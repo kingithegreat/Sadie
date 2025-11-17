@@ -1,0 +1,74 @@
+{
+  "name": "SADIE API Tool",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\n\nreturn {\n  json: {\n    method: params.method || 'GET',\n    url: params.url,\n    headers: params.headers || {},\n    body: params.body || null,\n    timeout: params.timeout || 30000\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": "={{ Object.entries($json.headers).map(([k,v]) => ({name: k, value: v})) }}"
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "options": {
+          "timeout": "={{ $json.timeout }}"
+        }
+      },
+      "id": "make-request",
+      "name": "Make HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.item.json;\nconst statusCode = response.statusCode || 200;\nconst body = response.body || response;\n\nreturn {\n  json: {\n    success: statusCode >= 200 && statusCode < 300,\n    action: 'api_call',\n    status_code: statusCode,\n    data: body,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
+    },
+    "Parse Parameters": {
+      "main": [[{ "node": "Make HTTP Request", "type": "main", "index": 0 }]]
+    },
+    "Make HTTP Request": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}

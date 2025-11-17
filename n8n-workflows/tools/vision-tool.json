@@ -1,0 +1,155 @@
+{
+  "name": "SADIE Vision Tool",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action;\n\nreturn {\n  json: {\n    action: action,\n    params: params\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "analyze_screenshot"}]
+              },
+              "renameOutput": true,
+              "outputKey": "analyze"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "ocr_text"}]
+              },
+              "renameOutput": true,
+              "outputKey": "ocr"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "describe_image"}]
+              },
+              "renameOutput": true,
+              "outputKey": "describe"
+            }
+          ]
+        }
+      },
+      "id": "route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.params;\nconst imagePath = params.image_path;\nconst prompt = params.prompt || 'Describe what you see in this image.';\n\nreturn {\n  json: {\n    model: 'llava:latest',\n    prompt: prompt,\n    image_path: imagePath,\n    stream: false\n  }\n};"
+      },
+      "id": "prepare-llava",
+      "name": "Prepare LLaVA Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $json.model }}"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.prompt }}"
+            },
+            {
+              "name": "images",
+              "value": "={{ [$json.image_path] }}"
+            },
+            {
+              "name": "stream",
+              "value": false
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "call-llava",
+      "name": "Call LLaVA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 100]
+    },
+    {
+      "parameters": {
+        "command": "tesseract '{{ $json.params.image_path }}' stdout",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "run-ocr",
+      "name": "Run OCR (Tesseract)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const action = $input.item.json.action || 'analyze';\nconst response = $input.item.json.response || $input.item.json.stdout || '';\n\nreturn {\n  json: {\n    success: true,\n    action: action,\n    result: response,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
+    },
+    "Parse Parameters": {
+      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+    },
+    "Route Action": {
+      "main": [
+        [{ "node": "Prepare LLaVA Request", "type": "main", "index": 0 }],
+        [{ "node": "Run OCR (Tesseract)", "type": "main", "index": 0 }],
+        [{ "node": "Prepare LLaVA Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare LLaVA Request": {
+      "main": [[{ "node": "Call LLaVA", "type": "main", "index": 0 }]]
+    },
+    "Call LLaVA": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    },
+    "Run OCR (Tesseract)": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}
