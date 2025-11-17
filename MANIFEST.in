@@ -1,0 +1,17 @@
+# Include configuration files
+include config/config.yaml
+
+# Include documentation
+recursive-include docs *.md
+
+# Include n8n workflows
+recursive-include src/sadie/n8n_workflows *.json
+
+# Include examples
+recursive-include examples *.py
+
+# Include readme and license
+include README.md
+include LICENSE
+include QUICK_START.md
+include CONTRIBUTING.md
