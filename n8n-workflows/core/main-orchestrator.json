@@ -1,0 +1,154 @@
+{
+  "name": "SADIE Main Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie/chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sadie-main-chat"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract user message and context\nconst userMessage = $input.item.json.message || $input.item.json.body.message;\nconst conversationId = $input.item.json.conversation_id || 'default';\nconst userId = $input.item.json.user_id || 'user';\n\n// Load conversation history from memory\nconst memoryPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/conversation-history.json';\nlet conversationHistory = [];\n\ntry {\n  const fs = require('fs');\n  if (fs.existsSync(memoryPath)) {\n    const data = fs.readFileSync(memoryPath, 'utf8');\n    const allConversations = JSON.parse(data);\n    conversationHistory = allConversations[conversationId] || [];\n  }\n} catch (error) {\n  console.log('No conversation history found, starting fresh');\n}\n\n// Load system prompts\nconst systemPrompt = `You are Sadie — a sweet, supportive, privacy-first AI assistant that runs fully locally.\n\nYour purpose:\n- help the user with tasks through structured tool calls\n- always output valid JSON when performing actions\n- remain safe, calm, friendly, and solution-focused\n\nRules:\n1. Be warm, supportive, but professional.\n2. Never claim human emotions; be gently personable.\n3. If you cannot perform a task, offer alternatives.\n4. All tool calls MUST be structured JSON using the tool_call schema.\n5. Never access blocked paths, perform unsafe operations, or modify system settings.\n6. Ask for confirmation when required (delete, email sending, risky actions).\n7. Follow safety policies strictly.\n8. Keep explanations simple and helpful.`;\n\n// Build Ollama prompt\nconst ollamaPrompt = `${systemPrompt}\n\nConversation History:\n${conversationHistory.slice(-5).map(m => `${m.role}: ${m.content}`).join('\\n')}\n\nUser: ${userMessage}\n\nRespond in JSON format with:\n{\n  \"response\": \"<your reply>\",\n  \"tool_call\": null OR {\"tool_name\": \"...\", \"parameters\": {...}, \"reasoning\": \"...\"}\n}`;\n\nreturn {\n  json: {\n    user_message: userMessage,\n    conversation_id: conversationId,\n    user_id: userId,\n    ollama_prompt: ollamaPrompt,\n    history: conversationHistory\n  }\n};"
+      },
+      "id": "prepare-context",
+      "name": "Prepare Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "llama3.2:3b"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.ollama_prompt }}"
+            },
+            {
+              "name": "stream",
+              "value": false
+            },
+            {
+              "name": "format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-ollama",
+      "name": "Call Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Ollama response\nconst ollamaResponse = JSON.parse($input.item.json.response);\nconst userMessage = $input.item.json.user_message;\nconst conversationId = $input.item.json.conversation_id;\n\n// Save to conversation history\nconst memoryPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/conversation-history.json';\nconst fs = require('fs');\n\nlet allConversations = {};\nif (fs.existsSync(memoryPath)) {\n  allConversations = JSON.parse(fs.readFileSync(memoryPath, 'utf8'));\n}\n\nif (!allConversations[conversationId]) {\n  allConversations[conversationId] = [];\n}\n\nallConversations[conversationId].push(\n  { role: 'user', content: userMessage, timestamp: new Date().toISOString() },\n  { role: 'assistant', content: ollamaResponse.response, timestamp: new Date().toISOString() }\n);\n\n// Keep only last 100 messages per conversation\nif (allConversations[conversationId].length > 100) {\n  allConversations[conversationId] = allConversations[conversationId].slice(-100);\n}\n\nfs.writeFileSync(memoryPath, JSON.stringify(allConversations, null, 2));\n\nreturn {\n  json: {\n    ...ollamaResponse,\n    conversation_id: conversationId,\n    user_message: userMessage\n  }\n};"
+      },
+      "id": "parse-response",
+      "name": "Parse & Save Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.tool_call }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-tool-call",
+      "name": "Has Tool Call?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "respond-direct",
+      "name": "Respond Directly",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $json.tool_call.tool_name }}"
+      },
+      "id": "execute-tool",
+      "name": "Execute Tool Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "respond-tool-result",
+      "name": "Respond Tool Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Prepare Context", "type": "main", "index": 0 }]]
+    },
+    "Prepare Context": {
+      "main": [[{ "node": "Call Ollama", "type": "main", "index": 0 }]]
+    },
+    "Call Ollama": {
+      "main": [[{ "node": "Parse & Save Response", "type": "main", "index": 0 }]]
+    },
+    "Parse & Save Response": {
+      "main": [[{ "node": "Has Tool Call?", "type": "main", "index": 0 }]]
+    },
+    "Has Tool Call?": {
+      "main": [
+        [{ "node": "Execute Tool Workflow", "type": "main", "index": 0 }],
+        [{ "node": "Respond Directly", "type": "main", "index": 0 }]
+      ]
+    },
+    "Execute Tool Workflow": {
+      "main": [[{ "node": "Respond Tool Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}

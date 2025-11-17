@@ -1,0 +1,176 @@
+{
+  "name": "SADIE File Manager Tool",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action;\n\nreturn {\n  json: {\n    action: action,\n    params: params,\n    original_request: $input.item.json\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "read_file"}]
+              },
+              "renameOutput": true,
+              "outputKey": "read_file"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "write_file"}]
+              },
+              "renameOutput": true,
+              "outputKey": "write_file"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "list_directory"}]
+              },
+              "renameOutput": true,
+              "outputKey": "list_directory"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "delete_file"}]
+              },
+              "renameOutput": true,
+              "outputKey": "delete_file"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "search_files"}]
+              },
+              "renameOutput": true,
+              "outputKey": "search_files"
+            }
+          ]
+        }
+      },
+      "id": "route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "command": "Get-Content -Path '{{ $json.params.file_path }}' -Raw",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "read-file",
+      "name": "Read File",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 100]
+    },
+    {
+      "parameters": {
+        "command": "$content = @'\n{{ $json.params.content }}\n'@; $content | Set-Content -Path '{{ $json.params.file_path }}'",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "write-file",
+      "name": "Write File",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "command": "Get-ChildItem -Path '{{ $json.params.directory_path }}' | Select-Object Name, Length, LastWriteTime | ConvertTo-Json",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "list-directory",
+      "name": "List Directory",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "command": "Remove-Item -Path '{{ $json.params.file_path }}' -Force",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "delete-file",
+      "name": "Delete File",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "command": "Get-ChildItem -Path '{{ $json.params.directory_path }}' -Recurse -Filter '*{{ $json.params.query }}*' | Select-Object FullName, Length | ConvertTo-Json",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "search-files",
+      "name": "Search Files",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\nconst action = $input.item.json.action;\n\nlet result;\nif (stderr) {\n  result = {\n    success: false,\n    error: stderr,\n    action: action\n  };\n} else {\n  // Try to parse JSON if action is list_directory or search_files\n  if (action === 'list_directory' || action === 'search_files') {\n    try {\n      result = {\n        success: true,\n        action: action,\n        data: JSON.parse(stdout)\n      };\n    } catch (e) {\n      result = {\n        success: true,\n        action: action,\n        data: stdout\n      };\n    }\n  } else {\n    result = {\n      success: true,\n      action: action,\n      data: stdout\n    };\n  }\n}\n\nreturn { json: result };"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
+    },
+    "Parse Parameters": {
+      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+    },
+    "Route Action": {
+      "main": [
+        [{ "node": "Read File", "type": "main", "index": 0 }],
+        [{ "node": "Write File", "type": "main", "index": 0 }],
+        [{ "node": "List Directory", "type": "main", "index": 0 }],
+        [{ "node": "Delete File", "type": "main", "index": 0 }],
+        [{ "node": "Search Files", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read File": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    },
+    "Write File": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    },
+    "List Directory": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    },
+    "Delete File": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    },
+    "Search Files": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,87 @@
+{
+  "name": "SADIE Planning Agent Tool",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst task = params.task;\nconst context = params.context || '';\n\n// Build prompt for Ollama to break down the task\nconst prompt = `You are a task planning assistant. Break down the following task into 3-10 sequential steps.\n\nTask: ${task}\nContext: ${context}\n\nProvide a JSON response with this structure:\n{\n  \"steps\": [\n    {\"step_number\": 1, \"action\": \"...\", \"tool\": \"...\", \"requires_confirmation\": false},\n    {\"step_number\": 2, \"action\": \"...\", \"tool\": \"...\", \"requires_confirmation\": false}\n  ],\n  \"estimated_duration\": \"5 minutes\"\n}\n\nAvailable tools: file_manager, email_manager, memory_manager, vision_tool, system_info, api_tool, search_tool`;\n\nreturn {\n  json: {\n    ollama_prompt: prompt,\n    original_task: task\n  }\n};"
+      },
+      "id": "prepare-planning-prompt",
+      "name": "Prepare Planning Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "llama3.2:3b"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.ollama_prompt }}"
+            },
+            {
+              "name": "stream",
+              "value": false
+            },
+            {
+              "name": "format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-ollama-planning",
+      "name": "Call Ollama for Planning",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = JSON.parse($input.item.json.response);\nconst plan = JSON.parse(response.response);\n\nreturn {\n  json: {\n    success: true,\n    action: 'create_plan',\n    plan: plan,\n    original_task: $input.item.json.original_task,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "format-plan",
+      "name": "Format Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Prepare Planning Prompt", "type": "main", "index": 0 }]]
+    },
+    "Prepare Planning Prompt": {
+      "main": [[{ "node": "Call Ollama for Planning", "type": "main", "index": 0 }]]
+    },
+    "Call Ollama for Planning": {
+      "main": [[{ "node": "Format Plan", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}

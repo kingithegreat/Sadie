@@ -1,0 +1,146 @@
+{
+  "name": "SADIE Memory Manager Tool",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action;\n\nreturn {\n  json: {\n    action: action,\n    params: params\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "store_fact"}]
+              },
+              "renameOutput": true,
+              "outputKey": "store_fact"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "retrieve_context"}]
+              },
+              "renameOutput": true,
+              "outputKey": "retrieve_context"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "search_memory"}]
+              },
+              "renameOutput": true,
+              "outputKey": "search_memory"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "update_preference"}]
+              },
+              "renameOutput": true,
+              "outputKey": "update_preference"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "get_preferences"}]
+              },
+              "renameOutput": true,
+              "outputKey": "get_preferences"
+            }
+          ]
+        }
+      },
+      "id": "route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst memoryPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/conversation-history.json';\nconst params = $input.item.json.params;\n\nlet memory = { facts: [], tasks: [], contexts: [] };\nif (fs.existsSync(memoryPath)) {\n  memory = JSON.parse(fs.readFileSync(memoryPath, 'utf8'));\n}\n\nif (!memory.facts) memory.facts = [];\n\nconst newFact = {\n  id: `fact_${Date.now()}`,\n  content: params.content,\n  category: params.category || 'general',\n  importance: params.importance || 5,\n  tags: params.tags || [],\n  timestamp: new Date().toISOString()\n};\n\nmemory.facts.push(newFact);\n\n// Keep only 500 most recent facts\nif (memory.facts.length > 500) {\n  memory.facts = memory.facts.slice(-500);\n}\n\nfs.writeFileSync(memoryPath, JSON.stringify(memory, null, 2));\n\nreturn {\n  json: {\n    success: true,\n    action: 'store_fact',\n    fact_id: newFact.id,\n    message: 'Fact stored successfully'\n  }\n};"
+      },
+      "id": "store-fact",
+      "name": "Store Fact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst memoryPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/conversation-history.json';\nconst params = $input.item.json.params;\n\nlet memory = { facts: [], tasks: [], contexts: [] };\nif (fs.existsSync(memoryPath)) {\n  memory = JSON.parse(fs.readFileSync(memoryPath, 'utf8'));\n}\n\nconst query = (params.query || '').toLowerCase();\nconst category = params.category;\nconst limit = params.limit || 10;\n\nlet results = memory.facts || [];\n\n// Filter by category\nif (category) {\n  results = results.filter(f => f.category === category);\n}\n\n// Search by query\nif (query) {\n  results = results.filter(f => \n    f.content.toLowerCase().includes(query) ||\n    (f.tags && f.tags.some(tag => tag.toLowerCase().includes(query)))\n  );\n}\n\n// Sort by importance and recency\nresults.sort((a, b) => {\n  const importanceDiff = b.importance - a.importance;\n  if (importanceDiff !== 0) return importanceDiff;\n  return new Date(b.timestamp) - new Date(a.timestamp);\n});\n\n// Limit results\nresults = results.slice(0, limit);\n\nreturn {\n  json: {\n    success: true,\n    action: 'search_memory',\n    results: results,\n    count: results.length\n  }\n};"
+      },
+      "id": "search-memory",
+      "name": "Search Memory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst prefsPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/user-preferences.json';\nconst params = $input.item.json.params;\n\nlet preferences = {};\nif (fs.existsSync(prefsPath)) {\n  preferences = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));\n}\n\nconst key = params.key;\nconst value = params.value;\n\npreferences[key] = {\n  value: value,\n  updated_at: new Date().toISOString()\n};\n\nfs.writeFileSync(prefsPath, JSON.stringify(preferences, null, 2));\n\nreturn {\n  json: {\n    success: true,\n    action: 'update_preference',\n    key: key,\n    message: 'Preference updated successfully'\n  }\n};"
+      },
+      "id": "update-preference",
+      "name": "Update Preference",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst prefsPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/user-preferences.json';\n\nlet preferences = {};\nif (fs.existsSync(prefsPath)) {\n  preferences = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));\n}\n\nreturn {\n  json: {\n    success: true,\n    action: 'get_preferences',\n    preferences: preferences\n  }\n};"
+      },
+      "id": "get-preferences",
+      "name": "Get Preferences",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst memoryPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/conversation-history.json';\nconst params = $input.item.json.params;\n\nlet memory = { facts: [], tasks: [], contexts: [] };\nif (fs.existsSync(memoryPath)) {\n  memory = JSON.parse(fs.readFileSync(memoryPath, 'utf8'));\n}\n\nconst category = params.category;\nconst limit = params.limit || 10;\n\nlet contexts = memory.facts || [];\n\n// Filter by category\nif (category) {\n  contexts = contexts.filter(f => f.category === category);\n}\n\n// Sort by importance and recency\ncontexts.sort((a, b) => {\n  const importanceDiff = b.importance - a.importance;\n  if (importanceDiff !== 0) return importanceDiff;\n  return new Date(b.timestamp) - new Date(a.timestamp);\n});\n\n// Limit results\ncontexts = contexts.slice(0, limit);\n\nreturn {\n  json: {\n    success: true,\n    action: 'retrieve_context',\n    contexts: contexts,\n    count: contexts.length\n  }\n};"
+      },
+      "id": "retrieve-context",
+      "name": "Retrieve Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 500]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
+    },
+    "Parse Parameters": {
+      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+    },
+    "Route Action": {
+      "main": [
+        [{ "node": "Store Fact", "type": "main", "index": 0 }],
+        [{ "node": "Retrieve Context", "type": "main", "index": 0 }],
+        [{ "node": "Search Memory", "type": "main", "index": 0 }],
+        [{ "node": "Update Preference", "type": "main", "index": 0 }],
+        [{ "node": "Get Preferences", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}

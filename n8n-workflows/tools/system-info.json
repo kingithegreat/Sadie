@@ -1,0 +1,132 @@
+{
+  "name": "SADIE System Info Tool",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action || 'get_system_info';\n\nreturn {\n  json: {\n    action: action,\n    params: params\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "get_system_info"}]
+              },
+              "renameOutput": true,
+              "outputKey": "system_info"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "get_disk_usage"}]
+              },
+              "renameOutput": true,
+              "outputKey": "disk_usage"
+            },
+            {
+              "conditions": {
+                "string": [{"value1": "={{ $json.action }}", "value2": "get_process_list"}]
+              },
+              "renameOutput": true,
+              "outputKey": "process_list"
+            }
+          ]
+        }
+      },
+      "id": "route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "command": "Get-ComputerInfo | Select-Object CsName, OsName, OsVersion, OsArchitecture, CsProcessors, CsTotalPhysicalMemory | ConvertTo-Json",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "get-system-info",
+      "name": "Get System Info",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 100]
+    },
+    {
+      "parameters": {
+        "command": "Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{Name='Used(GB)';Expression={[math]::Round($_.Used/1GB,2)}}, @{Name='Free(GB)';Expression={[math]::Round($_.Free/1GB,2)}} | ConvertTo-Json",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "get-disk-usage",
+      "name": "Get Disk Usage",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "command": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, WorkingSet | ConvertTo-Json",
+        "cwd": "C:/Users/adenk/Desktop/sadie"
+      },
+      "id": "get-process-list",
+      "name": "Get Process List",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\nconst action = $input.item.json.action;\n\nlet result;\nif (stderr) {\n  result = {\n    success: false,\n    error: stderr,\n    action: action\n  };\n} else {\n  try {\n    result = {\n      success: true,\n      action: action,\n      data: JSON.parse(stdout)\n    };\n  } catch (e) {\n    result = {\n      success: true,\n      action: action,\n      data: stdout\n    };\n  }\n}\n\nreturn { json: result };"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
+    },
+    "Parse Parameters": {
+      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+    },
+    "Route Action": {
+      "main": [
+        [{ "node": "Get System Info", "type": "main", "index": 0 }],
+        [{ "node": "Get Disk Usage", "type": "main", "index": 0 }],
+        [{ "node": "Get Process List", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get System Info": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    },
+    "Get Disk Usage": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    },
+    "Get Process List": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}
