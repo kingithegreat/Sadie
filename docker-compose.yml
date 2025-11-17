@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: sadie-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # Basic Configuration
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      
+      # Security
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=sadie_local_password
+      
+      # Execution
+      - EXECUTIONS_PROCESS=main
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      
+      # Workflows
+      - WORKFLOWS_DEFAULT_NAME=My Workflow
+      
+      # Nodes
+      - NODE_FUNCTION_ALLOW_BUILTIN=*
+      - NODE_FUNCTION_ALLOW_EXTERNAL=
+      
+      # Timezone
+      - GENERIC_TIMEZONE=America/New_York
+      - TZ=America/New_York
+      
+      # Logging
+      - N8N_LOG_LEVEL=info
+      - N8N_LOG_OUTPUT=console
+      
+    volumes:
+      # Persistent data
+      - n8n_data:/home/node/.n8n
+      
+      # Workflow imports (optional)
+      - ./n8n-workflows:/workflows:ro
+      
+      # Custom scripts access (for Execute Command node)
+      - ./scripts:/scripts:ro
+      
+    networks:
+      - sadie-network
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  sadie-network:
+    driver: bridge

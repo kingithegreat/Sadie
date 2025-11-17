@@ -1,0 +1,40 @@
+{
+  "allowed_tools": [
+    "file_manager",
+    "memory_manager",
+    "search_tool",
+    "system_info",
+    "vision_tool",
+    "email_manager",
+    "voice_tool",
+    "planning_agent",
+    "api_tool"
+  ],
+  "tool_descriptions": {
+    "file_manager": "Read, write, search, and organize files within allowed directories",
+    "memory_manager": "Store and retrieve contextual information and user preferences",
+    "search_tool": "Search for files on the local system using Everything Search",
+    "system_info": "Query system information like disk space, processes, and network status",
+    "vision_tool": "Analyze screenshots, extract text with OCR, describe images",
+    "email_manager": "Send and manage emails (requires configuration)",
+    "voice_tool": "Transcribe audio to text using Whisper",
+    "planning_agent": "Break down complex tasks into sequential steps",
+    "api_tool": "Make HTTP requests to approved APIs"
+  },
+  "tool_risk_levels": {
+    "file_manager": "medium",
+    "memory_manager": "low",
+    "search_tool": "low",
+    "system_info": "low",
+    "vision_tool": "low",
+    "email_manager": "high",
+    "voice_tool": "low",
+    "planning_agent": "medium",
+    "api_tool": "high"
+  },
+  "disabled_tools": [],
+  "experimental_tools": [
+    "planning_agent",
+    "api_tool"
+  ]
+}
