@@ -1,0 +1,88 @@
+version: '3.9'
+services:
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - '6379:6379'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mock-upstream:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./src/test:/app
+    command: sh -c "node mock-upstream.js"
+    ports:
+      - '7000:7000'
+    restart: unless-stopped
+
+  sse-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - proxy-config:/usr/src/app/proxy.config.json
+    ports:
+      - '5050:5050'
+    depends_on:
+      - redis
+      - mock-upstream
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:1.26-alpine
+    ports:
+      - '8080:80'
+      - '8443:443'
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - sse-proxy
+    restart: unless-stopped
+
+volumes:
+  proxy-config:
+  redis-data:
+version: '3.9'
+services:
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - '6379:6379'
+  mock-upstream:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./src/test:/app
+    command: sh -c "node mock-upstream.js"
+    ports:
+      - '7000:7000'
+  proxy:
+    build: .
+    environment:
+      - PORT=5050
+      - OPENAI_ENDPOINT=http://mock-upstream:7000/sse
+      - PROXY_API_KEY=changeme
+      - PROXY_REQUIRE_API_KEY=true
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - '5050:5050'
+    depends_on:
+      - mock-upstream
+      - redis
+    volumes:
+      - ./:/usr/src/app
+    command: sh -c "npm run dev"
