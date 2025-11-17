@@ -11,97 +11,18 @@
     },
     {
       "parameters": {
-        "jsCode": "// Load safety rules\nconst fs = require('fs');\nconst rulesPath = 'C:/Users/adenk/Desktop/sadie/config/safety-rules.json';\nconst safetyRules = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));\n\nconst toolCall = $input.item.json.tool_call;\nconst toolName = toolCall.tool_name;\nconst params = toolCall.parameters;\n\nconst violations = [];\nconst warnings = [];\n\n// File operation validation\nif (toolName === 'file_manager') {\n  const filePath = params.file_path || params.directory_path || '';\n  \n  // Check allowed paths\n  const isAllowed = safetyRules.file_operations.allowed_paths.some(allowed => \n    filePath.toLowerCase().includes(allowed.toLowerCase())\n  );\n  \n  if (!isAllowed) {\n    violations.push(`Path \"${filePath}\" is not in allowed directories`);\n  }\n  \n  // Check blocked paths\n  const isBlocked = safetyRules.file_operations.blocked_paths.some(blocked => \n    filePath.toLowerCase().includes(blocked.toLowerCase())\n  );\n  \n  if (isBlocked) {\n    violations.push(`Path \"${filePath}\" is in blocked system directories`);\n  }\n  \n  // Check file extensions\n  const ext = filePath.split('.').pop();\n  if (safetyRules.file_operations.blocked_extensions.includes(`.${ext}`)) {\n    violations.push(`File extension \".${ext}\" is blocked for security`);\n  }\n  \n  // Check if confirmation required\n  const requiresConfirm = ['delete_file', 'move_file', 'write_file'].includes(params.action);\n  if (requiresConfirm && !params.user_confirmed) {\n    warnings.push('This action requires user confirmation');\n  }\n}\n\n// Email operation validation\nif (toolName === 'email_manager') {\n  if (params.action === 'send_email' && !params.user_confirmed) {\n    warnings.push('Email sending requires user confirmation');\n  }\n  \n  // Check recipient domains (if configured)\n  if (params.to && safetyRules.email_operations.blocked_domains) {\n    const recipientDomain = params.to.split('@')[1];\n    if (safetyRules.email_operations.blocked_domains.includes(recipientDomain)) {\n      violations.push(`Email domain \"${recipientDomain}\" is blocked`);\n    }\n  }\n  \n  // Check attachment size\n  if (params.attachments) {\n    const totalSize = params.attachments.reduce((sum, att) => sum + (att.size || 0), 0);\n    if (totalSize > 25 * 1024 * 1024) {\n      violations.push('Attachment size exceeds 25MB limit');\n    }\n  }\n}\n\n// API operation validation\nif (toolName === 'api_tool') {\n  const url = params.url || '';\n  \n  // Only allow localhost/127.0.0.1 unless explicitly approved\n  const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');\n  const isApproved = safetyRules.api_operations.approved_domains.some(domain => \n    url.includes(domain)\n  );\n  \n  if (!isLocalhost && !isApproved) {\n    violations.push(`External API \"${url}\" is not in approved domains`);\n  }\n  \n  if (!params.user_confirmed) {\n    warnings.push('External API calls require user confirmation');\n  }\n}\n\n// System operation validation\nif (toolName === 'system_info') {\n  const blockedActions = safetyRules.system_operations.blocked_actions || [];\n  if (blockedActions.includes(params.action)) {\n    violations.push(`System action \"${params.action}\" is blocked`);\n  }\n}\n\nreturn {\n  json: {\n    tool_call: toolCall,\n    is_safe: violations.length === 0,\n    requires_confirmation: warnings.length > 0,\n    violations: violations,\n    warnings: warnings,\n    timestamp: new Date().toISOString()\n  }\n};"
+        "jsCode": "const fs = require('fs');\nconst path = '/data/config/safety-rules.json';\n\n// Default safe return structure\nconst safeReturn = (status, message, extra = {}) => ({\n  json: {\n    status,\n    message,\n    ...extra,\n    timestamp: new Date().toISOString()\n  }\n});\n\nlet safetyRules = {};\n\n// Load safety rules safely\ntry {\n  if (fs.existsSync(path)) {\n    safetyRules = JSON.parse(fs.readFileSync(path, 'utf8'));\n  } else {\n    return safeReturn('blocked', 'Missing safety-rules.json in /data/config');\n  }\n} catch (err) {\n  return safeReturn('blocked', 'Could not load safety rules', { error: err.message });\n}\n\nconst toolCall = $input.item.json.tool_call;\n\n// If missing tool_call → block\nif (!toolCall || typeof toolCall !== 'object') {\n  return safeReturn('blocked', 'Invalid or missing tool_call');\n}\n\nconst toolName = toolCall.tool_name;\nconst params = toolCall.parameters || {};\n\nconst violations = [];\nconst warnings = [];\n\n// Helper: check path safety\nconst isPathUnsafe = (p) => {\n  if (!p || typeof p !== 'string') return true;\n  const norm = p.toLowerCase();\n\n  if (safetyRules.file_operations.blocked_paths.some(b => norm.includes(b.toLowerCase()))) {\n    return true;\n  }\n  return false;\n};\n\nconst isPathAllowed = (p) => {\n  if (!p || typeof p !== 'string') return false;\n  const norm = p.toLowerCase();\n\n  return safetyRules.file_operations.allowed_paths.some(a => norm.includes(a.toLowerCase()));\n};\n\n// ----------------------------------------\n// FILE MANAGER TOOL\n// ----------------------------------------\nif (toolName === 'file_manager') {\n  const target = params.file_path || params.directory_path || '';\n  const action = params.action || '';\n\n  if (isPathUnsafe(target)) {\n    violations.push(`Blocked or unsafe path: ${target}`);\n  }\n\n  if (!isPathAllowed(target)) {\n    violations.push(`Path not in allowed zones: ${target}`);\n  }\n\n  const ext = target.includes('.') ? '.' + target.split('.').pop() : '';\n  if (safetyRules.file_operations.blocked_extensions.includes(ext)) {\n    violations.push(`Blocked extension: ${ext}`);\n  }\n\n  if (['delete_file', 'move_file', 'write_file'].includes(action) && !params.user_confirmed) {\n    warnings.push('This file action requires explicit user confirmation');\n  }\n}\n\n// ----------------------------------------\n// EMAIL TOOL\n// ----------------------------------------\nif (toolName === 'email_manager') {\n  if (params.action === 'send_email' && !params.user_confirmed) {\n    warnings.push('Sending email requires user confirmation');\n  }\n\n  if (params.to && safetyRules.email_operations.blocked_domains) {\n    try {\n      const domain = params.to.split('@')[1];\n      if (safetyRules.email_operations.blocked_domains.includes(domain)) {\n        violations.push(`Blocked email domain: ${domain}`);\n      }\n    } catch (e) {\n      violations.push('Invalid email format');\n    }\n  }\n\n  if (params.attachments) {\n    const totalBytes = params.attachments.reduce((a, b) => a + (b.size || 0), 0);\n    if (totalBytes > 25 * 1024 * 1024) {\n      violations.push('Attachment size exceeds 25MB limit');\n    }\n  }\n}\n\n// ----------------------------------------\n// API TOOL\n// ----------------------------------------\nif (toolName === 'api_tool') {\n  const url = params.url || '';\n  const isLocal = url.includes('localhost') || url.includes('127.0.0.1');\n  const isApproved = safetyRules.api_operations.approved_domains.some(d => url.includes(d));\n\n  if (!isLocal && !isApproved) {\n    violations.push(`External API not approved: ${url}`);\n  }\n\n  if (!params.user_confirmed) {\n    warnings.push('External API calls require confirmation');\n  }\n}\n\n// ----------------------------------------\n// SYSTEM INFO TOOL\n// ----------------------------------------\nif (toolName === 'system_info') {\n  if (safetyRules.system_operations.blocked_actions.includes(params.action)) {\n    violations.push(`Blocked system action: ${params.action}`);\n  }\n}\n\n// ----------------------------------------\n// FINAL DECISION\n// ----------------------------------------\nif (violations.length > 0) {\n  return safeReturn('blocked', 'Safety violations detected', { violations, tool_call: toolCall });\n}\n\nif (warnings.length > 0) {\n  return safeReturn('needs_confirmation', 'Action requires confirmation', { warnings, tool_call: toolCall });\n}\n\nreturn safeReturn('approved', 'Safe to execute', { tool_call: toolCall });"
       },
       "id": "validate-safety",
       "name": "Validate Safety",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [450, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.is_safe }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "check-safe",
-      "name": "Is Safe?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [650, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "return {\n  json: {\n    status: 'blocked',\n    message: 'Safety violation detected',\n    violations: $input.item.json.violations,\n    tool_call: $input.item.json.tool_call\n  }\n};"
-      },
-      "id": "block-unsafe",
-      "name": "Block Unsafe",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [850, 400]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.requires_confirmation }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "needs-confirmation",
-      "name": "Needs Confirmation?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [850, 200]
-    },
-    {
-      "parameters": {
-        "jsCode": "return {\n  json: {\n    status: 'needs_confirmation',\n    message: 'This action requires your confirmation',\n    warnings: $input.item.json.warnings,\n    tool_call: $input.item.json.tool_call,\n    confirmation_id: `confirm_${Date.now()}`\n  }\n};"
-      },
-      "id": "request-confirmation",
-      "name": "Request Confirmation",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1050, 100]
-    },
-    {
-      "parameters": {
-        "jsCode": "return {\n  json: {\n    status: 'approved',\n    message: 'Safety checks passed',\n    tool_call: $input.item.json.tool_call\n  }\n};"
-      },
-      "id": "approve-execution",
-      "name": "Approve Execution",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1050, 300]
     }
   ],
   "connections": {
     "Start": {
       "main": [[{ "node": "Validate Safety", "type": "main", "index": 0 }]]
-    },
-    "Validate Safety": {
-      "main": [[{ "node": "Is Safe?", "type": "main", "index": 0 }]]
-    },
-    "Is Safe?": {
-      "main": [
-        [{ "node": "Needs Confirmation?", "type": "main", "index": 0 }],
-        [{ "node": "Block Unsafe", "type": "main", "index": 0 }]
-      ]
-    },
-    "Needs Confirmation?": {
-      "main": [
-        [{ "node": "Request Confirmation", "type": "main", "index": 0 }],
-        [{ "node": "Approve Execution", "type": "main", "index": 0 }]
-      ]
     }
   },
   "settings": {
@@ -111,5 +32,5 @@
   "tags": [],
   "triggerCount": 0,
   "updatedAt": "2025-11-17T00:00:00.000Z",
-  "versionId": "1"
+  "versionId": "2"
 }

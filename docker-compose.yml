@@ -44,6 +44,12 @@ services:
       # Persistent data
       - n8n_data:/home/node/.n8n
       
+      # Memory volume for Docker
+      - ./memory:/data/memory
+      
+      # Config volume for safety rules
+      - ./config:/data/config:ro
+      
       # Workflow imports (optional)
       - ./n8n-workflows:/workflows:ro
       
