@@ -11,3 +11,4 @@ describe('Encryption helpers', () => {
     expect(decrypted).toBe(plain);
   });
 });
+afterAll(async () => { try { await require('../index').gracefulShutdown(); } catch (e) { /* ignore */ } });

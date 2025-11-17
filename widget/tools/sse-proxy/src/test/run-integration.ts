@@ -35,6 +35,7 @@ async function run() {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-sadie-key': 'changeme' }, body: JSON.stringify(body)
   });
 
+  if (!resp.body) throw new Error('No response body');
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';

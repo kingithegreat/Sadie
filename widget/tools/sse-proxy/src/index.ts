@@ -259,11 +259,11 @@ if (process.env.REDIS_URL) {
 
 const keyRateMap: Map<string, { count: number; resetAt: number }> = new Map();
 
-async function checkRateLimitForKey(key: string): Promise<boolean> {
+async function checkRateLimitForKey(key?: string): Promise<boolean> {
   const now = Date.now();
   if (redisClient) {
     try {
-      const keyName = `ratelimit:${key}`;
+      const keyName = `ratelimit:${key || 'anonymous'}`;
       const current = await redisClient.incr(keyName);
       if (current === 1) await redisClient.pexpire(keyName, rateLimitWindow);
       return current <= rateLimitMax;
@@ -271,9 +271,10 @@ async function checkRateLimitForKey(key: string): Promise<boolean> {
       // fallback to in-memory on Redis error
     }
   }
-  const existing = keyRateMap.get(key);
+  const k = key || 'anonymous';
+  const existing = keyRateMap.get(k);
   if (!existing || existing.resetAt < now) {
-    keyRateMap.set(key, { count: 1, resetAt: now + rateLimitWindow });
+    keyRateMap.set(k, { count: 1, resetAt: now + rateLimitWindow });
     return true;
   }
   if (existing.count >= rateLimitMax) return false;
@@ -330,8 +331,9 @@ app.post('/stream', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-transform, no-cache');
     res.setHeader('Connection', 'close');
-    sendSSE(res, { error: true, code: 'AUTH_FAILED', message: 'Invalid or missing API key' });
-    res.status(401).end();
+      res.status(401);
+      sendSSE(res, { error: true, code: 'AUTH_FAILED', message: 'Invalid or missing API key' });
+      res.end();
     return;
   }
 
@@ -339,8 +341,9 @@ app.post('/stream', async (req: Request, res: Response) => {
   const rateKey = headerKeyRaw || req.ip;
   if (!(await checkRateLimitForKey(rateKey))) {
     res.setHeader('Content-Type', 'text/event-stream');
-    sendSSE(res, { error: true, code: 'RATE_LIMIT', message: 'Rate limit exceeded' });
-    res.status(429).end();
+      res.status(429);
+      sendSSE(res, { error: true, code: 'RATE_LIMIT', message: 'Rate limit exceeded' });
+      res.end();
     return;
   }
 
@@ -524,4 +527,15 @@ if (adminEnabled) {
 
 // Basic ping health check already done
 export { encryptKey, decryptKey, isValidApiKey };
+// Graceful shutdown to close resources (used by tests and clean exits)
+export async function gracefulShutdown() {
+  try {
+    if (redisClient) {
+      await redisClient.quit();
+      redisClient = null;
+    }
+  } catch (err) {
+    console.warn('Error during graceful shutdown of redis:', err);
+  }
+}
 export default app;

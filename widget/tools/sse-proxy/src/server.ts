@@ -48,8 +48,8 @@ wss.on('connection', (socket: any) => {
 			} else {
 				await streamRawLinesToSink(upstreamResp, sendSink);
 			}
-		} catch (err) {
-			try { socket.send(JSON.stringify({ error: true, message: err.message || String(err) })); } catch (e) {}
+		} catch (err: any) {
+			try { socket.send(JSON.stringify({ error: true, message: err?.message || String(err) })); } catch (e) { }
 		}
 	});
 	socket.on('close', () => { if (upstreamController) upstreamController.abort(); console.log('WS client disconnected'); });

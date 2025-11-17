@@ -72,6 +72,20 @@ npm install
 
 # Build and run
 npm start
+
+### Optional: Use the SSE Proxy directly
+If you'd like SADIE to send streaming requests directly to the local SSE Proxy instead of routing through `n8n`, set the following environment variables before launching the widget.
+
+PowerShell example:
+```powershell
+$env:SADIE_USE_PROXY = "true"
+$env:SADIE_PROXY_URL = "http://localhost:5050/stream"
+$env:PROXY_API_KEYS = "changeme"
+$env:PROXY_ADMIN_KEY = "adminchangeme"
+npm start
+```
+
+This instructs the `message-router` in the main process to call the SSE proxy at `SADIE_PROXY_URL` for streaming operations.
 ```
 
 ## 📦 Project Structure
