@@ -1,0 +1,18 @@
+### Multi-stage build: build with node, runtime with node:alpine
+FROM node:20-alpine AS builder
+WORKDIR /usr/src/app
+COPY package.json package-lock.json* ./
+RUN npm ci --production=false --silent
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runtime
+WORKDIR /usr/src/app
+COPY --from=builder /usr/src/app/package.json ./
+COPY --from=builder /usr/src/app/package-lock.json ./
+RUN npm ci --production --silent
+COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/proxy.config.json ./proxy.config.json
+EXPOSE 5050
+ENV NODE_ENV=production
+CMD ["node", "dist/server.js"]

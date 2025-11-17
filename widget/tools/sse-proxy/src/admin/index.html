@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SADIE SSE Proxy Admin UI</title>
+  <style>body { font-family: system-ui, Arial; padding: 20px; } label, input, button { margin: 6px 0; } </style>
+</head>
+<body>
+  <h1>SADIE SSE Proxy — Admin UI</h1>
+  <div>
+    <label>Admin Key: <input id="adminKey" type="password" value="adminchangeme" /></label>
+    <button id="authBtn">Authenticate</button>
+  </div>
+  <hr />
+  <div>
+    <h2>API Keys</h2>
+    <ul id="keys"></ul>
+    <input id="newKey" placeholder="new api key" />
+    <button id="addKey">Add Key</button>
+  </div>
+  <script>
+    let adminKey = 'adminchangeme';
+    function authHeaders() { return { 'x-sadie-admin-key': adminKey, 'Content-Type': 'application/json'} }
+    async function loadKeys() {
+      const res = await fetch('/admin/keys', { headers: authHeaders() });
+      if (!res.ok) { alert('Unauthorized: Admin key invalid'); return; }
+      const json = await res.json();
+      const list = document.getElementById('keys'); list.innerHTML = '';
+      for (const k of json.keys) {
+        const li = document.createElement('li');
+        li.innerText = k.masked;
+        const del = document.createElement('button'); del.innerText = 'Delete';
+        del.onclick = async () => {
+          const supplied = prompt('Enter the full key string to delete');
+          if (!supplied) return;
+          const resp = await fetch('/admin/keys', { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ key: supplied }) });
+          if (resp.ok) loadKeys(); else alert('Failed');
+        };
+        li.appendChild(del);
+        list.appendChild(li);
+      }
+    }
+    document.getElementById('authBtn').onclick = () => { adminKey = document.getElementById('adminKey').value; loadKeys(); };
+    document.getElementById('addKey').onclick = async () => { const newKey = document.getElementById('newKey').value; await fetch('/admin/keys', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ key: newKey }) }); loadKeys(); };
+  </script>
+</body>
+</html>

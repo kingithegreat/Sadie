@@ -1,0 +1,31 @@
+{
+  "port": 5050,
+  "allowOrigins": ["http://localhost:3000", "http://localhost:5173", "*"],
+  "openai": {
+    "endpoint": "https://api.openai.com/v1/responses",
+    "streamHeader": "text/event-stream"
+  },
+  "ollama": {
+    "endpoint": "http://localhost:11434/api/infer",
+    "streamHeader": "text/event-stream"
+  },
+  "maxBodySize": "12mb",
+  "requestTimeoutMs": 120000,
+  "logLevel": "info",
+  "allowedProviders": ["openai", "ollama"],
+  "whitelistHosts": []
+  ,
+  "requireApiKey": true,
+  "proxyApiKeys": ["changeme"]
+  ,
+  "persistKeys": true,
+  "admin": {
+    "enabled": true,
+    "adminApiKey": "adminchangeme"
+  },
+  "rateLimit": {
+    "windowMs": 60000,
+    "maxRequests": 30
+  },
+  "enforceServerAuth": true
+}

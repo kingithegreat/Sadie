@@ -1,0 +1,61 @@
+version: '3.9'
+services:
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - redis-data:/data
+
+  mock-upstream:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./src/test:/app
+    command: sh -c "node mock-upstream.js"
+    ports:
+      - '7000:7000'
+    restart: unless-stopped
+
+  sse-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: sadie/sse-proxy:latest
+    env_file: .env
+    environment:
+      - OPENAI_ENDPOINT
+      - OLLAMA_ENDPOINT
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - '5050:5050'
+    volumes:
+      - proxy-config:/usr/src/app/proxy.config.json
+    depends_on:
+      - redis
+      - mock-upstream
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:1.26-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - sse-proxy
+
+volumes:
+  redis-data:
+  proxy-config:
