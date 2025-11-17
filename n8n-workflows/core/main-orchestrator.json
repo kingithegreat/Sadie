@@ -17,7 +17,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract user message and context\nconst userMessage = $input.item.json.message || $input.item.json.body.message;\nconst conversationId = $input.item.json.conversation_id || 'default';\nconst userId = $input.item.json.user_id || 'user';\n\n// Load conversation history from memory\nconst memoryPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/conversation-history.json';\nlet conversationHistory = [];\n\ntry {\n  const fs = require('fs');\n  if (fs.existsSync(memoryPath)) {\n    const data = fs.readFileSync(memoryPath, 'utf8');\n    const allConversations = JSON.parse(data);\n    conversationHistory = allConversations[conversationId] || [];\n  }\n} catch (error) {\n  console.log('No conversation history found, starting fresh');\n}\n\n// Load system prompts\nconst systemPrompt = `You are Sadie — a sweet, supportive, privacy-first AI assistant that runs fully locally.\n\nYour purpose:\n- help the user with tasks through structured tool calls\n- always output valid JSON when performing actions\n- remain safe, calm, friendly, and solution-focused\n\nRules:\n1. Be warm, supportive, but professional.\n2. Never claim human emotions; be gently personable.\n3. If you cannot perform a task, offer alternatives.\n4. All tool calls MUST be structured JSON using the tool_call schema.\n5. Never access blocked paths, perform unsafe operations, or modify system settings.\n6. Ask for confirmation when required (delete, email sending, risky actions).\n7. Follow safety policies strictly.\n8. Keep explanations simple and helpful.`;\n\n// Build Ollama prompt\nconst ollamaPrompt = `${systemPrompt}\n\nConversation History:\n${conversationHistory.slice(-5).map(m => `${m.role}: ${m.content}`).join('\\n')}\n\nUser: ${userMessage}\n\nRespond in JSON format with:\n{\n  \"response\": \"<your reply>\",\n  \"tool_call\": null OR {\"tool_name\": \"...\", \"parameters\": {...}, \"reasoning\": \"...\"}\n}`;\n\nreturn {\n  json: {\n    user_message: userMessage,\n    conversation_id: conversationId,\n    user_id: userId,\n    ollama_prompt: ollamaPrompt,\n    history: conversationHistory\n  }\n};"
+        "jsCode": "// Extract user message and context\nconst fs = require('fs');\n\nconst body = $input.item.json.body || $input.item.json;\nconst userMessage = body.message || body.text || '';\nconst conversationId = body.conversation_id || 'default';\nconst userId = body.user_id || 'user';\n\n// Load conversation history from memory (Docker-safe path)\nconst memoryDir = '/data/memory';\nconst memoryPath = `${memoryDir}/conversation-history.json`;\nlet conversationHistory = [];\n\ntry {\n  if (!fs.existsSync(memoryDir)) {\n    fs.mkdirSync(memoryDir, { recursive: true });\n  }\n  if (fs.existsSync(memoryPath)) {\n    const data = fs.readFileSync(memoryPath, 'utf8');\n    const allConversations = JSON.parse(data || '{}');\n    conversationHistory = allConversations[conversationId] || [];\n  }\n} catch (error) {\n  console.log('Error loading conversation history:', error.message);\n}\n\n// Sadie system prompt (inline for now)\nconst systemPrompt = `You are Sadie — a sweet, supportive, privacy-first AI assistant that runs fully locally.\\n\\nYour purpose:\\n- help the user with tasks through structured tool calls\\n- always output valid JSON when performing actions\\n- remain safe, calm, friendly, and solution-focused\\n\\nRules:\\n1. Be warm, supportive, but professional.\\n2. Never claim human emotions; be gently personable.\\n3. If you cannot perform a task, offer alternatives.\\n4. All tool calls MUST be structured JSON using the tool_call schema.\\n5. Never access blocked paths, perform unsafe operations, or modify system settings.\\n6. Ask for confirmation when required (delete, email sending, risky actions).\\n7. Follow safety policies strictly.\\n8. Keep explanations simple and helpful.`;\n\n// Build Ollama prompt\nconst historyText = conversationHistory\n  .slice(-5)\n  .map(m => `${m.role}: ${m.content}`)\n  .join('\\n');\n\nconst ollamaPrompt = `${systemPrompt}\\n\\nConversation History:\\n${historyText}\\n\\nUser: ${userMessage}\\n\\nRespond in JSON format with:\\n{\\n  \"response\": \"<your reply>\",\\n  \"tool_call\": null OR {\"tool_name\": \"...\", \"parameters\": {...}, \"reasoning\": \"...\"}\\n}`;\n\nreturn {\n  json: {\n    user_message: userMessage,\n    conversation_id: conversationId,\n    user_id: userId,\n    ollama_prompt: ollamaPrompt,\n    history: conversationHistory\n  }\n};"
       },
       "id": "prepare-context",
       "name": "Prepare Context",
@@ -28,30 +28,17 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:11434/api/generate",
+        "url": "http://host.docker.internal:11434/api/generate",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "model",
-              "value": "llama3.2:3b"
-            },
-            {
-              "name": "prompt",
-              "value": "={{ $json.ollama_prompt }}"
-            },
-            {
-              "name": "stream",
-              "value": false
-            },
-            {
-              "name": "format",
-              "value": "json"
-            }
-          ]
-        },
+        "jsonParameters": true,
         "options": {
           "timeout": 60000
+        },
+        "body": {
+          "model": "llama3.2:3b",
+          "prompt": "={{ $json.ollama_prompt }}",
+          "stream": false,
+          "format": "json"
         }
       },
       "id": "call-ollama",
@@ -62,7 +49,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse Ollama response\nconst ollamaResponse = JSON.parse($input.item.json.response);\nconst userMessage = $input.item.json.user_message;\nconst conversationId = $input.item.json.conversation_id;\n\n// Save to conversation history\nconst memoryPath = 'C:/Users/adenk/Desktop/sadie/memory/json-store/conversation-history.json';\nconst fs = require('fs');\n\nlet allConversations = {};\nif (fs.existsSync(memoryPath)) {\n  allConversations = JSON.parse(fs.readFileSync(memoryPath, 'utf8'));\n}\n\nif (!allConversations[conversationId]) {\n  allConversations[conversationId] = [];\n}\n\nallConversations[conversationId].push(\n  { role: 'user', content: userMessage, timestamp: new Date().toISOString() },\n  { role: 'assistant', content: ollamaResponse.response, timestamp: new Date().toISOString() }\n);\n\n// Keep only last 100 messages per conversation\nif (allConversations[conversationId].length > 100) {\n  allConversations[conversationId] = allConversations[conversationId].slice(-100);\n}\n\nfs.writeFileSync(memoryPath, JSON.stringify(allConversations, null, 2));\n\nreturn {\n  json: {\n    ...ollamaResponse,\n    conversation_id: conversationId,\n    user_message: userMessage\n  }\n};"
+        "jsCode": "// Parse Ollama response and update memory\nconst fs = require('fs');\n\nconst userMessage = $input.item.json.user_message;\nconst conversationId = $input.item.json.conversation_id;\nconst history = $input.item.json.history || [];\n\n// The HTTP Request node output is merged in; the Ollama body is at $json.response or $json.data.response\nconst rawResponse = $json.response || ($json.data && $json.data.response) || '';\n\nlet ollamaResponse;\ntry {\n  ollamaResponse = JSON.parse(rawResponse);\n} catch (error) {\n  // Fallback if JSON parsing fails\n  ollamaResponse = {\n    response: \"I'm sorry, I had trouble understanding internally. Please try again.\",\n    tool_call: null,\n    error: error.message\n  };\n}\n\n// Save to conversation history (Docker-safe path)\nconst memoryDir = '/data/memory';\nconst memoryPath = `${memoryDir}/conversation-history.json`;\n\nlet allConversations = {};\ntry {\n  if (!fs.existsSync(memoryDir)) {\n    fs.mkdirSync(memoryDir, { recursive: true });\n  }\n  if (fs.existsSync(memoryPath)) {\n    allConversations = JSON.parse(fs.readFileSync(memoryPath, 'utf8') || '{}');\n  }\n} catch (err) {\n  console.log('Error reading conversation history:', err.message);\n}\n\nif (!allConversations[conversationId]) {\n  allConversations[conversationId] = history || [];\n}\n\nallConversations[conversationId].push(\n  { role: 'user', content: userMessage, timestamp: new Date().toISOString() },\n  { role: 'assistant', content: ollamaResponse.response, timestamp: new Date().toISOString() }\n);\n\nif (allConversations[conversationId].length > 100) {\n  allConversations[conversationId] = allConversations[conversationId].slice(-100);\n}\n\ntry {\n  fs.writeFileSync(memoryPath, JSON.stringify(allConversations, null, 2));\n} catch (err) {\n  console.log('Error writing conversation history:', err.message);\n}\n\nreturn {\n  json: {\n    response: ollamaResponse.response,\n    tool_call: ollamaResponse.tool_call || null,\n    error: ollamaResponse.error || null,\n    conversation_id: conversationId,\n    user_message: userMessage\n  }\n};"
       },
       "id": "parse-response",
       "name": "Parse & Save Response",
@@ -89,58 +76,233 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}"
+        "workflowId": "",
+        "workflowName": "SADIE Safety Validator",
+        "options": {
+          "waitForCompletion": true
+        }
       },
-      "id": "respond-direct",
-      "name": "Respond Directly",
-      "type": "n8n-nodes-base.respondToWebhook",
+      "id": "execute-safety",
+      "name": "Execute Safety Validator",
+      "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [1250, 400]
+      "position": [1250, 260]
     },
     {
       "parameters": {
-        "workflowId": "={{ $json.tool_call.tool_name }}"
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equal",
+              "value2": "blocked"
+            }
+          ]
+        }
+      },
+      "id": "is-blocked",
+      "name": "Is Blocked?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: $json.status, message: $json.message, violations: $json.violations } }}"
+      },
+      "id": "respond-blocked",
+      "name": "Respond Blocked",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equal",
+              "value2": "needs_confirmation"
+            }
+          ]
+        }
+      },
+      "id": "needs-confirmation",
+      "name": "Needs Confirmation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1650, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: $json.status, message: $json.message, warnings: $json.warnings, tool_call: $json.tool_call } }}"
+      },
+      "id": "respond-needs-confirm",
+      "name": "Respond Needs Confirmation",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 140]
+    },
+    {
+      "parameters": {
+        "workflowId": "",
+        "workflowName": "={{ $json.tool_call.tool_name }}",
+        "options": {
+          "waitForCompletion": true
+        }
       },
       "id": "execute-tool",
       "name": "Execute Tool Workflow",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [1250, 200]
+      "position": [1850, 260]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}"
+        "responseBody": "={{ $json }}"
       },
       "id": "respond-tool-result",
       "name": "Respond Tool Result",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1450, 200]
+      "position": [2050, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { response: $json.response, tool_call: $json.tool_call, error: $json.error } }}"
+      },
+      "id": "respond-direct",
+      "name": "Respond Directly",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 420]
     }
   ],
   "connections": {
     "Webhook Trigger": {
-      "main": [[{ "node": "Prepare Context", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Context": {
-      "main": [[{ "node": "Call Ollama", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Call Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Call Ollama": {
-      "main": [[{ "node": "Parse & Save Response", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Parse & Save Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse & Save Response": {
-      "main": [[{ "node": "Has Tool Call?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Has Tool Call?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Has Tool Call?": {
       "main": [
-        [{ "node": "Execute Tool Workflow", "type": "main", "index": 0 }],
-        [{ "node": "Respond Directly", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Execute Safety Validator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Directly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Safety Validator": {
+      "main": [
+        [
+          {
+            "node": "Is Blocked?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Blocked?": {
+      "main": [
+        [
+          {
+            "node": "Needs Confirmation?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Blocked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Confirmation?": {
+      "main": [
+        [
+          {
+            "node": "Respond Needs Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Tool Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Execute Tool Workflow": {
-      "main": [[{ "node": "Respond Tool Result", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -150,5 +312,5 @@
   "tags": [],
   "triggerCount": 1,
   "updatedAt": "2025-11-17T00:00:00.000Z",
-  "versionId": "1"
+  "versionId": "2"
 }
