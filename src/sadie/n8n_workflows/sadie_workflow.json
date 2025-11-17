@@ -1,0 +1,190 @@
+{
+  "name": "Sadie AI Assistant Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sadie-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"type\"]}}",
+              "value2": "tool_call"
+            }
+          ]
+        }
+      },
+      "id": "if-tool-call",
+      "name": "If Tool Call",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Route tool call to appropriate handler\nconst toolCall = items[0].json.data;\nconst action = toolCall.action;\nconst params = toolCall.params || {};\n\nreturn [\n  {\n    json: {\n      action: action,\n      params: params,\n      timestamp: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "route-tool-call",
+      "name": "Route Tool Call",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"action\"]}}",
+              "operation": "contains",
+              "value2": "file_"
+            }
+          ]
+        }
+      },
+      "id": "if-file-action",
+      "name": "If File Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/execute",
+        "options": {
+          "bodyParametersUi": {
+            "parameter": [
+              {
+                "name": "action",
+                "value": "={{$json[\"action\"]}}"
+              },
+              {
+                "name": "params",
+                "value": "={{$json[\"params\"]}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "execute-action",
+      "name": "Execute Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process query\nconst query = items[0].json.query;\nconst context = items[0].json.context || {};\n\nreturn [\n  {\n    json: {\n      success: true,\n      message: \"Query received\",\n      query: query,\n      context: context\n    }\n  }\n];"
+      },
+      "id": "process-query",
+      "name": "Process Query",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Route Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Tool Call": {
+      "main": [
+        [
+          {
+            "node": "If File Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If File Action": {
+      "main": [
+        [
+          {
+            "node": "Execute Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Action": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

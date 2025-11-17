@@ -1,0 +1,29 @@
+# Core dependencies for Sadie AI Assistant
+pyqt5>=5.15.0
+requests>=2.31.0
+pillow>=10.0.0
+pytesseract>=0.3.10
+python-dotenv>=1.0.0
+
+# For voice processing (Whisper)
+openai-whisper>=20230314
+sounddevice>=0.4.6
+soundfile>=0.12.1
+
+# For file operations
+watchdog>=3.0.0
+
+# For email (optional, can be configured)
+# uncomment if email module is needed
+# smtplib is built-in
+# email is built-in
+
+# For vision tasks
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# For API calls
+aiohttp>=3.9.0
+
+# For configuration
+pyyaml>=6.0

@@ -1,0 +1,84 @@
+# Sadie Configuration File
+
+# Ollama settings
+ollama:
+  url: "http://localhost:11434"
+  model: "llama2"  # Default model, can be changed to others like mistral, codellama, etc.
+  timeout: 30
+
+# n8n settings
+n8n:
+  url: "http://localhost:5678"
+  webhook_path: "/webhook/sadie"
+
+# Assistant personality
+assistant:
+  name: "Sadie"
+  personality: "sweet, helpful, and safe"
+  response_style: "friendly and conversational"
+
+# Module settings
+modules:
+  file_actions:
+    enabled: true
+    safe_directories:
+      - "Documents"
+      - "Downloads"
+      - "Desktop"
+    forbidden_directories:
+      - "System32"
+      - "Windows"
+      - "Program Files"
+    max_file_size_mb: 100
+
+  email:
+    enabled: false  # Disabled by default for security
+    smtp_server: ""
+    smtp_port: 587
+    use_tls: true
+
+  vision:
+    enabled: true
+    use_llava: true
+    use_ocr: true
+    ocr_language: "eng"
+
+  voice:
+    enabled: true
+    whisper_model: "base"  # Options: tiny, base, small, medium, large
+    sample_rate: 16000
+
+  api:
+    enabled: true
+    timeout: 10
+    allowed_domains: []  # Empty = all allowed, or specify whitelist
+
+  memory:
+    enabled: true
+    storage_file: "sadie_memory.db"
+    max_history_items: 1000
+
+  planning:
+    enabled: true
+    max_steps: 10
+
+# Safety settings
+safety:
+  require_confirmation_for:
+    - "file_delete"
+    - "file_move"
+    - "email_send"
+    - "system_command"
+  blocked_actions:
+    - "format_drive"
+    - "delete_system_files"
+    - "modify_registry"
+  enable_sandbox: true
+
+# UI settings
+ui:
+  widget_width: 400
+  widget_height: 600
+  theme: "light"  # light or dark
+  always_on_top: true
+  transparency: 0.95
