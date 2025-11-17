@@ -1,0 +1,36 @@
+{
+  "models": {
+    "reasoning": {
+      "primary": "llama3.2:3b",
+      "fallback": "mistral:latest",
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "max_tokens": 2048
+      }
+    },
+    "vision": {
+      "model": "llava:latest",
+      "parameters": {
+        "temperature": 0.5,
+        "max_tokens": 1024
+      }
+    },
+    "voice": {
+      "model": "whisper:latest",
+      "parameters": {
+        "language": "en"
+      }
+    },
+    "embeddings": {
+      "model": "nomic-embed-text:latest",
+      "dimensions": 768
+    }
+  },
+  "endpoints": {
+    "generate": "http://localhost:11434/api/generate",
+    "chat": "http://localhost:11434/api/chat",
+    "embeddings": "http://localhost:11434/api/embeddings",
+    "tags": "http://localhost:11434/api/tags"
+  }
+}

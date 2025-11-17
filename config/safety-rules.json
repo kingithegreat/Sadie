@@ -1,0 +1,78 @@
+{
+  "file_operations": {
+    "allowed_directories": [
+      "C:\\Users\\adenk\\Documents",
+      "C:\\Users\\adenk\\Desktop",
+      "C:\\Users\\adenk\\Downloads"
+    ],
+    "blocked_directories": [
+      "C:\\Windows",
+      "C:\\Program Files",
+      "C:\\Program Files (x86)",
+      "C:\\ProgramData",
+      "C:\\Users\\adenk\\AppData"
+    ],
+    "blocked_extensions": [
+      ".exe",
+      ".dll",
+      ".sys",
+      ".bat",
+      ".cmd",
+      ".ps1",
+      ".vbs",
+      ".com",
+      ".scr",
+      ".msi"
+    ],
+    "require_confirmation": {
+      "delete": true,
+      "move": false,
+      "write": false,
+      "execute": true
+    },
+    "max_file_size_mb": 50
+  },
+  "email_operations": {
+    "require_confirmation": {
+      "send": true
+    },
+    "max_recipients": 10,
+    "max_attachment_size_mb": 25,
+    "blocked_domains": []
+  },
+  "api_operations": {
+    "require_confirmation": true,
+    "allowed_domains": [
+      "localhost",
+      "127.0.0.1"
+    ],
+    "timeout_seconds": 30,
+    "max_retries": 3
+  },
+  "system_operations": {
+    "allowed_commands": [
+      "Get-Process",
+      "Get-ComputerInfo",
+      "Get-Disk",
+      "Get-Volume",
+      "Get-NetAdapter",
+      "Get-Date"
+    ],
+    "blocked_commands": [
+      "Stop-Process",
+      "Restart-Computer",
+      "Stop-Computer",
+      "Remove-Item",
+      "Clear-Host",
+      "Format-Volume"
+    ],
+    "require_confirmation": true
+  },
+  "global": {
+    "safe_mode": true,
+    "log_all_actions": true,
+    "require_confirmation_for_ambiguous": true,
+    "max_tool_execution_time_seconds": 300,
+    "enable_sandbox": true
+  }
+}

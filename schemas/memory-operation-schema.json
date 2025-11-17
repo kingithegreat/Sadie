@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sadie.local/schemas/memory-operation.json",
+  "title": "Memory Manager Operations",
+  "description": "Schema for memory subsystem operations",
+  "type": "object",
+  "required": ["action", "parameters"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "store_fact",
+        "retrieve_context",
+        "search_memory",
+        "update_preference",
+        "get_preferences",
+        "clear_memory"
+      ]
+    },
+    "parameters": {
+      "type": "object",
+      "oneOf": [
+        {
+          "description": "Store fact parameters",
+          "properties": {
+            "content": { "type": "string" },
+            "category": { 
+              "type": "string",
+              "enum": ["personal", "preference", "fact", "task", "context"]
+            },
+            "importance": { 
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 5
+            },
+            "tags": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "required": ["content"]
+        },
+        {
+          "description": "Retrieve context parameters",
+          "properties": {
+            "query": { "type": "string" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 5 },
+            "category": { "type": "string" }
+          },
+          "required": ["query"]
+        },
+        {
+          "description": "Search memory parameters",
+          "properties": {
+            "query": { "type": "string" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 }
+          },
+          "required": ["query"]
+        },
+        {
+          "description": "Update preference parameters",
+          "properties": {
+            "key": { "type": "string" },
+            "value": { "type": ["string", "number", "boolean", "object"] }
+          },
+          "required": ["key", "value"]
+        },
+        {
+          "description": "Get preferences parameters",
+          "properties": {
+            "keys": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        {
+          "description": "Clear memory parameters",
+          "properties": {
+            "category": { "type": "string" },
+            "confirm": { "type": "boolean" }
+          },
+          "required": ["confirm"]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "n8n": {
+    "base_url": "http://localhost:5678",
+    "webhooks": {
+      "main_chat": "/webhook/sadie/chat",
+      "tool_callback": "/webhook/sadie/tool-callback",
+      "confirmation": "/webhook/sadie/confirm"
+    },
+    "api": {
+      "base_url": "http://localhost:5678/api/v1",
+      "auth": {
+        "type": "basic",
+        "user": "admin",
+        "password": "sadie_local_password"
+      }
+    }
+  }
+}

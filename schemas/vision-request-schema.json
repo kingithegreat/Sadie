@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sadie.local/schemas/vision-request.json",
+  "title": "Vision Tool Request",
+  "description": "Schema for vision analysis operations",
+  "type": "object",
+  "required": ["action", "parameters"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "analyze_screenshot",
+        "ocr_text",
+        "describe_image"
+      ]
+    },
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "image_source": {
+          "type": "string",
+          "enum": ["screenshot", "clipboard", "file"],
+          "default": "screenshot"
+        },
+        "file_path": { 
+          "type": "string",
+          "description": "Path to image file (required if image_source is 'file')"
+        },
+        "prompt": { 
+          "type": "string",
+          "description": "Specific question or instruction for vision analysis"
+        },
+        "ocr_only": { 
+          "type": "boolean",
+          "default": false,
+          "description": "Only extract text, skip AI analysis"
+        },
+        "language": {
+          "type": "string",
+          "default": "eng",
+          "description": "OCR language code (e.g., 'eng', 'spa', 'fra')"
+        },
+        "region": {
+          "type": "object",
+          "description": "Specific region of image to analyze",
+          "properties": {
+            "x": { "type": "integer", "minimum": 0 },
+            "y": { "type": "integer", "minimum": 0 },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    }
+  }
+}
