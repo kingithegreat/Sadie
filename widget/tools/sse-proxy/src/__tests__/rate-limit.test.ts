@@ -3,6 +3,7 @@ process.env.PROXY_API_KEYS = 'changeme';
 process.env.PROXY_REQUIRE_API_KEY = 'true';
 process.env.RATE_LIMIT_MAX = '5';
 const app = require('../index').default;
+afterAll(async () => { try { await require('../index').gracefulShutdown(); } catch (e) { /* ignore */ } });
 
 describe('Rate limiting', () => {
   test('Exceeding rate limit returns RATE_LIMIT SSE', async () => {

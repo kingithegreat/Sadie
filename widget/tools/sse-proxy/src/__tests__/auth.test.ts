@@ -3,6 +3,7 @@ process.env.PROXY_API_KEYS = 'changeme';
 process.env.PROXY_REQUIRE_API_KEY = 'true';
 process.env.PROXY_REQUIRE_API_KEY = 'true';
 const app = require('../index').default;
+afterAll(async () => { try { await require('../index').gracefulShutdown(); } catch (e) { /* ignore */ } });
 
 describe('Auth tests', () => {
   test('Missing body returns 400', async () => {

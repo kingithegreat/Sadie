@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
 import axios from 'axios';
+import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH } from '../shared/constants';
 import { getMainWindow } from './window-manager';
@@ -35,7 +36,7 @@ function validateImages(images?: any[]) {
 }
 
 // Track active streams (Node Readable) by streamId so we can cancel them
-const activeStreams: Map<string, NodeJS.ReadableStream> = new Map();
+const activeStreams: Map<string, { destroy?: () => void; stream?: NodeJS.ReadableStream }> = new Map();
 
 function mapErrorToSadieResponse(error: any): SadieResponse {
   if (error.code === 'ECONNREFUSED') {
@@ -89,18 +90,41 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         event.sender.send('sadie:stream-start', { streamId });
 
         // POST the request and expect a streaming (chunked) response
-        const res = await axios.post(streamUrl, request, {
-          responseType: 'stream',
-          timeout: 0,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        const useProxy = !!(process.env.SADIE_PROXY_URL || process.env.SADIE_USE_PROXY === 'true');
+        if (useProxy) {
+          const proxyOpts = {
+            proxyUrl: process.env.SADIE_PROXY_URL,
+            apiKey: process.env.PROXY_API_KEYS || process.env.PROXY_API_KEY
+          };
 
-        const stream = res.data as NodeJS.ReadableStream;
+          const handler = streamFromSadieProxy(request, (chunk) => {
+            try {
+              // forward raw chunk to renderer
+              event.sender.send('sadie:stream-chunk', { chunk: chunk.toString?.() || String(chunk), streamId });
+            } catch (err) {}
+          }, () => {
+            try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+            activeStreams.delete(streamId);
+          }, (err) => {
+            try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
+            activeStreams.delete(streamId);
+          }, proxyOpts);
 
-        // store stream so it can be cancelled
-        activeStreams.set(streamId, stream);
+          // store cancellation function
+          activeStreams.set(streamId, { destroy: handler.cancel });
+        } else {
+          const res = await axios.post(streamUrl, request, {
+            responseType: 'stream',
+            timeout: 0,
+            headers: { 'Content-Type': 'application/json' }
+          });
 
-        stream.on('data', (chunk: Buffer) => {
+          const stream = res.data as NodeJS.ReadableStream;
+
+          // store stream so it can be cancelled
+          activeStreams.set(streamId, { stream, destroy: () => { try { (stream as any).destroy?.(); } catch (e) {} } });
+
+          stream.on('data', (chunk: Buffer) => {
           try {
             const text = chunk.toString('utf8');
             // Forward raw chunk to renderer; renderer will append it to the assistant message
@@ -110,16 +134,17 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           }
         });
 
-        stream.on('end', () => {
-          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-          activeStreams.delete(streamId);
-        });
+          stream.on('end', () => {
+            try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+            activeStreams.delete(streamId);
+          });
 
-        stream.on('error', (err: any) => {
-          try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
-          try { (stream as any).destroy(); } catch (e) {}
-          activeStreams.delete(streamId);
-        });
+          stream.on('error', (err: any) => {
+            try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
+            try { (stream as any).destroy(); } catch (e) {}
+            activeStreams.delete(streamId);
+          });
+        }
       } catch (error: any) {
         event.sender.send('sadie:stream-error', { error: true, message: 'Unknown streaming error', details: error?.message || error, streamId });
       }
@@ -130,16 +155,18 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       const { streamId } = payload || {};
       if (!streamId) {
         // cancel all
-        for (const [id, stream] of activeStreams.entries()) {
-          try { (stream as any).destroy?.(); } catch (e) {}
+        for (const [id, entry] of activeStreams.entries()) {
+          try { entry.destroy?.(); } catch (e) {}
+          try { (entry.stream as any)?.destroy?.(); } catch (e) {}
           activeStreams.delete(id);
         }
         return;
       }
 
-      const stream = activeStreams.get(streamId);
-      if (stream) {
-        try { (stream as any).destroy?.(); } catch (e) {}
+      const entry = activeStreams.get(streamId);
+      if (entry) {
+        try { entry.destroy?.(); } catch (e) {}
+        try { (entry.stream as any)?.destroy?.(); } catch (e) {}
         activeStreams.delete(streamId);
         // notify renderer the stream ended due to cancel
         _event?.sender?.send('sadie:stream-end', { streamId, cancelled: true });
