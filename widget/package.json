@@ -13,7 +13,10 @@
     "build": "webpack --config webpack.config.js --mode production",
     "dev": "concurrently \"webpack --config webpack.config.js --mode development --watch\" \"electron .\"",
     "dist": "npm run build && electron-builder",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "e2e:install": "playwright install --with-deps",
+    "e2e": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test",
+    "e2e:headed": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test --headed"
   },
   "dependencies": {
     "axios": "^1.6.2",
@@ -43,7 +46,11 @@
     "@testing-library/user-event": "^14.4.3",
     "jest-environment-jsdom": "^28.1.1",
     "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4"
+    "webpack-cli": "^5.1.4",
+    "playwright": "^1.49.0",
+    "@playwright/test": "^1.49.0",
+    "wait-on": "^7.2.0",
+    "cross-env": "^7.0.3"
   },
   "build": {
     "appId": "com.sadie.app",

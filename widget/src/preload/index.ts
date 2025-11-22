@@ -69,6 +69,41 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.STREAM_CHUNK, listener);
   },
 
+  // Convenience grouped subscription: subscribe by streamId and receive
+  // chunk/end/error callbacks that are filtered for that stream only.
+  subscribeToStream: (streamId: string, handlers: {
+    onStreamChunk?: (data: { streamId?: string; chunk: string }) => void;
+    onStreamEnd?: (data: { streamId?: string; cancelled?: boolean }) => void;
+    onStreamError?: (err: { streamId?: string; error?: string }) => void;
+  }) => {
+    const { onStreamChunk, onStreamEnd, onStreamError } = handlers || {};
+
+    const chunkListener = (_ev: IpcRendererEvent, data: any) => {
+      if (!data || data.streamId !== streamId) return;
+      if (typeof onStreamChunk === 'function') onStreamChunk(data as { streamId?: string; chunk: string });
+    };
+
+    const endListener = (_ev: IpcRendererEvent, data: any) => {
+      if (!data || data.streamId !== streamId) return;
+      if (typeof onStreamEnd === 'function') onStreamEnd(data as { streamId?: string; cancelled?: boolean });
+    };
+
+    const errorListener = (_ev: IpcRendererEvent, data: any) => {
+      if (!data || data.streamId !== streamId) return;
+      if (typeof onStreamError === 'function') onStreamError(data as { streamId?: string; error?: string });
+    };
+
+    ipcRenderer.on(ALLOWED_CHANNELS.STREAM_CHUNK, chunkListener);
+    ipcRenderer.on(ALLOWED_CHANNELS.STREAM_END, endListener);
+    ipcRenderer.on(ALLOWED_CHANNELS.STREAM_ERROR, errorListener);
+
+    return () => {
+      ipcRenderer.removeListener(ALLOWED_CHANNELS.STREAM_CHUNK, chunkListener);
+      ipcRenderer.removeListener(ALLOWED_CHANNELS.STREAM_END, endListener);
+      ipcRenderer.removeListener(ALLOWED_CHANNELS.STREAM_ERROR, errorListener);
+    };
+  },
+
   onStreamEnd: (cb: (data: { streamId?: string; cancelled?: boolean }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data as { streamId?: string; cancelled?: boolean });
     ipcRenderer.on(ALLOWED_CHANNELS.STREAM_END, listener);

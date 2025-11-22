@@ -1,34 +1,19 @@
-/** Canonical InputBox: single source of truth.
- *  - Multi-image attachments (max 5)
- *  - Size limits: 5 MB per image, 10 MB total
- *  - Drag & drop, paste, file picker
- *  - Inline error message
- */
+import React, { useCallback } from "react";
 
-import React, {
-  useState,
-  KeyboardEvent,
-  useRef,
-  useEffect,
-} from 'react';
-import { resizeImageFile } from '../utils/imageUtils';
-import { ImageAttachment as SharedImageAttachment } from '../../shared/types';
-
-type ImageAttachment = SharedImageAttachment & {
-  id: string;
-  url?: string; // renderer-only preview URL
-};
-
-interface InputBoxProps {
-  onSendMessage: (message: string, images?: ImageAttachment[] | null) => void;
-}
-
-const MAX_IMAGES = 5;
-const MAX_PER_IMAGE = 5 * 1024 * 1024; // 5 MB
-const MAX_TOTAL = 10 * 1024 * 1024; // 10 MB
-
-const InputBox: React.FC<InputBoxProps> = ({ onSendMessage }) => {
-  const [inputValue, setInputValue] = useState<string>('');
+export function InputBox({
+  value,
+  onChange,
+  onSend,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  disabled?: boolean;
+}) {
+  const sendIfOk = useCallback(() => {
+    if (!disabled) onSend();
+  }, [disabled, onSend]);
   const [attachedImages, setAttachedImages] = useState<ImageAttachment[]>([]);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -84,12 +69,33 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage }) => {
     setAttachedImages([]);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  return (
+    <div className="flex items-end gap-2">
+      <textarea
+        className="flex-1 resize-none rounded-xl bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-indigo-500 min-h-[44px] max-h-[140px]"
+        placeholder="Ask Sadie…"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendIfOk();
+          }
+        }}
+      />
+      <button
+        className={`rounded-xl px-4 py-2 text-sm font-medium ${
+          disabled
+            ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+            : "bg-indigo-600 hover:bg-indigo-500 text-white"
+        }`}
+        onClick={sendIfOk}
+        disabled={disabled}
+      >
+        Send
+      </button>
+    </div>
+  );
 
   const handleAttachClick = () => {
     fileInputRef.current?.click();
