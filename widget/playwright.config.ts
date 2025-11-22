@@ -6,7 +6,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
-  retries: process.env.CI ? 1 : 0,
+  // Ensure shards retry independently in CI
+  retries: 1,
   // Ensure Playwright always writes the artifacts we expect in CI and locally
   reporter: [
     ['list'],
