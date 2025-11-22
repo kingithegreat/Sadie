@@ -99,6 +99,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
 
           const handler = streamFromSadieProxy(request, (chunk) => {
             try {
+              // Only forward chunks while the stream is still active
+              if (!activeStreams.has(streamId)) return;
               // forward raw chunk to renderer
               event.sender.send('sadie:stream-chunk', { chunk: chunk.toString?.() || String(chunk), streamId });
             } catch (err) {}
@@ -121,11 +123,21 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
 
           const stream = res.data as NodeJS.ReadableStream;
 
-          // store stream so it can be cancelled
-          activeStreams.set(streamId, { stream, destroy: () => { try { (stream as any).destroy?.(); } catch (e) {} } });
+          // store stream and request so it can be cancelled/aborted quickly
+          const req = (res as any)?.request;
+          activeStreams.set(streamId, {
+            stream,
+            // call request.abort if available and also destroy the response stream
+            destroy: () => {
+              try { req?.abort?.(); } catch (e) {}
+              try { (stream as any).destroy?.(); } catch (e) {}
+            }
+          });
 
           stream.on('data', (chunk: Buffer) => {
           try {
+            // Only forward chunks while the stream is still active (not cancelled)
+            if (!activeStreams.has(streamId)) return;
             const text = chunk.toString('utf8');
             // Forward raw chunk to renderer; renderer will append it to the assistant message
             event.sender.send('sadie:stream-chunk', { chunk: text, streamId });
@@ -165,11 +177,23 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
 
       const entry = activeStreams.get(streamId);
       if (entry) {
-        try { entry.destroy?.(); } catch (e) {}
-        try { (entry.stream as any)?.destroy?.(); } catch (e) {}
+        // If we're running in an E2E environment, send a best-effort cancel
+        // POST to the upstream mock so it stops emitting immediately. This
+        // helps make cancel behavior deterministic in tests.
+        try {
+          if (process.env.SADIE_E2E === '1') {
+            // Don't await — fire and forget
+            axios.post(`${n8nUrl}/__sadie_e2e_cancel`, { streamId }).catch(() => {});
+          }
+        } catch (e) {}
+        // Remove from the active map immediately so any in-flight data handlers
+        // will stop forwarding further chunks.
         activeStreams.delete(streamId);
         // notify renderer the stream ended due to cancel
         _event?.sender?.send('sadie:stream-end', { streamId, cancelled: true });
+        // then attempt to abort/destroy the underlying stream/request
+        try { entry.destroy?.(); } catch (e) {}
+        try { (entry.stream as any)?.destroy?.(); } catch (e) {}
       }
     });
   ipcMain.handle(IPC_SEND_MESSAGE, async (_event, request: SadieRequestWithImages | SadieRequest) => {
