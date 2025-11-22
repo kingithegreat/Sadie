@@ -82,7 +82,7 @@ jobs:
             playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
-            test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
+            test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
 
       - name: Upload Playwright Artifacts (always)
         if: always()
@@ -93,4 +93,4 @@ jobs:
             playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
             traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
+            test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
