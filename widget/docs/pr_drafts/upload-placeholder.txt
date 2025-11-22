@@ -1,0 +1,5 @@
+﻿placeholder upload file for PR tooling
+This file was added to give the PR tool a local file path (workspace path) to reference.
+Path: widget/docs/pr_drafts/upload-placeholder.txt
+Date: 2025-11-23
+
