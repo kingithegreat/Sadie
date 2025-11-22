@@ -1,4 +1,4 @@
-name: "Widget E2E Tests"
+﻿name: "Widget E2E Tests"
 
 on:
   push:
@@ -29,39 +29,5 @@ jobs:
       - name: Build widget
         run: npm run build
 
-      name: "Widget E2E Tests"
-
-      on:
-        push:
-          branches: [ main ]
-        pull_request: {}
-
-      jobs:
-        e2e:
-          runs-on: ubuntu-latest
-          env:
-            SADIE_E2E: '1'
-            NODE_ENV: test
-          steps:
-            - uses: actions/checkout@v4
-
-            - name: Setup Node 20
-              uses: actions/setup-node@v4
-              with:
-                node-version: 20
-                cache: npm
-
-            - name: Install root deps
-              run: npm ci
-
-            - name: Install Playwright browsers
-              run: npx playwright install --with-deps
-
-            - name: Build widget
-              run: npm run build
-
-            - name: Run E2E tests
-              run: npm run e2e --silent
-
       - name: Run E2E tests
-        run: npm run e2e
+        run: npm run e2e --silent
