@@ -9,17 +9,20 @@ jobs:
   e2e:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node-version: [20]
+        shardIndex: [1, 2, 3]
+        totalShards: [3]
     env:
       SADIE_E2E: '1'
       NODE_ENV: test
       # Playwright-specific output paths (useful for artifact collection)
-      PLAYWRIGHT_JUNIT_OUTPUT: test-results/junit.xml
-      PLAYWRIGHT_TRACES_DIR: traces
-      PLAYWRIGHT_VIDEO_DIR: test-results/videos
-      PLAYWRIGHT_HTML_REPORT: playwright-report
+      PLAYWRIGHT_JUNIT_OUTPUT: test-results/junit-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}.xml
+      PLAYWRIGHT_TRACES_DIR: traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
+      PLAYWRIGHT_VIDEO_DIR: test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
+      PLAYWRIGHT_HTML_REPORT: playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,23 +50,22 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Prepare Playwright artifact directories
-        run: node -e "const fs=require('fs');['playwright-report','test-results','traces','test-results/videos'].forEach(d=>{try{fs.mkdirSync(d,{recursive:true})}catch(e){}})"
+        run: node -e "const fs=require('fs');[`playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}`,'test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',`traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}`,'test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}'].forEach(d=>{try{fs.mkdirSync(d,{recursive:true})}catch(e){}})"
 
       - name: Build widget
         run: npm run build
 
-      - name: Run E2E tests
-        # Pass reporter/trace/video flags so CI captures artifacts and traces
-        # --reporter=line keeps console output compact; trace/video are enabled on-first-retry
-        run: npm run e2e --silent -- --reporter=line --trace=on-first-retry --video=on-first-retry
+      - name: Run E2E tests (sharded)
+        # Run Playwright with sharding and per-shard reporters so artifacts are isolated
+        run: npm run e2e --silent -- --shard=${{ matrix.shardIndex }}/${{ matrix.totalShards }} --reporter=line --reporter=junit=test-results/junit-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}.xml --reporter=html=playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }} --trace=on-first-retry --video=on-first-retry
 
       - name: Upload Playwright Artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-artifacts
+          name: playwright-artifacts-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
           path: |
-            playwright-report/
-            test-results/
-            traces/
-            test-results/videos/
+            playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
