@@ -10,7 +10,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "test:integration": "node dist/test/run-integration.js",
     "test:ci": "docker compose -f docker-compose.yml up -d redis mock-upstream && npm run build && npm run test:integration && docker compose -f docker-compose.yml down",
-    "test": "jest --runInBand",
+    "test": "jest --runInBand --config=jest.config.ts",
     "lint": "eslint . --ext .ts"
   },
   "author": "sadie-team",

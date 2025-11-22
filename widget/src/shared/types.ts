@@ -76,5 +76,14 @@ export interface ElectronAPI {
   onStreamChunk?: (callback: (data: { streamId?: string; chunk: string }) => void) => (() => void) | void;
   onStreamEnd?: (callback: (data: { streamId?: string; cancelled?: boolean }) => void) => (() => void) | void;
   onStreamError?: (callback: (err: { streamId?: string; error?: string }) => void) => (() => void) | void;
+  /**
+   * Convenience helper: subscribe to a specific streamId and receive
+   * chunk/end/error callbacks grouped together. Returns an unsubscribe function.
+   */
+  subscribeToStream?: (streamId: string, handlers: {
+    onStreamChunk?: (data: { streamId?: string; chunk: string }) => void;
+    onStreamEnd?: (data: { streamId?: string; cancelled?: boolean }) => void;
+    onStreamError?: (err: { streamId?: string; error?: string }) => void;
+  }) => (() => void) | void;
   onMessage?: (callback: (data: any) => void) => (() => void) | void;
 }
