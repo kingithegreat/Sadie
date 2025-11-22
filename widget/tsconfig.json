@@ -29,6 +29,7 @@
     "node_modules",
     "dist",
     "dist-electron",
-    "build"
+    "build",
+    "src/renderer/components/InputBox.previous.corrupted.tsx"
   ]
 }

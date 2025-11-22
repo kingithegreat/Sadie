@@ -1,31 +1,23 @@
 import React, { useEffect, useRef } from 'react';
-
-interface Message {
-  id?: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string;
-  error?: boolean;
-  // streaming state: 'streaming' | 'done' | 'cancelled'
-  streamingState?: 'streaming' | 'done' | 'cancelled';
-  image?: {
-    filename: string;
-    url?: string;
-    mimeType?: string;
-  } | null;
-}
+import { Message } from '../../shared/types';
 
 interface MessageListProps {
   messages: Message[];
+  onUserCancel?: (messageId: string) => void;
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, onUserCancel }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Parent owns authoritative message state. MessageList will call onUserCancel
+  // to request an optimistic state change and main will reconcile on stream events.
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // No local optimistic state — rely on parent `onUserCancel` callback to update the authoritative messages[] immediately.
 
   const formatTime = (timestamp: string): string => {
     try {
@@ -57,7 +49,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
               <div className="message-content">
                 {message.image && (
                   <div className="message-image-wrap">
-                    <img className="message-image" src={message.image.url} alt={message.image.filename} />
+                    <img className="message-image" src={message.image.url ?? ''} alt={message.image.filename ?? 'image'} />
                   </div>
                 )}
                 {message.content}
@@ -73,16 +65,25 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
                       title="Stop generating"
                       aria-label="Stop generating"
                       onClick={() => {
-                        try {
-                          (window as any).electron?.cancelStream?.(message.id);
-                        } catch (e) {
-                          // ignore
-                        }
-                      }}
+                          try {
+                            if (message.id) onUserCancel?.(message.id);
+                            // Ask main to cancel the stream by id
+                            window.electron?.cancelStream?.(message.id);
+                          } catch (e) {
+                            // ignore
+                          }
+                        }}
                     >
                       ✖
                     </button>
                   </>
+                )}
+                {/* Additional stream state badges (optimistic + server-confirmed) */}
+                {(message.streamingState === 'cancelled') && (
+                  <span className="streaming-badge cancelled" title="Cancelled">Cancelled</span>
+                )}
+                {message.error && (
+                  <span className="streaming-badge error" title="Error">Error</span>
                 )}
                 {message.streamingState === 'cancelled' && (
                   <div className="stream-cancelled-footer">Stopped by user</div>

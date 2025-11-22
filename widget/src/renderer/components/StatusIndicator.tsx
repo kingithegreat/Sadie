@@ -77,7 +77,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         </button>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .status-indicator {
           display: flex;
           justify-content: space-between;

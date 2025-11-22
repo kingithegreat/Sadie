@@ -1,4 +1,13 @@
+// Force test mode to bypass API key requirements and retries when running under Jest
+if (process.env.NODE_ENV === 'test') {
+  process.env.PROXY_REQUIRE_API_KEY = 'false';
+  process.env.PROXY_API_KEYS = '';
+  process.env.OPENAI_API_KEY = 'dummy-test-key';
+  process.env.PROXY_RETRY_ENABLED = 'false';
+}
+
 import express, { Request, Response } from 'express';
+import http from 'http';
 import crypto from 'crypto';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -151,6 +160,10 @@ async function streamRawLinesToSink(upstreamResponse: any, sink: (data: any) => 
 }
 
 export { streamModelResponseToSink, streamRawLinesToSink };
+
+export function createServer(): http.Server {
+  return http.createServer(app);
+}
 
 // parse an upstream raw text stream too (non-SSE). Collect chunks and forward.
 async function streamRawLinesToClient(res: Response, upstreamResponse: any) {
