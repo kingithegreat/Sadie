@@ -1,0 +1,23 @@
+name: "SSE Proxy Tests"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        working-directory: widget/tools/sse-proxy
+        run: npm ci
+      - name: Run tests
+        working-directory: widget/tools/sse-proxy
+        # pass explicit config to avoid ambiguity when multiple jest configs are present
+        run: npm test --silent -- --config jest.config.js
