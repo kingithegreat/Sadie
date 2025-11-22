@@ -11,6 +11,11 @@ jobs:
     env:
       SADIE_E2E: '1'
       NODE_ENV: test
+      # Playwright-specific output paths (useful for artifact collection)
+      PLAYWRIGHT_JUNIT_OUTPUT: test-results/junit.xml
+      PLAYWRIGHT_TRACES_DIR: traces
+      PLAYWRIGHT_VIDEO_DIR: test-results/videos
+      PLAYWRIGHT_HTML_REPORT: playwright-report
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +31,28 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
+      - name: Prepare Playwright artifact directories
+        run: |
+          mkdir -p playwright-report
+          mkdir -p test-results
+          mkdir -p traces
+          mkdir -p test-results/videos
+
       - name: Build widget
         run: npm run build
 
       - name: Run E2E tests
-        run: npm run e2e --silent
+        # Pass reporter/trace/video flags so CI captures artifacts and traces
+        # --reporter=line keeps console output compact; trace/video are enabled on-first-retry
+        run: npm run e2e --silent -- --reporter=line --trace=on-first-retry --video=on-first-retry
+
+      - name: Upload Playwright Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+            traces/
+            test-results/videos/
