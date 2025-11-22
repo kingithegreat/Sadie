@@ -1,0 +1,68 @@
+name: "Widget E2E Tests"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request: {}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      SADIE_E2E: '1'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Build widget
+        run: npm run build
+
+      - name: Run E2E tests
+        run: npm run e2e --silent
+name: "Widget E2E Tests"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request: {}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      # Mark the job as E2E so main process can use test-only cancellation hook
+      SADIE_E2E: '1'
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright deps
+        run: npm run e2e:install
+
+      - name: Run E2E tests
+        run: npm run e2e
