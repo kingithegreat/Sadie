@@ -30,6 +30,10 @@
     "dist",
     "dist-electron",
     "build",
-    "src/renderer/components/InputBox.previous.corrupted.tsx"
+    "src/renderer/components/InputBox.previous.corrupted.tsx",
+    "src/renderer/components/InputBox.*.tsx",
+    "src/renderer/components/InputBoxNew.tsx",
+    "src/renderer/components/InputBoxClean.tsx",
+    "src/renderer/components/InputBox.bak.tsx"
   ]
 }
