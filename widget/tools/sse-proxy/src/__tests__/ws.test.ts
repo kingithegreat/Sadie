@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
-process.env.PROXY_API_KEYS = 'changeme';
-process.env.PROXY_REQUIRE_API_KEY = 'true';
+process.env.PROXY_API_KEYS = '';
+process.env.PROXY_REQUIRE_API_KEY = 'false';
 const app = require('../index').default;
 import http from 'http';
 

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ChatInterface from './components/ChatInterface';
 import ActionConfirmation from './components/ActionConfirmation';
 import StatusIndicator from './components/StatusIndicator';
 import SettingsPanel from './components/SettingsPanel';
+import { ConnectionStatus, ImageAttachment, Message as SharedMessage } from '../shared/types';
 
 // Types
 interface Message {
@@ -11,8 +12,9 @@ interface Message {
   content: string;
   timestamp: string;
   error?: boolean;
-  // streaming state: 'streaming' | 'done' | 'cancelled'
-  streamingState?: 'streaming' | 'done' | 'cancelled';
+  // streaming state: pending | streaming | finished | cancelled | error
+  streamingState?: 'pending' | 'streaming' | 'finished' | 'cancelled' | 'error';
+  image?: { filename?: string; url?: string; mimeType?: string } | null;
 }
 
 interface ToolCall {
@@ -28,14 +30,16 @@ interface Settings {
   widgetHotkey: string;
 }
 
-interface Status {
-  n8nOnline: boolean;
-  ollamaOnline: boolean;
+type Status = ConnectionStatus;
+
+interface AppProps {
+  /** Optional initial messages for tests */
+  initialMessages?: SharedMessage[];
 }
 
-const App: React.FC = () => {
+const App: React.FC<AppProps> = ({ initialMessages }) => {
   // State
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<SharedMessage[]>(initialMessages ?? []);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
   const [pendingConfirmationData, setPendingConfirmationData] = useState<any>(null);
@@ -45,22 +49,37 @@ const App: React.FC = () => {
     n8nUrl: 'http://localhost:5678',
     widgetHotkey: 'Ctrl+Shift+Space'
   });
-  const [status, setStatus] = useState<Status>({
-    n8nOnline: false,
-    ollamaOnline: false
-  });
+  const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
   const [conversationId] = useState<string>('default');
+
+  // Map of active stream subscriptions keyed by streamId. Each entry holds
+  // unsubscribe functions for chunk, end and error listeners. This ensures
+  // robust lifecycle management and allows cleanup on unmount.
+  const streamSubsRef = useRef<Map<string, {
+    chunkUnsub?: () => void;
+    endUnsub?: () => void;
+    errorUnsub?: () => void;
+  }>>(new Map());
 
   // Load settings on mount
   useEffect(() => {
     loadSettings();
-    
     // Listen for IPC replies from main process
-    const unsubscribe = window.electron.onMessage(handleSadieReply);
-    
+    const unsub = window.electron.onMessage?.(handleSadieReply);
     // Cleanup
+    return () => { if (typeof unsub === 'function') unsub(); };
+  }, []);
+
+  // Ensure we clean up any remaining stream listeners when the component
+  // unmounts to avoid memory leaks.
+  useEffect(() => {
     return () => {
-      unsubscribe();
+      for (const subs of streamSubsRef.current.values()) {
+        try { if (typeof subs.chunkUnsub === 'function') subs.chunkUnsub(); } catch (e) {}
+        try { if (typeof subs.endUnsub === 'function') subs.endUnsub(); } catch (e) {}
+        try { if (typeof subs.errorUnsub === 'function') subs.errorUnsub(); } catch (e) {}
+      }
+      streamSubsRef.current.clear();
     };
   }, []);
 
@@ -100,14 +119,14 @@ const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         error: true
       }]);
-      setStatus({ n8nOnline: false, ollamaOnline: false });
+      setStatus({ n8n: 'offline', ollama: 'offline' });
       return;
     }
 
     const data = response.data;
 
     // Update status (n8n is online if we got a response)
-    setStatus({ n8nOnline: true, ollamaOnline: true });
+    setStatus({ n8n: 'online', ollama: 'online' });
 
     // Check if action is blocked
     if (data.status === 'blocked') {
@@ -180,26 +199,40 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, assistantPlaceholder]);
 
     // Subscribe to stream chunks for this request (filter by streamId)
-    const unsubscribeChunk = window.electron.onStreamChunk((data: any) => {
-      if (!data || !data.chunk || data.streamId !== assistantId) return;
+    // Use per-stream subscription map to make lifecycle robust and easy to cleanup
+    const streamId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `stream-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+
+    // store unsubscribers for this streamId
+    const chunkUnsub = window.electron.onStreamChunk?.((data: any) => {
+      if (!data || !data.chunk || data.streamId !== streamId) return;
       setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: (m.content || '') + data.chunk } : m));
-    });
+    }) as (() => void) | undefined;
 
-    const unsubscribeEnd = window.electron.onStreamEnd((data: any) => {
-      if (!data || data.streamId !== assistantId) return;
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streamingState: data.cancelled ? 'cancelled' : 'done', timestamp: new Date().toISOString() } : m));
-      unsubscribeChunk();
-      unsubscribeEnd();
-      unsubscribeError();
-    });
+    const endUnsub = window.electron.onStreamEnd?.((data: any) => {
+      if (!data || data.streamId !== streamId) return;
+      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streamingState: data.cancelled ? 'cancelled' : 'finished', timestamp: new Date().toISOString() } : m));
+      // cleanup this stream's subscriptions
+      const subs = streamSubsRef.current.get(streamId);
+      if (subs) {
+        try { if (typeof subs.chunkUnsub === 'function') subs.chunkUnsub(); } catch (e) {}
+        try { if (typeof subs.endUnsub === 'function') subs.endUnsub(); } catch (e) {}
+        try { if (typeof subs.errorUnsub === 'function') subs.errorUnsub(); } catch (e) {}
+      }
+      streamSubsRef.current.delete(streamId);
+    }) as (() => void) | undefined;
 
-    const unsubscribeError = window.electron.onStreamError((err: any) => {
-      if (!err || err.streamId !== assistantId) return;
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streamingState: 'cancelled', error: true, content: (m.content || '') + '\n\n[Stream error]' } : m));
-      unsubscribeChunk();
-      unsubscribeEnd();
-      unsubscribeError();
-    });
+    const errorUnsub = window.electron.onStreamError?.((err: any) => {
+      if (!err || err.streamId !== streamId) return;
+      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streamingState: 'error', error: true, content: (m.content || '') + '\n\n[Stream error]' } : m));
+      // cleanup this stream's subscriptions
+      const subs = streamSubsRef.current.get(streamId);
+      if (subs) {
+        try { if (typeof subs.chunkUnsub === 'function') subs.chunkUnsub(); } catch (e) {}
+        try { if (typeof subs.endUnsub === 'function') subs.endUnsub(); } catch (e) {}
+        try { if (typeof subs.errorUnsub === 'function') subs.errorUnsub(); } catch (e) {}
+      }
+      streamSubsRef.current.delete(streamId);
+    }) as (() => void) | undefined;
 
     // Start streaming request via preload, include the assistantId so main can correlate
     const streamRequest: any = {
@@ -216,7 +249,11 @@ const App: React.FC = () => {
       if (images.length === 1) streamRequest.image = images[0];
     }
 
-    window.electron.sendStreamMessage(streamRequest as any);
+    // register our per-stream subscribers under the assistantId so incoming events are correlated
+    streamSubsRef.current.set(streamId, { chunkUnsub, endUnsub, errorUnsub });
+
+    // tell main to start the stream; include our streamId so events are correlated
+    window.electron.sendStreamMessage?.({ ...streamRequest, streamId } as any);
   };
 
   /**
@@ -227,12 +264,17 @@ const App: React.FC = () => {
 
     // Send confirmation to orchestrator
     const confirmationMessage = `CONFIRM: ${pendingToolCall.tool_name}`;
-    window.electron.sendMessage(confirmationMessage, conversationId);
+    window.electron.sendMessage?.({ user_id: 'desktop_user', conversation_id: conversationId, message: confirmationMessage } as any);
 
     // Clear confirmation state
     setAwaitingConfirmation(false);
     setPendingToolCall(null);
     setPendingConfirmationData(null);
+  };
+
+  // Optimistic cancellation requested by the user in the UI.
+  const handleUserCancel = (id: string) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, streamingState: 'cancelled' } : m));
   };
 
   /**
@@ -253,7 +295,7 @@ const App: React.FC = () => {
   return (
     <div className="app-container">
       {/* Status Indicator */}
-      <StatusIndicator status={status} />
+      <StatusIndicator connectionStatus={status} onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) setStatus(c); } catch (e) { /* ignore */ } }} onSettingsClick={() => setSettingsOpen(true)} />
 
       {/* Settings Toggle Button */}
       <button 
@@ -268,6 +310,7 @@ const App: React.FC = () => {
       <ChatInterface 
         messages={messages}
         onSendMessage={handleSendMessage}
+        onUserCancel={handleUserCancel}
       />
 
       {/* Action Confirmation Modal */}

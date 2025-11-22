@@ -37,6 +37,16 @@ export interface SadieResponse {
   response?: string;
 }
 
+export interface Message {
+  id?: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  error?: boolean;
+  streamingState?: 'pending' | 'streaming' | 'finished' | 'cancelled' | 'error';
+  image?: ImageAttachment | null;
+}
+
 export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
@@ -60,4 +70,11 @@ export interface ElectronAPI {
   removeHideWindowListener: () => void;
   minimizeWindow?: () => void;
   closeWindow?: () => void;
+  // SSE/stream helpers
+  cancelStream?: (streamId?: string) => void;
+  sendStreamMessage?: (request: SadieRequestWithImages & { streamId?: string }) => Promise<void>;
+  onStreamChunk?: (callback: (data: { streamId?: string; chunk: string }) => void) => (() => void) | void;
+  onStreamEnd?: (callback: (data: { streamId?: string; cancelled?: boolean }) => void) => (() => void) | void;
+  onStreamError?: (callback: (err: { streamId?: string; error?: string }) => void) => (() => void) | void;
+  onMessage?: (callback: (data: any) => void) => (() => void) | void;
 }

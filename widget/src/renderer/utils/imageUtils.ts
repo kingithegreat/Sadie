@@ -36,7 +36,8 @@ export async function resizeImageFile(file: File, opts: ResizeOptions = {}) {
   const hasTransparency = file.type === 'image/png' || file.type === 'image/webp';
   const outputType = hasTransparency ? 'image/png' : 'image/jpeg';
 
-  const blob: Blob = await new Promise((res) => canvas.toBlob(res, outputType, quality));
+  const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, outputType, quality));
+  if (!blob) throw new Error('Canvas toBlob returned null');
   const blobFile = new File([blob], file.name, { type: blob.type });
   const resizedDataUrl = await fileToDataURL(blobFile);
   const data = resizedDataUrl.split(',')[1];

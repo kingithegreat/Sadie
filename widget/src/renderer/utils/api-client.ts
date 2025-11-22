@@ -1,10 +1,5 @@
 import axios from 'axios';
-
-interface Settings {
-  alwaysOnTop: boolean;
-  n8nUrl: string;
-  hotkey: string;
-}
+import { Settings } from '../../shared/types';
 
 interface SadieRequest {
   user_id: string;
@@ -35,7 +30,7 @@ export async function sendToSadie(
 ): Promise<SadieResponse> {
   try {
     // Load settings from the preload API
-    const settings: Settings = await window.electron.getSettings();
+    const settings: Settings = await window.electron.getSettings?.();
 
     // Construct the webhook URL
     const webhookUrl = `${settings.n8nUrl}/webhook/sadie/chat`;

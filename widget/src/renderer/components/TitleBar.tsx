@@ -32,7 +32,7 @@ export const TitleBar: React.FC = () => {
       role="banner"
       aria-label="Window Title Bar"
       tabIndex={-1}
-      style={{ WebkitAppRegion: "drag" }}
+      style={{ WebkitAppRegion: 'drag' } as any}
     >
       <div className="sadie-titlebar__controls" aria-label="Window Controls">
         {/* macOS traffic lights */}
