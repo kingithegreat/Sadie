@@ -33,8 +33,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - name: Install root deps
-        run: npm ci
+      - name: Install widget dependencies
+        run: npm ci --prefix widget
 
       - name: Cache Playwright binaries
         uses: actions/cache@v3
@@ -42,7 +42,7 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-            C:\Users\runneradmin\AppData\Local\ms-playwright
+            C:\\Users\\runneradmin\\AppData\\Local\\ms-playwright
           key: ${{ matrix.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ matrix.os }}-playwright-
@@ -51,7 +51,13 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Prepare Playwright artifact directories
-        run: node -e "const fs=require('fs');[`playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}`,'test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',`traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}`,'test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}'].forEach(d=>{try{fs.mkdirSync(d,{recursive:true})}catch(e){}})"
+        run: node -e "const fs = require('fs');
+        const dirs = [
+          'widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',
+          'widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',
+          'traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',
+          'widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}'
+        ]; dirs.forEach(d => { try { fs.mkdirSync(d, { recursive: true }) } catch(e){} });"
 
       - name: Build widget
         run: npm run build --prefix widget
@@ -60,14 +66,22 @@ jobs:
         run: |
           node -e "const { spawnSync } = require('child_process');
           const cmd = 'npm';
-          const args = ['run','e2e','--prefix','widget','--silent','--','--shard=${{ matrix.shardIndex }}/${{ matrix.totalShards }}','--reporter=line','--reporter=junit=test-results/junit-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}.xml','--reporter=html=playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','--trace=on-first-retry','--video=on-first-retry'];
+          const args = [
+            'run','e2e','--prefix','widget','--silent','--',
+            '--shard=${{ matrix.shardIndex }}/${{ matrix.totalShards }}',
+            '--reporter=line',
+            '--reporter=junit=test-results/junit-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}.xml',
+            '--reporter=html=playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',
+            '--trace=on-first-retry',
+            '--video=on-first-retry'
+          ];
           let rc = 1;
           for (let i = 0; i < 3; i++) {
             console.log('Playwright attempt', i+1, 'of 3');
             const r = spawnSync(cmd, args, { stdio: 'inherit' });
             rc = r.status;
             if (rc === 0) break;
-            if (i < 2) console.log('Attempt', i+1, 'failed — retrying...');
+            if (i < 2) console.log('Attempt', i+1, 'failed  retrying...');
           }
           process.exit(rc);"
 
@@ -89,6 +103,6 @@ jobs:
           name: e2e-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}-${{ github.run_id }}-${{ github.sha }}
           path: |
             widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
-            widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
+            widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
