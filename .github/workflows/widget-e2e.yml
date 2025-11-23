@@ -22,25 +22,25 @@ jobs:
       PLAYWRIGHT_JUNIT_OUTPUT: test-results/junit-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}.xml
       PLAYWRIGHT_TRACES_DIR: traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
       PLAYWRIGHT_VIDEO_DIR: test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
-      PLAYWRIGHT_HTML_REPORT: playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}
+      PLAYWRIGHT_HTML_REPORT: playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
+        PLAYWRIGHT_HTML_REPORT: playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - name: Install root deps
-        run: npm ci
+      - name: Install widget dependencies
+        run: npm ci --prefix widget --prefix widget
 
       - name: Cache Playwright binaries
         uses: actions/cache@v3
-        with:
+        - name: Install widget dependencies
           path: |
-            ~/.cache/ms-playwright
+          run: npm ci --prefix widget
             ~/Library/Caches/ms-playwright
             C:\\Users\\runneradmin\\AppData\\Local\\ms-playwright
           key: ${{ matrix.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
@@ -80,7 +80,7 @@ jobs:
             widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
-            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
+            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
 
       - name: Upload Playwright Artifacts (always)
         if: always()
@@ -88,7 +88,7 @@ jobs:
         with:
           name: e2e-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}-${{ github.run_id }}-${{ github.sha }}
           path: |
-            widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
+            widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
