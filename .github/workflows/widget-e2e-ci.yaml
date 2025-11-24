@@ -1,0 +1,19 @@
+name: Widget E2E Tests
+
+on:
+  push:
+    branches:
+      - feature/renderer-ui-wiring
+  pull_request:
+
+jobs:
+  test:
+    name: Reindex Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify workflow indexing
+        run: echo "Workflow indexed successfully"
