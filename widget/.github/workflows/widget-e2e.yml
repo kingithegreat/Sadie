@@ -1,9 +1,10 @@
-﻿name: "Widget E2E Tests"
+﻿name: "Widget E2E Tests (root)
+  (synchronized with repository-level workflow)"
 
 on:
-  push:
-    branches: [ main ]
-  pull_request: {}
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: {}
 
 jobs:
   e2e:
@@ -33,8 +34,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - name: Install root deps
-        run: npm ci
+      - name: Install widget dependencies
+        run: npm ci --prefix widget
 
       - name: Cache Playwright binaries
         uses: actions/cache@v3
@@ -51,10 +52,16 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Prepare Playwright artifact directories
-        run: node -e "const fs=require('fs');[`playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}`,'test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',`traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}`,'test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}'].forEach(d=>{try{fs.mkdirSync(d,{recursive:true})}catch(e){}})"
+        run: node -e "const fs = require('fs');
+        const dirs = [
+          'widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',
+          'widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',
+          'traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}',
+          'widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}'
+        ]; dirs.forEach(d => { try { fs.mkdirSync(d, { recursive: true }) } catch(e){} });"
 
       - name: Build widget
-        run: npm run build
+        run: npm run build --prefix widget
 
       - name: Run E2E tests (sharded)
         # Run Playwright with sharding and per-shard reporters so artifacts are isolated
@@ -79,10 +86,10 @@ jobs:
         with:
           name: e2e-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}-${{ github.run_id }}-${{ github.sha }}-failure
           path: |
-            playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
-            test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
-            test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
 
       - name: Upload Playwright Artifacts (always)
         if: always()
@@ -90,7 +97,7 @@ jobs:
         with:
           name: e2e-${{ matrix.os }}-shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}-${{ github.run_id }}-${{ github.sha }}
           path: |
-            playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
-            test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of/${{ matrix.totalShards }}/
-            test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+            widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
