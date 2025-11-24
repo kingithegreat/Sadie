@@ -55,6 +55,7 @@ jobs:
             ${{ matrix.os }}-playwright-
 
       - name: Install Playwright browsers
+        working-directory: widget
         run: npx playwright install --with-deps
 
       - name: Prepare Playwright artifact directories
