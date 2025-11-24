@@ -32,9 +32,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
-          # Tests run under widget/ — ensure cache hashing uses widget/package-lock.json
-          cache-dependency-path: widget/package-lock.json
 
       - name: Install widget dependencies
         run: npm ci --prefix widget
@@ -46,7 +43,7 @@ jobs:
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
             C:\\Users\\runneradmin\\AppData\\Local\\ms-playwright
-          key: ${{ matrix.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ matrix.os }}-playwright-${{ hashFiles('widget/package-lock.json') }}
           restore-keys: |
             ${{ matrix.os }}-playwright-
 
