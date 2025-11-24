@@ -1,4 +1,4 @@
-export type Role = "user" | "assistant";
+export type Role = "user" | "assistant" | "system";
 
 export type StreamingState =
   | "streaming"

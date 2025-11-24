@@ -1,10 +1,11 @@
 import React from 'react';
 import MessageList from './MessageList';
-import InputBox from './InputBox';
-import { Message as SharedMessage, ImageAttachment as SharedImageAttachment } from '../../shared/types';
+import { InputBox } from './InputBox';
+import type { ChatMessage } from '../types';
+import type { ImageAttachment as SharedImageAttachment } from '../../shared/types';
 
 interface ChatInterfaceProps {
-  messages: SharedMessage[];
+  messages: ChatMessage[];
   onSendMessage: (content: string, images?: SharedImageAttachment[] | null) => void;
   onUserCancel?: (messageId: string) => void;
 }
@@ -14,7 +15,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
     <div className="chat-interface">
       {/* Scrollable message list */}
       <div className="messages-container">
-        <MessageList messages={messages} onUserCancel={onUserCancel} />
+        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={() => {}} />
       </div>
 
       {/* Fixed input box at bottom */}
