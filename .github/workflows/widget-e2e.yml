@@ -31,8 +31,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
-          cache-dependency-path: widget/package-lock.json
+
+      - name: Cache widget node_modules
+        uses: actions/cache@v3
+        with:
+          path: widget/node_modules
+          key: ${{ matrix.os }}-node-${{ hashFiles('widget/package-lock.json') }}
+          restore-keys: |
+            ${{ matrix.os }}-node-
 
       - name: Install widget dependencies
         run: npm ci --prefix widget
