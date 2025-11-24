@@ -33,6 +33,8 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          # Tests run under widget/ — ensure cache hashing uses widget/package-lock.json
+          cache-dependency-path: widget/package-lock.json
 
       - name: Install widget dependencies
         run: npm ci --prefix widget
