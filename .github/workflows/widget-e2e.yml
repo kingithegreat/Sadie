@@ -32,6 +32,8 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          # Our workspace keeps package-lock.json under `widget/` — make caching look there
+          cache-dependency-path: widget/package-lock.json
 
       - name: Install widget dependencies
         run: npm ci --prefix widget
