@@ -1,42 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Header } from "./components/Header";
-import { InputBox } from "./components/InputBox";
-import { MessageList } from "./components/MessageList";
-import { SettingsModal } from "./components/SettingsModal";
+import ChatInterface from "./components/ChatInterface";
+import StatusIndicator from "./components/StatusIndicator";
+import ActionConfirmation from "./components/ActionConfirmation";
+import SettingsPanel from "./components/SettingsPanel";
 import type {
   ChatMessage,
   StreamingState,
   StreamChunkPayload,
   StreamEndPayload,
   StreamErrorPayload,
-  Settings
+  Settings as ModelSettings
 } from "./types";
+import type {
+  Message as SharedMessage,
+  ConnectionStatus,
+  ImageAttachment,
+  SadieRequestWithImages,
+  Settings as SharedSettings
+} from '../shared/types';
 
 // Types
-interface Message {
-  id?: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string;
-  error?: boolean;
-  // streaming state: pending | streaming | finished | cancelled | error
-  streamingState?: 'pending' | 'streaming' | 'finished' | 'cancelled' | 'error';
-  image?: { filename?: string; url?: string; mimeType?: string } | null;
-}
-
-interface ToolCall {
-  tool_name: string;
-  parameters: Record<string, any>;
-  reasoning?: string;
-  confirmation_id?: string;
-}
-
-interface Settings {
-  alwaysOnTop: boolean;
-  n8nUrl: string;
-  widgetHotkey: string;
-}
-
 type Status = ConnectionStatus;
 
 interface AppProps {
@@ -45,25 +28,39 @@ interface AppProps {
 }
 
 const App: React.FC<AppProps> = ({ initialMessages }) => {
+  // small helper to create ids
+  const newId = useCallback(() => `id-${Date.now()}-${Math.random().toString(16).slice(2,8)}`, []);
+
   // State
-  const [messages, setMessages] = useState<SharedMessage[]>(initialMessages ?? []);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (!initialMessages || !initialMessages.length) return [];
+    // convert shared messages into renderer ChatMessage shape
+    return initialMessages.map((m) => ({
+      id: m.id ?? newId(),
+      role: m.role as any,
+      content: m.content,
+      createdAt: Date.parse(m.timestamp) || Date.now(),
+      updatedAt: undefined,
+      streamId: (m as any).streamId,
+      streamingState: (m.streamingState as any) || undefined,
+      error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
+    }));
+  });
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
-  const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
+  const [pendingToolCall, setPendingToolCall] = useState<any | null>(null);
   const [pendingConfirmationData, setPendingConfirmationData] = useState<any>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<Settings>({
+  const [settings, setSettings] = useState<SharedSettings>({
     alwaysOnTop: true,
     n8nUrl: 'http://localhost:5678',
     widgetHotkey: 'Ctrl+Shift+Space'
   });
+  const [isHydrated, setIsHydrated] = useState(false);
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
   const [conversationId] = useState<string>('default');
 
-    // active stream subscriptions by streamId
-    const subsRef = useRef<Record<
-      string,
-      { unsubscribe: () => void }
-    >>({});
+    // active stream subscriptions by streamId (use Map for convenience)
+    const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
 
   // Load settings on boot
   useEffect(() => {
@@ -71,7 +68,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     (async () => {
       try {
         const loaded = await window.electron.getSettings();
-        if (mounted && loaded) setSettings({ ...DEFAULT_SETTINGS, ...loaded });
+        if (mounted && loaded) setSettings(prev => ({ ...prev, ...loaded }));
       } catch (err) {
         console.error("Failed to load settings", err);
       } finally {
@@ -86,9 +83,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   useEffect(() => {
     return () => {
       for (const subs of streamSubsRef.current.values()) {
-        try { if (typeof subs.chunkUnsub === 'function') subs.chunkUnsub(); } catch (e) {}
-        try { if (typeof subs.endUnsub === 'function') subs.endUnsub(); } catch (e) {}
-        try { if (typeof subs.errorUnsub === 'function') subs.errorUnsub(); } catch (e) {}
+        try { subs.unsubscribe(); } catch (e) {}
       }
       streamSubsRef.current.clear();
     };
@@ -122,7 +117,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   /**
    * Save user settings to main process
    */
-  const saveSettings = async (newSettings: Settings) => {
+  const saveSettings = async (newSettings: SharedSettings) => {
     try {
       await window.electron.saveSettings(newSettings);
       setSettings(newSettings);
@@ -138,10 +133,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Check if response is an error
     if (response.error || !response.success) {
       setMessages(prev => [...prev, {
+        id: newId(),
         role: 'assistant',
         content: response.message || response.response || 'An error occurred.',
-        timestamp: new Date().toISOString(),
-        error: true
+        createdAt: Date.now(),
+        error: response.message || 'error'
       }]);
       setStatus({ n8n: 'offline', ollama: 'offline' });
       return;
@@ -155,10 +151,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Check if action is blocked
     if (data.status === 'blocked') {
       setMessages(prev => [...prev, {
+        id: newId(),
         role: 'assistant',
         content: `⛔ ${data.message}\n\nViolations: ${data.violations?.join(', ') || 'Unknown'}`,
-        timestamp: new Date().toISOString(),
-        error: true
+        createdAt: Date.now(),
+        error: data.message || 'error'
       }]);
       return;
     }
@@ -170,9 +167,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       setAwaitingConfirmation(true);
       
       setMessages(prev => [...prev, {
+        id: newId(),
         role: 'assistant',
         content: data.message || 'This action requires your confirmation.',
-        timestamp: new Date().toISOString()
+        createdAt: Date.now(),
+        error: null
       }]);
       return;
     }
@@ -180,9 +179,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Normal response
     const assistantMessage = data.response || data.message || 'No response.';
     setMessages(prev => [...prev, {
+      id: newId(),
       role: 'assistant',
       content: assistantMessage,
-      timestamp: new Date().toISOString()
+      createdAt: Date.now(),
+      error: null
     }]);
   };
 
@@ -190,19 +191,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Send message to SADIE orchestrator
    */
   const unsubscribeStream = useCallback((streamId: string) => {
-    const subs = subsRef.current;
-    if (subs[streamId]) {
-      try { subs[streamId].unsubscribe(); } catch {}
-      delete subs[streamId];
+    const subs = streamSubsRef.current.get(streamId);
+    if (subs) {
+      try { subs.unsubscribe(); } catch {}
+      streamSubsRef.current.delete(streamId);
     }
   }, []);
 
   const subscribeToStream = useCallback((streamId: string, assistantId: string) => {
     // prevent double subscription
-    if (subsRef.current[streamId]) return;
+    if (streamSubsRef.current.has(streamId)) return;
 
     const unsubscribe = window.electron.subscribeToStream?.(streamId, {
-      onStreamChunk: (payload: StreamChunkPayload) => {
+      // payload may have an optional streamId coming from the main process listener
+      onStreamChunk: (payload: { streamId?: string; chunk: string }) => {
         setMessages(prev => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
@@ -215,7 +217,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           });
         });
       },
-      onStreamEnd: (payload: StreamEndPayload) => {
+      onStreamEnd: (payload: { streamId?: string; cancelled?: boolean }) => {
         setMessages(prev => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
@@ -232,7 +234,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         });
         unsubscribeStream(streamId);
       },
-      onStreamError: (payload: StreamErrorPayload) => {
+      onStreamError: (payload: { streamId?: string; error?: string }) => {
         setMessages(prev => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
@@ -248,99 +250,54 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       },
     });
 
-    subsRef.current[streamId] = { unsubscribe: (unsubscribe ?? (() => {})) as () => void };
+    streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
   }, [unsubscribeStream]);
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text) return;
-    const userMsg: Message = {
-      role: 'user',
-      content: message,
-      timestamp: new Date().toISOString()
-    };
+  const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null) => {
+    const text = content?.trim() ?? '';
+    if (!text && (!images || images.length === 0)) return;
 
-    // Normalize images: support single image or array of images
-    let images: Array<{ filename?: string; mimeType?: string; data?: string }> | undefined;
-    if (Array.isArray(imageOrImages)) {
-      images = imageOrImages.map((it: any) => ({ filename: it.filename, mimeType: it.mimeType, data: it.data }));
-    } else if (imageOrImages) {
-      images = [{ filename: imageOrImages.filename, mimeType: imageOrImages.mimeType, data: imageOrImages.data }];
-    }
-
-    // Append user message; include thumbnail info if available
-    const userMsgWithImage: Message = images && images.length > 0
-      ? { ...userMsg, image: { filename: images[0].filename, url: images[0].data ? `data:${images[0].mimeType};base64,${images[0].data}` : undefined, mimeType: images[0].mimeType } }
-      : userMsg;
-    setMessages(prev => [...prev, userMsgWithImage]);
-
-    // Prepare assistant placeholder with streaming flag
+    // Add user message
     const userId = newId();
-    const assistantId = newId(); // <- SINGLE ID USED FOR BOTH REQUEST + UI
-    const assistantPlaceholder: Message = {
+    const userMsg: ChatMessage = {
+      id: userId,
+      role: 'user',
+      content: text,
+      createdAt: Date.now(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    // Assistant placeholder
+    const assistantId = newId();
+    const assistantPlaceholder: ChatMessage = {
       id: assistantId,
       role: 'assistant',
       content: '',
-      timestamp: new Date().toISOString(),
+      createdAt: Date.now(),
       streamingState: 'streaming'
     };
-
     setMessages(prev => [...prev, assistantPlaceholder]);
 
-    // subscribe first so we don't miss early chunks
+    // subscribe to stream updates before sending to avoid lost chunks
     subscribeToStream(assistantId, assistantId);
-    // Use per-stream subscription map to make lifecycle robust and easy to cleanup
-    // Use a single stream identifier for both the message and the stream request so
-    // incoming chunks are correlated properly (renderer must subscribe using the
-    // same streamId that main receives).
-    const streamId = assistantId;
 
-    // store unsubscribers for this streamId
-    const chunkUnsub = window.electron.onStreamChunk?.((data: any) => {
-      if (!data || !data.chunk || data.streamId !== streamId) return;
-      // Only append chunks while the assistant message is still in 'streaming' state.
-      // This prevents racey situations where cancelled streams still receive
-      // in-flight chunks from upstream which should be ignored by the UI.
-      setMessages(prev => prev.map(m => {
-        if (m.id !== assistantId) return m;
-        if (m.streamingState !== 'streaming') return m;
-        return { ...m, content: (m.content || '') + data.chunk };
-      }));
-    }) as (() => void) | undefined;
+    // Prepare stream request
+    const streamRequest: (SadieRequestWithImages & { streamId?: string }) = {
+      user_id: 'desktop_user',
+      conversation_id: conversationId,
+      message: text,
+      timestamp: new Date().toISOString(),
+    };
+    if (images && images.length > 0) {
+      streamRequest.images = images;
+      if (images.length === 1) streamRequest.image = images[0];
+    }
 
-    const endUnsub = window.electron.onStreamEnd?.((data: any) => {
-      if (!data || data.streamId !== streamId) return;
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streamingState: data.cancelled ? 'cancelled' : 'finished', timestamp: new Date().toISOString() } : m));
-      // cleanup this stream's subscriptions
-      const subs = streamSubsRef.current.get(streamId);
-      if (subs) {
-        try { if (typeof subs.chunkUnsub === 'function') subs.chunkUnsub(); } catch (e) {}
-        try { if (typeof subs.endUnsub === 'function') subs.endUnsub(); } catch (e) {}
-        try { if (typeof subs.errorUnsub === 'function') subs.errorUnsub(); } catch (e) {}
-      }
-      streamSubsRef.current.delete(streamId);
-    }) as (() => void) | undefined;
+    // register a single unsubscribe placeholder if subscribeToStream used the subscription
+    // window.electron.subscribeToStream already stored an unsubscribe in streamSubsRef
 
-    const errorUnsub = window.electron.onStreamError?.((err: any) => {
-      if (!err || err.streamId !== streamId) return;
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streamingState: 'error', error: true, content: (m.content || '') + '\n\n[Stream error]' } : m));
-      // cleanup this stream's subscriptions
-      const subs = streamSubsRef.current.get(streamId);
-      if (subs) {
-        try { if (typeof subs.chunkUnsub === 'function') subs.chunkUnsub(); } catch (e) {}
-        try { if (typeof subs.endUnsub === 'function') subs.endUnsub(); } catch (e) {}
-        try { if (typeof subs.errorUnsub === 'function') subs.errorUnsub(); } catch (e) {}
-      }
-      streamSubsRef.current.delete(streamId);
-    }) as (() => void) | undefined;
-
-    // Start streaming request via preload; we include the SAME streamId so main can correlate
     try {
-      await window.electron.sendStreamMessage({
-        streamId: assistantId,
-        text,
-        settings,
-      });
+      await window.electron.sendStreamMessage?.({ ...streamRequest, streamId: assistantId });
     } catch (err: any) {
       console.error(err);
       updateMessage(assistantId, m => ({
@@ -350,7 +307,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }));
       unsubscribeStream(assistantId);
     }
-  }, [input, settings, subscribeToStream, unsubscribeStream, updateMessage]);
+  }, [conversationId, subscribeToStream, unsubscribeStream, updateMessage, newId]);
 
   const cancelStream = useCallback(async (assistantId: string) => {
     // optimistic cancel right away
@@ -360,7 +317,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }));
 
     try {
-      await window.electron.cancelStream(assistantId);
+      await window.electron.cancelStream?.(assistantId);
       // final authoritative state comes via onStreamEnd({cancelled:true})
       // but if upstream never responds, we still present cancelled
       updateMessage(assistantId, m => {
@@ -377,25 +334,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       unsubscribeStream(assistantId);
     }
   }, [unsubscribeStream, updateMessage]);
-      user_id: 'desktop_user',
-      conversation_id: conversationId,
-      message,
-      timestamp: new Date().toISOString(),
-      streamId
-    };
-    if (images && images.length > 0) {
-      // include images[] for multiple attachments
-      streamRequest.images = images;
-      // keep single-image compatibility for downstream/backends that expect `image`
-      if (images.length === 1) streamRequest.image = images[0];
-    }
-
-    // register our per-stream subscribers under the assistantId so incoming events are correlated
-    streamSubsRef.current.set(streamId, { chunkUnsub, endUnsub, errorUnsub });
-
-    // tell main to start the stream; include our streamId so events are correlated
-    window.electron.sendStreamMessage?.({ ...streamRequest, streamId } as any);
-  };
 
   /**
    * Handle confirmation approval
@@ -430,11 +368,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     subscribeToStream(assistantId, assistantId);
 
     try {
-      await window.electron.sendStreamMessage({
-        streamId: assistantId,
-        text: prevUser.content,
-        settings,
-      });
+      await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId, message: prevUser.content, timestamp: new Date().toISOString(), images: undefined });
     } catch (err: any) {
       updateMessage(assistantId, m => ({
         ...m,
@@ -454,9 +388,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // in-flight chunks that still arrive won't be appended to the message.
     const subs = streamSubsRef.current.get(id);
     if (subs) {
-      try { if (typeof subs.chunkUnsub === 'function') subs.chunkUnsub(); } catch (e) {}
-      try { if (typeof subs.endUnsub === 'function') subs.endUnsub(); } catch (e) {}
-      try { if (typeof subs.errorUnsub === 'function') subs.errorUnsub(); } catch (e) {}
+      try { subs.unsubscribe(); } catch (e) {}
     }
     streamSubsRef.current.delete(id);
   };
@@ -466,9 +398,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    */
   const handleRejectAction = () => {
     setMessages(prev => [...prev, {
+      id: newId(),
       role: 'system',
       content: 'Action cancelled by user.',
-      timestamp: new Date().toISOString()
+      createdAt: Date.now(),
+      error: null
     }]);
 
     setAwaitingConfirmation(false);
@@ -476,7 +410,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     setPendingConfirmationData(null);
   };
 
-  const canSend = useMemo(() => isHydrated && input.trim().length > 0, [isHydrated, input]);
+  // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
   return (
     <div className="app-container">
