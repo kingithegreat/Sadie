@@ -1,15 +1,2 @@
-<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="0" time="12.863318999999999">
-<testsuite name="streaming.e2e.spec.ts" timestamp="2025-11-22T10:19:43.400Z" hostname="" tests="3" failures="0" skipped="0" time="12.179" errors="0">
-<testcase name="streams chunks to UI" classname="streaming.e2e.spec.ts" time="6.64">
-<system-err>
-<![CDATA[(node:23988) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
-(Use `node --trace-deprecation ...` to show where the warning was created)
-]]>
-</system-err>
-</testcase>
-<testcase name="cancel stops stream" classname="streaming.e2e.spec.ts" time="4.737">
-</testcase>
-<testcase name="handles upstream error" classname="streaming.e2e.spec.ts" time="0.802">
-</testcase>
-</testsuite>
+<testsuites id="" name="" tests="0" failures="0" skipped="0" errors="0" time="0.03595899999999983">
 </testsuites>
