@@ -4,13 +4,25 @@ import App from '../App';
 
 jest.useFakeTimers();
 
+let _chunkHandler: any;
+let _endHandler: any;
+let _errorHandler: any;
+
 // Provide a fully mocked preload API
 beforeEach(() => {
+  _chunkHandler = undefined;
+  _endHandler = undefined;
+  _errorHandler = undefined;
+
   (window as any).electron = {
     sendStreamMessage: jest.fn().mockResolvedValue(undefined),
     cancelStream: jest.fn(),
-    onStreamChunk: jest.fn(),
-    onStreamEnd: jest.fn(),
+    subscribeToStream: jest.fn((sid: string, handlers: any) => {
+      _chunkHandler = handlers.onStreamChunk;
+      _endHandler = handlers.onStreamEnd;
+      _errorHandler = handlers.onStreamError;
+      return jest.fn();
+    }),
     onStreamError: jest.fn(),
     getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
     saveSettings: jest.fn().mockResolvedValue(undefined),
@@ -56,11 +68,10 @@ describe('cancel-confirmation flow', () => {
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
     expect(await screen.findByText(/cancelled/i)).toBeInTheDocument();
 
-    // Now simulate proxy confirmation: capture onStreamEnd handler and invoke with cancelled:true
-    const endHandler = (window as any).electron.onStreamEnd.mock.calls[0]?.[0];
-    expect(typeof endHandler).toBe('function');
+    // Now simulate proxy confirmation: our mocked subscribeToStream captured the handler
+    expect(typeof _endHandler).toBe('function');
     act(() => {
-      endHandler({ streamId: capturedStreamId, cancelled: true });
+      _endHandler({ streamId: capturedStreamId, cancelled: true });
     });
 
     // Confirm final authoritative state: cancelled badge still present
@@ -93,10 +104,9 @@ describe('cancel-confirmation flow', () => {
     expect(await screen.findByText(/cancelled/i)).toBeInTheDocument();
 
     // simulate proxy end without cancelled flag
-    const endHandler2 = (window as any).electron.onStreamEnd.mock.calls[0]?.[0];
-    expect(typeof endHandler2).toBe('function');
+    expect(typeof _endHandler).toBe('function');
     act(() => {
-      endHandler2({ streamId: capturedStreamId2 });
+      _endHandler({ streamId: capturedStreamId2 });
     });
 
     // authoritative state: cancelled badge should DISAPPEAR (proxy did not confirm cancellation)

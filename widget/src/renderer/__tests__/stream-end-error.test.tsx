@@ -14,15 +14,18 @@ describe('stream end and error handling (renderer)', () => {
     let chunkHandler: ((d: any) => void) | undefined;
     let endHandler: ((d: any) => void) | undefined;
 
-    const chunkUnsub = jest.fn();
-    const endUnsub = jest.fn();
-    const errorUnsub = jest.fn();
+    const unsub = jest.fn();
+    const chunkUnsub = unsub;
+    const endUnsub = unsub;
+    const errorUnsub = unsub;
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      onStreamChunk: jest.fn((cb: (d: any) => void) => { chunkHandler = cb; return chunkUnsub; }),
-      onStreamEnd: jest.fn((cb: (d: any) => void) => { endHandler = cb; return endUnsub; }),
-      onStreamError: jest.fn((cb: (d: any) => void) => { /* track, return unsub */ return errorUnsub; }),
+      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+        chunkHandler = handlers.onStreamChunk;
+        endHandler = handlers.onStreamEnd;
+        return unsub;
+      }),
       getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
       sendStreamMessage: jest.fn((payload: any) => { capturedStreamId = payload.streamId; return Promise.resolve(); }),
@@ -66,15 +69,18 @@ describe('stream end and error handling (renderer)', () => {
     let chunkHandler: ((d: any) => void) | undefined;
     let errorHandler: ((d: any) => void) | undefined;
 
-    const chunkUnsub = jest.fn();
-    const endUnsub = jest.fn();
-    const errorUnsub = jest.fn();
+    const unsub = jest.fn();
+    const chunkUnsub = unsub;
+    const endUnsub = unsub;
+    const errorUnsub = unsub;
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      onStreamChunk: jest.fn((cb: (d: any) => void) => { chunkHandler = cb; return chunkUnsub; }),
-      onStreamEnd: jest.fn((cb: (d: any) => void) => { /* not used in this test */ return endUnsub; }),
-      onStreamError: jest.fn((cb: (d: any) => void) => { errorHandler = cb; return errorUnsub; }),
+      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+        chunkHandler = handlers.onStreamChunk;
+        errorHandler = handlers.onStreamError;
+        return unsub;
+      }),
       getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
       sendStreamMessage: jest.fn((payload: any) => { capturedStreamId = payload.streamId; return Promise.resolve(); }),

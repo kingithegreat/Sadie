@@ -391,6 +391,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       try { subs.unsubscribe(); } catch (e) {}
     }
     streamSubsRef.current.delete(id);
+    // Tell main process to cancel the stream as well (best-effort)
+    try { window.electron.cancelStream?.(id); } catch(e) { /* ignore */ }
   };
 
   /**
