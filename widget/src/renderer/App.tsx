@@ -16,7 +16,8 @@ import type {
   ConnectionStatus,
   ImageAttachment,
   SadieRequestWithImages,
-  Settings as SharedSettings
+  Settings as SharedSettings,
+  StoredConversation,
 } from '../shared/types';
 
 // Types
@@ -57,26 +58,67 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   });
   const [isHydrated, setIsHydrated] = useState(false);
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
-  const [conversationId] = useState<string>('default');
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
 
-  // Load settings on boot
+  // Load settings and conversation on boot
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        // Load settings
         const loaded = await window.electron.getSettings();
         if (mounted && loaded) setSettings(prev => ({ ...prev, ...loaded }));
+        
+        // Load conversations from memory
+        const convResult = await window.electron.loadConversations?.();
+        if (mounted && convResult?.success && convResult.data) {
+          const store = convResult.data;
+          
+          // If there's an active conversation, load it
+          if (store.activeConversationId) {
+            const convData = await window.electron.getConversation?.(store.activeConversationId);
+            if (convData?.success && convData.data) {
+              setConversationId(store.activeConversationId);
+              // Convert stored messages to ChatMessage format
+              const loadedMsgs: ChatMessage[] = convData.data.messages.map((m: SharedMessage) => ({
+                id: m.id ?? newId(),
+                role: m.role as any,
+                content: m.content,
+                createdAt: Date.parse(m.timestamp) || Date.now(),
+                streamingState: (m.streamingState as any) || undefined,
+                error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
+              }));
+              if (!initialMessages || initialMessages.length === 0) {
+                setMessages(loadedMsgs);
+              }
+            }
+          } else {
+            // No active conversation - create a new one
+            const newConv = await window.electron.createConversation?.();
+            if (newConv?.success && newConv.data) {
+              setConversationId(newConv.data.id);
+            }
+          }
+        } else {
+          // No conversations yet - create first one
+          const newConv = await window.electron.createConversation?.();
+          if (mounted && newConv?.success && newConv.data) {
+            setConversationId(newConv.data.id);
+          }
+        }
       } catch (err) {
-        console.error("Failed to load settings", err);
+        console.error("Failed to load settings/conversations", err);
+        // Fallback to a local-only conversation ID
+        setConversationId('default');
       } finally {
         if (mounted) setIsHydrated(true);
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [newId, initialMessages]);
 
   // Ensure we clean up any remaining stream listeners when the component
   // unmounts to avoid memory leaks.
@@ -95,6 +137,36 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const updateMessage = useCallback((id: string, fn: (m: ChatMessage) => ChatMessage) => {
     setMessages(prev => prev.map(m => (m.id === id ? fn(m) : m)));
   }, []);
+
+  // Helper to persist a message to the conversation store
+  const persistMessage = useCallback(async (msg: ChatMessage) => {
+    if (!conversationId) return;
+    try {
+      // Map renderer StreamingState to shared type (exclude 'cancelling' which is renderer-only)
+      const mappedStreamingState = msg.streamingState === 'cancelling' ? 'cancelled' : msg.streamingState;
+      const sharedMsg: SharedMessage = {
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(msg.createdAt).toISOString(),
+        streamingState: mappedStreamingState as SharedMessage['streamingState'],
+        error: !!msg.error,
+      };
+      await window.electron.addMessage?.(conversationId, sharedMsg);
+    } catch (err) {
+      console.error('Failed to persist message:', err);
+    }
+  }, [conversationId]);
+
+  // Helper to update a persisted message
+  const updatePersistedMessage = useCallback(async (messageId: string, updates: Partial<SharedMessage>) => {
+    if (!conversationId) return;
+    try {
+      await window.electron.updateMessage?.(conversationId, messageId, updates);
+    } catch (err) {
+      console.error('Failed to update persisted message:', err);
+    }
+  }, [conversationId]);
 
   const appendAssistantIfMissing = useCallback((assistantId: string) => {
     setMessages(prev => {
@@ -219,18 +291,29 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       },
       onStreamEnd: (payload: { streamId?: string; cancelled?: boolean }) => {
         setMessages(prev => {
-          return prev.map(m => {
+          const updated = prev.map(m => {
             if (m.id !== assistantId) return m;
 
             const cancelled = !!payload.cancelled;
             const nextState: StreamingState = cancelled ? "cancelled" : "finished";
 
-            return {
+            const updatedMsg = {
               ...m,
               streamingState: nextState,
               updatedAt: Date.now(),
             };
+            
+            // Persist the final message content
+            if (conversationId) {
+              updatePersistedMessage(assistantId, {
+                content: updatedMsg.content,
+                streamingState: nextState,
+              });
+            }
+            
+            return updatedMsg;
           });
+          return updated;
         });
         unsubscribeStream(streamId);
       },
@@ -238,12 +321,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         setMessages(prev => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
-            return {
+            const updatedMsg = {
               ...m,
-              streamingState: "error",
+              streamingState: "error" as StreamingState,
               error: payload.error ?? "Stream error",
               updatedAt: Date.now(),
             };
+            
+            // Persist the error state
+            if (conversationId) {
+              updatePersistedMessage(assistantId, {
+                content: updatedMsg.content,
+                streamingState: "error",
+                error: true,
+              });
+            }
+            
+            return updatedMsg;
           });
         });
         unsubscribeStream(streamId);
@@ -251,7 +345,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
-  }, [unsubscribeStream]);
+  }, [unsubscribeStream, conversationId, updatePersistedMessage]);
 
   const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null) => {
     const text = content?.trim() ?? '';
@@ -266,6 +360,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       createdAt: Date.now(),
     };
     setMessages(prev => [...prev, userMsg]);
+    
+    // Persist user message
+    persistMessage(userMsg);
 
     // Assistant placeholder
     const assistantId = newId();
@@ -277,6 +374,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       streamingState: 'streaming'
     };
     setMessages(prev => [...prev, assistantPlaceholder]);
+    
+    // Persist assistant placeholder (will be updated when streaming completes)
+    persistMessage(assistantPlaceholder);
 
     // subscribe to stream updates before sending to avoid lost chunks
     subscribeToStream(assistantId, assistantId);
@@ -284,7 +384,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Prepare stream request
     const streamRequest: (SadieRequestWithImages & { streamId?: string }) = {
       user_id: 'desktop_user',
-      conversation_id: conversationId,
+      conversation_id: conversationId || 'default',
       message: text,
       timestamp: new Date().toISOString(),
     };
@@ -368,7 +468,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     subscribeToStream(assistantId, assistantId);
 
     try {
-      await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId, message: prevUser.content, timestamp: new Date().toISOString(), images: undefined });
+      await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId || 'default', message: prevUser.content, timestamp: new Date().toISOString(), images: undefined });
     } catch (err: any) {
       updateMessage(assistantId, m => ({
         ...m,
