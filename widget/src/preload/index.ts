@@ -8,6 +8,10 @@ import {
   ConnectionStatus,
   ElectronAPI,
   Settings,
+  StoredConversation,
+  ConversationStore,
+  MemoryResult,
+  Message,
 } from '../shared/types';
 import { IPC_SEND_MESSAGE } from '../shared/constants';
 
@@ -165,7 +169,41 @@ const electronAPI: ElectronAPI = {
   },
 
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
-  closeWindow: () => ipcRenderer.send('window-close')
+  closeWindow: () => ipcRenderer.send('window-close'),
+
+  // ============= Memory/Conversation APIs =============
+
+  loadConversations: async (): Promise<MemoryResult<ConversationStore>> => {
+    return await ipcRenderer.invoke('sadie:load-conversations');
+  },
+
+  getConversation: async (conversationId: string): Promise<MemoryResult<StoredConversation | null>> => {
+    return await ipcRenderer.invoke('sadie:get-conversation', conversationId);
+  },
+
+  createConversation: async (title?: string): Promise<MemoryResult<StoredConversation>> => {
+    return await ipcRenderer.invoke('sadie:create-conversation', title);
+  },
+
+  saveConversation: async (conversation: StoredConversation): Promise<MemoryResult> => {
+    return await ipcRenderer.invoke('sadie:save-conversation', conversation);
+  },
+
+  deleteConversation: async (conversationId: string): Promise<MemoryResult> => {
+    return await ipcRenderer.invoke('sadie:delete-conversation', conversationId);
+  },
+
+  setActiveConversation: async (conversationId: string | null): Promise<MemoryResult> => {
+    return await ipcRenderer.invoke('sadie:set-active-conversation', conversationId);
+  },
+
+  addMessage: async (conversationId: string, message: Message): Promise<MemoryResult> => {
+    return await ipcRenderer.invoke('sadie:add-message', { conversationId, message });
+  },
+
+  updateMessage: async (conversationId: string, messageId: string, updates: Partial<Message>): Promise<MemoryResult> => {
+    return await ipcRenderer.invoke('sadie:update-message', { conversationId, messageId, updates });
+  }
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.

@@ -3,6 +3,12 @@ import { getMainWindow } from './window-manager';
 import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
+import {
+  MemoryManager,
+  StoredConversation,
+  ConversationStore,
+} from './memory-manager';
+import { Message } from '../shared/types';
 
 // Default settings
 const DEFAULT_SETTINGS = {
@@ -147,6 +153,112 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { success: true };
     } catch (err: any) {
       console.error('Error saving settings:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ============= Memory / Conversation Handlers =============
+
+  /**
+   * Load all conversations (list view)
+   */
+  ipcMain.handle('sadie:load-conversations', async () => {
+    try {
+      const store = MemoryManager.loadConversationStore();
+      return { success: true, data: store };
+    } catch (err: any) {
+      console.error('Error loading conversations:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Get a single conversation by ID
+   */
+  ipcMain.handle('sadie:get-conversation', async (_event, conversationId: string) => {
+    try {
+      const conversation = MemoryManager.getConversation(conversationId);
+      return { success: true, data: conversation };
+    } catch (err: any) {
+      console.error('Error getting conversation:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Create a new conversation
+   */
+  ipcMain.handle('sadie:create-conversation', async (_event, title?: string) => {
+    try {
+      const conversation = MemoryManager.createNewConversation(title);
+      return { success: true, data: conversation };
+    } catch (err: any) {
+      console.error('Error creating conversation:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Save/update a conversation
+   */
+  ipcMain.handle('sadie:save-conversation', async (_event, conversation: StoredConversation) => {
+    try {
+      const success = MemoryManager.saveConversation(conversation);
+      return { success };
+    } catch (err: any) {
+      console.error('Error saving conversation:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Delete a conversation
+   */
+  ipcMain.handle('sadie:delete-conversation', async (_event, conversationId: string) => {
+    try {
+      const success = MemoryManager.deleteConversation(conversationId);
+      return { success };
+    } catch (err: any) {
+      console.error('Error deleting conversation:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Set active conversation
+   */
+  ipcMain.handle('sadie:set-active-conversation', async (_event, conversationId: string | null) => {
+    try {
+      const success = MemoryManager.setActiveConversation(conversationId);
+      return { success };
+    } catch (err: any) {
+      console.error('Error setting active conversation:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Add a message to a conversation
+   */
+  ipcMain.handle('sadie:add-message', async (_event, { conversationId, message }: { conversationId: string; message: Message }) => {
+    try {
+      const success = MemoryManager.addMessageToConversation(conversationId, message);
+      return { success };
+    } catch (err: any) {
+      console.error('Error adding message:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Update a message in a conversation
+   */
+  ipcMain.handle('sadie:update-message', async (_event, { conversationId, messageId, updates }: { conversationId: string; messageId: string; updates: Partial<Message> }) => {
+    try {
+      const success = MemoryManager.updateMessageInConversation(conversationId, messageId, updates);
+      return { success };
+    } catch (err: any) {
+      console.error('Error updating message:', err.message);
       return { success: false, error: err.message };
     }
   });
