@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { createMainWindow } from './window-manager';
+import { registerIpcHandlers } from './ipc-handlers';
 
 // Load environment variables
 require('dotenv').config();
@@ -21,10 +22,10 @@ let mainWindow: BrowserWindow | null = null;
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
+  // Register IPC handlers BEFORE window creation to satisfy early renderer invokes
+  registerIpcHandlers();
+
   mainWindow = createMainWindow();
-  // Register IPC handlers for window controls and SADIE communication
-  const { registerIpcHandlers } = require('./ipc-handlers');
-  if (mainWindow) registerIpcHandlers(mainWindow);
 
   // Register message router for SADIE backend communication
   const { registerMessageRouter } = require('./message-router');
