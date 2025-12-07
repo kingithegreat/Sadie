@@ -8,10 +8,8 @@ describe('cancel flow (renderer)', () => {
     // default minimal electron mock
     (window as any).electron = {
       cancelStream: jest.fn(),
-      // onStreamChunk/onStreamEnd/onStreamError return unsubscribe functions
-      onStreamChunk: jest.fn(() => jest.fn()),
-      onStreamEnd: jest.fn(() => jest.fn()),
-      onStreamError: jest.fn(() => jest.fn()),
+      // use subscribeToStream (returns an unsubscribe function)
+      subscribeToStream: jest.fn(() => jest.fn()),
       // Other methods used by App
       getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
@@ -49,10 +47,8 @@ describe('cancel flow (renderer)', () => {
     const cancelledBadge = await screen.findByText('Cancelled');
     expect(cancelledBadge).toBeInTheDocument();
 
-    // Messages state in App should be updated immediately to 'cancelled' too.
-    // We can assert by finding the cancelled footer text which is rendered for cancelled state.
-    const cancelledFooter = await screen.findByText('Stopped by user');
-    expect(cancelledFooter).toBeInTheDocument();
+    // Confirm there is no longer a cancel button for the message
+    expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
   });
 
   test('unmount calls unsubscribe functions returned by onStream*', async () => {
@@ -61,9 +57,9 @@ describe('cancel flow (renderer)', () => {
     const endUnsub = jest.fn();
     const errorUnsub = jest.fn();
 
-    (window as any).electron.onStreamChunk = jest.fn(() => chunkUnsub);
-    (window as any).electron.onStreamEnd = jest.fn(() => endUnsub);
-    (window as any).electron.onStreamError = jest.fn(() => errorUnsub);
+    (window as any).electron.subscribeToStream = jest.fn(() => {
+      return jest.fn(() => { chunkUnsub(); endUnsub(); errorUnsub(); });
+    });
 
     // Start with an empty message list and then trigger a send to create subscriptions
     const { getByLabelText, getByText, unmount } = render(<App />);
@@ -75,8 +71,8 @@ describe('cancel flow (renderer)', () => {
     // Send should be enabled now
     fireEvent.click(sendBtn);
 
-    // Wait for subscriptions to be registered; onStreamChunk should have been called
-    await waitFor(() => expect((window as any).electron.onStreamChunk).toHaveBeenCalled());
+    // Wait for subscriptions to be registered; subscribeToStream should have been called
+    await waitFor(() => expect((window as any).electron.subscribeToStream).toHaveBeenCalled());
 
     // Unmount the App which should trigger unsubscribe cleanup
     unmount();

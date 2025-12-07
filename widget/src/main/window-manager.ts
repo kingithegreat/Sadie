@@ -12,12 +12,20 @@ export function createMainWindow(): BrowserWindow {
 
   // Create the browser window
   mainWindow = new BrowserWindow({
-    width: 450,
-    height: 650,
-    resizable: false,
+    width: 1200,
+    height: 800,
+    // Allow OS-level resizing by default; keep other flags that make the
+    // window behave like a widget. Frameless windows remove native resize
+    // controls on some OSes, so set "frame: true" if you want a native
+    // titlebar and system resize handles. You can also use a custom
+    // draggable/resizable UI if you prefer to keep frameless.
+    resizable: true,
+    maximizable: true,
+    minimizable: true,
+    closable: true,
     movable: true,
-    alwaysOnTop: true,
-    frame: false,
+    alwaysOnTop: false,
+    frame: true,
     transparent: false,
     show: false,
     webPreferences: {

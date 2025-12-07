@@ -1,10 +1,11 @@
-name: "Widget E2E Tests"
+# Widget E2E Full Matrix Workflow
+name: Widget E2E Tests
+
 on:
-  pull_request:
+  push:
     branches:
       - feature/renderer-ui-wiring
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
+  pull_request:
 
 jobs:
   e2e:

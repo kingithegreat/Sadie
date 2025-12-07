@@ -47,6 +47,26 @@ export interface Message {
   image?: ImageAttachment | null;
 }
 
+// Memory/Conversation types
+export interface StoredConversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationStore {
+  conversations: StoredConversation[];
+  activeConversationId: string | null;
+}
+
+export interface MemoryResult<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
 export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
@@ -76,5 +96,24 @@ export interface ElectronAPI {
   onStreamChunk?: (callback: (data: { streamId?: string; chunk: string }) => void) => (() => void) | void;
   onStreamEnd?: (callback: (data: { streamId?: string; cancelled?: boolean }) => void) => (() => void) | void;
   onStreamError?: (callback: (err: { streamId?: string; error?: string }) => void) => (() => void) | void;
+  /**
+   * Convenience helper: subscribe to a specific streamId and receive
+   * chunk/end/error callbacks grouped together. Returns an unsubscribe function.
+   */
+  subscribeToStream?: (streamId: string, handlers: {
+    onStreamChunk?: (data: { streamId?: string; chunk: string }) => void;
+    onStreamEnd?: (data: { streamId?: string; cancelled?: boolean }) => void;
+    onStreamError?: (err: { streamId?: string; error?: string }) => void;
+  }) => (() => void) | void;
   onMessage?: (callback: (data: any) => void) => (() => void) | void;
+  
+  // Memory/Conversation APIs
+  loadConversations?: () => Promise<MemoryResult<ConversationStore>>;
+  getConversation?: (conversationId: string) => Promise<MemoryResult<StoredConversation | null>>;
+  createConversation?: (title?: string) => Promise<MemoryResult<StoredConversation>>;
+  saveConversation?: (conversation: StoredConversation) => Promise<MemoryResult>;
+  deleteConversation?: (conversationId: string) => Promise<MemoryResult>;
+  setActiveConversation?: (conversationId: string | null) => Promise<MemoryResult>;
+  addMessage?: (conversationId: string, message: Message) => Promise<MemoryResult>;
+  updateMessage?: (conversationId: string, messageId: string, updates: Partial<Message>) => Promise<MemoryResult>;
 }
