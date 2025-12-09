@@ -174,7 +174,10 @@ function isAllowedDomain(url: string): boolean {
     'wikipedia.org',
     'duckduckgo.com',
     'google.com/search',
-    'bing.com/search'
+    'bing.com/search',
+    'brave.com',
+    'account.brave.com',
+    'search.brave.com'
   ];
   return !blockedDomains.some(domain => url.includes(domain));
 }
@@ -337,11 +340,11 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     const maxResults = Math.min(Math.max(1, args.maxResults || 5), 10);
     let results: Array<{ title: string; url: string; snippet: string }> = [];
     
-    // Try multiple search engines in order of reliability
+    // Try multiple search engines - DuckDuckGo is most reliable for actual results
     const searchEngines = [
+      { name: 'DuckDuckGo', fn: searchDuckDuckGo },
       { name: 'Google', fn: searchGoogle },
-      { name: 'Brave', fn: searchBrave },
-      { name: 'DuckDuckGo', fn: searchDuckDuckGo }
+      { name: 'Brave', fn: searchBrave }
     ];
     
     for (const engine of searchEngines) {
