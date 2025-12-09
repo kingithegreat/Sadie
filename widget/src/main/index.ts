@@ -6,6 +6,18 @@ import { registerIpcHandlers } from './ipc-handlers';
 // Load environment variables
 require('dotenv').config();
 
+// Hard-lock production environment for packaged builds (portable safe)
+if (process.env.NODE_ENV === undefined || process.env.NODE_ENV === null) {
+  process.env.NODE_ENV = app.isPackaged ? 'production' : 'development';
+}
+// Always set SADIE_ENV to desktop (locked)
+process.env.SADIE_ENV = 'desktop';
+
+// Initialize logging early
+import { initLogging, logStartup, logError } from './utils/logger';
+initLogging();
+logStartup(`Starting SADIE, NODE_ENV=${process.env.NODE_ENV}, SADIE_ENV=${process.env.SADIE_ENV}`);
+
 // Enable Chrome flags for Web Speech API
 app.commandLine.appendSwitch('enable-speech-dispatcher');
 app.commandLine.appendSwitch('enable-features', 'WebSpeechAPI');
@@ -28,6 +40,8 @@ let mainWindow: BrowserWindow | null = null;
 app.whenReady().then(() => {
   // Register IPC handlers BEFORE window creation to satisfy early renderer invokes
   registerIpcHandlers();
+
+  logStartup('Registered IPC handlers.');
 
   mainWindow = createMainWindow();
 
@@ -75,4 +89,14 @@ app.on('window-all-closed', () => {
 // Handle cleanup
 app.on('before-quit', () => {
   mainWindow = null;
+});
+
+// Global error handlers to write to startup log
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  logError(err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+  logError(reason);
 });

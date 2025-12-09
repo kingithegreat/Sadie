@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import TelemetryConsentModal from './TelemetryConsentModal';
+import type { Settings as SharedSettings } from '../../shared/types';
 
 interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   widgetHotkey: string;
   uncensoredMode?: boolean;
+  telemetryEnabled?: boolean;
+  permissions?: Record<string, boolean>;
+  telemetryConsentTimestamp?: string;
+  telemetryConsentVersion?: string;
 }
 
 interface SettingsPanelProps {
-  settings: Settings;
-  onSave: (settings: Settings) => void;
+  settings: SharedSettings;
+  onSave: (settings: SharedSettings) => void;
   onClose: () => void;
 }
 
@@ -20,10 +26,31 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const [localSettings, setLocalSettings] = useState<Settings>(settings);
   const [uncensoredMode, setUncensoredMode] = useState(false);
+  const [telemetryEnabled, setTelemetryEnabled] = useState<boolean>(!!(settings as any).telemetryEnabled);
+  const [permissions, setPermissions] = useState<Record<string, boolean>>(((settings as any).permissions || {}) as Record<string, boolean>);
+  const [showTelemetryModal, setShowTelemetryModal] = useState(false);
+
+  const PERMISSION_DESCRIPTIONS: Record<string, string> = {
+    read_file: 'Read the contents of a file (safe).',
+    list_directory: 'List files/folders within a directory (safe).',
+    create_directory: 'Create a directory/folder in your home folder.',
+    get_file_info: 'Get details about a file or folder (size, dates).',
+    copy_file: 'Copy files and folders.',
+    write_file: 'Write or modify files. Dangerous: could overwrite or leak sensitive data.',
+    delete_file: 'Delete files or folders permanently. Dangerous: irreversible.',
+    move_file: 'Move or rename files or folders. Dangerous: may overwrite.',
+    launch_app: 'Launch external applications on your system (e.g., notepad, chrome).',
+    screenshot: 'Take screenshots of your display and save them to disk.',
+    open_url: 'Open URLs in your default browser (safe), but could lead to external content.',
+    web_search: 'Perform web searches to retrieve results.',
+    nba_query: 'Query NBA stats and team information from trusted sources (ESPN).'
+  };
 
   // Update local settings when props change
   useEffect(() => {
     setLocalSettings(settings);
+    setTelemetryEnabled(!!(settings as any).telemetryEnabled);
+    setPermissions((settings as any).permissions || {});
   }, [settings]);
 
   // Load uncensored mode state on mount
@@ -125,6 +152,97 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               : 'Using llama3.2:3b - Standard safety filters'}
           </small>
         </div>
+
+        <div className="setting-group">
+            <label className="setting-label">
+              <input
+                type="checkbox"
+                checked={telemetryEnabled}
+                onChange={(e) => {
+                  // If enabling telemetry, show consent modal before enabling
+                  if (e.target.checked) {
+                    setShowTelemetryModal(true);
+                  } else {
+                    setTelemetryEnabled(false);
+                    setLocalSettings({ ...localSettings, telemetryEnabled: false } as any);
+                  }
+                }}
+              />
+              <span>🛡️ Telemetry (opt-in)</span>
+            </label>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Permissions</label>
+          <small className="setting-hint">Enable or disable specific tools.</small>
+          <div className="permission-grid space-y-2">
+            {Object.keys(permissions).map((k) => (
+              <div key={k} className="flex items-start gap-3">
+                <label className="setting-label inline-flex items-center mr-3">
+                  <input
+                    type="checkbox"
+                    checked={!!permissions[k]}
+                    onChange={(e) => {
+                      const next = { ...permissions, [k]: e.target.checked };
+                      setPermissions(next);
+                      setLocalSettings({ ...localSettings, permissions: next } as any);
+                    }}
+                  />
+                  <span className="ml-2">{k.replace(/_/g, ' ')}</span>
+                </label>
+                <small className="text-zinc-500">{PERMISSION_DESCRIPTIONS[k] || 'No description available.'}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="setting-group">
+          <button
+            className="button button-secondary"
+            onClick={async () => {
+              // Reset permissions to defaults by calling a dedicated IPC to avoid ambiguity
+              const result = await (window as any).electron.resetPermissions();
+              if (result) {
+                const newPerms = (result as any).permissions || {};
+                setPermissions(newPerms);
+                setLocalSettings({ ...localSettings, permissions: newPerms } as any);
+              }
+            }}
+          >
+            Reset permissions to defaults
+          </button>
+        </div>
+        <div className="setting-group">
+          <label className="setting-label">Telemetry consent</label>
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-zinc-400">{localSettings.telemetryConsentTimestamp ? `Consented: ${localSettings.telemetryConsentTimestamp} (v${localSettings.telemetryConsentVersion || '1.0'})` : 'No consent on record'}</div>
+            <button className="button button-secondary" onClick={async () => {
+              const r = await (window as any).electron.exportTelemetryConsent();
+              if (r && r.success) {
+                alert(`Consent exported to ${r.path}`);
+              } else {
+                alert(`Failed to export consent: ${r?.error}`);
+              }
+            }}>
+              Export consent JSON
+            </button>
+          </div>
+        </div>
+        <TelemetryConsentModal
+          open={showTelemetryModal}
+          onAccept={async () => {
+            // Persist immediately so telemetry consent is logged
+            const updated = await (window as any).electron.saveSettings({ ...localSettings, telemetryEnabled: true });
+            setTelemetryEnabled(true);
+            setLocalSettings({ ...localSettings, telemetryEnabled: true, telemetryConsentTimestamp: updated.telemetryConsentTimestamp });
+            setShowTelemetryModal(false);
+          }}
+          onDecline={() => {
+            setShowTelemetryModal(false);
+            setTelemetryEnabled(false);
+            setLocalSettings({ ...localSettings, telemetryEnabled: false });
+          }}
+          onClose={() => setShowTelemetryModal(false)}
+        />
       </div>
 
       <div className="settings-footer">

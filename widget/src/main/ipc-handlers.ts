@@ -3,6 +3,7 @@ import { getMainWindow } from './window-manager';
 import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
+import { getSettings, saveSettings } from './config-manager';
 import {
   MemoryManager,
   StoredConversation,
@@ -71,14 +72,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.on('sadie:message', async (_event, { message, conversationId }) => {
     try {
-      // Load settings to get n8n URL
-      const settingsPath = getSettingsPath();
-      let settings = DEFAULT_SETTINGS;
-      
-      if (fs.existsSync(settingsPath)) {
-        const data = fs.readFileSync(settingsPath, 'utf8');
-        settings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
-      }
+          // Load settings to get n8n URL
+          const settings = getSettings();
 
       // Send message to n8n orchestrator
       const response = await axios.post(`${settings.n8nUrl}/webhook/sadie/chat`, {
@@ -124,17 +119,22 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.handle('sadie:get-settings', async () => {
     try {
-      const settingsPath = getSettingsPath();
-      
-      if (fs.existsSync(settingsPath)) {
-        const data = fs.readFileSync(settingsPath, 'utf8');
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
-      }
-      
-      return DEFAULT_SETTINGS;
+      return getSettings();
     } catch (err: any) {
       console.error('Error loading settings:', err.message);
-      return DEFAULT_SETTINGS;
+      return getSettings();
+    }
+  });
+
+  // Check a single permission for a given tool (used by renderer to hide/disable UI)
+  ipcMain.handle('sadie:has-permission', async (_event, toolName: string) => {
+    try {
+      const { assertPermission } = require('./config-manager');
+      const allowed = assertPermission(toolName);
+      return { success: true, allowed };
+    } catch (err: any) {
+      console.error('Error checking permission:', err.message);
+      return { success: false, error: err.message };
     }
   });
 
@@ -143,16 +143,33 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.handle('sadie:save-settings', async (_event, settings) => {
     try {
-      const settingsPath = getSettingsPath();
-      
-      // Merge with defaults to ensure all keys exist
-      const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
-      
-      fs.writeFileSync(settingsPath, JSON.stringify(mergedSettings, null, 2), 'utf8');
-      
-      return { success: true };
+      const merged = { ...getSettings(), ...settings };
+      saveSettings(merged);
+      return { success: true, data: merged };
     } catch (err: any) {
       console.error('Error saving settings:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('sadie:reset-permissions', async () => {
+    try {
+      const { resetPermissions, getSettings } = require('./config-manager');
+      const updated = resetPermissions();
+      return { success: true, data: updated };
+    } catch (err: any) {
+      console.error('Error resetting permissions:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('sadie:export-consent', async () => {
+    try {
+      const { exportTelemetryConsent } = require('./config-manager');
+      const result = exportTelemetryConsent();
+      return result;
+    } catch (err: any) {
+      console.error('Error exporting telemetry consent:', err.message);
       return { success: false, error: err.message };
     }
   });

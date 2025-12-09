@@ -15,8 +15,10 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
   use: {
+    env: { SADIE_E2E: 'true' },
     trace: 'on-first-retry',
     video: 'on-first-retry',
     screenshot: 'only-on-failure'
   }
 });
+

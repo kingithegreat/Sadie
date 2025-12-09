@@ -15,6 +15,7 @@ import {
   ToolCall
 } from './types';
 import { fileSystemTools } from './filesystem';
+import { assertPermission } from '../config-manager';
 import { systemToolDefs, systemToolHandlers } from './system';
 import { webToolDefs, webToolHandlers } from './web';
 import { voiceToolDefs, voiceToolHandlers } from './voice';
@@ -87,6 +88,19 @@ export async function executeTool(
   
   console.log(`[SADIE Tools] Executing: ${call.name}`, call.arguments);
   
+  // Check permission first
+  try {
+    const allowed = assertPermission(call.name);
+    if (!allowed) {
+      console.warn(`[SADIE Tools] Permission denied for tool: ${call.name}`);
+      return { success: false, error: `Permission denied: ${call.name}` };
+    }
+  } catch (e) {
+    // Fail closed if any error occurs while checking permission
+    console.error(`[SADIE Tools] Permission check failed: ${e}`);
+    return { success: false, error: 'Permission check failed' };
+  }
+
   // Check if confirmation is required
   console.log(`[SADIE Tools] requiresConfirmation=${tool.definition.requiresConfirmation}, hasCallback=${!!context.requestConfirmation}`);
   if (tool.definition.requiresConfirmation && context.requestConfirmation) {

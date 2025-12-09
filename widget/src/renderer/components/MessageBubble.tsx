@@ -15,7 +15,12 @@ export function MessageBubble({
   const state = message.streamingState;
 
   return (
-    <div className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}>
+    <div
+      className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}
+      data-role={isAssistant ? 'assistant-message' : 'user-message'}
+      data-state={state || ''}
+      data-message-id={message.id ?? ''}
+    >
       {/* Avatar */}
       <div className={`message-avatar ${isUser ? 'user' : 'assistant'}`}>
         {isUser ? '👤' : '✨'}
@@ -55,7 +60,7 @@ export function MessageBubble({
             )}
 
             {state === "cancelled" && (
-              <span className="status-text" style={{ color: '#FCD34D' }}>Stopped</span>
+              <span className="status-text" style={{ color: '#FCD34D' }}>Cancelled</span>
             )}
 
             {state === "error" && (

@@ -3,6 +3,7 @@ import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
 import SettingsPanel from "./components/SettingsPanel";
+import FirstRunModal from './components/FirstRunModal';
 import ConversationSidebar from "./components/ConversationSidebar";
 import type {
   ChatMessage,
@@ -123,6 +124,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     return () => { mounted = false; };
   }, [newId, initialMessages]);
 
+  // show first-run onboarding modal if enabled
+  const [firstRunOpen, setFirstRunOpen] = useState(false);
+
+  useEffect(() => {
+    if (isHydrated && settings?.firstRun) {
+      setFirstRunOpen(true);
+    }
+  }, [isHydrated, settings?.firstRun]);
+
   // Ensure we clean up any remaining stream listeners when the component
   // unmounts to avoid memory leaks.
   useEffect(() => {
@@ -211,8 +221,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    */
   const saveSettings = async (newSettings: SharedSettings) => {
     try {
-      await window.electron.saveSettings(newSettings);
-      setSettings(newSettings);
+      const updated = await window.electron.saveSettings(newSettings);
+      setSettings(prev => ({ ...prev, ...updated }));
     } catch (err) {
       console.error('Failed to save settings:', err);
     }
@@ -649,6 +659,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           settings={settings}
           onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {firstRunOpen && (
+        <FirstRunModal
+          open={firstRunOpen}
+          settings={settings as any}
+          onSave={(s) => saveSettings(s as any)}
+          onClose={() => setFirstRunOpen(false)}
         />
       )}
     </div>

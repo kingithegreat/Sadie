@@ -30,6 +30,7 @@ export const IPC_SEND_MESSAGE = 'sadie:message';
 export const IPC_REPLY = 'sadie:reply';
 export const IPC_GET_SETTINGS = 'sadie:get-settings';
 export const IPC_SAVE_SETTINGS = 'sadie:save-settings';
+export const IPC_HAS_PERMISSION = 'sadie:has-permission';
 export const IPC_CHECK_CONNECTION = 'sadie:check-connection';
 
 // UI Configuration

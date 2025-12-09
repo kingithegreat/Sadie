@@ -81,6 +81,14 @@ export interface Settings {
   n8nUrl: string;
   widgetHotkey: string;
   uncensoredMode?: boolean;
+  // First-run / telemetry
+  firstRun?: boolean;
+  telemetryEnabled?: boolean;
+  telemetryConsentTimestamp?: string;
+  telemetryConsentVersion?: string;
+  // Per-tool permissions (keys are tool names)
+  permissions?: Record<string, boolean>;
+  defaultTeam?: string;
 }
 
 export interface ConnectionStatus {
@@ -93,6 +101,7 @@ export interface ElectronAPI {
   sendMessage: (request: SadieRequest) => Promise<SadieResponse>;
   getSettings: () => Promise<Settings>;
   saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
+  hasPermission?: (toolName: string) => Promise<{ success: boolean; allowed?: boolean; error?: string }>;
   checkConnection: () => Promise<ConnectionStatus>;
   onShowWindow: (callback: () => void) => void;
   onHideWindow: (callback: () => void) => void;
@@ -140,4 +149,6 @@ export interface ElectronAPI {
   // Confirmation for dangerous operations
   onConfirmationRequest?: (cb: (data: { confirmationId: string; message: string; streamId: string }) => void) => () => void;
   sendConfirmationResponse?: (confirmationId: string, confirmed: boolean) => void;
+  exportTelemetryConsent?: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  resetPermissions?: () => Promise<Settings>;
 }

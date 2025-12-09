@@ -23,6 +23,9 @@ const ALLOWED_CHANNELS = {
   RECEIVE: 'sadie:reply',
   GET_SETTINGS: 'sadie:get-settings',
   SAVE_SETTINGS: 'sadie:save-settings',
+  HAS_PERMISSION: 'sadie:has-permission',
+  RESET_PERMISSIONS: 'sadie:reset-permissions',
+  EXPORT_CONSENT: 'sadie:export-consent',
   SHOW_WINDOW: 'sadie:show-window',
   HIDE_WINDOW: 'sadie:hide-window',
   STREAM_SEND: 'sadie:stream-message',
@@ -172,9 +175,27 @@ const electronAPI: ElectronAPI = {
    * Save user settings to main process
    */
   saveSettings: async (settings: Partial<Settings>): Promise<Settings> => {
-    // saveSettings should return the updated settings object from main
-    const result = await ipcRenderer.invoke(ALLOWED_CHANNELS.SAVE_SETTINGS, settings);
-    return result as Settings;
+    // saveSettings returns the updated settings (wrapped in { success:true, data })
+    const result: any = await ipcRenderer.invoke(ALLOWED_CHANNELS.SAVE_SETTINGS, settings);
+    if (result && result.success && result.data) {
+      return result.data as Settings;
+    }
+    // If something went wrong, fallback to current Settings
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SETTINGS) as Settings;
+  },
+
+  resetPermissions: async (): Promise<Settings> => {
+    const r = await ipcRenderer.invoke(ALLOWED_CHANNELS.RESET_PERMISSIONS);
+    if (r && r.success && r.data) return r.data as Settings;
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SETTINGS) as Settings;
+  },
+
+  exportTelemetryConsent: async (): Promise<{ success: boolean; path?: string; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.EXPORT_CONSENT);
+  },
+
+  hasPermission: async (toolName: string): Promise<{ success: boolean; allowed?: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.HAS_PERMISSION, toolName);
   },
 
   checkConnection: async (): Promise<ConnectionStatus> => {

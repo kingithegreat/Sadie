@@ -1,0 +1,8 @@
+﻿# Ignore build output and generated artifacts
+dist-electron/
+widget/dist-electron/
+SADIE-portable.zip
+*.asar
+widget/test-results/
+test-results/
+widget/dist-electron/win-unpacked/*
