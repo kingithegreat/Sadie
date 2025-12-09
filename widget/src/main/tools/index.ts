@@ -20,6 +20,7 @@ import { webToolDefs, webToolHandlers } from './web';
 import { voiceToolDefs, voiceToolHandlers } from './voice';
 import { memoryToolDefs, memoryToolHandlers } from './memory';
 import { documentToolDefs, documentToolHandlers } from './documents';
+import { nbaQueryDef, nbaQueryHandler } from './nba';
 
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
@@ -244,6 +245,9 @@ export function initializeTools(): void {
       registerTool(def.name, def, handler);
     }
   }
+
+  // Register NBA tool (balldontlie)
+  registerTool(nbaQueryDef.name, nbaQueryDef, nbaQueryHandler);
   
   console.log(`[SADIE Tools] Initialized ${toolRegistry.size} tools`);
 }
