@@ -1,0 +1,123 @@
+{
+  "name": "SADIE Main Orchestrator (Streaming)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie/chat/stream",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "sadie-streaming"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and prepare request for Ollama streaming\nconst body = $input.item.json.body || $input.item.json;\nconst userMessage = body.message || body.text || '';\nconst conversationId = body.conversation_id || 'default';\nconst userId = body.user_id || 'user';\n\n// Simple system prompt\nconst systemPrompt = `You are Sadie, a helpful AI assistant. Be concise and friendly.`;\n\n// Build prompt (simplified - no history for now to ensure streaming works)\nconst prompt = `${systemPrompt}\\n\\nUser: ${userMessage}\\n\\nAssistant:`;\n\nreturn {\n  json: {\n    model: 'llama3.2:3b',\n    prompt: prompt,\n    stream: true,\n    user_message: userMessage,\n    conversation_id: conversationId,\n    user_id: userId\n  }\n};"
+      },
+      "id": "prepare-streaming-request",
+      "name": "Prepare Streaming Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": $json.model,\n  \"prompt\": $json.prompt,\n  \"stream\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "stream"
+            }
+          }
+        }
+      },
+      "id": "stream-from-ollama",
+      "name": "Stream from Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $binary }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/event-stream"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-cache"
+              },
+              {
+                "name": "Connection",
+                "value": "keep-alive"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-stream",
+      "name": "Respond Stream",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Streaming Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Streaming Request": {
+      "main": [
+        [
+          {
+            "node": "Stream from Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stream from Ollama": {
+      "main": [
+        [
+          {
+            "node": "Respond Stream",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-12-08T00:00:00.000Z",
+  "versionId": "4"
+}

@@ -263,6 +263,58 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  /**
+   * Start Windows speech recognition (offline capable)
+   * Uses Windows SAPI through PowerShell
+   */
+  ipcMain.handle('sadie:start-speech-recognition', async () => {
+    const { exec } = require('child_process');
+    
+    return new Promise((resolve) => {
+      // PowerShell script to use Windows Speech Recognition
+      const psScript = `
+Add-Type -AssemblyName System.Speech
+$recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+$recognizer.SetInputToDefaultAudioDevice()
+
+# Create a simple grammar that accepts any dictation
+$dictation = New-Object System.Speech.Recognition.DictationGrammar
+$recognizer.LoadGrammar($dictation)
+
+# Listen for 10 seconds max
+$recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(5)
+$recognizer.BabbleTimeout = [TimeSpan]::FromSeconds(3)
+$recognizer.EndSilenceTimeout = [TimeSpan]::FromSeconds(1)
+
+try {
+    $result = $recognizer.Recognize([TimeSpan]::FromSeconds(10))
+    if ($result -and $result.Text) {
+        Write-Output $result.Text
+    } else {
+        Write-Output ""
+    }
+} catch {
+    Write-Output ""
+} finally {
+    $recognizer.Dispose()
+}
+`;
+
+      exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
+        { timeout: 15000 }, 
+        (error: any, stdout: string, stderr: string) => {
+          if (error) {
+            console.error('Speech recognition error:', error.message);
+            resolve({ success: false, error: 'Speech recognition failed', text: '' });
+          } else {
+            const text = stdout.trim();
+            resolve({ success: true, text });
+          }
+        }
+      );
+    });
+  });
+
   // Mark registration complete
   g.__sadie_ipc_registered = true;
   if (process.env.NODE_ENV === 'development') {

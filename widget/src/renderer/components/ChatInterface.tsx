@@ -20,7 +20,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
 
       {/* Fixed input box at bottom */}
       <div className="input-container">
-        <InputBox onSendMessage={onSendMessage} />
+        <div className="input-wrapper">
+          <InputBox onSendMessage={onSendMessage} />
+        </div>
       </div>
     </div>
   );

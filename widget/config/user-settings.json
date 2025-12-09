@@ -1,0 +1,5 @@
+{
+  "alwaysOnTop": true,
+  "n8nUrl": "http://localhost:5678",
+  "widgetHotkey": "Ctrl+Shift+Space"
+}

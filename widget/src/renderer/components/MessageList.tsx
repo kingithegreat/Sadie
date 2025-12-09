@@ -17,8 +17,21 @@ export function MessageList({
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
+  // Show welcome message if no messages
+  if (messages.length === 0) {
+    return (
+      <div className="welcome-container">
+        <div className="welcome-icon">✨</div>
+        <h2 className="welcome-title">Hello! I'm SADIE</h2>
+        <p className="welcome-subtitle">
+          Your friendly local AI assistant. I can help you with questions, create folders, move files, and more. What would you like to do today?
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full overflow-y-auto px-4 py-4 space-y-3">
+    <div className="message-list">
       {messages.map((m) => (
         <MessageBubble
           key={m.id}

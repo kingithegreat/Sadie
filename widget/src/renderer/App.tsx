@@ -3,6 +3,7 @@ import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
 import SettingsPanel from "./components/SettingsPanel";
+import ConversationSidebar from "./components/ConversationSidebar";
 import type {
   ChatMessage,
   StreamingState,
@@ -15,6 +16,7 @@ import type {
   Message as SharedMessage,
   ConnectionStatus,
   ImageAttachment,
+  DocumentAttachment,
   SadieRequestWithImages,
   Settings as SharedSettings,
   StoredConversation,
@@ -51,6 +53,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [pendingToolCall, setPendingToolCall] = useState<any | null>(null);
   const [pendingConfirmationData, setPendingConfirmationData] = useState<any>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settings, setSettings] = useState<SharedSettings>({
     alwaysOnTop: true,
     n8nUrl: 'http://localhost:5678',
@@ -131,6 +134,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     };
   }, []);
 
+  // Listen for confirmation requests from main process (dangerous operations)
+  useEffect(() => {
+    const unsubscribe = window.electron.onConfirmationRequest?.((data) => {
+      console.log('[App] Confirmation request received:', data);
+      setPendingConfirmationData({
+        confirmationId: data.confirmationId,
+        message: data.message,
+        streamId: data.streamId
+      });
+      setAwaitingConfirmation(true);
+    });
+    
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   /**
    * Load user settings from main process
    */
@@ -195,6 +215,64 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       setSettings(newSettings);
     } catch (err) {
       console.error('Failed to save settings:', err);
+    }
+  };
+
+  /**
+   * Handle creating a new conversation
+   */
+  const handleNewConversation = async () => {
+    try {
+      const result = await window.electron.createConversation?.();
+      if (result?.success && result.data) {
+        setConversationId(result.data.id);
+        setMessages([]);
+        await window.electron.setActiveConversation?.(result.data.id);
+      }
+    } catch (err) {
+      console.error('Failed to create conversation:', err);
+    }
+  };
+
+  /**
+   * Handle selecting a different conversation
+   */
+  const handleSelectConversation = async (id: string) => {
+    try {
+      const convData = await window.electron.getConversation?.(id);
+      if (convData?.success && convData.data) {
+        setConversationId(id);
+        await window.electron.setActiveConversation?.(id);
+        
+        // Convert stored messages to ChatMessage format
+        const loadedMsgs: ChatMessage[] = convData.data.messages.map((m: SharedMessage) => ({
+          id: m.id ?? newId(),
+          role: m.role as any,
+          content: m.content,
+          createdAt: Date.parse(m.timestamp) || Date.now(),
+          streamingState: (m.streamingState as any) || undefined,
+          error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
+        }));
+        setMessages(loadedMsgs);
+      }
+    } catch (err) {
+      console.error('Failed to load conversation:', err);
+    }
+  };
+
+  /**
+   * Handle deleting a conversation
+   */
+  const handleDeleteConversation = async (id: string) => {
+    try {
+      await window.electron.deleteConversation?.(id);
+      
+      // If we deleted the current conversation, create a new one
+      if (id === conversationId) {
+        await handleNewConversation();
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
     }
   };
 
@@ -347,16 +425,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
   }, [unsubscribeStream, conversationId, updatePersistedMessage]);
 
-  const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null) => {
+  const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim() ?? '';
-    if (!text && (!images || images.length === 0)) return;
+    if (!text && (!images || images.length === 0) && (!documents || documents.length === 0)) return;
+
+    // If documents are attached, prepend info about them to the message
+    let messageText = text;
+    if (documents && documents.length > 0) {
+      const docInfo = documents.map(d => `[Document attached: ${d.filename}]`).join('\n');
+      messageText = docInfo + (text ? '\n\n' + text : '\n\nPlease analyze this document.');
+    }
 
     // Add user message
     const userId = newId();
     const userMsg: ChatMessage = {
       id: userId,
       role: 'user',
-      content: text,
+      content: messageText,
       createdAt: Date.now(),
     };
     setMessages(prev => [...prev, userMsg]);
@@ -385,12 +470,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     const streamRequest: (SadieRequestWithImages & { streamId?: string }) = {
       user_id: 'desktop_user',
       conversation_id: conversationId || 'default',
-      message: text,
+      message: messageText,
       timestamp: new Date().toISOString(),
     };
     if (images && images.length > 0) {
       streamRequest.images = images;
       if (images.length === 1) streamRequest.image = images[0];
+    }
+    if (documents && documents.length > 0) {
+      streamRequest.documents = documents;
     }
 
     // register a single unsubscribe placeholder if subscribeToStream used the subscription
@@ -439,11 +527,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Handle confirmation approval
    */
   const handleConfirmAction = () => {
-    if (!pendingToolCall) return;
-
-    // Send confirmation to orchestrator
-    const confirmationMessage = `CONFIRM: ${pendingToolCall.tool_name}`;
-    window.electron.sendMessage?.({ user_id: 'desktop_user', conversation_id: conversationId, message: confirmationMessage } as any);
+    // Send confirmation response to main process
+    if (pendingConfirmationData?.confirmationId) {
+      window.electron.sendConfirmationResponse?.(pendingConfirmationData.confirmationId, true);
+    }
 
     // Clear confirmation state
     setAwaitingConfirmation(false);
@@ -499,6 +586,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Handle confirmation rejection
    */
   const handleRejectAction = () => {
+    // Send rejection response to main process
+    if (pendingConfirmationData?.confirmationId) {
+      window.electron.sendConfirmationResponse?.(pendingConfirmationData.confirmationId, false);
+    }
+
     setMessages(prev => [...prev, {
       id: newId(),
       role: 'system',
@@ -516,17 +608,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
   return (
     <div className="app-container">
-      {/* Status Indicator */}
-      <StatusIndicator connectionStatus={status} onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) setStatus(c); } catch (e) { /* ignore */ } }} onSettingsClick={() => setSettingsOpen(true)} />
+      {/* Conversation Sidebar */}
+      <ConversationSidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        currentConversationId={conversationId}
+        onSelectConversation={handleSelectConversation}
+        onNewConversation={handleNewConversation}
+        onDeleteConversation={handleDeleteConversation}
+      />
 
-      {/* Settings Toggle Button */}
-      <button 
-        className="settings-toggle"
-        onClick={() => setSettingsOpen(!settingsOpen)}
-        title="Settings"
-      >
-        ⚙️
-      </button>
+      {/* Status Indicator / Header */}
+      <StatusIndicator 
+        connectionStatus={status} 
+        onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) setStatus(c); } catch (e) { /* ignore */ } }} 
+        onSettingsClick={() => setSettingsOpen(true)}
+        onMenuClick={() => setSidebarOpen(true)}
+      />
 
       {/* Main Chat Interface */}
       <ChatInterface 

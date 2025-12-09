@@ -18,6 +18,14 @@ export interface ImageAttachment {
   url?: string;
 }
 
+export interface DocumentAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  data: string; // base64-encoded content
+}
+
 /**
  * SadieRequest supports multiple images via `images`.
  * The single `image` field is kept for backward compatibility but is deprecated.
@@ -26,6 +34,7 @@ export interface SadieRequestWithImages extends SadieRequest {
   /** @deprecated Prefer `images` for multiple attachments */
   image?: ImageAttachment;
   images?: ImageAttachment[];
+  documents?: DocumentAttachment[];
 }
 
 export interface SadieResponse {
@@ -71,6 +80,7 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   widgetHotkey: string;
+  uncensoredMode?: boolean;
 }
 
 export interface ConnectionStatus {
@@ -116,4 +126,18 @@ export interface ElectronAPI {
   setActiveConversation?: (conversationId: string | null) => Promise<MemoryResult>;
   addMessage?: (conversationId: string, message: Message) => Promise<MemoryResult>;
   updateMessage?: (conversationId: string, messageId: string, updates: Partial<Message>) => Promise<MemoryResult>;
+  
+  // Speech recognition (Windows SAPI - offline capable)
+  startSpeechRecognition?: () => Promise<{ success: boolean; text: string; error?: string }>;
+  
+  // Uncensored mode toggle
+  setUncensoredMode?: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;
+  getUncensoredMode?: () => Promise<{ enabled: boolean }>;
+  
+  // Restart app
+  restartApp?: () => Promise<void>;
+  
+  // Confirmation for dangerous operations
+  onConfirmationRequest?: (cb: (data: { confirmationId: string; message: string; streamId: string }) => void) => () => void;
+  sendConfirmationResponse?: (confirmationId: string, confirmed: boolean) => void;
 }

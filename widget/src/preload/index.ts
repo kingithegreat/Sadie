@@ -28,7 +28,9 @@ const ALLOWED_CHANNELS = {
   STREAM_SEND: 'sadie:stream-message',
   STREAM_CHUNK: 'sadie:stream-chunk',
   STREAM_END: 'sadie:stream-end',
-  STREAM_ERROR: 'sadie:stream-error'
+  STREAM_ERROR: 'sadie:stream-error',
+  CONFIRMATION_REQUEST: 'sadie:confirmation-request',
+  CONFIRMATION_RESPONSE: 'sadie:confirmation-response'
 };
 
 // Create the API object
@@ -120,6 +122,17 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.STREAM_ERROR, listener);
   },
 
+  // Confirmation request/response for dangerous operations
+  onConfirmationRequest: (cb: (data: { confirmationId: string; message: string; streamId: string }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);
+  },
+
+  sendConfirmationResponse: (confirmationId: string, confirmed: boolean) => {
+    ipcRenderer.send(ALLOWED_CHANNELS.CONFIRMATION_RESPONSE, { confirmationId, confirmed });
+  },
+
   // removeStreamListeners is intentionally not exposed in the canonical API; use returned unsubscribes instead.
 
   // Cancel a running stream by id. If no id is provided, cancels all.
@@ -203,6 +216,25 @@ const electronAPI: ElectronAPI = {
 
   updateMessage: async (conversationId: string, messageId: string, updates: Partial<Message>): Promise<MemoryResult> => {
     return await ipcRenderer.invoke('sadie:update-message', { conversationId, messageId, updates });
+  },
+
+  // Speech recognition using Windows SAPI (offline capable)
+  startSpeechRecognition: async (): Promise<{ success: boolean; text: string; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:start-speech-recognition');
+  },
+
+  // Uncensored mode toggle
+  setUncensoredMode: async (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> => {
+    return await ipcRenderer.invoke('sadie:set-uncensored-mode', enabled);
+  },
+
+  getUncensoredMode: async (): Promise<{ enabled: boolean }> => {
+    return await ipcRenderer.invoke('sadie:get-uncensored-mode');
+  },
+
+  // Restart the app (for settings that require restart)
+  restartApp: async (): Promise<void> => {
+    return await ipcRenderer.invoke('sadie:restart-app');
   }
 };
 

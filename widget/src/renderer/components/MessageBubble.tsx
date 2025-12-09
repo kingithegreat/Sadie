@@ -12,60 +12,66 @@ export function MessageBubble({
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
-
   const state = message.streamingState;
 
   return (
-    <div
-      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-      data-role={isAssistant ? "assistant-message" : "user-message"}
-    >
-      <div
-        className={[
-          "max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow",
-          isUser
-            ? "bg-indigo-600 text-white rounded-br-md"
-            : "bg-zinc-900 text-zinc-100 rounded-bl-md border border-zinc-800",
-        ].join(" ")}
-      >
-        <div className="whitespace-pre-wrap break-words">
-          {message.content || (isAssistant && state === "streaming" ? "•••" : "")}
+    <div className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}>
+      {/* Avatar */}
+      <div className={`message-avatar ${isUser ? 'user' : 'assistant'}`}>
+        {isUser ? '👤' : '✨'}
+      </div>
+
+      {/* Message content */}
+      <div className="message-content">
+        <div className="message-bubble">
+          {/* Message text */}
+          {message.content || (isAssistant && state === "streaming" ? (
+            <div className="streaming-indicator">
+              <span className="dot"></span>
+              <span className="dot"></span>
+              <span className="dot"></span>
+            </div>
+          ) : "")}
         </div>
 
+        {/* Footer with status and actions */}
         {isAssistant && (
-          <div className="mt-2 flex items-center gap-2 text-xs opacity-80">
+          <div className="message-footer">
             {state === "streaming" && (
-              <button
-                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700"
-                onClick={() => onCancel(message.id!)}
-                aria-label="Stop generating"
-              >
-                Stop generating
-              </button>
+              <>
+                <span className="status-text streaming">Generating...</span>
+                <button
+                  className="message-action-btn"
+                  onClick={() => onCancel(message.id!)}
+                  aria-label="Stop generating"
+                >
+                  ⏹ Stop
+                </button>
+              </>
             )}
 
             {state === "cancelling" && (
-              <span className="text-amber-300">Cancelling…</span>
+              <span className="status-text" style={{ color: '#FCD34D' }}>Stopping...</span>
             )}
 
             {state === "cancelled" && (
-              <span className="text-amber-300">Cancelled</span>
+              <span className="status-text" style={{ color: '#FCD34D' }}>Stopped</span>
             )}
 
             {state === "error" && (
               <>
-                <span className="text-red-400 font-semibold">Error</span>
+                <span className="status-text error">Error</span>
                 <button
-                  className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700"
+                  className="message-action-btn"
                   onClick={() => onRetry(message.id!)}
                 >
-                  Retry
+                  ↻ Retry
                 </button>
               </>
             )}
 
             {state === "finished" && (
-              <span className="text-zinc-400">Done</span>
+              <span className="status-text">Done</span>
             )}
           </div>
         )}

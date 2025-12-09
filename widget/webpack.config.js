@@ -65,14 +65,13 @@ module.exports = (env, argv) => {
 
     // Renderer process configuration
     {
-      target: 'electron-renderer',
+      target: 'web',
       mode: isDevelopment ? 'development' : 'production',
       devtool: isDevelopment ? 'inline-source-map' : false,
       entry: './src/renderer/index.tsx',
       output: {
         path: path.resolve(__dirname, 'dist/renderer'),
-        filename: 'index.js',
-        libraryTarget: 'commonjs2'
+        filename: 'index.js'
       },
       resolve: {
         extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],

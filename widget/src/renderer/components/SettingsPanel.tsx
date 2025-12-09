@@ -4,6 +4,7 @@ interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   widgetHotkey: string;
+  uncensoredMode?: boolean;
 }
 
 interface SettingsPanelProps {
@@ -18,6 +19,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose
 }) => {
   const [localSettings, setLocalSettings] = useState<Settings>(settings);
+  const [uncensoredMode, setUncensoredMode] = useState(false);
+
+  // Update local settings when props change
+  useEffect(() => {
+    setLocalSettings(settings);
+  }, [settings]);
+
+  // Load uncensored mode state on mount
+  useEffect(() => {
+    (window as any).electron?.getUncensoredMode?.().then((result: { enabled: boolean }) => {
+      setUncensoredMode(result?.enabled || false);
+    });
+  }, []);
+
+  const handleUncensoredToggle = async (enabled: boolean) => {
+    setUncensoredMode(enabled);
+    await (window as any).electron?.setUncensoredMode?.(enabled);
+    // Model switches immediately - no restart needed
+  };
 
   // Update local settings when props change
   useEffect(() => {
@@ -87,6 +107,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           />
           <small className="setting-hint">
             Hotkey configuration requires restart
+          </small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={uncensoredMode}
+              onChange={(e) => handleUncensoredToggle(e.target.checked)}
+            />
+            <span>🔓 Uncensored Mode</span>
+          </label>
+          <small className="setting-hint" style={{ color: uncensoredMode ? '#f59e0b' : undefined }}>
+            {uncensoredMode 
+              ? 'Using dolphin-llama3:8b - No content filters' 
+              : 'Using llama3.2:3b - Standard safety filters'}
           </small>
         </div>
       </div>

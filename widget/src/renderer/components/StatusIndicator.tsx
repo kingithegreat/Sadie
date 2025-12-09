@@ -1,34 +1,49 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ConnectionStatus } from '../../shared/types';
 
 interface StatusIndicatorProps {
   connectionStatus: ConnectionStatus;
   onRefresh: () => void;
   onSettingsClick: () => void;
+  onMenuClick?: () => void;
 }
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   connectionStatus,
   onRefresh,
-  onSettingsClick
+  onSettingsClick,
+  onMenuClick
 }) => {
-  const getStatusColor = (status: 'online' | 'offline' | 'checking') => {
+  const [uncensoredMode, setUncensoredMode] = useState(false);
+
+  // Load uncensored mode state on mount
+  useEffect(() => {
+    (window as any).electron?.getUncensoredMode?.().then((result: { enabled: boolean }) => {
+      setUncensoredMode(result?.enabled || false);
+    });
+  }, []);
+
+  const handleUncensoredToggle = async () => {
+    const newValue = !uncensoredMode;
+    setUncensoredMode(newValue);
+    await (window as any).electron?.setUncensoredMode?.(newValue);
+  };
+
+  const getStatusClass = (status: 'online' | 'offline' | 'checking') => {
     switch (status) {
       case 'online':
-        return '#34c759';
-      case 'offline':
-        return '#ff3b30';
+        return 'connected';
       case 'checking':
-        return '#ff9500';
+        return 'checking';
       default:
-        return '#8e8e93';
+        return 'disconnected';
     }
   };
 
   const getStatusText = (status: 'online' | 'offline' | 'checking') => {
     switch (status) {
       case 'online':
-        return 'Online';
+        return 'Connected';
       case 'offline':
         return 'Offline';
       case 'checking':
@@ -39,106 +54,147 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   };
 
   return (
-    <div className="status-indicator">
-      <div className="status-badges">
-        <div className="status-badge">
-          <span 
-            className="status-dot"
-            style={{ backgroundColor: getStatusColor(connectionStatus.n8n) }}
-          />
-          <span className="status-label">n8n: {getStatusText(connectionStatus.n8n)}</span>
+    <div className="app-header">
+      {onMenuClick && (
+        <button
+          onClick={onMenuClick}
+          className="menu-btn"
+          title="Conversations"
+          aria-label="Open conversations"
+        >
+          ☰
+        </button>
+      )}
+      <h1>✨ SADIE</h1>
+      
+      <div className="status-bar-inline">
+        <div className="status-item">
+          <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} />
+          <span>Ollama</span>
         </div>
         
-        <div className="status-badge">
-          <span 
-            className="status-dot"
-            style={{ backgroundColor: getStatusColor(connectionStatus.ollama) }}
-          />
-          <span className="status-label">Ollama: {getStatusText(connectionStatus.ollama)}</span>
+        {/* Uncensored Mode Toggle */}
+        <div 
+          className={`uncensored-toggle ${uncensoredMode ? 'active' : ''}`}
+          onClick={handleUncensoredToggle}
+          title={uncensoredMode ? 'Uncensored Mode ON (dolphin-llama3:8b)' : 'Uncensored Mode OFF (llama3.2:3b)'}
+        >
+          <span className="toggle-icon">{uncensoredMode ? '🔓' : '🔒'}</span>
+          <span className="toggle-label">{uncensoredMode ? 'Uncensored' : 'Safe'}</span>
         </div>
       </div>
 
-      <div className="status-actions">
+      <div className="header-actions">
         <button
           onClick={onRefresh}
-          className="icon-button"
-          title="Refresh connection status"
+          className="header-btn"
+          title="Refresh connection"
           aria-label="Refresh"
         >
           ↻
         </button>
         <button
           onClick={onSettingsClick}
-          className="icon-button"
-          title="Open settings"
+          className="header-btn"
+          title="Settings"
           aria-label="Settings"
         >
-          ⚙
+          ⚙️
         </button>
       </div>
 
       <style>{`
-        .status-indicator {
+        .app-header {
           display: flex;
+          align-items: center;
           justify-content: space-between;
-          align-items: center;
-          padding: var(--spacing-sm) var(--spacing-md);
-          background: var(--bg-alt);
-          border-bottom: 1px solid var(--border);
+          padding: 8px 16px;
+          background: #1A1A1A;
+          border-bottom: 1px solid #333333;
+          -webkit-app-region: drag;
+          min-height: 48px;
         }
 
-        .status-badges {
-          display: flex;
-          gap: var(--spacing-md);
+        .app-header h1 {
+          font-size: 16px;
+          font-weight: 600;
+          color: #ECECEC;
+          letter-spacing: -0.3px;
+          margin: 0;
         }
 
-        .status-badge {
+        .status-bar-inline {
           display: flex;
           align-items: center;
-          gap: var(--spacing-xs);
+          gap: 16px;
+        }
+
+        .status-item {
+          display: flex;
+          align-items: center;
+          gap: 6px;
           font-size: 12px;
+          color: #B4B4B4;
         }
 
-        .status-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          display: inline-block;
+        .uncensored-toggle {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 12px;
+          background: #2a2a2a;
+          border: 1px solid #444;
+          cursor: pointer;
+          transition: all 150ms ease;
+          -webkit-app-region: no-drag;
+          font-size: 11px;
+          color: #888;
         }
 
-        .status-label {
-          color: var(--text);
+        .uncensored-toggle:hover {
+          background: #333;
+          border-color: #555;
+        }
+
+        .uncensored-toggle.active {
+          background: linear-gradient(135deg, #4a1a1a, #1a1a4a);
+          border-color: #f59e0b;
+          color: #f59e0b;
+        }
+
+        .uncensored-toggle .toggle-icon {
+          font-size: 14px;
+        }
+
+        .uncensored-toggle .toggle-label {
           font-weight: 500;
         }
 
-        .status-actions {
+        .header-actions {
           display: flex;
-          gap: var(--spacing-xs);
+          gap: 8px;
+          -webkit-app-region: no-drag;
         }
 
-        .icon-button {
+        .header-btn {
+          width: 32px;
+          height: 32px;
+          border: none;
+          border-radius: 8px;
           background: transparent;
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          width: 28px;
-          height: 28px;
+          color: #B4B4B4;
+          cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          cursor: pointer;
+          transition: 150ms ease;
           font-size: 16px;
-          color: var(--text);
-          transition: all 0.2s ease;
         }
 
-        .icon-button:hover {
-          background: var(--bg);
-          border-color: var(--primary);
-        }
-
-        .icon-button:focus {
-          outline: 2px solid var(--primary);
-          outline-offset: 2px;
+        .header-btn:hover {
+          background: #333333;
+          color: #ECECEC;
         }
       `}</style>
     </div>

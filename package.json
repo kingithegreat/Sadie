@@ -1,0 +1,12 @@
+{
+  "name": "sadie-root",
+  "version": "1.0.0",
+  "description": "SADIE Root - Redirects to widget",
+  "private": true,
+  "scripts": {
+    "start": "cd widget && npm start",
+    "build": "cd widget && npm run build",
+    "dev": "cd widget && npm run dev",
+    "test": "cd widget && npm test"
+  }
+}
