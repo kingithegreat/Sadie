@@ -776,10 +776,10 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
                   return;
                 }
               } catch (fallbackErr) {
-                if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback failed for streamId', streamId, 'error=', fallbackErr?.message || fallbackErr);
+                if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback failed for streamId', streamId, 'error=', (fallbackErr as any)?.message || fallbackErr);
               }
 
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: (err as any)?.message || String(err), streamId }); } catch (e) {}
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-error (proxy)', { streamId, error: err });
                           }
