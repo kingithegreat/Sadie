@@ -96,6 +96,12 @@ function validatePath(targetPath: string): { valid: boolean; resolved: string; e
   return { valid: true, resolved };
 }
 
+// Resolve a user-facing path (expands shortcuts and returns an absolute path)
+export function resolveUserPath(targetPath: string): string {
+  const validation = validatePath(targetPath);
+  return validation.resolved;
+}
+
 // ============= TOOL DEFINITIONS =============
 
 export const listDirectoryDef: ToolDefinition = {
