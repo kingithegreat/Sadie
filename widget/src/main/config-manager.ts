@@ -2,6 +2,7 @@ import { app } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
+import { isReleaseBuild } from './env';
 
 interface WindowPosition {
   x: number;
@@ -86,7 +87,9 @@ export function assertPermission(toolName: string): boolean {
 
 function getSettingsPath(): string {
   const userDataPath = app.getPath('userData');
-  return join(userDataPath, 'config', 'user-settings.json');
+  const path = join(userDataPath, 'config', 'user-settings.json');
+  if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Config path resolved:', path);
+  return path;
 }
 
 function ensureConfigDirectory(): void {
@@ -103,17 +106,34 @@ export function getSettings(): Settings {
     const settingsPath = getSettingsPath();
     
     if (!existsSync(settingsPath)) {
+      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings file does not exist, using defaults:', settingsPath);
       return { ...DEFAULT_SETTINGS };
     }
     
     const data = readFileSync(settingsPath, 'utf-8');
     const savedSettings = JSON.parse(data);
+    if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings loaded from:', settingsPath, 'keys:', Object.keys(savedSettings));
     
     // Merge with defaults to ensure all keys exist
     const merged = { ...DEFAULT_SETTINGS, ...savedSettings } as Settings;
     // If permissions are missing, ensure default
     if (!merged.permissions) {
       merged.permissions = DEFAULT_SETTINGS.permissions;
+    }
+    // If running in assessor demo mode, enforce safe defaults: telemetry off and dangerous permissions disabled
+    const demoMode = process.argv?.includes('--demo') || process.env.SADIE_DEMO_MODE === '1' || process.env.SADIE_DEMO_MODE === 'true';
+    if (demoMode) {
+      merged.telemetryEnabled = false;
+      merged.telemetryConsentTimestamp = undefined;
+      merged.telemetryConsentVersion = undefined;
+      // Force dangerous permissions off
+      merged.permissions = {
+        ...(merged.permissions || {}),
+        delete_file: false,
+        move_file: false,
+        launch_app: false,
+        screenshot: false
+      };
     }
     return merged;
   } catch (error) {
@@ -126,6 +146,7 @@ export function saveSettings(settings: Settings): void {
   try {
     ensureConfigDirectory();
     const settingsPath = getSettingsPath();
+    if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Saving settings to:', settingsPath, 'firstRun:', settings.firstRun, 'telemetryEnabled:', settings.telemetryEnabled);
     // Compare with previous to log telemetry consent events
     const previous = getSettings();
     const toSave = { ...settings } as Settings & { telemetryConsentTimestamp?: string; telemetryConsentVersion?: string };
@@ -137,6 +158,7 @@ export function saveSettings(settings: Settings): void {
       toSave.telemetryConsentVersion = '1.0';
     }
     writeFileSync(settingsPath, JSON.stringify(toSave, null, 2), 'utf-8');
+    if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings saved successfully to:', settingsPath);
     // Log consent changes
     try {
       if (!previous.telemetryEnabled && toSave.telemetryEnabled) {

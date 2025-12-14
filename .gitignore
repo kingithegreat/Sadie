@@ -48,6 +48,11 @@ build/
 
 # Electron
 widget/out/
+
+# Test artifacts
+widget/test-results/
+widget/playwright-report/
+widget/trace-output/
 widget/release/
 
 # Docker volumes

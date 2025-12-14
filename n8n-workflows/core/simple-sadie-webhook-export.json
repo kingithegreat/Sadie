@@ -1,0 +1,56 @@
+[{
+  "name": "SADIE Simple Webhook",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie/chat/stream",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sadie-simple-chat"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { reply: 'Hello from n8n 👋 SADIE is connected.' } }}"
+      },
+      "id": "respond-direct",
+      "name": "Respond Directly",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Respond Directly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {"executionOrder":"v1"},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "1",
+  "activeVersionId": "1",
+  "versionCounter": 1,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": []
+}]

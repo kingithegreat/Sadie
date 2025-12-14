@@ -1,0 +1,76 @@
+[{
+  "name": "SADIE Main Orchestrator - TEMP",
+  "description": "Temporary orchestrator that normalizes input and returns a non-streaming reply for verification",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie/chat/stream",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize incoming payload\nconst body = $input.item.json.body || $input.item.json || {}\nconst userMessage = body.message || body.text || ''\nconst streamId = body.streamId || body.streamId || null\nconst conversationId = body.conversationId || body.conversation_id || null\nreturn [{ json: { userMessage, streamId, conversationId } }];"
+      },
+      "id": "normalize-input",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { reply: $json.userMessage || 'SADIE orchestrator reached', streamId: $json.streamId || null, conversationId: $json.conversationId || null } }}"
+      },
+      "id": "respond-direct",
+      "name": "Respond Directly",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Respond Directly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {"executionOrder":"v1"},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "1",
+  "activeVersionId": "1",
+  "versionCounter": 1,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [{"updatedAt":"2025-12-14T02:00:00.000Z","createdAt":"2025-12-14T02:00:00.000Z","role":"workflow:owner","workflowId":"ppilfb78LZt7NJfr","projectId":"4RWdPqcOPpSG0Nvd","project":{"updatedAt":"2025-12-14T02:11:35.069Z","createdAt":"2025-12-14T02:09:34.241Z","id":"4RWdPqcOPpSG0Nvd","name":"aden king <adenkingi@hotmail.com>","type":"personal","icon":null,"description":null}}]
+}]

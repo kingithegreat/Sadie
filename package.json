@@ -7,6 +7,7 @@
     "start": "cd widget && npm start",
     "build": "cd widget && npm run build",
     "dev": "cd widget && npm run dev",
-    "test": "cd widget && npm test"
+    "test": "cd widget && npm test",
+    "release": "node scripts/preflight-env-check.js --require-production && cd widget && npm run build && node ../scripts/preflight-env-check.js --scan-artifacts && npm run dist && node ../scripts/scan-package-integrity.js"
   }
 }

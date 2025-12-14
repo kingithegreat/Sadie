@@ -10,6 +10,7 @@ import {
   ConversationStore,
 } from './memory-manager';
 import { Message } from '../shared/types';
+import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 
 // Default settings
 const DEFAULT_SETTINGS = {
@@ -40,17 +41,39 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     // Note: we store a flag on the global to persist across reloads in dev.
     const g = global as any;
     if (g.__sadie_ipc_registered) {
-      if (process.env.NODE_ENV === 'development') {
+      // Only log idempotent registration warnings in development
+      const { isDevelopment } = require('./env');
+      if (isDevelopment) {
         console.log('[IPC] registerIpcHandlers already executed — skipping');
+        try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) {}
       }
       return;
     }
-    // Simple health check so renderer can verify main is responsive
+    // Health check: verify n8n and Ollama statuses
     ipcMain.handle('sadie:check-connection', async () => {
-      return {
-        ok: true,
-        timestamp: Date.now()
-      };
+      const settings = getSettings();
+      const n8nBase = settings.n8nUrl || 'http://localhost:5678';
+      const n8nHealth = `${n8nBase.replace(/\/$/, '')}/healthz`;
+      const result = { n8n: 'checking', ollama: 'checking', lastChecked: new Date().toISOString() } as any;
+      try {
+        const r = await axios.get(n8nHealth, { timeout: 2000 });
+        if (r && r.status && r.status >= 200 && r.status < 300) result.n8n = 'online';
+        else result.n8n = 'offline';
+      } catch (e) {
+        result.n8n = 'offline';
+      }
+
+      try {
+        // Ollama may not expose /healthz; a simple GET on base URL will suffice for a quick check
+        const ollamaBase = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
+        const r2 = await axios.get(ollamaBase, { timeout: 2000 });
+        result.ollama = (r2 && r2.status && r2.status >= 200 && r2.status < 500) ? 'online' : 'offline';
+      } catch (e) {
+        result.ollama = 'offline';
+      }
+
+      result.lastChecked = new Date().toISOString();
+      return result as { n8n: 'online'|'offline'|'checking'; ollama: 'online'|'offline'|'checking'; lastChecked: string };
     });
 
     ipcMain.on('window-minimize', () => {
@@ -72,8 +95,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.on('sadie:message', async (_event, { message, conversationId }) => {
     try {
+      console.log('[Main] Received sendMessage', { conversationId, preview: String(message).substring(0,120) });
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] Received sendMessage conv=${conversationId} preview=${String(message).substring(0,120)}`); } catch (e) {}
           // Load settings to get n8n URL
           const settings = getSettings();
+      console.log('[Main] Calling messageRouter.sendStreamRequest (via axios post)');
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] Calling messageRouter.sendStreamRequest (via axios post)'); } catch (e) {}
 
       // Send message to n8n orchestrator
       const response = await axios.post(`${settings.n8nUrl}/webhook/sadie/chat`, {
@@ -96,6 +123,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         data: response.data
         });
       }
+      console.log('[Main] sendStreamRequest returned', { status: response.status });
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] sendStreamRequest returned status=${response.status}`); } catch (e) {}
 
     } catch (err: any) {
       console.error('Error communicating with n8n orchestrator:', err.message);
@@ -152,6 +181,14 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  /**
+   * Get the absolute path to the config file (for E2E testing)
+   */
+  ipcMain.handle('sadie:get-config-path', async () => {
+    const { getSettingsPath } = require('./config-manager');
+    return getSettingsPath();
+  });
+
   ipcMain.handle('sadie:reset-permissions', async () => {
     try {
       const { resetPermissions, getSettings } = require('./config-manager');
@@ -171,6 +208,29 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     } catch (err: any) {
       console.error('Error exporting telemetry consent:', err.message);
       return { success: false, error: err.message };
+    }
+  });
+
+  // Expose current app mode (demo or normal)
+  ipcMain.handle('sadie:get-mode', async () => {
+    const { isDemoMode } = require('./env');
+    return { demo: !!isDemoMode };
+  });
+
+  // Read telemetry consent log (JSONL) for UI display
+  ipcMain.handle('sadie:read-consent-log', async () => {
+    try {
+      const { app } = require('electron');
+      const path = require('path');
+      const fs = require('fs');
+      const userData = app.getPath('userData');
+      const logPath = path.join(userData, 'logs', 'telemetry-consent.log');
+      if (!fs.existsSync(logPath)) return { success: true, data: '' };
+      const data = fs.readFileSync(logPath, 'utf-8');
+      return { success: true, data };
+    } catch (err: any) {
+      console.error('Failed to read consent log:', err);
+      return { success: false, error: String(err) };
     }
   });
 
@@ -334,7 +394,8 @@ try {
 
   // Mark registration complete
   g.__sadie_ipc_registered = true;
-  if (process.env.NODE_ENV === 'development') {
+  const { isDevelopment } = require('./env');
+  if (isDevelopment) {
     console.log('[IPC] Handlers registered');
   }
 }

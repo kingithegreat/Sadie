@@ -1,5 +1,11 @@
 # SADIE Start Script
 # This script checks all dependencies and starts SADIE
+#
+# DEV-ONLY: This script is intended for local development only.
+# Do NOT include this in release artifacts or CI release jobs.
+# If you are preparing a release, ensure environment flags like
+# SADIE_E2E and SADIE_DIRECT_OLLAMA are NOT set and run the
+# `scripts/preflight-env-check.js` before building.
 
 $ErrorActionPreference = "Continue"
 $Host.UI.RawUI.WindowTitle = "SADIE Launcher"
