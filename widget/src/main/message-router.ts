@@ -1,11 +1,13 @@
 import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
+import { permissionRequester } from './permission-requester';
 import axios from 'axios';
 import { debug as logDebug, error as logError, info as logInfo } from '../shared/logger';
 import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { getMainWindow } from './window-manager';
-import { initializeTools, getOllamaTools, executeTool, ToolCall, ToolContext } from './tools';
+import { initializeTools, getOllamaTools, executeTool, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild, isReleaseBuild } from './env';
 
@@ -258,7 +260,8 @@ async function streamFromOllamaWithTools(
   onToolResult: (result: any) => void,
   onEnd: () => void, 
   onError: (err: any) => void,
-  requestConfirmation?: (msg: string) => Promise<boolean>
+  requestConfirmation?: (msg: string) => Promise<boolean>,
+  requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>
 ): Promise<{ cancel: () => void }> {
   const controller = new AbortController();
   let ended = false;
@@ -398,35 +401,73 @@ async function streamFromOllamaWithTools(
           tool_calls: pendingToolCalls
         });
         
-        // Execute each tool call
-        for (const toolCall of pendingToolCalls) {
-          const toolName = toolCall.function?.name;
-          const toolArgs = toolCall.function?.arguments || {};
-          
-          console.log(`[SADIE] Executing tool: ${toolName}`, toolArgs);
-          onToolCall(toolName, toolArgs);
-          
-          // Parse arguments if they're a string
-          let args = toolArgs;
-          if (typeof args === 'string') {
-            try { args = JSON.parse(args); } catch { }
+        // Execute tool calls as an atomic batch (precheck permissions to avoid
+        // partial execution like creating a folder then failing to write a file)
+        const calls = pendingToolCalls.map((c: any) => {
+          const toolName = c.function?.name || c.name;
+          let toolArgs = c.function?.arguments || c.arguments || {};
+          if (typeof toolArgs === 'string') {
+            try { toolArgs = JSON.parse(toolArgs); } catch { }
           }
-          
-          const result = await executeTool(
-            { name: toolName, arguments: args },
-            toolContext
-          );
-          
+          return { name: toolName, arguments: toolArgs } as any;
+        });
+
+        const batchResults = await executeToolBatch(calls, toolContext);
+
+        // If batch indicates missing permissions, request user approval
+        if (batchResults.length === 1 && batchResults[0].success === false && (batchResults[0] as any).status === 'needs_confirmation') {
+          const missing = (batchResults[0] as any).missingPermissions || [];
+          const reason = (batchResults[0] as any).reason || `This action requires: ${missing.join(', ')}`;
+          try { pushRouter(`Permission escalation requested: ${missing.join(',')}`); } catch (e) {}
+
+            if (typeof requestPermission === 'function') {
+              const resp = await requestPermission(missing, reason);
+
+              if (!resp || resp.decision === 'cancel') {
+                const result = { success: false, error: 'User declined permission request' } as any;
+                onToolResult(result);
+                messages.push({ role: 'tool', content: JSON.stringify(result) });
+                safeEnd('permission-denied');
+                return;
+              }
+
+              if (resp.decision === 'allow_once') {
+                const rerun = await executeToolBatch(calls, toolContext, { overrideAllowed: missing });
+                for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
+                await processResponse();
+                return;
+              }
+
+              if (resp.decision === 'always_allow') {
+                try {
+                  const { getSettings, saveSettings } = require('./config-manager');
+                  const s = getSettings();
+                  s.permissions = s.permissions || {};
+                  for (const p of missing) s.permissions[p] = true;
+                  saveSettings(s);
+                } catch (e) { console.error('[SADIE] Failed to persist permission changes:', e); }
+
+                const rerun = await executeToolBatch(calls, toolContext);
+                for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
+                await processResponse();
+                return;
+              }
+            } else {
+              const result = { success: false, error: `Missing permissions: ${missing.join(', ')}` } as any;
+              onToolResult(result);
+              messages.push({ role: 'tool', content: JSON.stringify(result) });
+              safeEnd('permission-denied');
+              return;
+            }
+        }
+
+        // Otherwise, emit each tool result and continue the conversation
+        for (const result of batchResults) {
           console.log(`[SADIE] Tool result:`, result);
           onToolResult(result);
-          
-          // Add tool result to messages
-          messages.push({
-            role: 'tool',
-            content: JSON.stringify(result)
-          });
+          messages.push({ role: 'tool', content: JSON.stringify(result) });
         }
-        
+
         // Continue the conversation with tool results
         await processResponse();
       } else {
@@ -489,6 +530,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
     
     // Track pending confirmation requests
     const pendingConfirmations = new Map<string, { resolve: (confirmed: boolean) => void }>();
+
+    // Permission escalation is handled by the centralized `permissionRequester` module
     
     // Handle confirmation responses from renderer
     ipcMain.on('sadie:confirmation-response', (_event: IpcMainEvent, data: { confirmationId: string; confirmed: boolean }) => {
@@ -498,6 +541,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         pendingConfirmations.delete(data.confirmationId);
       }
     });
+
+    // Permission responses are handled by the `permissionRequester` module
     
     // Create confirmation requester for a specific event sender
     function createConfirmationRequester(sender: Electron.WebContents, streamId: string) {
@@ -523,6 +568,7 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         });
       };
     }
+
     
     // Streaming responses via HTTP chunked response (POST -> stream)
     ipcMain.on('sadie:stream-message', async (event: IpcMainEvent, request: SadieRequestWithImages & { streamId?: string }) => {
@@ -730,7 +776,7 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
                           }
               activeStreams.delete(streamId);
             },
-            requestConfirmation  // Pass confirmation requester
+            requestConfirmation // Pass confirmation requester
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           return;
@@ -872,7 +918,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
                   }
                 })();
               },
-              requestConfirmation
+              requestConfirmation,
+              (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason)
             );
 
             activeStreams.set(streamId, { destroy: handler.cancel });
@@ -1018,7 +1065,7 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
     });
 
     // Test helper: trigger a simulated non-stream fallback for a given streamId (E2E only)
-    ipcMain.handle('sadie:__e2e_trigger_fallback', async (event, payload: { streamId: string; finalText?: string }) => {
+    ipcMain.handle('sadie:__e2e_trigger_fallback', async (event: IpcMainInvokeEvent, payload: { streamId: string; finalText?: string }) => {
       console.log('[E2E-TRACE] __e2e_trigger_fallback invoked, SADIE_E2E=', process.env.SADIE_E2E, 'NODE_ENV=', process.env.NODE_ENV);
       try {
         const { streamId, finalText } = payload || {} as any;
@@ -1028,8 +1075,49 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         return { ok: true };
       } catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
     });
+    // Test helper: invoke a tool batch via main and exercise the permission escalation flow (E2E only)
+    ipcMain.handle('sadie:__e2e_invoke_tool_batch', async (event: IpcMainInvokeEvent, payload: { calls: any[]; streamId?: string }) => {
+      try {
+        // Allow E2E helper when the centralized env module reports E2E mode
+        // (this is more robust in packaged/release builds where raw env vars
+        // may be sanitized early). Also keep NODE_ENV=test as a fallback.
+        const envModule = require('./env');
+        const e2eEnabled = Boolean(envModule.isE2E) || process.env.NODE_ENV === 'test';
+        if (!e2eEnabled) return { ok: false, error: 'E2E_ONLY' };
+        const { calls, streamId } = payload || {} as any;
+        if (!Array.isArray(calls) || calls.length === 0) return { ok: false, error: 'MISSING_CALLS' };
+        // Run batch precheck
+        const batch = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
+        const batch = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
+        if (batch.length === 1 && (batch[0] as any).status === 'needs_confirmation') {
+          const missing = (batch[0] as any).missingPermissions || [];
+          const reason = (batch[0] as any).reason || `Requires: ${missing.join(', ')}`;
+          const resp = await permissionRequester.request(event.sender, streamId || `e2e-${Date.now()}`, missing, reason);
+
+          if (!resp || resp.decision === 'cancel') return { ok: false, error: 'USER_CANCELLED' };
+          if (resp.decision === 'allow_once') {
+            const rerun = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any, { overrideAllowed: missing });
+            return { ok: true, result: rerun };
+          }
+          if (resp.decision === 'always_allow') {
+            try { const { getSettings, saveSettings } = require('./config-manager'); const s = getSettings(); s.permissions = s.permissions || {}; for (const p of missing) s.permissions[p] = true; saveSettings(s); } catch (e) {}
+            const rerun = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
+            return { ok: true, result: rerun };
+          }
+        }
+
+        // No permission needed, or executed directly
+        return { ok: true, result: batch };
+      } catch (e: any) {
+        return { ok: false, error: e?.message || String(e) };
+      }
+    });
+    // Test helper: retrieve router diagnostics buffer (E2E only)
+    ipcMain.handle('sadie:__e2e_get_router_logs', async () => {
+      return (global as any).__SADIE_ROUTER_LOG_BUFFER || [];
+    });
     // Test helper: trigger a simulated upstream error for a given streamId (E2E only)
-    ipcMain.handle('sadie:__e2e_trigger_upstream_error', async (event, payload: { streamId: string; message?: string }) => {
+    ipcMain.handle('sadie:__e2e_trigger_upstream_error', async (event: IpcMainInvokeEvent, payload: { streamId: string; message?: string }) => {
       try {
         const { streamId, message } = payload || {} as any;
         if (!streamId) return { ok: false, error: 'MISSING_STREAM_ID' };

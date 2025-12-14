@@ -5,6 +5,7 @@ import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
 import SettingsPanel from "./components/SettingsPanel";
 import FirstRunModal from './components/FirstRunModal';
+import PermissionModal from './components/PermissionModal';
 import ConversationSidebar from "./components/ConversationSidebar";
 import type {
   ChatMessage,
@@ -63,6 +64,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<any | null>(null);
   const [pendingConfirmationData, setPendingConfirmationData] = useState<any>(null);
+  const [permissionModalOpen, setPermissionModalOpen] = useState(false);
+  const [permissionRequestData, setPermissionRequestData] = useState<{ requestId?: string; missingPermissions?: string[]; reason?: string; streamId?: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settings, setSettings] = useState<SharedSettings>({
@@ -173,9 +176,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       });
       setAwaitingConfirmation(true);
     });
+
+    const permUnsub = window.electron.onPermissionRequest?.((data) => {
+      console.log('[App] Permission request received:', data);
+      setPermissionRequestData({ requestId: data.requestId, missingPermissions: data.missingPermissions, reason: data.reason, streamId: data.streamId });
+      setPermissionModalOpen(true);
+    });
     
     return () => {
       unsubscribe?.();
+      permUnsub?.();
     };
   }, []);
 
@@ -758,6 +768,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {/* Permission Modal (appears when main requests permission escalation) */}
+      <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />
 
       {firstRunOpen && (
         <FirstRunModal

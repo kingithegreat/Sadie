@@ -1,0 +1,58 @@
+name: Playwright E2E Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Start docker services
+        run: docker compose up -d
+
+      - name: Install widget dependencies
+        run: npm ci --prefix widget
+
+      - name: Install Playwright browsers
+        run: npm run e2e:install --prefix widget
+
+      - name: Build widget
+        env:
+          NODE_ENV: test
+        run: npm run build --prefix widget
+
+      - name: Run Playwright E2E
+        env:
+          SADIE_E2E: '1'
+          NODE_ENV: 'test'
+        run: npm run e2e --prefix widget
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: widget/playwright-report
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit
+          path: widget/test-results/junit.xml
+
+      - name: Teardown docker services
+        if: always()
+        run: docker compose down --volumes

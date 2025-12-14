@@ -24,6 +24,9 @@ export interface ToolDefinition {
   };
   // Whether this tool requires user confirmation before execution
   requiresConfirmation?: boolean;
+  // Any named permissions this tool requires in addition to its own execution
+  // e.g., a report generator may also require `write_file` permission.
+  requiredPermissions?: string[];
   // Category for grouping tools
   category?: 'filesystem' | 'system' | 'web' | 'utility' | 'voice' | 'memory' | 'document';
 }
@@ -40,6 +43,10 @@ export interface ToolResult {
   // For confirmable tools, this indicates the operation is pending user approval
   pendingConfirmation?: boolean;
   confirmationId?: string;
+  // Indicates the tool batch requires user permission confirmation before proceeding
+  status?: 'needs_confirmation';
+  missingPermissions?: string[];
+  reason?: string;
 }
 
 // Ollama tool format (for API calls)
@@ -80,6 +87,9 @@ export interface ToolContext {
   requestConfirmation?: (message: string) => Promise<boolean>;
   // Callback to send progress updates
   onProgress?: (message: string) => void;
+  // Transient list of permissions or tool names that are allowed for this execution
+  // (used for "allow once" flows during E2E and permission escalation).
+  overrideAllowed?: string[];
 }
 
 // Type for tool handler functions

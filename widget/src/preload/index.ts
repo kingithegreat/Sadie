@@ -44,6 +44,8 @@ const ALLOWED_CHANNELS = {
   STREAM_ERROR: 'sadie:stream-error',
   CONFIRMATION_REQUEST: 'sadie:confirmation-request',
   CONFIRMATION_RESPONSE: 'sadie:confirmation-response',
+  PERMISSION_REQUEST: 'sadie:permission-request',
+  PERMISSION_RESPONSE: 'sadie:permission-response',
   GET_ENV: 'sadie:get-env',
   GET_CONFIG_PATH: 'sadie:get-config-path'
 };
@@ -146,6 +148,21 @@ const electronAPI: ElectronAPI = {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);
+  },
+
+  onPermissionRequest: (cb: (data: { requestId: string; missingPermissions: string[]; reason: string; streamId?: string }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
+    // E2E diagnostic: expose the last permission request to the renderer global for tests
+    const debugListener = (_ev: IpcRendererEvent, data: any) => {
+      try { (global as any).__lastPermissionRequest = data; } catch (e) {}
+    };
+    ipcRenderer.on(ALLOWED_CHANNELS.PERMISSION_REQUEST, debugListener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
+  },
+
+  sendPermissionResponse: (requestId: string, decision: 'allow_once'|'always_allow'|'cancel', missingPermissions?: string[]) => {
+    ipcRenderer.send(ALLOWED_CHANNELS.PERMISSION_RESPONSE, { requestId, decision, missingPermissions });
   },
 
   sendConfirmationResponse: (confirmationId: string, confirmed: boolean) => {

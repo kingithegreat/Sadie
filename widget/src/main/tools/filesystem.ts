@@ -366,6 +366,7 @@ export const createDirectoryHandler: ToolHandler = async (args, context): Promis
   try {
     // Check if directory already exists
     const exists = await fsPromises.access(resolvedPath).then(() => true).catch(() => false);
+
     
     if (exists && isRootDir) {
       return {
@@ -524,6 +525,7 @@ export const writeFileHandler: ToolHandler = async (args, context): Promise<Tool
       await fsPromises.writeFile(validation.resolved, args.content, 'utf-8');
     }
     
+    // Log successful write
     return {
       success: true,
       result: {
