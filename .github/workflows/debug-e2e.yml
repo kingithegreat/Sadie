@@ -44,6 +44,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install Playwright browsers and deps
+        working-directory: widget
+        run: npx playwright install --with-deps
+
       - name: Install widget deps
         run: npm ci --prefix widget
 
