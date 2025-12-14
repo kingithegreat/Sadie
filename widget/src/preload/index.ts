@@ -1,4 +1,12 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { debug as logDebug, error as logError } from '../shared/logger';
+
+// Renderer diagnostics buffer
+(global as any).__SADIE_RENDERER_LOG_BUFFER ??= [];
+function pushRendererLog(line: string) {
+  try { (global as any).__SADIE_RENDERER_LOG_BUFFER.push(`[RENDERER] ${String(line)}`); } catch (e) {}
+  try { ipcRenderer.send('sadie:append-renderer-log', String(line)); } catch (e) {}
+}
 
 // Use canonical shared types for the preload API
 import {
@@ -22,10 +30,12 @@ const ALLOWED_CHANNELS = {
   SEND: IPC_SEND_MESSAGE,
   RECEIVE: 'sadie:reply',
   GET_SETTINGS: 'sadie:get-settings',
+  GET_MODE: 'sadie:get-mode',
   SAVE_SETTINGS: 'sadie:save-settings',
   HAS_PERMISSION: 'sadie:has-permission',
   RESET_PERMISSIONS: 'sadie:reset-permissions',
   EXPORT_CONSENT: 'sadie:export-consent',
+  READ_CONSENT_LOG: 'sadie:read-consent-log',
   SHOW_WINDOW: 'sadie:show-window',
   HIDE_WINDOW: 'sadie:hide-window',
   STREAM_SEND: 'sadie:stream-message',
@@ -33,7 +43,9 @@ const ALLOWED_CHANNELS = {
   STREAM_END: 'sadie:stream-end',
   STREAM_ERROR: 'sadie:stream-error',
   CONFIRMATION_REQUEST: 'sadie:confirmation-request',
-  CONFIRMATION_RESPONSE: 'sadie:confirmation-response'
+  CONFIRMATION_RESPONSE: 'sadie:confirmation-response',
+  GET_ENV: 'sadie:get-env',
+  GET_CONFIG_PATH: 'sadie:get-config-path'
 };
 
 // Create the API object
@@ -42,11 +54,15 @@ const electronAPI: ElectronAPI = {
    * Send a message to SADIE backend
    */
   sendMessage: async (request: SadieRequest): Promise<SadieResponse> => {
+    logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.SEND, { messagePreview: String(request?.message).substring(0, 120) });
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.SEND} preview=${String(request?.message).substring(0,120)}`); } catch (e) {}
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.SEND, request);
   },
 
   // Start a streaming request. Non-blocking; return a Promise<void> to match shared types
   sendStreamMessage: async (request: SadieRequestWithImages): Promise<void> => {
+    logDebug('[Preload] IPC send', ALLOWED_CHANNELS.STREAM_SEND, { streamId: (request as any)?.streamId, messagePreview: String(request?.message).substring(0,120) });
+    try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId}`); } catch (e) {}
     ipcRenderer.send(ALLOWED_CHANNELS.STREAM_SEND, request);
     // Fire-and-forget; return a resolved promise so callers can await
     return Promise.resolve();
@@ -140,6 +156,8 @@ const electronAPI: ElectronAPI = {
 
   // Cancel a running stream by id. If no id is provided, cancels all.
   cancelStream: (streamId?: string) => {
+    logDebug('[Preload] IPC send', 'sadie:stream-cancel', { streamId });
+    try { pushRendererLog(`IPC send sadie:stream-cancel streamId=${streamId}`); } catch (e) {}
     ipcRenderer.send('sadie:stream-cancel', { streamId });
   },
 
@@ -168,6 +186,8 @@ const electronAPI: ElectronAPI = {
    * Get user settings from main process
    */
   getSettings: async (): Promise<Settings> => {
+    logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.GET_SETTINGS);
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.GET_SETTINGS}`); } catch (e) {}
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SETTINGS) as Settings;
   },
 
@@ -176,6 +196,8 @@ const electronAPI: ElectronAPI = {
    */
   saveSettings: async (settings: Partial<Settings>): Promise<Settings> => {
     // saveSettings returns the updated settings (wrapped in { success:true, data })
+    logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.SAVE_SETTINGS, { keys: Object.keys(settings || {}) });
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.SAVE_SETTINGS} keys=${Object.keys(settings || {}).join(',')}`); } catch (e) {}
     const result: any = await ipcRenderer.invoke(ALLOWED_CHANNELS.SAVE_SETTINGS, settings);
     if (result && result.success && result.data) {
       return result.data as Settings;
@@ -194,11 +216,43 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.EXPORT_CONSENT);
   },
 
+  getMode: async (): Promise<{ demo: boolean }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_MODE);
+  },
+
+  getEnv: async (): Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_ENV);
+  },
+
+  getConfigPath: async (): Promise<string> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_CONFIG_PATH);
+  },
+
+  // Test-only: allow invoking arbitrary channels from the renderer (only in E2E)
+  invoke: async (channel: string, ...args: any[]) => {
+    return await ipcRenderer.invoke(channel, ...args);
+  },
+
+  captureLogs: async (): Promise<{ success: boolean; path?: string; error?: string }> => {
+    try {
+      const r = await ipcRenderer.invoke('sadie:capture-logs');
+      return r;
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  },
+
+  readConsentLog: async (): Promise<{ success: boolean; data?: string; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.READ_CONSENT_LOG);
+  },
+
   hasPermission: async (toolName: string): Promise<{ success: boolean; allowed?: boolean; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.HAS_PERMISSION, toolName);
   },
 
   checkConnection: async (): Promise<ConnectionStatus> => {
+    logDebug('[Preload] IPC invoke', 'sadie:check-connection');
+    try { pushRendererLog('IPC invoke sadie:check-connection'); } catch (e) {}
     return await ipcRenderer.invoke('sadie:check-connection');
   },
 
@@ -261,6 +315,10 @@ const electronAPI: ElectronAPI = {
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.
 contextBridge.exposeInMainWorld('electron', electronAPI as unknown as ElectronAPI);
+// Expose a simple capture API for renderer to forward logs into the main global buffer
+contextBridge.exposeInMainWorld('sadieCapture', {
+  log: (msg: string) => { try { pushRendererLog(msg); } catch (e) {} }
+});
 
 // Export types for TypeScript consumers
 // Re-export the type (forwarded from shared/types)

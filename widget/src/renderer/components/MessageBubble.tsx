@@ -13,74 +13,151 @@ export function MessageBubble({
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const state = message.streamingState;
-
+  const hasContent = Boolean(message.content && message.content.trim());
+  const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
   return (
     <div
-      className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}
-      data-role={isAssistant ? 'assistant-message' : 'user-message'}
-      data-state={state || ''}
-      data-message-id={message.id ?? ''}
+      className={`message-wrapper ${isUser ? "user" : "assistant"}`}
+      data-role={isAssistant ? "assistant-message" : "user-message"}
+      data-state={state || ""}
+      data-message-id={message.id ?? ""}
     >
-      {/* Avatar */}
-      <div className={`message-avatar ${isUser ? 'user' : 'assistant'}`}>
-        {isUser ? '👤' : '✨'}
-      </div>
-
-      {/* Message content */}
-      <div className="message-content">
-        <div className="message-bubble">
-          {/* Message text */}
-          {message.content || (isAssistant && state === "streaming" ? (
-            <div className="streaming-indicator">
-              <span className="dot"></span>
-              <span className="dot"></span>
-              <span className="dot"></span>
-            </div>
-          ) : "")}
-        </div>
-
-        {/* Footer with status and actions */}
-        {isAssistant && (
-          <div className="message-footer">
-            {state === "streaming" && (
-              <>
-                <span className="status-text streaming">Generating...</span>
-                <button
-                  className="message-action-btn"
-                  onClick={() => onCancel(message.id!)}
-                  aria-label="Stop generating"
-                >
-                  ⏹ Stop
-                </button>
-              </>
+      {isUser ? (
+        <>
+          {/* USER: content first, avatar second */}
+          <div className="message-content">
+            {shouldShowBubble && (
+              <div className="message-bubble">
+                {hasContent ? (
+                  message.content
+                ) : (
+                  isAssistant && state === "streaming" && (
+                    <div className="streaming-indicator">
+                      <span className="dot" />
+                      <span className="dot" />
+                      <span className="dot" />
+                    </div>
+                  )
+                )}
+              </div>
             )}
+            {isAssistant && (
+              <div className="message-footer">
+                {state === "streaming" && (
+                  <>
+                    <span className="status-text streaming">Generating...</span>
+                    <button
+                      className="message-action-btn"
+                      onClick={() => onCancel(message.id!)}
+                      aria-label="Stop generating"
+                    >
+                      ⏹ Stop
+                    </button>
+                  </>
+                )}
 
-            {state === "cancelling" && (
-              <span className="status-text" style={{ color: '#FCD34D' }}>Stopping...</span>
-            )}
+                {state === "cancelling" && (
+                  <span className="status-text" style={{ color: "#FCD34D" }}>
+                    Stopping...
+                  </span>
+                )}
 
-            {state === "cancelled" && (
-              <span className="status-text" style={{ color: '#FCD34D' }}>Cancelled</span>
-            )}
+                {state === "cancelled" && (
+                  <span className="status-text" style={{ color: "#FCD34D" }}>
+                    Cancelled
+                  </span>
+                )}
 
-            {state === "error" && (
-              <>
-                <span className="status-text error">Error</span>
-                <button
-                  className="message-action-btn"
-                  onClick={() => onRetry(message.id!)}
-                >
-                  ↻ Retry
-                </button>
-              </>
-            )}
+                {state === "error" && (
+                  <>
+                    <span className="status-text error">Error</span>
+                    <button
+                      className="message-action-btn"
+                      onClick={() => onRetry(message.id!)}
+                    >
+                      ↻ Retry
+                    </button>
+                  </>
+                )}
 
-            {state === "finished" && (
-              <span className="status-text">Done</span>
+                {state === "finished" && <span className="status-text">Done</span>}
+              </div>
             )}
           </div>
-        )}
-      </div>
+
+          <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
+            {isUser ? "👤" : "✨"}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* ASSISTANT: avatar first, content second */}
+          <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
+            {isUser ? "👤" : "✨"}
+          </div>
+
+          <div className="message-content">
+            {shouldShowBubble && (
+              <div className="message-bubble">
+                {hasContent ? (
+                  message.content
+                ) : (
+                  isAssistant && state === "streaming" && (
+                    <div className="streaming-indicator">
+                      <span className="dot" />
+                      <span className="dot" />
+                      <span className="dot" />
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+            {isAssistant && (
+              <div className="message-footer">
+                {state === "streaming" && (
+                  <>
+                    <span className="status-text streaming">Generating...</span>
+                    <button
+                      className="message-action-btn"
+                      onClick={() => onCancel(message.id!)}
+                      aria-label="Stop generating"
+                    >
+                      ⏹ Stop
+                    </button>
+                  </>
+                )}
+
+                {state === "cancelling" && (
+                  <span className="status-text" style={{ color: "#FCD34D" }}>
+                    Stopping...
+                  </span>
+                )}
+
+                {state === "cancelled" && (
+                  <span className="status-text" style={{ color: "#FCD34D" }}>
+                    Cancelled
+                  </span>
+                )}
+
+                {state === "error" && (
+                  <>
+                    <span className="status-text error">Error</span>
+                    <button
+                      className="message-action-btn"
+                      onClick={() => onRetry(message.id!)}
+                    >
+                      ↻ Retry
+                    </button>
+                  </>
+                )}
+
+                {state === "finished" && <span className="status-text">Done</span>}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

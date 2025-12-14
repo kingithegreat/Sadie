@@ -6,6 +6,9 @@ interface StatusIndicatorProps {
   onRefresh: () => void;
   onSettingsClick: () => void;
   onMenuClick?: () => void;
+  backendDiagnostic?: string | null;
+  onCopyDiagnostic?: (text: string) => void;
+  onDismissDiagnostic?: () => void;
 }
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
@@ -13,7 +16,9 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onRefresh,
   onSettingsClick,
   onMenuClick
+  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic
 }) => {
+  const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
 
   // Load uncensored mode state on mount
@@ -72,6 +77,33 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} />
           <span>Ollama</span>
         </div>
+
+        <div className="status-item">
+          <span className={`status-dot ${getStatusClass(connectionStatus.n8n)}`} />
+          <span>n8n</span>
+        </div>
+
+        {/* Soft backend badge when n8n is offline */}
+        {connectionStatus.n8n === 'offline' && (
+          <div className="backend-badge" title="SADIE backend (n8n) is offline. Start n8n to restore functionality.">
+            <span className="backend-text">SADIE backend offline</span>
+            <button className="backend-retry" onClick={() => { try { (window as any).sadieCapture?.log('[Renderer] Retry connection (backend badge)'); } catch (e) {} ; onRefresh(); }} aria-label="Retry connection">↻</button>
+            {backendDiagnostic && (
+              <>
+                <button className="backend-detail" onClick={() => setDetailOpen(true)} title="Details">⋯</button>
+                {detailOpen && (
+                  <div className="backend-popover" role="dialog" aria-label="SADIE backend diagnostic">
+                    <pre className="backend-popover-text">{backendDiagnostic}</pre>
+                    <div className="backend-popover-actions">
+                      <button onClick={() => { onCopyDiagnostic?.(backendDiagnostic); setDetailOpen(false); }}>Copy</button>
+                      <button onClick={() => { setDetailOpen(false); onDismissDiagnostic?.(); }}>Dismiss</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
         
         {/* Uncensored Mode Toggle */}
         <div 
@@ -86,12 +118,31 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
 
       <div className="header-actions">
         <button
-          onClick={onRefresh}
+          onClick={() => { try { (window as any).sadieCapture?.log('[Renderer] Retry connection (header)'); } catch (e) {} ; onRefresh(); }}
           className="header-btn"
           title="Refresh connection"
           aria-label="Refresh"
         >
           ↻
+        </button>
+        <button
+          onClick={async () => {
+            try { (window as any).sadieCapture?.log('[Renderer] Capture logs requested (header)'); } catch (e) {}
+            const r = await (window as any).electron?.captureLogs?.();
+            if (r?.success && r.path) {
+              try { (window as any).sadieCapture?.log(`[Renderer] Capture saved ${r.path}`); } catch (e) {}
+              // Show a quick system chat message to notify user
+              const event = new CustomEvent('sadie:capture-saved', { detail: { path: r.path } });
+              window.dispatchEvent(event);
+            } else {
+              try { (window as any).sadieCapture?.log(`[Renderer] Capture failed: ${r?.error}`); } catch (e) {}
+            }
+          }}
+          className="header-btn"
+          title="Capture logs"
+          aria-label="Capture logs"
+        >
+          📁
         </button>
         <button
           onClick={onSettingsClick}
@@ -135,6 +186,40 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           gap: 6px;
           font-size: 12px;
           color: #B4B4B4;
+        }
+
+        .backend-badge {
+          background: rgba(255,213,85,0.18);
+          color: #ffd555;
+          padding: 6px 10px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 600;
+          margin-left: 8px;
+          -webkit-app-region: no-drag;
+          display: inline-flex;
+          gap: 8px;
+          align-items: center;
+          border: 1px solid rgba(255,213,85,0.4);
+        }
+        .backend-detail {
+          appearance: none;
+          border: none;
+          background: transparent;
+          color: #ffd555;
+          font-size: 14px;
+          cursor: pointer;
+          padding: 2px 6px;
+        }
+
+        .backend-retry {
+          appearance: none;
+          border: none;
+          background: transparent;
+          color: #ffd555;
+          font-size: 14px;
+          cursor: pointer;
+          padding: 2px 6px;
         }
 
         .uncensored-toggle {
@@ -195,6 +280,38 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         .header-btn:hover {
           background: #333333;
           color: #ECECEC;
+        }
+
+        .backend-popover {
+          position: absolute;
+          top: 48px;
+          right: 16px;
+          background: #121212;
+          padding: 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(255,213,85,0.12);
+          min-width: 320px;
+          max-width: 520px;
+          max-height: 40vh;
+          overflow: auto;
+          z-index: 9999;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        }
+
+        .backend-popover-text {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
+          font-size: 12px;
+          color: #EAEAEA;
+          white-space: pre-wrap;
+          word-break: break-word;
+          margin: 0 0 6px 0;
+        }
+
+        .backend-popover-actions {
+          display: flex;
+          gap: 8px;
+          justify-content: flex-end;
+          padding-top: 6px;
         }
       `}</style>
     </div>

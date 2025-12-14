@@ -20,6 +20,12 @@ export default function FirstRunModal({
   }, [settings]);
 
   const [showTelemetryModal, setShowTelemetryModal] = useState(false);
+  const PERMISSION_DESCRIPTIONS: Record<string, string> = {
+    delete_file: 'Allows permanent deletion of files',
+    move_file: 'Allows moving files between folders',
+    launch_app: 'Allows launching installed applications',
+    screenshot: 'Allows capture of screen contents'
+  };
 
   if (!open) return null;
 
@@ -36,75 +42,115 @@ export default function FirstRunModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="w-[560px] max-w-[95vw] rounded-2xl bg-zinc-950 border border-zinc-800 p-4 shadow-lg">
-        <h2 className="text-lg font-semibold mb-2">Welcome to SADIE</h2>
-        <p className="text-sm text-zinc-400 mb-4">Let's get started — a few initial options to make SADIE safe and private by default.</p>
+    <>
+      {/* Semi-transparent overlay - NOT full black */}
+      <div className="first-run-overlay">
+        <div className="first-run-modal">
+          {/* Header */}
+          <div className="first-run-header">
+            <h1 className="first-run-title">Welcome to SADIE</h1>
+            <p className="first-run-subtitle">
+              Let's get started — a few initial options to make SADIE safe and private by default.
+            </p>
+          </div>
 
-        <div className="space-y-3 text-sm mb-4">
-          <label className="block">
-            <div className="text-zinc-400 mb-1">Telemetry</div>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={!!draft.telemetryEnabled}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setShowTelemetryModal(true);
-                  } else {
-                    setDraft({ ...draft, telemetryEnabled: false });
-                  }
-                }}
-              />
-              <span className="ml-1">Allow anonymous telemetry (opt-in)</span>
-            </label>
-          </label>
-        <TelemetryConsentModal
-          open={showTelemetryModal}
-          onAccept={() => {
-            setDraft({ ...draft, telemetryEnabled: true });
-            setShowTelemetryModal(false);
-          }}
-          onDecline={() => {
-            setDraft({ ...draft, telemetryEnabled: false });
-            setShowTelemetryModal(false);
-          }}
-          onClose={() => setShowTelemetryModal(false)}
-        />
-
-          <label className="block"> 
-            <div className="text-zinc-400 mb-1">Permissions</div>
-            <small className="text-zinc-500 block mb-1">Enable individual tools SADIE can use. Dangerous operations are disabled by default.</small>
-            <div className="space-y-2">
-              {(Object.keys(draft.permissions || {}) as string[]).map((k) => (
-                <label className="inline-flex items-center gap-2" key={k}>
-                  <input
-                    type="checkbox"
-                    checked={!!draft.permissions?.[k]}
-                    onChange={(e) => setDraft({ ...draft, permissions: { ...(draft.permissions || {}), [k]: e.target.checked } })}
-                  />
-                  <span className="capitalize">{k.replace(/_/g, ' ')}</span>
-                </label>
-              ))}
+          {/* Scrollable content area */}
+          <div className="first-run-content">
+            {/* Telemetry section */}
+            <div className="first-run-section">
+              <div className="first-run-label">Telemetry</div>
+              <label className="first-run-checkbox">
+                <input
+                  type="checkbox"
+                  checked={!!draft.telemetryEnabled}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setShowTelemetryModal(true);
+                    } else {
+                      setDraft({ ...draft, telemetryEnabled: false });
+                    }
+                  }}
+                />
+                <span className="first-run-checkbox-text">Allow anonymous telemetry (opt-in)</span>
+              </label>
             </div>
-          </label>
 
-          <label className="block">
-            <div className="text-zinc-400 mb-1">Default NBA team</div>
-            <input
-              type="text"
-              className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2"
-              value={draft.defaultTeam || ''}
-              onChange={(e) => setDraft({ ...draft, defaultTeam: e.target.value })}
-            />
-          </label>
-        </div>
+            {/* Permissions section - SCROLLABLE */}
+            <div className="first-run-section">
+              <div className="first-run-label">Permissions</div>
+              <small className="first-run-description">
+                Enable individual tools SADIE can use. Dangerous operations are disabled by default.
+              </small>
+              <div className="permissions-container">
+                {(Object.keys(draft.permissions || {}) as string[]).map((k) => (
+                  <div key={k} className="permission-item">
+                    <label className="first-run-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={!!draft.permissions?.[k]}
+                        onChange={(e) => setDraft({
+                          ...draft,
+                          permissions: { ...(draft.permissions || {}), [k]: e.target.checked }
+                        })}
+                      />
+                      <span className="first-run-checkbox-text capitalize">
+                        {k.replace(/_/g, ' ')}
+                      </span>
+                    </label>
+                    {PERMISSION_DESCRIPTIONS[k] && (
+                      <small className="permission-warning">
+                        {PERMISSION_DESCRIPTIONS[k]}
+                      </small>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
 
-        <div className="flex justify-end gap-2">
-          <button onClick={handleSkip} className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800">Skip</button>
-          <button onClick={handleSubmit} className="px-3 py-2 rounded-lg bg-indigo-600 text-white">Finish</button>
+            {/* Default team section */}
+            <div className="first-run-section">
+              <div className="first-run-label">Default NBA team</div>
+              <input
+                type="text"
+                className="first-run-input"
+                value={draft.defaultTeam || ''}
+                onChange={(e) => setDraft({ ...draft, defaultTeam: e.target.value })}
+                placeholder="e.g., Lakers, Celtics, Warriors"
+              />
+            </div>
+          </div>
+
+          {/* Fixed footer with buttons - ALWAYS VISIBLE */}
+          <div className="first-run-footer">
+            <button
+              onClick={handleSkip}
+              className="first-run-btn first-run-btn-secondary"
+            >
+              Skip
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="first-run-btn first-run-btn-primary"
+            >
+              Finish
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Telemetry consent modal */}
+      <TelemetryConsentModal
+        open={showTelemetryModal}
+        onAccept={() => {
+          setDraft({ ...draft, telemetryEnabled: true });
+          setShowTelemetryModal(false);
+        }}
+        onDecline={() => {
+          setDraft({ ...draft, telemetryEnabled: false });
+          setShowTelemetryModal(false);
+        }}
+        onClose={() => setShowTelemetryModal(false)}
+      />
+    </>
   );
 }

@@ -1,157 +1,250 @@
 # SADIE - Structured AI Desktop Intelligence Engine
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-in%20development-yellow.svg)]()
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Electron](https://img.shields.io/badge/Electron-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Jest](https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white)](https://jestjs.io/)
+[![Playwright](https://img.shields.io/badge/Playwright-45ba4b?style=for-the-badge&logo=Playwright&logoColor=white)](https://playwright.dev/)
 
-A fully local, privacy-first AI personal assistant system for Windows that combines n8n automation, Ollama LLMs, and an Electron-based desktop widget for intelligent, safe task automation.
+> A secure, cross-platform desktop AI assistant built with Electron that provides structured tool-based AI interactions while maintaining strict security boundaries and offline-first operation.
 
-## 🎯 Overview
+## ✨ Features
 
-**SADIE** runs 100% locally on your machine, ensuring complete privacy while providing powerful AI-assisted automation capabilities. It combines:
+### 🔍 Web Intelligence Tools
+- **Multi-Engine Web Search**: DuckDuckGo, Google, and Brave search with automatic content fetching
+- **Safe URL Fetching**: SSRF-protected content extraction with DNS validation
+- **Weather Information**: Real-time weather data via wttr.in (no API keys required)
 
-- **n8n** for workflow orchestration
-- **Ollama** for local LLM inference (Llama3, LLaVA, Whisper)
-- **Electron widget** for user interaction
-- **Multi-layer safety validation** to prevent harmful actions
-- **Modular tool architecture** for easy extensibility
+### 📄 Document Processing
+- **PDF & Text Analysis**: Local document processing with mammoth and pdf-parse
+- **Content Extraction**: Intelligent text extraction from various document formats
 
-## ✨ Key Features
+### 🎤 Speech & Audio
+- **Offline Speech Recognition**: Local STT using whisper-node
+- **Audio Processing**: Real-time audio capture and processing
 
-- 🔒 **Privacy-first**: All data stays local, no cloud dependencies
-- 🤖 **AI-powered**: Natural language interaction with tool-calling
-- 🛡️ **Safety-focused**: Multi-layer validation with user confirmations
-- 🔧 **Modular**: Easy to add new tools and capabilities
-- 📝 **Transparent**: All actions logged and explainable
-- 💾 **Memory**: Contextual memory for personalized assistance
+### 🖼️ Image Processing
+- **Local Image Analysis**: Client-side image processing capabilities
+- **Format Support**: Multiple image format handling
+
+### 🔒 Security Features
+- **URL Safety Validation**: Comprehensive SSRF protection with DNS resolution checks
+- **Process Isolation**: Electron main/renderer separation with secure IPC
+- **Input Sanitization**: All inputs validated and sanitized
+- **Compile-time Gating**: Development code automatically removed in production builds
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐
-│   Widget    │  Electron UI (always accessible)
-└──────┬──────┘
-       │ HTTP
-       ▼
-┌─────────────┐
-│     n8n     │  Orchestration & routing
-└──────┬──────┘
-       │
-       ├──► Ollama (LLM reasoning)
-       ├──► PowerShell (file/system ops)
-       ├──► Memory (context storage)
-       └──► Tool Workflows (modular)
+┌─────────────────────────────────────────────────────────────────┐
+│                    SADIE Desktop Application                     │
+│                    (Electron Framework)                          │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │   Main Process  │  │  Preload Script │  │ Renderer Process │ │
+│  │   (Node.js)     │  │   (Security)    │  │   (React UI)     │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+│           │                       │                   │         │
+│           └───────────────────────┼───────────────────┘         │
+│                                   │                             │
+│                    ┌──────────────┴──────────────┐              │
+│                    │     IPC Communication       │              │
+│                    │   (Context Isolation)       │              │
+│                    └─────────────────────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    AI Tool System                                │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │   Web Search    │  │   URL Fetch     │  │   Weather API   │ │
+│  │   (DuckDuckGo)  │  │   (Safe HTTP)   │  │   (wttr.in)     │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
+│  │                                                                │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │ │
+│  │  │ Document Tools  │  │   Speech Tools  │  │   Image Tools   │ │
+│  │  │   (PDF/Text)    │  │   (Offline STT) │  │   (Processing)  │ │
+│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
+│  │                                                                │ │
+│  └─────────────────────── AI Model Integration ──────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-
-- Windows 10/11
-- Node.js 18+
-- Docker Desktop
-- Ollama
+- Node.js 18+ and npm
+- Windows 10+, macOS 10.15+, or Linux
 
 ### Installation
 
-```powershell
-# Clone the repository
-git clone https://github.com/kingithegreat/Sadie.git
-cd Sadie
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/kingithegreat/sadie.git
+   cd sadie/widget
+   ```
 
-# Pull required Ollama models
-ollama pull llama3.2:3b
-ollama pull llava
-ollama pull whisper
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-# Start n8n
-docker-compose up -d
+3. **Install Playwright browsers** (for E2E testing)
+   ```bash
+   npx playwright install --with-deps
+   ```
 
-# Install widget dependencies
-cd widget
-npm install
+### Development
 
-# Build and run
-npm start
+1. **Start development mode**
+   ```bash
+   npm run dev
+   ```
 
-### Optional: Use the SSE Proxy directly
-If you'd like SADIE to send streaming requests directly to the local SSE Proxy instead of routing through `n8n`, set the following environment variables before launching the widget.
+2. **Run tests**
+   ```bash
+   npm run test
+   ```
 
-PowerShell example:
-```powershell
-$env:SADIE_USE_PROXY = "true"
-$env:SADIE_PROXY_URL = "http://localhost:5050/stream"
-$env:PROXY_API_KEYS = "changeme"
-$env:PROXY_ADMIN_KEY = "adminchangeme"
-npm start
+3. **Run E2E tests**
+   ```bash
+   npm run e2e
+   ```
+
+### Production Build
+
+1. **Build for production**
+   ```bash
+   npm run build
+   ```
+
+2. **Package application**
+   ```bash
+   npm run dist
+   ```
+
+## 📋 Usage
+
+### First Launch
+- Launch SADIE to see the first-run modal
+- Review privacy settings and telemetry preferences
+- Configure your preferences in the settings panel
+
+### AI Interactions
+SADIE uses a structured tool-based approach for AI interactions:
+
+- **Web Search**: "What are the current NBA standings?"
+- **Weather**: "What's the weather in Tokyo?"
+- **URL Fetching**: "Summarize https://example.com/article"
+- **Document Analysis**: Upload and analyze documents locally
+
+### Security Features
+- All web requests are validated for safety
+- Local network access is blocked
+- Private IP ranges are prohibited
+- Content is processed client-side only
+
+## 🧪 Testing
+
+### Test Suite
+- **Unit Tests**: Jest-based testing with TypeScript support
+- **E2E Tests**: Playwright tests for complete user workflows
+- **Security Tests**: Automated scanning for forbidden strings
+- **Build Verification**: Preflight checks prevent unsafe releases
+
+### Running Tests
+```bash
+# Unit tests
+npm run test
+
+# E2E tests (headed)
+npm run e2e:headed
+
+# E2E tests (headless)
+npm run e2e
 ```
 
-This instructs the `message-router` in the main process to call the SSE proxy at `SADIE_PROXY_URL` for streaming operations.
-```
+## 🔒 Security
 
-## 📦 Project Structure
+SADIE implements multiple layers of security:
 
-```
-sadie/
-├── widget/              # Electron desktop widget
-├── n8n-workflows/       # n8n workflow definitions
-├── prompts/             # LLM prompt templates
-├── schemas/             # JSON schemas for validation
-├── config/              # Configuration files
-├── scripts/             # Automation scripts
-├── memory/              # Local memory subsystem
-├── tests/               # Test suite
-└── docs/                # Documentation
-```
-
-## 🛠️ Available Tools
-
-- **File Manager**: Read, write, search, organize files
-- **Email Manager**: Send and manage emails
-- **Vision Tool**: Screenshot analysis and OCR
-- **Voice Tool**: Speech-to-text transcription
-- **Planning Agent**: Multi-step task breakdown
-- **Memory Manager**: Store and retrieve context
-- **Search Tool**: Fast local file search
-- **System Info**: Query system information
-
-## 🔒 Safety Features
-
-- **Path Whitelisting**: File operations restricted to safe directories
-- **Action Confirmation**: Dangerous operations require user approval
-- **Tool Allowlist**: Only approved tools can be executed
-- **Audit Logging**: All actions logged for review
-- **Schema Validation**: All tool calls validated against JSON schemas
+- **URL Safety**: DNS resolution and IP validation prevent SSRF attacks
+- **Process Isolation**: Electron's context isolation prevents code injection
+- **Input Validation**: All user inputs are sanitized and validated
+- **Compile-time Security**: Development code is automatically removed in production
+- **Privacy Controls**: User consent required for telemetry
 
 ## 📚 Documentation
 
-- [Project Plan](PROJECT_PLAN.md) - Complete architecture and build plan
-- [Environment Status](ENVIRONMENT_STATUS.md) - System requirements check
-- [Setup Guide](docs/setup-guide.md) - Detailed installation
-- [Architecture](docs/architecture.md) - System design
-- [Safety Guidelines](docs/safety-guidelines.md) - Security considerations
+### Core Documentation
+- **[Architecture Overview](FINAL_ARCHITECTURE_DIAGRAM.md)** - System design and components
+- **[Submission Overview](SUBMISSION_OVERVIEW.md)** - Project summary and features
+- **[Demo Script](DEMO_SCRIPT.md)** - Step-by-step demonstration guide
+- **[Evidence Index](EVIDENCE_INDEX.md)** - Comprehensive implementation evidence
+
+### Development Documentation
+- **[Developer Build Guide](DEVELOPER_BUILD_GUIDE.md)** - Setup and development instructions
+- **[Testing Matrix](TESTING_MATRIX.md)** - Test coverage and scenarios
+- **[Release Process](RELEASE_PROCESS.md)** - Build and deployment procedures
+- **[Security & Compliance](SECURITY_AND_COMPLIANCE.md)** - Security measures and compliance
+
+## 🛠️ Development
+
+### Project Structure
+```
+widget/
+├── src/
+│   ├── main/           # Main process (Node.js)
+│   │   ├── tools/      # AI tool implementations
+│   │   ├── env.ts      # Environment detection
+│   │   └── index.ts    # Application entry point
+│   ├── preload/        # Preload scripts (security)
+│   └── renderer/       # React UI components
+├── dist/               # Built application bundles
+├── scripts/            # Build and utility scripts
+└── tests/              # Test files
+```
+
+### Key Technologies
+- **Electron**: Cross-platform desktop framework
+- **React**: UI framework with hooks
+- **TypeScript**: Type-safe JavaScript
+- **Webpack**: Module bundling and optimization
+- **Jest**: Unit testing framework
+- **Playwright**: E2E testing framework
+
+### Build System
+- **Webpack**: Multi-target bundling (main, preload, renderer)
+- **DefinePlugin**: Compile-time constants and code elimination
+- **Electron Builder**: Cross-platform packaging
+- **Preflight Checks**: Automated security and quality verification
 
 ## 🤝 Contributing
 
-This project is in active development. Contributions welcome once core functionality is stable.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-MIT License - See [LICENSE](LICENSE) file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-Built with:
-- [n8n](https://n8n.io/) - Workflow automation
-- [Ollama](https://ollama.ai/) - Local LLM runtime
-- [Electron](https://www.electronjs.org/) - Desktop framework
-- [React](https://react.dev/) - UI framework
+- Built for Toi Ohomai COMP.7112 / COMP.7203 assessment
+- Electron community for the excellent framework
+- Open source AI and security communities
+- DuckDuckGo for privacy-focused search capabilities
 
-## ⚠️ Status
+## 📞 Contact
 
-**Currently in development** - Core functionality being implemented.
-
-See [PROJECT_PLAN.md](PROJECT_PLAN.md) for detailed roadmap and progress tracking.
+**Project Author**: kingithegreat
+**Repository**: [https://github.com/kingithegreat/sadie](https://github.com/kingithegreat/sadie)
 
 ---
 
-**Made with ❤️ for privacy-conscious automation**
+**SADIE** - Bringing safe, intelligent AI assistance to the desktop while protecting user privacy and security.

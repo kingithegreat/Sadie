@@ -1,5 +1,6 @@
 {
   "name": "SADIE Main Orchestrator",
+  "active": true,
   "nodes": [
     {
       "parameters": {

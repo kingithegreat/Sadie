@@ -88,21 +88,21 @@ test.describe('First-run onboarding and config persistence', () => {
     const tmp = makeTempProfile();
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
 
-    // In fresh profile initial modal shows; open settings, toggle telemetry on
-    await page.getByRole('button', { name: /Settings/i }).click();
-    // The telemetry toggle is in SettingsPanel; toggle it on
-    const settingsPanel = page.locator('.settings-panel');
-    // Click to open the TelemetryConsentModal (the control only toggles after consent)
-    await settingsPanel.getByLabel('🛡️ Telemetry (opt-in)', { exact: true }).click();
+    // First-run modal should be visible
+    await expect(page.getByLabel(/Allow anonymous telemetry/i)).toBeVisible();
+
+    // Click the telemetry checkbox to enable (opens consent modal)
+    await page.getByLabel(/Allow anonymous telemetry/i).click();
 
     // TelemetryConsentModal should be visible; click Decline
     await page.getByRole('button', { name: /Decline/i }).click();
 
-    // Settings should still show telemetry disabled
-    const closeBtn = page.getByRole('button', { name: /Close/i });
-    if (await closeBtn.isVisible()) {
-      await closeBtn.click();
-    }
+    // Telemetry should now be unchecked
+    await expect(page.getByLabel(/Allow anonymous telemetry/i)).not.toBeChecked();
+
+    // Click Finish to complete setup
+    await page.getByRole('button', { name: /Finish/i }).click();
+
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.telemetryEnabled).toBe(false);
