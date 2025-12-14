@@ -24,7 +24,10 @@ export function getRuntimeMode(): RuntimeMode {
 }
 
 // Hard safety: use webpack-defined global for compile-time dead code elimination
-export const isReleaseBuild = (typeof IS_RELEASE_BUILD !== 'undefined' && IS_RELEASE_BUILD) || (app?.isPackaged === true && !isE2E);
+// Consider E2E explicitly: even in packaged or release builds we should
+// preserve E2E mode when `SADIE_E2E` or `NODE_ENV=test` is set so that
+// Playwright-packaged test runs still behave like E2E runs.
+export const isReleaseBuild = (((typeof IS_RELEASE_BUILD !== 'undefined' && IS_RELEASE_BUILD) || (app?.isPackaged === true)) && !isE2E);
 
 /**
  * Sanitize environment for packaged builds. Removes or ignores test/dev flags

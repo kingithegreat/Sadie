@@ -44,6 +44,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     open_url: 'Open URLs in your default browser (safe), but could lead to external content.',
     web_search: 'Perform web searches to retrieve results.',
     nba_query: 'Query NBA stats and team information from trusted sources (ESPN).'
+    ,
+    generate_sports_report: 'Generate a formatted sports results report and save it to your Desktop (requires Write permission).'
   };
 
   const DANGEROUS_PERMISSIONS = new Set(['delete_file', 'move_file', 'launch_app', 'screenshot']);

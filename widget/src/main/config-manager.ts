@@ -65,7 +65,8 @@ const DEFAULT_SETTINGS: Settings = {
     open_url: true,
     // Allow read-only network or info operations
     web_search: true,
-    nba_query: true
+    nba_query: true,
+    generate_sports_report: false
   },
 
   // Default NBA team for new users

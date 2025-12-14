@@ -211,6 +211,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // E2E ping helper - used by tests to ensure main is responsive
+  ipcMain.handle('sadie:__e2e_ping', async () => {
+    try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; (global as any).__SADIE_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) {}
+    return { ok: true };
+  });
+
   // Expose current app mode (demo or normal)
   ipcMain.handle('sadie:get-mode', async () => {
     const { isDemoMode } = require('./env');

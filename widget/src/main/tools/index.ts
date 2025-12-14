@@ -22,6 +22,7 @@ import { voiceToolDefs, voiceToolHandlers } from './voice';
 import { memoryToolDefs, memoryToolHandlers } from './memory';
 import { documentToolDefs, documentToolHandlers } from './documents';
 import { nbaQueryDef, nbaQueryHandler } from './nba';
+import sports from './sports';
 
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
@@ -154,6 +155,89 @@ export async function executeToolCalls(
 }
 
 /**
+ * Execute a batch of tool calls atomically: first verify permissions for all tools,
+ * and if any are denied, fail the batch without executing any of them. This
+ * avoids partial effects (e.g., creating a folder then failing to write a file).
+ */
+export async function executeToolBatch(
+  calls: ToolCall[],
+  context: ToolContext,
+  options?: { overrideAllowed?: string[] }
+): Promise<ToolResult[]> {
+  try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; } catch (e) {}
+  console.log('[BATCH] executeToolBatch called', { toolCount: calls.length, toolNames: calls.map(c => c.name) });
+  try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) {}
+  // Pre-check permissions for all unique tools
+  const denied: string[] = [];
+  const seen = new Set<string>();
+  const overrides = new Set(options?.overrideAllowed || []);
+  for (const call of calls) {
+    const name = call.name;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    try {
+      if (overrides.has(name)) continue;
+      const allowed = assertPermission(name);
+      console.log(`[SADIE Tools] Permission check for ${name}: allowed=${allowed}`);
+      try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) {}
+      if (!allowed) denied.push(name);
+
+      // Also check any permissions declared by the tool (e.g., write_file)
+      try {
+        const tool = getTool(name);
+        if (tool && Array.isArray((tool.definition as any).requiredPermissions)) {
+          for (const perm of (tool.definition as any).requiredPermissions as string[]) {
+            if (overrides.has(perm)) continue;
+            const pAllowed = assertPermission(perm);
+            console.log(`[SADIE Tools] Permission check for declared permission ${perm}: allowed=${pAllowed}`);
+            try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${perm}=${pAllowed}`); } catch (e) {}
+            if (!pAllowed) denied.push(perm);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) {
+      // Treat errors as denial
+      denied.push(name);
+    }
+  }
+
+  if (denied.length > 0) {
+    // Return a structured result indicating permission(s) required so the
+    // caller (message router) can prompt the user for confirmation and
+    // optionally enable or allow once.
+    console.log('[BATCH] executeToolBatch missing permissions', { denied });
+    try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) {}
+    return [{ success: false, status: 'needs_confirmation', missingPermissions: denied, reason: `Requires permissions: ${denied.join(', ')}` } as any];
+  }
+
+  const results: ToolResult[] = [];
+  for (const call of calls) {
+    // Prepare execution context including any transient overrides
+    const callContext = { ...(context || {} as any), overrideAllowed: Array.from(overrides) } as any;
+    // If this call is explicitly overridden, call the handler directly (so tools can honor overrideAllowed)
+    if (overrides.has(call.name)) {
+      const tool = getTool(call.name);
+      if (!tool) {
+        results.push({ success: false, error: `Unknown tool: ${call.name}` });
+        continue;
+      }
+      try {
+        const r = await tool.handler(call.arguments, callContext);
+        results.push(r);
+      } catch (e: any) {
+        results.push({ success: false, error: `Tool execution failed: ${e?.message || String(e)}` });
+      }
+      continue;
+    }
+
+    const result = await executeTool(call, callContext);
+    results.push(result);
+  }
+
+  return results;
+}
+
+/**
  * Format a human-readable confirmation message
  */
 function formatConfirmationMessage(toolName: string, args: Record<string, any>): string {
@@ -262,6 +346,8 @@ export function initializeTools(): void {
 
   // Register NBA tool (balldontlie)
   registerTool(nbaQueryDef.name, nbaQueryDef, nbaQueryHandler);
+  // Register sports report tool
+  registerTool(sports.definition.name, sports.definition, sports.handler);
   
   console.log(`[SADIE Tools] Initialized ${toolRegistry.size} tools`);
 }

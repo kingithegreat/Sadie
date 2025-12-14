@@ -151,6 +151,9 @@ export interface ElectronAPI {
   // Confirmation for dangerous operations
   onConfirmationRequest?: (cb: (data: { confirmationId: string; message: string; streamId: string }) => void) => () => void;
   sendConfirmationResponse?: (confirmationId: string, confirmed: boolean) => void;
+  // Permission escalation flow
+  onPermissionRequest?: (cb: (data: { requestId: string; missingPermissions: string[]; reason: string; streamId?: string }) => void) => () => void;
+  sendPermissionResponse?: (requestId: string, decision: 'allow_once'|'always_allow'|'cancel', missingPermissions?: string[]) => void;
   exportTelemetryConsent?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetPermissions?: () => Promise<Settings>;
   
