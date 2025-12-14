@@ -27,6 +27,11 @@ import sports from './sports';
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
 
+// Aliases for tool names coming from models that may use different names
+const TOOL_ALIASES: Record<string, string> = {
+  nba_scores: 'nba_query'
+};
+
 // Pending confirmations for tools that require user approval
 const pendingConfirmations = new Map<string, {
   toolName: string;
@@ -78,6 +83,9 @@ export async function executeTool(
   call: ToolCall,
   context: ToolContext
 ): Promise<ToolResult> {
+  // Normalize aliases (e.g., models may emit `nba_scores` but our registered tool is `nba_query`)
+  const normalized = TOOL_ALIASES[call.name] || call.name;
+  call.name = normalized;
   const tool = toolRegistry.get(call.name);
   
   if (!tool) {
