@@ -771,60 +771,40 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           }
 
           try {
-            const res = await axios.post(streamUrl, request, {
-              responseType: 'stream',
-              timeout: 0,
-              headers: { 'Content-Type': 'application/json' }
-            });
-
-            payloadSent = true;
-            if (process.env.NODE_ENV !== 'production') logDebug(`[DIAG] n8n responded with status ${res.status} for streamId=${streamId}`);
-
-            const stream = res.data as NodeJS.ReadableStream;
-
-            // store stream and request so it can be cancelled/aborted quickly
-            const req = (res as any)?.request;
-            activeStreams.set(streamId, {
-              stream,
-              // call request.abort if available and also destroy the response stream
-              destroy: () => {
-                try { req?.abort?.(); } catch (e) {}
-                try { (stream as any).destroy?.(); } catch (e) {}
-              }
-            });
-
-            stream.on('data', (chunk: Buffer) => {
-              try {
-                // Only forward chunks while the stream is still active (not cancelled)
+            // Instead of proxying streaming through n8n (which can buffer), stream directly from Ollama here for true token-by-token behavior.
+            const handler = await streamFromOllamaWithTools(
+              enhancedMessage,
+              request.images,
+              convId,
+              (chunk) => {
                 if (!activeStreams.has(streamId)) return;
-                const text = chunk.toString('utf8');
-                if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] stream-chunk received', { streamId, len: text.length, snippet: text.substring(0, 120) });
-                // Forward raw chunk to renderer; renderer will append it to the assistant message
-                event.sender.send('sadie:stream-chunk', { chunk: text, streamId });
-              } catch (err) {
-                // ignore chunk parse errors
-              }
-            });
+                try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
+              },
+              (toolName, args) => {
+                // notify renderer of tool call that will be executed
+                try { event.sender.send('sadie:tool-call', { toolName, args, streamId }); } catch (e) {}
+              },
+              (result) => {
+                // send tool execution result back to renderer (optional)
+                try { event.sender.send('sadie:tool-result', { result, streamId }); } catch (e) {}
+              },
+              () => {
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                activeStreams.delete(streamId);
+              },
+              (err) => {
+                try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId }); } catch (e) {}
+                activeStreams.delete(streamId);
+              },
+              requestConfirmation
+            );
 
-            stream.on('end', () => {
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-              if (process.env.NODE_ENV !== 'production') console.log('[Router] Stream ended', { streamId });
-              try { pushRouter(`Stream ended streamId=${streamId}`); } catch (e) {}
-              activeStreams.delete(streamId);
-            });
-
-            stream.on('error', (err: any) => {
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId, diagnostic: { url: streamUrl, payloadSent, httpStatus: res?.status, n8nResponded: true, errorText: err?.message || String(err) } }); } catch (e) {}
-              if (process.env.NODE_ENV !== 'production') logError('[Router] Stream error', { streamId, error: err?.message || err });
-              try { pushRouter(`Stream error streamId=${streamId} error=${err?.message || String(err)}`); } catch (e) {}
-              try { (stream as any).destroy(); } catch (e) {}
-              activeStreams.delete(streamId);
-            });
+            activeStreams.set(streamId, { destroy: handler.cancel });
           } catch (err: any) {
-            logError('[Router] fetch error', err?.message || err);
-            try { pushRouter(`fetch error: ${err?.message || String(err)}`); } catch (e) {}
-            // Build rich diagnostic payload to help determine why the request failed
-            const diagnostic: any = {
+            logError('[Router] direct stream error', err?.message || err);
+            try { pushRouter(`direct stream error: ${err?.message || String(err)}`); } catch (e) {}
+            try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId }); } catch (e) {}
               url: streamUrl,
               payloadSent: payloadSent,
               n8nResponded: !!(err && err.response),
@@ -845,6 +825,28 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         // n8n failed - either fall back to direct Ollama (if explicitly enabled),
         // or return an error to the renderer. Do NOT fall back to Ollama silently
         // because this can mask upstream failures during tests.
+            // Fallback: fetch a non-streaming response from Ollama and return final text
+            try {
+              const fallbackBody = {
+                model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
+                messages: [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: enhancedMessage } ],
+                stream: false
+              };
+              const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
+              // Parse and send final assistant content
+              try {
+                const finalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                if (finalText) {
+                  event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId });
+                }
+              } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              activeStreams.delete(streamId);
+            } catch (fallbackErr) {
+              // If fallback also fails, emit stream-error and clean up
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming fallback failed', details: fallbackErr?.message || fallbackErr, streamId }); } catch (e) {}
+              activeStreams.delete(streamId);
+            }
         console.log('[SADIE] n8n failed:', error?.message || error);
         try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) {}
         if (useDirectOllama) {

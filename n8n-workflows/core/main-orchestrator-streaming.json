@@ -18,7 +18,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Prepare messages for Ollama /api/chat streaming\nconst body = $input.item.json.body || $input.item.json || {};\nconst userMessage = body.message || body.text || '';\nconst conversationId = body.conversation_id || 'default';\nconst userId = body.user_id || 'user';\nconst systemPrompt = `You are Sadie, a helpful AI assistant. Be concise and friendly.`;\n\nconst messages = [\n  { role: 'system', content: systemPrompt },\n  { role: 'user', content: userMessage }\n];\n\nreturn {\n  json: {\n    model: 'llama3.2:3b',\n    messages: messages,\n    stream: true,\n    user_message: userMessage,\n    conversation_id: conversationId,\n    user_id: userId\n  }\n};"
+        "jsCode": "// Prepare messages for Ollama /api/chat (non-streaming orchestrator behaviour)\nconst body = $input.item.json.body || $input.item.json || {};\nconst userMessage = body.message || body.text || '';\nconst conversationId = body.conversation_id || 'default';\nconst userId = body.user_id || 'user';\nconst systemPrompt = `You are Sadie, a helpful AI assistant. Be concise and friendly.`;\n\nconst messages = [\n  { role: 'system', content: systemPrompt },\n  { role: 'user', content: userMessage }\n];\n\nreturn {\n  json: {\n    model: 'llama3.2:3b',\n    messages: messages,\n    stream: false,\n    user_message: userMessage,\n    conversation_id: conversationId,\n    user_id: userId\n  }\n};"
       },
       "id": "prepare-streaming-request",
       "name": "Prepare Streaming Request",
@@ -37,7 +37,7 @@
           "response": {
             "response": {
               "neverError": true,
-              "responseFormat": "stream"
+              "responseFormat": "json"
             }
           }
         }
@@ -50,7 +50,7 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
+        "respondWith": "binary",
         "responseBody": "={{ $binary }}",
         "options": {
           "responseHeaders": {
