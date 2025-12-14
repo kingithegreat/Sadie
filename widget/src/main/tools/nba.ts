@@ -146,6 +146,34 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       if (d) params.dates = d;
       const board = await fetchEspnJson('/scoreboard', params);
       let events = board?.events || [];
+
+      // If no events found for the requested date/range, fall back to a
+      // rolling 7-day window to avoid week-boundary and timezone issues.
+      // If events empty and either no date was given, or the date token is a
+      // fuzzy phrase like 'this week' / 'last week', fall back to a rolling
+      // 7-day window to be tolerant of week-boundaries and timezone shifts.
+      if ((!events || events.length === 0) && (!d || /week|last/i.test(d))) {
+        const seen = new Set<string>();
+        const agg: any[] = [];
+        const now = new Date();
+        for (let i = 0; i < 7; i++) {
+          const dt = new Date(now);
+          dt.setDate(now.getDate() - i);
+          const y = dt.getFullYear();
+          const m = String(dt.getMonth() + 1).padStart(2, '0');
+          const day = String(dt.getDate()).padStart(2, '0');
+          const dateParam = `${y}${m}${day}`;
+          try {
+            const b = await fetchEspnJson('/scoreboard', { dates: dateParam });
+            const ev = b?.events || [];
+            for (const e of ev) {
+              const id = e?.id || JSON.stringify(e);
+              if (!seen.has(id)) { seen.add(id); agg.push(e); }
+            }
+          } catch (e) { /* ignore individual date fetch errors */ }
+        }
+        events = agg;
+      }
       if (query) {
         const q = query.toLowerCase();
         events = events.filter((e: any) => (e.name || '').toLowerCase().includes(q) || (e.shortName || '').toLowerCase().includes(q) || (e.competitions || []).some((c: any) => (c.competitors || []).some((co: any) => (co.team?.displayName || '').toLowerCase().includes(q))));

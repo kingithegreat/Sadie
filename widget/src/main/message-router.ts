@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { permissionRequester } from './permission-requester';
+import { looksLikeToolJson } from './tool-helpers';
 import axios from 'axios';
 import { debug as logDebug, error as logError, info as logInfo } from '../shared/logger';
 import streamFromSadieProxy from './stream-proxy-client';
@@ -23,6 +24,8 @@ function pushRouter(line: string) {
   try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[ROUTER] ${String(line)}`); } catch (e) {}
   try { (global as any).__SADIE_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) {}
 }
+
+// NOTE: tool JSON detection is implemented in `tool-helpers` (imported above)
 
 // Image attachment limits (mirror renderer defaults)
 const MAX_IMAGES = 5;
@@ -392,24 +395,41 @@ async function streamFromOllamaWithTools(
         stream.on('error', reject);
       });
       
+      // If no explicit tool_calls were emitted but the assistant content
+      // looks like raw tool JSON, parse and route it through the tool
+      // execution pipeline rather than rendering it as plain text.
+      if (pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
+        try {
+          const parsed = JSON.parse(assistantContent);
+          if (parsed && (parsed.name || parsed.function)) {
+            pendingToolCalls = [parsed];
+            assistantContent = "I'm fetching that now...";
+            pushRouter('Detected inline tool JSON; routing to tool executor');
+          }
+        } catch (e) {}
+      }
+
       // Process tool calls if any
       if (pendingToolCalls.length > 0) {
-        // Add assistant message with tool calls to history
+        // Add assistant message with tool calls to history (sanitize raw JSON)
+        const contentToStore = looksLikeToolJson(assistantContent) ? "I'm fetching that now..." : assistantContent;
         messages.push({
           role: 'assistant',
-          content: assistantContent,
+          content: contentToStore,
           tool_calls: pendingToolCalls
         });
         
         // Execute tool calls as an atomic batch (precheck permissions to avoid
         // partial execution like creating a folder then failing to write a file)
+        const TOOL_ALIASES: Record<string, string> = { nba_scores: 'nba_query' };
         const calls = pendingToolCalls.map((c: any) => {
           const toolName = c.function?.name || c.name;
+          const normalizedName = TOOL_ALIASES[toolName] || toolName;
           let toolArgs = c.function?.arguments || c.arguments || {};
           if (typeof toolArgs === 'string') {
             try { toolArgs = JSON.parse(toolArgs); } catch { }
           }
-          return { name: toolName, arguments: toolArgs } as any;
+          return { name: normalizedName, arguments: toolArgs } as any;
         });
 
         const batchResults = await executeToolBatch(calls, toolContext);
@@ -1087,7 +1107,6 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         const { calls, streamId } = payload || {} as any;
         if (!Array.isArray(calls) || calls.length === 0) return { ok: false, error: 'MISSING_CALLS' };
         // Run batch precheck
-        const batch = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
         const batch = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
         if (batch.length === 1 && (batch[0] as any).status === 'needs_confirmation') {
           const missing = (batch[0] as any).missingPermissions || [];

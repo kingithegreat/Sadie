@@ -1768,8 +1768,13 @@ body {
   gap: 8px;
   margin: 8px 0;
 }
-
-/* User messages align right */
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  /* Prevent bubbles from collapsing to extremely small widths which
+     can cause text to break between every character. Give a sensible
+     minimum width and avoid breaking inside words unless necessary. */
+  min-inline-size: 64px;
+  word-break: normal;
 .message-wrapper.user {
   justify-content: flex-end;
   grid-template-columns: 1fr auto;
