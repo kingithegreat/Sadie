@@ -8,6 +8,7 @@ This directory contains all n8n workflow JSON files for SADIE's automation layer
 These are the main orchestration workflows:
 
 - **main-orchestrator.json**: Entry point webhook that receives user messages, calls Ollama for reasoning, routes to tools, and manages conversation history
+ - **main-orchestrator-streaming.json**: Streaming-capable orchestrator that proxies Ollama chunked output and includes an inline safety check for tool calls
 - **safety-validator.json**: Pre-execution safety checks for all tool calls (path validation, confirmation requirements, blocked operations)
 
 ### Tool Workflows (`tools/`)
@@ -43,6 +44,7 @@ Individual tool execution workflows:
 
 - All workflows use absolute paths: `C:/Users/adenk/Desktop/sadie`
 - Ollama endpoint: `http://localhost:11434`
+ - Ollama endpoint: `http://localhost:11434`
 - Primary model: `llama3.2:3b`
 - Vision model: `llava:latest`
 - Memory storage: `memory/json-store/` directory
@@ -78,3 +80,12 @@ curl -X POST http://localhost:5678/webhook/sadie/chat `
   -H "Content-Type: application/json" `
   -d '{"message": "Hello Sadie!"}'
 ```
+
+To test the streaming endpoint (replace the default orchestrator):
+```powershell
+curl -X POST http://localhost:5678/webhook/sadie/chat/stream `
+   -H "Content-Type: application/json" `
+   -d '{"message": "Stream test"}'
+```
+
+Note: `main-orchestrator-streaming.json` contains an inline safety check that reads `/data/config/safety-rules.json`. Ensure the file exists in your n8n container or mount it into `/data/config` before importing. The streaming webhook will return an immediate JSON response if a tool call is blocked or requires confirmation.
