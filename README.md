@@ -56,9 +56,6 @@
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    AI Tool System                                │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
 │  │   Web Search    │  │   URL Fetch     │  │   Weather API   │ │
 │  │   (DuckDuckGo)  │  │   (Safe HTTP)   │  │   (wttr.in)     │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
@@ -97,6 +94,17 @@
    ```
 
 ### Development
+
+                                 ## Architecture: Permissions & Batching
+
+                                 High-level flow (permissions and batch execution):
+
+                                 - Batch precheck: when a batch of tool calls is requested, `executeToolBatch()` inspects all unique tools and their declared `requiredPermissions` before executing any tool.
+                                 - `requiredPermissions` (tool definition): tools declare any named permissions they require (for example, a report generator declares `['write_file']`). These are discovered by the batch precheck so nested permissions are not missed.
+                                 - `overrideAllowed` (ToolContext): used for "Allow once" semantics. When the user chooses Allow once, the router re-invokes the batch with `overrideAllowed` set for the current execution; tools should consult this transient list when checking permissions.
+                                 - Re-execution semantics: if precheck finds missing permissions, the batch returns a `needs_confirmation` result (no tools run). The router prompts the user; on `allow_once` the batch is retried with `overrideAllowed`, on `always_allow` the setting is persisted and the batch is retried normally.
+
+                                 This section is the canonical reference for contributors implementing or modifying permission-related code.
 
 1. **Start development mode**
    ```bash
