@@ -41,14 +41,13 @@ describe('CI smoke - permissions', () => {
       expect(r.success).toBe(true);
     }
 
-    // Verify file exists on the real Desktop (path expansion resolves 'Desktop/...')
-    // Use environment-based Desktop resolution for CI-friendly checks.
-    const desktop = path.join(process.env.USERPROFILE || process.env.HOME || os.homedir(), 'Desktop');
-    const reportPath = path.join(desktop, 'SmokeTest', 'report.txt');
+    // Verify file exists by resolving via SADIE's path resolver
+    const { resolveUserPath } = require('../tools/filesystem');
+    const reportPath = resolveUserPath('Desktop/SmokeTest/report.txt');
     expect(fs.existsSync(reportPath)).toBe(true);
 
     // Cleanup: remove the SmokeTest folder from the system Desktop and the temporary HOME
-    try { fs.rmSync(path.join(desktop, 'SmokeTest'), { recursive: true, force: true }); } catch (e) {}
+    try { fs.rmSync(resolveUserPath('Desktop/SmokeTest'), { recursive: true, force: true }); } catch (e) {}
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
   }, 20000);
 });
