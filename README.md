@@ -166,6 +166,12 @@ npm run e2e:headed
 npm run e2e
 ```
 
+### CI behavior (short note)
+
+- **Widget E2E (`widget-e2e.yml`)**: Runs on pull requests only (PRs -> feature branches). You may see "failed" runs on `main` with zero jobs — these are expected and can be ignored.
+- **Release Gate**: The `Release Gate` workflow is the source of truth for `main` branch health and release readiness.
+- **If you'd like**: we can add a cosmetic guard job or a README entry to change visibility later — nothing is required now.
+
 ## 🔒 Security
 
 SADIE implements multiple layers of security:
