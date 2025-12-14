@@ -1,0 +1,64 @@
+name: Release Gate
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install deps
+        run: npm ci
+      - name: Build widget
+        run: npm run build --prefix widget
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run unit tests
+        run: npm test --prefix widget
+
+  e2e-smoke:
+    name: E2E (smoke)
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install widget deps
+        run: npm ci --prefix widget
+      - name: Build widget
+        run: npm run build --prefix widget
+      - name: Install Playwright browsers
+        working-directory: widget
+        run: npx playwright install --with-deps
+      - name: Run smoke E2E
+        working-directory: widget
+        run: npx playwright test -g "smoke" --retries=2 --trace on-first-retry --reporter=dot
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-artifacts-${{ github.run_id }}
+          path: |
+            widget/playwright-report/
+            widget/test-results/
+            widget/traces/

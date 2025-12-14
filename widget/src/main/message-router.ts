@@ -761,11 +761,30 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
                         }
             activeStreams.delete(streamId);
           }, (err) => {
-            try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
-                        if (E2E) {
-                          console.log('[E2E-TRACE] stream-error (proxy)', { streamId, error: err });
-                        }
-            activeStreams.delete(streamId);
+            // Attempt a non-streaming fallback via n8n webhook before emitting an error
+            (async () => {
+              try {
+                const fallbackUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
+                if (process.env.NODE_ENV !== 'production') console.log('[Router] Attempting non-stream fallback to', fallbackUrl, 'for streamId', streamId);
+                const fallbackRes = await axios.post(fallbackUrl, request, { timeout: DEFAULT_TIMEOUT });
+                const finalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                if (finalText) {
+                  try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                  if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback succeeded for streamId', streamId);
+                  activeStreams.delete(streamId);
+                  return;
+                }
+              } catch (fallbackErr) {
+                if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback failed for streamId', streamId, 'error=', fallbackErr?.message || fallbackErr);
+              }
+
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
+                          if (E2E) {
+                            console.log('[E2E-TRACE] stream-error (proxy)', { streamId, error: err });
+                          }
+              activeStreams.delete(streamId);
+            })();
           }, proxyOpts);
 
           // store cancellation function
