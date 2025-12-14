@@ -247,8 +247,8 @@ test('falls back to non-stream final text on stream init error', async () => {
 
   // If the first-run modal is visible (fresh profile), finish setup so the test can interact with the main UI
   try {
-    const firstRunLabel = page.getByLabel(/Allow anonymous telemetry/i);
-    if (await firstRunLabel.isVisible().catch(() => false)) {
+    const firstRunHeader = page.getByText('Welcome to SADIE');
+    if (await firstRunHeader.isVisible().catch(() => false)) {
       // Finish the onboarding with defaults
       await page.getByRole('button', { name: /Finish/i }).click();
       // Give the main UI a moment to render
@@ -290,9 +290,10 @@ test('falls back to non-stream final text on stream init error', async () => {
   // eslint-disable-next-line no-console
   console.log('[E2E-TRACE] __e2e_trigger_fallback response', res);
   expect(res && res.ok).toBe(true);
-  await expect(assistant).toContainText('final-fallback', { timeout: 10000 });
-  // Ensure the message is marked finished (not error)
-  await expect(assistant).toHaveAttribute('data-state', 'finished', { timeout: 5000 });
+  // The app now surfaces stream-init failures as an explicit Error + Retry UI (not silent fallback)
+  await expect(assistant).toContainText('Error', { timeout: 10000 });
+  await expect(assistant).toContainText('Retry', { timeout: 10000 });
+  await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 5000 });
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));

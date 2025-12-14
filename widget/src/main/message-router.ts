@@ -158,6 +158,38 @@ function mapErrorToSadieResponse(error: any): SadieResponse {
   };
 }
 
+// Exported deterministic intent router so it can be used by the message handler
+// and imported directly by unit tests.
+export async function preProcessIntent(userMessage: string): Promise<{ calls: any[] } | null> {
+  if (!userMessage || typeof userMessage !== 'string') return null;
+  const m = userMessage.toLowerCase();
+
+  // SPORTS / NBA intents
+  if (/\b(nba|nba\s|nba:|\bgame(s)?\b|\bscores?\b|\bteam\b)/i.test(m)) {
+    const teamMatch = m.match(/(?:for|about|on|between) ([a-zA-Z0-9\s]+)/i);
+    const teamQuery = teamMatch ? teamMatch[1].trim() : '';
+    const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
+    const call = { name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } };
+    return { calls: [call] };
+  }
+
+  // WEATHER intents
+  if (/\bweather\b/i.test(m)) {
+    const locMatch = m.match(/in ([a-zA-Z\s,]+)/i);
+    const location = locMatch ? locMatch[1].trim() : '';
+    if (location) return { calls: [{ name: 'get_weather', arguments: { location } }] };
+    return null;
+  }
+
+  // WEB SEARCH intents
+  if (/\b(search for|find|who is|what is|look up|tell me about)\b/i.test(m)) {
+    const q = userMessage.trim();
+    return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
+  }
+
+  return null;
+}
+
 // SADIE system prompt for direct Ollama mode with tools
 // Get actual user paths for the prompt
 const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
@@ -165,6 +197,12 @@ const USERNAME = require('os').userInfo().username;
 
 const SADIE_SYSTEM_PROMPT = `You are Sadie — a sweet, supportive, privacy-first AI assistant that runs fully locally.
 Be warm, helpful, and conversational. Keep responses concise but friendly.
+
+TOOL-PRIMACY RULES (READ CAREFULLY):
+- When the user asks for factual, time-based, or external data (sports scores, weather, web search, documents, filesystem actions), you MUST call the appropriate tool and must NOT answer from memory.
+- Do NOT emit raw tool JSON in normal text. All tool calls must be returned via structured tool_call messages or be routed through the tool execution pipeline.
+- If a query is ambiguous about timeframes (e.g., "this week", "recent"), make a best-effort normalization (e.g., last_7_days) and call the tool anyway.
+- If you cannot call tools (offline or error), reply: "I'm unable to fetch that right now." and do NOT invent results.
 
 You have access to various tools. IMPORTANT: When calling tools, you MUST provide complete, valid arguments.
 
@@ -506,7 +544,21 @@ async function streamFromOllamaWithTools(
   }
   
   // Start processing
-  processResponse();
+  // Pre-check for deterministic intent routing: if this user message maps
+  // to tool calls, execute them immediately and emit results before invoking
+  // the LLM. This enforces tool-first behavior for targeted intents.
+  (async () => {
+    try {
+      const pre = await preProcessIntent(request.message);
+      if (pre && pre.calls && pre.calls.length > 0) {
+        try { pushRouter(`Pre-routing detected ${pre.calls.map((c:any)=>c.name).join(',')}`); } catch (e) {}
+        const preResults = await executeToolBatch(pre.calls, { executionId: `pre-${Date.now()}` } as any);
+        for (const r of preResults) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
+      }
+    } catch (e) {}
+    // Continue with the normal streaming/LMM process
+    processResponse();
+  })();
   
   return {
     cancel: () => {
@@ -620,6 +672,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       
       // Create confirmation requester for this stream
       const requestConfirmation = createConfirmationRequester(event.sender, streamId);
+
+      // Deterministic intent routing is handled by module-level `preProcessIntent`.
 
       // Should we use direct Ollama mode? Honor the direct-ollama env only in E2E/test runs.
       // This lets Playwright packaged runs enable test-only behavior while keeping

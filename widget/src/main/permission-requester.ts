@@ -4,17 +4,19 @@ type PermissionResponse = { requestId: string; decision: 'allow_once'|'always_al
 
 const pending = new Map<string, (resp: PermissionResponse) => void>();
 
-ipcMain.on('sadie:permission-response', (_ev: IpcMainEvent, data: PermissionResponse) => {
-  try {
-    const resolver = pending.get(data.requestId);
-    if (resolver) {
-      resolver(data);
-      pending.delete(data.requestId);
+if (ipcMain && typeof ipcMain.on === 'function') {
+  ipcMain.on('sadie:permission-response', (_ev: IpcMainEvent, data: PermissionResponse) => {
+    try {
+      const resolver = pending.get(data.requestId);
+      if (resolver) {
+        resolver(data);
+        pending.delete(data.requestId);
+      }
+    } catch (e) {
+      // ignore
     }
-  } catch (e) {
-    // ignore
-  }
-});
+  });
+}
 
 export const permissionRequester = {
   async request(sender: WebContents, streamId: string | undefined, missingPermissions: string[], reason: string) {
