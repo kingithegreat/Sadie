@@ -7,14 +7,14 @@ describe('executeToolBatch', () => {
 
   test('denies batch if any tool permission missing', async () => {
     // Deny write_file, allow create_directory
-    jest.spyOn(config, 'assertPermission').mockImplementation((name: string) => name === 'write_file' ? false : true as any);
+    jest.spyOn(config, 'assertPermission').mockImplementation((name) => (name === 'write_file' ? false : true));
 
-    const calls: ToolCall[] = [
+    const calls = [
       { name: 'create_directory', arguments: { path: 'Desktop/Test' } },
       { name: 'write_file', arguments: { path: 'Desktop/Test/report.txt', content: 'hi' } }
     ];
 
-    const res = await executeToolBatch(calls as any, {} as any);
+    const res = await executeToolBatch(calls, {});
     expect(res.length).toBe(1);
     expect(res[0].success).toBe(false);
     expect(res[0].status).toBe('needs_confirmation');
@@ -27,10 +27,10 @@ describe('executeToolBatch', () => {
     registerTool('dummy_report', { name: 'dummy_report', description: 'dummy', parameters: { type: 'object', properties: {}, required: [] }, requiredPermissions: ['write_file'] } as any, async () => ({ success: true }));
 
     // Deny write_file
-    jest.spyOn(config, 'assertPermission').mockImplementation((name: string) => name === 'write_file' ? false : true as any);
+    jest.spyOn(config, 'assertPermission').mockImplementation((name) => (name === 'write_file' ? false : true));
 
-    const calls: ToolCall[] = [ { name: 'dummy_report', arguments: {} } as any ];
-    const res = await executeToolBatch(calls as any, {} as any);
+    const calls = [ { name: 'dummy_report', arguments: {} } as any ];
+    const res = await executeToolBatch(calls, {});
     expect(res.length).toBe(1);
     expect((res[0] as any).status).toBe('needs_confirmation');
     expect((res[0] as any).missingPermissions).toContain('write_file');

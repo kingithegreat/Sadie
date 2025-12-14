@@ -29,15 +29,32 @@ export default function FirstRunModal({
 
   if (!open) return null;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Mark firstRun as false and persist
-    onSave({ ...draft, firstRun: false });
+    // Telemetry is required for the app; ensure it's recorded on first-run persist
+    const payload = { ...draft, firstRun: false, telemetryEnabled: true, telemetryConsentTimestamp: new Date().toISOString() } as any;
+    // Persist immediately via the electron bridge to reduce race windows
+    try {
+      console.log('[E2E] FirstRun saving payload', payload);
+      await (window as any).electron.saveSettings?.(payload);
+    } catch (e) {
+      console.warn('FirstRun immediate save failed:', e);
+    }
+    onSave(payload);
     onClose();
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
     // Mark firstRun false and keep defaults set so we don't show again
-    onSave({ ...draft, firstRun: false });
+    // Even when skipping, ensure telemetry is recorded as required
+    const payload = { ...draft, firstRun: false, telemetryEnabled: true, telemetryConsentTimestamp: new Date().toISOString() } as any;
+    try {
+      console.log('[E2E] FirstRun saving payload (skip)', payload);
+      await (window as any).electron.saveSettings?.(payload);
+    } catch (e) {
+      console.warn('FirstRun immediate save failed (skip):', e);
+    }
+    onSave(payload);
     onClose();
   };
 
@@ -58,20 +75,14 @@ export default function FirstRunModal({
           <div className="first-run-content">
             {/* Telemetry section */}
             <div className="first-run-section">
-              <div className="first-run-label">Telemetry</div>
+              <div className="first-run-label">Telemetry (required)</div>
               <label className="first-run-checkbox">
                 <input
                   type="checkbox"
-                  checked={!!draft.telemetryEnabled}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setShowTelemetryModal(true);
-                    } else {
-                      setDraft({ ...draft, telemetryEnabled: false });
-                    }
-                  }}
+                  checked={true}
+                  disabled
                 />
-                <span className="first-run-checkbox-text">Allow anonymous telemetry (opt-in)</span>
+                <span className="first-run-checkbox-text">Telemetry is anonymous and required</span>
               </label>
             </div>
 
