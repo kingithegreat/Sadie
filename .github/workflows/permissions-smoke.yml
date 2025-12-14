@@ -1,0 +1,29 @@
+name: Permissions Smoke
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    name: Permissions smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install deps
+        run: |
+          cd widget
+          npm ci
+
+      - name: Run smoke test
+        run: |
+          cd widget
+          npm run test:smoke
