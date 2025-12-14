@@ -101,6 +101,8 @@ export interface ElectronAPI {
   sendMessage: (request: SadieRequest) => Promise<SadieResponse>;
   getSettings: () => Promise<Settings>;
   saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
+  getMode?: () => Promise<{ demo: boolean }>;
+  readConsentLog?: () => Promise<{ success: boolean; data?: string; error?: string }>;
   hasPermission?: (toolName: string) => Promise<{ success: boolean; allowed?: boolean; error?: string }>;
   checkConnection: () => Promise<ConnectionStatus>;
   onShowWindow: (callback: () => void) => void;
@@ -151,4 +153,14 @@ export interface ElectronAPI {
   sendConfirmationResponse?: (confirmationId: string, confirmed: boolean) => void;
   exportTelemetryConsent?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetPermissions?: () => Promise<Settings>;
+  
+  // Diagnostic: get env info
+  getEnv?: () => Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }>;
+  
+  // Diagnostic: get config file path
+  getConfigPath?: () => Promise<string>;
+  // Capture logs helper (write runtime snapshot and return path)
+  captureLogs?: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  // Test-only: invoke arbitrary IPC channels (E2E only)
+  invoke?: (channel: string, ...args: any[]) => Promise<any>;
 }

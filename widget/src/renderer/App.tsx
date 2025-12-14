@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { debug as logDebug, info as logInfo, error as logError } from '../shared/logger';
 import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
@@ -35,6 +36,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // small helper to create ids
   const newId = useCallback(() => `id-${Date.now()}-${Math.random().toString(16).slice(2,8)}`, []);
 
+  // Diagnostic log for E2E traces
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      window.electron?.getEnv?.().then(env => console.log('[DIAG] Env from main:', env)).catch(console.error);
+    }
+    // Capture: renderer started
+    try { (window as any).sadieCapture?.log('[Renderer] started'); } catch (e) {}
+  }, []);
+
   // State
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (!initialMessages || !initialMessages.length) return [];
@@ -62,10 +72,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   });
   const [isHydrated, setIsHydrated] = useState(false);
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
+  const [backendDiagnostic, setBackendDiagnostic] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
+    // test-only watchdog timers per stream to avoid hanging 'streaming' state in tests
+    const streamWatchersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // Load settings and conversation on boot
   useEffect(() => {
@@ -129,7 +142,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
   useEffect(() => {
     if (isHydrated && settings?.firstRun) {
+      logDebug('[Renderer] Opening first-run modal - isHydrated:', isHydrated, 'firstRun:', settings?.firstRun);
+      try { (window as any).sadieCapture?.log('[Renderer] Opening first-run modal'); } catch (e) {}
       setFirstRunOpen(true);
+    } else {
+      logDebug('[Renderer] Not opening first-run modal - isHydrated:', isHydrated, 'firstRun:', settings?.firstRun);
+      try { (window as any).sadieCapture?.log('[Renderer] Not opening first-run modal'); } catch (e) {}
     }
   }, [isHydrated, settings?.firstRun]);
 
@@ -160,6 +178,18 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       unsubscribe?.();
     };
   }, []);
+
+  // Listen for capture saved event from header (StatusIndicator)
+  useEffect(() => {
+    const onSaved = (e: Event) => {
+      const detail: any = (e as CustomEvent)?.detail;
+      if (detail?.path) {
+        setMessages(prev => [...prev, { id: newId(), role: 'system', content: `Saved capture: ${detail.path}`, createdAt: Date.now(), error: null }]);
+      }
+    };
+    window.addEventListener('sadie:capture-saved', onSaved as EventListener);
+    return () => window.removeEventListener('sadie:capture-saved', onSaved as EventListener);
+  }, [newId]);
 
   /**
    * Load user settings from main process
@@ -378,6 +408,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         });
       },
       onStreamEnd: (payload: { streamId?: string; cancelled?: boolean }) => {
+        // Clear any test-only watchdog timer if set
+        try {
+          const t = streamWatchersRef.current.get(streamId);
+          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
+        } catch (e) {}
         setMessages(prev => {
           const updated = prev.map(m => {
             if (m.id !== assistantId) return m;
@@ -404,8 +439,32 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           return updated;
         });
         unsubscribeStream(streamId);
+        // E2E: record that stream-end was received
+        try {
+          (window as any).__e2eEvents = (window as any).__e2eEvents || [];
+          (window as any).__e2eEvents.push('sadie:stream-end');
+          console.log('[E2E-TRACE] renderer received sadie:stream-end', payload);
+        } catch (e) {}
       },
       onStreamError: (payload: { streamId?: string; error?: string }) => {
+        // Clear any test-only watchdog timer if set
+        try {
+          const t = streamWatchersRef.current.get(streamId);
+          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
+        } catch (e) {}
+        // If the main process included diagnostics, log them and update status
+        try {
+          const diag = (payload as any)?.diagnostic;
+          if (diag) {
+            console.error(`[STREAM ERROR] url=${diag.url} error=${diag.errorText} n8nResponded=${diag.n8nResponded} httpStatus=${diag.httpStatus}`);
+            try { (window as any).sadieCapture?.log(`[Renderer] STREAM ERROR url=${diag.url} status=${diag.httpStatus} n8nResponded=${diag.n8nResponded}`); } catch (e) {}
+            try {
+              setBackendDiagnostic(typeof diag === 'string' ? diag : JSON.stringify(diag, null, 2));
+            } catch (e) { setBackendDiagnostic(String(diag)); }
+            setStatus(prev => ({ ...prev, n8n: 'offline' }));
+          }
+        } catch (e) {}
+
         setMessages(prev => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
@@ -429,6 +488,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           });
         });
         unsubscribeStream(streamId);
+        // E2E: record that stream-error was received
+        try {
+          (window as any).__e2eEvents = (window as any).__e2eEvents || [];
+          (window as any).__e2eEvents.push('sadie:stream-error');
+          console.log('[E2E-TRACE] renderer received sadie:stream-error', payload);
+        } catch (e) {}
       },
     });
 
@@ -495,7 +560,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // window.electron.subscribeToStream already stored an unsubscribe in streamSubsRef
 
     try {
+      logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
+      try { (window as any).sadieCapture?.log(`[Renderer] Sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ ...streamRequest, streamId: assistantId });
+      // Test-only watchdog: if no stream-end or stream-error arrives within timeout,
+      // mark the stream as error so E2E tests don't hang indefinitely.
+      if (process.env.NODE_ENV === 'test') {
+        const timeoutMs = Number(process.env.SADIE_E2E_PROBE_TIMEOUT_MS) || 6000;
+        try {
+          const t = setTimeout(() => {
+            try { (window as any).__sadie_error_received = true; (window as any).__sadie_error_event = { error: 'probe_timeout', streamId: assistantId }; } catch (e) {}
+            updateMessage(assistantId, m => ({ ...m, streamingState: 'error' as StreamingState, error: 'Upstream error (probe timeout)' }));
+            unsubscribeStream(assistantId);
+          }, timeoutMs);
+          streamWatchersRef.current.set(assistantId, t);
+        } catch (e) {}
+      }
     } catch (err: any) {
       console.error(err);
       updateMessage(assistantId, m => ({
@@ -503,6 +583,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         streamingState: "error",
         error: err?.message ?? "Failed to send",
       }));
+      // In test runs, expose a global flag so E2E harness can detect the error
+      if (process.env.NODE_ENV === 'test') {
+        try { (window as any).__sadie_error_received = true; (window as any).__sadie_error_event = err; } catch (e) {}
+      }
       unsubscribeStream(assistantId);
     }
   }, [conversationId, subscribeToStream, unsubscribeStream, updateMessage, newId]);
@@ -565,6 +649,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     subscribeToStream(assistantId, assistantId);
 
     try {
+      logDebug('[Renderer] Retry sending stream request', { streamId: assistantId, message: prevUser.content });
+      try { (window as any).sadieCapture?.log(`[Renderer] Retry sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId || 'default', message: prevUser.content, timestamp: new Date().toISOString(), images: undefined });
     } catch (err: any) {
       updateMessage(assistantId, m => ({
@@ -631,9 +717,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {/* Status Indicator / Header */}
       <StatusIndicator 
         connectionStatus={status} 
-        onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) setStatus(c); } catch (e) { /* ignore */ } }} 
+        onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) { setStatus(c); if (c.n8n === 'online') setBackendDiagnostic(null); } } catch (e) { /* ignore */ } }} 
         onSettingsClick={() => setSettingsOpen(true)}
         onMenuClick={() => setSidebarOpen(true)}
+        backendDiagnostic={backendDiagnostic}
+        onCopyDiagnostic={async (text: string) => {
+          try {
+            await navigator.clipboard.writeText(text);
+            // Optionally show a small in-chat system message
+            setMessages(prev => [...prev, { id: newId(), role: 'system', content: 'Diagnostic copied to clipboard', createdAt: Date.now(), error: null }]);
+          } catch (e) {
+            console.error('Failed to copy diagnostic to clipboard:', e);
+          }
+        }}
+        onDismissDiagnostic={() => setBackendDiagnostic(null)}
       />
 
       {/* Main Chat Interface */}

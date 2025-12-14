@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 
 module.exports = (env, argv) => {
   const isDevelopment = argv.mode !== 'production';
@@ -31,7 +32,14 @@ module.exports = (env, argv) => {
       node: {
         __dirname: false,
         __filename: false
-      }
+      },
+      plugins: [
+        new webpack.DefinePlugin({
+          'process.env.SADIE_RELEASE_BUILD': JSON.stringify(!isDevelopment),
+          'process.env.isReleaseBuild': !isDevelopment,
+          'IS_RELEASE_BUILD': !isDevelopment
+        })
+      ]
     },
 
     // Preload script configuration
@@ -60,7 +68,14 @@ module.exports = (env, argv) => {
       node: {
         __dirname: false,
         __filename: false
-      }
+      },
+      plugins: [
+        new webpack.DefinePlugin({
+          'process.env.SADIE_RELEASE_BUILD': JSON.stringify(!isDevelopment),
+          'process.env.isReleaseBuild': !isDevelopment,
+          'IS_RELEASE_BUILD': !isDevelopment
+        })
+      ]
     },
 
     // Renderer process configuration
@@ -105,6 +120,11 @@ module.exports = (env, argv) => {
           template: './src/renderer/index.html',
           filename: 'index.html',
           inject: 'body'
+        }),
+        new webpack.DefinePlugin({
+          'process.env.SADIE_RELEASE_BUILD': JSON.stringify(!isDevelopment),
+          'process.env.isReleaseBuild': !isDevelopment,
+          'IS_RELEASE_BUILD': !isDevelopment
         })
       ]
     }

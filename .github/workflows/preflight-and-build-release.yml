@@ -1,0 +1,27 @@
+name: Preflight and Build (Release)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  preflight-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run preflight checks
+        run: node ./scripts/preflight-env-check.js --require-production
+
+      - name: Install widget dependencies
+        run: npm ci --prefix widget
+
+      - name: Build and package widget
+        run: npm run dist --prefix widget

@@ -30,4 +30,23 @@ describe('IPC registration', () => {
     // Second call should be a no-op (idempotent), not throw
     expect(() => registerIpcHandlers()).not.toThrow();
   });
+
+  it('check-connection handler returns structured status', async () => {
+    registerIpcHandlers();
+    // Mock axios to simulate n8n online and ollama offline
+    const axios = require('axios');
+    const get = jest.spyOn(axios, 'get').mockImplementation((...args: any[]) => {
+      const url = args[0] as string;
+      if (url.includes('/healthz')) return Promise.resolve({ status: 200 });
+      if (url.includes('11434')) return Promise.reject(new Error('conn refused'));
+      return Promise.resolve({ status: 200 });
+    });
+
+    const res = await handles['sadie:check-connection']();
+    expect(res).toBeDefined();
+    expect(res.n8n).toBe('online');
+    expect(res.ollama).toBe('offline');
+
+    get.mockRestore();
+  });
 });

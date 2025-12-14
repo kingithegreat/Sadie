@@ -16,7 +16,10 @@
     "postinstall": "electron-builder install-app-deps",
     "e2e:install": "playwright install --with-deps",
     "e2e": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test",
-    "e2e:headed": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test --headed"
+    "e2e:headed": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test --headed",
+    "capture-logs": "node ./scripts/capture-diagnostics.js",
+    "clean-tests": "rmdir /s /q test-results playwright-report trace-output 2>nul || echo No test artifacts to clean",
+    "release": "node ../scripts/preflight-env-check.js --require-production && npm run build && node ../scripts/preflight-env-check.js --scan-artifacts && npm run dist && node ../scripts/scan-package-integrity.js"
   },
   "dependencies": {
     "@xenova/transformers": "^2.17.2",

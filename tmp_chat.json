@@ -1,0 +1,1 @@
+﻿{"model":"llama3.2:3b","messages":[{"role":"system","content":"You are Sadie, be concise."},{"role":"user","content":"Write a long essay (200 words) about local LLM streaming."}],"stream":true}

@@ -8,6 +8,9 @@
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import * as https from 'https';
 import * as http from 'http';
+import * as dns from 'dns';
+import * as net from 'net';
+import { isE2E } from '../env';
 
 // ============= TOOL DEFINITIONS =============
 
@@ -77,7 +80,16 @@ export const getWeatherDef: ToolDefinition = {
 // ============= HELPER FUNCTIONS =============
 
 function httpGet(url: string, headers: Record<string, string> = {}): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    // Validate the URL before attempting any network request to mitigate SSRF/local access
+    try {
+      const safe = await isUrlSafe(url);
+      if (!safe.ok) {
+        return reject(new Error('Blocked unsafe URL'));
+      }
+    } catch (err) {
+      return reject(new Error('Blocked unsafe URL'));
+    }
     const isHttps = url.startsWith('https://');
     const client = isHttps ? https : http;
     
@@ -118,6 +130,113 @@ function httpGet(url: string, headers: Record<string, string> = {}): Promise<str
       reject(new Error('Request timeout'));
     });
   });
+}
+
+// ============= URL SAFETY CHECKS =============
+async function isUrlSafe(urlString: string): Promise<{ ok: boolean; message?: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlString);
+  } catch (e) {
+    return { ok: false, message: 'Invalid URL' };
+  }
+
+  const protocol = parsed.protocol.replace(':', '');
+  if (protocol !== 'http' && protocol !== 'https') {
+    return { ok: false, message: 'Unsupported protocol' };
+  }
+
+  if (parsed.protocol === 'file:') {
+    return { ok: false, message: 'file protocol blocked' };
+  }
+
+  const hostname = parsed.hostname;
+  // quick hostname checks
+  if (!hostname) return { ok: false, message: 'Empty hostname' };
+
+  const lower = hostname.toLowerCase();
+  if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1') {
+    return { ok: false, message: 'Loopback hostname blocked' };
+  }
+
+  // If hostname is an IP literal, validate directly
+  const ipVersion = net.isIP(hostname);
+  if (ipVersion === 4) {
+    if (isPrivateIPv4(hostname)) return { ok: false, message: 'IPv4 private range' };
+    return { ok: true };
+  }
+  if (ipVersion === 6) {
+    // block IPv6 loopback
+    if (hostname === '::1') return { ok: false, message: 'IPv6 loopback blocked' };
+    return { ok: true };
+  }
+
+  // Resolve DNS and check all addresses
+  try {
+    const records = await dns.promises.lookup(hostname, { all: true });
+    for (const rec of records) {
+      if (rec.family === 4) {
+        if (isPrivateIPv4(rec.address)) return { ok: false, message: 'Resolved to private IPv4' };
+        if (rec.address.startsWith('127.')) return { ok: false, message: 'Resolved to loopback' };
+      }
+      if (rec.family === 6) {
+        if (rec.address === '::1') return { ok: false, message: 'Resolved to IPv6 loopback' };
+      }
+    }
+  } catch (err) {
+    // If DNS resolution fails, be conservative and allow the request to proceed
+    // (failure to resolve does not imply safety issues). Return ok here so callers
+    // will receive the network error instead of a blocked error.
+    return { ok: true };
+  }
+
+  return { ok: true };
+}
+
+function isPrivateIPv4(ip: string): boolean {
+  // convert to 32-bit number
+  const parts = ip.split('.').map(s => parseInt(s, 10));
+  if (parts.length !== 4 || parts.some(p => Number.isNaN(p))) return false;
+  const num = ((parts[0] << 24) >>> 0) + ((parts[1] << 16) >>> 0) + ((parts[2] << 8) >>> 0) + (parts[3] >>> 0);
+
+  const inRange = (start: string, maskBits: number) => {
+    const sp = start.split('.').map(s => parseInt(s, 10));
+    const startNum = ((sp[0] << 24) >>> 0) + ((sp[1] << 16) >>> 0) + ((sp[2] << 8) >>> 0) + (sp[3] >>> 0);
+    const mask = maskBits === 0 ? 0 : (~0 << (32 - maskBits)) >>> 0;
+    return (num & mask) === (startNum & mask);
+  };
+
+  // 10.0.0.0/8
+  if (inRange('10.0.0.0', 8)) return true;
+  // 172.16.0.0/12
+  if (inRange('172.16.0.0', 12)) return true;
+  // 192.168.0.0/16
+  if (inRange('192.168.0.0', 16)) return true;
+  // 127.0.0.0/8 (loopback)
+  if (inRange('127.0.0.0', 8)) return true;
+
+  return false;
+}
+
+// ============= SIMPLE IN-MEMORY CACHE =============
+type CacheEntry = { data: any; expires: number };
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const webCache: Map<string, CacheEntry> = new Map();
+
+function getFromCache(key: string): any | null {
+  if (isE2E) return null;
+  const entry = webCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expires) {
+    webCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(key: string, data: any) {
+  if (isE2E) return;
+  webCache.set(key, { data, expires: Date.now() + CACHE_TTL_MS });
 }
 
 function stripHtml(html: string): string {
@@ -338,6 +457,12 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     }
     
     const maxResults = Math.min(Math.max(1, args.maxResults || 5), 10);
+    const cacheKey = `web_search:${query}:${maxResults}:${String(args.fetchTopResult)}`;
+
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return { success: true, result: { ...cached }, fromCache: true } as any;
+    }
     let results: Array<{ title: string; url: string; snippet: string }> = [];
     
     // Try multiple search engines - DuckDuckGo is most reliable for actual results
@@ -409,18 +534,17 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       }
     }
     
-    return {
-      success: true,
-      result: {
-        query,
-        resultCount: results.length,
-        results,
-        topResultContent: topContent,
-        note: topContent 
-          ? `I fetched the content from "${topContent.title}" - use this to answer the question.`
-          : 'Could not fetch detailed content. You may need to use fetch_url on specific results.'
-      }
+    const resultPayload = {
+      query,
+      resultCount: results.length,
+      results,
+      topResultContent: topContent,
+      note: topContent 
+        ? `I fetched the content from "${topContent.title}" - use this to answer the question.`
+        : 'Could not fetch detailed content. You may need to use fetch_url on specific results.'
     };
+    setCache(cacheKey, resultPayload);
+    return { success: true, result: resultPayload, fromCache: false } as any;
   } catch (err: any) {
     console.error('[SADIE Web] Search error:', err.message);
     return { success: false, error: `Search failed: ${err.message}` };
@@ -437,9 +561,25 @@ export const fetchUrlHandler: ToolHandler = async (args): Promise<ToolResult> =>
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return { success: false, error: 'URL must start with http:// or https://' };
     }
+
+    // Explicit safety check to prevent SSRF / local network access
+    try {
+      const safe = await isUrlSafe(url);
+      if (!safe.ok) {
+        return { success: false, error: 'Blocked unsafe URL' };
+      }
+    } catch (e) {
+      return { success: false, error: 'Blocked unsafe URL' };
+    }
     
     const maxLength = Math.min(Math.max(500, args.maxLength || 5000), 20000);
-    
+
+    const cacheKey = `fetch_url:${url}:${maxLength}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return { success: true, result: { ...cached }, fromCache: true } as any;
+    }
+
     const html = await httpGet(url);
     
     // Extract title
@@ -454,15 +594,14 @@ export const fetchUrlHandler: ToolHandler = async (args): Promise<ToolResult> =>
       content = content.substring(0, maxLength) + '... [truncated]';
     }
     
-    return {
-      success: true,
-      result: {
-        url,
-        title,
-        contentLength: content.length,
-        content
-      }
+    const resultPayload = {
+      url,
+      title,
+      contentLength: content.length,
+      content
     };
+    setCache(cacheKey, resultPayload);
+    return { success: true, result: resultPayload, fromCache: false } as any;
   } catch (err: any) {
     return { success: false, error: `Failed to fetch URL: ${err.message}` };
   }

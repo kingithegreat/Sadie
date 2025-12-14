@@ -46,6 +46,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     nba_query: 'Query NBA stats and team information from trusted sources (ESPN).'
   };
 
+  const DANGEROUS_PERMISSIONS = new Set(['delete_file', 'move_file', 'launch_app', 'screenshot']);
+
+  const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
+
+  const refreshTelemetryLog = async () => {
+    try {
+      const r = await (window as any).electron?.readConsentLog?.();
+      let entries: string[] = [];
+      if (r && r.success && typeof r.data === 'string') {
+        const lines = r.data.split(/\r?\n/).filter(Boolean);
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line);
+            entries.push(JSON.stringify(obj, null, 2));
+          } catch (e) {
+            entries.push(line);
+          }
+        }
+      }
+      setTelemetryLog(entries);
+    } catch (e) {
+      setTelemetryLog([`Failed to read consent log: ${String(e)}`]);
+    }
+  };
+
+  const telemetryLogPreview = () => {
+    if (!telemetryLog || telemetryLog.length === 0) return 'No consent log entries found.';
+    return telemetryLog.join('\n\n-----\n\n');
+  };
+
   // Update local settings when props change
   useEffect(() => {
     setLocalSettings(settings);
@@ -82,7 +112,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   return (
-    <div className="settings-panel">
+    <div className="settings-overlay">
+      <div className="settings-panel">
       <div className="settings-header">
         <h2>Settings</h2>
         <button className="close-button" onClick={onClose}>
@@ -190,7 +221,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   />
                   <span className="ml-2">{k.replace(/_/g, ' ')}</span>
                 </label>
-                <small className="text-zinc-500">{PERMISSION_DESCRIPTIONS[k] || 'No description available.'}</small>
+                <div>
+                  <small className="text-zinc-500">{PERMISSION_DESCRIPTIONS[k] || 'No description available.'}</small>
+                  {DANGEROUS_PERMISSIONS.has(k) && (
+                    <small style={{ color: '#f59e0b', display: 'block' }}>{PERMISSION_DESCRIPTIONS[k]}</small>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -227,6 +263,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </button>
           </div>
         </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Telemetry Consent Log</label>
+          <div className="flex items-center gap-2 mb-2">
+            <button className="button button-secondary" onClick={async () => {
+              await refreshTelemetryLog();
+            }}>Refresh</button>
+            <button className="button button-secondary" onClick={async () => {
+              const r = await (window as any).electron.exportTelemetryConsent();
+              if (r && r.success) alert(`Exported to ${r.path}`);
+              else alert(`Export failed: ${r?.error}`);
+            }}>Export</button>
+          </div>
+          <div style={{ maxHeight: 220, overflow: 'auto', background: '#0f1724', padding: 8, borderRadius: 6 }}>
+            <pre style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace', color: '#cbd5e1', margin: 0, whiteSpace: 'pre-wrap' }}>{telemetryLogPreview()}</pre>
+          </div>
+        </div>
         <TelemetryConsentModal
           open={showTelemetryModal}
           onAccept={async () => {
@@ -252,6 +305,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <button className="button button-save" onClick={handleSave}>
           Save
         </button>
+      </div>
       </div>
     </div>
   );
