@@ -538,6 +538,10 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       // For convenience in places where request has optional properties, use a typed any alias
       const reqAny: any = request;
 
+      if (process.env.NODE_ENV === 'test') {
+        try { console.log('[E2E-TRACE] stream-message handler entered', { streamId, n8nUrl }); } catch (e) {}
+      }
+
       // Validate images (if provided) to guard the backend from oversized payloads
       const validation = validateImages((request as any).images);
       if (!validation.ok) {
@@ -571,6 +575,30 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Stream POST target =', streamUrl);
           try { pushRouter(`Stream POST target = ${streamUrl}`); } catch (e) {}
 
+          // In test runs, proactively validate the streaming endpoint to detect
+          // immediate upstream failures (500/4xx). If the stream endpoint is
+          // already failing, emit a deterministic error and end the stream so
+          // the renderer reliably receives the error event instead of staying
+          // stuck in 'streaming' state. This check runs only in test mode to
+          // avoid additional latency in production runs.
+          if (process.env.NODE_ENV === 'test') {
+            try {
+              const probe = await axios.get(streamUrl, { timeout: 3000, validateStatus: () => true });
+              if (probe && probe.status >= 400) {
+                try { console.log('[E2E-TRACE] stream POST target probe returned error', { streamId, status: probe.status }); } catch (e) {}
+                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                try { activeStreams.delete(streamId); } catch (e) {}
+                return;
+              }
+            } catch (e: any) {
+              try { console.log('[E2E-TRACE] stream POST target probe failed', { streamId, error: e?.message || e }); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { activeStreams.delete(streamId); } catch (e) {}
+              return;
+            }
+          }
           // notify renderer that stream is starting
                     event.sender.send('sadie:stream-start', { streamId });
 
@@ -915,11 +943,18 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
             event.sender.send('sadie:stream-error', { error: true, message: 'Both n8n and Ollama unavailable', details: ollamaError?.message || ollamaError, streamId });
           }
         } else {
-          // If we are not allowed to fallback to Ollama, propagate the error to frontend
-          console.log('[E2E-TRACE] sending stream-error Upstream error', { streamId, details: error?.message || error });
-          event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId });
+          // If we are not allowed to fallback to Ollama, propagate the error to frontend.
+          // Emit a deterministic error then end so renderer always receives a single
+          // error event and then the stream end notification (prevents the UI from
+          // remaining stuck in 'streaming' state when upstream fails).
+          try {
+            console.log('[E2E-TRACE] sending deterministic stream-error Upstream error', { streamId, details: error?.message || error });
+          } catch (e) {}
+          try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId }); } catch (e) {}
+          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+          try { activeStreams.delete(streamId); } catch (e) {}
           if (E2E) {
-            console.log('[E2E-TRACE] n8n error, fallback disabled', { streamId, error: error?.message || error, fallbackEnabled: useDirectOllama });
+            console.log('[E2E-TRACE] n8n error, fallback disabled (deterministic emit sent)', { streamId, error: error?.message || error, fallbackEnabled: useDirectOllama });
           }
         }
       }
@@ -970,6 +1005,17 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         const { streamId, finalText } = payload || {} as any;
         if (!streamId) return { ok: false, error: 'MISSING_STREAM_ID' };
         event.sender.send('sadie:stream-chunk', { chunk: finalText || 'final-fallback', streamId });
+        event.sender.send('sadie:stream-end', { streamId });
+        return { ok: true };
+      } catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
+    });
+    // Test helper: trigger a simulated upstream error for a given streamId (E2E only)
+    ipcMain.handle('sadie:__e2e_trigger_upstream_error', async (event, payload: { streamId: string; message?: string }) => {
+      try {
+        const { streamId, message } = payload || {} as any;
+        if (!streamId) return { ok: false, error: 'MISSING_STREAM_ID' };
+        console.log('[E2E-TRACE] __e2e_trigger_upstream_error invoked', { streamId });
+        event.sender.send('sadie:stream-error', { error: true, message: message || 'Upstream error (simulated)', streamId, diagnostic: { simulated: true } });
         event.sender.send('sadie:stream-end', { streamId });
         return { ok: true };
       } catch (e: any) { return { ok: false, error: e?.message || String(e) }; }

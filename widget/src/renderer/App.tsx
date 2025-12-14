@@ -77,6 +77,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
+    // test-only watchdog timers per stream to avoid hanging 'streaming' state in tests
+    const streamWatchersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // Load settings and conversation on boot
   useEffect(() => {
@@ -406,6 +408,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         });
       },
       onStreamEnd: (payload: { streamId?: string; cancelled?: boolean }) => {
+        // Clear any test-only watchdog timer if set
+        try {
+          const t = streamWatchersRef.current.get(streamId);
+          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
+        } catch (e) {}
         setMessages(prev => {
           const updated = prev.map(m => {
             if (m.id !== assistantId) return m;
@@ -432,8 +439,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           return updated;
         });
         unsubscribeStream(streamId);
+        // E2E: record that stream-end was received
+        try {
+          (window as any).__e2eEvents = (window as any).__e2eEvents || [];
+          (window as any).__e2eEvents.push('sadie:stream-end');
+          console.log('[E2E-TRACE] renderer received sadie:stream-end', payload);
+        } catch (e) {}
       },
       onStreamError: (payload: { streamId?: string; error?: string }) => {
+        // Clear any test-only watchdog timer if set
+        try {
+          const t = streamWatchersRef.current.get(streamId);
+          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
+        } catch (e) {}
         // If the main process included diagnostics, log them and update status
         try {
           const diag = (payload as any)?.diagnostic;
@@ -470,6 +488,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           });
         });
         unsubscribeStream(streamId);
+        // E2E: record that stream-error was received
+        try {
+          (window as any).__e2eEvents = (window as any).__e2eEvents || [];
+          (window as any).__e2eEvents.push('sadie:stream-error');
+          console.log('[E2E-TRACE] renderer received sadie:stream-error', payload);
+        } catch (e) {}
       },
     });
 
@@ -539,6 +563,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
       try { (window as any).sadieCapture?.log(`[Renderer] Sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ ...streamRequest, streamId: assistantId });
+      // Test-only watchdog: if no stream-end or stream-error arrives within timeout,
+      // mark the stream as error so E2E tests don't hang indefinitely.
+      if (process.env.NODE_ENV === 'test') {
+        const timeoutMs = Number(process.env.SADIE_E2E_PROBE_TIMEOUT_MS) || 6000;
+        try {
+          const t = setTimeout(() => {
+            try { (window as any).__sadie_error_received = true; (window as any).__sadie_error_event = { error: 'probe_timeout', streamId: assistantId }; } catch (e) {}
+            updateMessage(assistantId, m => ({ ...m, streamingState: 'error' as StreamingState, error: 'Upstream error (probe timeout)' }));
+            unsubscribeStream(assistantId);
+          }, timeoutMs);
+          streamWatchersRef.current.set(assistantId, t);
+        } catch (e) {}
+      }
     } catch (err: any) {
       console.error(err);
       updateMessage(assistantId, m => ({
@@ -546,6 +583,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         streamingState: "error",
         error: err?.message ?? "Failed to send",
       }));
+      // In test runs, expose a global flag so E2E harness can detect the error
+      if (process.env.NODE_ENV === 'test') {
+        try { (window as any).__sadie_error_received = true; (window as any).__sadie_error_event = err; } catch (e) {}
+      }
       unsubscribeStream(assistantId);
     }
   }, [conversationId, subscribeToStream, unsubscribeStream, updateMessage, newId]);

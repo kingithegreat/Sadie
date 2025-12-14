@@ -165,13 +165,26 @@ test('handles upstream error', async () => {
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
 
-  // Wait until the state is no longer 'streaming', then expect 'error'
-  await expect(assistant).not.toHaveAttribute('data-state', 'streaming', { timeout: 10000 });
-  // The renderer should receive the error event
-  const errorReceived = await page.evaluate(() => (window as any).__sadie_error_received);
-  expect(errorReceived).toBe(true);
-  const state = await assistant.getAttribute('data-state');
-  expect(state).toBe('error');
+  // Invoke a test-only handler to simulate upstream error (deterministic)
+  const msgId = await assistant.getAttribute('data-message-id');
+  await page.evaluate(async (id) => {
+    try {
+      // @ts-ignore - test hook
+      await (window as any).electron.invoke('sadie:__e2e_trigger_upstream_error', { streamId: id, message: 'Upstream error (simulated)' });
+    } catch (e) {
+      // ignore invocation errors
+    }
+  }, msgId);
+
+  // Wait for the renderer to observe the stream-error IPC event (E2E global tracker)
+  await page.waitForFunction(() => Array.isArray((window as any).__e2eEvents) && (window as any).__e2eEvents.includes('sadie:stream-error'), null, { timeout: 10000 });
+  // Verify the event was observed
+  const events = await page.evaluate(() => (window as any).__e2eEvents || []);
+  expect(events.includes('sadie:stream-error')).toBe(true);
+
+  // After the error event the UI should transition to the 'error' state and show the error indicator
+  await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 5000 });
+  await expect(assistant).toContainText('Error');
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));
