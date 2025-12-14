@@ -1,14 +1,26 @@
 import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
 import axios from 'axios';
+import { debug as logDebug, error as logError, info as logInfo } from '../shared/logger';
 import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { getMainWindow } from './window-manager';
 import { initializeTools, getOllamaTools, executeTool, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
+import { isE2E, isPackagedBuild, isReleaseBuild } from './env';
+
+const E2E = isE2E;
+const PACKAGED = isPackagedBuild;
 
 const DEFAULT_TIMEOUT = 30000;
 const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
+
+// Router diagnostics buffer for capture tool
+(global as any).__SADIE_ROUTER_LOG_BUFFER ??= [];
+function pushRouter(line: string) {
+  try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[ROUTER] ${String(line)}`); } catch (e) {}
+  try { (global as any).__SADIE_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) {}
+}
 
 // Image attachment limits (mirror renderer defaults)
 const MAX_IMAGES = 5;
@@ -469,8 +481,10 @@ async function streamFromOllama(
 export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string) {
     // Initialize tools system
     initializeTools();
-    if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
-      console.log('[E2E-TRACE] registerMessageRouter env', { SADIE_E2E: process.env.SADIE_E2E, SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA });
+    if (E2E) {
+      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Registering E2E mock streaming handlers');
+      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] n8nUrl in E2E =', n8nUrl);
+      if (process.env.NODE_ENV !== 'production') console.log('[E2E-TRACE] registerMessageRouter flags', { E2E, PACKAGED });
     }
     
     // Track pending confirmation requests
@@ -512,6 +526,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
     
     // Streaming responses via HTTP chunked response (POST -> stream)
     ipcMain.on('sadie:stream-message', async (event: IpcMainEvent, request: SadieRequestWithImages & { streamId?: string }) => {
+      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received sadie:stream-message', { request });
+      try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) {}
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 
       if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
@@ -532,52 +548,93 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       // Create confirmation requester for this stream
       const requestConfirmation = createConfirmationRequester(event.sender, streamId);
 
-      // Should we use direct Ollama mode? Declare before try so catch can read it
-      const useDirectOllama = process.env.SADIE_DIRECT_OLLAMA === 'true' || process.env.SADIE_DIRECT_OLLAMA === '1';
+      // Should we use direct Ollama mode? Honor the direct-ollama env only in E2E/test runs.
+      // This lets Playwright packaged runs enable test-only behavior while keeping
+      // release builds protected via `isReleaseBuild` in the env helper.
+      const useDirectOllama = isE2E && (process.env.SADIE_DIRECT_OLLAMA === 'true' || process.env.SADIE_DIRECT_OLLAMA === '1');
 
-      try {
-          const streamUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}/stream`;
 
-          // E2E mock streaming: return deterministic chunks for Playwright/E2E tests
-          if (process.env.SADIE_E2E === 'true' || process.env.SADIE_E2E === '1') {
-                      // register the stream id as active to support cancellation APIs
-            activeStreams.set(streamId, { destroy: () => {} });
-                      try { event.sender.send('sadie:stream-start', { streamId }); } catch (e) {}
-                      if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
-                        console.log('[E2E-TRACE] stream-start', { streamId, conversationId: convId, userId: request.user_id });
-                      }
-            const chunks = ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4', 'chunk-5'];
-            for (const c of chunks) {
-                // stop emitting if the stream has been cancelled
-                if (!activeStreams.has(streamId)) {
-                                  try { event.sender.send('sadie:stream-end', { streamId, cancelled: true }); } catch (e) {}
-                                  if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
-                                    console.log('[E2E-TRACE] stream-cancelled', { streamId });
-                                  }
-                  activeStreams.delete(streamId);
-                  return;
-                }
-                try { event.sender.send('sadie:stream-chunk', { chunk: c, streamId }); } catch (e) {}
-                                if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
-                                  console.log('[E2E-TRACE] stream-chunk', { streamId, chunkLen: c?.length ?? 0, snippet: c?.substring(0, 120) });
-                                }
-                await new Promise((r) => setTimeout(r, 200));
-              }
-            try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-                        if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
-                          console.log('[E2E-TRACE] stream-end', { streamId });
-                        }
-            activeStreams.delete(streamId);
-            return;
+        try {
+          const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${SADIE_WEBHOOK_PATH}/stream`;
+          const streamUrl = N8N_STREAM_URL;
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[Router] Final streamUrl built =', streamUrl, ' (N8N_STREAM_URL override present=', Boolean(process.env.N8N_STREAM_URL), ')');
+            try { pushRouter(`Final streamUrl built = ${streamUrl}`); } catch (e) {}
+            if (streamUrl === 'http://localhost:5678/webhook/sadie/chat/stream') {
+              console.log('[Router] Verified streamUrl equals expected default');
+              try { pushRouter('Verified streamUrl equals expected default'); } catch (e) {}
+            }
           }
+          if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Stream POST target =', streamUrl);
+          try { pushRouter(`Stream POST target = ${streamUrl}`); } catch (e) {}
 
           // notify renderer that stream is starting
                     event.sender.send('sadie:stream-start', { streamId });
 
-        // Check if we should use direct Ollama mode (bypass n8n)
-        const useDirectOllama = process.env.SADIE_DIRECT_OLLAMA === 'true' || process.env.SADIE_DIRECT_OLLAMA === '1';
-        if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
-          console.log('[E2E-TRACE] stream-start (real)', { streamId, conversationId: convId, userId: request.user_id, useDirectOllama });
+        // E2E MOCK MODE: Replace all real streaming with deterministic chunks
+        if (E2E) {
+          if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Starting deterministic streaming mock for streamId:', streamId);
+          try { pushRouter(`E2E-MOCK starting streamId=${streamId}`); } catch (e) {}
+          
+          // Add user message to conversation history
+          addToHistory(convId, 'user', request.message);
+          
+          // Track assistant response for history
+          let assistantResponse = '';
+          
+          // Emit deterministic chunks with 200ms delay
+          const chunks = ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4', 'chunk-5'];
+          let chunkIndex = 0;
+          
+          const emitNextChunk = () => {
+            // Check if stream was cancelled
+            if (!activeStreams.has(streamId)) {
+              if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled during emission, streamId:', streamId);
+              try { pushRouter(`E2E-MOCK stream cancelled streamId=${streamId}`); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId, cancelled: true }); } catch (e) {}
+              return;
+            }
+            
+            if (chunkIndex < chunks.length) {
+              const chunk = chunks[chunkIndex];
+              assistantResponse += chunk;
+              try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+              if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Emitted chunk:', chunk, 'for streamId:', streamId);
+              try { pushRouter(`E2E-MOCK emitted chunk ${chunk} for streamId=${streamId}`); } catch (e) {}
+              chunkIndex++;
+              
+              // Schedule next chunk after 200ms
+              setTimeout(emitNextChunk, 200);
+            } else {
+              // All chunks emitted, end the stream
+              if (assistantResponse.trim()) {
+                addToHistory(convId, 'assistant', assistantResponse);
+              }
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream completed for streamId:', streamId);
+              try { pushRouter(`E2E-MOCK stream completed streamId=${streamId}`); } catch (e) {}
+              activeStreams.delete(streamId);
+            }
+          };
+          
+          // Start emitting chunks
+          activeStreams.set(streamId, { 
+            destroy: () => {
+              if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled via destroy, streamId:', streamId);
+              try { pushRouter(`E2E-MOCK stream cancelled via destroy streamId=${streamId}`); } catch (e) {}
+              activeStreams.delete(streamId);
+            }
+          });
+          
+          // Start the first chunk immediately (no initial delay)
+          setTimeout(emitNextChunk, 0);
+          return;
+        }
+
+        // Check if we should use direct Ollama mode (bypass n8n) - env ignored in packaged builds
+        const useDirectOllamaInner = useDirectOllama;
+        if (E2E) {
+          console.log('[E2E-TRACE] stream-start (real)', { streamId, conversationId: convId, userId: request.user_id, useDirectOllama: useDirectOllamaInner });
         }
         
         // Parse any attached documents and build enhanced message
@@ -617,7 +674,7 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
               if (!activeStreams.has(streamId)) return;
               assistantResponse += chunk;
               event.sender.send('sadie:stream-chunk', { chunk, streamId });
-                          if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+                          if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (ollama)', { streamId, chunkLen: chunk?.length ?? 0, snippet: String(chunk).substring(0, 120) });
                           }
             },
@@ -627,14 +684,14 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
                 addToHistory(convId, 'assistant', assistantResponse);
               }
               try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-                          if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+                          if (E2E) {
                             console.log('[E2E-TRACE] stream-end (ollama)', { streamId });
                           }
               activeStreams.delete(streamId);
             },
             (err) => {
               try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId }); } catch (e) {}
-                          if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+                          if (E2E) {
                             console.log('[E2E-TRACE] stream-error (ollama)', { streamId, error: err?.message || err });
                           }
               activeStreams.delete(streamId);
@@ -659,19 +716,19 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
               if (!activeStreams.has(streamId)) return;
               // forward raw chunk to renderer
               event.sender.send('sadie:stream-chunk', { chunk: chunk.toString?.() || String(chunk), streamId });
-                          if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+                          if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
                           }
             } catch (err) {}
           }, () => {
             try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-                        if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+                        if (E2E) {
                           console.log('[E2E-TRACE] stream-end (proxy)', { streamId });
                         }
             activeStreams.delete(streamId);
           }, (err) => {
             try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
-                        if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+                        if (E2E) {
                           console.log('[E2E-TRACE] stream-error (proxy)', { streamId, error: err });
                         }
             activeStreams.delete(streamId);
@@ -680,53 +737,116 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           // store cancellation function
           activeStreams.set(streamId, { destroy: handler.cancel });
         } else {
-          const res = await axios.post(streamUrl, request, {
-            responseType: 'stream',
-            timeout: 0,
-            headers: { 'Content-Type': 'application/json' }
-          });
-
-          const stream = res.data as NodeJS.ReadableStream;
-
-          // store stream and request so it can be cancelled/aborted quickly
-          const req = (res as any)?.request;
-          activeStreams.set(streamId, {
-            stream,
-            // call request.abort if available and also destroy the response stream
-            destroy: () => {
-              try { req?.abort?.(); } catch (e) {}
-              try { (stream as any).destroy?.(); } catch (e) {}
-            }
-          });
-
-          stream.on('data', (chunk: Buffer) => {
-          try {
-            // Only forward chunks while the stream is still active (not cancelled)
-            if (!activeStreams.has(streamId)) return;
-            const text = chunk.toString('utf8');
-            // Forward raw chunk to renderer; renderer will append it to the assistant message
-            event.sender.send('sadie:stream-chunk', { chunk: text, streamId });
-          } catch (err) {
-            // ignore chunk parse errors
+          // Diagnostic: record that we are about to POST to n8n
+          if (process.env.NODE_ENV !== 'production') {
+            logDebug('[Router] Preparing POST', streamUrl);
+            try { logDebug('[Router] Payload preview', JSON.stringify(request, null, 2).substring(0, 1000)); } catch (e) { logDebug('[Router] Payload preview [cannot stringify]'); }
           }
-        });
+          let payloadSent = false;
+          // If a tool_call is present, run a safety check first via n8n safety webhook (if available)
+          if (request.tool_call) {
+            try {
+              const safetyUrl = `${n8nUrl}/webhook/sadie/validate`;
+              if (process.env.NODE_ENV !== 'production') logDebug('[Router] Running safety check', { safetyUrl });
+              const safetyRes = await axios.post(safetyUrl, { tool_call: request.tool_call }, { timeout: DEFAULT_TIMEOUT });
+              if (safetyRes?.data?.status === 'blocked') {
+                // Safety blocked - return an error to the renderer and stop
+                try { event.sender.send('sadie:stream-error', { error: true, message: 'Safety blocked', details: safetyRes.data, streamId }); } catch (e) {}
+                activeStreams.delete(streamId);
+                return;
+              }
+              if (safetyRes?.data?.status === 'needs_confirmation') {
+                // Ask user for confirmation via renderer
+                const confirmed = await requestConfirmation(safetyRes.data.message || 'Confirm action');
+                if (!confirmed) {
+                  try { event.sender.send('sadie:stream-error', { error: true, message: 'User declined confirmation', details: safetyRes.data, streamId }); } catch (e) {}
+                  activeStreams.delete(streamId);
+                  return;
+                }
+              }
+            } catch (err: any) {
+              // If safety webhook doesn't exist or returns 404, log and continue (fail-open)
+              if (process.env.NODE_ENV !== 'production') logDebug('[Router] Safety check skipped or failed (continuing):', { error: err?.message || err });
+            }
+          }
 
-          stream.on('end', () => {
-            try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-            activeStreams.delete(streamId);
-          });
+          try {
+            const res = await axios.post(streamUrl, request, {
+              responseType: 'stream',
+              timeout: 0,
+              headers: { 'Content-Type': 'application/json' }
+            });
 
-          stream.on('error', (err: any) => {
-            try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId }); } catch (e) {}
-            try { (stream as any).destroy(); } catch (e) {}
-            activeStreams.delete(streamId);
-          });
+            payloadSent = true;
+            if (process.env.NODE_ENV !== 'production') logDebug(`[DIAG] n8n responded with status ${res.status} for streamId=${streamId}`);
+
+            const stream = res.data as NodeJS.ReadableStream;
+
+            // store stream and request so it can be cancelled/aborted quickly
+            const req = (res as any)?.request;
+            activeStreams.set(streamId, {
+              stream,
+              // call request.abort if available and also destroy the response stream
+              destroy: () => {
+                try { req?.abort?.(); } catch (e) {}
+                try { (stream as any).destroy?.(); } catch (e) {}
+              }
+            });
+
+            stream.on('data', (chunk: Buffer) => {
+              try {
+                // Only forward chunks while the stream is still active (not cancelled)
+                if (!activeStreams.has(streamId)) return;
+                const text = chunk.toString('utf8');
+                if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] stream-chunk received', { streamId, len: text.length, snippet: text.substring(0, 120) });
+                // Forward raw chunk to renderer; renderer will append it to the assistant message
+                event.sender.send('sadie:stream-chunk', { chunk: text, streamId });
+              } catch (err) {
+                // ignore chunk parse errors
+              }
+            });
+
+            stream.on('end', () => {
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              if (process.env.NODE_ENV !== 'production') console.log('[Router] Stream ended', { streamId });
+              try { pushRouter(`Stream ended streamId=${streamId}`); } catch (e) {}
+              activeStreams.delete(streamId);
+            });
+
+            stream.on('error', (err: any) => {
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: err, streamId, diagnostic: { url: streamUrl, payloadSent, httpStatus: res?.status, n8nResponded: true, errorText: err?.message || String(err) } }); } catch (e) {}
+              if (process.env.NODE_ENV !== 'production') logError('[Router] Stream error', { streamId, error: err?.message || err });
+              try { pushRouter(`Stream error streamId=${streamId} error=${err?.message || String(err)}`); } catch (e) {}
+              try { (stream as any).destroy(); } catch (e) {}
+              activeStreams.delete(streamId);
+            });
+          } catch (err: any) {
+            logError('[Router] fetch error', err?.message || err);
+            try { pushRouter(`fetch error: ${err?.message || String(err)}`); } catch (e) {}
+            // Build rich diagnostic payload to help determine why the request failed
+            const diagnostic: any = {
+              url: streamUrl,
+              payloadSent: payloadSent,
+              n8nResponded: !!(err && err.response),
+              httpStatus: err?.response?.status,
+              responseBody: err?.response?.data,
+              errorText: err?.message || String(err)
+            };
+
+            logError('[SADIE] [STREAM ERROR] streamId=%s url=%s error=%s n8nResponded=%s httpStatus=%s', streamId, streamUrl, diagnostic.errorText, diagnostic.n8nResponded, diagnostic.httpStatus);
+            try { pushRouter(`STREAM ERROR streamId=${streamId} url=${streamUrl} n8nResponded=${diagnostic.n8nResponded} httpStatus=${diagnostic.httpStatus} error=${diagnostic.errorText}`); } catch (e) {}
+
+            try {
+              event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: err?.message || err, streamId, diagnostic });
+            } catch (e) {}
+          }
         }
       } catch (error: any) {
         // n8n failed - either fall back to direct Ollama (if explicitly enabled),
         // or return an error to the renderer. Do NOT fall back to Ollama silently
         // because this can mask upstream failures during tests.
         console.log('[SADIE] n8n failed:', error?.message || error);
+        try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) {}
         if (useDirectOllama) {
           console.log('[SADIE] Falling back to direct Ollama...');
           try {
@@ -759,7 +879,7 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         } else {
           // If we are not allowed to fallback to Ollama, propagate the error to frontend
           event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId });
-          if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+          if (E2E) {
             console.log('[E2E-TRACE] n8n error, fallback disabled', { streamId, error: error?.message || error, fallbackEnabled: useDirectOllama });
           }
         }
@@ -785,7 +905,7 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         // POST to the upstream mock so it stops emitting immediately. This
         // helps make cancel behavior deterministic in tests.
         try {
-          if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+          if (E2E) {
             // Don't await — fire and forget
             axios.post(`${n8nUrl}/__sadie_e2e_cancel`, { streamId }).catch(() => {});
           }
@@ -793,7 +913,7 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         // Remove from the active map immediately so any in-flight data handlers
         // will stop forwarding further chunks.
         activeStreams.delete(streamId);
-                if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+                if (E2E) {
                   console.log('[E2E-TRACE] stream-cancel-received', { streamId });
                 }
         // notify renderer the stream ended due to cancel

@@ -1,0 +1,55 @@
+{
+  "name": "SADIE Safety Webhook",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie/validate",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "sadie-validate"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = '/data/config/safety-rules.json';\nconst safeReturn = (status, message, extra = {}) => ({ json: { status, message, ...extra, timestamp: new Date().toISOString() } });\nlet safetyRules = {};\ntry {\n  if (fs.existsSync(path)) {\n    safetyRules = JSON.parse(fs.readFileSync(path, 'utf8'));\n  } else {\n    return safeReturn('blocked', 'Missing safety-rules.json in /data/config');\n  }\n} catch (err) {\n  return safeReturn('blocked', 'Could not load safety rules', { error: err.message });\n}\nconst toolCall = $input.item.json.tool_call;\nif (!toolCall || typeof toolCall !== 'object') {\n  return safeReturn('blocked', 'Invalid or missing tool_call');\n}\nconst toolName = toolCall.tool_name;\nconst params = toolCall.parameters || {};\nconst violations = [];\nconst warnings = [];\nconst blockedDirs = (safetyRules.file_operations.blocked_paths || safetyRules.file_operations.blocked_directories || []);\nconst allowedDirs = (safetyRules.file_operations.allowed_paths || safetyRules.file_operations.allowed_directories || []);\nconst blockedExts = (safetyRules.file_operations.blocked_extensions || []);\nconst isPathUnsafe = (p) => { if (!p || typeof p !== 'string') return true; const norm = p.toLowerCase(); if (blockedDirs.some(b => norm.includes(b.toLowerCase()))) return true; return false; };\nconst isPathAllowed = (p) => { if (!p || typeof p !== 'string') return false; const norm = p.toLowerCase(); return allowedDirs.some(a => norm.includes(a.toLowerCase())); };\nif (toolName === 'file_manager') { const target = params.file_path || params.directory_path || ''; const action = params.action || ''; if (isPathUnsafe(target)) violations.push(`Blocked or unsafe path: ${target}`); if (!isPathAllowed(target)) violations.push(`Path not in allowed zones: ${target}`); const ext = target.includes('.') ? '.' + target.split('.').pop() : ''; if (blockedExts.includes(ext)) violations.push(`Blocked extension: ${ext}`); if (['delete_file','move_file','write_file'].includes(action) && !params.user_confirmed) warnings.push('This file action requires explicit user confirmation'); }\nif (toolName === 'email_manager') { if (params.action === 'send_email' && !params.user_confirmed) warnings.push('Sending email requires user confirmation'); if (params.to && safetyRules.email_operations.blocked_domains) { try { const domain = params.to.split('@')[1]; if (safetyRules.email_operations.blocked_domains.includes(domain)) violations.push(`Blocked email domain: ${domain}`); } catch (e) { violations.push('Invalid email format'); } } if (params.attachments) { const totalBytes = params.attachments.reduce((a,b) => a + (b.size || 0), 0); if (totalBytes > 25 * 1024 * 1024) violations.push('Attachment size exceeds 25MB limit'); } }\nif (toolName === 'api_tool') { const url = params.url || ''; const isLocal = url.includes('localhost') || url.includes('127.0.0.1'); const isApproved = (safetyRules.api_operations.approved_domains || safetyRules.api_operations.allowed_domains || []).some(d => url.includes(d)); if (!isLocal && !isApproved) violations.push(`External API not approved: ${url}`); if (!params.user_confirmed) warnings.push('External API calls require confirmation'); }\nif (toolName === 'system_info') { if (safetyRules.system_operations.blocked_actions.includes(params.action)) violations.push(`Blocked system action: ${params.action}`); }\nif (violations.length > 0) { return safeReturn('blocked', 'Safety violations detected', { violations, tool_call: toolCall }); }\nif (warnings.length > 0) { return safeReturn('needs_confirmation', 'Action requires confirmation', { warnings, tool_call: toolCall }); }\nreturn safeReturn('approved', 'Safe to execute', { tool_call: toolCall });"
+      },
+      "id": "validate-safety",
+      "name": "Validate Safety",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Validate Safety", "type": "main", "index": 0}]]
+    },
+    "Validate Safety": {
+      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-12-14T00:00:00.000Z",
+  "versionId": "1"
+}
