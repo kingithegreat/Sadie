@@ -804,21 +804,29 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           } catch (err: any) {
             logError('[Router] direct stream error', err?.message || err);
             try { pushRouter(`direct stream error: ${err?.message || String(err)}`); } catch (e) {}
-            try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId }); } catch (e) {}
-              url: streamUrl,
-              payloadSent: payloadSent,
-              n8nResponded: !!(err && err.response),
-              httpStatus: err?.response?.status,
-              responseBody: err?.response?.data,
-              errorText: err?.message || String(err)
-            };
 
-            logError('[SADIE] [STREAM ERROR] streamId=%s url=%s error=%s n8nResponded=%s httpStatus=%s', streamId, streamUrl, diagnostic.errorText, diagnostic.n8nResponded, diagnostic.httpStatus);
-            try { pushRouter(`STREAM ERROR streamId=${streamId} url=${streamUrl} n8nResponded=${diagnostic.n8nResponded} httpStatus=${diagnostic.httpStatus} error=${diagnostic.errorText}`); } catch (e) {}
-
+            // Attempt a non-streaming fallback to Ollama to retrieve a final message
             try {
-              event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: err?.message || err, streamId, diagnostic });
-            } catch (e) {}
+              const fallbackBody = {
+                model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
+                messages: [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: enhancedMessage } ],
+                stream: false
+              };
+              const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
+              const finalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+              if (finalText) {
+                try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
+              }
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              activeStreams.delete(streamId);
+              try { pushRouter(`direct stream fallback succeeded for streamId=${streamId}`); } catch (e) {}
+              return;
+            } catch (fallbackErr) {
+              // If fallback also fails, emit stream-error and clean up
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId }); } catch (e) {}
+              try { pushRouter(`direct stream fallback failed for streamId=${streamId} error=${fallbackErr?.message || fallbackErr}`); } catch (e) {}
+              activeStreams.delete(streamId);
+            }
           }
         }
       } catch (error: any) {

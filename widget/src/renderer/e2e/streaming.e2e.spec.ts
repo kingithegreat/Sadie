@@ -176,3 +176,69 @@ test('handles upstream error', async () => {
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));
 });
+
+test('falls back to non-stream final text on stream init error', async () => {
+  // Server that fails streaming requests but returns a non-stream final message
+  const server = await (async () => {
+    const http = await import('http');
+    return new Promise<any>((resolve) => {
+      const s = http.createServer(async (req, res) => {
+        if (req.url === '/api/chat' && req.method === 'POST') {
+          try {
+            let body = '';
+            for await (const chunk of req) body += chunk.toString();
+            const parsed = body ? JSON.parse(body) : {};
+            if (parsed.stream === true) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'streaming failure' }));
+              return;
+            }
+            // Non-streaming request: return final assistant content
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: { content: 'final-fallback' } }));
+            return;
+          } catch (e) {
+            res.writeHead(500);
+            res.end();
+            return;
+          }
+        }
+        res.writeHead(404);
+        res.end();
+      });
+
+      s.listen(0, () => resolve(s));
+    });
+  })();
+
+  const { port } = server.address() as any;
+  const base = `http://127.0.0.1:${port}`;
+
+  // Point the app's Ollama URL to our server
+  process.env.OLLAMA_URL = base;
+  process.env.N8N_URL = base; // not used but keep consistent
+  process.env.SADIE_USE_PROXY = 'false';
+
+  const { app, page } = await launchElectronApp({
+    N8N_URL: base,
+    OPENAI_ENDPOINT: `${base}/mock-sse`,
+    PROXY_RETRY_ENABLED: 'false',
+    SADIE_E2E: '0',
+    SADIE_DIRECT_OLLAMA: '1',
+    NODE_ENV: 'test',
+  });
+
+  const beforeCount = await page.locator('[data-role="assistant-message"]').count();
+  await page.getByLabel('Message SADIE').fill('hello');
+  await page.getByRole('button', { name: /send/i }).click();
+
+  const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
+
+  // Wait for the assistant to finish and contain the final fallback text
+  await expect(assistant).toContainText('final-fallback', { timeout: 10000 });
+  // Ensure the message is marked finished (not error)
+  await expect(assistant).toHaveAttribute('data-state', 'finished', { timeout: 5000 });
+
+  await app.close();
+  await new Promise<void>((r) => server.close(() => r()));
+});
