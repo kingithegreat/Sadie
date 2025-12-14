@@ -110,3 +110,36 @@ test('permission escalation: Allow once, Always allow, persistence across restar
 
   await app2.close();
 });
+
+test('no permission modal when permissions already allowed', async () => {
+  const tmp = makeTempProfile();
+  const env = { SADIE_E2E: '1', NODE_ENV: 'test', HOME: tmp, USERPROFILE: tmp } as any;
+
+  const { app, page } = await launchElectronApp(env, tmp);
+
+  // Ensure settings explicitly allow the needed permissions
+  await page.evaluate(async () => {
+    const s = await (window as any).electron.getSettings();
+    s.permissions = s.permissions || {};
+    s.permissions.generate_sports_report = true;
+    s.permissions.write_file = true;
+    await (window as any).electron.saveSettings(s);
+  });
+
+  const call = [{ name: 'generate_sports_report', arguments: { league: 'nba', date: '2025-12-14', directory: 'Desktop/TestNBA', format: 'txt' } }];
+
+  // Invoke and ensure it runs immediately and no modal appears
+  const invoke = page.evaluate(async (c) => await (window as any).electron.invoke('sadie:__e2e_invoke_tool_batch', { calls: c }), call);
+  // short wait to ensure modal doesn't appear
+  await page.waitForTimeout(300);
+  await expect(page.getByText('Permission Required')).toHaveCount(0);
+
+  const res: any = await invoke;
+  expect(res.ok).toBe(true);
+
+  // Verify the report file was created
+  const reportPath = path.join(tmp, 'Desktop', 'TestNBA', 'report.txt');
+  expect(fs.existsSync(reportPath)).toBe(true);
+
+  await app.close();
+});
