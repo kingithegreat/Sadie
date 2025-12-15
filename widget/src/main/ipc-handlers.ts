@@ -33,6 +33,7 @@ const getSettingsPath = (): string => {
   
   return path.join(configDir, 'user-settings.json');
 };
+ 
 
 /**
  * Register all IPC handlers for communication between renderer and main process
@@ -53,6 +54,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         console.log('[IPC] registerIpcHandlers already executed — skipping ipcMain registrations');
         try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping ipcMain registrations'); } catch (e) {}
       }
+      // Prevent duplicate registration on hot reload by returning early
+      return;
+    } else {
+      // Mark as registered immediately to prevent concurrent duplicate calls
+      g.__sadie_ipc_registered = true;
     }
     // Health check: verify n8n and Ollama statuses
     const handleCheckConnection = async () => {
@@ -425,9 +431,7 @@ try {
   }
 }
 
-// Auto-register IPC handlers at module import so tests can inspect `ipcHandlers`.
-try {
-  registerIpcHandlers();
-} catch (e) {
-  // Ignore errors during import-time registration (e.g., mocked ipcMain in tests)
-}
+// Note: Do NOT auto-register handlers at module import time. Call
+// `registerIpcHandlers()` explicitly from the main process (once) to
+// avoid duplicate Electron handler registration (especially during
+// hot-reload or test bootstrap).

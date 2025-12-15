@@ -4,6 +4,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock Electron's ipcMain so we can capture handler registrations
+const handleMock = jest.fn();
+jest.mock('electron', () => ({
+  ipcMain: {
+    handle: handleMock,
+    on: jest.fn(),
+  },
+}));
+
 describe('IPC Handler Registration', () => {
   let testConfigDir: string;
   let configManager: any;
@@ -20,6 +29,9 @@ describe('IPC Handler Registration', () => {
   beforeEach(async () => {
     // Clear any cached modules
     jest.resetModules();
+    handleMock.mockClear();
+    // Ensure the global registration guard is cleared so handlers will be re-registered
+    try { (global as any).__sadie_ipc_registered = false; } catch (e) {}
     
     // Create fresh temp directory for this test
     testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sadie-test-'));
@@ -28,7 +40,8 @@ describe('IPC Handler Registration', () => {
     // Now import modules (they will use the test config dir)
     configManager = await import('../config-manager');
     const ipcHandlersModule = await import('../ipc-handlers');
-    ipcHandlers = ipcHandlersModule.ipcHandlers;
+    // Ensure handlers are registered for the test harness (this will call ipcMain.handle which we mock)
+    if (typeof ipcHandlersModule.registerIpcHandlers === 'function') ipcHandlersModule.registerIpcHandlers();
 
     // Initialize with default test settings
     const defaultSettings = {
@@ -69,27 +82,34 @@ describe('IPC Handler Registration', () => {
   });
 
   it('should have IPC handlers defined', () => {
-    expect(ipcHandlers).toBeDefined();
-    expect(typeof ipcHandlers).toBe('object');
+    // Handlers should be registered via ipcMain.handle
+    expect(handleMock).toHaveBeenCalled();
   });
 
   it('should have check-connection handler', () => {
-    expect(ipcHandlers['sadie:check-connection']).toBeDefined();
-    expect(typeof ipcHandlers['sadie:check-connection']).toBe('function');
+    const call = handleMock.mock.calls.find(([channel]) => channel === 'sadie:check-connection');
+    expect(call).toBeDefined();
+    const [, handler] = call!;
+    expect(typeof handler).toBe('function');
   });
 
   it('should have get-settings handler', () => {
-    expect(ipcHandlers['sadie:get-settings']).toBeDefined();
-    expect(typeof ipcHandlers['sadie:get-settings']).toBe('function');
+    const call = handleMock.mock.calls.find(([channel]) => channel === 'sadie:get-settings');
+    expect(call).toBeDefined();
+    const [, handler] = call!;
+    expect(typeof handler).toBe('function');
   });
 
   it('should have save-settings handler', () => {
-    expect(ipcHandlers['sadie:save-settings']).toBeDefined();
-    expect(typeof ipcHandlers['sadie:save-settings']).toBe('function');
+    const call = handleMock.mock.calls.find(([channel]) => channel === 'sadie:save-settings');
+    expect(call).toBeDefined();
+    const [, handler] = call!;
+    expect(typeof handler).toBe('function');
   });
 
   it('should handle get-settings request', async () => {
-    const handler = ipcHandlers['sadie:get-settings'];
+    const call = handleMock.mock.calls.find(([channel]) => channel === 'sadie:get-settings');
+    const [, handler] = call!;
     const result = await handler();
 
     expect(result).toBeDefined();
@@ -101,8 +121,10 @@ describe('IPC Handler Registration', () => {
   });
 
   it('should handle save-settings request', async () => {
-    const saveHandler = ipcHandlers['sadie:save-settings'];
-    const getHandler = ipcHandlers['sadie:get-settings'];
+    const saveCall = handleMock.mock.calls.find(([ch]) => ch === 'sadie:save-settings');
+    const getCall = handleMock.mock.calls.find(([ch]) => ch === 'sadie:get-settings');
+    const [, saveHandler] = saveCall!;
+    const [, getHandler] = getCall!;
 
     // Save new settings
     const newSettings = {
@@ -122,8 +144,9 @@ describe('IPC Handler Registration', () => {
   });
 
   it('should handle check-connection request without errors', async () => {
-    const handler = ipcHandlers['sadie:check-connection'];
-    
+    const call = handleMock.mock.calls.find(([channel]) => channel === 'sadie:check-connection');
+    const [, handler] = call!;
+
     // This should not throw even if services aren't available
     const result = await handler();
 
@@ -137,8 +160,10 @@ describe('IPC Handler Registration', () => {
   });
 
   it('should preserve complex permission structures', async () => {
-    const saveHandler = ipcHandlers['sadie:save-settings'];
-    const getHandler = ipcHandlers['sadie:get-settings'];
+    const saveCall = handleMock.mock.calls.find(([ch]) => ch === 'sadie:save-settings');
+    const getCall = handleMock.mock.calls.find(([ch]) => ch === 'sadie:get-settings');
+    const [, saveHandler] = saveCall!;
+    const [, getHandler] = getCall!;
 
     const complexPermissions = {
       permissions: {

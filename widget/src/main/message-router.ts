@@ -242,84 +242,95 @@ function summarizeToolResults(results: any[]): string {
 // NOT be called. Returns structured assistant payloads for the renderer.
 export async function processIncomingRequest(request: SadieRequestWithImages | SadieRequest, n8nUrl: string, decisionOverride?: RoutingDecision) {
   try {
-    const decision = decisionOverride ?? await analyzeAndRouteMessage(request.message as string);
-    // diagnostic log for tests
-    try { console.log('[ROUTER DIAG] decision=', JSON.stringify(decision)); } catch (e) {}
+    // Model-first loop: always send the user message to the LLM/webhook first
+    // and only execute tools if the model explicitly requests them.
+    const convId = (request as any).conversation_id || 'default';
+    addToHistory(convId, 'user', request.message as string);
 
-    if (decision.type === 'error') {
-      return { success: false, error: true, message: `Routing error: ${decision.reason}` };
+    // Prepare initial outgoing payload to the LLM/upstream webhook. Include
+    // available tool schemas so the model may choose to call them.
+    const tools = getOllamaTools();
+    let outgoing: any = { ...request };
+    if (tools && Array.isArray(tools) && tools.length > 0) {
+      outgoing.tools = tools;
+      outgoing.tool_choice = 'auto';
     }
 
-    if (decision.type === 'tools') {
-      // Execute tools atomically and return deterministic assistant summary.
-      const toolContext: ToolContext = { executionId: `pre-${Date.now()}` } as any;
-      try {
-        const results = await executeToolBatch(decision.calls, toolContext as any);
+    const toolContext: ToolContext = { executionId: `exec-${Date.now()}` } as any;
 
-        // If any result indicates missing permissions, surface that explicitly.
-        const needsConfirmation = (results || []).find((r: any) => r && r.status === 'needs_confirmation');
-        if (needsConfirmation) {
-          return {
-            success: true,
-            data: {
-              assistant: {
-                role: 'assistant',
-                content: `This action requires permissions: ${(needsConfirmation.missingPermissions || []).join(', ')}`,
-                status: 'needs_confirmation',
-                missingPermissions: needsConfirmation.missingPermissions || []
-              },
-              toolResults: results,
-              routed: true
-            }
-          };
-        }
-
-        // If any tool failed for other reasons, return a structured error.
-        const failed = (results || []).filter((r: any) => r && r.success === false && r.status !== 'needs_confirmation');
-        if (failed.length > 0) {
-          const msgs = failed.map((f: any) => f.error || f.message || JSON.stringify(f)).join('; ');
-          return {
-            success: true,
-            data: {
-              assistant: {
-                role: 'assistant',
-                content: `Tool execution error: ${msgs}`,
-                status: 'error'
-              },
-              toolResults: results,
-              routed: true
-            }
-          };
-        }
-
-        // Normal success path: deterministic assistant summary
-        const assistantText = summarizeToolResults(results as any[]);
-        return {
-          success: true,
-          data: {
-            assistant: {
-              role: 'assistant',
-              content: assistantText
-            },
-            toolResults: results,
-            routed: true
-          }
-        };
-      } catch (toolErr: any) {
-        return { success: true, data: { assistant: { role: 'assistant', content: `Tool execution failed: ${String(toolErr?.message || toolErr)}`, status: 'error' }, routed: true } };
-      }
-    }
-
-    // Only if decision.type === 'llm' do we call the upstream orchestrator/webhook.
-    if (decision.type === 'llm') {
-      const response = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, request, {
+    // Loop: call LLM, if it requests tools then validate & run them, append
+    // results and call LLM again. Terminate when LLM returns a final reply.
+    const MAX_ITER = 6;
+    for (let iter = 0; iter < MAX_ITER; iter++) {
+      const response = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, outgoing, {
         timeout: DEFAULT_TIMEOUT,
         headers: { 'Content-Type': 'application/json' }
       });
-      return { success: true, data: response.data };
+
+      const body = response?.data;
+
+      // Normalize assistant payload from upstream
+      const assistant = body?.data?.assistant || body?.assistant || body;
+
+      // If the assistant explicitly requested tool calls, handle them
+      const pendingCalls = assistant?.tool_calls || assistant?.toolCalls || assistant?.tool_request ? (assistant.tool_calls || assistant.toolCalls || [assistant.tool_request]) : null;
+
+      if (!pendingCalls || pendingCalls.length === 0) {
+        // Final assistant response — append to history and return
+        const assistantText = typeof assistant === 'string' ? assistant : (assistant?.content || assistant?.message || JSON.stringify(assistant));
+        addToHistory(convId, 'assistant', assistantText);
+        return { success: true, data: { assistant: assistant } };
+      }
+
+      // Build normalized calls array
+      const calls = pendingCalls.map((c: any) => {
+        const toolName = c.function?.name || c.name || c.tool || c.action;
+        let toolArgs = c.function?.arguments || c.arguments || c.args || c.params || {};
+        if (typeof toolArgs === 'string') {
+          try { toolArgs = JSON.parse(toolArgs); } catch { }
+        }
+        return { name: toolName, arguments: toolArgs } as any;
+      });
+
+      // Validate permissions (router acts as validator)
+      const { getSettings } = require('./config-manager');
+      const settings = getSettings();
+      const missing: string[] = [];
+      for (const c of calls) {
+        const allowed = settings.permissions && settings.permissions[c.name];
+        if (!allowed) missing.push(c.name);
+      }
+
+      if (missing.length > 0) {
+        // Surface permission escalation to caller (renderer/UI should handle)
+        return { success: true, data: { assistant: { role: 'assistant', content: `This action requires permissions: ${missing.join(', ')}`, status: 'needs_confirmation', missingPermissions: missing }, routed: true } };
+      }
+
+      // Execute tool batch
+      const results = await executeToolBatch(calls as any[], toolContext as any);
+
+      // If any tool in batch requested confirmation, surface that
+      const needsConfirmation = (results || []).find((r: any) => r && r.status === 'needs_confirmation');
+      if (needsConfirmation) {
+        const missingPermissions = needsConfirmation.missingPermissions || [];
+        return { success: true, data: { assistant: { role: 'assistant', content: `This action requires permissions: ${missingPermissions.join(', ')}`, status: 'needs_confirmation', missingPermissions }, toolResults: results, routed: true } };
+      }
+
+      // If any tool failed, return an error-like assistant message so model can adapt
+      const failed = (results || []).filter((r: any) => r && r.success === false);
+      if (failed.length > 0) {
+        const msgs = failed.map((f: any) => f.error || f.message || JSON.stringify(f)).join('; ');
+        return { success: true, data: { assistant: { role: 'assistant', content: `Tool execution error: ${msgs}`, status: 'error' }, toolResults: results, routed: true } };
+      }
+
+      // Append tool results to outgoing payload so LLM can continue reasoning.
+      outgoing = { ...outgoing, tool_results: results };
+      // Also append a synthetic tool result message to conversation history
+      addToHistory(convId, 'assistant', `Tool results: ${summarizeToolResults(results as any[])}`);
+      // Loop will call LLM again with updated `outgoing`
     }
 
-    return { success: false, error: true, message: 'Unhandled routing decision' };
+    return { success: false, error: true, message: 'Max iterations exceeded' };
   } catch (err: any) {
     return mapErrorToSadieResponse(err);
   }
