@@ -3,19 +3,34 @@ module.exports = {
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/src'],
   testMatch: [
-    '**/*.test.ts',
-    '**/*.test.tsx'
+    '**/__tests__/**/*.test.ts',
+    '**/__tests__/**/*.test.tsx'
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
-  // Load renderer setup and main-process mocks after the test environment is ready
-  setupFiles: [],
-  setupFilesAfterEnv: ['<rootDir>/src/main/__tests__/jest-setup.ts', '<rootDir>/src/renderer/setupTests.ts', '<rootDir>/src/main/__tests__/jest-setup-after-env.ts'],
+  setupFiles: [
+    '<rootDir>/jest/jest-setup.ts'
+  ],
+  setupFilesAfterEnv: [
+    '<rootDir>/jest/jest-setup-after-env.ts'
+  ],
   transform: {
-    '^.+\\.tsx?$': 'ts-jest'
+    '^.+\\.tsx?$': ['ts-jest', {
+      tsconfig: {
+        jsx: 'react',
+        esModuleInterop: true,
+        allowSyntheticDefaultImports: true,
+        moduleResolution: 'node'
+      }
+    }]
   },
+  moduleNameMapper: {
+    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+    '^@/(.*)$': '<rootDir>/src/$1'
+  },
+  testTimeout: 10000,
   globals: {
     'ts-jest': {
-      tsconfig: '<rootDir>/tsconfig.json'
+      isolatedModules: true
     }
   }
 };

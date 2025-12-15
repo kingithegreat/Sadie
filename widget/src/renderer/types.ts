@@ -16,6 +16,7 @@ export type ChatMessage = {
 
   // assistant only
   streamId?: string;
+  isStreaming?: boolean;
   streamingState?: StreamingState;
   error?: string | null;
 };
