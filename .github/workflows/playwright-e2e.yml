@@ -25,6 +25,12 @@ jobs:
       - name: Install widget dependencies
         run: npm ci --prefix widget
 
+      - name: Fix Electron sandbox permissions
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root:root widget/node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 widget/node_modules/electron/dist/chrome-sandbox
+
       - name: Install Playwright browsers
         run: npm run e2e:install --prefix widget
 
