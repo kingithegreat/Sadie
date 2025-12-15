@@ -51,6 +51,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const DANGEROUS_PERMISSIONS = new Set(['delete_file', 'move_file', 'launch_app', 'screenshot']);
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
+  // Local model selection and api keys
+  const [model, setModel] = useState<string>((settings as any).model || 'ollama');
+  const [apiKeysLocal, setApiKeysLocal] = useState<Record<string, string>>(((settings as any).apiKeys) || {});
 
   const refreshTelemetryLog = async () => {
     try {
@@ -83,6 +86,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setLocalSettings(settings);
     setTelemetryEnabled(!!(settings as any).telemetryEnabled);
     setPermissions((settings as any).permissions || {});
+    setModel((settings as any).model || 'ollama');
+    setApiKeysLocal((settings as any).apiKeys || {});
   }, [settings]);
 
   // Load uncensored mode state on mount
@@ -104,7 +109,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, [settings]);
 
   const handleSave = () => {
-    onSave(localSettings);
+    const merged = { ...localSettings, model, apiKeys: apiKeysLocal } as any;
+    onSave(merged);
     onClose();
   };
 
@@ -154,6 +160,42 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }
             placeholder="http://localhost:5678"
           />
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Model</label>
+          <select aria-label="Model" className="setting-input" value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="ollama">Ollama (local)</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <small className="setting-hint">Select which model/provider to use for assistant reasoning.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">API keys</label>
+          <small className="setting-hint">Enter provider API keys. Values are stored locally in your SADIE config file.</small>
+          <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+            <div>
+              <label className="setting-label">OpenAI API Key</label>
+              <input
+                type="password"
+                className="setting-input"
+                value={apiKeysLocal.openai || ''}
+                onChange={(e) => setApiKeysLocal({ ...apiKeysLocal, openai: e.target.value })}
+                placeholder="sk-..."
+              />
+            </div>
+            <div>
+              <label className="setting-label">Ollama API Key</label>
+              <input
+                type="password"
+                className="setting-input"
+                value={apiKeysLocal.ollama || ''}
+                onChange={(e) => setApiKeysLocal({ ...apiKeysLocal, ollama: e.target.value })}
+                placeholder="(optional for local ollama)"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="setting-group">

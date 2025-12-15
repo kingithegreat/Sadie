@@ -86,6 +86,9 @@ export interface Settings {
   telemetryEnabled?: boolean;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
+  // Model selection and provider API keys
+  model?: string;
+  apiKeys?: Record<string, string>;
   // Per-tool permissions (keys are tool names)
   permissions?: Record<string, boolean>;
   defaultTeam?: string;

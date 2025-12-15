@@ -6,6 +6,9 @@ import * as os from 'os';
 const DEFAULT_SETTINGS = {
   n8nUrl: 'http://localhost:5678',
   ollamaUrl: 'http://localhost:11434',
+  // Agent/model defaults
+  model: 'ollama',
+  apiKeys: {},
   theme: 'system',
   alwaysOnTop: true,
   globalHotkey: 'CommandOrControl+Shift+S',

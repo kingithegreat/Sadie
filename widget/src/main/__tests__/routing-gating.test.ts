@@ -29,8 +29,8 @@ describe('model-first routing loop', () => {
     const axiosPost = (axios.post as jest.MockedFunction<any>);
     // First call: LLM requests a tool
     axiosPost.mockResolvedValueOnce({ data: { data: { assistant: { role: 'assistant', content: '', tool_calls: [{ name: 'nba_query', arguments: {} }] } } } });
-    // Second call: final assistant reply
-    axiosPost.mockResolvedValueOnce({ data: { data: { assistant: { role: 'assistant', content: 'Final answer' } } } });
+    // Second call: reflection accepts and returns strict JSON with final message
+    axiosPost.mockResolvedValueOnce({ data: { assistant: JSON.stringify({ outcome: 'accept', final_message: 'Final answer' }) } });
 
     const execSpy = jest.spyOn(tools as any, 'executeToolBatch').mockResolvedValue([{ success: true, result: { summary: 'Lakers won' } }] as any);
 
