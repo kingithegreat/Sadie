@@ -39,7 +39,19 @@ jobs:
           NODE_ENV: test
         run: npm run build --prefix widget
 
-      - name: Run Playwright E2E
+      - name: Install Xvfb
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Run Playwright E2E (Linux)
+        if: runner.os == 'Linux'
+        env:
+          SADIE_E2E: '1'
+          NODE_ENV: 'test'
+        run: xvfb-run -s "-screen 0 1920x1080x24" npm run e2e --prefix widget
+
+      - name: Run Playwright E2E (non-Linux)
+        if: runner.os != 'Linux'
         env:
           SADIE_E2E: '1'
           NODE_ENV: 'test'
