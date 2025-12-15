@@ -1,141 +1,156 @@
-import { app } from 'electron';
-import { join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { logTelemetryConsent } from './utils/logger';
-import { isReleaseBuild } from './env';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 
-interface WindowPosition {
-  x: number;
-  y: number;
-}
-
-export interface Settings {
-  n8nUrl: string;
-  ollamaUrl: string;
-  theme: 'light' | 'dark' | 'system';
-  alwaysOnTop: boolean;
-  globalHotkey: string;
-  confirmDangerousActions: boolean;
-  saveConversationHistory: boolean;
-  hideOnBlur: boolean;
-  windowPosition?: WindowPosition;
-
-  // First-run and telemetry
-  firstRun?: boolean;
-  telemetryEnabled?: boolean;
-  telemetryConsentTimestamp?: string;
-  telemetryConsentVersion?: string;
-
-  // Permissions for tools (granular by tool name)
-  permissions?: Record<string, boolean>;
-
-  // Misc / developer defaults
-  defaultTeam?: string;
-}
-
-const DEFAULT_SETTINGS: Settings = {
+// Default settings used when no config file exists
+const DEFAULT_SETTINGS = {
   n8nUrl: 'http://localhost:5678',
   ollamaUrl: 'http://localhost:11434',
   theme: 'system',
   alwaysOnTop: true,
-  globalHotkey: 'Ctrl+Shift+Space',
+  globalHotkey: 'CommandOrControl+Shift+S',
   confirmDangerousActions: true,
   saveConversationHistory: true,
   hideOnBlur: false,
-
-  // onboarding defaults
   firstRun: true,
-  telemetryEnabled: true, // REQUIRED: telemetry is anonymous and always enabled
-
-  // sensible safe defaults: most dangerous tools are disabled until user enables
+  telemetryEnabled: true,
+  telemetryConsentTimestamp: undefined,
+  telemetryConsentVersion: undefined,
   permissions: {
-    // File system
     read_file: true,
     list_directory: true,
     create_directory: true,
     get_file_info: true,
     copy_file: true,
-    // Dangerous: disabled by default
     write_file: false,
     delete_file: false,
     move_file: false,
-    // System controls
     launch_app: false,
     screenshot: false,
     open_url: true,
-    // Allow read-only network or info operations
     web_search: true,
     nba_query: true,
-    generate_sports_report: false
   },
-
-  // Default NBA team for new users
-  defaultTeam: 'GSW'
+  defaultTeam: ''
 };
 
-// A convenience function for asserting permissions on a tool
-export function assertPermission(toolName: string): boolean {
-  const settings = getSettings();
-  if (!settings.permissions) return false;
-  // If the toolName is not present, default to deny (safe approach)
-  if (typeof settings.permissions[toolName] === 'boolean') {
-    return !!settings.permissions[toolName];
+// Safe Electron app import with fallback
+let app: any;
+try {
+  const electron = require('electron');
+  app = electron.app;
+} catch (e) {
+  // In test environment, electron might not be available yet
+  app = null;
+}
+
+/**
+ * Get the path to user settings file
+ * Handles both production and test environments safely
+ */
+export function getSettingsPath(): string {
+  try {
+    // Priority 1: Test environment override
+    if (process.env.SADIE_TEST_CONFIG_DIR) {
+      const testPath = path.join(process.env.SADIE_TEST_CONFIG_DIR, 'config', 'user-settings.json');
+      console.log('[DIAG] Config path resolved (test env):', testPath);
+      
+      // Ensure directory exists
+      const dir = path.dirname(testPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      return testPath;
+    }
+
+    // Priority 2: Production with Electron app
+    if (app && typeof app.getPath === 'function') {
+      const userDataPath = app.getPath('userData');
+      const configPath = path.join(userDataPath, 'config', 'user-settings.json');
+      console.log('[DIAG] Config path resolved:', configPath);
+      
+      // Ensure directory exists
+      const dir = path.dirname(configPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      return configPath;
+    }
+
+    // Priority 3: Fallback for test environment without SADIE_TEST_CONFIG_DIR
+    const fallbackDir = path.join(os.tmpdir(), `sadie-test-${process.pid}`);
+    const fallbackPath = path.join(fallbackDir, 'config', 'user-settings.json');
+    
+    console.log('[DIAG] Config path resolved (fallback):', fallbackPath);
+    
+    if (!fs.existsSync(path.dirname(fallbackPath))) {
+      fs.mkdirSync(path.dirname(fallbackPath), { recursive: true });
+    }
+    
+    return fallbackPath;
+  } catch (error) {
+    // Last resort fallback
+    const emergencyPath = path.join(os.tmpdir(), 'sadie-emergency', 'user-settings.json');
+    console.error('[DIAG] Error in getSettingsPath, using emergency path:', emergencyPath, error);
+    
+    const dir = path.dirname(emergencyPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    return emergencyPath;
   }
-  // Allow if explicitly present in defaults or read-only type
-  // Fallback to false to be conservative
-  return false;
 }
 
-function getSettingsPath(): string {
-  const userDataPath = app.getPath('userData');
-  const path = join(userDataPath, 'config', 'user-settings.json');
-  if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Config path resolved:', path);
-  return path;
-}
-
-function ensureConfigDirectory(): void {
-  const settingsPath = getSettingsPath();
-  const configDir = join(settingsPath, '..');
-  
-  if (!existsSync(configDir)) {
-    mkdirSync(configDir, { recursive: true });
+/**
+ * Check if a permission is allowed
+ */
+export function assertPermission(permission: string): boolean {
+  try {
+    const settings = getSettings();
+    const permissions = settings.permissions || {};
+    const allowed = permissions[permission] === true;
+    
+    if (!allowed) {
+      console.log(`[SADIE] Permission denied: ${permission}`);
+    }
+    
+    return allowed;
+  } catch (error) {
+    console.error('[SADIE] Permission check failed:', error);
+    return false;
   }
 }
 
-export function getSettings(): Settings {
+/**
+ * Load user settings, merging with defaults
+ */
+export function getSettings(): any {
   try {
     const settingsPath = getSettingsPath();
     
-    if (!existsSync(settingsPath)) {
-      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings file does not exist, using defaults:', settingsPath);
+    if (!fs.existsSync(settingsPath)) {
+      console.log('[DIAG] Settings file does not exist, using defaults:', settingsPath);
       return { ...DEFAULT_SETTINGS };
     }
     
-    const data = readFileSync(settingsPath, 'utf-8');
-    const savedSettings = JSON.parse(data);
-    if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings loaded from:', settingsPath, 'keys:', Object.keys(savedSettings));
+    const raw = fs.readFileSync(settingsPath, 'utf-8');
+    const loaded = JSON.parse(raw);
     
-    // Merge with defaults to ensure all keys exist
-    const merged = { ...DEFAULT_SETTINGS, ...savedSettings } as Settings;
-    // If permissions are missing, ensure default
-    if (!merged.permissions) {
-      merged.permissions = DEFAULT_SETTINGS.permissions;
-    }
-    // If running in assessor demo mode, enforce safe defaults: telemetry off and dangerous permissions disabled
-    const demoMode = process.argv?.includes('--demo') || process.env.SADIE_DEMO_MODE === '1' || process.env.SADIE_DEMO_MODE === 'true';
-    if (demoMode) {
-      merged.telemetryEnabled = false;
-      merged.telemetryConsentTimestamp = undefined;
-      merged.telemetryConsentVersion = undefined;
-      // Force dangerous permissions off
-      merged.permissions = {
-        ...(merged.permissions || {}),
-        delete_file: false,
-        move_file: false,
-        launch_app: false,
-        screenshot: false
-      };
-    }
+    // Deep merge with defaults
+    const merged = {
+      ...DEFAULT_SETTINGS,
+      ...loaded,
+      permissions: {
+        ...DEFAULT_SETTINGS.permissions,
+        ...(loaded.permissions || {}),
+      },
+    };
+    
+    console.log('[DIAG] Settings loaded from:', settingsPath, 'keys:', Object.keys(merged));
+    
     return merged;
   } catch (error) {
     console.error('Failed to load settings:', error);
@@ -143,53 +158,56 @@ export function getSettings(): Settings {
   }
 }
 
-export function saveSettings(settings: Settings): void {
+/**
+ * Save user settings to disk
+ */
+export function saveSettings(settings: any): void {
   try {
-    ensureConfigDirectory();
     const settingsPath = getSettingsPath();
-    if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Saving settings to:', settingsPath, 'firstRun:', settings.firstRun, 'telemetryEnabled:', settings.telemetryEnabled);
-    // Compare with previous to log telemetry consent events
-    const previous = getSettings();
-    const toSave = { ...settings } as Settings & { telemetryConsentTimestamp?: string; telemetryConsentVersion?: string };
-    if (toSave.telemetryEnabled && !toSave.telemetryConsentTimestamp) {
-      toSave.telemetryConsentTimestamp = new Date().toISOString();
-    }
-    // Default consent version to 1.0 when consent is given
-    if (toSave.telemetryEnabled && !toSave.telemetryConsentVersion) {
-      toSave.telemetryConsentVersion = '1.0';
-    }
-    writeFileSync(settingsPath, JSON.stringify(toSave, null, 2), 'utf-8');
-    if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings saved successfully to:', settingsPath);
-    // Log consent changes
-    try {
-      if (!previous.telemetryEnabled && toSave.telemetryEnabled) {
-        logTelemetryConsent('consent_given', { version: toSave.telemetryConsentVersion, timestamp: toSave.telemetryConsentTimestamp });
-      } else if (previous.telemetryEnabled && !toSave.telemetryEnabled) {
-        logTelemetryConsent('consent_revoked', { version: previous.telemetryConsentVersion, timestamp: new Date().toISOString() });
+    // Ensure telemetry consent timestamp/version if telemetryEnabled is true
+    if (settings.telemetryEnabled) {
+      if (!settings.telemetryConsentTimestamp) {
+        settings.telemetryConsentTimestamp = new Date().toISOString();
       }
-    } catch (e) {
-      console.error('Failed to record telemetry consent change:', e);
+      if (!settings.telemetryConsentVersion) {
+        settings.telemetryConsentVersion = '1.0';
+      }
     }
+    console.log(
+      '[DIAG] Saving settings to:',
+      settingsPath,
+      'firstRun:',
+      settings.firstRun,
+      'telemetryEnabled:',
+      settings.telemetryEnabled
+    );
+    // Ensure directory exists
+    const dir = path.dirname(settingsPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    console.log('[DIAG] Settings saved successfully to:', settingsPath);
   } catch (error) {
     console.error('Failed to save settings:', error);
     throw error;
   }
 }
 
-export function resetSettings(): Settings {
+export function resetSettings(): any {
   const defaultSettings = { ...DEFAULT_SETTINGS };
   saveSettings(defaultSettings);
   return defaultSettings;
 }
 
-export function getDefaultSettings(): Settings {
+export function getDefaultSettings(): any {
   return { ...DEFAULT_SETTINGS };
 }
 
-export function resetPermissions(): Settings {
+export function resetPermissions(): any {
   const current = getSettings();
   const defaults = getDefaultSettings();
-  const updated = { ...current, permissions: { ...(defaults.permissions || {} ) } } as Settings;
+  const updated = { ...current, permissions: { ...(defaults.permissions || {}) } };
   saveSettings(updated);
   return updated;
 }
@@ -199,19 +217,42 @@ export function exportTelemetryConsent(): { success: true; path: string } {
   const telemetry = {
     enabled: !!settings.telemetryEnabled,
     consentGivenAt: settings.telemetryConsentTimestamp || null,
-    consentVersion: settings.telemetryConsentVersion || null
+    consentVersion: settings.telemetryConsentVersion || null,
   };
 
-  const userData = app.getPath('userData');
-  const logDir = join(userData, 'logs');
+  const userData = app && typeof app.getPath === 'function' ? app.getPath('userData') : os.tmpdir();
+  const logDir = path.join(userData, 'logs');
   try {
-    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
     const filename = `telemetry-consent-export-${Date.now()}.json`;
-    const fullPath = join(logDir, filename);
-    writeFileSync(fullPath, JSON.stringify(telemetry, null, 2), 'utf-8');
+    const fullPath = path.join(logDir, filename);
+    fs.writeFileSync(fullPath, JSON.stringify(telemetry, null, 2), 'utf-8');
     return { success: true, path: fullPath };
   } catch (err) {
     console.error('Failed to export telemetry consent:', err);
     throw err;
   }
+}
+
+/**
+ * Test helper: Clear settings for clean test state
+ */
+export function clearSettingsForTest(): void {
+  try {
+    const settingsPath = getSettingsPath();
+    if (fs.existsSync(settingsPath)) {
+      fs.unlinkSync(settingsPath);
+      console.log('[TEST] Cleared settings:', settingsPath);
+    }
+  } catch (error) {
+    console.warn('[TEST] Failed to clear settings:', error);
+  }
+}
+
+/**
+ * Test helper: Set test config directory
+ */
+export function setTestConfigDir(dir: string): void {
+  process.env.SADIE_TEST_CONFIG_DIR = dir;
+  console.log('[TEST] Set config dir:', dir);
 }
