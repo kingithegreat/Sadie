@@ -19,6 +19,42 @@ const PACKAGED = isPackagedBuild;
 const DEFAULT_TIMEOUT = 30000;
 const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
 
+// Reflection loop constants
+const REFLECTION_MAX_DEPTH = 2;
+
+// Reflection system message (strict JSON-only enforcement)
+const REFLECTION_SYSTEM_MESSAGE = `Return ONLY a single JSON object. No surrounding text, no markdown.\n` +
+  `The JSON object MUST be one of:\n` +
+  `{"outcome":"accept","final_message":"..."} OR ` +
+  `{"outcome":"request_tool","tool_request":{"name":"<tool>","args":{...}}} OR ` +
+  `{"outcome":"explain","explanation":"..."}`;
+
+function stableStringify(obj: any): string {
+  if (obj === null || obj === undefined) return JSON.stringify(obj);
+  if (typeof obj !== 'object') return JSON.stringify(obj);
+  if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(',')}]`;
+  const keys = Object.keys(obj).sort();
+  const parts = keys.map(k => `${JSON.stringify(k)}:${stableStringify(obj[k])}`);
+  return `{${parts.join(',')}}`;
+}
+
+function hashToolCall(name: string, args: any): string {
+  return `${name}|${stableStringify(args)}`;
+}
+
+function parseStrictJsonOnly(text: string): { ok: true; value: any } | { ok: false } {
+  if (typeof text !== 'string') return { ok: false };
+  const trimmed = text.trim();
+  if (!trimmed) return { ok: false };
+  // Must be a single JSON value and nothing else
+  try {
+    const parsed = JSON.parse(trimmed);
+    return { ok: true, value: parsed };
+  } catch (e) {
+    return { ok: false };
+  }
+}
+
 // Router diagnostics buffer for capture tool
 (global as any).__SADIE_ROUTER_LOG_BUFFER ??= [];
 function pushRouter(line: string) {
@@ -249,7 +285,9 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 
     // Prepare initial outgoing payload to the LLM/upstream webhook. Include
     // available tool schemas so the model may choose to call them.
-    const tools = getOllamaTools();
+    // Safely fetch tools schema (tests may mock tools partially)
+    let tools: any[] = [];
+    try { tools = (typeof getOllamaTools === 'function') ? getOllamaTools() : []; } catch (e) { tools = []; }
     let outgoing: any = { ...request };
     if (tools && Array.isArray(tools) && tools.length > 0) {
       outgoing.tools = tools;
@@ -323,11 +361,123 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
         return { success: true, data: { assistant: { role: 'assistant', content: `Tool execution error: ${msgs}`, status: 'error' }, toolResults: results, routed: true } };
       }
 
-      // Append tool results to outgoing payload so LLM can continue reasoning.
-      outgoing = { ...outgoing, tool_results: results };
-      // Also append a synthetic tool result message to conversation history
-      addToHistory(convId, 'assistant', `Tool results: ${summarizeToolResults(results as any[])}`);
-      // Loop will call LLM again with updated `outgoing`
+      // Reflection loop: after tools run, ask the model to reflect on the tool results
+      // and explicitly accept, request another tool, or explain discrepancy.
+      // Prepare executed tool dedupe set for this request
+      const executedToolSet = new Set<string>();
+      for (const c of calls) executedToolSet.add(hashToolCall(c.name, c.arguments));
+
+      // helper: perform reflection cycles (may request further tools)
+      async function performReflectionLoop(localCalls: any[], localResults: any[]): Promise<{ status: 'accept'|'explain'|'invalid_json'|'failure'; payload?: any }> {
+        let depth = 0;
+        // Keep iterating until accept or explain or failure
+        while (depth < REFLECTION_MAX_DEPTH) {
+          // Build reflection messages per spec
+          const assistantMsg = { role: 'assistant', content: null, tool_calls: localCalls } as any;
+          const toolMsgs: any[] = [];
+          for (let i = 0; i < localResults.length; i++) {
+            const call = localCalls[i];
+            const res = localResults[i];
+            const toolName = call?.name || res?.tool || `tool_${i}`;
+            toolMsgs.push({ role: 'tool', tool_name: toolName, content: JSON.stringify(res) });
+          }
+
+          const payload = { messages: [assistantMsg, ...toolMsgs, { role: 'system', content: REFLECTION_SYSTEM_MESSAGE }], tools };
+          // Call LLM (via upstream webhook) for reflection
+          let r;
+          try {
+            const resp = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, payload, { timeout: DEFAULT_TIMEOUT, headers: { 'Content-Type': 'application/json' } });
+            r = resp?.data?.data?.assistant || resp?.data?.assistant || resp?.data;
+          } catch (err: any) {
+            logError('[REFLECTION] LLM call failed', err?.message || err);
+            return { status: 'failure', payload: { message: 'Reflection LLM call failed' } };
+          }
+
+          const assistantText = typeof r === 'string' ? r : (r?.content || r?.message || JSON.stringify(r));
+
+          // Strict JSON-only parsing
+          const parsed = parseStrictJsonOnly(assistantText);
+          if (!parsed.ok) {
+            return { status: 'invalid_json' };
+          }
+
+          const obj = parsed.value;
+          if (!obj || typeof obj !== 'object' || !obj.outcome) {
+            return { status: 'invalid_json' };
+          }
+
+          const outcome = obj.outcome;
+          if (outcome === 'accept') {
+            if (!obj.final_message || typeof obj.final_message !== 'string') return { status: 'invalid_json' };
+            return { status: 'accept', payload: { final_message: obj.final_message } };
+          }
+
+          if (outcome === 'explain') {
+            const explanation = obj.explanation || 'No explanation provided.';
+            return { status: 'explain', payload: { explanation } };
+          }
+
+          if (outcome === 'request_tool') {
+            const req = obj.tool_request;
+            if (!req || !req.name) return { status: 'invalid_json' };
+            // dedupe
+            const key = hashToolCall(req.name, req.args || {});
+            if (executedToolSet.has(key)) {
+              return { status: 'failure', payload: { message: 'Reflection failed: duplicate tool request' } };
+            }
+            // permission check
+            const { getSettings } = require('./config-manager');
+            const s = getSettings();
+            const allowed = s.permissions && s.permissions[req.name];
+            if (!allowed) {
+              return { status: 'failure', payload: { message: 'Missing permission', missing: [req.name] } };
+            }
+
+            // Execute requested tool
+            const toolCall = [{ name: req.name, arguments: req.args || {} }];
+            const toolRes = await executeToolBatch(toolCall as any[], { executionId: `exec-${Date.now()}` } as any);
+            // Append
+            localCalls = localCalls.concat(toolCall as any[]);
+            localResults = localResults.concat(toolRes as any[]);
+            executedToolSet.add(key);
+            depth += 1;
+            // continue loop
+            continue;
+          }
+
+          // otherwise invalid
+          return { status: 'invalid_json' };
+        }
+
+        return { status: 'failure', payload: { message: 'Reflection max depth exceeded' } };
+      }
+
+      const reflectionResult = await performReflectionLoop(calls, results);
+
+      // Handle reflection outcomes
+      if (reflectionResult.status === 'accept') {
+        // Final assistant message from reflection
+        const finalText = reflectionResult.payload.final_message;
+        addToHistory(convId, 'assistant', finalText);
+        return { success: true, data: { assistant: { role: 'assistant', content: finalText } } };
+      }
+
+      if (reflectionResult.status === 'explain') {
+        const explanation = reflectionResult.payload.explanation;
+        addToHistory(convId, 'assistant', explanation);
+        return { success: true, data: { assistant: { role: 'assistant', content: explanation } } };
+      }
+
+      if (reflectionResult.status === 'invalid_json') {
+        const msg = `I couldn't validate the tool output due to an invalid reflection response. Please retry.`;
+        addToHistory(convId, 'assistant', msg);
+        return { success: true, data: { assistant: { role: 'assistant', content: msg } } };
+      }
+
+      // Any failure (dedupe, permission, max depth, LLM call failed)
+      const msg = reflectionResult.payload?.message || 'Reflection failed: could not validate tool results.';
+      addToHistory(convId, 'assistant', msg);
+      return { success: true, data: { assistant: { role: 'assistant', content: msg } } };
     }
 
     return { success: false, error: true, message: 'Max iterations exceeded' };

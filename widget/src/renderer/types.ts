@@ -42,4 +42,5 @@ export type Settings = {
   maxTokens: number;
   n8nUrl?: string;
   openaiEndpoint?: string;
+  apiKeys?: Record<string, string>;
 };
