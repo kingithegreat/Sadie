@@ -7,6 +7,7 @@ import { debug as logDebug, error as logError, info as logInfo } from '../shared
 import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
+import { SADIE_SYSTEM_PROMPT } from '../shared/system-prompt';
 import { getMainWindow } from './window-manager';
 import { initializeTools, getOllamaTools, executeTool, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
@@ -158,74 +159,173 @@ function mapErrorToSadieResponse(error: any): SadieResponse {
   };
 }
 
-// SADIE system prompt for direct Ollama mode with tools
-// Get actual user paths for the prompt
-const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
-const USERNAME = require('os').userInfo().username;
+// Exported deterministic intent router so it can be used by the message handler
+// and imported directly by unit tests.
+export async function preProcessIntent(userMessage: string): Promise<{ calls: any[] } | null> {
+  if (!userMessage || typeof userMessage !== 'string') return null;
+  const m = userMessage.toLowerCase();
 
-const SADIE_SYSTEM_PROMPT = `You are Sadie — a sweet, supportive, privacy-first AI assistant that runs fully locally.
-Be warm, helpful, and conversational. Keep responses concise but friendly.
+  // SPORTS / NBA intents
+  if (/\b(nba|nba\s|nba:|\bgame(s)?\b|\bscores?\b|\bteam\b)/i.test(m)) {
+    const teamMatch = m.match(/(?:for|about|on|between) ([a-zA-Z0-9\s]+)/i);
+    const teamQuery = teamMatch ? teamMatch[1].trim() : '';
+    const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
+    const call = { name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } };
+    return { calls: [call] };
+  }
 
-You have access to various tools. IMPORTANT: When calling tools, you MUST provide complete, valid arguments.
+  // WEATHER intents
+  if (/\bweather\b/i.test(m)) {
+    const locMatch = m.match(/in ([a-zA-Z\s,]+)/i);
+    const location = locMatch ? locMatch[1].trim() : '';
+    if (location) return { calls: [{ name: 'get_weather', arguments: { location } }] };
+    return null;
+  }
 
-=== USER SYSTEM INFO ===
-- Username: ${USERNAME}
-- Home directory: ${HOME_DIR}
-- Desktop: ${HOME_DIR}/Desktop
-- Documents: ${HOME_DIR}/Documents
-- Downloads: ${HOME_DIR}/Downloads
+  // WEB SEARCH intents
+  if (/\b(search for|find|who is|what is|look up|tell me about)\b/i.test(m)) {
+    const q = userMessage.trim();
+    return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
+  }
 
-=== FILE SYSTEM TOOLS ===
-IMPORTANT PATH RULES:
-1. Use simple relative paths like "Desktop/filename.txt" - they auto-expand to the user's home
-2. When asked to put a file IN a folder, include the folder in the path: "Desktop/foldername/filename.txt"
-3. To CREATE A FILE, use write_file (NOT create_directory)
-4. To CREATE A FOLDER, use create_directory
+  return null;
+}
 
-Examples:
-- "Create a folder called Projects on desktop" → create_directory with path="Desktop/Projects"
-- "Create a file called notes.txt on desktop" → write_file with path="Desktop/notes.txt" content=""
-- "Create hello.txt inside the Projects folder" → write_file with path="Desktop/Projects/hello.txt" content=""
-- "Write 'Hello World' to test.txt" → write_file with path="Desktop/test.txt" content="Hello World"
-- "List my Desktop" → list_directory with path="Desktop"
-- "Read config.txt from desktop" → read_file with path="Desktop/config.txt"
-- "Delete the test folder" → delete_file with path="Desktop/test" recursive=true
+// Centralized routing decision type and analyzer. This is the single canonical
+// place that decides whether a message should invoke tools or be handled by
+// the LLM. Other modules should consume the resulting RoutingDecision.
+export type RoutingDecision =
+  | { type: 'tools'; calls: ToolCall[] }
+  | { type: 'llm' }
+  | { type: 'error'; reason: string };
 
-=== SYSTEM TOOLS ===
-- "What's my system info?" → get_system_info
-- "Open calculator" → launch_app with appName="calculator"
-- "Open VS Code" → launch_app with appName="code"
-- "What's 256 * 128?" → calculate with expression="256 * 128"
-- "What time is it?" → get_current_time
-- "What's on my clipboard?" → get_clipboard
-- "Copy this: hello" → set_clipboard with text="hello"
+export async function analyzeAndRouteMessage(message: string): Promise<RoutingDecision> {
+  if (!message || typeof message !== 'string') return { type: 'error', reason: 'invalid_message' };
+  try {
+    const pre = await preProcessIntent(message);
+    if (pre && Array.isArray(pre.calls) && pre.calls.length > 0) {
+      return { type: 'tools', calls: pre.calls as ToolCall[] };
+    }
+    return { type: 'llm' };
+  } catch (err: any) {
+    return { type: 'error', reason: String(err?.message || err) };
+  }
+}
 
-=== WEB TOOLS ===
-- "Search for Python tutorials" → web_search with query="Python tutorials"
-- "What's the weather in London?" → get_weather with location="London"
-- "Get content from this URL" → fetch_url with url="https://example.com"
-- "Search the news about AI" → web_search with query="latest AI news"
+// Summarize tool results into a human-readable assistant message. Keep this
+// deterministic and brief so the UI can present a helpful summary after tools
+// execute.
+function summarizeToolResults(results: any[]): string {
+  if (!results || results.length === 0) return 'No results returned from tools.';
+  const parts: string[] = [];
+  for (const r of results) {
+    if (r === null || r === undefined) continue;
+    if (r.success === false) {
+      parts.push(`Tool failed: ${r.error || r.message || 'unknown error'}`);
+      continue;
+    }
+    // Heuristic extraction for common result shapes
+    if (r.result && typeof r.result === 'string') parts.push(r.result);
+    else if (r.result && typeof r.result === 'object') {
+      // Try to stringify concise keys
+      if (r.result.summary) parts.push(r.result.summary);
+      else if (r.result.content) parts.push(r.result.content);
+      else parts.push(JSON.stringify(r.result).slice(0, 400));
+    } else if (r.output && typeof r.output === 'string') parts.push(r.output);
+    else parts.push(JSON.stringify(r).slice(0, 400));
+  }
+  return parts.join('\n\n');
+}
 
-Use web_search when you need current/up-to-date information or facts you're unsure about.
-Use get_weather for weather questions.
-Use fetch_url to read content from a specific webpage.
+// Process an incoming request at the router boundary. This enforces the
+// tool-gating policy: when routing decision is `tools`, the LLM/webhook must
+// NOT be called. Returns structured assistant payloads for the renderer.
+export async function processIncomingRequest(request: SadieRequestWithImages | SadieRequest, n8nUrl: string, decisionOverride?: RoutingDecision) {
+  try {
+    const decision = decisionOverride ?? await analyzeAndRouteMessage(request.message as string);
+    // diagnostic log for tests
+    try { console.log('[ROUTER DIAG] decision=', JSON.stringify(decision)); } catch (e) {}
 
-=== MEMORY TOOLS ===
-- "Remember that I like dark mode" → remember with content="User prefers dark mode"
-- "Remember my name is John" → remember with content="User's name is John" category="fact"
-- "What do you remember about me?" → recall with query="user preferences and facts"
-- "What's my name?" → recall with query="user's name"
-- "List all memories" → list_memories
-- "Forget memory xyz" → forget with memoryId="xyz"
+    if (decision.type === 'error') {
+      return { success: false, error: true, message: `Routing error: ${decision.reason}` };
+    }
 
-Use remember to store important facts about the user that should persist across conversations.
-Use recall to search your memories when the user asks about something you should know.
-Proactively recall relevant memories when they might help answer a question.
+    if (decision.type === 'tools') {
+      // Execute tools atomically and return deterministic assistant summary.
+      const toolContext: ToolContext = { executionId: `pre-${Date.now()}` } as any;
+      try {
+        const results = await executeToolBatch(decision.calls, toolContext as any);
 
-=== AVAILABLE APPS ===
-notepad, calculator, explorer, cmd, powershell, code (VS Code), chrome, firefox, edge, paint, word, excel, spotify, discord, terminal, settings, task manager
+        // If any result indicates missing permissions, surface that explicitly.
+        const needsConfirmation = (results || []).find((r: any) => r && r.status === 'needs_confirmation');
+        if (needsConfirmation) {
+          return {
+            success: true,
+            data: {
+              assistant: {
+                role: 'assistant',
+                content: `This action requires permissions: ${(needsConfirmation.missingPermissions || []).join(', ')}`,
+                status: 'needs_confirmation',
+                missingPermissions: needsConfirmation.missingPermissions || []
+              },
+              toolResults: results,
+              routed: true
+            }
+          };
+        }
 
-CRITICAL: Never call a tool with empty arguments. Always provide required parameters.`;
+        // If any tool failed for other reasons, return a structured error.
+        const failed = (results || []).filter((r: any) => r && r.success === false && r.status !== 'needs_confirmation');
+        if (failed.length > 0) {
+          const msgs = failed.map((f: any) => f.error || f.message || JSON.stringify(f)).join('; ');
+          return {
+            success: true,
+            data: {
+              assistant: {
+                role: 'assistant',
+                content: `Tool execution error: ${msgs}`,
+                status: 'error'
+              },
+              toolResults: results,
+              routed: true
+            }
+          };
+        }
+
+        // Normal success path: deterministic assistant summary
+        const assistantText = summarizeToolResults(results as any[]);
+        return {
+          success: true,
+          data: {
+            assistant: {
+              role: 'assistant',
+              content: assistantText
+            },
+            toolResults: results,
+            routed: true
+          }
+        };
+      } catch (toolErr: any) {
+        return { success: true, data: { assistant: { role: 'assistant', content: `Tool execution failed: ${String(toolErr?.message || toolErr)}`, status: 'error' }, routed: true } };
+      }
+    }
+
+    // Only if decision.type === 'llm' do we call the upstream orchestrator/webhook.
+    if (decision.type === 'llm') {
+      const response = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, request, {
+        timeout: DEFAULT_TIMEOUT,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return { success: true, data: response.data };
+    }
+
+    return { success: false, error: true, message: 'Unhandled routing decision' };
+  } catch (err: any) {
+    return mapErrorToSadieResponse(err);
+  }
+}
+
+// Central system prompt moved to `src/shared/system-prompt.ts`.
 
 // Vision model for image analysis
 const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'llava';
@@ -254,7 +354,7 @@ interface ChatMessage {
 }
 
 // Stream from Ollama with tool calling support
-async function streamFromOllamaWithTools(
+export async function streamFromOllamaWithTools(
   message: string, 
   images: ImageAttachment[] | undefined,
   conversationId: string,
@@ -505,7 +605,10 @@ async function streamFromOllamaWithTools(
     }
   }
   
-  // Start processing
+  // Start processing: delegate to the streaming process. Intent analysis is
+  // centralized via `analyzeAndRouteMessage` and must be invoked by the
+  // message router (not here) so streaming behavior does not duplicate
+  // routing decisions.
   processResponse();
   
   return {
@@ -620,6 +723,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       
       // Create confirmation requester for this stream
       const requestConfirmation = createConfirmationRequester(event.sender, streamId);
+
+      // Deterministic intent routing is handled by module-level `preProcessIntent`.
 
       // Should we use direct Ollama mode? Honor the direct-ollama env only in E2E/test runs.
       // This lets Playwright packaged runs enable test-only behavior while keeping
@@ -1167,17 +1272,8 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       } as any;
     }
 
-    try {
-      const response = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, request, {
-        timeout: DEFAULT_TIMEOUT,
-        headers: { 'Content-Type': 'application/json' }
-      });
-      return {
-        success: true,
-        data: response.data
-      };
-    } catch (error: any) {
-      return mapErrorToSadieResponse(error);
-    }
+    // Use centralized processor for incoming requests so we can enforce
+    // gating: if tools are required, never call the LLM or webhook.
+    return await processIncomingRequest(request as any, n8nUrl);
   });
 }

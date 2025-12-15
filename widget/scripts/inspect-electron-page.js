@@ -22,7 +22,7 @@ const { _electron: electron } = require('playwright');
       console.log('--- END WINDOW ---');
       const hasInput = await w.$('label:has-text("Message SADIE")');
       console.log('Has Message input label:', !!hasInput);
-      const hasFirstRun = await w.$('label:has-text("Allow anonymous telemetry")');
+      const hasFirstRun = await w.$('label:has-text("Telemetry")');
       console.log('Has first-run telemetry label:', !!hasFirstRun);
       const finishBtn = await w.$('button:has-text("Finish")');
       console.log('Has Finish button:', !!finishBtn);

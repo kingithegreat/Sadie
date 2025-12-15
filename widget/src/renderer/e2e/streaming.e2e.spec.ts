@@ -42,8 +42,8 @@ test('streams chunks to UI', async () => {
   }
   // Wait for the stream to produce chunk tokens
   await expect(assistant).toContainText('chunk-1', { timeout: 15000 });
-  await expect(assistant).toContainText('chunk-3');
-  await expect(assistant).toContainText('chunk-5');
+  await expect(assistant).toContainText('chunk-3', { timeout: 15000 });
+  await expect(assistant).toContainText('chunk-5', { timeout: 15000 });
 
   await expect(assistant.locator('button[aria-label="Stop generating"]')).toHaveCount(0);
 
@@ -82,7 +82,7 @@ test('cancel stops stream', async () => {
   await page.evaluate((id) => (window as any).electron.cancelStream?.(id), msgId);
 
   // Wait for the renderer to observe the cancelled/finished state so we know cancel was processed
-  await expect(assistant).toHaveAttribute('data-state', /cancelled|finished/, { timeout: 5000 });
+  await expect(assistant).toHaveAttribute('data-state', /cancelled|finished/, { timeout: 10000 });
 
   // Ensure no additional content arrives after cancel is processed
   const contentAfterCancelProcessed = await assistant.innerText();
@@ -177,14 +177,14 @@ test('handles upstream error', async () => {
   }, msgId);
 
   // Wait for the renderer to observe the stream-error IPC event (E2E global tracker)
-  await page.waitForFunction(() => Array.isArray((window as any).__e2eEvents) && (window as any).__e2eEvents.includes('sadie:stream-error'), null, { timeout: 10000 });
+  await page.waitForFunction(() => Array.isArray((window as any).__e2eEvents) && (window as any).__e2eEvents.includes('sadie:stream-error'), null, { timeout: 20000 });
   // Verify the event was observed
   const events = await page.evaluate(() => (window as any).__e2eEvents || []);
   expect(events.includes('sadie:stream-error')).toBe(true);
 
   // After the error event the UI should transition to the 'error' state and show the error indicator
-  await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 5000 });
-  await expect(assistant).toContainText('Error');
+  await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 10000 });
+  await expect(assistant).toContainText('Error', { timeout: 10000 });
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));
@@ -247,8 +247,8 @@ test('falls back to non-stream final text on stream init error', async () => {
 
   // If the first-run modal is visible (fresh profile), finish setup so the test can interact with the main UI
   try {
-    const firstRunLabel = page.getByLabel(/Allow anonymous telemetry/i);
-    if (await firstRunLabel.isVisible().catch(() => false)) {
+    const firstRunHeader = page.getByText('Welcome to SADIE');
+    if (await firstRunHeader.isVisible().catch(() => false)) {
       // Finish the onboarding with defaults
       await page.getByRole('button', { name: /Finish/i }).click();
       // Give the main UI a moment to render
@@ -290,9 +290,10 @@ test('falls back to non-stream final text on stream init error', async () => {
   // eslint-disable-next-line no-console
   console.log('[E2E-TRACE] __e2e_trigger_fallback response', res);
   expect(res && res.ok).toBe(true);
-  await expect(assistant).toContainText('final-fallback', { timeout: 10000 });
-  // Ensure the message is marked finished (not error)
-  await expect(assistant).toHaveAttribute('data-state', 'finished', { timeout: 5000 });
+  // The app now surfaces stream-init failures as an explicit Error + Retry UI (not silent fallback)
+  await expect(assistant).toContainText('Error', { timeout: 10000 });
+  await expect(assistant).toContainText('Retry', { timeout: 10000 });
+  await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 5000 });
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));

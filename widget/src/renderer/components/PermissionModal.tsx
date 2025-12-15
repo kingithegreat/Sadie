@@ -32,7 +32,7 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <div data-role="permission-modal" className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="w-[620px] max-w-[95vw] rounded-2xl bg-zinc-950 border border-zinc-800 p-4 shadow-lg">
         <h2 className="text-lg font-semibold mb-2">Permission Required</h2>
         <p className="text-sm text-zinc-400 mb-4">This action requires the following permissions:</p>
