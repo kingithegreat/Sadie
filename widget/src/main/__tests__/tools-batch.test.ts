@@ -14,7 +14,7 @@ describe('executeToolBatch', () => {
       { name: 'write_file', arguments: { path: 'Desktop/Test/report.txt', content: 'hi' } }
     ];
 
-    const res = await executeToolBatch(calls, {});
+    const res = await executeToolBatch(calls, { executionId: 'test' } as any);
     expect(res.length).toBe(1);
     expect(res[0].success).toBe(false);
     expect(res[0].status).toBe('needs_confirmation');
@@ -30,7 +30,7 @@ describe('executeToolBatch', () => {
     jest.spyOn(config, 'assertPermission').mockImplementation((name) => (name === 'write_file' ? false : true));
 
     const calls = [ { name: 'dummy_report', arguments: {} } as any ];
-    const res = await executeToolBatch(calls, {});
+    const res = await executeToolBatch(calls, { executionId: 'test' } as any);
     expect(res.length).toBe(1);
     expect((res[0] as any).status).toBe('needs_confirmation');
     expect((res[0] as any).missingPermissions).toContain('write_file');

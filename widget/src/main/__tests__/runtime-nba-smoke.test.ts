@@ -1,5 +1,5 @@
-let executeTool;
-let config;
+let executeTool: any;
+let config: any;
 try {
   // Prefer the compiled dist bundle to avoid TS parsing issues in Jest
   const dist = require('../../dist/main/index.js');
