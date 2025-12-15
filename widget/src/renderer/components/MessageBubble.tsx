@@ -12,6 +12,10 @@ export function MessageBubble({
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
+  // Derive avatar and avatar class directly from the canonical role to
+  // avoid any accidental mismatch when nested conditionals are evaluated.
+  const avatarEmoji = message.role === 'user' ? '👤' : '✨';
+  const avatarClass = message.role === 'user' ? 'user' : 'assistant';
   const state = message.streamingState;
   const hasContent = Boolean(message.content && message.content.trim());
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
@@ -85,15 +89,15 @@ export function MessageBubble({
             )}
           </div>
 
-          <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? "👤" : "✨"}
+          <div className={`message-avatar ${avatarClass}`}>
+            {avatarEmoji}
           </div>
         </>
       ) : (
         <>
           {/* ASSISTANT: avatar first, content second */}
-          <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? "👤" : "✨"}
+          <div className={`message-avatar ${avatarClass}`}>
+            {avatarEmoji}
           </div>
 
           <div className="message-content">

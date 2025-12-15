@@ -1,4 +1,4 @@
-import { mockApp, mockIpcMain, mockBrowserWindow } from './jest-setup';
+import { mockApp, mockIpcMain, mockBrowserWindow } from './jest-setup.ts';
 
 // Wrap plain mocks with jest.fn now that the Jest environment is ready
 for (const key of Object.keys(mockApp)) {

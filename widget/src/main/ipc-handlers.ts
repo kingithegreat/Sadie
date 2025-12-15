@@ -19,6 +19,9 @@ const DEFAULT_SETTINGS = {
   widgetHotkey: 'Ctrl+Shift+Space'
 };
 
+// Exposed mapping of handler functions for tests
+export const ipcHandlers: Record<string, any> = {};
+
 // Get settings file path
 const getSettingsPath = (): string => {
   const configDir = path.join(__dirname, '..', '..', 'config');
@@ -40,41 +43,47 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     // early renderer invokes during startup without races.
     // Note: we store a flag on the global to persist across reloads in dev.
     const g = global as any;
-    if (g.__sadie_ipc_registered) {
+
+  // (registration occurs at module import below)
+    const alreadyRegistered = !!g.__sadie_ipc_registered;
+    if (alreadyRegistered) {
       // Only log idempotent registration warnings in development
       const { isDevelopment } = require('./env');
       if (isDevelopment) {
-        console.log('[IPC] registerIpcHandlers already executed — skipping');
-        try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) {}
+        console.log('[IPC] registerIpcHandlers already executed — skipping ipcMain registrations');
+        try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping ipcMain registrations'); } catch (e) {}
       }
-      return;
     }
     // Health check: verify n8n and Ollama statuses
-    ipcMain.handle('sadie:check-connection', async () => {
+    const handleCheckConnection = async () => {
       const settings = getSettings();
       const n8nBase = settings.n8nUrl || 'http://localhost:5678';
       const n8nHealth = `${n8nBase.replace(/\/$/, '')}/healthz`;
-      const result = { n8n: 'checking', ollama: 'checking', lastChecked: new Date().toISOString() } as any;
+      const result = { n8n: { status: 'checking' }, ollama: { status: 'checking' }, lastChecked: new Date().toISOString() } as any;
       try {
         const r = await axios.get(n8nHealth, { timeout: 2000 });
-        if (r && r.status && r.status >= 200 && r.status < 300) result.n8n = 'online';
-        else result.n8n = 'offline';
+        if (r && r.status && r.status >= 200 && r.status < 300) result.n8n.status = 'online';
+        else result.n8n.status = 'offline';
       } catch (e) {
-        result.n8n = 'offline';
+        result.n8n.status = 'offline';
       }
 
       try {
         // Ollama may not expose /healthz; a simple GET on base URL will suffice for a quick check
         const ollamaBase = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
         const r2 = await axios.get(ollamaBase, { timeout: 2000 });
-        result.ollama = (r2 && r2.status && r2.status >= 200 && r2.status < 500) ? 'online' : 'offline';
+        result.ollama.status = (r2 && r2.status && r2.status >= 200 && r2.status < 500) ? 'online' : 'offline';
       } catch (e) {
-        result.ollama = 'offline';
+        result.ollama.status = 'offline';
       }
 
       result.lastChecked = new Date().toISOString();
-      return result as { n8n: 'online'|'offline'|'checking'; ollama: 'online'|'offline'|'checking'; lastChecked: string };
-    });
+      return result as { n8n: { status: string }; ollama: { status: string }; lastChecked: string };
+    };
+    ipcHandlers['sadie:check-connection'] = handleCheckConnection;
+    if (!alreadyRegistered && ipcMain && typeof (ipcMain as any).handle === 'function') {
+      ipcMain.handle('sadie:check-connection', handleCheckConnection);
+    }
 
     ipcMain.on('window-minimize', () => {
       const win = mainWindow ?? getMainWindow();
@@ -146,17 +155,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Get user settings from file
    */
-  ipcMain.handle('sadie:get-settings', async () => {
+  const handleGetSettings = async () => {
     try {
       return getSettings();
     } catch (err: any) {
       console.error('Error loading settings:', err.message);
       return getSettings();
     }
-  });
+  };
+  ipcHandlers['sadie:get-settings'] = handleGetSettings;
+  ipcMain.handle('sadie:get-settings', handleGetSettings);
 
   // Check a single permission for a given tool (used by renderer to hide/disable UI)
-  ipcMain.handle('sadie:has-permission', async (_event, toolName: string) => {
+  const handleHasPermission = async (_event: any, toolName: string) => {
     try {
       const { assertPermission } = require('./config-manager');
       const allowed = assertPermission(toolName);
@@ -165,12 +176,14 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       console.error('Error checking permission:', err.message);
       return { success: false, error: err.message };
     }
-  });
+  };
+  ipcHandlers['sadie:has-permission'] = handleHasPermission;
+  ipcMain.handle('sadie:has-permission', handleHasPermission);
 
   /**
    * Save user settings to file
    */
-  ipcMain.handle('sadie:save-settings', async (_event, settings) => {
+  const handleSaveSettings = async (_event: any, settings: any) => {
     try {
       const merged = { ...getSettings(), ...settings };
       saveSettings(merged);
@@ -179,7 +192,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       console.error('Error saving settings:', err.message);
       return { success: false, error: err.message };
     }
-  });
+  };
+  ipcHandlers['sadie:save-settings'] = handleSaveSettings;
+  ipcMain.handle('sadie:save-settings', handleSaveSettings);
 
   /**
    * Get the absolute path to the config file (for E2E testing)
@@ -381,9 +396,13 @@ try {
 } finally {
     $recognizer.Dispose()
 }
+
+// Automatically register handlers when this module is imported so tests
+// that inspect ipcHandlers can see the populated mapping without
+// needing to call registerIpcHandlers() manually.
 `;
 
-      exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
+        exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
         { timeout: 15000 }, 
         (error: any, stdout: string, stderr: string) => {
           if (error) {
@@ -404,4 +423,11 @@ try {
   if (isDevelopment) {
     console.log('[IPC] Handlers registered');
   }
+}
+
+// Auto-register IPC handlers at module import so tests can inspect `ipcHandlers`.
+try {
+  registerIpcHandlers();
+} catch (e) {
+  // Ignore errors during import-time registration (e.g., mocked ipcMain in tests)
 }

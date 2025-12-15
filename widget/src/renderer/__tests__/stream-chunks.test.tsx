@@ -77,6 +77,10 @@ describe('stream chunks (renderer)', () => {
     // Cancel button should disappear after finish
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
 
+    // The assistant message associated with the stream should be finalized
+    const msgEl = document.querySelector(`[data-message-id="${streamId}"]`) as HTMLElement | null;
+    expect(msgEl).not.toBeNull();
+    expect(msgEl?.getAttribute('data-state')).toBe('finished');
     // Ensure unsubscribe functions still exist and can be called (cleanup implicit on end)
     // The test ensures our mocks were returned; actual cleanup on app is tested elsewhere.
     expect(typeof chunkUnsub).toBe('function');
