@@ -187,22 +187,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="setting-group">
-            <label className="setting-label">
-              <input
-                type="checkbox"
-                checked={telemetryEnabled}
-                onChange={(e) => {
-                  // If enabling telemetry, show consent modal before enabling
-                  if (e.target.checked) {
-                    setShowTelemetryModal(true);
-                  } else {
-                    setTelemetryEnabled(false);
-                    setLocalSettings({ ...localSettings, telemetryEnabled: false } as any);
-                  }
-                }}
-              />
-              <span>🛡️ Telemetry (opt-in)</span>
-            </label>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={true}
+              disabled
+            />
+            <span>🛡️ Telemetry (required, anonymous)</span>
+          </label>
         </div>
 
         <div className="setting-group">
