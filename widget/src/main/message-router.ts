@@ -27,7 +27,9 @@ const REFLECTION_SYSTEM_MESSAGE = `Return ONLY a single JSON object. No surround
   `The JSON object MUST be one of:\n` +
   `{"outcome":"accept","final_message":"..."} OR ` +
   `{"outcome":"request_tool","tool_request":{"name":"<tool>","args":{...}}} OR ` +
-  `{"outcome":"explain","explanation":"..."}`;
+  `{"outcome":"explain","explanation":"..."}\n` +
+  `If the user asks about sports (scores, schedules, "next game", team records, standings), you MUST return a ` +
+  `{"outcome":"request_tool","tool_request":{"name":"nba_query","args":{...}}} object and MUST NOT answer directly in prose. Any other form will be treated as an invalid reflection.`;
 
 function stableStringify(obj: any): string {
   if (obj === null || obj === undefined) return JSON.stringify(obj);
@@ -295,6 +297,134 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
     }
 
     const toolContext: ToolContext = { executionId: `exec-${Date.now()}` } as any;
+
+    // Deterministic pre-routing: if the caller did NOT provide a routing
+    // decision override, check for tool intents (e.g., sports/NBA) and
+    // short-circuit the model-first loop to execute tools directly. This
+    // ensures sports queries cannot be answered from model memory if the
+    // model fails to request a tool.
+    if (!decisionOverride) try {
+      const decision = await analyzeAndRouteMessage(request.message as string);
+      if (decision.type === 'tools') {
+        // Normalize calls (same shape as when model requests tools)
+        const calls = decision.calls.map((c: any) => {
+          const toolName = c.name || c.tool || c.action;
+          let toolArgs = c.arguments || c.args || c.params || {};
+          if (typeof toolArgs === 'string') {
+            try { toolArgs = JSON.parse(toolArgs); } catch { }
+          }
+          return { name: toolName, arguments: toolArgs } as any;
+        });
+
+        // Permission gating
+        const { getSettings } = require('./config-manager');
+        const settings = getSettings();
+        const missing: string[] = [];
+        for (const c of calls) {
+          const allowed = settings.permissions && settings.permissions[c.name];
+          if (!allowed) missing.push(c.name);
+        }
+        if (missing.length > 0) {
+          return { success: true, data: { assistant: { role: 'assistant', content: `This action requires permissions: ${missing.join(', ')}`, status: 'needs_confirmation', missingPermissions: missing }, routed: true } };
+        }
+
+        // Execute tools and run reflection as usual
+        const results = await executeToolBatch(calls as any[], toolContext as any);
+        const needsConfirmation = (results || []).find((r: any) => r && r.status === 'needs_confirmation');
+        if (needsConfirmation) {
+          const missingPermissions = needsConfirmation.missingPermissions || [];
+          return { success: true, data: { assistant: { role: 'assistant', content: `This action requires permissions: ${missingPermissions.join(', ')}`, status: 'needs_confirmation', missingPermissions }, toolResults: results, routed: true } };
+        }
+        const failed = (results || []).filter((r: any) => r && r.success === false);
+        if (failed.length > 0) {
+          const msgs = failed.map((f: any) => f.error || f.message || JSON.stringify(f)).join('; ');
+          return { success: true, data: { assistant: { role: 'assistant', content: `Tool execution error: ${msgs}`, status: 'error' }, toolResults: results, routed: true } };
+        }
+
+        // Run reflection loop to validate results (reuse same helper semantics)
+        const executedToolSet = new Set<string>();
+        for (const c of calls) executedToolSet.add(hashToolCall(c.name, c.arguments));
+        // Inline reflection helper (keeps parity with model-initiated path)
+        async function performReflectionLoopLocal(localCalls: any[], localResults: any[]): Promise<{ status: 'accept'|'explain'|'invalid_json'|'failure'; payload?: any }> {
+          let depth = 0;
+          while (depth < REFLECTION_MAX_DEPTH) {
+            const assistantMsg = { role: 'assistant', content: null, tool_calls: localCalls } as any;
+            const toolMsgs: any[] = [];
+            for (let i = 0; i < localResults.length; i++) {
+              const call = localCalls[i];
+              const res = localResults[i];
+              const toolName = call?.name || res?.tool || `tool_${i}`;
+              toolMsgs.push({ role: 'tool', tool_name: toolName, content: JSON.stringify(res) });
+            }
+            const payload = { messages: [assistantMsg, ...toolMsgs, { role: 'system', content: REFLECTION_SYSTEM_MESSAGE }], tools };
+            let r;
+            try {
+              const resp = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, payload, { timeout: DEFAULT_TIMEOUT, headers: { 'Content-Type': 'application/json' } });
+              r = resp?.data?.data?.assistant || resp?.data?.assistant || resp?.data;
+            } catch (err: any) {
+              logError('[REFLECTION] LLM call failed', err?.message || err);
+              return { status: 'failure', payload: { message: 'Reflection LLM call failed' } };
+            }
+            const assistantText = typeof r === 'string' ? r : (r?.content || r?.message || JSON.stringify(r));
+            const parsed = parseStrictJsonOnly(assistantText);
+            if (!parsed.ok) return { status: 'invalid_json' };
+            const obj = parsed.value;
+            if (!obj || typeof obj !== 'object' || !obj.outcome) return { status: 'invalid_json' };
+            const outcome = obj.outcome;
+            if (outcome === 'accept') {
+              if (!obj.final_message || typeof obj.final_message !== 'string') return { status: 'invalid_json' };
+              return { status: 'accept', payload: { final_message: obj.final_message } };
+            }
+            if (outcome === 'explain') {
+              const explanation = obj.explanation || 'No explanation provided.';
+              return { status: 'explain', payload: { explanation } };
+            }
+            if (outcome === 'request_tool') {
+              const req = obj.tool_request;
+              if (!req || !req.name) return { status: 'invalid_json' };
+              const key = hashToolCall(req.name, req.args || {});
+              if (executedToolSet.has(key)) return { status: 'failure', payload: { message: 'Reflection failed: duplicate tool request' } };
+              const { getSettings } = require('./config-manager');
+              const s = getSettings();
+              const allowed = s.permissions && s.permissions[req.name];
+              if (!allowed) return { status: 'failure', payload: { message: 'Missing permission', missing: [req.name] } };
+              const toolCall = [{ name: req.name, arguments: req.args || {} }];
+              const toolRes = await executeToolBatch(toolCall as any[], { executionId: `exec-${Date.now()}` } as any);
+              localCalls = localCalls.concat(toolCall as any[]);
+              localResults = localResults.concat(toolRes as any[]);
+              executedToolSet.add(key);
+              depth += 1;
+              continue;
+            }
+            return { status: 'invalid_json' };
+          }
+          return { status: 'failure', payload: { message: 'Reflection max depth exceeded' } };
+        }
+
+        const reflectionResultLocal = await performReflectionLoopLocal(calls, results);
+        if (reflectionResultLocal.status === 'accept') {
+          const finalText = reflectionResultLocal.payload.final_message;
+          addToHistory(convId, 'assistant', finalText);
+          return { success: true, data: { assistant: { role: 'assistant', content: finalText } } };
+        }
+        if (reflectionResultLocal.status === 'explain') {
+          const explanation = reflectionResultLocal.payload.explanation;
+          addToHistory(convId, 'assistant', explanation);
+          return { success: true, data: { assistant: { role: 'assistant', content: explanation } } };
+        }
+        if (reflectionResultLocal.status === 'invalid_json') {
+          const msg = `I couldn't validate the tool output due to an invalid reflection response. Please retry.`;
+          addToHistory(convId, 'assistant', msg);
+          return { success: true, data: { assistant: { role: 'assistant', content: msg } } };
+        }
+        const msg = reflectionResultLocal.payload?.message || 'Reflection failed: could not validate tool results.';
+        addToHistory(convId, 'assistant', msg);
+        return { success: true, data: { assistant: { role: 'assistant', content: msg } } };
+      }
+    } catch (e) {
+      // proceed with model-first path if intent preprocessing fails for any reason
+      logDebug('[ROUTER] pre-routing check failed, falling back to model-first', String(e));
+    }
 
     // Loop: call LLM, if it requests tools then validate & run them, append
     // results and call LLM again. Terminate when LLM returns a final reply.

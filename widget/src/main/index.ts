@@ -107,6 +107,11 @@ app.whenReady().then(() => {
   const { registerMessageRouter, setUncensoredMode, getUncensoredMode } = require('./message-router');
   const n8nUrl = process.env.N8N_URL || require('../shared/constants').DEFAULT_N8N_URL;
   if (mainWindow) registerMessageRouter(mainWindow, n8nUrl);
+
+  // Dev-only test server for manual scenario testing (POST /dev-test)
+  if (process.env.NODE_ENV !== 'production') {
+    try { require('./dev-test-server'); } catch (e) { console.error('Failed to start dev test server', e); }
+  }
   
   // IPC handler for uncensored mode toggle
   const { ipcMain } = require('electron');
