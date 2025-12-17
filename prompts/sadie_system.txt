@@ -26,3 +26,6 @@ Reflection discipline:
   {"outcome":"request_tool","tool_request":{"name":"<tool>","args":{...}}}
   {"outcome":"explain","explanation":"..."}
 - If you cannot produce a valid single JSON object, do not attempt prose; the router will treat it as an invalid reflection response and will finalize with a controlled failure message.
+ - For **sports-related queries** (scores, schedules, "next game", team results, standings), you MUST NOT answer directly in prose. Instead you MUST return a single JSON object requesting the appropriate tool in the `request_tool` shape: for example:
+    {"outcome":"request_tool","tool_request":{"name":"nba_query","args":{"query":"warriors","date":"YYYY-MM-DD","type":"games"}}}
+  If you output any other form (prose, markdown, or a non-JSON value), the response will be treated as an invalid reflection and finalized with a controlled failure message.
