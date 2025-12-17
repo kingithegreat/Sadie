@@ -11,6 +11,8 @@ for (const key of Object.keys(mockIpcMain)) {
 }
 
 const browserWindowFactory = jest.fn(mockBrowserWindow as any);
+// Provide static helpers used by the app code
+(browserWindowFactory as any).getAllWindows = (mockBrowserWindow as any).getAllWindows;
 
 jest.mock('electron', () => ({
   app: mockApp,
