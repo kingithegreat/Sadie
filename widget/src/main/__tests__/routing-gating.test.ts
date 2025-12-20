@@ -4,57 +4,76 @@ import * as tools from '../tools';
 
 jest.mock('axios');
 
-describe('routing gating', () => {
+describe('model-first routing loop', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.resetAllMocks();
   });
 
-  test('LLM/webhook is never called when decision is tools', async () => {
-    // Arrange: force analyzer to return tools
-    (mr as any).analyzeAndRouteMessage = jest.fn().mockResolvedValue({ type: 'tools', calls: [{ name: 'nba_query', arguments: {} }] } as any);
-
-    // Spy on executeToolBatch to return a successful result
-    (tools as any).executeToolBatch = jest.fn().mockResolvedValue([{ success: true, result: 'ok' }] as any);
-
-    // Spy on axios.post so we can assert it was not called
+  test('Direct response: LLM called once, no tools executed', async () => {
     const axiosPost = (axios.post as jest.MockedFunction<any>);
+    axiosPost.mockResolvedValue({ data: { data: { assistant: { role: 'assistant', content: 'Hello world' } } } });
 
-    // Act
-    const req: any = { user_id: 'u', message: 'NBA score', conversation_id: 'c' };
+    const execSpy = jest.spyOn(tools as any, 'executeToolBatch').mockResolvedValue([] as any);
+
+    const req: any = { user_id: 'u', message: 'Say hi', conversation_id: 'c' };
     const res = await mr.processIncomingRequest(req, 'http://unused');
 
-    // Assert
-    expect(axiosPost).not.toHaveBeenCalled();
+    expect(axiosPost).toHaveBeenCalledTimes(1);
+    expect(execSpy).not.toHaveBeenCalled();
     expect(res.success).toBe(true);
-    expect(res.data).toBeDefined();
-    expect(res.data.routed).toBe(true);
-    expect(res.data.assistant).toBeDefined();
-    expect(res.data.assistant.role).toBe('assistant');
-    expect(typeof res.data.assistant.content).toBe('string');
+    expect(res.data.assistant.content).toBe('Hello world');
   });
 
-  test('Tool routing returns assistant text and toolResults', async () => {
-    (mr as any).analyzeAndRouteMessage = jest.fn().mockResolvedValue({ type: 'tools', calls: [{ name: 'nba_query', arguments: {} }] } as any);
-    (tools as any).executeToolBatch = jest.fn().mockResolvedValue([{ success: true, result: { summary: 'Lakers won' } }] as any);
+  test('Single tool request: LLM requests tool, tool runs, LLM finalizes', async () => {
+    const axiosPost = (axios.post as jest.MockedFunction<any>);
+    // First call: LLM requests a tool (model-first path)
+    axiosPost.mockResolvedValueOnce({ data: { data: { assistant: { role: 'assistant', content: '', tool_calls: [{ name: 'calculate', arguments: { expression: '2+2' } }] } } } });
+    // Second call: reflection accepts and returns strict JSON with final message
+    axiosPost.mockResolvedValueOnce({ data: { assistant: JSON.stringify({ outcome: 'accept', final_message: 'Final answer' }) } });
 
-    const req: any = { user_id: 'u', message: 'NBA score', conversation_id: 'c' };
+    const execSpy = jest.spyOn(tools as any, 'executeToolBatch').mockResolvedValue([{ success: true, result: { value: 4 } }] as any);
+
+    // Ensure permissions allow calculate for this test
+    const cfg = require('../config-manager');
+    jest.spyOn(cfg, 'getSettings').mockReturnValue({ permissions: { calculate: true } });
+
+    const req: any = { user_id: 'u', message: 'Calculate 2+2', conversation_id: 'c' };
     const res = await mr.processIncomingRequest(req, 'http://unused');
 
+    expect(axiosPost).toHaveBeenCalled();
     expect(res.success).toBe(true);
-    expect(res.data.assistant.content).toContain('Lakers');
-    expect(Array.isArray(res.data.toolResults)).toBe(true);
+    expect(res.data.assistant.content).toBe('Final answer');
   });
 
-  test('Permission denial blocks LLM fallback and returns needs_confirmation', async () => {
-    // Use decision override to avoid mocking internal analyzer
-    const decision = { type: 'tools', calls: [{ name: 'write_file', arguments: {} }] } as any;
-    (tools as any).executeToolBatch = jest.fn().mockResolvedValue([{ success: false, status: 'needs_confirmation', missingPermissions: ['write_file'] }] as any);
+  test('Pre-routing sports intent: router executes sports tool without initial LLM call', async () => {
+    const axiosPost = (axios.post as jest.MockedFunction<any>);
+    // Reflection call: accepts and returns final message
+    axiosPost.mockResolvedValueOnce({ data: { assistant: JSON.stringify({ outcome: 'accept', final_message: 'Warriors play Lakers on 2024-03-12' }) } });
+
+    const execSpy = jest.spyOn(tools as any, 'executeToolBatch').mockResolvedValue([{ success: true, result: { schedule: 'Warriors vs Lakers', date: '2024-03-12' } }] as any);
+
+    const req: any = { user_id: 'u', message: "whats the warriors next game?", conversation_id: 'c' };
+    const res = await mr.processIncomingRequest(req, 'http://unused');
+
+    // Should have executed tool directly (pre-routing) and then run reflection once
+    expect(execSpy).toHaveBeenCalledTimes(1);
+    expect(axiosPost).toHaveBeenCalledTimes(1);
+    expect(res.success).toBe(true);
+    expect(res.data.assistant.content).toBe('Warriors play Lakers on 2024-03-12');
+  });
+
+  test('Permission-gated tool: LLM requests restricted tool and router blocks', async () => {
+    const axiosPost = (axios.post as jest.MockedFunction<any>);
+    axiosPost.mockResolvedValue({ data: { data: { assistant: { role: 'assistant', content: '', tool_calls: [{ name: 'write_file', arguments: {} }] } } } });
+
+    const execSpy = jest.spyOn(tools as any, 'executeToolBatch').mockResolvedValue([{ success: false, status: 'needs_confirmation', missingPermissions: ['write_file'] }] as any);
 
     const req: any = { user_id: 'u', message: 'Write file', conversation_id: 'c' };
-    const res = await mr.processIncomingRequest(req, 'http://unused', decision);
-    console.log('debug res', JSON.stringify(res));
+    const res = await mr.processIncomingRequest(req, 'http://unused');
 
+    // Router should return a needs_confirmation response without executing tool
+    expect(execSpy).not.toHaveBeenCalled();
     expect(res.success).toBe(true);
     expect(res.data.assistant.status).toBe('needs_confirmation');
     expect(res.data.assistant.missingPermissions).toEqual(['write_file']);

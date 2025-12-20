@@ -16,6 +16,7 @@ export type ChatMessage = {
 
   // assistant only
   streamId?: string;
+  isStreaming?: boolean;
   streamingState?: StreamingState;
   error?: string | null;
 };
@@ -41,4 +42,5 @@ export type Settings = {
   maxTokens: number;
   n8nUrl?: string;
   openaiEndpoint?: string;
+  apiKeys?: Record<string, string>;
 };

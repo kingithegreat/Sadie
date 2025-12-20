@@ -61,6 +61,7 @@ if (isDevelopment) {
 
 // Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null;
+let handlersRegistered = false;
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
@@ -79,9 +80,12 @@ app.whenReady().then(() => {
   }
   if (process.env.NODE_ENV !== 'production') console.log('[DIAG] userData Path =', app.getPath('userData'));
   // Register IPC handlers BEFORE window creation to satisfy early renderer invokes
-  registerIpcHandlers();
-  pushMainLog('Registered IPC handlers.');
-  logStartup('Registered IPC handlers.');
+  if (!handlersRegistered) {
+    registerIpcHandlers();
+    handlersRegistered = true;
+    pushMainLog('Registered IPC handlers.');
+    logStartup('Registered IPC handlers.');
+  }
 
   // Auto-start n8n on Windows using the shipped helper script. This ensures the
   // local orchestrator is running before the renderer attempts to reach it.
@@ -103,6 +107,11 @@ app.whenReady().then(() => {
   const { registerMessageRouter, setUncensoredMode, getUncensoredMode } = require('./message-router');
   const n8nUrl = process.env.N8N_URL || require('../shared/constants').DEFAULT_N8N_URL;
   if (mainWindow) registerMessageRouter(mainWindow, n8nUrl);
+
+  // Dev-only test server for manual scenario testing (POST /dev-test)
+  if (process.env.NODE_ENV !== 'production') {
+    try { require('./dev-test-server'); } catch (e) { console.error('Failed to start dev test server', e); }
+  }
   
   // IPC handler for uncensored mode toggle
   const { ipcMain } = require('electron');
