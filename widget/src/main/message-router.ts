@@ -1,4 +1,32 @@
 // =====================
+// =====================
+// Memory Policy Types & Constants (Router-Owned)
+// =====================
+
+export const MEMORY_MAX_CHARS = 500;
+export const MEMORY_MIN_CONFIDENCE = 0.8;
+export const MEMORY_REDACTION_PATTERNS = [
+  'apikey', 'api key', 'token', 'bearer ', 'password', 'passwd', 'secret',
+  'private key', 'ssh-rsa', 'BEGIN PRIVATE KEY', '-----BEGIN',
+];
+
+export type MemoryAction = 'allow' | 'deny' | 'redact';
+
+export type MemoryDecision = {
+  action: MemoryAction;
+  key?: string;
+  value?: string;
+  reason?: string;
+};
+
+export type MemoryPolicyResult = {
+  result: 'stored' | 'skipped' | 'failed';
+  key?: string;
+  confidence?: number;
+  reason?: string;
+};
+
+// =====================
 // Streaming UX Polish: Stream Controller, Redaction, and Gated Streaming
 // =====================
 
