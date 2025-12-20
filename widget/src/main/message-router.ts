@@ -27,6 +27,67 @@ export type MemoryPolicyResult = {
 };
 
 // =====================
+// Memory Policy Helpers (Pure, Side-Effect Free)
+// =====================
+
+type UserSettings = {
+  saveConversationHistory: boolean;
+  permissions?: string[];
+};
+
+const MEMORY_DENY_PATTERNS = [
+  'session', 'temp', 'password', 'secret', 'token', 'credential', 'apikey', 'api key', 'bearer ',
+];
+
+export function evaluateMemoryPolicy(input: {
+  text: string;
+  confidence: number | null;
+  settings: UserSettings;
+}): {
+  decision: 'allow' | 'deny' | 'redact';
+  reason: string;
+} {
+  if (!input.settings.saveConversationHistory) {
+    return { decision: 'deny', reason: 'conversation history disabled' };
+  }
+  if (input.confidence === null || typeof input.confidence !== 'number' || input.confidence < MEMORY_MIN_CONFIDENCE) {
+    return { decision: 'deny', reason: 'confidence below threshold' };
+  }
+  for (const pat of MEMORY_DENY_PATTERNS) {
+    if (input.text.toLowerCase().includes(pat)) {
+      return { decision: 'deny', reason: `denied by pattern: ${pat}` };
+    }
+  }
+  if (input.text.length > MEMORY_MAX_CHARS) {
+    return { decision: 'redact', reason: 'memory exceeds max length' };
+  }
+  for (const pat of MEMORY_REDACTION_PATTERNS) {
+    if (input.text.toLowerCase().includes(pat)) {
+      return { decision: 'redact', reason: `redacted by pattern: ${pat}` };
+    }
+  }
+  return { decision: 'allow', reason: 'memory allowed' };
+}
+
+export function redactMemoryContent(text: string): string {
+  let redacted = text;
+  for (const pat of MEMORY_REDACTION_PATTERNS) {
+    const regex = new RegExp(pat, 'gi');
+    redacted = redacted.replace(regex, '[REDACTED]');
+  }
+  // Fallback: never return empty string
+  if (!redacted.trim()) return '[REDACTED CONTENT]';
+  return redacted;
+}
+
+export function canPersistMemory(meta: {
+  decision: 'allow' | 'deny' | 'redact';
+  confidence: number | null;
+}): boolean {
+  return meta.decision === 'allow';
+}
+
+// =====================
 // Streaming UX Polish: Stream Controller, Redaction, and Gated Streaming
 // =====================
 
@@ -453,6 +514,22 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
   if (streamController) {
     if (meta.accepted) {
       streamController.open();
+      // Memory policy enforcement
+      const memoryPolicy = evaluateMemoryPolicy({
+        text: reflection.final_message,
+        confidence: meta.confidence,
+        settings: { saveConversationHistory: true } // TODO: wire actual user settings
+      });
+      let memoryText = reflection.final_message;
+      if (memoryPolicy.decision === 'redact') {
+        memoryText = redactMemoryContent(reflection.final_message);
+      }
+      let persisted = false;
+      if (canPersistMemory({ decision: memoryPolicy.decision, confidence: meta.confidence })) {
+        // Simulate memory persistence (replace with actual remember call)
+        persisted = true;
+        // await remember({ content: memoryText, meta: { confidence: meta.confidence, reason: memoryPolicy.reason } });
+      }
       const safeText = redactBeforeStream(reflection.final_message);
       const tokens = tokenizeForStreaming(safeText);
       await streamController.emitTokens(tokens);
@@ -461,7 +538,11 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
         success: true,
         data: {
           assistant: { role: 'assistant', content: safeText },
-          reflection: meta
+          reflection: meta,
+          memory: {
+            decision: memoryPolicy.decision,
+            persisted
+          }
         }
       };
     } else {
@@ -480,12 +561,32 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
   } else {
     // If no streaming, just return the reflection result as content
     if (meta.accepted) {
+      // Memory policy enforcement
+      const memoryPolicy = evaluateMemoryPolicy({
+        text: reflection.final_message,
+        confidence: meta.confidence,
+        settings: { saveConversationHistory: true } // TODO: wire actual user settings
+      });
+      let memoryText = reflection.final_message;
+      if (memoryPolicy.decision === 'redact') {
+        memoryText = redactMemoryContent(reflection.final_message);
+      }
+      let persisted = false;
+      if (canPersistMemory({ decision: memoryPolicy.decision, confidence: meta.confidence })) {
+        // Simulate memory persistence (replace with actual remember call)
+        persisted = true;
+        // await remember({ content: memoryText, meta: { confidence: meta.confidence, reason: memoryPolicy.reason } });
+      }
       const safeText = redactBeforeStream(reflection.final_message);
       return {
         success: true,
         data: {
           assistant: { role: 'assistant', content: safeText },
-          reflection: meta
+          reflection: meta,
+          memory: {
+            decision: memoryPolicy.decision,
+            persisted
+          }
         }
       };
     }
