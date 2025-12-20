@@ -27,4 +27,18 @@ describe('Reflection integration', () => {
     expect(res.data.assistant.content).toBe('It is Sunny and 70F.');
     expect(mockedExecute).toHaveBeenCalledTimes(1);
   });
+
+  it('surfaces reflection confidence and acceptance', async () => {
+    (global as any).__SADIE_TEST_REFLECTION = {
+      outcome: 'accept',
+      confidence: 0.85,
+      final_message: 'Integration test message.'
+    };
+    const res = await processIncomingRequest({ message: 'test' }, 'http://unused');
+    expect(res.data.reflection).toEqual({
+      confidence: 0.85,
+      accepted: true
+    });
+    expect(res.data.assistant.content).toBe('Integration test message.');
+  });
 });
