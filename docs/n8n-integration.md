@@ -1,5 +1,32 @@
 # n8n Workflow Integration Guide
 
+> **Note**: n8n is **optional** for SADIE. The default architecture uses **direct Ollama streaming** with native tool support. n8n is provided as an optional orchestration layer for advanced users who want to customize workflows.
+
+## Architecture Overview
+
+SADIE supports multiple backend modes:
+
+| Mode | Description | Status |
+|------|-------------|--------|
+| **Direct Ollama** | Native streaming with tool support | ✅ Default |
+| **External Providers** | OpenAI, Anthropic, Google APIs | ✅ Supported |
+| **n8n Workflows** | Custom orchestration | ⚡ Optional |
+
+### When to Use n8n
+
+- Complex multi-step workflows
+- Custom integrations with external services
+- Advanced safety/validation pipelines
+- Team workflows with approval processes
+
+### When NOT to Use n8n
+
+- Standard chat interactions (Direct Ollama is faster)
+- Simple tool calls (handled natively)
+- External API providers (OpenAI, Anthropic, etc.)
+
+---
+
 ## Integrating PowerShell Scripts into n8n Workflows
 
 This guide shows how to wire PowerShell scripts into existing SADIE n8n workflows.
