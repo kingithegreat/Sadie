@@ -11,28 +11,46 @@
 
 ## ✨ Features
 
+### 🤖 Multi-Provider AI Support
+- **Ollama (Local)**: Free, private, runs entirely on your machine
+- **OpenAI**: GPT-4o, GPT-4o-mini, GPT-4-turbo support
+- **Anthropic**: Claude Sonnet, Claude Haiku, Claude Opus
+- **Google**: Gemini 1.5 Pro, Gemini 1.5 Flash
+
+### 🏀 Sports Intelligence
+- **NBA Live Data**: Real-time scores, schedules, and game results via ESPN API
+- **Smart Team Recognition**: 50+ team names automatically detected
+- **Pre-processed Queries**: Instant responses without LLM hallucination
+
 ### 🔍 Web Intelligence Tools
 - **Multi-Engine Web Search**: DuckDuckGo, Google, and Brave search with automatic content fetching
 - **Safe URL Fetching**: SSRF-protected content extraction with DNS validation
 - **Weather Information**: Real-time weather data via wttr.in (no API keys required)
 
+### 🛠️ Tool Picker & Pre-Processing
+- **Visual Tool Selector**: Browse and select from 32+ tools organized by category
+- **Deterministic Routing**: NBA, weather, time, calculator queries bypass LLM for guaranteed accuracy
+- **Smart Intent Detection**: Automatic tool selection based on query patterns
+
 ### 📄 Document Processing
 - **PDF & Text Analysis**: Local document processing with mammoth and pdf-parse
 - **Content Extraction**: Intelligent text extraction from various document formats
 
-### 🎤 Speech & Audio
-- **Offline Speech Recognition**: Local STT using whisper-node
-- **Audio Processing**: Real-time audio capture and processing
+### 🧠 Memory System
+- **Persistent Memory**: Remember facts and preferences across sessions
+- **Confidence Tracking**: Reflection metadata for memory validation
+- **Smart Retrieval**: Context-aware memory injection
 
-### 🖼️ Image Processing
-- **Local Image Analysis**: Client-side image processing capabilities
-- **Format Support**: Multiple image format handling
+### 🎤 Speech & Audio
+- **Speech Recognition**: Voice input support
+- **Text-to-Speech**: Natural voice output with multiple voices
 
 ### 🔒 Security Features
 - **URL Safety Validation**: Comprehensive SSRF protection with DNS resolution checks
 - **Process Isolation**: Electron main/renderer separation with secure IPC
 - **Input Sanitization**: All inputs validated and sanitized
 - **Compile-time Gating**: Development code automatically removed in production builds
+- **Permission System**: Granular control over tool access
 
 ## 🏗️ Architecture
 
@@ -143,10 +161,21 @@
 ### AI Interactions
 SADIE uses a structured tool-based approach for AI interactions:
 
-- **Web Search**: "What are the current NBA standings?"
+- **NBA Sports**: "Warriors last 5 games" or "Lakers schedule"
 - **Weather**: "What's the weather in Tokyo?"
-- **URL Fetching**: "Summarize https://example.com/article"
-- **Document Analysis**: Upload and analyze documents locally
+- **Web Search**: "Search for Python tutorials"
+- **Time/Date**: "What time is it?" or "Today's date"
+- **Calculator**: "Calculate 15% of 230"
+- **File Operations**: "List files in Documents" or "Read config.json"
+- **Memory**: "Remember my favorite color is blue"
+
+### Configuring AI Providers
+
+1. Open Settings (gear icon)
+2. Select your AI Provider (Ollama, OpenAI, Anthropic, or Google)
+3. Choose a specific model from the dropdown
+4. For cloud providers, enter your API key
+5. Click Save
 
 ### Security Features
 - All web requests are validated for safety
@@ -211,15 +240,31 @@ SADIE implements multiple layers of security:
 widget/
 ├── src/
 │   ├── main/           # Main process (Node.js)
-│   │   ├── tools/      # AI tool implementations
+│   │   ├── tools/      # AI tool implementations (32+ tools)
+│   │   ├── providers/  # External AI providers (OpenAI, Anthropic, Google)
 │   │   ├── env.ts      # Environment detection
-│   │   └── index.ts    # Application entry point
+│   │   └── message-router.ts  # Pre-processing & routing
 │   ├── preload/        # Preload scripts (security)
 │   └── renderer/       # React UI components
+│       ├── components/ # UI components (ToolPicker, SettingsPanel, etc.)
+│       └── styles/     # CSS themes
 ├── dist/               # Built application bundles
 ├── scripts/            # Build and utility scripts
 └── tests/              # Test files
 ```
+
+### Available Tools (32+)
+| Category | Tools |
+|----------|-------|
+| **Files** | list_directory, read_file, write_file, create_directory, move_file, copy_file, delete_file, get_file_info |
+| **Web** | web_search, fetch_url, open_url |
+| **System** | get_system_info, get_clipboard, set_clipboard, launch_app, screenshot |
+| **Time** | get_current_time, calculate |
+| **Weather** | get_weather |
+| **Memory** | remember, recall, forget, list_memories |
+| **Documents** | parse_document, get_document_content, list_documents, search_document |
+| **Voice** | speak, stop_speaking, get_voices |
+| **Sports** | nba_query, generate_sports_report |
 
 ### Key Technologies
 - **Electron**: Cross-platform desktop framework
