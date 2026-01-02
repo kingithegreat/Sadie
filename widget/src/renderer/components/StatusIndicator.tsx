@@ -70,7 +70,10 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           ☰
         </button>
       )}
-      <h1>✨ SADIE</h1>
+      <div className="app-title">
+        <img src={require('../assets/SadieIcon.png')} alt="SADIE" className="app-logo" />
+        <h1>SADIE</h1>
+      </div>
       
       <div className="status-bar-inline">
         <div className="status-item">
@@ -164,6 +167,18 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           border-bottom: 1px solid #333333;
           -webkit-app-region: drag;
           min-height: 48px;
+        }
+
+        .app-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .app-logo {
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
         }
 
         .app-header h1 {
