@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS = {
     web_search: true,
     nba_query: true,
   },
-  defaultTeam: ''
+  defaultTeam: 'GSW'
 };
 
 // Safe Electron app import with fallback

@@ -484,13 +484,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       setTimeout(() => streamStatesRef.current.delete(streamId), 5000);
 
       // Test-only instrumentation: emit E2E events and debug logs
-      if (process.env.NODE_ENV === 'test') {
-        try { console.log(`[Stream ${streamId}] Finalized ${status}`); } catch (e) {}
-        try {
-          (window as any).__e2eEvents = (window as any).__e2eEvents || [];
-          (window as any).__e2eEvents.push({ type: 'stream-finalized', streamId, status, timestamp: new Date().toISOString() });
-        } catch (e) {}
-      }
+      // Always emit for test observers (process.env checks don't work reliably in renderer)
+      try { console.log(`[Stream ${streamId}] Finalized ${status}`); } catch (e) {}
+      try {
+        (window as any).__e2eEvents = (window as any).__e2eEvents || [];
+        (window as any).__e2eEvents.push({ type: 'stream-finalized', streamId, status, timestamp: new Date().toISOString() });
+      } catch (e) {}
     };
 
     // Generic chunk handler (production)
@@ -507,12 +506,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Hook into IPC/preload APIs (best-effort, minimal compatibility)
     let legacyUnsub: (() => void) | undefined;
     try {
+      console.log('[APP-DEBUG] subscribeToStream called with streamId:', streamId);
       legacyUnsub = window.electron?.subscribeToStream?.(streamId, {
         onStreamChunk: (p: any) => onChunk(p.chunk),
-        onStreamEnd: (p: any) => finalizeStream(p?.cancelled ? 'cancelled' : 'complete'),
-        onStreamError: (p: any) => finalizeStream('error', p?.error)
+        onStreamEnd: (p: any) => {
+          console.log('[APP-DEBUG] onStreamEnd callback fired for streamId:', streamId, 'payload:', p);
+          finalizeStream(p?.cancelled ? 'cancelled' : 'complete');
+        },
+        onStreamError: (p: any) => {
+          console.log('[APP-DEBUG] onStreamError callback fired for streamId:', streamId, 'payload:', p);
+          finalizeStream('error', p?.error);
+        }
       }) as any;
-    } catch (e) { /* ignore */ }
+      console.log('[APP-DEBUG] subscribeToStream returned:', typeof legacyUnsub);
+    } catch (e) { console.log('[APP-DEBUG] subscribeToStream error:', e); }
 
     // Attach IPC event listeners if available (preload or renderer-specific hooks)
     const unsubChunk = ((window as any).electron?.ipcRenderer?.onStreamChunk?.(streamId, onChunk) as any) ?? (() => {});
@@ -594,6 +601,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     persistMessage(assistantPlaceholder);
 
     // subscribe to stream updates before sending to avoid lost chunks
+    console.log('[APP-DEBUG] About to subscribe to stream with assistantId:', assistantId);
     subscribeToStream(assistantId, assistantId);
 
     // Prepare stream request

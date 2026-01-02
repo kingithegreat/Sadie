@@ -4,7 +4,9 @@ describe('Multi-Model Routing', () => {
   it('routes NBA queries to tools (fast model phase)', async () => {
     const decision = await analyzeAndRouteMessage('What are the NBA scores?');
     expect(decision.type).toBe('tools');
-    expect(decision.calls[0].name).toBe('nba_query');
+    if (decision.type === 'tools') {
+      expect(decision.calls[0].name).toBe('nba_query');
+    }
   });
 
   it('routes generic queries to LLM (fast model phase)', async () => {

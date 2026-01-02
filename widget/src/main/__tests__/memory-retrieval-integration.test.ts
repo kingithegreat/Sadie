@@ -20,7 +20,7 @@ describe('Memory Retrieval Policy Integration', () => {
   it('retrieval allowed: sanitized memory injected', () => {
     const memories = [
       { text: 'user prefers dark mode', confidence: 1, created: now },
-      { text: 'api key: 123', confidence: 1, created: now, redactionLevel: 'redact' }
+      { text: 'api key: 123', confidence: 1, created: now, redactionLevel: 'redact' as const }
     ];
     const filtered = filterRetrievableMemories(memories, now);
     const injected = prepareMemoriesForContext(filtered);
@@ -30,7 +30,7 @@ describe('Memory Retrieval Policy Integration', () => {
 
   it('retrieval redacted: redacted content injected', () => {
     const memories = [
-      { text: 'api key: 123', confidence: 1, created: now, redactionLevel: 'redact' }
+      { text: 'api key: 123', confidence: 1, created: now, redactionLevel: 'redact' as const }
     ];
     const filtered = filterRetrievableMemories(memories, now);
     const injected = prepareMemoriesForContext(filtered);
@@ -47,7 +47,7 @@ describe('Memory Retrieval Policy Integration', () => {
 
   it('memory never appears in assistant output verbatim', () => {
     const memories = [
-      { text: 'api key: 123', confidence: 1, created: now, redactionLevel: 'redact' }
+      { text: 'api key: 123', confidence: 1, created: now, redactionLevel: 'redact' as const }
     ];
     const injected = prepareMemoriesForContext(memories);
     expect(injected[0]).not.toBe('api key: 123');

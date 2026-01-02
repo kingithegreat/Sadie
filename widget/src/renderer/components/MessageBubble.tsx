@@ -12,13 +12,40 @@ export function MessageBubble({
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
-  // Derive avatar and avatar class directly from the canonical role to
-  // avoid any accidental mismatch when nested conditionals are evaluated.
   const avatarEmoji = message.role === 'user' ? '👤' : '✨';
   const avatarClass = message.role === 'user' ? 'user' : 'assistant';
   const state = message.streamingState;
   const hasContent = Boolean(message.content && message.content.trim());
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
+
+  // Reflection meta UI logic
+  const reflection = isAssistant ? message.reflection : undefined;
+  const hasReflection = !!reflection;
+
+  // Clamp and guard confidence percent
+  let confidencePercent: number | null = null;
+  let confidenceDisplay: string = '—';
+  if (hasReflection && typeof reflection?.confidence === 'number' && Number.isFinite(reflection.confidence)) {
+    let raw = reflection.confidence;
+    if (raw < 0) raw = 0;
+    if (raw > 1) raw = 1;
+    confidencePercent = Math.round(raw * 100);
+    confidenceDisplay = `${confidencePercent}%`;
+  }
+  const accepted = reflection?.accepted ?? false;
+  const isStreaming = state === "streaming";
+
+  // Color for confidence badge
+  let confidenceColor = '#888';
+  if (hasReflection) {
+    if (accepted) confidenceColor = '#22c55e'; // green
+    else if (confidencePercent !== null) confidenceColor = '#f59e42'; // orange
+  }
+
+  // Strip tool prefix from displayed content for cleaner UI
+  const displayContent = message.content?.replace(/^\[USE TOOL: [^\]]+\]\s*/i, '') || '';
+  const hasDisplayContent = Boolean(displayContent.trim());
+
   return (
     <div
       className={`message-wrapper ${isUser ? "user" : "assistant"}`}
@@ -30,16 +57,15 @@ export function MessageBubble({
         <>
           {/* USER: content first, avatar second */}
           <div className="message-content">
-            {shouldShowBubble && (
+            {(hasDisplayContent || (isAssistant && isStreaming)) && (
               <div className="message-bubble">
-                {hasContent ? (
-                  message.content
+                {hasDisplayContent ? (
+                  displayContent
                 ) : (
-                  isAssistant && state === "streaming" && (
-                    <div className="streaming-indicator">
-                      <span className="dot" />
-                      <span className="dot" />
-                      <span className="dot" />
+                  isAssistant && isStreaming && (
+                    <div className="thinking-indicator">
+                      <span className="thinking-icon">✨</span>
+                      <span className="thinking-text">Thinking...</span>
                     </div>
                   )
                 )}
@@ -47,9 +73,9 @@ export function MessageBubble({
             )}
             {isAssistant && (
               <div className="message-footer">
-                {state === "streaming" && (
+                {isStreaming && (
                   <>
-                    <span className="status-text streaming">Generating...</span>
+                    <span className="status-text streaming">{hasContent ? 'Generating...' : 'Thinking...'}</span>
                     <button
                       className="message-action-btn"
                       onClick={() => onCancel(message.id!)}
@@ -101,27 +127,47 @@ export function MessageBubble({
           </div>
 
           <div className="message-content">
-            {shouldShowBubble && (
+            {(hasDisplayContent || (isAssistant && isStreaming)) && (
               <div className="message-bubble">
-                {hasContent ? (
-                  message.content
+                {hasDisplayContent ? (
+                  displayContent
                 ) : (
-                  isAssistant && state === "streaming" && (
-                    <div className="streaming-indicator">
-                      <span className="dot" />
-                      <span className="dot" />
-                      <span className="dot" />
+                  isAssistant && isStreaming && (
+                    <div className="thinking-indicator">
+                      <span className="thinking-icon">✨</span>
+                      <span className="thinking-text">Thinking...</span>
                     </div>
                   )
                 )}
               </div>
             )}
 
+            {/* Confidence / validation meta — only when finished and reflection exists */}
+            {isAssistant && hasReflection && !isStreaming && (
+              <div className="mt-1 text-xs opacity-70 flex flex-row items-center gap-2">
+                <span style={{ color: confidenceColor }}>
+                  {accepted
+                    ? 'Validated result'
+                    : (confidencePercent !== null ? 'Unvalidated / low-confidence result' : 'Not evaluated')}
+                </span>
+                <span style={{ color: confidenceColor }}>
+                  · Confidence: {confidenceDisplay}
+                  {accepted ? ' (accepted)' : confidencePercent !== null ? ' (rejected)' : ''}
+                </span>
+                {typeof reflection?.threshold === 'number' &&
+                  confidencePercent !== null && (
+                    <span>
+                      (threshold {Math.round(Math.max(0, Math.min(1, reflection.threshold)) * 100)}%)
+                    </span>
+                  )}
+              </div>
+            )}
+
             {isAssistant && (
               <div className="message-footer">
-                {state === "streaming" && (
+                {isStreaming && (
                   <>
-                    <span className="status-text streaming">Generating...</span>
+                    <span className="status-text streaming">{hasContent ? 'Generating...' : 'Thinking...'}</span>
                     <button
                       className="message-action-btn"
                       onClick={() => onCancel(message.id!)}

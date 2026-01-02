@@ -11,8 +11,10 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
       SADIE_DIRECT_OLLAMA: mergedEnv.SADIE_DIRECT_OLLAMA,
       NODE_ENV: mergedEnv.NODE_ENV,
       OLLAMA_URL: mergedEnv.OLLAMA_URL,
-      SADIE_E2E_BYPASS_MOCK: mergedEnv.SADIE_E2E_BYPASS_MOCK
+      SADIE_E2E_BYPASS_MOCK: mergedEnv.SADIE_E2E_BYPASS_MOCK,
+      N8N_URL: mergedEnv.N8N_URL,
     });
+    console.log('[E2E-LAUNCH] Full SADIE env keys:', Object.keys(mergedEnv).filter(k => k.startsWith('SADIE')));
   } catch (e) {
     // ignore any errors logging to ensure we don't block launch
   }

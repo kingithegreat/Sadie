@@ -123,9 +123,44 @@ async function findPlayerByName(query: string, perPage = 20) {
 export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
     const type = args.type;
-    const query = args.query || '';
-    const date = args.date || '';
-    const perPage = Math.min(Math.max(1, args.perPage || 5), 25);
+    let query = args.query || '';
+    let date = args.date || '';
+    let perPage = Math.min(Math.max(1, args.perPage || 5), 25);
+
+    // Smart parsing: if query contains "last N games", extract N and use it as perPage
+    const lastNMatch = query.match(/last\s*(\d+)\s*games?/i);
+    if (lastNMatch) {
+      perPage = Math.min(parseInt(lastNMatch[1], 10) || 5, 25);
+    }
+    
+    // Clean up query to extract just the team name
+    // Remove common filler words that aren't team names
+    query = query
+      .replace(/last\s*\d*\s*games?\s*/gi, '')
+      .replace(/\b(results?|from|their|there|the|give me|show me|get|what|are|were)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    console.log(`[NBA] Cleaned query: "${query}", perPage: ${perPage}`);
+
+    // If date looks invalid, contains words like "last", or is too old, ignore it
+    if (date) {
+      // If date contains non-date text like "last 5 games", clear it
+      if (/last|week|recent|games?/i.test(date)) {
+        console.log(`[NBA] Ignoring fuzzy date "${date}", using rolling window`);
+        date = '';
+      } else {
+        // Check if it's a numeric date and if it's too old (more than 30 days ago)
+        const parsedDate = new Date(date);
+        const now = new Date();
+        const daysDiff = (now.getTime() - parsedDate.getTime()) / (1000 * 60 * 60 * 24);
+        if (daysDiff > 30 || isNaN(daysDiff)) {
+          console.log(`[NBA] Ignoring outdated/invalid date ${date} (${Math.round(daysDiff)} days old), using rolling window`);
+          date = ''; // Force rolling 14-day window
+        }
+      }
+    }
+
     // Use ESPN endpoints for news/games/teams/roster/players when possible
     if (type === 'news') {
       // General NBA news or filtered by query
@@ -147,16 +182,15 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       const board = await fetchEspnJson('/scoreboard', params);
       let events = board?.events || [];
 
-      // If no events found for the requested date/range, fall back to a
-      // rolling 7-day window to avoid week-boundary and timezone issues.
-      // If events empty and either no date was given, or the date token is a
-      // fuzzy phrase like 'this week' / 'last week', fall back to a rolling
-      // 7-day window to be tolerant of week-boundaries and timezone shifts.
-      if ((!events || events.length === 0) && (!d || /week|last/i.test(d))) {
+      // If no events found OR user wants multiple games without specific date,
+      // fall back to a rolling 14-day window to get enough games
+      const needsMoreGames = !d || events.length < perPage;
+      if (needsMoreGames) {
         const seen = new Set<string>();
         const agg: any[] = [];
         const now = new Date();
-        for (let i = 0; i < 7; i++) {
+        // Look back up to 14 days to find enough games
+        for (let i = 0; i < 14 && agg.length < perPage * 3; i++) {
           const dt = new Date(now);
           dt.setDate(now.getDate() - i);
           const y = dt.getFullYear();
@@ -174,11 +208,25 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
         }
         events = agg;
       }
+      // Filter by team name if query provided
       if (query) {
         const q = query.toLowerCase();
-        events = events.filter((e: any) => (e.name || '').toLowerCase().includes(q) || (e.shortName || '').toLowerCase().includes(q) || (e.competitions || []).some((c: any) => (c.competitors || []).some((co: any) => (co.team?.displayName || '').toLowerCase().includes(q))));
+        events = events.filter((e: any) => 
+          (e.name || '').toLowerCase().includes(q) || 
+          (e.shortName || '').toLowerCase().includes(q) || 
+          (e.competitions || []).some((c: any) => 
+            (c.competitors || []).some((co: any) => 
+              (co.team?.displayName || '').toLowerCase().includes(q) ||
+              (co.team?.shortDisplayName || '').toLowerCase().includes(q) ||
+              (co.team?.abbreviation || '').toLowerCase() === q ||
+              (co.team?.name || '').toLowerCase().includes(q)
+            )
+          )
+        );
       }
-      return { success: true, result: { query, resultCount: events.length, events } };
+      // Limit to perPage results
+      const limitedEvents = events.slice(0, perPage);
+      return { success: true, result: { query, resultCount: limitedEvents.length, events: limitedEvents } };
     }
 
     if (type === 'teams') {

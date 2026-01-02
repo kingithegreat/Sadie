@@ -7,6 +7,12 @@ export type StreamingState =
   | "finished"
   | "error";
 
+export interface ReflectionMeta {
+  confidence: number | null;
+  accepted: boolean;
+  threshold?: number | null;
+}
+
 export type ChatMessage = {
   id: string;
   role: Role;
@@ -19,6 +25,8 @@ export type ChatMessage = {
   isStreaming?: boolean;
   streamingState?: StreamingState;
   error?: string | null;
+  // NEW: reflection meta
+  reflection?: ReflectionMeta;
 };
 
 export type StreamChunkPayload = {

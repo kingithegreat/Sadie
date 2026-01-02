@@ -3,6 +3,13 @@ import { spawn } from 'child_process';
 import { mkdirSync, existsSync, appendFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+// ======= DEBUG: Log process.env right at startup, before any imports =======
+console.log('[SADIE-MAIN-STARTUP] process.env.NODE_ENV:', process.env.NODE_ENV);
+console.log('[SADIE-MAIN-STARTUP] process.env.SADIE_E2E:', process.env.SADIE_E2E);
+console.log('[SADIE-MAIN-STARTUP] process.env.SADIE_E2E_BYPASS_MOCK:', process.env.SADIE_E2E_BYPASS_MOCK);
+// ============================================================================
+
 (global as any).__SADIE_DIAG_DIR = path.join(os.homedir(), 'SADIE_DIAG');
 if (!existsSync((global as any).__SADIE_DIAG_DIR)) mkdirSync((global as any).__SADIE_DIAG_DIR, { recursive: true });
 (global as any).__SADIE_DIAG_FILE = path.join((global as any).__SADIE_DIAG_DIR, 'sadie-runtime.log');
@@ -106,12 +113,8 @@ app.whenReady().then(() => {
   // Register message router for SADIE backend communication
   const { registerMessageRouter, setUncensoredMode, getUncensoredMode } = require('./message-router');
   const n8nUrl = process.env.N8N_URL || require('../shared/constants').DEFAULT_N8N_URL;
+  console.log('[MAIN-INIT] n8nUrl resolved to:', n8nUrl, '(from env:', process.env.N8N_URL, ')');
   if (mainWindow) registerMessageRouter(mainWindow, n8nUrl);
-
-  // Dev-only test server for manual scenario testing (POST /dev-test)
-  if (process.env.NODE_ENV !== 'production') {
-    try { require('./dev-test-server'); } catch (e) { console.error('Failed to start dev test server', e); }
-  }
   
   // IPC handler for uncensored mode toggle
   const { ipcMain } = require('electron');

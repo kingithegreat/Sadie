@@ -2,6 +2,88 @@
 // =====================
 // Memory Policy Types & Constants (Router-Owned)
 // =====================
+// =====================
+// Memory Retrieval Policy Constants (Router-Owned)
+// =====================
+
+import { 
+  streamFromProvider, 
+  ProviderConfig, 
+  ModelProvider, 
+  DEFAULT_MODELS,
+  ChatMessage as ProviderChatMessage 
+} from './providers';
+
+export const MEMORY_RETRIEVAL_MIN_CONFIDENCE = 0.8;
+export const MEMORY_RETRIEVAL_MAX_CANDIDATES = 20;
+export const MEMORY_MAX_AGE_DAYS = 30;
+export const MEMORY_MAX_INJECTED_ITEMS = 5;
+export const MEMORY_RETRIEVAL_DENY_PATTERNS = [
+  'session', 'temp', 'password', 'secret', 'token', 'credential', 'apikey', 'api key', 'bearer ',
+];
+
+export type MemoryEntry = {
+  text: string;
+  confidence: number;
+  created: Date;
+  redactionLevel?: 'none' | 'redact' | 'deny';
+};
+
+export type RetrievalResult = {
+  allowed: boolean;
+  memories: MemoryEntry[];
+  reason?: string;
+};
+
+type RetrievalInput = {
+  queryText: string;
+  reflectionConfidence: number;
+  settings: UserSettings;
+  now: Date;
+};
+
+export function evaluateMemoryRetrievalPolicy(input: RetrievalInput): { allowed: boolean; reason?: string } {
+  if (!input.settings.saveConversationHistory) {
+    return { allowed: false, reason: 'conversation history disabled' };
+  }
+  if (input.reflectionConfidence === null || typeof input.reflectionConfidence !== 'number' || input.reflectionConfidence < MEMORY_RETRIEVAL_MIN_CONFIDENCE) {
+    return { allowed: false, reason: 'reflection confidence below threshold' };
+  }
+  for (const pat of MEMORY_RETRIEVAL_DENY_PATTERNS) {
+    if (input.queryText.toLowerCase().includes(pat)) {
+      return { allowed: false, reason: `query denied by pattern: ${pat}` };
+    }
+  }
+  return { allowed: true };
+}
+
+export function filterRetrievableMemories(memories: MemoryEntry[], now: Date): MemoryEntry[] {
+  return memories.filter(mem => {
+    if (mem.confidence < MEMORY_RETRIEVAL_MIN_CONFIDENCE) return false;
+    const ageDays = (now.getTime() - mem.created.getTime()) / (1000 * 60 * 60 * 24);
+    if (ageDays > MEMORY_MAX_AGE_DAYS) return false;
+    for (const pat of MEMORY_RETRIEVAL_DENY_PATTERNS) {
+      if (mem.text.toLowerCase().includes(pat)) return false;
+    }
+    if (mem.redactionLevel === 'deny') return false;
+    return true;
+  });
+}
+
+export function prepareMemoriesForContext(memories: MemoryEntry[]): string[] {
+  const out: string[] = [];
+  for (const mem of memories) {
+    let txt = mem.text;
+    if (mem.redactionLevel === 'redact' || MEMORY_RETRIEVAL_DENY_PATTERNS.some(p => txt.toLowerCase().includes(p))) {
+      txt = redactMemoryContent(txt);
+    }
+    if (txt.trim() && txt !== '[REDACTED CONTENT]') {
+      out.push(txt.length > 120 ? txt.slice(0, 117) + '...' : txt);
+    }
+    if (out.length >= MEMORY_MAX_INJECTED_ITEMS) break;
+  }
+  return out;
+}
 
 export const MEMORY_MAX_CHARS = 500;
 export const MEMORY_MIN_CONFIDENCE = 0.8;
@@ -135,6 +217,53 @@ function tokenizeForStreaming(text: string): string[] {
 }
 
 // =====================
+// Direct NBA Result Formatter (bypasses LLM to prevent hallucination)
+// =====================
+function formatNbaResultDirectly(result: any): string {
+  if (!result?.events || result.events.length === 0) {
+    return `No NBA games found for "${result.query || 'your search'}". Try a different team name or check back later for upcoming games.`;
+  }
+
+  const lines: string[] = [];
+  lines.push(`**NBA Games for ${result.query || 'your search'}:**\n`);
+
+  for (const event of result.events) {
+    // ESPN structure: event.competitions[0].competitors[] with home/away designation
+    const competition = event.competitions?.[0];
+    const competitors = competition?.competitors || [];
+    
+    // Find home and away teams
+    const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
+    const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
+    
+    const homeTeam = homeComp?.team?.displayName || homeComp?.team?.shortDisplayName || homeComp?.team?.name || event.homeTeam || 'Home Team';
+    const awayTeam = awayComp?.team?.displayName || awayComp?.team?.shortDisplayName || awayComp?.team?.name || event.awayTeam || 'Away Team';
+    const homeScore = homeComp?.score ?? event.homeScore ?? '—';
+    const awayScore = awayComp?.score ?? event.awayScore ?? '—';
+    
+    // Get status
+    const statusObj = competition?.status || event.status;
+    const status = String(statusObj?.type?.name || statusObj?.type?.description || statusObj || 'Scheduled');
+    
+    // Get date
+    const dateStr = event.date || competition?.date;
+    const date = dateStr ? new Date(dateStr).toLocaleDateString('en-US', { 
+      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    }) : 'TBD';
+
+    if (status === 'STATUS_FINAL' || status.toLowerCase().includes('final')) {
+      lines.push(`🏀 **${awayTeam}** ${awayScore} @ **${homeTeam}** ${homeScore} — *Final*`);
+    } else if (status === 'STATUS_IN_PROGRESS' || status.toLowerCase().includes('progress')) {
+      lines.push(`🏀 **${awayTeam}** ${awayScore} @ **${homeTeam}** ${homeScore} — *Live*`);
+    } else {
+      lines.push(`🏀 **${awayTeam}** @ **${homeTeam}** — ${date}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// =====================
 // Multi-Model Routing & Reflection Confidence Enforcement
 // =====================
 
@@ -183,7 +312,7 @@ export function enforceReflectionConfidence(reflection: any): { accept: boolean;
 import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { permissionRequester } from './permission-requester';
-import { looksLikeToolJson } from './tool-helpers';
+import { looksLikeToolJson, extractToolJson } from './tool-helpers';
 import axios from 'axios';
 import { debug as logDebug, error as logError, info as logInfo } from '../shared/logger';
 import streamFromSadieProxy from './stream-proxy-client';
@@ -385,24 +514,92 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   if (!userMessage || typeof userMessage !== 'string') return null;
   const m = userMessage.toLowerCase();
 
-  // SPORTS / NBA intents
-  if (/\b(nba|nba\s|nba:|\bgame(s)?\b|\bscores?\b|\bteam\b)/i.test(m)) {
-    const teamMatch = m.match(/(?:for|about|on|between) ([a-zA-Z0-9\s]+)/i);
-    const teamQuery = teamMatch ? teamMatch[1].trim() : '';
-    const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
-    const call = { name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } };
+  // NBA TEAM NAMES - direct routing for any team mention
+  const NBA_TEAMS = [
+    'warriors', 'lakers', 'celtics', 'bulls', 'heat', 'nets', 'knicks', 'bucks',
+    'suns', 'mavericks', 'mavs', 'nuggets', 'clippers', 'rockets', 'spurs', 'grizzlies',
+    'thunder', 'blazers', 'jazz', 'kings', 'pelicans', 'timberwolves', 'wolves',
+    'hawks', 'hornets', 'cavaliers', 'cavs', 'pistons', 'pacers', 'magic', 'sixers',
+    '76ers', 'raptors', 'wizards', 'golden state', 'los angeles', 'boston', 'chicago',
+    'miami', 'brooklyn', 'new york', 'milwaukee', 'phoenix', 'dallas', 'denver',
+    'houston', 'san antonio', 'memphis', 'oklahoma', 'portland', 'utah', 'sacramento',
+    'new orleans', 'minnesota', 'atlanta', 'charlotte', 'cleveland', 'detroit',
+    'indiana', 'orlando', 'philadelphia', 'toronto', 'washington'
+  ];
+  
+  const hasTeamMention = NBA_TEAMS.some(team => m.includes(team));
+  const hasNbaKeyword = /\b(nba|basketball|game|games|score|scores|schedule|results?|last \d+ games?)\b/i.test(m);
+  
+  // If any NBA team is mentioned OR NBA keywords, route to nba_query
+  if (hasTeamMention || hasNbaKeyword) {
+    // Extract team name
+    let teamQuery = '';
+    for (const team of NBA_TEAMS) {
+      if (m.includes(team)) {
+        teamQuery = team;
+        break;
+      }
+    }
+    // Extract number of games if mentioned
+    const gamesMatch = m.match(/last\s*(\d+)\s*games?/i);
+    const perPage = gamesMatch ? parseInt(gamesMatch[1], 10) : 5;
+    
+    const call = { name: 'nba_query', arguments: { type: 'games', date: '', perPage, query: teamQuery } };
     return { calls: [call] };
   }
 
   // WEATHER intents
-  if (/\bweather\b/i.test(m)) {
-    const locMatch = m.match(/in ([a-zA-Z\s,]+)/i);
+  if (/\b(weather|temperature|forecast|rain|sunny|cloudy)\b/i.test(m)) {
+    const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z\s,]+?)(?:\s+(?:today|tomorrow|now|please|right now))?$/i);
     const location = locMatch ? locMatch[1].trim() : '';
     if (location) return { calls: [{ name: 'get_weather', arguments: { location } }] };
     return null;
   }
 
-  // WEB SEARCH intents
+  // TIME/DATE intents
+  if (/\b(what time|current time|time is it|what\'?s the time|date today|current date|today\'?s date)\b/i.test(m)) {
+    return { calls: [{ name: 'get_current_time', arguments: {} }] };
+  }
+
+  // CALCULATOR intents
+  const calcMatch = m.match(/^(?:calculate|compute|what\'?s|whats)\s+(.+?)(?:\s*\?)?$/i);
+  if (calcMatch) {
+    const expression = calcMatch[1].trim();
+    // Check if it looks like a math expression
+    if (/[\d+\-*\/().\s%]+/.test(expression)) {
+      return { calls: [{ name: 'calculate', arguments: { expression } }] };
+    }
+  }
+
+  // SYSTEM INFO intents
+  if (/\b(system info|os version|my (os|operating system)|what os|computer info)\b/i.test(m)) {
+    return { calls: [{ name: 'get_system_info', arguments: {} }] };
+  }
+
+  // FILE OPERATIONS - reading files
+  if (/\b(read|show|display|cat|get)\s+(?:the\s+)?(?:file|contents of)\s+(.+)/i.test(m)) {
+    const fileMatch = m.match(/\b(read|show|display|cat|get)\s+(?:the\s+)?(?:file|contents of)\s+(.+)/i);
+    if (fileMatch) {
+      const filePath = fileMatch[2].trim();
+      return { calls: [{ name: 'read_file', arguments: { path: filePath } }] };
+    }
+  }
+
+  // LIST DIRECTORY - showing folder contents
+  if (/\b(list|show|ls|dir)\s+(?:files in|directory|folder)\s+(.+)/i.test(m)) {
+    const dirMatch = m.match(/\b(list|show|ls|dir)\s+(?:files in|directory|folder)\s+(.+)/i);
+    if (dirMatch) {
+      const dirPath = dirMatch[2].trim();
+      return { calls: [{ name: 'list_directory', arguments: { path: dirPath } }] };
+    }
+  }
+
+  // CLIPBOARD operations
+  if (/\b(get|show|what\'?s (?:in|on) (?:my\s+)?clipboard)\b/i.test(m)) {
+    return { calls: [{ name: 'get_clipboard', arguments: {} }] };
+  }
+
+  // WEB SEARCH intents (keep as fallback for general queries)
   if (/\b(search for|find|who is|what is|look up|tell me about)\b/i.test(m)) {
     const q = userMessage.trim();
     return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
@@ -504,11 +701,44 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
   // === Reflection loop (reasoning model) ===
   // For now, simulate a reflection result (replace with real reflection logic)
   // TODO: Replace this with actual reflection model call and loop
-  const reflection: any = (global as any).__SADIE_TEST_REFLECTION || { outcome: 'accept', confidence: 0.8, final_message: 'Hello world!' };
+  if (!(global as any).__SADIE_TEST_REFLECTION) {
+    throw new Error('[Sadie] No reflection meta provided. All tests and runtime must inject __SADIE_TEST_REFLECTION for deterministic behavior.');
+  }
+  const reflection: any = (global as any).__SADIE_TEST_REFLECTION;
 
   // Structured log for debugging
   const meta = buildReflectionMeta(reflection.outcome, reflection.confidence);
   console.log('[REFLECTION]', { ...meta });
+
+  // === Memory Retrieval Policy Enforcement ===
+  let retrievedMemories: string[] = [];
+  let retrievalMeta = { retrieved: false, redacted: false, count: 0 };
+  if (meta.accepted) {
+    // Evaluate retrieval policy
+    const retrievalDecision = evaluateMemoryRetrievalPolicy({
+      queryText: request.message,
+      reflectionConfidence: meta.confidence ?? 0,
+      settings: { saveConversationHistory: true }, // TODO: wire actual user settings
+      now: new Date()
+    });
+    if (retrievalDecision.allowed) {
+      // Simulate recall (replace with actual memory store)
+      // For demo, use last N assistant messages from history
+      const history = getHistory(convId).filter(m => m.role === 'assistant').map(m => ({
+        text: m.content,
+        confidence: 0.9,
+        created: new Date(m.timestamp),
+        redactionLevel: undefined
+      }));
+      const filtered = filterRetrievableMemories(history, new Date());
+      retrievedMemories = prepareMemoriesForContext(filtered);
+      retrievalMeta = {
+        retrieved: retrievedMemories.length > 0,
+        redacted: retrievedMemories.some(txt => txt.includes('[REDACTED]')),
+        count: retrievedMemories.length
+      };
+    }
+  }
 
   // === Streaming enforcement ===
   if (streamController) {
@@ -525,10 +755,31 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
         memoryText = redactMemoryContent(reflection.final_message);
       }
       let persisted = false;
-      if (canPersistMemory({ decision: memoryPolicy.decision, confidence: meta.confidence })) {
-        // Simulate memory persistence (replace with actual remember call)
-        persisted = true;
-        // await remember({ content: memoryText, meta: { confidence: meta.confidence, reason: memoryPolicy.reason } });
+      if (
+        canPersistMemory({ decision: memoryPolicy.decision, confidence: meta.confidence }) &&
+        reflection && typeof reflection.confidence === 'number' && reflection.accepted
+      ) {
+        // Persist memory with reflection meta
+        try {
+          const { rememberHandler } = require('./tools/memory');
+          await rememberHandler({
+            content: memoryText,
+            category: 'general',
+            reflection: {
+              confidence: reflection.confidence,
+              accepted: reflection.accepted ?? true,
+              threshold: reflection.threshold ?? 0.7
+            }
+          });
+          persisted = true;
+        } catch (e) {
+          // Log but do not fail the main flow
+          console.error('Failed to persist memory with reflection meta:', e);
+        }
+      }
+      // Inject retrieved memories as system context (for demo, just log)
+      if (retrievedMemories.length > 0) {
+        console.log('[MEMORY RETRIEVED]', retrievedMemories);
       }
       const safeText = redactBeforeStream(reflection.final_message);
       const tokens = tokenizeForStreaming(safeText);
@@ -537,11 +788,12 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
       return {
         success: true,
         data: {
-          assistant: { role: 'assistant', content: safeText },
+          assistant: { role: 'assistant', content: safeText, reflection: meta },
           reflection: meta,
           memory: {
             decision: memoryPolicy.decision,
-            persisted
+            persisted,
+            retrieval: retrievalMeta
           }
         }
       };
@@ -552,7 +804,8 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
         data: {
           assistant: {
             role: 'assistant',
-            content: reflection.explanation ?? 'I could not confidently validate the tool output.'
+            content: reflection.explanation ?? 'I could not confidently validate the tool output.',
+            reflection: meta
           },
           reflection: meta
         }
@@ -581,7 +834,7 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
       return {
         success: true,
         data: {
-          assistant: { role: 'assistant', content: safeText },
+          assistant: { role: 'assistant', content: safeText, reflection: meta },
           reflection: meta,
           memory: {
             decision: memoryPolicy.decision,
@@ -595,11 +848,14 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
       data: {
         assistant: {
           role: 'assistant',
-          content: reflection.explanation ?? 'I could not confidently validate the tool output.'
+          content: reflection.explanation ?? 'I could not confidently validate the tool output.',
+          reflection: meta
         },
         reflection: meta
       }
     };
+  // Reflection meta builder is now in reflection-meta.ts for testability
+  const { buildReflectionMeta } = require('./reflection-meta');
   }
 }
 
@@ -666,11 +922,88 @@ export async function streamFromOllamaWithTools(
     }
   };
   
+  // PRE-PROCESS: Check if this is a deterministic tool call (e.g., NBA query)
+  // This bypasses the LLM entirely for known patterns
+  try {
+    console.log('[SADIE] Checking preProcessIntent for message:', message.substring(0, 50));
+    const routing = await analyzeAndRouteMessage(message);
+    console.log('[SADIE] Routing decision:', routing.type);
+    
+    if (routing.type === 'tools' && routing.calls.length > 0) {
+      console.log('[SADIE] Pre-processor forcing tool calls:', routing.calls.map(c => c.name));
+      
+      // Execute tools directly without LLM
+      const toolContext: ToolContext = {
+        executionId: `exec-${Date.now()}`,
+        requestConfirmation
+      };
+      
+      const batchResults = await executeToolBatch(routing.calls, toolContext);
+      
+      for (const result of batchResults) {
+        console.log(`[SADIE] Pre-processed tool result:`, result);
+        onToolResult(result);
+      }
+      
+      // Check if NBA query - format directly
+      const isNbaQuery = routing.calls.some((c: any) => c.name === 'nba_query');
+      if (isNbaQuery && batchResults.length > 0) {
+        const nbaResult = batchResults.find((r: any) => r.result?.events || r.result?.query);
+        if (nbaResult?.success && nbaResult.result?.events) {
+          const formatted = formatNbaResultDirectly(nbaResult.result);
+          console.log(`[SADIE] Pre-processor formatted NBA result (${formatted.length} chars):`, formatted.substring(0, 100));
+          
+          // Stream the formatted response as a single chunk for faster display
+          onChunk(formatted);
+          chunkCount = formatted.length;
+          
+          safeEnd('pre-process-complete');
+          return { cancel: () => controller.abort() };
+        }
+      }
+      
+      // For non-NBA tools, let them fall through to normal processing
+      // (This allows the LLM to format the results)
+    }
+  } catch (preErr) {
+    console.error('[SADIE] preProcessIntent error:', preErr);
+    // Continue to normal LLM flow on error
+  }
+  
   // Check if we have images - use vision model if so (vision models typically don't support tools)
   const hasImages = images && images.length > 0;
   // Select model: vision > uncensored > normal
   const chatModel = uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL;
   const model = hasImages ? OLLAMA_VISION_MODEL : chatModel;
+  
+  // Check for external provider (OpenAI, Anthropic, Google)
+  let useExternalProvider = false;
+  let externalProviderConfig: ProviderConfig | null = null;
+  
+  try {
+    const { getSettings } = require('./config-manager');
+    const settings = getSettings();
+    const selectedProvider = settings.model as ModelProvider;
+    const apiKeys = settings.apiKeys || {};
+    
+    if (selectedProvider && selectedProvider !== 'ollama') {
+      const apiKey = apiKeys[selectedProvider];
+      if (apiKey) {
+        useExternalProvider = true;
+        externalProviderConfig = {
+          provider: selectedProvider,
+          apiKey,
+          model: settings.selectedModel || DEFAULT_MODELS[selectedProvider],
+          baseUrl: undefined // Use defaults
+        };
+        console.log(`[SADIE] Using external provider: ${selectedProvider}, model: ${externalProviderConfig.model}`);
+      } else {
+        console.log(`[SADIE] External provider ${selectedProvider} selected but no API key configured, falling back to Ollama`);
+      }
+    }
+  } catch (e) {
+    console.error('[SADIE] Failed to check external provider settings:', e);
+  }
   
   // Extract base64 image data for Ollama
   const imageData: string[] = [];
@@ -715,8 +1048,101 @@ export async function streamFromOllamaWithTools(
     executionId: `exec-${Date.now()}`,
     requestConfirmation
   };
+  
+  // ========== EXTERNAL PROVIDER HANDLING ==========
+  if (useExternalProvider && externalProviderConfig) {
+    console.log(`[SADIE] Streaming from external provider: ${externalProviderConfig.provider}`);
+    
+    // Convert tools to OpenAI/Anthropic format
+    const externalTools = tools?.map(t => ({
+      type: 'function' as const,
+      function: {
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters
+      }
+    }));
+    
+    // Convert messages to provider format
+    const providerMessages: ProviderChatMessage[] = messages.map(m => ({
+      role: m.role,
+      content: m.content,
+      images: (m as any).images
+    }));
+    
+    let pendingToolCalls: { name: string; args: any }[] = [];
+    let assistantContent = '';
+    
+    const handleToolExecution = async () => {
+      if (pendingToolCalls.length === 0) return;
+      
+      console.log(`[SADIE] External provider requested ${pendingToolCalls.length} tool(s):`, pendingToolCalls.map(tc => tc.name));
+      
+      for (const tc of pendingToolCalls) {
+        onToolCall(tc.name, tc.args);
+        
+        // Execute the tool
+        const batchResult = await executeToolBatch([{
+          name: tc.name,
+          arguments: tc.args
+        }], toolContext);
+        
+        if (batchResult[0]) {
+          onToolResult(batchResult[0]);
+          
+          // Check for NBA result and format directly
+          if (tc.name === 'nba_query' && batchResult[0].success && batchResult[0].result?.events) {
+            const formatted = formatNbaResultDirectly(batchResult[0].result);
+            for (const char of formatted) {
+              onChunk(char);
+              chunkCount++;
+            }
+          }
+        }
+      }
+      pendingToolCalls = [];
+    };
+    
+    try {
+      await streamFromProvider(
+        externalProviderConfig,
+        providerMessages,
+        externalTools,
+        {
+          onChunk: (text) => {
+            chunkCount++;
+            assistantContent += text;
+            onChunk(text);
+          },
+          onToolCall: (name, args) => {
+            pendingToolCalls.push({ name, args });
+          },
+          onEnd: async () => {
+            await handleToolExecution();
+            
+            // Add to history
+            if (assistantContent.trim()) {
+              addToHistory(conversationId, 'assistant', assistantContent);
+            }
+            
+            safeEnd('external-provider-complete');
+          },
+          onError: (err) => {
+            safeError(err, 'external-provider');
+          }
+        },
+        controller.signal
+      );
+      
+      return { cancel: () => controller.abort() };
+    } catch (err) {
+      safeError(err, 'external-provider-setup');
+      return { cancel: () => controller.abort() };
+    }
+  }
+  // ========== END EXTERNAL PROVIDER HANDLING ==========
 
-  // Recursive function to handle tool calls
+  // Recursive function to handle tool calls (Ollama)
   async function processResponse(): Promise<void> {
     try {
       const requestBody: any = {
@@ -776,11 +1202,20 @@ export async function streamFromOllamaWithTools(
       });
       
       // If no explicit tool_calls were emitted but the assistant content
-      // looks like raw tool JSON, parse and route it through the tool
-      // execution pipeline rather than rendering it as plain text.
+      // looks like raw tool JSON (or contains embedded tool JSON), parse and 
+      // route it through the tool execution pipeline rather than rendering as plain text.
       if (pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
         try {
-          const parsed = JSON.parse(assistantContent);
+          // First try direct parse (content is pure JSON)
+          let parsed = null;
+          const trimmed = assistantContent.trim();
+          if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try { parsed = JSON.parse(trimmed); } catch (e) {}
+          }
+          // If direct parse failed, try extracting from prose
+          if (!parsed) {
+            parsed = extractToolJson(assistantContent);
+          }
           if (parsed && (parsed.name || parsed.function)) {
             pendingToolCalls = [parsed];
             assistantContent = "I'm fetching that now...";
@@ -864,8 +1299,32 @@ export async function streamFromOllamaWithTools(
         // Otherwise, emit each tool result and continue the conversation
         for (const result of batchResults) {
           console.log(`[SADIE] Tool result:`, result);
-          onToolResult(result);
+          try { onToolResult(result); } catch (e) { console.log('[SADIE] onToolResult callback error:', e); }
           messages.push({ role: 'tool', content: JSON.stringify(result) });
+        }
+
+        // Check if this is an NBA query - if so, format result directly to avoid hallucination
+        console.log(`[SADIE] Checking if NBA query, calls:`, calls?.map((c: any) => c.name));
+        const isNbaQuery = Array.isArray(calls) && calls.some((c: any) => c.name === 'nba_query');
+        console.log(`[SADIE] isNbaQuery=${isNbaQuery}, batchResults=${batchResults.length}`);
+        if (isNbaQuery && batchResults.length > 0) {
+          const nbaResult = batchResults.find((r: any) => r.result?.events || r.result?.query);
+          console.log(`[SADIE] nbaResult found:`, nbaResult?.success, nbaResult?.result?.events?.length);
+          if (nbaResult?.success && nbaResult.result?.events) {
+            try {
+              const formatted = formatNbaResultDirectly(nbaResult.result);
+              console.log(`[SADIE] Direct formatting NBA result (${formatted.length} chars)`);
+              // Stream the formatted response directly
+              for (const char of formatted) {
+                onChunk(char);
+                chunkCount++;
+              }
+              safeEnd('direct-format-complete');
+              return;
+            } catch (fmtErr) {
+              console.error('[SADIE] formatNbaResultDirectly error:', fmtErr);
+            }
+          }
         }
 
         // Continue the conversation with tool results
@@ -979,6 +1438,9 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) {}
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 
+      // DEBUG: Log IPC handler invocation
+      console.log('[MAIN-DEBUG] IPC handler invoked for streamId:', streamId);
+
       if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
         event.sender.send('sadie:stream-error', { error: true, message: 'Invalid request format.', streamId });
         return;
@@ -1033,19 +1495,29 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           // stuck in 'streaming' state. This check runs only in test mode to
           // avoid additional latency in production runs.
           if (process.env.NODE_ENV === 'test') {
+            console.log('[MAIN-DEBUG] About to probe streamUrl:', streamUrl);
+            try { event.sender.send('sadie:stream-chunk', { chunk: `[DEBUG-PROBE-URL:${streamUrl}]`, streamId }); } catch (e) {}
             try {
               const probe = await axios.get(streamUrl, { timeout: 3000, validateStatus: () => true });
+              console.log('[MAIN-DEBUG] Probe response status:', probe?.status);
+              try { event.sender.send('sadie:stream-chunk', { chunk: `[DEBUG-PROBE-STATUS:${probe?.status}]`, streamId }); } catch (e) {}
               if (probe && probe.status >= 400) {
+                console.log('[MAIN-DEBUG] Probe failed with status', probe.status, 'sending stream-error with streamId:', streamId);
                 try { console.log('[E2E-TRACE] stream POST target probe returned error', { streamId, status: probe.status }); } catch (e) {}
                 try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId }); } catch (e) {}
+                console.log('[MAIN-DEBUG] Sent sadie:stream-error, now sending stream-end');
                 try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                console.log('[MAIN-DEBUG] Sent sadie:stream-end');
                 try { activeStreams.delete(streamId); } catch (e) {}
                 return;
               }
             } catch (e: any) {
+              console.log('[MAIN-DEBUG] Probe threw error, sending stream-error with streamId:', streamId);
               try { console.log('[E2E-TRACE] stream POST target probe failed', { streamId, error: e?.message || e }); } catch (e) {}
               try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId }); } catch (e) {}
+              console.log('[MAIN-DEBUG] Sent sadie:stream-error, now sending stream-end');
               try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              console.log('[MAIN-DEBUG] Sent sadie:stream-end');
               try { activeStreams.delete(streamId); } catch (e) {}
               return;
             }
@@ -1056,7 +1528,13 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
         // E2E MOCK MODE: Replace all real streaming with deterministic chunks
         // Allow opt-out of the deterministic mock via `SADIE_E2E_BYPASS_MOCK=1` when we want
         // to exercise the real streaming/fallback paths in tests.
-        if (E2E && process.env.SADIE_E2E_BYPASS_MOCK !== '1') {
+        // NOTE: Cannot use process.env.NODE_ENV === 'test' because webpack replaces it at compile time.
+        // SADIE_E2E='1' means use mock mode, SADIE_E2E='0' means use real network
+        // SADIE_E2E_BYPASS_MOCK='1' also means skip mock and use real network
+        const wantMockMode = (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') && 
+                             process.env.SADIE_E2E_BYPASS_MOCK !== '1';
+        console.log('[MAIN-DEBUG] Mock mode check:', { wantMockMode, SADIE_E2E: process.env.SADIE_E2E, BYPASS_MOCK: process.env.SADIE_E2E_BYPASS_MOCK });
+        if (wantMockMode) {
           if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Starting deterministic streaming mock for streamId:', streamId);
           try { pushRouter(`E2E-MOCK starting streamId=${streamId}`); } catch (e) {}
           
@@ -1273,6 +1751,10 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
               if (process.env.NODE_ENV !== 'production') logDebug('[Router] Safety check skipped or failed (continuing):', { error: err?.message || err });
             }
           }
+
+          // Pre-register the stream BEFORE calling streamFromOllamaWithTools
+          // This ensures pre-processing callbacks can send chunks immediately
+          activeStreams.set(streamId, { destroy: () => {} });
 
           try {
             // Instead of proxying streaming through n8n (which can buffer), stream directly from Ollama here for true token-by-token behavior.
