@@ -14,6 +14,21 @@ import {
   ChatMessage as ProviderChatMessage 
 } from './providers';
 
+// Helper to get user settings for memory policy
+function getMemorySettings(): UserSettings {
+  try {
+    const { getSettings } = require('./config-manager');
+    const settings = getSettings();
+    return {
+      saveConversationHistory: settings.saveConversationHistory ?? true,
+      permissions: settings.permissions,
+    };
+  } catch (e) {
+    // Fallback to safe defaults
+    return { saveConversationHistory: true };
+  }
+}
+
 export const MEMORY_RETRIEVAL_MIN_CONFIDENCE = 0.8;
 export const MEMORY_RETRIEVAL_MAX_CANDIDATES = 20;
 export const MEMORY_MAX_AGE_DAYS = 30;
@@ -718,7 +733,7 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
     const retrievalDecision = evaluateMemoryRetrievalPolicy({
       queryText: request.message,
       reflectionConfidence: meta.confidence ?? 0,
-      settings: { saveConversationHistory: true }, // TODO: wire actual user settings
+      settings: getMemorySettings(),
       now: new Date()
     });
     if (retrievalDecision.allowed) {
@@ -748,7 +763,7 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
       const memoryPolicy = evaluateMemoryPolicy({
         text: reflection.final_message,
         confidence: meta.confidence,
-        settings: { saveConversationHistory: true } // TODO: wire actual user settings
+        settings: getMemorySettings()
       });
       let memoryText = reflection.final_message;
       if (memoryPolicy.decision === 'redact') {
@@ -818,7 +833,7 @@ async function routeAndReflect(request: SadieRequestWithImages | SadieRequest, n
       const memoryPolicy = evaluateMemoryPolicy({
         text: reflection.final_message,
         confidence: meta.confidence,
-        settings: { saveConversationHistory: true } // TODO: wire actual user settings
+        settings: getMemorySettings()
       });
       let memoryText = reflection.final_message;
       if (memoryPolicy.decision === 'redact') {
