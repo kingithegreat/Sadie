@@ -1,6 +1,9 @@
 import React from "react";
 import type { ChatMessage } from "../types";
 
+// Import SADIE icon for assistant avatar
+const sadieIcon = require('../assets/SadieIcon.png');
+
 export function MessageBubble({
   message,
   onCancel,
@@ -12,7 +15,7 @@ export function MessageBubble({
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
-  const avatarEmoji = message.role === 'user' ? '👤' : '✨';
+  const avatarEmoji = message.role === 'user' ? '👤' : null; // Use icon for assistant
   const avatarClass = message.role === 'user' ? 'user' : 'assistant';
   const state = message.streamingState;
   const hasContent = Boolean(message.content && message.content.trim());
@@ -123,7 +126,7 @@ export function MessageBubble({
         <>
           {/* ASSISTANT: avatar first, content second */}
           <div className={`message-avatar ${avatarClass}`}>
-            {avatarEmoji}
+            <img src={sadieIcon} alt="SADIE" className="avatar-icon" />
           </div>
 
           <div className="message-content">

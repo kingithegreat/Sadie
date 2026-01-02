@@ -71,7 +71,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         </button>
       )}
       <div className="app-title">
-        <img src={require('../assets/SadieIcon.png')} alt="SADIE" className="app-logo" />
+        <img src={require('../assets/SadieLogo.png')} alt="SADIE" className="app-logo" />
         <h1>SADIE</h1>
       </div>
       
