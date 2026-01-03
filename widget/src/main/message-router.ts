@@ -339,6 +339,18 @@ import { initializeTools, getOllamaTools, executeTool, executeToolBatch, ToolCal
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild, isReleaseBuild } from './env';
 
+// Import pre-processor (extracted module)
+import { 
+  preProcessIntent, 
+  analyzeAndRouteMessage, 
+  mightNeedTools 
+} from './routing/pre-processor';
+import type { RoutingDecision } from './routing/pre-processor';
+
+// Re-export for backward compatibility
+export { preProcessIntent, analyzeAndRouteMessage } from './routing/pre-processor';
+export type { RoutingDecision } from './routing/pre-processor';
+
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
 
@@ -523,126 +535,9 @@ function mapErrorToSadieResponse(error: any): SadieResponse {
   };
 }
 
-// Exported deterministic intent router so it can be used by the message handler
-// and imported directly by unit tests.
-export async function preProcessIntent(userMessage: string): Promise<{ calls: any[] } | null> {
-  if (!userMessage || typeof userMessage !== 'string') return null;
-  const m = userMessage.toLowerCase();
-
-  // NBA TEAM NAMES - direct routing for any team mention
-  const NBA_TEAMS = [
-    'warriors', 'lakers', 'celtics', 'bulls', 'heat', 'nets', 'knicks', 'bucks',
-    'suns', 'mavericks', 'mavs', 'nuggets', 'clippers', 'rockets', 'spurs', 'grizzlies',
-    'thunder', 'blazers', 'jazz', 'kings', 'pelicans', 'timberwolves', 'wolves',
-    'hawks', 'hornets', 'cavaliers', 'cavs', 'pistons', 'pacers', 'magic', 'sixers',
-    '76ers', 'raptors', 'wizards', 'golden state', 'los angeles', 'boston', 'chicago',
-    'miami', 'brooklyn', 'new york', 'milwaukee', 'phoenix', 'dallas', 'denver',
-    'houston', 'san antonio', 'memphis', 'oklahoma', 'portland', 'utah', 'sacramento',
-    'new orleans', 'minnesota', 'atlanta', 'charlotte', 'cleveland', 'detroit',
-    'indiana', 'orlando', 'philadelphia', 'toronto', 'washington'
-  ];
-  
-  const hasTeamMention = NBA_TEAMS.some(team => m.includes(team));
-  const hasNbaKeyword = /\b(nba|basketball|game|games|score|scores|schedule|results?|last \d+ games?)\b/i.test(m);
-  
-  // If any NBA team is mentioned OR NBA keywords, route to nba_query
-  if (hasTeamMention || hasNbaKeyword) {
-    // Extract team name
-    let teamQuery = '';
-    for (const team of NBA_TEAMS) {
-      if (m.includes(team)) {
-        teamQuery = team;
-        break;
-      }
-    }
-    // Extract number of games if mentioned
-    const gamesMatch = m.match(/last\s*(\d+)\s*games?/i);
-    const perPage = gamesMatch ? parseInt(gamesMatch[1], 10) : 5;
-    
-    const call = { name: 'nba_query', arguments: { type: 'games', date: '', perPage, query: teamQuery } };
-    return { calls: [call] };
-  }
-
-  // WEATHER intents
-  if (/\b(weather|temperature|forecast|rain|sunny|cloudy)\b/i.test(m)) {
-    const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z\s,]+?)(?:\s+(?:today|tomorrow|now|please|right now))?$/i);
-    const location = locMatch ? locMatch[1].trim() : '';
-    if (location) return { calls: [{ name: 'get_weather', arguments: { location } }] };
-    return null;
-  }
-
-  // TIME/DATE intents
-  if (/\b(what time|current time|time is it|what\'?s the time|date today|current date|today\'?s date)\b/i.test(m)) {
-    return { calls: [{ name: 'get_current_time', arguments: {} }] };
-  }
-
-  // CALCULATOR intents
-  const calcMatch = m.match(/^(?:calculate|compute|what\'?s|whats)\s+(.+?)(?:\s*\?)?$/i);
-  if (calcMatch) {
-    const expression = calcMatch[1].trim();
-    // Check if it looks like a math expression
-    if (/[\d+\-*\/().\s%]+/.test(expression)) {
-      return { calls: [{ name: 'calculate', arguments: { expression } }] };
-    }
-  }
-
-  // SYSTEM INFO intents
-  if (/\b(system info|os version|my (os|operating system)|what os|computer info)\b/i.test(m)) {
-    return { calls: [{ name: 'get_system_info', arguments: {} }] };
-  }
-
-  // FILE OPERATIONS - reading files
-  if (/\b(read|show|display|cat|get)\s+(?:the\s+)?(?:file|contents of)\s+(.+)/i.test(m)) {
-    const fileMatch = m.match(/\b(read|show|display|cat|get)\s+(?:the\s+)?(?:file|contents of)\s+(.+)/i);
-    if (fileMatch) {
-      const filePath = fileMatch[2].trim();
-      return { calls: [{ name: 'read_file', arguments: { path: filePath } }] };
-    }
-  }
-
-  // LIST DIRECTORY - showing folder contents
-  if (/\b(list|show|ls|dir)\s+(?:files in|directory|folder)\s+(.+)/i.test(m)) {
-    const dirMatch = m.match(/\b(list|show|ls|dir)\s+(?:files in|directory|folder)\s+(.+)/i);
-    if (dirMatch) {
-      const dirPath = dirMatch[2].trim();
-      return { calls: [{ name: 'list_directory', arguments: { path: dirPath } }] };
-    }
-  }
-
-  // CLIPBOARD operations
-  if (/\b(get|show|what\'?s (?:in|on) (?:my\s+)?clipboard)\b/i.test(m)) {
-    return { calls: [{ name: 'get_clipboard', arguments: {} }] };
-  }
-
-  // WEB SEARCH intents (keep as fallback for general queries)
-  if (/\b(search for|find|who is|what is|look up|tell me about)\b/i.test(m)) {
-    const q = userMessage.trim();
-    return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
-  }
-
-  return null;
-}
-
-// Centralized routing decision type and analyzer. This is the single canonical
-// place that decides whether a message should invoke tools or be handled by
-// the LLM. Other modules should consume the resulting RoutingDecision.
-export type RoutingDecision =
-  | { type: 'tools'; calls: ToolCall[] }
-  | { type: 'llm' }
-  | { type: 'error'; reason: string };
-
-export async function analyzeAndRouteMessage(message: string): Promise<RoutingDecision> {
-  if (!message || typeof message !== 'string') return { type: 'error', reason: 'invalid_message' };
-  try {
-    const pre = await preProcessIntent(message);
-    if (pre && Array.isArray(pre.calls) && pre.calls.length > 0) {
-      return { type: 'tools', calls: pre.calls as ToolCall[] };
-    }
-    return { type: 'llm' };
-  } catch (err: any) {
-    return { type: 'error', reason: String(err?.message || err) };
-  }
-}
+// NOTE: preProcessIntent, analyzeAndRouteMessage, and RoutingDecision 
+// have been extracted to ./routing/pre-processor.ts
+// They are re-exported above for backward compatibility.
 
 // Summarize tool results into a human-readable assistant message. Keep this
 // deterministic and brief so the UI can present a helpful summary after tools
