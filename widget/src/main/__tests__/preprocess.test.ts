@@ -20,4 +20,16 @@ describe('preProcessIntent', () => {
     expect(res).not.toBeNull();
     expect(res!.calls[0].name).toBe('web_search');
   });
+
+  test('does not trigger tools for document payloads', async () => {
+    const docMessage = '=== Document: test.txt ===\nThis document mentions results and scores but should not trigger nba query.\n=== End of test.txt ===';
+    const res = await preProcessIntent(docMessage);
+    expect(res).toBeNull();
+  });
+
+  test('pre-processor ignores messages marked by policy', async () => {
+    const policyMessage = '[POLICY:FORCE_DOCUMENT]\n=== Document: test.txt ===\ncontent here\n=== End of test.txt ===';
+    const res = await preProcessIntent(policyMessage);
+    expect(res).toBeNull();
+  });
 });

@@ -379,6 +379,33 @@ function estimateSizeFromBase64(base64?: string) {
   return Math.floor((base64.length * 3) / 4);
 }
 
+// Fuzzy keyword matching to tolerate small typos (e.g., "sumary")
+export function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1];
+      else dp[i][j] = 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+export function fuzzyIncludes(message: string, keyword: string): boolean {
+  const msg = message.toLowerCase();
+  const k = keyword.toLowerCase();
+  if (msg.includes(k)) return true;
+  // Check tokens for small typos (distance <=1)
+  const tokens = msg.split(/[^a-z0-9]+/i).filter(Boolean);
+  for (const t of tokens) {
+    if (levenshtein(t, k) <= 1) return true;
+  }
+  return false;
+}
+
 function validateImages(images?: any[]) {
   if (!images || !Array.isArray(images) || images.length === 0) return { ok: true };
   if (images.length > MAX_IMAGES) return { ok: false, code: 'IMAGE_LIMIT_EXCEEDED', message: `Too many images (max ${MAX_IMAGES}).` };
@@ -779,8 +806,44 @@ export async function streamFromOllamaWithTools(
   // This bypasses the LLM entirely for known patterns
   try {
     console.log('[SADIE] Checking preProcessIntent for message:', message.substring(0, 50));
-    const routing = await analyzeAndRouteMessage(message);
-    console.log('[SADIE] Routing decision:', routing.type);
+
+    // Load router policy (if present) and enforce document summary routing when conditions match
+    let policyForcesDocument = false;
+    let policy: any = null;
+    try {
+      const policyPath = require('path').join(__dirname, '..', '..', 'config', 'router-policy.json');
+      policy = require(policyPath);
+      const rules = (policy?.priority_rules || []) as any[];
+      for (const r of rules) {
+        if (r.name === 'Document Summary Hard Route') {
+          const cond = r.condition || {};
+          const keywords: string[] = cond.any_message_contains || [];
+          const hasFile = Boolean((request as any)?.documents && (request as any).documents.length > 0);
+          const msg = String(message || '').toLowerCase();
+
+          if (hasFile && keywords.some(k => fuzzyIncludes(msg, k))) {
+            policyForcesDocument = true;
+            console.log('[SADIE] Router policy matched: forcing document handling and blocking other tool pre-processing');
+            // Add structured policy log
+            try { pushRouter(`Policy: Document Summary Hard Route matched for conv=${request?.conversation_id}`); } catch (e) {}
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      // If policy missing or malformed, continue gracefully
+      console.warn('[SADIE] Router policy load/parse failed:', err?.message || err);
+    }
+
+    let routing: any;
+    if (policyForcesDocument) {
+      // Force LLM path for document summarization (skip pre-processor tools)
+      routing = { type: 'llm' };
+    } else {
+      const r = await analyzeAndRouteMessage(message);
+      routing = r;
+      console.log('[SADIE] Routing decision:', routing.type);
+    }
     
     if (routing.type === 'tools' && routing.calls.length > 0) {
       console.log('[SADIE] Pre-processor forcing tool calls:', routing.calls.map(c => c.name));
@@ -1478,6 +1541,28 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           const documentContents = await parseDocuments(request.documents);
           if (documentContents.length > 0) {
             enhancedMessage = documentContents.join('\n\n') + '\n\n' + request.message;
+          }
+
+          // If router policy previously forced document handling, add a marker
+          // so downstream pre-processing will ignore the parsed content and we
+          // can also emit a short structured log for tracing in the n8n pipeline
+          try {
+            if (policyForcesDocument) {
+              enhancedMessage = '[POLICY:FORCE_DOCUMENT]\n' + enhancedMessage;
+              console.log('[SADIE] Policy enforced: document handling forced for this request');
+              try { pushRouter(`Policy enforced: document handling forced for conv=${request?.conversation_id}`); } catch (e) {}
+
+              // Add extra log with file metadata
+              const file = request.documents[0];
+              console.log('[SADIE] Document summary run metadata:', {
+                tool_selected: 'document_reader',
+                confidence: (policy?.fallback?.confidence_threshold) || 1.0,
+                fileType: file.mimeType,
+                contentLength: file.size
+              });
+            }
+          } catch (e) {
+            // ignore logging errors
           }
         }
         

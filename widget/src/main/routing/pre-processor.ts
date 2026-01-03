@@ -225,7 +225,22 @@ function detectWebSearchIntent(message: string, originalMessage: string): { call
  */
 export async function preProcessIntent(userMessage: string): Promise<{ calls: any[] } | null> {
   if (!userMessage || typeof userMessage !== 'string') return null;
-  
+
+  // If this message is a document payload inserted by the router, avoid
+  // treating its content as a normal query (e.g., sports keywords inside a
+  // document could incorrectly trigger an NBA query). Document messages are
+  // formatted as: "=== Document: <filename> ===\n<content>\n=== End of <filename> ==="
+  if (userMessage.trim().startsWith('=== Document:')) {
+    return null;
+  }
+
+  // Also avoid pre-processing when a policy forced document handling earlier
+  // (the router sets a short token in the message to indicate this). This
+  // prevents the pre-processor from calling unrelated tools like `nba_query`.
+  if (userMessage.includes('[POLICY:FORCE_DOCUMENT]')) {
+    return null;
+  }
+
   const m = userMessage.toLowerCase();
   
   // Check each intent detector in priority order

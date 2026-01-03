@@ -39,6 +39,11 @@ const DEFAULT_SETTINGS = {
     get_clipboard: true,
     set_clipboard: false,
     get_system_info: true,
+    // Document tools
+    parse_document: true,
+    get_document_content: true,
+    list_documents: true,
+    search_document: true
   },
   defaultTeam: 'GSW'
 };
