@@ -23,8 +23,8 @@
  * @returns Formatted markdown string for display
  */
 export function formatNbaResultDirectly(result: any): string {
-  if (!result?.events || result.events.length === 0) {
-    return `No NBA games found for "${result.query || 'your search'}". Try a different team name or check back later for upcoming games.`;
+  if (!result || !result.events || result.events.length === 0) {
+    return `No NBA games found for "${result?.query || 'your search'}". Try a different team name or check back later for upcoming games.`;
   }
 
   const lines: string[] = [];
@@ -33,11 +33,11 @@ export function formatNbaResultDirectly(result: any): string {
   for (const event of result.events) {
     // ESPN structure: event.competitions[0].competitors[] with home/away designation
     const competition = event.competitions?.[0];
-    const competitors = competition?.competitors || [];
+    const competitors = (competition?.competitors || []).filter((c: any) => c != null);
     
     // Find home and away teams
-    const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
-    const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
+    const homeComp = competitors.find((c: any) => c?.homeAway === 'home') || competitors[0];
+    const awayComp = competitors.find((c: any) => c?.homeAway === 'away') || competitors[1];
     
     const homeTeam = homeComp?.team?.displayName || homeComp?.team?.shortDisplayName || homeComp?.team?.name || event.homeTeam || 'Home Team';
     const awayTeam = awayComp?.team?.displayName || awayComp?.team?.shortDisplayName || awayComp?.team?.name || event.awayTeam || 'Away Team';
