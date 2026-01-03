@@ -33,6 +33,12 @@ const DEFAULT_SETTINGS = {
     open_url: true,
     web_search: true,
     nba_query: true,
+    get_weather: true,
+    calculate: true,
+    get_current_time: true,
+    get_clipboard: true,
+    set_clipboard: false,
+    get_system_info: true,
   },
   defaultTeam: 'GSW'
 };

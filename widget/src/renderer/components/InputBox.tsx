@@ -263,6 +263,14 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
       finalMessage = `[USE TOOL: ${selectedTool.id}] ${trimmed}`;
     }
 
+    // Debug: log what we're sending
+    console.log('[InputBox] Sending message with:', JSON.stringify({
+      message: finalMessage.substring(0, 50),
+      imageCount: attachedImages.length,
+      documentCount: attachedDocuments.length,
+      documents: attachedDocuments.map(d => ({ filename: d.filename, size: d.size, hasData: !!d.data }))
+    }));
+
     onSendMessage(
       finalMessage, 
       attachedImages.length ? attachedImages : undefined,

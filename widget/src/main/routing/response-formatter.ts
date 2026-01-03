@@ -82,23 +82,53 @@ export function formatWeatherResultDirectly(result: any): string {
   }
 
   const location = result.location || result.city || 'Unknown location';
-  const temp = result.temperature ?? result.temp;
-  const conditions = result.conditions || result.description || result.weather || 'Unknown';
-  const humidity = result.humidity;
-  const wind = result.wind || result.wind_speed;
-
   const lines: string[] = [];
-  lines.push(`**Weather for ${location}:**\n`);
+  lines.push(`**Weather for ${location}**\n`);
   
-  if (temp !== undefined) {
-    lines.push(`🌡️ Temperature: ${temp}°F`);
+  // Handle temperature (can be object or scalar)
+  const temp = result.temperature;
+  if (temp) {
+    if (typeof temp === 'object') {
+      lines.push(`🌡️ **Temperature:** ${temp.celsius || temp.fahrenheit}`);
+      if (temp.feelsLike) {
+        lines.push(`   Feels like: ${temp.feelsLike}`);
+      }
+    } else {
+      lines.push(`🌡️ **Temperature:** ${temp}°`);
+    }
   }
-  lines.push(`☁️ Conditions: ${conditions}`);
+  
+  const conditions = result.condition || result.conditions || result.description || result.weather;
+  if (conditions) {
+    lines.push(`☁️ **Conditions:** ${conditions}`);
+  }
+  
+  const humidity = result.humidity;
   if (humidity !== undefined) {
-    lines.push(`💧 Humidity: ${humidity}%`);
+    lines.push(`💧 **Humidity:** ${humidity}`);
   }
-  if (wind !== undefined) {
-    lines.push(`💨 Wind: ${wind}`);
+  
+  const wind = result.wind;
+  if (wind) {
+    if (typeof wind === 'object') {
+      lines.push(`💨 **Wind:** ${wind.speed} ${wind.direction || ''}`);
+    } else {
+      lines.push(`💨 **Wind:** ${wind}`);
+    }
+  }
+  
+  if (result.uvIndex) {
+    lines.push(`☀️ **UV Index:** ${result.uvIndex}`);
+  }
+  
+  // Add forecast if available
+  if (result.forecast && Array.isArray(result.forecast) && result.forecast.length > 0) {
+    lines.push('\n**📅 Forecast:**\n');
+    for (const day of result.forecast) {
+      const dateStr = day.date || 'Unknown';
+      lines.push(`• **${dateStr}**: ${day.condition || 'Unknown'}`);
+      lines.push(`  High: ${day.high}, Low: ${day.low}, Rain: ${day.chanceOfRain}`);
+    }
   }
 
   return lines.join('\n');

@@ -63,8 +63,17 @@ function detectNbaIntent(message: string): { calls: any[] } | null {
   const gamesMatch = m.match(/last\s*(\d+)\s*games?/i);
   const perPage = gamesMatch ? parseInt(gamesMatch[1], 10) : 5;
   
+  // Check if explicitly asking for results/scores (past games) vs schedule (upcoming games)
+  // Only add "results" to query when user explicitly uses result-related words
+  const wantsResults = /\b(results?|scores?|final|won|lost|beat|defeated)\b/i.test(m);
+  
+  // Add context to query so NBA tool knows to look for completed games
+  const queryWithContext = wantsResults 
+    ? (teamQuery ? `${teamQuery} results` : 'results')
+    : teamQuery;
+  
   return { 
-    calls: [{ name: 'nba_query', arguments: { type: 'games', date: '', perPage, query: teamQuery } }] 
+    calls: [{ name: 'nba_query', arguments: { type: 'games', date: '', perPage, query: queryWithContext } }] 
   };
 }
 
@@ -76,10 +85,23 @@ function detectWeatherIntent(message: string): { calls: any[] } | null {
   
   if (!/\b(weather|temperature|forecast|rain|sunny|cloudy)\b/i.test(m)) return null;
   
-  const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z\s,]+?)(?:\s+(?:today|tomorrow|now|please|right now))?$/i);
+  // Try multiple patterns to extract location
+  // Pattern 1: "weather in/for/at [location] [optional time modifier]"
+  let locMatch = m.match(/\b(?:weather|forecast|temperature)\s+(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+?)(?:\s+(?:for|today|tomorrow|now|please|right now|this|next|the next).*)?$/i);
+  
+  // Pattern 2: "in/for/at [location] weather"
+  if (!locMatch) {
+    locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+?)\s+(?:weather|forecast)/i);
+  }
+  
+  // Pattern 3: Just "weather [location]" without preposition
+  if (!locMatch) {
+    locMatch = m.match(/\bweather\s+([a-zA-Z][a-zA-Z\s,]+?)(?:\s+(?:for|today|tomorrow|now|please|right now|this|next|the next).*)?$/i);
+  }
+  
   const location = locMatch ? locMatch[1].trim() : '';
   
-  if (location) {
+  if (location && location.length > 1) {
     return { calls: [{ name: 'get_weather', arguments: { location } }] };
   }
   

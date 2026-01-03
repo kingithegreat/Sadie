@@ -5,6 +5,7 @@
  */
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { webSearchHandler } from './web';
 import * as https from 'https';
 import * as zlib from 'zlib';
 import { URL } from 'url';
@@ -127,6 +128,10 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
     let date = args.date || '';
     let perPage = Math.min(Math.max(1, args.perPage || 5), 25);
 
+    // Check if query wants results (completed games) vs schedule (upcoming) BEFORE cleaning
+    const wantsResults = /\b(results?|scores?|final|won|lost|beat|defeated)\b/i.test(query);
+    console.log(`[NBA] wantsResults: ${wantsResults}, original query: "${query}"`);
+
     // Smart parsing: if query contains "last N games", extract N and use it as perPage
     const lastNMatch = query.match(/last\s*(\d+)\s*games?/i);
     if (lastNMatch) {
@@ -137,7 +142,7 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
     // Remove common filler words that aren't team names
     query = query
       .replace(/last\s*\d*\s*games?\s*/gi, '')
-      .replace(/\b(results?|from|their|there|the|give me|show me|get|what|are|were)\b/gi, '')
+      .replace(/\b(results?|scores?|from|their|there|the|give me|show me|get|what|are|were)\b/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
     
@@ -183,14 +188,20 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       let events = board?.events || [];
 
       // If no events found OR user wants multiple games without specific date,
-      // fall back to a rolling 14-day window to get enough games
+      // fall back to a rolling window to get enough games
+      // For results: look back further (up to 7 days). For schedule: include today + upcoming
       const needsMoreGames = !d || events.length < perPage;
       if (needsMoreGames) {
         const seen = new Set<string>();
         const agg: any[] = [];
         const now = new Date();
-        // Look back up to 14 days to find enough games
-        for (let i = 0; i < 14 && agg.length < perPage * 3; i++) {
+        // Look back up to 7 days for completed games
+        const daysBack = wantsResults ? 7 : 3;
+        // Also look forward 3 days for upcoming games (if not asking for results)
+        const daysForward = wantsResults ? 0 : 3;
+        
+        // First fetch past days (for results)
+        for (let i = 0; i <= daysBack && agg.length < perPage * 3; i++) {
           const dt = new Date(now);
           dt.setDate(now.getDate() - i);
           const y = dt.getFullYear();
@@ -200,14 +211,66 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
           try {
             const b = await fetchEspnJson('/scoreboard', { dates: dateParam });
             const ev = b?.events || [];
+            console.log(`[NBA] Fetched ${ev.length} events for ${dateParam}`);
+            // Log status of each event to debug filtering
             for (const e of ev) {
+              const status = e.competitions?.[0]?.status?.type?.name || e.status?.type?.name || 'unknown';
+              const completed = e.competitions?.[0]?.status?.type?.completed || e.status?.type?.completed;
+              console.log(`[NBA] Event: ${e.shortName || e.name}, status: "${status}", completed: ${completed}`);
               const id = e?.id || JSON.stringify(e);
               if (!seen.has(id)) { seen.add(id); agg.push(e); }
             }
           } catch (e) { /* ignore individual date fetch errors */ }
         }
+        
+        // Then fetch future days (for schedule only)
+        if (!wantsResults) {
+          for (let i = 1; i <= daysForward && agg.length < perPage * 3; i++) {
+            const dt = new Date(now);
+            dt.setDate(now.getDate() + i);
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const day = String(dt.getDate()).padStart(2, '0');
+            const dateParam = `${y}${m}${day}`;
+            try {
+              const b = await fetchEspnJson('/scoreboard', { dates: dateParam });
+              const ev = b?.events || [];
+              console.log(`[NBA] Fetched ${ev.length} upcoming events for ${dateParam}`);
+              for (const e of ev) {
+                const id = e?.id || JSON.stringify(e);
+                if (!seen.has(id)) { seen.add(id); agg.push(e); }
+              }
+            } catch (e) { /* ignore individual date fetch errors */ }
+          }
+        }
         events = agg;
       }
+      
+      // Filter for completed games if asking for results (wantsResults computed above before cleaning)
+      if (wantsResults) {
+        events = events.filter((e: any) => {
+          const status = e.competitions?.[0]?.status?.type?.name || e.status?.type?.name || '';
+          const completed = e.competitions?.[0]?.status?.type?.completed || e.status?.type?.completed;
+          const statusLower = status.toLowerCase();
+          const isCompleted = completed === true || 
+                              status === 'STATUS_FINAL' || 
+                              statusLower.includes('final') ||
+                              statusLower.includes('end');
+          if (isCompleted) {
+            console.log(`[NBA] Found completed game: ${e.shortName || e.name}, status: ${status}`);
+          }
+          return isCompleted;
+        });
+        console.log(`[NBA] Filtered to ${events.length} completed games`);
+        
+        // If no completed games found, fall back to web search for results
+        if (events.length === 0) {
+          console.log(`[NBA] No completed games from ESPN, falling back to web search`);
+          const searchQuery = query ? `NBA ${query} results scores` : 'NBA results scores today';
+          return await webSearchHandler({ query: searchQuery, maxResults: 5 }, { executionId: 'nba-fallback' });
+        }
+      }
+      
       // Filter by team name if query provided
       if (query) {
         const q = query.toLowerCase();

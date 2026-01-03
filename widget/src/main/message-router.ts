@@ -17,6 +17,7 @@ import {
 // Import response formatting utilities
 import {
   formatNbaResultDirectly,
+  formatWeatherResultDirectly,
   summarizeToolResults,
   normalizeToolName,
   TOOL_ALIASES,
@@ -814,7 +815,24 @@ export async function streamFromOllamaWithTools(
         }
       }
       
-      // For non-NBA tools, let them fall through to normal processing
+      // Check if weather query - format directly (avoid redundant LLM call)
+      const isWeatherQuery = routing.calls.some((c: any) => c.name === 'get_weather');
+      if (isWeatherQuery && batchResults.length > 0) {
+        const weatherResult = batchResults.find((r: any) => r.result?.location || r.result?.temperature);
+        if (weatherResult?.success && weatherResult.result) {
+          const formatted = formatWeatherResultDirectly(weatherResult.result);
+          console.log(`[SADIE] Pre-processor formatted weather result (${formatted.length} chars):`, formatted.substring(0, 100));
+          
+          // Stream the formatted response as a single chunk for faster display
+          onChunk(formatted);
+          chunkCount = formatted.length;
+          
+          safeEnd('pre-process-complete');
+          return { cancel: () => controller.abort() };
+        }
+      }
+      
+      // For non-NBA/weather tools, let them fall through to normal processing
       // (This allows the LLM to format the results)
     }
   } catch (preErr) {
@@ -1290,8 +1308,9 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) {}
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 
-      // DEBUG: Log IPC handler invocation
+      // DEBUG: Log IPC handler invocation with document info
       console.log('[MAIN-DEBUG] IPC handler invoked for streamId:', streamId);
+      console.log('[MAIN-DEBUG] Request documents:', request?.documents?.length || 0, request?.documents?.map((d: any) => d?.filename));
 
       if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
         event.sender.send('sadie:stream-error', { error: true, message: 'Invalid request format.', streamId });

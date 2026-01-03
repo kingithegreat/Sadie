@@ -402,13 +402,9 @@ try {
 } finally {
     $recognizer.Dispose()
 }
-
-// Automatically register handlers when this module is imported so tests
-// that inspect ipcHandlers can see the populated mapping without
-// needing to call registerIpcHandlers() manually.
 `;
 
-        exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
+      exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
         { timeout: 15000 }, 
         (error: any, stdout: string, stderr: string) => {
           if (error) {

@@ -83,7 +83,10 @@ const electronAPI: ElectronAPI = {
   // Start a streaming request. Non-blocking; return a Promise<void> to match shared types
   sendStreamMessage: async (request: SadieRequestWithImages): Promise<void> => {
     logDebug('[Preload] IPC send', ALLOWED_CHANNELS.STREAM_SEND, { streamId: (request as any)?.streamId, messagePreview: String(request?.message).substring(0,120) });
-    try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId}`); } catch (e) {}
+    // Log document info
+    const docs = (request as any)?.documents;
+    console.log('[Preload] sendStreamMessage documents:', docs?.length || 0, docs?.map((d: any) => d?.filename));
+    try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId} docs=${docs?.length || 0}`); } catch (e) {}
     ipcRenderer.send(ALLOWED_CHANNELS.STREAM_SEND, request);
     // Fire-and-forget; return a resolved promise so callers can await
     return Promise.resolve();

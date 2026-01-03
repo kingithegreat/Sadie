@@ -564,6 +564,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // Handle sending a message and wiring up streaming lifecycle
   const handleSendMessage = useCallback(async (content?: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = (content ?? '').toString().trim();
+    console.log('[App] handleSendMessage called:', { 
+      content: content?.substring(0, 50), 
+      imageCount: images?.length || 0, 
+      documentCount: documents?.length || 0,
+      documentFilenames: documents?.map(d => d.filename)
+    });
     if (!text && (!images || images.length === 0) && (!documents || documents.length === 0)) return;
 
     // If documents are attached, prepend info about them to the message
@@ -617,7 +623,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
     if (documents && documents.length > 0) {
       streamRequest.documents = documents;
+      console.log('[App] Adding documents to streamRequest:', documents.length, documents.map(d => ({ filename: d.filename, size: d.size, hasData: !!d.data, dataLen: d.data?.length })));
     }
+
+    console.log('[App] Final streamRequest has documents:', !!streamRequest.documents, streamRequest.documents?.length);
 
     // register a single unsubscribe placeholder if subscribeToStream used the subscription
     // window.electron.subscribeToStream already stored an unsubscribe in streamSubsRef

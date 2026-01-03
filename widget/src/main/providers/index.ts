@@ -43,7 +43,7 @@ export const DEFAULT_MODELS: Record<ModelProvider, string> = {
   ollama: 'llama3.2:3b',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-haiku-20240307',
-  google: 'gemini-1.5-flash'
+  google: 'gemini-2.0-flash'
 };
 
 // Provider display names
@@ -59,7 +59,7 @@ export const AVAILABLE_MODELS: Record<ModelProvider, string[]> = {
   ollama: ['llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'codellama:7b', 'dolphin-llama3:8b', 'llava'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
   anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-opus-20240229'],
-  google: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro']
+  google: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash']
 };
 
 /**
