@@ -2,7 +2,7 @@ name: Playwright E2E Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, followup/stash-wip ]
   pull_request:
     branches: [ main ]
   workflow_dispatch: {}
@@ -48,14 +48,15 @@ jobs:
         env:
           SADIE_E2E: '1'
           NODE_ENV: 'test'
-        run: xvfb-run -s "-screen 0 1920x1080x24" npm run e2e --prefix widget
+        # pass Playwright CLI arg to retain traces on failure
+        run: xvfb-run -s "-screen 0 1920x1080x24" npm run e2e --prefix widget -- --trace=retain-on-failure
 
       - name: Run Playwright E2E (non-Linux)
         if: runner.os != 'Linux'
         env:
           SADIE_E2E: '1'
           NODE_ENV: 'test'
-        run: npm run e2e --prefix widget
+        run: npm run e2e --prefix widget -- --trace=retain-on-failure
 
       - name: Upload Playwright report
         if: always()
@@ -69,7 +70,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: junit
-          path: widget/test-results/junit.xml
+          path: widget/test-results
+
+      - name: Upload traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: traces
 
       - name: Teardown docker services
         if: always()

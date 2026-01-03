@@ -16,9 +16,10 @@ export default defineConfig({
   ],
   use: {
     env: { SADIE_E2E: 'true' },
-    trace: 'on',
-    video: 'on',
-    screenshot: 'on',
+    // Retain traces/videos/screenshots only on failure to save CI storage
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
   projects: [
     {
