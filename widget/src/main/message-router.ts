@@ -14,6 +14,14 @@ import {
   ChatMessage as ProviderChatMessage 
 } from './providers';
 
+// Import response formatting utilities
+import {
+  formatNbaResultDirectly,
+  summarizeToolResults,
+  normalizeToolName,
+  TOOL_ALIASES,
+} from './routing/response-formatter';
+
 // Helper to get user settings for memory policy
 function getMemorySettings(): UserSettings {
   try {
@@ -231,52 +239,7 @@ function tokenizeForStreaming(text: string): string[] {
   return text.split(/(\s+)/).filter(Boolean);
 }
 
-// =====================
-// Direct NBA Result Formatter (bypasses LLM to prevent hallucination)
-// =====================
-function formatNbaResultDirectly(result: any): string {
-  if (!result?.events || result.events.length === 0) {
-    return `No NBA games found for "${result.query || 'your search'}". Try a different team name or check back later for upcoming games.`;
-  }
-
-  const lines: string[] = [];
-  lines.push(`**NBA Games for ${result.query || 'your search'}:**\n`);
-
-  for (const event of result.events) {
-    // ESPN structure: event.competitions[0].competitors[] with home/away designation
-    const competition = event.competitions?.[0];
-    const competitors = competition?.competitors || [];
-    
-    // Find home and away teams
-    const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
-    const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
-    
-    const homeTeam = homeComp?.team?.displayName || homeComp?.team?.shortDisplayName || homeComp?.team?.name || event.homeTeam || 'Home Team';
-    const awayTeam = awayComp?.team?.displayName || awayComp?.team?.shortDisplayName || awayComp?.team?.name || event.awayTeam || 'Away Team';
-    const homeScore = homeComp?.score ?? event.homeScore ?? '—';
-    const awayScore = awayComp?.score ?? event.awayScore ?? '—';
-    
-    // Get status
-    const statusObj = competition?.status || event.status;
-    const status = String(statusObj?.type?.name || statusObj?.type?.description || statusObj || 'Scheduled');
-    
-    // Get date
-    const dateStr = event.date || competition?.date;
-    const date = dateStr ? new Date(dateStr).toLocaleDateString('en-US', { 
-      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-    }) : 'TBD';
-
-    if (status === 'STATUS_FINAL' || status.toLowerCase().includes('final')) {
-      lines.push(`🏀 **${awayTeam}** ${awayScore} @ **${homeTeam}** ${homeScore} — *Final*`);
-    } else if (status === 'STATUS_IN_PROGRESS' || status.toLowerCase().includes('progress')) {
-      lines.push(`🏀 **${awayTeam}** ${awayScore} @ **${homeTeam}** ${homeScore} — *Live*`);
-    } else {
-      lines.push(`🏀 **${awayTeam}** @ **${homeTeam}** — ${date}`);
-    }
-  }
-
-  return lines.join('\n');
-}
+// NOTE: formatNbaResultDirectly has been moved to ./routing/response-formatter.ts
 
 // =====================
 // Multi-Model Routing & Reflection Confidence Enforcement
@@ -539,30 +502,9 @@ function mapErrorToSadieResponse(error: any): SadieResponse {
 // have been extracted to ./routing/pre-processor.ts
 // They are re-exported above for backward compatibility.
 
-// Summarize tool results into a human-readable assistant message. Keep this
-// deterministic and brief so the UI can present a helpful summary after tools
-// execute.
-function summarizeToolResults(results: any[]): string {
-  if (!results || results.length === 0) return 'No results returned from tools.';
-  const parts: string[] = [];
-  for (const r of results) {
-    if (r === null || r === undefined) continue;
-    if (r.success === false) {
-      parts.push(`Tool failed: ${r.error || r.message || 'unknown error'}`);
-      continue;
-    }
-    // Heuristic extraction for common result shapes
-    if (r.result && typeof r.result === 'string') parts.push(r.result);
-    else if (r.result && typeof r.result === 'object') {
-      // Try to stringify concise keys
-      if (r.result.summary) parts.push(r.result.summary);
-      else if (r.result.content) parts.push(r.result.content);
-      else parts.push(JSON.stringify(r.result).slice(0, 400));
-    } else if (r.output && typeof r.output === 'string') parts.push(r.output);
-    else parts.push(JSON.stringify(r).slice(0, 400));
-  }
-  return parts.join('\n\n');
-}
+// NOTE: summarizeToolResults, formatNbaResultDirectly, and TOOL_ALIASES 
+// have been extracted to ./routing/response-formatter.ts
+// They are imported above.
 
 // Process an incoming request at the router boundary. This enforces the
 // tool-gating policy: when routing decision is `tools`, the LLM/webhook must
@@ -1146,10 +1088,10 @@ export async function streamFromOllamaWithTools(
         
         // Execute tool calls as an atomic batch (precheck permissions to avoid
         // partial execution like creating a folder then failing to write a file)
-        const TOOL_ALIASES: Record<string, string> = { nba_scores: 'nba_query' };
+        // NOTE: TOOL_ALIASES is imported from ./routing/response-formatter.ts
         const calls = pendingToolCalls.map((c: any) => {
           const toolName = c.function?.name || c.name;
-          const normalizedName = TOOL_ALIASES[toolName] || toolName;
+          const normalizedName = normalizeToolName(toolName);
           let toolArgs = c.function?.arguments || c.arguments || {};
           if (typeof toolArgs === 'string') {
             try { toolArgs = JSON.parse(toolArgs); } catch { }
