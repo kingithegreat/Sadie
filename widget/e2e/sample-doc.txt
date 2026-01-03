@@ -1,0 +1,1 @@
+This is a small document about A* Search and Genetic Algorithms. A* is optimal; GA is flexible.

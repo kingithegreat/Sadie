@@ -20,7 +20,7 @@ describe('SettingsPanel model & API key fields', () => {
     render(<SettingsPanel settings={initialSettings} onSave={onSave} onClose={onClose} />);
 
     // Expect the model selector to be present and show default
-    const select = screen.getByRole('combobox', { name: /model/i });
+    const select = screen.getByRole('combobox', { name: 'Model' });
     expect(select).toBeInTheDocument();
     expect((select as HTMLSelectElement).value).toBe('ollama');
 

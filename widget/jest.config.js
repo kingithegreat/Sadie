@@ -8,6 +8,10 @@ module.exports = {
       transform: {
         '^.+\\.(ts|tsx)$': ['ts-jest', { isolatedModules: true }],
       },
+      moduleNameMapper: {
+        '\\.(jpg|jpeg|png|gif|svg|webp)$': '<rootDir>/src/__mocks__/fileMock.js',
+        '\\.(css|less|scss|sass)$': '<rootDir>/src/__mocks__/styleMock.js'
+      },
       setupFilesAfterEnv: [
         '<rootDir>/jest/jest-setup.ts'
       ],
@@ -20,6 +24,10 @@ module.exports = {
       testEnvironment: 'jsdom',
       transform: {
         '^.+\\.(ts|tsx)$': ['ts-jest', { isolatedModules: true }],
+      },
+      moduleNameMapper: {
+        '\\.(jpg|jpeg|png|gif|svg|webp)$': '<rootDir>/src/__mocks__/fileMock.js',
+        '\\.(css|less|scss|sass)$': '<rootDir>/src/__mocks__/styleMock.js'
       },
       setupFilesAfterEnv: [
         '<rootDir>/jest/jest-setup.ts',

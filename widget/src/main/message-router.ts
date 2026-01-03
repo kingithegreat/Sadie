@@ -807,46 +807,18 @@ export async function streamFromOllamaWithTools(
   try {
     console.log('[SADIE] Checking preProcessIntent for message:', message.substring(0, 50));
 
-    // Load router policy (if present) and enforce document summary routing when conditions match
-    let policyForcesDocument = false;
-    let policy: any = null;
-    try {
-      const policyPath = require('path').join(__dirname, '..', '..', 'config', 'router-policy.json');
-      policy = require(policyPath);
-      const rules = (policy?.priority_rules || []) as any[];
-      for (const r of rules) {
-        if (r.name === 'Document Summary Hard Route') {
-          const cond = r.condition || {};
-          const keywords: string[] = cond.any_message_contains || [];
-          const hasFile = Boolean((request as any)?.documents && (request as any).documents.length > 0);
-          const msg = String(message || '').toLowerCase();
-
-          if (hasFile && keywords.some(k => fuzzyIncludes(msg, k))) {
-            policyForcesDocument = true;
-            console.log('[SADIE] Router policy matched: forcing document handling and blocking other tool pre-processing');
-            // Add structured policy log
-            try { pushRouter(`Policy: Document Summary Hard Route matched for conv=${request?.conversation_id}`); } catch (e) {}
-            break;
-          }
-        }
-      }
-    } catch (err) {
-      // If policy missing or malformed, continue gracefully
-      console.warn('[SADIE] Router policy load/parse failed:', err?.message || err);
-    }
-
+    // Default behavior: run the pre-processor on the plain message
     let routing: any;
-    if (policyForcesDocument) {
-      // Force LLM path for document summarization (skip pre-processor tools)
+    try {
+      routing = (await analyzeAndRouteMessage(message)) as any;
+      console.log('[SADIE] Routing decision:', (routing as any).type);
+    } catch (err) {
+      console.warn('[SADIE] pre-processor failed:', (err as any)?.message || err);
       routing = { type: 'llm' };
-    } else {
-      const r = await analyzeAndRouteMessage(message);
-      routing = r;
-      console.log('[SADIE] Routing decision:', routing.type);
     }
     
     if (routing.type === 'tools' && routing.calls.length > 0) {
-      console.log('[SADIE] Pre-processor forcing tool calls:', routing.calls.map(c => c.name));
+      console.log('[SADIE] Pre-processor forcing tool calls:', routing.calls.map((c: any) => c.name));
       
       // Execute tools directly without LLM
       const toolContext: ToolContext = {
@@ -1375,6 +1347,31 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
       console.log('[MAIN-DEBUG] IPC handler invoked for streamId:', streamId);
       console.log('[MAIN-DEBUG] Request documents:', request?.documents?.length || 0, request?.documents?.map((d: any) => d?.filename));
 
+      // Load router policy (if present) and check for document-force rule. Store
+      // the decision on the request object so downstream code can act on it.
+      try {
+        const policyPath = require('path').join(__dirname, '..', '..', 'config', 'router-policy.json');
+        const policy = require(policyPath);
+        (request as any).__routerPolicy = policy;
+        const rules = (policy?.priority_rules || []) as any[];
+        for (const r of rules) {
+          if (r.name === 'Document Summary Hard Route') {
+            const cond = r.condition || {};
+            const keywords: string[] = cond.any_message_contains || [];
+            const hasFile = Boolean(request?.documents && request.documents.length > 0);
+            const userMsg = String(request?.message || '').toLowerCase();
+            if (hasFile && keywords.some(k => fuzzyIncludes(userMsg, k))) {
+              (request as any).__policyForcesDocument = true;
+              console.log('[SADIE] Router policy matched for incoming request: forcing document handling');
+              try { pushRouter(`Policy: Document Summary Hard Route matched for conv=${request?.conversation_id}`); } catch (e) {}
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        // ignore missing policy
+      }
+
       if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
         event.sender.send('sadie:stream-error', { error: true, message: 'Invalid request format.', streamId });
         return;
@@ -1544,19 +1541,20 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
           }
 
           // If router policy previously forced document handling, add a marker
-          // so downstream pre-processing will ignore the parsed content and we
-          // can also emit a short structured log for tracing in the n8n pipeline
+          // so downstream pre-processing will ignore parsed content and emit
+          // structured logs for observability.
           try {
-            if (policyForcesDocument) {
+            if ((request as any).__policyForcesDocument) {
               enhancedMessage = '[POLICY:FORCE_DOCUMENT]\n' + enhancedMessage;
               console.log('[SADIE] Policy enforced: document handling forced for this request');
               try { pushRouter(`Policy enforced: document handling forced for conv=${request?.conversation_id}`); } catch (e) {}
 
-              // Add extra log with file metadata
+              // Add extra log with file metadata and configured confidence
               const file = request.documents[0];
+              const pol = (request as any).__routerPolicy || {};
               console.log('[SADIE] Document summary run metadata:', {
                 tool_selected: 'document_reader',
-                confidence: (policy?.fallback?.confidence_threshold) || 1.0,
+                confidence: (pol?.fallback?.confidence_threshold) || 1.0,
                 fileType: file.mimeType,
                 contentLength: file.size
               });

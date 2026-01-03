@@ -1,0 +1,13 @@
+SADIE Test Document
+This is a sample document used for automated testing of the SADIE document summary pipeline.
+
+The purpose of this file is to verify:
+- File detection
+- Router enforcement
+- Document parsing
+- Summary generation
+
+This ensures:
+• Enough content to generate a non-trivial summary
+• Predictable structure
+• No whitespace-only or blank files that would cause failures
