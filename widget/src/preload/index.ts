@@ -47,7 +47,8 @@ const ALLOWED_CHANNELS = {
   PERMISSION_REQUEST: 'sadie:permission-request',
   PERMISSION_RESPONSE: 'sadie:permission-response',
   GET_ENV: 'sadie:get-env',
-  GET_CONFIG_PATH: 'sadie:get-config-path'
+  GET_CONFIG_PATH: 'sadie:get-config-path',
+  AUTOMATION_EXECUTE: 'automation:execute'
 };
 
 // Create the API object
@@ -327,6 +328,11 @@ const electronAPI: ElectronAPI = {
   // Restart the app (for settings that require restart)
   restartApp: async (): Promise<void> => {
     return await ipcRenderer.invoke('sadie:restart-app');
+  },
+
+  // Automation Control Center API
+  executeAutomation: async (operation: string, params?: any): Promise<{ success: boolean; result?: any; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.AUTOMATION_EXECUTE, { operation, params });
   }
 };
 

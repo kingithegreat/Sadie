@@ -1,0 +1,124 @@
+{
+  "name": "SADIE Image Generation Tool",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\n\nreturn {\n  json: {\n    prompt: params.prompt,\n    style: params.style || 'realistic',\n    resolution: params.resolution || '512x512',\n    backend: params.backend || 'stability'\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.STABILITY_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text_prompts",
+              "value": "[{\"text\": \"{{ $json.prompt }}\", \"weight\": 1}]"
+            },
+            {
+              "name": "cfg_scale",
+              "value": "7"
+            },
+            {
+              "name": "height",
+              "value": "{{ $json.resolution.split('x')[1] }}"
+            },
+            {
+              "name": "width",
+              "value": "{{ $json.resolution.split('x')[0] }}"
+            },
+            {
+              "name": "samples",
+              "value": "1"
+            },
+            {
+              "name": "steps",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "stability-request",
+      "name": "Stability AI Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.item.json;\nconst artifacts = response.artifacts;\n\nif (artifacts && artifacts.length > 0) {\n  const base64 = artifacts[0].base64;\n  const seed = artifacts[0].seed;\n  \n  return {\n    json: {\n      success: true,\n      action: 'image_generate',\n      data: {\n        image_base64: base64,\n        seed: seed,\n        prompt: $json.prompt,\n        style: $json.style,\n        resolution: $json.resolution\n      },\n      timestamp: new Date().toISOString()\n    }\n  };\n} else {\n  return {\n    json: {\n      success: false,\n      action: 'image_generate',\n      error: 'No image generated',\n      timestamp: new Date().toISOString()\n    }\n  };\n}"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "start-node": {
+      "main": [
+        [
+          {
+            "node": "parse-params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse-params": {
+      "main": [
+        [
+          {
+            "node": "stability-request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "stability-request": {
+      "main": [
+        [
+          {
+            "node": "format-result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null
+}

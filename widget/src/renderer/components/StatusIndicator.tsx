@@ -9,6 +9,8 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
+  mode?: 'chat' | 'automation';
+  onModeChange?: (mode: 'chat' | 'automation') => void;
 }
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
@@ -16,7 +18,9 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onRefresh,
   onSettingsClick,
   onMenuClick
-  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic
+  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic,
+  mode = 'chat',
+  onModeChange
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -114,6 +118,26 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           <span className="toggle-icon">{uncensoredMode ? '🔓' : '🔒'}</span>
           <span className="toggle-label">{uncensoredMode ? 'Uncensored' : 'Safe'}</span>
         </div>
+
+        {/* Mode Switcher */}
+        {onModeChange && (
+          <div className="mode-switcher">
+            <button
+              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
+              onClick={() => onModeChange('chat')}
+              title="Chat Mode"
+            >
+              💬 Chat
+            </button>
+            <button
+              className={`mode-btn ${mode === 'automation' ? 'active' : ''}`}
+              onClick={() => onModeChange('automation')}
+              title="Automation Control Center"
+            >
+              ⚙️ Automation
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="header-actions">
@@ -312,6 +336,35 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           gap: 8px;
           justify-content: flex-end;
           padding-top: 6px;
+        }
+
+        .mode-switcher {
+          display: flex;
+          gap: 4px;
+          background: #2A2A2A;
+          border-radius: 6px;
+          padding: 2px;
+        }
+
+        .mode-btn {
+          background: transparent;
+          border: none;
+          color: #B4B4B4;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          cursor: pointer;
+          transition: all 150ms ease;
+        }
+
+        .mode-btn:hover {
+          background: #333333;
+          color: #ECECEC;
+        }
+
+        .mode-btn.active {
+          background: #007ACC;
+          color: #FFFFFF;
         }
       `}</style>
     </div>
