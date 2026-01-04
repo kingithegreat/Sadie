@@ -19,6 +19,7 @@ function pushMainLog(line: string) {
 (global as any).__SADIE_PUSH_MAIN_LOG = pushMainLog;
 import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
+import { registerAutomationIpc } from './ipc-automation';
 import { sanitizeEnvForPackaged, isPackagedBuild } from './env';
 
 // Load environment variables
@@ -82,6 +83,11 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   pushMainLog('Registered IPC handlers.');
   logStartup('Registered IPC handlers.');
+
+  // Register automation IPC handlers
+  registerAutomationIpc('http://localhost:5678'); // Adjust n8n URL as needed
+  pushMainLog('Registered automation IPC handlers.');
+  logStartup('Registered automation IPC handlers.');
 
   // Auto-start n8n on Windows using the shipped helper script. This ensures the
   // local orchestrator is running before the renderer attempts to reach it.

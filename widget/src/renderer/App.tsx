@@ -7,6 +7,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import FirstRunModal from './components/FirstRunModal';
 import PermissionModal from './components/PermissionModal';
 import ConversationSidebar from "./components/ConversationSidebar";
+import { AutomationCenter } from "./components/AutomationCenter";
 import type {
   ChatMessage,
   StreamingState,
@@ -27,6 +28,7 @@ import type {
 
 // Types
 type Status = ConnectionStatus;
+type AppMode = 'chat' | 'automation';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -77,6 +79,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
   const [backendDiagnostic, setBackendDiagnostic] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [mode, setMode] = useState<AppMode>('chat');
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
@@ -741,14 +744,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           }
         }}
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
+        mode={mode}
+        onModeChange={setMode}
       />
 
-      {/* Main Chat Interface */}
-      <ChatInterface 
-        messages={messages}
-        onSendMessage={handleSendMessage}
-        onUserCancel={handleUserCancel}
-      />
+      {/* Main Content Area */}
+      {mode === 'chat' ? (
+        <ChatInterface 
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          onUserCancel={handleUserCancel}
+        />
+      ) : (
+        <AutomationCenter />
+      )}
 
       {/* Action Confirmation Modal */}
       {awaitingConfirmation && pendingConfirmationData && (

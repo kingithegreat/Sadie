@@ -166,4 +166,7 @@ export interface ElectronAPI {
   captureLogs?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Test-only: invoke arbitrary IPC channels (E2E only)
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
+  
+  // Automation operations
+  executeAutomation?: (operation: string, params?: any) => Promise<{ success: boolean; result?: any; error?: string }>;
 }
