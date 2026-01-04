@@ -1,5 +1,4 @@
 import { documentToolHandlers } from '../tools/documents';
-import { parseDocuments } from '../message-router';
 import { preProcessIntent, analyzeAndRouteMessage } from '../routing/pre-processor';
 
 jest.mock('../tools/documents', () => ({

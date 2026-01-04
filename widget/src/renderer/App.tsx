@@ -181,6 +181,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
   }, [isHydrated, settings?.firstRun]);
 
+  // Expose a stable readiness signal for E2E tests and helpers.
+  useEffect(() => {
+    try { (window as any).__SADIE_APP_READY__ = !!isHydrated; } catch (e) {}
+  }, [isHydrated]);
+
   // Ensure we clean up any remaining stream listeners when the component
   // unmounts to avoid memory leaks.
   useEffect(() => {
@@ -776,7 +781,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
   return (
-    <div className="app-container">
+    <div className="app-container" data-testid="sadie-app-root" data-app-ready={isHydrated ? 'true' : 'false'}>
       {/* Conversation Sidebar */}
       <ConversationSidebar
         isOpen={sidebarOpen}

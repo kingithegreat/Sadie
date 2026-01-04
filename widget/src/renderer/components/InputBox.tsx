@@ -485,7 +485,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
       )}
 
       <div className="input-top">
-        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" />
+        <textarea className="input-field" data-testid="chat-input" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" />
 
         <div className="input-actions">
           <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFileChange} />
