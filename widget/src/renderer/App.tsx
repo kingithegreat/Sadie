@@ -7,6 +7,9 @@ import SettingsPanel from "./components/SettingsPanel";
 import FirstRunModal from './components/FirstRunModal';
 import PermissionModal from './components/PermissionModal';
 import ConversationSidebar from "./components/ConversationSidebar";
+import { ModeSwitcher } from "./components/ModeSwitcher";
+import { N8NMode } from "./modes/n8n/N8NMode";
+import { useModeStore } from "./stores/mode-store";
 import type {
   ChatMessage,
   StreamingState,
@@ -36,6 +39,9 @@ interface AppProps {
 const App: React.FC<AppProps> = ({ initialMessages }) => {
   // small helper to create ids
   const newId = useCallback(() => `id-${Date.now()}-${Math.random().toString(16).slice(2,8)}`, []);
+
+  // Mode management
+  const { mode } = useModeStore();
 
   // Diagnostic log for E2E traces
   useEffect(() => {
@@ -809,14 +815,24 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           }
         }}
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
+        modeSwitcher={<ModeSwitcher />}
       />
 
-      {/* Main Chat Interface */}
-      <ChatInterface 
-        messages={messages}
-        onSendMessage={handleSendMessage}
-        onUserCancel={handleUserCancel}
-      />
+      {/* Main Content - Conditional based on mode */}
+      {mode === 'chat' && (
+        <>
+          {/* Main Chat Interface */}
+          <ChatInterface 
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            onUserCancel={handleUserCancel}
+          />
+        </>
+      )}
+
+      {mode === 'n8n' && (
+        <N8NMode />
+      )}
 
       {/* Action Confirmation Modal */}
       {awaitingConfirmation && pendingConfirmationData && (

@@ -9,6 +9,7 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
+  modeSwitcher?: React.ReactNode;
 }
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
@@ -16,7 +17,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onRefresh,
   onSettingsClick,
   onMenuClick
-  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic
+  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic, modeSwitcher
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -118,6 +119,9 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           <span className="toggle-label">{uncensoredMode ? 'Uncensored' : 'Safe'}</span>
         </div>
       </div>
+
+      {/* Mode Switcher */}
+      {modeSwitcher}
 
       <div className="header-actions">
         <button
