@@ -1,0 +1,90 @@
+{
+  "name": "SADIE Archive Operations Tool (Phase 6.1)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action;\n\n// Map n8n action names to ArchiveOps.ps1 actions\nconst actionMap = {\n  'extract_archive': 'extract',\n  'create_archive': 'create',\n  'list_archive': 'list'\n};\n\nconst mappedAction = actionMap[action] || action;\n\nreturn {\n  json: {\n    action: mappedAction,\n    params: params,\n    original_request: $input.item.json\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"archive_ops\" -Action \"{{ $json.action }}\" -Parameters @{{ $json.params | ConvertTo-Json -Compress }} -UserConfirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+      },
+      "id": "safety-validation",
+      "name": "Safety Validation",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\n\nlet validationResult;\ntry {\n  validationResult = JSON.parse(stdout);\n} catch (e) {\n  validationResult = {\n    success: false,\n    error: 'Failed to parse safety validation output',\n    raw_output: stdout\n  };\n}\n\nif (!validationResult.success) {\n  return {\n    json: {\n      status: 'validation_failed',\n      error: validationResult.error || 'Safety validation failed',\n      validation: validationResult\n    }\n  };\n}\n\n// Continue to archive operation\nreturn {\n  json: {\n    ...$input.item.json,\n    validation: validationResult\n  }\n};"
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\ArchiveOps.ps1\" -Action \"{{ $json.action }}\"{{ $json.params.archive_path ? ` -ArchivePath \"${$json.params.archive_path}\"` : '' }}{{ $json.params.destination ? ` -Destination \"${$json.params.destination}\"` : '' }}{{ $json.params.files ? ` -Files @(${($json.params.files || []).map(f => `\"${f}\"`).join(',')})` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+      },
+      "id": "execute-archiveops",
+      "name": "Execute ArchiveOps",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\n\nlet scriptResult;\ntry {\n  scriptResult = JSON.parse(stdout);\n} catch (e) {\n  scriptResult = {\n    success: false,\n    error: 'Failed to parse ArchiveOps output',\n    raw_output: stdout\n  };\n}\n\nreturn {\n  json: {\n    status: scriptResult.success ? 'success' : 'failure',\n    timestamp: scriptResult.timestamp || new Date().toISOString(),\n    operation: 'ArchiveOps',\n    action: scriptResult.action || $input.item.json.action,\n    data: scriptResult.data || null,\n    error: scriptResult.error || null,\n    validation: $input.item.json.validation\n  }\n};"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
+    },
+    "Parse Parameters": {
+      "main": [[{ "node": "Safety Validation", "type": "main", "index": 0 }]]
+    },
+    "Safety Validation": {
+      "main": [[{ "node": "Check Validation", "type": "main", "index": 0 }]]
+    },
+    "Check Validation": {
+      "main": [[{ "node": "Execute ArchiveOps", "type": "main", "index": 0 }]]
+    },
+    "Execute ArchiveOps": {
+      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}

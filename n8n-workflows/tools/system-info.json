@@ -1,5 +1,5 @@
 {
-  "name": "SADIE System Info Tool",
+  "name": "SADIE System Info Tool (Phase 6.1)",
   "nodes": [
     {
       "parameters": {},
@@ -11,7 +11,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action || 'get_system_info';\n\nreturn {\n  json: {\n    action: action,\n    params: params\n  }\n};"
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action || 'get_system_info';\n\n// Map n8n action names to SystemInfo.ps1 info types\nconst actionMap = {\n  'get_system_info': 'system',\n  'get_disk_usage': 'disk',\n  'get_process_list': 'processes',\n  'get_memory_info': 'memory',\n  'get_network_info': 'network',\n  'get_all_info': 'all'\n};\n\nconst mappedInfoType = actionMap[action] || 'all';\n\nreturn {\n  json: {\n    info_type: mappedInfoType,\n    params: params\n  }\n};"
       },
       "id": "parse-params",
       "name": "Parse Parameters",
@@ -21,80 +21,45 @@
     },
     {
       "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "string": [{"value1": "={{ $json.action }}", "value2": "get_system_info"}]
-              },
-              "renameOutput": true,
-              "outputKey": "system_info"
-            },
-            {
-              "conditions": {
-                "string": [{"value1": "={{ $json.action }}", "value2": "get_disk_usage"}]
-              },
-              "renameOutput": true,
-              "outputKey": "disk_usage"
-            },
-            {
-              "conditions": {
-                "string": [{"value1": "={{ $json.action }}", "value2": "get_process_list"}]
-              },
-              "renameOutput": true,
-              "outputKey": "process_list"
-            }
-          ]
-        }
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"system_info\" -Action \"{{ $json.info_type }}\" -Parameters @{{ $json.params | ConvertTo-Json -Compress }} -UserConfirmed $true",
+        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
       },
-      "id": "route-action",
-      "name": "Route Action",
-      "type": "n8n-nodes-base.switch",
+      "id": "safety-validation",
+      "name": "Safety Validation",
+      "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [650, 300]
     },
     {
       "parameters": {
-        "command": "Get-ComputerInfo | Select-Object CsName, OsName, OsVersion, OsArchitecture, CsProcessors, CsTotalPhysicalMemory | ConvertTo-Json",
-        "cwd": "C:/Users/adenk/Desktop/sadie"
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\n\nlet validationResult;\ntry {\n  validationResult = JSON.parse(stdout);\n} catch (e) {\n  validationResult = {\n    success: false,\n    error: 'Failed to parse safety validation output',\n    raw_output: stdout\n  };\n}\n\nif (!validationResult.success) {\n  return {\n    json: {\n      status: 'validation_failed',\n      error: validationResult.error || 'Safety validation failed',\n      validation: validationResult\n    }\n  };\n}\n\n// Continue to system info operation\nreturn {\n  json: {\n    ...$input.item.json,\n    validation: validationResult\n  }\n};"
       },
-      "id": "get-system-info",
-      "name": "Get System Info",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [850, 100]
-    },
-    {
-      "parameters": {
-        "command": "Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{Name='Used(GB)';Expression={[math]::Round($_.Used/1GB,2)}}, @{Name='Free(GB)';Expression={[math]::Round($_.Free/1GB,2)}} | ConvertTo-Json",
-        "cwd": "C:/Users/adenk/Desktop/sadie"
-      },
-      "id": "get-disk-usage",
-      "name": "Get Disk Usage",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [850, 300]
     },
     {
       "parameters": {
-        "command": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, WorkingSet | ConvertTo-Json",
-        "cwd": "C:/Users/adenk/Desktop/sadie"
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SystemInfo.ps1\" -InfoType \"{{ $json.info_type }}\"{{ $json.params.top_processes ? ` -TopProcesses ${$json.params.top_processes}` : '' }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
       },
-      "id": "get-process-list",
-      "name": "Get Process List",
+      "id": "execute-systeminfo",
+      "name": "Execute SystemInfo",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [850, 500]
+      "position": [1050, 300]
     },
     {
       "parameters": {
-        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\nconst action = $input.item.json.action;\n\nlet result;\nif (stderr) {\n  result = {\n    success: false,\n    error: stderr,\n    action: action\n  };\n} else {\n  try {\n    result = {\n      success: true,\n      action: action,\n      data: JSON.parse(stdout)\n    };\n  } catch (e) {\n    result = {\n      success: true,\n      action: action,\n      data: stdout\n    };\n  }\n}\n\nreturn { json: result };"
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\n\nlet scriptResult;\ntry {\n  scriptResult = JSON.parse(stdout);\n} catch (e) {\n  scriptResult = {\n    success: false,\n    error: 'Failed to parse SystemInfo output',\n    raw_output: stdout\n  };\n}\n\nreturn {\n  json: {\n    status: scriptResult.success ? 'success' : 'failure',\n    timestamp: scriptResult.timestamp || new Date().toISOString(),\n    operation: 'SystemInfo',\n    info_type: scriptResult.info_type || $input.item.json.info_type,\n    data: scriptResult.data || null,\n    error: scriptResult.error || null,\n    validation: $input.item.json.validation\n  }\n};"
       },
       "id": "format-result",
       "name": "Format Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1050, 300]
+      "position": [1250, 300]
     }
   ],
   "connections": {
@@ -102,22 +67,15 @@
       "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
     },
     "Parse Parameters": {
-      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Safety Validation", "type": "main", "index": 0 }]]
     },
-    "Route Action": {
-      "main": [
-        [{ "node": "Get System Info", "type": "main", "index": 0 }],
-        [{ "node": "Get Disk Usage", "type": "main", "index": 0 }],
-        [{ "node": "Get Process List", "type": "main", "index": 0 }]
-      ]
+    "Safety Validation": {
+      "main": [[{ "node": "Check Validation", "type": "main", "index": 0 }]]
     },
-    "Get System Info": {
-      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+    "Check Validation": {
+      "main": [[{ "node": "Execute SystemInfo", "type": "main", "index": 0 }]]
     },
-    "Get Disk Usage": {
-      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
-    },
-    "Get Process List": {
+    "Execute SystemInfo": {
       "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
     }
   },
@@ -128,5 +86,5 @@
   "tags": [],
   "triggerCount": 0,
   "updatedAt": "2025-11-17T00:00:00.000Z",
-  "versionId": "1"
+  "versionId": "2"
 }
