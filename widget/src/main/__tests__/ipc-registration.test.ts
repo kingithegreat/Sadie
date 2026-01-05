@@ -1,16 +1,32 @@
 import { registerIpcHandlers } from '../ipc-handlers';
 
-// Minimal mock of electron's ipcMain to capture registrations
+// Capture IPC handlers while still using the shared Electron mock (app, BrowserWindow, etc.).
 const handles: Record<string, Function> = {};
 jest.mock('electron', () => {
+  const { mockApp, mockBrowserWindow } = require('./jest-setup');
+
+  const browserWindowFactory = jest.fn(mockBrowserWindow as any);
+  (browserWindowFactory as any).getAllWindows = (mockBrowserWindow as any).getAllWindows;
+
   return {
+    app: mockApp,
     ipcMain: {
       handle: (channel: string, handler: Function) => {
         handles[channel] = handler;
       },
       on: jest.fn(),
+      removeHandler: jest.fn(),
     },
-    BrowserWindow: jest.fn(),
+    BrowserWindow: browserWindowFactory,
+    dialog: {
+      showMessageBox: jest.fn(() => Promise.resolve({ response: 0 })),
+    },
+    shell: {
+      openExternal: jest.fn(() => Promise.resolve()),
+    },
+    nativeTheme: {
+      themeSource: 'system',
+    },
   };
 });
 

@@ -58,7 +58,7 @@
 .remove-image { background: transparent; border: none; color: var(--danger-bg,#d9534f); cursor: pointer; }
 
 /* Drop zone overlay and dragging state */
-.input-box.dragging { outline: 2px dashed var(--primary, #007aff); background: rgba(0,122,255,0.02); }
+.input-box.dragging { outline: 2px dashed transparent; box-shadow: 0 0 0 2px rgba(0,122,255,0.25); background: rgba(0,122,255,0.02); }
 .input-box .drop-overlay {
   position: absolute;
   inset: 0;
@@ -77,10 +77,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,122,255,0.06);
-  border-radius: 8px;
+  background: radial-gradient(circle at 50% 40%, rgba(0, 122, 255, 0.14), rgba(0, 122, 255, 0.04));
+  border-radius: 16px;
   pointer-events: none;
   animation: dropFadeIn 160ms ease-out;
+  backdrop-filter: blur(3px);
 }
 .drop-overlay .drop-inner {
   color: var(--primary, #007aff);

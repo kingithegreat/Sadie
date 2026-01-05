@@ -83,6 +83,8 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
 
   // Initialize speech recognition (online mode - requires internet)
   const startListening = useCallback(async () => {
+    if (disabled) return;
+
     console.log('[Voice] Starting speech recognition...');
     console.log('[Voice] electron object:', (window as any).electron);
     console.log('[Voice] startSpeechRecognition:', (window as any).electron?.startSpeechRecognition);
@@ -182,7 +184,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, []);
+  }, [disabled]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
@@ -193,12 +195,19 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
   }, []);
 
   const toggleVoiceInput = useCallback(() => {
+    if (disabled) return;
     if (isListening) {
       stopListening();
     } else {
       startListening();
     }
-  }, [isListening, startListening, stopListening]);
+  }, [disabled, isListening, startListening, stopListening]);
+
+  useEffect(() => {
+    if (disabled && isListening) {
+      stopListening();
+    }
+  }, [disabled, isListening, stopListening]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -239,6 +248,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
   }, [attachedImages]);
 
   const handleSend = useCallback(() => {
+    if (disabled) return;
     const trimmed = inputValue.trim();
     if (!trimmed && attachedImages.length === 0 && attachedDocuments.length === 0) return;
 
@@ -266,9 +276,10 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     setAttachedDocuments([]);
     setInputValue('');
     setErrorMessage(null);
-  }, [inputValue, attachedImages, attachedDocuments, onSendMessage]);
+  }, [disabled, inputValue, attachedImages, attachedDocuments, onSendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (disabled) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -393,6 +404,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
   };
 
   const handleDocChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const files = e.target.files;
     if (files) {
       await processDocuments(Array.from(files));
@@ -400,15 +412,16 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     if (docInputRef.current) docInputRef.current.value = '';
   };
 
-  const handleAttachClick = () => fileInputRef.current?.click();
-  const handleDocAttachClick = () => docInputRef.current?.click();
+  const handleAttachClick = () => { if (!disabled) fileInputRef.current?.click(); };
+  const handleDocAttachClick = () => { if (!disabled) docInputRef.current?.click(); };
 
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!isDragging) setIsDragging(true); };
-  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
-  const handleDrop = async (e: React.DragEvent) => { 
-    e.preventDefault(); 
-    e.stopPropagation(); 
+  const handleDragOver = (e: React.DragEvent) => { if (disabled) return; e.preventDefault(); e.stopPropagation(); if (!isDragging) setIsDragging(true); };
+  const handleDragEnter = (e: React.DragEvent) => { if (disabled) return; e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { if (disabled) return; e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
+  const handleDrop = async (e: React.DragEvent) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false); 
     const files = Array.from(e.dataTransfer.files);
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
@@ -428,6 +441,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (disabled) return;
     const items = e.clipboardData?.items; if (!items) return; const files: File[] = [];
     for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.kind === 'file') { const file = it.getAsFile(); if (file) files.push(file); } }
     if (files.length) { 
@@ -439,71 +453,117 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     }
   };
 
+  const hasContent = inputValue.trim().length > 0 || attachedImages.length > 0 || attachedDocuments.length > 0;
+
   return (
-    <div ref={dropRef} className={`input-box ${isDragging ? 'dragging' : ''}`} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+    <div
+      ref={dropRef}
+      className={`input-box ${isDragging ? 'dragging' : ''} ${disabled ? 'is-disabled' : ''}`}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {disabled && <div className="input-disabled-overlay" aria-hidden />}
+
       {isDragging && (
         <div className="drop-overlay" role="status" aria-live="polite"><div className="drop-inner">📥 Drop files to attach</div></div>
       )}
 
-      <div className="input-top">
-        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" />
+      <div className="input-shell">
+        <div className="input-header">
+          <div className="input-label">
+            <span className="label-dot" aria-hidden />
+            <div className="label-copy">
+              <div className="label-title">Compose message</div>
+              <div className="label-subtitle">Share images, documents, or speak to SADIE</div>
+            </div>
+          </div>
+          <div className="input-meta">
+            <span className="meta-chip" aria-label={`Characters: ${inputValue.length}`}>{inputValue.length} chars</span>
+            <span className="meta-chip" aria-label={`Images attached: ${attachedImages.length}`}>{attachedImages.length} imgs</span>
+            <span className="meta-chip" aria-label={`Documents attached: ${attachedDocuments.length}`}>{attachedDocuments.length} docs</span>
+          </div>
+        </div>
 
-        <div className="input-actions">
-          <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFileChange} />
-          <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple style={{ display: 'none' }} onChange={handleDocChange} />
-          <button className="attach-button" title="Attach images" onClick={handleAttachClick}>📷</button>
-          <button className="attach-button" title="Attach documents (PDF, Word, Text)" onClick={handleDocAttachClick}>📄</button>
-          {speechSupported && (
-            <button 
-              className={`voice-button ${isListening ? 'listening' : ''}`} 
-              title={isListening ? 'Stop listening' : 'Voice input'} 
-              onClick={toggleVoiceInput}
-              style={{
-                background: isListening ? '#ff3b30' : 'transparent',
-                animation: isListening ? 'pulse 1.5s infinite' : 'none'
-              }}
-            >
-              🎤
+        <div className="input-top">
+          <textarea
+            className="input-field"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder="Message SADIE..."
+            rows={2}
+            aria-label="Message SADIE"
+            disabled={disabled}
+          />
+
+          <div className="input-actions">
+            <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFileChange} />
+            <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple style={{ display: 'none' }} onChange={handleDocChange} />
+            <button className="attach-button" title="Attach images" onClick={handleAttachClick} disabled={disabled}>📷</button>
+            <button className="attach-button" title="Attach documents (PDF, Word, Text)" onClick={handleDocAttachClick} disabled={disabled}>📄</button>
+            {speechSupported && (
+              <button
+                className={`voice-button ${isListening ? 'listening' : ''}`}
+                title={isListening ? 'Stop listening' : 'Voice input'}
+                onClick={toggleVoiceInput}
+                disabled={disabled}
+              >
+                🎤
+                <span className="voice-pulse" aria-hidden />
+              </button>
+            )}
+            <button className="send-button" onClick={handleSend} disabled={disabled || !hasContent}>
+              <span className="send-label">Send</span>
+              <span aria-hidden>➜</span>
             </button>
-          )}
-          <button className="send-button" onClick={handleSend} disabled={!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0}>Send</button>
+          </div>
+        </div>
+
+        {attachedImages.length > 0 && (
+          <div className="image-preview-gallery">
+            {attachedImages.map((img) => (
+              <div key={img.id} className="image-preview">
+                {img.url && <img src={img.url} alt={img.filename} className="image-thumb" />}
+                <div className="image-meta">
+                  <div className="image-filename">{img.filename ?? 'image'}</div>
+                  <div className="image-size">{((img.size || 0) / 1024).toFixed(0)} KB</div>
+                </div>
+                <button className="remove-image" onClick={() => removeAttachment(img.id)} title="Remove image">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {attachedDocuments.length > 0 && (
+          <div className="document-preview-gallery">
+            {attachedDocuments.map((doc) => (
+              <div key={doc.id} className="document-preview">
+                <span className="document-icon">
+                  {doc.filename.endsWith('.pdf') ? '📕' :
+                   doc.filename.endsWith('.docx') || doc.filename.endsWith('.doc') ? '📘' :
+                   '📄'}
+                </span>
+                <div className="document-meta">
+                  <div className="document-filename">{doc.filename}</div>
+                  <div className="document-size">{(doc.size / 1024).toFixed(1)} KB</div>
+                </div>
+                <button className="remove-document" onClick={() => removeDocument(doc.id)} title="Remove document">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="input-footer">
+          <div className="footer-hints">
+            <span className="hint-chip">Enter ↵ to send</span>
+            <span className="hint-chip">Shift + Enter for newline</span>
+          </div>
+          {errorMessage && <div role="alert" className="input-error">{errorMessage}</div>}
         </div>
       </div>
-
-      {attachedImages.length > 0 && (
-        <div className="image-preview-gallery">
-          {attachedImages.map((img) => (
-            <div key={img.id} className="image-preview">
-              {img.url && <img src={img.url} alt={img.filename} className="image-thumb" />}
-              <div className="image-meta">
-                <div className="image-filename">{img.filename ?? 'image'}</div>
-                <button className="remove-image" onClick={() => removeAttachment(img.id)} title="Remove image">Remove</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {attachedDocuments.length > 0 && (
-        <div className="document-preview-gallery">
-          {attachedDocuments.map((doc) => (
-            <div key={doc.id} className="document-preview">
-              <span className="document-icon">
-                {doc.filename.endsWith('.pdf') ? '📕' : 
-                 doc.filename.endsWith('.docx') || doc.filename.endsWith('.doc') ? '📘' : 
-                 '📄'}
-              </span>
-              <div className="document-meta">
-                <div className="document-filename">{doc.filename}</div>
-                <div className="document-size">{(doc.size / 1024).toFixed(1)} KB</div>
-              </div>
-              <button className="remove-document" onClick={() => removeDocument(doc.id)} title="Remove document">✕</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {errorMessage && <div role="alert" className="image-error" style={{ color: '#ff3b30', marginTop: 8 }}>{errorMessage}</div>}
     </div>
   );
 }
