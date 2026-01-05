@@ -143,6 +143,45 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Image generation: forward to n8n image webhook
+  ipcMain.handle('sadie:automation:image:generate', async (_event, { action, payload }) => {
+    try {
+      const settings = getSettings();
+      const url = `${settings.n8nUrl}/webhook/sadie/image-generate`;
+      console.log('[Main] Image generate request ->', { url, action });
+
+      const response = await axios.post(url, { action, payload }, { timeout: 600000, headers: { 'Content-Type': 'application/json' } });
+
+      return response.data;
+    } catch (err: any) {
+      console.error('[Main] Image generate failed:', err.message);
+      return {
+        status: 'failure',
+        timestamp: new Date().toISOString(),
+        operation: 'image_generate',
+        source: null,
+        image: null,
+        metadata: {},
+        validation: { validated: false },
+        error: { message: err.message, code: 'N8N_CALL_FAILED' }
+      };
+    }
+  });
+      
+      // Send error response back to renderer
+      const win = mainWindow ?? getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('sadie:reply', {
+          success: false,
+          error: true,
+          message: 'Sadie could not reach the orchestrator.',
+          details: err.message,
+          response: 'I\'m having trouble connecting to my backend. Please make sure n8n is running.'
+        });
+      }
+    }
+  });
+
   /**
    * Get user settings from file
    */

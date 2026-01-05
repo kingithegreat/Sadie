@@ -1,0 +1,165 @@
+{
+  "name": "SADIE Image Generate (Hybrid)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "image-generate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sadie-image-generate"
+    },
+    {
+      "parameters": {
+        "jsCode": "const axios = require('axios');\nconst payload = $input.item.json || {};\nconst action = payload.action || 'generate';\nconst params = payload.payload || {};\nconst prompt = params.prompt || '';\nconst resolution = params.resolution || (params.width && params.height ? `${params.width}x${params.height}` : '512x512');\nconst [w,h] = resolution.split('x').map(n => Number(n));\nconst width = Number(w) || 512;\nconst height = Number(h) || 512;\nconst steps = params.steps || 20;\nconst backendPref = params.backend || 'hybrid';\n\n// Safety checks (quick on-chain checks; more thorough validation should run through safety-validator workflow)
+const bannedTerms = ['porn','sex','pedo','child','rape','kill','bomb','terror'];
+if (bannedTerms.some(t => prompt.toLowerCase().includes(t))) {
+  return { json: { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt }, validation: { validated: false, policy: 'Phase 8 image rules' }, error: { message: 'Prompt rejected by safety filter', code: 'SAFETY_POLICY_REJECTED' } } };
+}
+if (width > 1536 || height > 1536) {
+  return { json: { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt, width, height }, validation: { validated: false, policy: 'Phase 8 image rules' }, error: { message: 'Resolution exceeds hard limit', code: 'SAFETY_POLICY_REJECTED' } } };
+}
+
+// Providers and env
+const LOCAL_SD = process.env.LOCAL_SD_ENDPOINT || 'http://127.0.0.1:7860';
+const COMFY = process.env.COMFY_ENDPOINT || 'http://127.0.0.1:8188';
+const STABILITY_KEY = process.env.STABILITY_API_KEY || '';
+const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
+
+// Helper: attempt AUTOMATIC1111
+async function tryAutomatic1111() {
+  try {
+    const url = `${LOCAL_SD.replace(/\/$/,'')}/sdapi/v1/txt2img`;
+    const body = { prompt, steps, width, height, cfg_scale: params.cfg_scale || 7, sampler_name: params.sampler || 'Euler a' };
+    const r = await axios.post(url, body, { timeout: 120000 });
+    if (r && r.data && r.data.images && r.data.images.length > 0) {
+      const b64 = r.data.images[0];
+      // Optional seed info parsing
+      let seed = null;
+      try { const info = JSON.parse(r.data.info || '{}'); seed = info.seed; } catch(e){}
+      return { ok: true, base64: b64, seed, model: r.data.model || 'automatic1111' };
+    }
+  } catch (e) {
+    // ignore, return null
+  }
+  return null;
+}
+
+// Helper: attempt ComfyUI (best-effort)
+async function tryComfy() {
+  try {
+    const url = `${COMFY.replace(/\/$/,'')}/api/generate`;
+    const body = { prompt, steps, width, height };
+    const r = await axios.post(url, body, { timeout: 120000 });
+    if (r && r.data && (r.data.image || (r.data.artifacts && r.data.artifacts.length))) {
+      const b64 = r.data.image || (r.data.artifacts && r.data.artifacts[0].base64);
+      return { ok: true, base64: b64, seed: (r.data.seed || null), model: r.data.model || 'comfyui' };
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Helper: Stability AI
+async function tryStability() {
+  if (!STABILITY_KEY) return null;
+  try {
+    const url = 'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image';
+    const r = await axios.post(url, { text_prompts: [{ text: prompt, weight: 1 }], cfg_scale: params.cfg_scale || 7, height, width, samples: 1, steps }, { headers: { Authorization: `Bearer ${STABILITY_KEY}`, 'Content-Type':'application/json' }, timeout: 120000 });
+    if (r && r.data && r.data.artifacts && r.data.artifacts.length > 0) {
+      return { ok: true, base64: r.data.artifacts[0].base64, seed: r.data.artifacts[0].seed, model: 'stability' };
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Helper: OpenAI DALL·E
+async function tryOpenAI() {
+  if (!OPENAI_KEY) return null;
+  try {
+    const url = 'https://api.openai.com/v1/images/generations';
+    const r = await axios.post(url, { prompt, n:1, size: `${width}x${height}` }, { headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' }, timeout: 120000 });
+    if (r && r.data && r.data.data && r.data.data.length > 0) {
+      // OpenAI returns data[0].b64_json
+      const b64 = r.data.data[0].b64_json;
+      return { ok: true, base64: b64, seed: null, model: 'openai' };
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Routing logic
+let result = null;
+let source = null;
+if (backendPref === 'local') {
+  result = await tryAutomatic1111() || await tryComfy();
+  source = result ? (result.model === 'comfyui' ? 'comfyui' : 'local_sd') : null;
+} else if (backendPref === 'cloud') {
+  result = await tryStability() || await tryOpenAI();
+  source = result ? (result.model === 'openai' ? 'openai' : 'stability') : null;
+} else {
+  // hybrid: local first
+  result = await tryAutomatic1111();
+  if (result) source = 'local_sd';
+  if (!result) { result = await tryComfy(); if (result) source = 'comfyui'; }
+  if (!result) { result = await tryStability(); if (result) source = 'stability'; }
+  if (!result) { result = await tryOpenAI(); if (result) source = 'openai'; }
+}
+
+if (!result) {
+  return { json: { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt, width, height, steps }, validation: { validated: false, policy: 'Phase 8 image rules' }, error: { message: 'No available providers or generation failed', code: 'NO_PROVIDER_AVAILABLE' } } };
+}
+
+// Return unified JSON
+return { json: { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source, image: result.base64, metadata: { prompt, width, height, steps, seed: result.seed || '', model: result.model || '' }, validation: { validated: true, policy: 'Phase 8 image rules' }, error: { message: '', code: '' } } };"
+      },
+      "id": "router-and-generate",
+      "name": "Router & Generate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "router-and-generate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "router-and-generate": {
+      "main": [
+        [
+          {
+            "node": "respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null
+}

@@ -9,14 +9,20 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
-}
+  mode?: 'chat' | 'automation' | 'image';
+  onModeChange?: (mode: 'chat' | 'automation' | 'image') => void;
+} 
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   connectionStatus,
   onRefresh,
   onSettingsClick,
-  onMenuClick
-  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic
+  onMenuClick,
+  backendDiagnostic,
+  onCopyDiagnostic,
+  onDismissDiagnostic,
+  mode = 'chat',
+  onModeChange
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -152,42 +158,32 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         >
           ⚙️
         </button>
-      </div>
 
-      <style>{`
-        .app-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 8px 16px;
-          background: #1A1A1A;
-          border-bottom: 1px solid #333333;
-          -webkit-app-region: drag;
-          min-height: 48px;
-        }
-
-        .app-header h1 {
-          font-size: 16px;
-          font-weight: 600;
-          color: #ECECEC;
-          letter-spacing: -0.3px;
-          margin: 0;
-        }
-
-        .status-bar-inline {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .status-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          color: #B4B4B4;
-        }
-
+        {onModeChange && (
+          <div className="mode-switcher">
+            <button
+              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
+              onClick={() => onModeChange('chat')}
+              title="Chat Mode"
+            >
+              💬 Chat
+            </button>
+            <button
+              className={`mode-btn ${mode === 'automation' ? 'active' : ''}`}
+              onClick={() => onModeChange('automation')}
+              title="Automation Control Center"
+            >
+              ⚙️ Automation
+            </button>
+            <button
+              className={`mode-btn ${mode === 'image' ? 'active' : ''}`}
+              onClick={() => onModeChange('image')}
+              title="Image Mode"
+            >
+              🎨 Image
+            </button>
+          </div>
+        )}
         .backend-badge {
           background: rgba(255,213,85,0.18);
           color: #ffd555;

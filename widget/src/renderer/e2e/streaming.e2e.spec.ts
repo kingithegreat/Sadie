@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 process.env.SADIE_E2E = 'true';
 import { startMockUpstream } from './mockUpstream';
 import { launchElectronApp } from './launchElectron';
+import { waitForAppReady } from './helpers/appReady';
 
 test('streams chunks to UI', async () => {
   // Use a larger per-chunk delay so cancellation has time to reach main before
@@ -20,6 +21,7 @@ test('streams chunks to UI', async () => {
     SADIE_E2E: '1',
     NODE_ENV: 'test',
   });
+  await waitForAppReady(page);
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
   await page.getByLabel('Message SADIE').fill('hello');
@@ -65,6 +67,7 @@ test('cancel stops stream', async () => {
     SADIE_E2E: '1',
     NODE_ENV: 'test',
   });
+  await waitForAppReady(page);
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
   await page.getByLabel('Message SADIE').fill('hello');
@@ -131,6 +134,7 @@ test('handles upstream error', async () => {
     SADIE_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
   });
+  await waitForAppReady(page);
 
   // Quick pre-flight check to ensure the mock upstream returns 500 at the streaming endpoint
   const mockStatus = await page.evaluate(async (u) => {
@@ -244,6 +248,7 @@ test('falls back to non-stream final text on stream init error', async () => {
     SADIE_DIRECT_OLLAMA: '1',
     NODE_ENV: 'test',
   });
+  await waitForAppReady(page);
 
   // If the first-run modal is visible (fresh profile), finish setup so the test can interact with the main UI
   try {

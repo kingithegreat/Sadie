@@ -39,6 +39,7 @@ const ALLOWED_CHANNELS = {
   SHOW_WINDOW: 'sadie:show-window',
   HIDE_WINDOW: 'sadie:hide-window',
   STREAM_SEND: 'sadie:stream-message',
+  AUTOMATION_IMAGE_GENERATE: 'sadie:automation:image:generate',
   STREAM_CHUNK: 'sadie:stream-chunk',
   STREAM_END: 'sadie:stream-end',
   STREAM_ERROR: 'sadie:stream-error',
@@ -235,6 +236,12 @@ const electronAPI: ElectronAPI = {
 
   getMode: async (): Promise<{ demo: boolean }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_MODE);
+  },
+
+  executeImageGenerate: async ({ action, payload }: { action: string; payload?: any }) => {
+    logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE);
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE}`); } catch (e) {}
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE, { action, payload });
   },
 
   getEnv: async (): Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }> => {

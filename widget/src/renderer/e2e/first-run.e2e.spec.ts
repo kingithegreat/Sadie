@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { launchElectronApp } from './launchElectron';
+import { waitForAppReady } from './helpers/appReady';
 
 function makeTempProfile() {
   const base = path.join(os.tmpdir(), `sadie-e2e-${Date.now()}`);
@@ -16,6 +17,7 @@ test.describe('First-run onboarding and config persistence', () => {
     const tmp = makeTempProfile();
     // Launch electron with a clean profile
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
 
     // FirstRun modal should be visible - telemetry is required and shown checked+disabled
     await expect(page.getByText('Welcome to SADIE')).toBeVisible();
@@ -77,6 +79,7 @@ test.describe('First-run onboarding and config persistence', () => {
     fs.writeFileSync(confPath, JSON.stringify(initial, null, 2), 'utf-8');
 
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
     // FirstRun modal should not be visible
     await expect(page.getByText('Welcome to SADIE')).toHaveCount(0);
 
@@ -94,6 +97,7 @@ test.describe('First-run onboarding and config persistence', () => {
   test('telemetry is required and consent is recorded on finish', async () => {
     const tmp = makeTempProfile();
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
 
     // Finish onboarding
     await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
