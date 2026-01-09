@@ -51,6 +51,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const DANGEROUS_PERMISSIONS = new Set(['delete_file', 'move_file', 'launch_app', 'screenshot']);
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
+  // Local model selection and api keys
+  const [model, setModel] = useState<string>((settings as any).model || 'ollama');
+  const [selectedModel, setSelectedModel] = useState<string>((settings as any).selectedModel || '');
+  const [apiKeysLocal, setApiKeysLocal] = useState<Record<string, string>>(((settings as any).apiKeys) || {});
+
+  // Available models per provider
+  const AVAILABLE_MODELS: Record<string, string[]> = {
+    ollama: ['llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'codellama:7b', 'dolphin-llama3:8b', 'llava', 'qwen2.5:7b'],
+    openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1-mini', 'o1-preview'],
+    anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-opus-20240229'],
+    google: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash-exp', 'gemini-1.0-pro']
+  };
+
+  const DEFAULT_MODELS: Record<string, string> = {
+    ollama: 'llama3.2:3b',
+    openai: 'gpt-4o-mini',
+    anthropic: 'claude-3-haiku-20240307',
+    google: 'gemini-1.5-flash'
+  };
 
   const refreshTelemetryLog = async () => {
     try {
@@ -83,6 +102,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setLocalSettings(settings);
     setTelemetryEnabled(!!(settings as any).telemetryEnabled);
     setPermissions((settings as any).permissions || {});
+    setModel((settings as any).model || 'ollama');
+    setSelectedModel((settings as any).selectedModel || DEFAULT_MODELS[(settings as any).model || 'ollama']);
+    setApiKeysLocal((settings as any).apiKeys || {});
   }, [settings]);
 
   // Load uncensored mode state on mount
@@ -104,7 +126,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, [settings]);
 
   const handleSave = () => {
-    onSave(localSettings);
+    const merged = { ...localSettings, model, selectedModel, apiKeys: apiKeysLocal } as any;
+    onSave(merged);
     onClose();
   };
 
@@ -154,6 +177,99 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }
             placeholder="http://localhost:5678"
           />
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">AI Provider</label>
+          <select aria-label="Model" className="setting-input" value={model} onChange={(e) => {
+            setModel(e.target.value);
+            setSelectedModel(DEFAULT_MODELS[e.target.value] || '');
+          }}>
+            <option value="ollama">Ollama (Local - Free)</option>
+            <option value="openai">OpenAI (GPT-4o)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="google">Google (Gemini)</option>
+          </select>
+          <small className="setting-hint">
+            {model === 'ollama' && '🟢 Local processing - no API key needed. Requires Ollama running.'}
+            {model === 'openai' && '☁️ Cloud API - requires OpenAI API key. Fast and capable.'}
+            {model === 'anthropic' && '☁️ Cloud API - requires Anthropic API key. Excellent reasoning.'}
+            {model === 'google' && '☁️ Cloud API - requires Google API key. Good for general tasks.'}
+          </small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Model</label>
+          <select aria-label="Specific Model" className="setting-input" value={selectedModel || DEFAULT_MODELS[model]} onChange={(e) => setSelectedModel(e.target.value)}>
+            {(AVAILABLE_MODELS[model] || []).map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <small className="setting-hint">
+            {model === 'ollama' && 'Make sure this model is installed: ollama pull ' + (selectedModel || DEFAULT_MODELS.ollama)}
+            {model === 'openai' && 'GPT-4o is most capable, GPT-4o-mini is faster & cheaper'}
+            {model === 'anthropic' && 'Claude Sonnet is most capable, Haiku is faster & cheaper'}
+            {model === 'google' && 'Gemini 1.5 Pro is most capable, Flash is faster'}
+          </small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">API Keys</label>
+          <small className="setting-hint">Enter provider API keys. Values are stored locally and never sent anywhere except the provider.</small>
+          <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
+            {model === 'openai' && (
+              <div>
+                <label className="setting-label">OpenAI API Key</label>
+                <input
+                  type="password"
+                  className="setting-input"
+                  value={apiKeysLocal.openai || ''}
+                  onChange={(e) => setApiKeysLocal({ ...apiKeysLocal, openai: e.target.value })}
+                  placeholder="sk-..."
+                />
+                <small className="setting-hint">Get from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style={{color: '#60a5fa'}}>platform.openai.com/api-keys</a></small>
+              </div>
+            )}
+            {model === 'anthropic' && (
+              <div>
+                <label className="setting-label">Anthropic API Key</label>
+                <input
+                  type="password"
+                  className="setting-input"
+                  value={apiKeysLocal.anthropic || ''}
+                  onChange={(e) => setApiKeysLocal({ ...apiKeysLocal, anthropic: e.target.value })}
+                  placeholder="sk-ant-..."
+                />
+                <small className="setting-hint">Get from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" style={{color: '#60a5fa'}}>console.anthropic.com/settings/keys</a></small>
+              </div>
+            )}
+            {model === 'google' && (
+              <div>
+                <label className="setting-label">Google AI API Key</label>
+                <input
+                  type="password"
+                  className="setting-input"
+                  value={apiKeysLocal.google || ''}
+                  onChange={(e) => setApiKeysLocal({ ...apiKeysLocal, google: e.target.value })}
+                  placeholder="AIza..."
+                />
+                <small className="setting-hint">Get from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener" style={{color: '#60a5fa'}}>makersuite.google.com/app/apikey</a></small>
+              </div>
+            )}
+            {model === 'ollama' && (
+              <div>
+                <label className="setting-label">Ollama URL (optional)</label>
+                <input
+                  type="text"
+                  className="setting-input"
+                  value={apiKeysLocal.ollamaUrl || ''}
+                  onChange={(e) => setApiKeysLocal({ ...apiKeysLocal, ollamaUrl: e.target.value })}
+                  placeholder="http://localhost:11434 (default)"
+                />
+                <small className="setting-hint">Only change if Ollama is on a different machine</small>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="setting-group">

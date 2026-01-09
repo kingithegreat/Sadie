@@ -152,6 +152,9 @@ export const rememberHandler: ToolHandler = async (args): Promise<ToolResult> =>
     // Generate unique ID
     const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     
+    // Accept optional reflection meta
+    const reflection = args.reflection && typeof args.reflection === 'object' ? args.reflection : undefined;
+
     // Store in Qdrant
     await axios.put(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points`, {
       points: [{
@@ -160,7 +163,8 @@ export const rememberHandler: ToolHandler = async (args): Promise<ToolResult> =>
         payload: {
           content: content,
           category: category,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          ...(reflection ? { reflection } : {})
         }
       }]
     });
@@ -170,7 +174,8 @@ export const rememberHandler: ToolHandler = async (args): Promise<ToolResult> =>
       result: {
         message: `Remembered: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`,
         memoryId: id,
-        category: category
+        category: category,
+        ...(reflection ? { reflection } : {})
       }
     };
   } catch (err: any) {

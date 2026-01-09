@@ -3,6 +3,13 @@ import { spawn } from 'child_process';
 import { mkdirSync, existsSync, appendFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+// ======= DEBUG: Log process.env right at startup, before any imports =======
+console.log('[SADIE-MAIN-STARTUP] process.env.NODE_ENV:', process.env.NODE_ENV);
+console.log('[SADIE-MAIN-STARTUP] process.env.SADIE_E2E:', process.env.SADIE_E2E);
+console.log('[SADIE-MAIN-STARTUP] process.env.SADIE_E2E_BYPASS_MOCK:', process.env.SADIE_E2E_BYPASS_MOCK);
+// ============================================================================
+
 (global as any).__SADIE_DIAG_DIR = path.join(os.homedir(), 'SADIE_DIAG');
 if (!existsSync((global as any).__SADIE_DIAG_DIR)) mkdirSync((global as any).__SADIE_DIAG_DIR, { recursive: true });
 (global as any).__SADIE_DIAG_FILE = path.join((global as any).__SADIE_DIAG_DIR, 'sadie-runtime.log');
@@ -61,6 +68,7 @@ if (isDevelopment) {
 
 // Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null;
+let handlersRegistered = false;
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
@@ -79,9 +87,12 @@ app.whenReady().then(() => {
   }
   if (process.env.NODE_ENV !== 'production') console.log('[DIAG] userData Path =', app.getPath('userData'));
   // Register IPC handlers BEFORE window creation to satisfy early renderer invokes
-  registerIpcHandlers();
-  pushMainLog('Registered IPC handlers.');
-  logStartup('Registered IPC handlers.');
+  if (!handlersRegistered) {
+    registerIpcHandlers();
+    handlersRegistered = true;
+    pushMainLog('Registered IPC handlers.');
+    logStartup('Registered IPC handlers.');
+  }
 
   // Auto-start n8n on Windows using the shipped helper script. This ensures the
   // local orchestrator is running before the renderer attempts to reach it.
@@ -102,6 +113,7 @@ app.whenReady().then(() => {
   // Register message router for SADIE backend communication
   const { registerMessageRouter, setUncensoredMode, getUncensoredMode } = require('./message-router');
   const n8nUrl = process.env.N8N_URL || require('../shared/constants').DEFAULT_N8N_URL;
+  console.log('[MAIN-INIT] n8nUrl resolved to:', n8nUrl, '(from env:', process.env.N8N_URL, ')');
   if (mainWindow) registerMessageRouter(mainWindow, n8nUrl);
   
   // IPC handler for uncensored mode toggle

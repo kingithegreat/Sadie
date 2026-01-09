@@ -8,6 +8,25 @@ function pushRendererLog(line: string) {
   try { ipcRenderer.send('sadie:append-renderer-log', String(line)); } catch (e) {}
 }
 
+// DEBUG: Global listener for all stream events (always active, before any filtering)
+const preloadAllEvents: any[] = [];
+const preloadDebugEvents: any[] = [];
+
+(function initDebugListeners() {
+  ipcRenderer.on('sadie:stream-error', (_ev, data) => {
+    preloadAllEvents.push({ channel: 'sadie:stream-error', data, time: Date.now() });
+    console.log('[PRELOAD-GLOBAL] sadie:stream-error received:', data);
+  });
+  ipcRenderer.on('sadie:stream-end', (_ev, data) => {
+    preloadAllEvents.push({ channel: 'sadie:stream-end', data, time: Date.now() });
+    console.log('[PRELOAD-GLOBAL] sadie:stream-end received:', data);
+  });
+  ipcRenderer.on('sadie:stream-chunk', (_ev, data) => {
+    preloadAllEvents.push({ channel: 'sadie:stream-chunk', data, time: Date.now() });
+    console.log('[PRELOAD-GLOBAL] sadie:stream-chunk received:', data);
+  });
+})();
+
 // Use canonical shared types for the preload API
 import {
   SadieRequest,
@@ -64,7 +83,10 @@ const electronAPI: ElectronAPI = {
   // Start a streaming request. Non-blocking; return a Promise<void> to match shared types
   sendStreamMessage: async (request: SadieRequestWithImages): Promise<void> => {
     logDebug('[Preload] IPC send', ALLOWED_CHANNELS.STREAM_SEND, { streamId: (request as any)?.streamId, messagePreview: String(request?.message).substring(0,120) });
-    try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId}`); } catch (e) {}
+    // Log document info
+    const docs = (request as any)?.documents;
+    console.log('[Preload] sendStreamMessage documents:', docs?.length || 0, docs?.map((d: any) => d?.filename));
+    try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId} docs=${docs?.length || 0}`); } catch (e) {}
     ipcRenderer.send(ALLOWED_CHANNELS.STREAM_SEND, request);
     // Fire-and-forget; return a resolved promise so callers can await
     return Promise.resolve();
@@ -106,17 +128,24 @@ const electronAPI: ElectronAPI = {
     const { onStreamChunk, onStreamEnd, onStreamError } = handlers || {};
 
     const chunkListener = (_ev: IpcRendererEvent, data: any) => {
+      preloadDebugEvents.push({ event: 'chunk', data, expectedStreamId: streamId });
       if (!data || data.streamId !== streamId) return;
       if (typeof onStreamChunk === 'function') onStreamChunk(data as { streamId?: string; chunk: string });
     };
 
     const endListener = (_ev: IpcRendererEvent, data: any) => {
+      preloadDebugEvents.push({ event: 'end', data, expectedStreamId: streamId, match: data?.streamId === streamId });
+      console.log('[PRELOAD-DEBUG] endListener received', { data, expectedStreamId: streamId, match: data?.streamId === streamId });
       if (!data || data.streamId !== streamId) return;
+      console.log('[PRELOAD-DEBUG] endListener MATCHED, calling onStreamEnd');
       if (typeof onStreamEnd === 'function') onStreamEnd(data as { streamId?: string; cancelled?: boolean });
     };
 
     const errorListener = (_ev: IpcRendererEvent, data: any) => {
+      preloadDebugEvents.push({ event: 'error', data, expectedStreamId: streamId, match: data?.streamId === streamId });
+      console.log('[PRELOAD-DEBUG] errorListener received', { data, expectedStreamId: streamId, match: data?.streamId === streamId });
       if (!data || data.streamId !== streamId) return;
+      console.log('[PRELOAD-DEBUG] errorListener MATCHED, calling onStreamError');
       if (typeof onStreamError === 'function') onStreamError(data as { streamId?: string; error?: string });
     };
 
@@ -336,6 +365,10 @@ contextBridge.exposeInMainWorld('electron', electronAPI as unknown as ElectronAP
 contextBridge.exposeInMainWorld('sadieCapture', {
   log: (msg: string) => { try { pushRendererLog(msg); } catch (e) {} }
 });
+
+// DEBUG: Expose debug arrays for E2E testing
+contextBridge.exposeInMainWorld('__preloadAllEvents', () => preloadAllEvents);
+contextBridge.exposeInMainWorld('__preloadDebug', () => preloadDebugEvents);
 
 // Export types for TypeScript consumers
 // Re-export the type (forwarded from shared/types)

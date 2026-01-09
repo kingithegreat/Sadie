@@ -28,12 +28,14 @@
     "axios": "^1.6.2",
     "dotenv": "^16.3.1",
     "electron-reload": "^2.0.0-alpha.1",
+    "lucide-react": "^0.562.0",
     "mammoth": "^1.11.0",
     "node-record-lpcm16": "^1.0.1",
     "pdf-parse": "^2.4.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "whisper-node": "^1.1.1"
+    "whisper-node": "^1.1.1",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
@@ -52,7 +54,7 @@
     "file-loader": "^6.2.0",
     "html-webpack-plugin": "^5.6.0",
     "jest": "^29.7.0",
-    "jest-environment-jsdom": "^28.1.1",
+    "jest-environment-jsdom": "^29.7.0",
     "playwright": "^1.49.0",
     "style-loader": "^3.3.3",
     "ts-jest": "^29.1.0",
@@ -82,8 +84,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico"
-      ,
+      "icon": "build/icon.ico",
       "sign": false
     },
     "nsis": {

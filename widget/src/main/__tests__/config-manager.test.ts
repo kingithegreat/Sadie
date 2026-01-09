@@ -38,6 +38,9 @@ describe('config-manager integration tests', () => {
   test('permission gating default and changes via saveSettings', () => {
     const settings = getSettings();
     expect(assertPermission('delete_file')).toBe(false); // default disabled
+    // Document parsing tools should be enabled by default
+    expect(assertPermission('parse_document')).toBe(true);
+    expect(assertPermission('get_document_content')).toBe(true);
 
     // Enable delete and assert
     settings.permissions = { ...settings.permissions, delete_file: true };

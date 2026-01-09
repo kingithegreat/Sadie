@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
-  testDir: 'src/renderer/e2e',
+  testDir: './e2e',
   timeout: 30_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
@@ -16,9 +16,21 @@ export default defineConfig({
   ],
   use: {
     env: { SADIE_E2E: 'true' },
-    trace: 'on-first-retry',
-    video: 'on-first-retry',
-    screenshot: 'only-on-failure'
-  }
+    // Retain traces/videos/screenshots only on failure to save CI storage
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+  projects: [
+    {
+      name: 'electron',
+      use: {
+        // Electron tests will launch the app from the repo root
+        launchOptions: {
+          args: ['.'],
+        },
+      },
+    }
+  ]
 });
 

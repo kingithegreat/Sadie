@@ -9,6 +9,7 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
+  modeSwitcher?: React.ReactNode;
 }
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
@@ -16,7 +17,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onRefresh,
   onSettingsClick,
   onMenuClick
-  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic
+  , backendDiagnostic, onCopyDiagnostic, onDismissDiagnostic, modeSwitcher
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -70,7 +71,10 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           ☰
         </button>
       )}
-      <h1>✨ SADIE</h1>
+      <div className="app-title">
+        <img src={require('../assets/SadieLogo.png')} alt="SADIE" className="app-logo" />
+        <h1>SADIE</h1>
+      </div>
       
       <div className="status-bar-inline">
         <div className="status-item">
@@ -115,6 +119,9 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           <span className="toggle-label">{uncensoredMode ? 'Uncensored' : 'Safe'}</span>
         </div>
       </div>
+
+      {/* Mode Switcher */}
+      {modeSwitcher}
 
       <div className="header-actions">
         <button
@@ -164,6 +171,18 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           border-bottom: 1px solid #333333;
           -webkit-app-region: drag;
           min-height: 48px;
+        }
+
+        .app-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .app-logo {
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
         }
 
         .app-header h1 {

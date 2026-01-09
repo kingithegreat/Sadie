@@ -1,0 +1,28 @@
+{
+  "priority_rules": [
+    {
+      "name": "Document Summary Hard Route",
+      "condition": {
+        "any_message_contains": [
+          "report",
+          "summary",
+          "read this",
+          "analyse",
+          "analyze",
+          "this doc",
+          "document",
+          "file"
+        ],
+        "file_attached": true
+      },
+      "action": {
+        "force_tool": "document_reader",
+        "block_tools": ["news_search", "web_search", "sports_query", "nba_query"]
+      }
+    }
+  ],
+  "fallback": {
+    "confidence_threshold": 0.55,
+    "on_low_confidence": "ask_clarification"
+  }
+}

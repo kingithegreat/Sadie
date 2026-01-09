@@ -11,7 +11,10 @@ export const isDevelopment = !isPackagedBuild && process.env.NODE_ENV === 'devel
 
 // E2E detection: enable when running under test or when SADIE_E2E is explicitly set.
 // Do NOT gate this by packaging here so Playwright-packaged runs can enable E2E.
-export const isE2E = (process.env.NODE_ENV === 'test') || (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true');
+// Include SADIE_E2E='0' (means E2E but bypass mock) and SADIE_E2E_BYPASS_MOCK='1' as E2E indicators.
+export const isE2E = (process.env.NODE_ENV === 'test') || 
+  (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true' || process.env.SADIE_E2E === '0') ||
+  (process.env.SADIE_E2E_BYPASS_MOCK === '1');
 
 export const isDemoMode = process.argv?.includes('--demo') || process.env.SADIE_DEMO_MODE === '1' || process.env.SADIE_DEMO_MODE === 'true';
 
@@ -36,6 +39,13 @@ export const isReleaseBuild = (((typeof IS_RELEASE_BUILD !== 'undefined' && IS_R
 export function sanitizeEnvForPackaged() {
   // Only aggressively sanitize environment for true release builds.
   if (!isReleaseBuild) return;
+
+  // Don't sanitize if SADIE_E2E_BYPASS_MOCK is set - this indicates E2E testing
+  // (BYPASS_MOCK gets through even when isE2E was evaluated before env vars were set)
+  if (process.env.SADIE_E2E_BYPASS_MOCK === '1') {
+    console.log('[SADIE] Skipping env sanitization - E2E bypass mock detected');
+    return;
+  }
 
   if (process.env.SADIE_E2E) {
     console.warn('[SADIE] Removing SADIE_E2E in release build');

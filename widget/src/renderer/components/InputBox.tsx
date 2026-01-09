@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ImageAttachment, DocumentAttachment } from '../../shared/types';
 import { IMAGE_LIMITS } from '../../shared/constants';
 import { resizeImageFile } from '../utils/imageUtils';
+import { ToolPicker } from './ToolPicker';
 
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
@@ -73,6 +74,8 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
+  const [toolPickerOpen, setToolPickerOpen] = useState(false);
+  const [selectedTool, setSelectedTool] = useState<{ id: string; name: string } | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Check for speech recognition support
@@ -254,8 +257,22 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
       return;
     }
 
+    // If a tool is selected, prefix the message with a tool instruction
+    let finalMessage = trimmed;
+    if (selectedTool) {
+      finalMessage = `[USE TOOL: ${selectedTool.id}] ${trimmed}`;
+    }
+
+    // Debug: log what we're sending
+    console.log('[InputBox] Sending message with:', JSON.stringify({
+      message: finalMessage.substring(0, 50),
+      imageCount: attachedImages.length,
+      documentCount: attachedDocuments.length,
+      documents: attachedDocuments.map(d => ({ filename: d.filename, size: d.size, hasData: !!d.data }))
+    }));
+
     onSendMessage(
-      trimmed, 
+      finalMessage, 
       attachedImages.length ? attachedImages : undefined,
       attachedDocuments.length ? attachedDocuments : undefined
     );
@@ -266,7 +283,8 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     setAttachedDocuments([]);
     setInputValue('');
     setErrorMessage(null);
-  }, [inputValue, attachedImages, attachedDocuments, onSendMessage]);
+    setSelectedTool(null);
+  }, [inputValue, attachedImages, attachedDocuments, onSendMessage, selectedTool]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -439,18 +457,46 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     }
   };
 
+  // Handler for tool selection
+  const handleToolSelect = useCallback((toolId: string, toolName: string) => {
+    setSelectedTool({ id: toolId, name: toolName });
+    setToolPickerOpen(false);
+  }, []);
+
   return (
     <div ref={dropRef} className={`input-box ${isDragging ? 'dragging' : ''}`} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
       {isDragging && (
         <div className="drop-overlay" role="status" aria-live="polite"><div className="drop-inner">📥 Drop files to attach</div></div>
       )}
 
+      {/* Tool Picker Component */}
+      <ToolPicker 
+        isOpen={toolPickerOpen} 
+        onClose={() => setToolPickerOpen(false)} 
+        onSelectTool={handleToolSelect} 
+      />
+
+      {/* Selected Tool Indicator */}
+      {selectedTool && (
+        <div className="selected-tool-indicator">
+          <span>🛠️ Using: <strong>{selectedTool.name}</strong></span>
+          <button className="clear-tool" onClick={() => setSelectedTool(null)} title="Clear tool selection">✕</button>
+        </div>
+      )}
+
       <div className="input-top">
-        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" />
+        <textarea className="input-field" data-testid="chat-input" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" />
 
         <div className="input-actions">
           <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFileChange} />
           <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple style={{ display: 'none' }} onChange={handleDocChange} />
+          <button 
+            className={`tool-trigger-btn ${toolPickerOpen ? 'active' : ''}`} 
+            title="Select a tool" 
+            onClick={() => setToolPickerOpen(!toolPickerOpen)}
+          >
+            🛠️
+          </button>
           <button className="attach-button" title="Attach images" onClick={handleAttachClick}>📷</button>
           <button className="attach-button" title="Attach documents (PDF, Word, Text)" onClick={handleDocAttachClick}>📄</button>
           {speechSupported && (

@@ -16,23 +16,23 @@ import { isE2E } from '../env';
 
 export const webSearchDef: ToolDefinition = {
   name: 'web_search',
-  description: 'Search the web and get results. By default, automatically fetches content from the top result to provide actual information. Use this when the user asks about current events, sports, news, facts you\'re unsure about, or anything that requires up-to-date information.',
+  description: 'Search the web for current information. ALWAYS use this for: news, current events, facts you\'re uncertain about, product info, how-to guides, reviews, or anything requiring up-to-date data. Automatically fetches content from top results.',
   category: 'web',
   parameters: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'The search query - be specific and include dates/years when relevant'
+        description: 'Search query - be specific! Include relevant context like dates, locations, or specific terms. E.g., "NBA playoffs 2026 schedule" not just "NBA schedule"'
       },
       maxResults: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 5, max: 10)',
+        description: 'Number of results (default: 5)',
         default: 5
       },
       fetchTopResult: {
         type: 'boolean',
-        description: 'Automatically fetch and include content from the top result (default: true)',
+        description: 'Fetch full content from top result (default: true)',
         default: true
       }
     },
@@ -63,14 +63,14 @@ export const fetchUrlDef: ToolDefinition = {
 
 export const getWeatherDef: ToolDefinition = {
   name: 'get_weather',
-  description: 'Get current weather information for a location using wttr.in (no API key needed).',
+  description: 'Get current weather and 3-day forecast for any location. Returns temperature, conditions, humidity, wind, UV index, and daily forecasts with high/low temps and rain chance.',
   category: 'web',
   parameters: {
     type: 'object',
     properties: {
       location: {
         type: 'string',
-        description: 'City name or location (e.g., "London", "New York", "Tokyo")'
+        description: 'City name (e.g., "London", "New York", "Tokyo", "Tauranga")'
       }
     },
     required: ['location']
@@ -627,9 +627,11 @@ export const getWeatherHandler: ToolHandler = async (args): Promise<ToolResult> 
     
     const current = data.current_condition[0];
     const area = data.nearest_area?.[0];
+    const locationName = area ? `${area.areaName?.[0]?.value || location}, ${area.country?.[0]?.value || ''}`.trim() : location;
     
-    const weather = {
-      location: area ? `${area.areaName?.[0]?.value || location}, ${area.country?.[0]?.value || ''}`.trim() : location,
+    // Build current weather
+    const weather: any = {
+      location: locationName,
       temperature: {
         celsius: `${current.temp_C}°C`,
         fahrenheit: `${current.temp_F}°F`,
@@ -645,6 +647,30 @@ export const getWeatherHandler: ToolHandler = async (args): Promise<ToolResult> 
       uvIndex: current.uvIndex,
       precipitation: `${current.precipMM} mm`
     };
+    
+    // Include 3-day forecast from wttr.in
+    if (data.weather && Array.isArray(data.weather)) {
+      weather.forecast = data.weather.map((day: any) => {
+        const date = day.date;
+        const maxTemp = day.maxtempC;
+        const minTemp = day.mintempC;
+        const avgTemp = day.avgtempC;
+        const hourly = day.hourly || [];
+        // Get midday conditions (around 12:00)
+        const midday = hourly.find((h: any) => h.time === '1200') || hourly[Math.floor(hourly.length / 2)] || {};
+        const condition = midday.weatherDesc?.[0]?.value || 'Unknown';
+        const chanceOfRain = midday.chanceofrain || '0';
+        
+        return {
+          date,
+          high: `${maxTemp}°C`,
+          low: `${minTemp}°C`,
+          avg: `${avgTemp}°C`,
+          condition,
+          chanceOfRain: `${chanceOfRain}%`
+        };
+      });
+    }
     
     return {
       success: true,
