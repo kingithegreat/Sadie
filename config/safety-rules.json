@@ -73,6 +73,7 @@
     "log_all_actions": true,
     "require_confirmation_for_ambiguous": true,
     "max_tool_execution_time_seconds": 300,
-    "enable_sandbox": true
+    "enable_sandbox": true,
+    "max_image_resolution": 1024
   }
 }

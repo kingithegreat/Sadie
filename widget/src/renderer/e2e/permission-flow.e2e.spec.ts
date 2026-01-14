@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { launchElectronApp } from './launchElectron';
+import { waitForAppReady } from './helpers/appReady';
 
 function makeTempProfile() {
   const base = path.join(os.tmpdir(), `sadie-e2e-${Date.now()}`);
@@ -17,6 +18,7 @@ test('permission escalation: Allow once, Always allow, persistence across restar
   const env = { SADIE_E2E: '1', NODE_ENV: 'test', HOME: tmp, USERPROFILE: tmp } as any;
 
   const { app, page } = await launchElectronApp(env, tmp);
+    await waitForAppReady(page);
 
   // Reset permissions to defaults
   await page.evaluate(async () => { await (window as any).electron.resetPermissions?.(); });
@@ -151,6 +153,7 @@ test('no permission modal when permissions already allowed', async () => {
   const env = { SADIE_E2E: '1', NODE_ENV: 'test', HOME: tmp, USERPROFILE: tmp } as any;
 
   const { app, page } = await launchElectronApp(env, tmp);
+    await waitForAppReady(page);
 
   // Ensure settings explicitly allow the needed permissions
   await page.evaluate(async () => {
