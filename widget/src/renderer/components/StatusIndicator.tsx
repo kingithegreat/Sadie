@@ -53,28 +53,30 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
 
   return (
     <div className="app-header">
-      {onMenuClick && (
-        <button
-          onClick={onMenuClick}
-          className="menu-btn"
-          title="Conversations"
-          aria-label="Open conversations"
-        >
-          ☰
-        </button>
-      )}
-      <h1>✨ SADIE</h1>
-      
-      <div className="status-bar-inline">
-        <div className="status-item">
-          <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} />
-          <span>Ollama</span>
-        </div>
+      <div className="header-left-group">
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            className="menu-btn"
+            title="Conversations"
+            aria-label="Open conversations"
+          >
+            ☰
+          </button>
+        )}
+        <h1>✨ SADIE</h1>
+        
+        <div className="status-bar-inline">
+          <div className="status-item">
+            <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} />
+            <span>Ollama</span>
+          </div>
 
-        <div className="status-item">
-          <span className={`status-dot ${getStatusClass(connectionStatus.n8n)}`} />
-          <span>n8n</span>
-        </div>
+          <div className="status-item">
+            <span className={`status-dot ${getStatusClass(connectionStatus.n8n)}`} />
+            <span>n8n</span>
+          </div>
+
 
         {/* Soft backend badge when n8n is offline */}
         {connectionStatus.n8n === 'offline' && (
@@ -107,6 +109,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           <span className="toggle-icon">{uncensoredMode ? '🔓' : '🔒'}</span>
           <span className="toggle-label">{uncensoredMode ? 'Uncensored' : 'Safe'}</span>
         </div>
+      </div>
       </div>
 
       <div className="header-actions">

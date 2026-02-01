@@ -19,25 +19,25 @@
   --bg-light: oklch(28% 0 0);
 
   
-  /* Warm accent colors using modern color functions */
-  --accent-primary: oklch(75% 0.08 65);
-  --accent-hover: color-mix(in oklch, var(--accent-primary), white 15%);
-  --accent-light: color-mix(in oklch, var(--accent-primary), white 30%);
-  --accent-dark: color-mix(in oklch, var(--accent-primary), black 15%);
+  /* Warm accent colors using modern color functions - NOW COOLER BLUE/INDIGO */
+  --accent-primary: oklch(65% 0.15 260); /* Blue-ish */
+  --accent-hover: color-mix(in oklch, var(--accent-primary), white 10%);
+  --accent-light: color-mix(in oklch, var(--accent-primary), white 20%);
+  --accent-dark: color-mix(in oklch, var(--accent-primary), black 10%);
   
   /* Text colors */
-  --text-primary: oklch(95% 0 0);
-  --text-secondary: oklch(75% 0 0);
-  --text-muted: oklch(55% 0 0);
+  --text-primary: oklch(98% 0 0);
+  --text-secondary: oklch(85% 0 0);
+  --text-muted: oklch(65% 0 0);
   --text-dark: oklch(12% 0 0);
   
   /* Background colors */
-  --bg-main: var(--bg-darkest);
-  --bg-sidebar: var(--bg-darker);
-  --bg-chat: var(--bg-darkest);
-  --bg-input: var(--bg-dark);
+  --bg-main: oklch(15% 0 0); /* Slightly lighter dark */
+  --bg-sidebar: oklch(12% 0 0);
+  --bg-chat: oklch(15% 0 0);
+  --bg-input: oklch(20% 0 0);
   --bg-user-msg: var(--accent-primary);
-  --bg-assistant-msg: var(--bg-darker);
+  --bg-assistant-msg: var(--bg-sidebar);
   
   /* Border colors */
   --border-light: var(--bg-medium);
@@ -112,9 +112,9 @@ body {
 /* Header / Title bar with modern grid layout */
 .app-header {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto; /* 1fr takes remaining space for left group, auto for details */
   align-items: center;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 0 var(--spacing-md);
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border-light);
   -webkit-app-region: drag;
@@ -123,11 +123,19 @@ body {
   container-name: header;
 }
 
+.header-left-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  overflow: hidden;
+}
+
 .app-header h1 {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.3px;
+  white-space: nowrap;
 }
 
 .header-actions {
@@ -233,12 +241,12 @@ body {
   background: var(--accent-dark);
 }
 
-/* Thin golden scrollbar for messages */
+/* Thin neutral scrollbar */
 .messages-container::-webkit-scrollbar { width: 6px; }
-.messages-container::-webkit-scrollbar-thumb { background: #d9ad7c; border-radius: 8px; }
+.messages-container::-webkit-scrollbar-thumb { background: var(--bg-light); border-radius: 8px; }
 
 /* Input container tweaks */
-.input-container { padding: 10px 16px; border-top: 1px solid #333; }
+.input-container { padding: 10px 16px; border-top: 1px solid var(--border-medium); }
 
 /* Send button glow on hover - already defined gradient but add glow */
 .send-button:hover:not(:disabled) { box-shadow: 0 12px 30px rgba(217,173,124,0.16); }
@@ -318,17 +326,17 @@ body {
   max-width: 70%;
   padding: 12px 16px;
   border-radius: 16px;
-  line-height: 1.5;
-  font-size: 15px;
-  word-wrap: break-word;
-  white-space: pre-wrap;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  line-height:var(--accent-primary);
+  color: white;
+  border-bottom-right-radius: var(--spacing-xs);
+  margin-left: auto;
 }
 
-.message-wrapper.user .message-bubble {
-  background: #d9ad7c;
-  color: #222;
-  border-bottom-right-radius: var(--spacing-xs);
+.message-wrapper.assistant .message-bubble {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-bottom-left-radius: var(--spacing-xs);
+  border: 1px solid var(--border-mediumng-xs);
   margin-left: auto;
 }
 
