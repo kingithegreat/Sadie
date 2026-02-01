@@ -229,15 +229,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   // Expose current app mode (demo or normal)
   ipcMain.handle('sadie:get-mode', async () => {
-    const { isDemoMode } = require('./env');
     return { demo: !!isDemoMode };
-  });
-return { demo: !!isDemoMode };
   });
 
   // Read telemetry consent log (JSONL) for UI display
   ipcMain.handle('sadie:read-consent-log', async () => {
-    try {h)) return { success: true, data: '' };
+    try {
+      const userData = app.getPath('userData');
+      const logPath = path.join(userData, 'logs', 'telemetry-consent.log');
+      if (!fs.existsSync(logPath)) return { success: true, data: '' };
       const data = fs.readFileSync(logPath, 'utf-8');
       return { success: true, data };
     } catch (err: any) {
