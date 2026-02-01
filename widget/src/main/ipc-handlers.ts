@@ -406,7 +406,6 @@ try {
 
   // Mark registration complete
   (global as any).__sadie_ipc_registered = true;
-  const { isDevelopment } = require('./env');
   if (isDevelopment) {
     console.log('[IPC] Handlers registered');
   }

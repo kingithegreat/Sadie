@@ -11,6 +11,7 @@ import { SADIE_SYSTEM_PROMPT } from '../shared/system-prompt';
 import { initializeTools, getOllamaTools, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
+import { getSettings, saveSettings } from './config-manager';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -560,7 +561,6 @@ export async function streamFromOllamaWithTools(
 
               if (resp.decision === 'always_allow') {
                 try {
-                  const { getSettings, saveSettings } = require('./config-manager');
                   const s = getSettings();
                   s.permissions = s.permissions || {};
                   for (const p of missing) s.permissions[p] = true;
@@ -1205,8 +1205,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // Allow E2E helper when the centralized env module reports E2E mode
         // (this is more robust in packaged/release builds where raw env vars
         // may be sanitized early). Also keep NODE_ENV=test as a fallback.
-        const envModule = require('./env');
-        const e2eEnabled = Boolean(envModule.isE2E) || process.env.NODE_ENV === 'test';
+        const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
         if (!e2eEnabled) return { ok: false, error: 'E2E_ONLY' };
         const { calls, streamId } = payload || {} as any;
         if (!Array.isArray(calls) || calls.length === 0) return { ok: false, error: 'MISSING_CALLS' };
@@ -1224,7 +1223,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           }
           if (resp.decision === 'always_allow') {
             try { const { getSettings, saveSettings } = require('./config-manager'); const s = getSettings(); s.permissions = s.permissions || {}; for (const p of missing) s.permissions[p] = true; saveSettings(s); } catch (e) {}
-            const rerun = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
+            const rerun } as any);
             return { ok: true, result: rerun };
           }
         }
