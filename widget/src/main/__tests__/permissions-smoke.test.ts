@@ -1,5 +1,5 @@
 import os from 'os';
-import fs from 'fs';
+import * as fs from 'fs';
 import path from 'path';
 
 // Note: we intentionally `require` the tools after setting `HOME` so

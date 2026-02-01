@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { debug as logDebug } from '../../shared/logger';
 import MessageList from './MessageList';
 import { InputBox } from './InputBox';

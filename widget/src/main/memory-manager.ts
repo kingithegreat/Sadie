@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { Message, Settings } from '../shared/types';
+import { Message } from '../shared/types';
 
 // Resolve memory store path relative to app root (not asar)
 function getMemoryStorePath(): string {

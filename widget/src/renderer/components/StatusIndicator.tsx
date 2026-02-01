@@ -51,19 +51,6 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     }
   };
 
-  const getStatusText = (status: 'online' | 'offline' | 'checking') => {
-    switch (status) {
-      case 'online':
-        return 'Connected';
-      case 'offline':
-        return 'Offline';
-      case 'checking':
-        return 'Checking...';
-      default:
-        return 'Unknown';
-    }
-  };
-
   return (
     <div className="app-header">
       {onMenuClick && (
@@ -184,93 +171,94 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
             </button>
           </div>
         )}
+        <style>{`
         .backend-badge {
-          background: rgba(255,213,85,0.18);
+          backgroundColor: rgba(255,213,85,0.18);
           color: #ffd555;
           padding: 6px 10px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 600;
-          margin-left: 8px;
-          -webkit-app-region: no-drag;
+          borderRadius: 12px;
+          fontSize: 12px;
+          fontWeight: 600;
+          marginLeft: 8px;
+          WebkitAppRegion: no-drag;
           display: inline-flex;
           gap: 8px;
-          align-items: center;
+          alignItems: center;
           border: 1px solid rgba(255,213,85,0.4);
         }
         .backend-detail {
-          appearance: none;
+          WebkitAppearance: none;
           border: none;
           background: transparent;
           color: #ffd555;
-          font-size: 14px;
+          fontSize: 14px;
           cursor: pointer;
           padding: 2px 6px;
         }
 
         .backend-retry {
-          appearance: none;
+          WebkitAppearance: none;
           border: none;
           background: transparent;
           color: #ffd555;
-          font-size: 14px;
+          fontSize: 14px;
           cursor: pointer;
           padding: 2px 6px;
         }
 
         .uncensored-toggle {
           display: flex;
-          align-items: center;
+          alignItems: center;
           gap: 6px;
           padding: 4px 10px;
-          border-radius: 12px;
+          borderRadius: 12px;
           background: #2a2a2a;
           border: 1px solid #444;
           cursor: pointer;
           transition: all 150ms ease;
-          -webkit-app-region: no-drag;
-          font-size: 11px;
+          WebkitAppRegion: no-drag;
+          fontSize: 11px;
           color: #888;
         }
 
         .uncensored-toggle:hover {
           background: #333;
-          border-color: #555;
+          borderColor: #555;
         }
 
         .uncensored-toggle.active {
           background: linear-gradient(135deg, #4a1a1a, #1a1a4a);
-          border-color: #f59e0b;
+          borderColor: #f59e0b;
           color: #f59e0b;
         }
 
         .uncensored-toggle .toggle-icon {
-          font-size: 14px;
+          fontSize: 14px;
         }
 
         .uncensored-toggle .toggle-label {
-          font-weight: 500;
+          fontWeight: 500;
         }
 
         .header-actions {
           display: flex;
           gap: 8px;
-          -webkit-app-region: no-drag;
+          WebkitAppRegion: no-drag;
         }
 
         .header-btn {
           width: 32px;
           height: 32px;
           border: none;
-          border-radius: 8px;
+          borderRadius: 8px;
           background: transparent;
           color: #B4B4B4;
           cursor: pointer;
           display: flex;
-          align-items: center;
-          justify-content: center;
+          alignItems: center;
+          justifyContent: center;
           transition: 150ms ease;
-          font-size: 16px;
+          fontSize: 16px;
         }
 
         .header-btn:hover {
@@ -284,34 +272,35 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           right: 16px;
           background: #121212;
           padding: 12px;
-          border-radius: 8px;
+          borderRadius: 8px;
           border: 1px solid rgba(255,213,85,0.12);
-          min-width: 320px;
-          max-width: 520px;
-          max-height: 40vh;
+          minWidth: 320px;
+          maxWidth: 520px;
+          maxHeight: 40vh;
           overflow: auto;
-          z-index: 9999;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+          zIndex: 9999;
+          boxShadow: 0 8px 24px rgba(0,0,0,0.6);
         }
 
         .backend-popover-text {
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
-          font-size: 12px;
+          fontFamily: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
+          fontSize: 12px;
           color: #EAEAEA;
-          white-space: pre-wrap;
-          word-break: break-word;
+          whiteSpace: pre-wrap;
+          wordBreak: break-word;
           margin: 0 0 6px 0;
         }
 
         .backend-popover-actions {
           display: flex;
           gap: 8px;
-          justify-content: flex-end;
-          padding-top: 6px;
+          justifyContent: flex-end;
+          paddingTop: 6px;
         }
-      `}</style>
+        `}</style>
+      </div>
     </div>
   );
-};
+}
 
 export default StatusIndicator;

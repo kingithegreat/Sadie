@@ -1,4 +1,5 @@
-import React from 'react';
+/** @jest-environment jsdom */
+
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import App from '../App';
@@ -22,7 +23,7 @@ describe('stream chunks (renderer)', () => {
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+      subscribeToStream: jest.fn((_sid: string, handlers: any) => {
         chunkHandler = handlers.onStreamChunk;
         endHandler = handlers.onStreamEnd;
         return unsub;

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import type { Settings } from "../types";
 
 export function SettingsModal({

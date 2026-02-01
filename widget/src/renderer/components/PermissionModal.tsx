@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 export default function PermissionModal({ open, missingPermissions, reason, requestId, onClose }: {
   open: boolean;

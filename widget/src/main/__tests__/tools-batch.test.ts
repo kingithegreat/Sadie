@@ -1,5 +1,5 @@
 import { executeToolBatch } from '../tools';
-import { ToolCall } from '../tools/types';
+
 import * as config from '../config-manager';
 
 describe('executeToolBatch', () => {

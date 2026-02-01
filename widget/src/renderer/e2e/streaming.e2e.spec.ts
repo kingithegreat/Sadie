@@ -23,7 +23,7 @@ test('streams chunks to UI', async () => {
   });
   await waitForAppReady(page);
 
-  const beforeCount = await page.locator('[data-role="assistant-message"]').count();
+
   await page.getByLabel('Message SADIE').fill('hello');
   await page.getByRole('button', { name: /send/i }).click();
 
@@ -69,7 +69,7 @@ test('cancel stops stream', async () => {
   });
   await waitForAppReady(page);
 
-  const beforeCount = await page.locator('[data-role="assistant-message"]').count();
+
   await page.getByLabel('Message SADIE').fill('hello');
   await page.getByRole('button', { name: /send/i }).click();
 

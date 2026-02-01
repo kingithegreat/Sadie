@@ -24,7 +24,7 @@ export async function waitForAppReady(page: Page, opts?: { timeout?: number }) {
       return Array.from(blockers).every((e) => {
         // offsetParent is null for display:none or not rendered elements
         // getClientRects length is 0 if not visible
-        try { return e.offsetParent === null || e.getClientRects().length === 0; } catch (err) { return true; }
+        try { return (e as HTMLElement).offsetParent === null || e.getClientRects().length === 0; } catch (err) { return true; }
       });
     } catch (e) {
       return true;

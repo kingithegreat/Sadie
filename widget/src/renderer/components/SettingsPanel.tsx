@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import type { Settings as SharedSettings } from '../../shared/types';
 
@@ -26,7 +26,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const [localSettings, setLocalSettings] = useState<Settings>(settings);
   const [uncensoredMode, setUncensoredMode] = useState(false);
-  const [telemetryEnabled, setTelemetryEnabled] = useState<boolean>(!!(settings as any).telemetryEnabled);
   const [permissions, setPermissions] = useState<Record<string, boolean>>(((settings as any).permissions || {}) as Record<string, boolean>);
   const [showTelemetryModal, setShowTelemetryModal] = useState(false);
 
@@ -81,7 +80,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   // Update local settings when props change
   useEffect(() => {
     setLocalSettings(settings);
-    setTelemetryEnabled(!!(settings as any).telemetryEnabled);
     setPermissions((settings as any).permissions || {});
   }, [settings]);
 
@@ -279,13 +277,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onAccept={async () => {
             // Persist immediately so telemetry consent is logged
             const updated = await (window as any).electron.saveSettings({ ...localSettings, telemetryEnabled: true });
-            setTelemetryEnabled(true);
             setLocalSettings({ ...localSettings, telemetryEnabled: true, telemetryConsentTimestamp: updated.telemetryConsentTimestamp });
             setShowTelemetryModal(false);
           }}
           onDecline={() => {
             setShowTelemetryModal(false);
-            setTelemetryEnabled(false);
             setLocalSettings({ ...localSettings, telemetryEnabled: false });
           }}
           onClose={() => setShowTelemetryModal(false)}

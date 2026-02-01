@@ -3,15 +3,14 @@ import type { IpcMainInvokeEvent } from 'electron';
 import { permissionRequester } from './permission-requester';
 import { looksLikeToolJson } from './tool-helpers';
 import axios from 'axios';
-import { debug as logDebug, error as logError, info as logInfo } from '../shared/logger';
+import { debug as logDebug, error as logError } from '../shared/logger';
 import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { SADIE_SYSTEM_PROMPT } from '../shared/system-prompt';
-import { getMainWindow } from './window-manager';
-import { initializeTools, getOllamaTools, executeTool, executeToolBatch, ToolCall, ToolContext } from './tools';
+import { initializeTools, getOllamaTools, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
-import { isE2E, isPackagedBuild, isReleaseBuild } from './env';
+import { isE2E, isPackagedBuild } from './env';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -127,7 +126,8 @@ function getHistory(conversationId: string): ConversationMessage[] {
   return conversationHistory.get(conversationId) || [];
 }
 
-function clearHistory(conversationId: string) {
+// Exported for potential future use and testing
+export function clearHistory(conversationId: string) {
   conversationHistory.delete(conversationId);
 }
 
@@ -359,7 +359,7 @@ export async function streamFromOllamaWithTools(
   images: ImageAttachment[] | undefined,
   conversationId: string,
   onChunk: (text: string) => void, 
-  onToolCall: (toolName: string, args: any) => void,
+  _onToolCall: (toolName: string, args: any) => void,
   onToolResult: (result: any) => void,
   onEnd: () => void, 
   onError: (err: any) => void,
@@ -642,7 +642,7 @@ async function streamFromOllama(
   );
 }
 
-export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string) {
+export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string) {
     // Initialize tools system
     initializeTools();
     if (E2E) {
@@ -966,7 +966,6 @@ export function registerMessageRouter(mainWindow: BrowserWindow, n8nUrl: string)
             logDebug('[Router] Preparing POST', streamUrl);
             try { logDebug('[Router] Payload preview', JSON.stringify(request, null, 2).substring(0, 1000)); } catch (e) { logDebug('[Router] Payload preview [cannot stringify]'); }
           }
-          let payloadSent = false;
           // If a tool_call is present, run a safety check first via n8n safety webhook (if available)
           if (reqAny.tool_call) {
             try {

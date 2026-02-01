@@ -1,191 +1,91 @@
-import { app, BrowserWindow, ipcMain, IpcMainEvent } from 'electron';
+// Clean main process for SADIE - simplified and self-contained
+import { app, shell, BrowserWindow, ipcMain } from 'electron';
+import { join } from 'path';
 import { spawn } from 'child_process';
-import { mkdirSync, existsSync, appendFileSync } from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-(global as any).__SADIE_DIAG_DIR = path.join(os.homedir(), 'SADIE_DIAG');
-if (!existsSync((global as any).__SADIE_DIAG_DIR)) mkdirSync((global as any).__SADIE_DIAG_DIR, { recursive: true });
-(global as any).__SADIE_DIAG_FILE = path.join((global as any).__SADIE_DIAG_DIR, 'sadie-runtime.log');
-function appendDiagLog(line: string) {
-  try { appendFileSync((global as any).__SADIE_DIAG_FILE, `${new Date().toISOString()} ${line}\n`, { encoding: 'utf8' }); } catch (e) {}
-}
-// Diagnostics buffer capture
-(global as any).__SADIE_MAIN_LOG_BUFFER ??= [];
-function pushMainLog(line: string) {
-  try { (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[MAIN] ${String(line)}`); } catch (e) {}
-  try { appendDiagLog(String(line)); } catch (e) {}
-}
-// Expose a global push function for other modules
-(global as any).__SADIE_PUSH_MAIN_LOG = pushMainLog;
-import { createMainWindow } from './window-manager';
-import { registerIpcHandlers } from './ipc-handlers';
-import { sanitizeEnvForPackaged, isPackagedBuild } from './env';
 
-// Load environment variables
-require('dotenv').config();
-
-// Sanitize env when running a packaged build so test flags cannot be honored
-sanitizeEnvForPackaged();
-
-// Hard-lock NODE_ENV based on packaging status if not set
-if (!process.env.NODE_ENV) {
-  process.env.NODE_ENV = isPackagedBuild ? 'production' : 'development';
-}
-
-// Always set SADIE_ENV to desktop (locked)
-process.env.SADIE_ENV = 'desktop';
-
-// Initialize logging early
-import { initLogging, logStartup, logError } from './utils/logger';
-initLogging();
-logStartup(`Starting SADIE, NODE_ENV=${process.env.NODE_ENV}, SADIE_ENV=${process.env.SADIE_ENV}`);
-// Top-level startup trace
-console.log('[Startup] SADIE app booted; tracing enabled');
-pushMainLog('[Startup] SADIE app booted; tracing enabled');
-
-// Enable Chrome flags for Web Speech API
-app.commandLine.appendSwitch('enable-speech-dispatcher');
-app.commandLine.appendSwitch('enable-features', 'WebSpeechAPI');
-
-// Enable hot reload in development
-import { isDevelopment } from './env';
-if (isDevelopment) {
-  try {
-    require('electron-reload')(path.join(__dirname, '..'), {
-      electron: path.join(__dirname, '..', '..', 'node_modules', 'electron')
-    });
-  } catch (err) {
-    console.log('Electron-reload not available');
-  }
-}
-
-// Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null;
 
-// This method will be called when Electron has finished initialization
-app.whenReady().then(() => {
-  // === DIAGNOSTICS: Print runtime mode and paths ===
-  const { isE2E, isReleaseBuild } = require('./env');
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[DIAG] isE2E =', isE2E);
-    console.log('[DIAG] app.isPackaged =', app.isPackaged);
-    console.log('[DIAG] isReleaseBuild =', isReleaseBuild);
-    console.log('[DIAG] userData path =', app.getPath('userData'));
-  }
-
-  // Release build logging (only in production)
-  if (process.env.NODE_ENV === 'production') {
-    console.log(`[BUILD] mode=release; userData=${app.getPath('userData')}`);
-  }
-  if (process.env.NODE_ENV !== 'production') console.log('[DIAG] userData Path =', app.getPath('userData'));
-  // Register IPC handlers BEFORE window creation to satisfy early renderer invokes
-  registerIpcHandlers();
-  pushMainLog('Registered IPC handlers.');
-  logStartup('Registered IPC handlers.');
-
-  // Auto-start n8n on Windows using the shipped helper script. This ensures the
-  // local orchestrator is running before the renderer attempts to reach it.
-  if (process.platform === 'win32') {
+function registerIpcHandlers() {
+  ipcMain.handle('run-n8n-workflow', async (_event, { workflowId, data }) => {
     try {
-      const scriptPath = require('path').join(process.cwd(), 'scripts', 'start-n8n.ps1');
-      spawn('powershell.exe', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
-      pushMainLog('Invoked start-n8n.ps1');
-    } catch (e) {
-      console.error('Failed to invoke start-n8n.ps1:', e);
-      pushMainLog('Failed to invoke start-n8n.ps1');
+      const webhookUrl = `http://localhost:5678/webhook/${workflowId}`;
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data || {})
+      });
+      if (!res.ok) return { success: false, status: res.status, statusText: res.statusText };
+      const json = await res.json().catch(() => null);
+      return { success: true, data: json };
+    } catch (err: any) {
+      return { success: false, error: String(err) };
     }
-  }
-
-  mainWindow = createMainWindow();
-  pushMainLog('Main window created');
-
-  // Register message router for SADIE backend communication
-  const { registerMessageRouter, setUncensoredMode, getUncensoredMode } = require('./message-router');
-  const n8nUrl = process.env.N8N_URL || require('../shared/constants').DEFAULT_N8N_URL;
-  if (mainWindow) registerMessageRouter(mainWindow, n8nUrl);
-  
-  // IPC handler for uncensored mode toggle
-  const { ipcMain } = require('electron');
-  ipcMain.handle('sadie:set-uncensored-mode', (_event: any, enabled: boolean) => {
-    setUncensoredMode(enabled);
-    return { success: true, enabled };
-  });
-  ipcMain.handle('sadie:get-uncensored-mode', () => {
-    return { enabled: getUncensoredMode() };
-  });
-  
-  // Restart app handler - relaunch from the correct directory
-  ipcMain.handle('sadie:restart-app', () => {
-    const execPath = process.execPath;
-    const appPath = app.getAppPath();
-    app.relaunch({ 
-      execPath: execPath,
-      args: [appPath]
-    });
-    app.exit(0);
   });
 
-  // Diagnostic env handler
-  ipcMain.handle('sadie:get-env', () => {
-    const { isE2E, isPackagedBuild, isReleaseBuild } = require('./env');
-    return {
-      isE2E,
-      isPackagedBuild,
-      isReleaseBuild,
-      userDataPath: app.getPath('userData')
-    };
-  });
-  // Allow renderer to append a log string to the runtime diag file
-  ipcMain.on('sadie:append-renderer-log', (_e: IpcMainEvent, line: string) => {
-    try { appendDiagLog(`[RENDERER] ${line}`); } catch (e) {}
-  });
-
-  // Handler invoked by renderer to capture logs and return the file path
-  ipcMain.handle('sadie:capture-logs', async () => {
-    try {
-      const TS = new Date().toISOString().replace(/[:.]/g, '-');
-      const outPath = path.join((global as any).__SADIE_DIAG_DIR, `sadie-diagnostics-${TS}.log`);
-      // Copy runtime log file to snapshot
-      const src = (global as any).__SADIE_DIAG_FILE;
-      if (src && existsSync(src)) {
-        const content = require('fs').readFileSync(src, 'utf8');
-        require('fs').writeFileSync(outPath, content, 'utf8');
-        return { success: true, path: outPath };
+  ipcMain.handle('run-ps-script', async (_event, { scriptName, args = [] }) => {
+    return new Promise((resolve) => {
+      try {
+        const safe = String(scriptName || '').replace(/[^a-zA-Z0-9-_]/g, '');
+        const scriptPath = join(process.cwd(), 'scripts', `${safe}.ps1`);
+        const ps = spawn('powershell.exe', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args], { windowsHide: true });
+        let out = '';
+        let errOut = '';
+        ps.stdout.on('data', (d) => out += d.toString());
+        ps.stderr.on('data', (d) => errOut += d.toString());
+        ps.on('close', (code) => {
+          if (code === 0) resolve({ success: true, output: out.trim() });
+          else resolve({ success: false, error: errOut || out, code });
+        });
+      } catch (e) {
+        resolve({ success: false, error: String(e) });
       }
-      // If not present, return success with path but no content
-      require('fs').writeFileSync(outPath, 'No runtime log captured.', 'utf8');
-      return { success: true, path: outPath };
-    } catch (e) {
-      return { success: false, error: String(e) };
+    });
+  });
+}
+
+function createMainWindow() {
+  const iconPath = join(__dirname, '..', '..', 'build', 'icon.ico');
+  const win = new BrowserWindow({
+    width: 900,
+    height: 670,
+    show: false,
+    autoHideMenuBar: true,
+    icon: process.platform === 'win32' ? iconPath : undefined,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
     }
   });
 
-  app.on('activate', () => {
-    // On macOS, re-create window when dock icon is clicked and no windows are open
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createMainWindow();
-    }
-  });
-});
+  win.on('ready-to-show', () => win.show());
+  win.webContents.setWindowOpenHandler((details) => { shell.openExternal(details.url); return { action: 'deny' }; });
 
-// Quit when all windows are closed, except on macOS
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
+  if (process.env.ELECTRON_RENDERER_URL) {
+    win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'));
   }
+
+  return win;
+}
+
+app.whenReady().then(() => {
+  registerIpcHandlers();
+  mainWindow = createMainWindow();
+  ipcMain.on('ping', () => console.log('pong'));
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow(); });
 });
 
-// Handle cleanup
-app.on('before-quit', () => {
-  mainWindow = null;
-});
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
-// Global error handlers to write to startup log
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err);
-  logError(err);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection:', reason);
-  logError(reason);
-});
+// Optional: auto-start n8n on Windows if helper exists
+if (process.platform === 'win32') {
+  try {
+    const startScript = join(process.cwd(), 'scripts', 'start-n8n.ps1');
+    // spawn detached if present
+    // Note: Do not fail the app if start script is missing
+    // spawn('powershell.exe', ['-ExecutionPolicy', 'Bypass', '-File', startScript], { detached: true, stdio: 'ignore' }).unref();
+  } catch (e) {}
+}

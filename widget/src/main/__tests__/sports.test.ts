@@ -1,6 +1,6 @@
 import os from 'os';
 import path from 'path';
-import fs from 'fs';
+import * as fs from 'fs';
 
 import { sportsReportHandler } from '../tools/sports';
 import * as nba from '../tools/nba';
@@ -20,7 +20,7 @@ describe('generate_sports_report tool', () => {
     fs.mkdirSync(desktop, { recursive: true });
 
     // Allow write_file permission during tests
-    jest.spyOn(config, 'assertPermission').mockImplementation((name: string) => true as any);
+    jest.spyOn(config, 'assertPermission').mockImplementation((_name: string) => true as any);
   });
 
   afterEach(() => {

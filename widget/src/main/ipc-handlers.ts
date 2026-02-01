@@ -1,35 +1,15 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { getMainWindow } from './window-manager';
 import axios from 'axios';
-import * as path from 'path';
-import * as fs from 'fs';
+
 import { getSettings, saveSettings } from './config-manager';
 import {
   MemoryManager,
   StoredConversation,
-  ConversationStore,
 } from './memory-manager';
 import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 
-// Default settings
-const DEFAULT_SETTINGS = {
-  alwaysOnTop: true,
-  n8nUrl: 'http://localhost:5678',
-  widgetHotkey: 'Ctrl+Shift+Space'
-};
-
-// Get settings file path
-const getSettingsPath = (): string => {
-  const configDir = path.join(__dirname, '..', '..', 'config');
-  
-  // Ensure config directory exists
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true });
-  }
-  
-  return path.join(configDir, 'user-settings.json');
-};
 
 /**
  * Register all IPC handlers for communication between renderer and main process
@@ -167,20 +147,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       };
     }
   });
-      
-      // Send error response back to renderer
-      const win = mainWindow ?? getMainWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('sadie:reply', {
-          success: false,
-          error: true,
-          message: 'Sadie could not reach the orchestrator.',
-          details: err.message,
-          response: 'I\'m having trouble connecting to my backend. Please make sure n8n is running.'
-        });
-      }
-    }
-  });
 
   /**
    * Get user settings from file
@@ -230,7 +196,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   ipcMain.handle('sadie:reset-permissions', async () => {
     try {
-      const { resetPermissions, getSettings } = require('./config-manager');
+      const { resetPermissions }: { resetPermissions: () => any } = require('./config-manager');
       const updated = resetPermissions();
       return { success: true, data: updated };
     } catch (err: any) {
@@ -424,7 +390,7 @@ try {
 
       exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
         { timeout: 15000 }, 
-        (error: any, stdout: string, stderr: string) => {
+        (error: any, stdout: string, _stderr: string) => {
           if (error) {
             console.error('Speech recognition error:', error.message);
             resolve({ success: false, error: 'Speech recognition failed', text: '' });
@@ -438,7 +404,7 @@ try {
   });
 
   // Mark registration complete
-  g.__sadie_ipc_registered = true;
+  (global as any).__sadie_ipc_registered = true;
   const { isDevelopment } = require('./env');
   if (isDevelopment) {
     console.log('[IPC] Handlers registered');

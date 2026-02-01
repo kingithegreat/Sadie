@@ -1,26 +1,21 @@
-import React from 'react';
+/** @jest-environment jsdom */
+
 import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 
 jest.useFakeTimers();
 
-let _chunkHandler: any;
 let _endHandler: any;
-let _errorHandler: any;
 
 // Provide a fully mocked preload API
 beforeEach(() => {
-  _chunkHandler = undefined;
   _endHandler = undefined;
-  _errorHandler = undefined;
 
   (window as any).electron = {
     sendStreamMessage: jest.fn().mockResolvedValue(undefined),
     cancelStream: jest.fn(),
-    subscribeToStream: jest.fn((sid: string, handlers: any) => {
-      _chunkHandler = handlers.onStreamChunk;
+    subscribeToStream: jest.fn((_sid: string, handlers: any) => {
       _endHandler = handlers.onStreamEnd;
-      _errorHandler = handlers.onStreamError;
       return jest.fn();
     }),
     onStreamError: jest.fn(),
@@ -79,7 +74,7 @@ describe('cancel-confirmation flow', () => {
   });
 
   test('cancel + onStreamEnd without cancelled flag → should finalize but not mark cancelled', async () => {
-    const streamId = 'stream-999';
+    
 
     // second scenario: send a new message so handlers are registered
     let capturedStreamId2: string | undefined;

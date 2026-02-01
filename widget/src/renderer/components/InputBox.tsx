@@ -52,18 +52,12 @@ declare global {
 // The @xenova/transformers library has bundling issues in Electron
 // TODO: Implement native Whisper.cpp integration for true offline support
 
-const OFFLINE_SUPPORTED = false;
-
-async function transcribeWithWhisper(_audioBlob: Blob, _onStatus?: (msg: string) => void): Promise<string> {
-  throw new Error('Offline transcription not yet available. Please connect to the internet for voice input.');
-}
-
 export type InputBoxProps = {
   onSendMessage: (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;
   disabled?: boolean;
 };
 
-export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
+export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) {
   type LocalImage = ImageAttachment & { id: string };
   type LocalDocument = DocumentAttachment & { id: string };
   const [inputValue, setInputValue] = useState('');
@@ -507,5 +501,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     </div>
   );
 }
+
+export default InputBox;
 
 

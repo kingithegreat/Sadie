@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 export default function TelemetryConsentModal({ open, onAccept, onDecline, onClose }: {
   open: boolean;

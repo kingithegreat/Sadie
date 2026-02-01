@@ -24,7 +24,7 @@ test('generates a document summary via streaming', async () => {
   await waitForAppReady(page);
 
   // Send a summarize request through the chat UI
-  const beforeCount = await page.locator('[data-role="assistant-message"]').count();
+
   await page.getByLabel('Message SADIE').fill('Summarize: The quick brown fox jumped over the lazy dog.');
   await page.getByRole('button', { name: /send/i }).click();
 

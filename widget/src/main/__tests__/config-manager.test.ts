@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, mkdirSync } from 'fs';
+import { existsSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import os from 'os';
 
@@ -76,7 +76,6 @@ describe('config-manager integration tests', () => {
 
   test('telemetry consent is logged into audit log', () => {
     const fs = require('fs');
-    const os = require('os');
     const path = require('path');
     const temp = process.env.TEST_USERDATA as string;
     const logPath = path.join(temp, 'logs', 'telemetry-consent.log');

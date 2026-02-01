@@ -1,11 +1,6 @@
 import React, { useEffect } from 'react';
 
-interface ToolCall {
-  tool_name: string;
-  parameters: Record<string, any>;
-  reasoning?: string;
-  confirmation_id?: string;
-}
+
 
 interface ActionConfirmationProps {
   actionSummary: string;

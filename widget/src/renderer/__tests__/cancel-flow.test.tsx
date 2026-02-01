@@ -1,4 +1,5 @@
-import React from 'react';
+/** @jest-environment jsdom */
+
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 import { Message as SharedMessage, ElectronAPI } from '../../shared/types';

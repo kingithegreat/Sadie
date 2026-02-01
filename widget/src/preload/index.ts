@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-import { debug as logDebug, error as logError } from '../shared/logger';
+import { debug as logDebug } from '../shared/logger';
 
 // Renderer diagnostics buffer
 (global as any).__SADIE_RENDERER_LOG_BUFFER ??= [];

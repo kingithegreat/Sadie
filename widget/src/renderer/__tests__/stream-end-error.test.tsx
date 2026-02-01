@@ -1,4 +1,4 @@
-import React from 'react';
+/** @jest-environment jsdom */
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import App from '../App';
@@ -21,7 +21,7 @@ describe('stream end and error handling (renderer)', () => {
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+      subscribeToStream: jest.fn((_sid: string, handlers: any) => {
         chunkHandler = handlers.onStreamChunk;
         endHandler = handlers.onStreamEnd;
         return unsub;
@@ -70,13 +70,10 @@ describe('stream end and error handling (renderer)', () => {
     let errorHandler: ((d: any) => void) | undefined;
 
     const unsub = jest.fn();
-    const chunkUnsub = unsub;
-    const endUnsub = unsub;
-    const errorUnsub = unsub;
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+      subscribeToStream: jest.fn((_sid: string, handlers: any) => {
         chunkHandler = handlers.onStreamChunk;
         errorHandler = handlers.onStreamError;
         return unsub;

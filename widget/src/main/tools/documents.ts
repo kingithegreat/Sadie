@@ -5,7 +5,6 @@
  */
 
 import { ToolDefinition, ToolHandler, ToolResult, ToolContext } from './types';
-import * as fs from 'fs';
 import * as path from 'path';
 
 // Lazy load document parsers
@@ -15,7 +14,7 @@ let mammoth: typeof import('mammoth') | null = null;
 async function getPdfParser() {
   if (!pdfParse) {
     const mod = await import('pdf-parse');
-    pdfParse = mod.default || mod;
+    pdfParse = mod;
   }
   return pdfParse;
 }

@@ -7,20 +7,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { promisify } from 'util';
-import { ToolDefinition, ToolHandler, ToolResult, ToolContext } from './types';
+
+import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const fsPromises = fs.promises;
 
 // Safety: Restrict operations to user's home directory and below
 const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
 const DESKTOP_DIR = path.join(HOME_DIR, 'Desktop');
-const ALLOWED_ROOTS = [
-  HOME_DIR,
-  path.join(HOME_DIR, 'Desktop'),
-  path.join(HOME_DIR, 'Documents'),
-  path.join(HOME_DIR, 'Downloads'),
-];
+
 
 // Expand common path shortcuts
 function expandPath(inputPath: string): string {
@@ -269,7 +264,7 @@ export const getFileInfoDef: ToolDefinition = {
 
 // ============= TOOL HANDLERS =============
 
-export const listDirectoryHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const listDirectoryHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const validation = validatePath(args.path);
   if (!validation.valid) {
     return { success: false, error: validation.error };
@@ -318,7 +313,7 @@ export const listDirectoryHandler: ToolHandler = async (args, context): Promise<
   }
 };
 
-export const readFileHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const readFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const validation = validatePath(args.path);
   if (!validation.valid) {
     return { success: false, error: validation.error };
@@ -357,7 +352,7 @@ export const readFileHandler: ToolHandler = async (args, context): Promise<ToolR
   }
 };
 
-export const createDirectoryHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const createDirectoryHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const validation = validatePath(args.path);
   if (!validation.valid) {
     return { success: false, error: validation.error };
@@ -406,7 +401,7 @@ export const createDirectoryHandler: ToolHandler = async (args, context): Promis
   }
 };
 
-export const moveFileHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const moveFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const sourceValidation = validatePath(args.source);
   const destValidation = validatePath(args.destination);
   
@@ -435,7 +430,7 @@ export const moveFileHandler: ToolHandler = async (args, context): Promise<ToolR
   }
 };
 
-export const copyFileHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const copyFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const sourceValidation = validatePath(args.source);
   const destValidation = validatePath(args.destination);
   
@@ -487,7 +482,7 @@ async function copyDirectory(source: string, destination: string): Promise<void>
   }
 }
 
-export const deleteFileHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const deleteFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const validation = validatePath(args.path);
   if (!validation.valid) {
     return { success: false, error: validation.error };
@@ -515,7 +510,7 @@ export const deleteFileHandler: ToolHandler = async (args, context): Promise<Too
   }
 };
 
-export const writeFileHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const writeFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const validation = validatePath(args.path);
   if (!validation.valid) {
     return { success: false, error: validation.error };
@@ -545,7 +540,7 @@ export const writeFileHandler: ToolHandler = async (args, context): Promise<Tool
   }
 };
 
-export const getFileInfoHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
+export const getFileInfoHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const validation = validatePath(args.path);
   if (!validation.valid) {
     return { success: false, error: validation.error };

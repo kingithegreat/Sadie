@@ -2,7 +2,6 @@ import { app } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
-import { isReleaseBuild } from './env';
 
 interface WindowPosition {
   x: number;

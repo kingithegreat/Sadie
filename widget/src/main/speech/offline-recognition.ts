@@ -5,9 +5,7 @@
  * The model runs entirely in JavaScript - no native dependencies needed.
  */
 
-import { app, BrowserWindow } from 'electron';
-import * as path from 'path';
-import * as fs from 'fs';
+import { BrowserWindow } from 'electron';
 
 export interface TranscriptionResult {
   text: string;
@@ -24,7 +22,6 @@ export interface ModelStatus {
 
 class OfflineSpeechRecognition {
   private status: ModelStatus = { ready: false, loading: false };
-  private modelName: string = 'Xenova/whisper-tiny.en';
 
   getStatus(): ModelStatus {
     return { ...this.status };

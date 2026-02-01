@@ -49,7 +49,7 @@ export function createMainWindow(): BrowserWindow {
   try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Setting permission handlers'); } catch (e) {}
 
   // Handle permission requests (microphone for speech recognition)
-  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
     const allowedPermissions = ['media', 'microphone', 'audioCapture'];
     if (allowedPermissions.includes(permission)) {
       callback(true);
@@ -75,12 +75,12 @@ export function createMainWindow(): BrowserWindow {
   });
 
   // Handle page load errors
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     console.error('[WINDOW] Failed to load page:', errorCode, errorDescription);
   });
 
-  // Handle console messages from renderer
-  mainWindow.webContents.on('console-message', (event, level, message) => {
+// Handle console messages from renderer
+  mainWindow.webContents.on('console-message', (_event, _level, message) => {
     console.log('[RENDERER]', message);
     try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] [RENDERER] ${message}`); } catch (e) {}
   });

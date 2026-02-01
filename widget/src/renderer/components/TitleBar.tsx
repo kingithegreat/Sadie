@@ -1,12 +1,9 @@
-import React from "react";
 import { useEffect, useState } from "react";
 import { ipcRenderer } from "electron";
 import "../styles/global.css";
 
 // Modern Apple-style traffic-light TitleBar for SADIE
 // Uses theme tokens, accessibility, animation, and IPC hooks
-
-const isMac = navigator.userAgent.includes("Macintosh") || navigator.userAgent.includes("Mac OS X");
 
 export const TitleBar: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
