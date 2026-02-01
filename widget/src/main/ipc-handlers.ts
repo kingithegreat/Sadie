@@ -1,14 +1,24 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, app } from 'electron';
 import { getMainWindow } from './window-manager';
 import axios from 'axios';
+import * as path from 'path';
+import * as fs from 'fs';
 
-import { getSettings, saveSettings } from './config-manager';
+import { 
+  getSettings, 
+  saveSettings, 
+  assertPermission, 
+  getSettingsPath, 
+  resetPermissions, 
+  exportTelemetryConsent 
+} from './config-manager';
 import {
   MemoryManager,
   StoredConversation,
 } from './memory-manager';
 import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
+import { isDevelopment, isDemoMode } from './env';
 
 
 /**
@@ -22,7 +32,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     const g = global as any;
     if (g.__sadie_ipc_registered) {
       // Only log idempotent registration warnings in development
-      const { isDevelopment } = require('./env');
       if (isDevelopment) {
         console.log('[IPC] registerIpcHandlers already executed — skipping');
         try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) {}
@@ -163,7 +172,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // Check a single permission for a given tool (used by renderer to hide/disable UI)
   ipcMain.handle('sadie:has-permission', async (_event, toolName: string) => {
     try {
-      const { assertPermission } = require('./config-manager');
       const allowed = assertPermission(toolName);
       return { success: true, allowed };
     } catch (err: any) {
@@ -190,13 +198,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    * Get the absolute path to the config file (for E2E testing)
    */
   ipcMain.handle('sadie:get-config-path', async () => {
-    const { getSettingsPath } = require('./config-manager');
     return getSettingsPath();
   });
 
   ipcMain.handle('sadie:reset-permissions', async () => {
     try {
-      const { resetPermissions }: { resetPermissions: () => any } = require('./config-manager');
       const updated = resetPermissions();
       return { success: true, data: updated };
     } catch (err: any) {
@@ -207,7 +213,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   ipcMain.handle('sadie:export-consent', async () => {
     try {
-      const { exportTelemetryConsent } = require('./config-manager');
       const result = exportTelemetryConsent();
       return result;
     } catch (err: any) {
@@ -227,16 +232,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     const { isDemoMode } = require('./env');
     return { demo: !!isDemoMode };
   });
+return { demo: !!isDemoMode };
+  });
 
   // Read telemetry consent log (JSONL) for UI display
   ipcMain.handle('sadie:read-consent-log', async () => {
-    try {
-      const { app } = require('electron');
-      const path = require('path');
-      const fs = require('fs');
-      const userData = app.getPath('userData');
-      const logPath = path.join(userData, 'logs', 'telemetry-consent.log');
-      if (!fs.existsSync(logPath)) return { success: true, data: '' };
+    try {h)) return { success: true, data: '' };
       const data = fs.readFileSync(logPath, 'utf-8');
       return { success: true, data };
     } catch (err: any) {
