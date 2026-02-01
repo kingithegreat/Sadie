@@ -1222,8 +1222,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             return { ok: true, result: rerun };
           }
           if (resp.decision === 'always_allow') {
-            try { const { getSettings, saveSettings } = require('./config-manager'); const s = getSettings(); s.permissions = s.permissions || {}; for (const p of missing) s.permissions[p] = true; saveSettings(s); } catch (e) {}
-            const rerun } as any);
+            try { const s = getSettings(); s.permissions = s.permissions || {}; for (const p of missing) s.permissions[p] = true; saveSettings(s); } catch (e) {}
+            const rerun = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
             return { ok: true, result: rerun };
           }
         }
