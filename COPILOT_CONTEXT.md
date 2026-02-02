@@ -55,7 +55,6 @@ This file provides **persistent context** for GitHub Copilot when working on SAD
 ```
 sadie/
 ├── COPILOT_CONTEXT.md          ← YOU ARE HERE
-├── SADIE_SPEC_LOCK.txt         ← Unchangeable specifications
 ├── PROJECT_PLAN.md             ← Master implementation plan
 ├── COMPLIANCE_REPORT.md        ← Progress tracking
 ├── CHATGPT_EXECUTION_PROMPT.md ← Phase-by-phase execution plan

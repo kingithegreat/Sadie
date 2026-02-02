@@ -95,17 +95,6 @@
 
 ### Development
 
-                                 ## Architecture: Permissions & Batching
-
-                                 High-level flow (permissions and batch execution):
-
-                                 - Batch precheck: when a batch of tool calls is requested, `executeToolBatch()` inspects all unique tools and their declared `requiredPermissions` before executing any tool.
-                                 - `requiredPermissions` (tool definition): tools declare any named permissions they require (for example, a report generator declares `['write_file']`). These are discovered by the batch precheck so nested permissions are not missed.
-                                 - `overrideAllowed` (ToolContext): used for "Allow once" semantics. When the user chooses Allow once, the router re-invokes the batch with `overrideAllowed` set for the current execution; tools should consult this transient list when checking permissions.
-                                 - Re-execution semantics: if precheck finds missing permissions, the batch returns a `needs_confirmation` result (no tools run). The router prompts the user; on `allow_once` the batch is retried with `overrideAllowed`, on `always_allow` the setting is persisted and the batch is retried normally.
-
-                                 This section is the canonical reference for contributors implementing or modifying permission-related code.
-
 1. **Start development mode**
    ```bash
    npm run dev
@@ -262,3 +251,51 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **SADIE** - Bringing safe, intelligent AI assistance to the desktop while protecting user privacy and security.
+
+## 🔄 Migration from Legacy Startup Scripts
+
+**IMPORTANT:** `start.bat` and `Start-SADIE.bat` are deprecated and will be removed on **February 22, 2026**.
+
+### Windows Users
+
+**Old Method (Deprecated):**
+```batch
+start.bat
+# or
+Start-SADIE.bat
+```
+
+**New Method (Recommended):**
+```powershell
+powershell -ExecutionPolicy Bypass -File start.ps1
+```
+
+### Why Migrate?
+
+- ✅ **Better Error Handling**: Clear error messages and validation
+- ✅ **Cross-Platform**: Works on Windows, Linux (via PowerShell Core), and macOS
+- ✅ **Active Maintenance**: All updates will target start.ps1 only
+- ✅ **Unified Codebase**: Single script reduces maintenance overhead
+
+### Prerequisites
+
+- **Node.js**: Version 18.0.0 or higher (verify with `node --version`)
+- **Docker**: Required for containerized services
+- **PowerShell**: Built-in on Windows 10+, install PowerShell Core for other platforms
+
+### Troubleshooting
+
+**"Execution Policy" Error:**
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**"Command Not Found" Error:**
+- Ensure Node.js is installed and in your PATH
+- Restart your terminal after installing Node.js
+
+**Docker Issues:**
+- Verify Docker Desktop is running
+- Check `docker-compose --version` works
+
+For additional help, see [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) or open an issue.

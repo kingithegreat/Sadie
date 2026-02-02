@@ -65,6 +65,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return result as { n8n: 'online'|'offline'|'checking'; ollama: 'online'|'offline'|'checking'; lastChecked: string };
     });
 
+    // Uncensored Mode Handlers
+    ipcMain.handle('sadie:get-uncensored-mode', async () => {
+      const settings = getSettings();
+      return { enabled: !!settings.uncensoredMode };
+    });
+
+    ipcMain.handle('sadie:set-uncensored-mode', async (_event, enabled: boolean) => {
+      const settings = getSettings();
+      settings.uncensoredMode = enabled;
+      saveSettings(settings); // This function is already imported from config-manager
+      return { success: true, enabled: settings.uncensoredMode };
+    });
+
     ipcMain.on('window-minimize', () => {
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {

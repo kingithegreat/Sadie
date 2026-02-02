@@ -19,11 +19,11 @@
   --bg-light: oklch(28% 0 0);
 
   
-  /* Warm accent colors using modern color functions - NOW COOLER BLUE/INDIGO */
-  --accent-primary: oklch(65% 0.15 260); /* Blue-ish */
-  --accent-hover: color-mix(in oklch, var(--accent-primary), white 10%);
-  --accent-light: color-mix(in oklch, var(--accent-primary), white 20%);
-  --accent-dark: color-mix(in oklch, var(--accent-primary), black 10%);
+  /* Professional accent colors - Refined indigo/blue */
+  --accent-primary: oklch(62% 0.18 265);
+  --accent-hover: oklch(68% 0.18 265);
+  --accent-light: oklch(75% 0.15 265);
+  --accent-dark: oklch(52% 0.20 265);
   
   /* Text colors */
   --text-primary: oklch(98% 0 0);
@@ -48,10 +48,10 @@
   --warning: oklch(85% 0.15 85);
   --error: oklch(65% 0.2 25);
   
-  /* Enhanced shadows with modern syntax */
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.3);
-  --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.4);
-  --shadow-lg: 0 8px 24px oklch(0% 0 0 / 0.5);
+  /* Professional shadows with subtle depth */
+  --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.12), 0 1px 2px oklch(0% 0 0 / 0.08);
+  --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.15), 0 2px 4px oklch(0% 0 0 / 0.10);
+  --shadow-lg: 0 10px 40px oklch(0% 0 0 / 0.20), 0 4px 12px oklch(0% 0 0 / 0.12);
   
   /* Spacing using modern calc() and trigonometric functions */
   --spacing-xs: 4px;
@@ -90,13 +90,15 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', 'Helvetica Neue', sans-serif;
   font-size: 15px;
   line-height: 1.6;
   color: var(--text-primary);
   background: var(--bg-main);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern' 1, 'liga' 1;
 }
 
 /* Main app container with CSS Grid */
@@ -246,7 +248,7 @@ body {
 .messages-container::-webkit-scrollbar-thumb { background: var(--bg-light); border-radius: 8px; }
 
 /* Input container tweaks */
-.input-container { padding: 10px 16px; border-top: 1px solid var(--border-medium); }
+.input-container { padding: 16px 20px; border-top: 1px solid var(--border-medium); }
 
 /* Send button glow on hover - already defined gradient but add glow */
 .send-button:hover:not(:disabled) { box-shadow: 0 12px 30px rgba(217,173,124,0.16); }
@@ -258,20 +260,21 @@ body {
 .message-list {
   max-width: 768px;
   margin: 0 auto;
-  padding: 0 var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-lg);
 }
 
 /* Individual message wrapper with modern grid */
 .message-wrapper {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 12px;
-  margin-block: 12px;
-  padding-inline: 12px;
+  gap: 14px;
+  margin-block: 24px;
+  padding-inline: 16px;
   align-items: flex-start;
   animation: fadeIn 300ms ease;
   container-type: inline-size;
   container-name: message;
+  width: 100%;
 }
 
 @keyframes fadeIn {
@@ -292,18 +295,19 @@ body {
 
 /* Avatar with modern styling */
 .message-avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   flex-shrink: 0;
   transition: var(--transition-fast);
-  background: #222;
-  box-shadow: 0 0 6px rgba(0,0,0,0.6);
+  background: oklch(18% 0 0);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid oklch(25% 0 0);
 }
 
 .message-avatar.user {
@@ -319,32 +323,42 @@ body {
 /* Message content */
 .message-content {
   flex: 1;
-  max-width: calc(100% - 52px);
+  max-width: 100%;
+  min-width: 0;
 }
 
 .message-bubble {
-  max-width: 70%;
-  padding: 12px 16px;
-  border-radius: 16px;
-  line-height:var(--accent-primary);
+  display: inline-block;
+  max-width: 75%;
+  min-width: 60px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.message-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.message-wrapper.user .message-bubble {
+  background: var(--accent-primary);
   color: white;
-  border-bottom-right-radius: var(--spacing-xs);
-  margin-left: auto;
+  border-bottom-right-radius: 4px;
+  box-shadow: var(--shadow-sm);
+  font-weight: 450;
 }
 
 .message-wrapper.assistant .message-bubble {
-  background: var(--bg-input);
+  background: oklch(18% 0 0);
   color: var(--text-primary);
-  border-bottom-left-radius: var(--spacing-xs);
-  border: 1px solid var(--border-mediumng-xs);
-  margin-left: auto;
-}
-
-.message-wrapper.assistant .message-bubble {
-  background: #1a1a1a;
-  color: var(--text-primary);
-  border-bottom-left-radius: var(--spacing-xs);
-  border: 1px solid rgba(217,173,124,0.25);
+  border-bottom-left-radius: 4px;
+  border: 1px solid oklch(25% 0 0);
+  box-shadow: var(--shadow-sm);
 }
 .message-bubble:empty { display: none; }
 
@@ -1823,48 +1837,6 @@ body {
 .message-wrapper { margin-top: 12px; margin-bottom: 12px; }
 
 /* End message fixes */
-
-/* ===================== SADIE Premium Gold / Black Theme ===================== */
-:root {
-  /* Gold tones */
-  --sadie-gold: oklch(74% 0.12 95); /* warm gold */
-  --sadie-gold-700: color-mix(in oklch, var(--sadie-gold), black 12%);
-  --sadie-gold-500: color-mix(in oklch, var(--sadie-gold), white 10%);
-
-  /* Dark neutrals */
-  --sadie-charcoal: oklch(10% 0 0);
-  --sadie-charcoal-2: oklch(16% 0 0);
-
-  /* Accents */
-  --sadie-warm-shadow: 0 8px 24px oklch(0% 0 0 / 0.45);
-}
-
-/* Body tweaks for premium look */
-body {
-  background: linear-gradient(180deg, var(--bg-main), var(--bg-chat));
-}
-
-/* User bubble: warm gold (soft bronze) */
-.message-wrapper.user .message-bubble {
-  background: color-mix(in oklch, var(--sadie-gold-500), oklch(0% 0 0) 6%);
-  color: var(--text-dark);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.02) inset;
-}
-
-/* Assistant bubble: deep charcoal with subtle gold border */
-.message-wrapper.assistant .message-bubble {
-  background: var(--sadie-charcoal-2);
-  color: var(--text-primary);
-  border: 1px solid color-mix(in oklch, var(--sadie-gold), var(--sadie-charcoal) 84%);
-  box-shadow: var(--sadie-warm-shadow);
-}
-
-/* Avatar gold ring */
-.message-avatar.user {
-  background: linear-gradient(135deg, var(--sadie-gold-700), var(--sadie-gold));
-  color: var(--text-dark);
-  box-shadow: 0 6px 14px rgba(0,0,0,0.35);
-}
 
 .message-avatar.assistant {
   background: linear-gradient(135deg, var(--sadie-charcoal-2), color-mix(in oklch, var(--sadie-charcoal-2), black 6%));

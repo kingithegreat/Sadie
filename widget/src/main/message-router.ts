@@ -166,25 +166,42 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   if (!userMessage || typeof userMessage !== 'string') return null;
   const m = userMessage.toLowerCase();
 
-  // SPORTS / NBA intents
-  if (/\b(nba|nba\s|nba:|\bgame(s)?\b|\bscores?\b|\bteam\b)/i.test(m)) {
-    const teamMatch = m.match(/(?:for|about|on|between) ([a-zA-Z0-9\s]+)/i);
-    const teamQuery = teamMatch ? teamMatch[1].trim() : '';
+  // SPORTS / NBA intents - match team names and basketball terms
+  // Common NBA team names for fuzzy matching
+  const nbaTeams = ['warriors', 'lakers', 'celtics', 'bulls', 'heat', 'nets', 'knicks', 'suns', 'bucks', 'nuggets', 
+                   'clippers', 'spurs', 'rockets', 'mavericks', 'thunder', 'jazz', 'kings', 'pelicans', 'grizzlies',
+                   'hawks', 'hornets', 'cavaliers', 'pistons', 'pacers', 'magic', 'wizards', 'raptors', 'timberwolves', 'blazers', '76ers', 'sixers'];
+  const hasNbaTeam = nbaTeams.some(team => m.includes(team));
+  
+  if (hasNbaTeam || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) {
+    // Extract team name
+    let teamQuery = '';
+    for (const team of nbaTeams) {
+      if (m.includes(team)) {
+        teamQuery = team;
+        break;
+      }
+    }
     const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
     const call = { name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } };
     return { calls: [call] };
   }
 
-  // WEATHER intents
-  if (/\bweather\b/i.test(m)) {
-    const locMatch = m.match(/in ([a-zA-Z\s,]+)/i);
-    const location = locMatch ? locMatch[1].trim() : '';
+  // WEATHER intents - very fuzzy match for weather/weater/wether/whether etc
+  if (/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy)\b/i.test(m)) {
+    // Extract location - look for "in <location>" pattern
+    const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|$)/i) ||
+                     m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+    let location = locMatch ? locMatch[1].trim() : '';
+    // Remove trailing time words
+    location = location.replace(/\s*(tomorrow|today|tonight|this week|next week)$/i, '').trim();
     if (location) return { calls: [{ name: 'get_weather', arguments: { location } }] };
+    // If no location found, don't match - let LLM handle it
     return null;
   }
 
   // WEB SEARCH intents
-  if (/\b(search for|find|who is|what is|look up|tell me about)\b/i.test(m)) {
+  if (/\b(search for|find|who is|what is|look up|tell me about|google)\b/i.test(m)) {
     const q = userMessage.trim();
     return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
   }
@@ -426,8 +443,8 @@ export async function streamFromOllamaWithTools(
     ...(imageData.length > 0 ? { images: imageData } : {})
   });
   
-  // Get tools (disable for vision models and uncensored mode as they don't support tools well)
-  const tools = (hasImages || uncensoredModeEnabled) ? undefined : getOllamaTools();
+  // Get tools (disable only for vision models as they don't support tools well)
+  const tools = hasImages ? undefined : getOllamaTools();
   
   console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, message="${message.substring(0, 30)}..."`);
   
@@ -994,7 +1011,165 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           }
 
           try {
-            // Instead of proxying streaming through n8n (which can buffer), stream directly from Ollama here for true token-by-token behavior.
+            // SMART ROUTING: Use intent detection first to handle known patterns reliably
+            const intentResult = await preProcessIntent(enhancedMessage);
+            console.log('[SADIE] Intent result:', intentResult);
+            let shouldUseDirectTools = false;
+            let toolResults: any[] | null = null;
+            
+            if (intentResult && intentResult.calls && intentResult.calls.length > 0) {
+              console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
+              
+              // Execute tools directly without involving the LLM
+              try {
+                toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
+                  executionId: `intent-${Date.now()}`,
+                  requestConfirmation,
+                  requestPermission: (perms, reason) => permissionRequester.request(event.sender, streamId, perms, reason)
+                } as ToolContext);
+                
+                console.log('[SADIE] Intent tool results:', toolResults);
+                
+                // Check if results are empty/useless (0 items returned) OR failed
+                const hasUsefulResults = toolResults.some((r: any) => {
+                  if (!r) return false;
+                  // Check for failures
+                  if (r.success === false) return false;
+                  if (!r.result) return false;
+                  // Check for empty arrays
+                  if (r.result.events && Array.isArray(r.result.events) && r.result.events.length === 0) return false;
+                  if (r.result.players && Array.isArray(r.result.players) && r.result.players.length === 0) return false;
+                  if (r.result.teams && Array.isArray(r.result.teams) && r.result.teams.length === 0) return false;
+                  if (r.result.articles && Array.isArray(r.result.articles) && r.result.articles.length === 0) return false;
+                  if (r.result.resultCount === 0) return false;
+                  return true;
+                });
+                
+                if (!hasUsefulResults) {
+                  console.log('[SADIE] Tool results empty or failed, falling back to web search');
+                  // Fall back to web search
+                  const webSearchCall: ToolCall = {
+                    name: 'web_search',
+                    arguments: {
+                      query: enhancedMessage,
+                      maxResults: 3,
+                      fetchTopResult: true
+                    }
+                  };
+                  
+                  toolResults = await executeToolBatch([webSearchCall], {
+                    executionId: `websearch-${Date.now()}`,
+                    requestConfirmation,
+                    requestPermission: (perms, reason) => permissionRequester.request(event.sender, streamId, perms, reason)
+                  } as ToolContext);
+                  
+                  console.log('[SADIE] Web search results:', toolResults);
+                }
+                
+                shouldUseDirectTools = true;
+              } catch (toolErr: any) {
+                console.error('[SADIE] Intent tool execution failed:', toolErr);
+                // Try web search as ultimate fallback
+                try {
+                  console.log('[SADIE] Trying web search as fallback after error');
+                  const webSearchCall: ToolCall = {
+                    name: 'web_search',
+                    arguments: {
+                      query: enhancedMessage,
+                      maxResults: 3,
+                      fetchTopResult: true
+                    }
+                  };
+                  toolResults = await executeToolBatch([webSearchCall], {
+                    executionId: `websearch-fallback-${Date.now()}`,
+                    requestConfirmation,
+                    requestPermission: (perms, reason) => permissionRequester.request(event.sender, streamId, perms, reason)
+                  } as ToolContext);
+                  shouldUseDirectTools = true;
+                } catch (webErr) {
+                  console.error('[SADIE] Web search fallback also failed:', webErr);
+                  // Continue to LLM fallback
+                }
+              }
+            }
+            
+            // If we have tool results from intent detection, stream them as the response
+            if (shouldUseDirectTools && toolResults) {
+              // Ensure stream is tracked
+              if (!activeStreams.has(streamId)) {
+                activeStreams.set(streamId, { destroy: () => {} });
+              }
+
+              // Format tool results into a nice response
+              let responseText = '';
+              for (const result of toolResults) {
+                if (result.result) {
+                  // Handle NBA games
+                  if (result.result.events && result.result.events.length > 0) {
+                    responseText += 'Here are the games:\n\n';
+                    result.result.events.slice(0, 5).forEach((game: any) => {
+                      const teams = game.competitions?.[0]?.competitors?.map((c: any) => c.team.displayName).join(' vs ') || 'Unknown matchup';
+                      const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
+                      responseText += `${teams} - ${status}\n`;
+                    });
+                  } 
+                  // Handle web search results
+                  else if (result.result.topResultContent) {
+                    const topContent = result.result.topResultContent.content || result.result.topResultContent.contentText;
+                    if (topContent) {
+                      responseText += topContent + '\n\n';
+                    }
+                    if (result.result.topResultContent.url) {
+                      responseText += `Source: ${result.result.topResultContent.url}\n`;
+                    }
+                    if (!topContent && result.result.note) {
+                      responseText += `${result.result.note}\n`;
+                    }
+                  }
+                  // Handle generic results with results array
+                  else if (result.result.results && Array.isArray(result.result.results) && result.result.results.length > 0) {
+                    result.result.results.slice(0, 3).forEach((item: any) => {
+                      if (item.title) responseText += `• ${item.title}\n`;
+                      if (item.snippet) responseText += `  ${item.snippet}\n`;
+                      if (item.url) responseText += `  ${item.url}\n`;
+                      responseText += '\n';
+                    });
+                    if (result.result.note) {
+                      responseText += `${result.result.note}\n`;
+                    }
+                  }
+                  // Handle plain content/summary
+                  else if (result.result.content) {
+                    responseText += result.result.content + '\n';
+                  } else if (result.result.summary) {
+                    responseText += result.result.summary + '\n';
+                  } 
+                  // Last resort: stringify
+                  else {
+                    responseText += JSON.stringify(result.result).slice(0, 500) + '\n';
+                  }
+                }
+              }
+
+              // If nothing was assembled, dump the raw result to avoid silent empties
+              if (!responseText.trim() && toolResults.length > 0) {
+                responseText = JSON.stringify(toolResults[0].result).slice(0, 500);
+              }
+              
+              if (responseText.trim()) {
+                // Stream the formatted response
+                addToHistory(convId, 'user', enhancedMessage);
+                addToHistory(convId, 'assistant', responseText);
+                
+                // Send as a single chunk to avoid silent failures
+                try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                activeStreams.delete(streamId);
+                return;
+              }
+            }
+            
+            // Otherwise, use LLM with tool calling as usual
             const handler = await streamFromOllamaWithTools(
               enhancedMessage,
               request.images,

@@ -1,0 +1,18 @@
+appId: com.sadie.app
+productName: SADIE
+directories:
+  output: dist-electron
+  buildResources: build
+files:
+  - out/**
+  - scripts/**
+win:
+  target:
+    - nsis
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true

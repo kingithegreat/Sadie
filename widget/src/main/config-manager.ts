@@ -30,6 +30,7 @@ export interface Settings {
 
   // Misc / developer defaults
   defaultTeam?: string;
+  uncensoredMode?: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: Settings = {
   ollamaUrl: 'http://localhost:11434',
   theme: 'system',
   alwaysOnTop: true,
+  uncensoredMode: false,
   globalHotkey: 'Ctrl+Shift+Space',
   confirmDangerousActions: true,
   saveConversationHistory: true,
@@ -85,7 +87,7 @@ export function assertPermission(toolName: string): boolean {
   return false;
 }
 
-function getSettingsPath(): string {
+export function getSettingsPath(): string {
   const userDataPath = app.getPath('userData');
   const path = join(userDataPath, 'config', 'user-settings.json');
   if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Config path resolved:', path);

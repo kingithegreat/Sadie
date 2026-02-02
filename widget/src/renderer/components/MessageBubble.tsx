@@ -28,7 +28,7 @@ export function MessageBubble({
             {shouldShowBubble && (
               <div className="message-bubble">
                 {hasContent ? (
-                  message.content
+                  <div className="message-text">{message.content}</div>
                 ) : (
                   isAssistant && state === "streaming" && (
                     <div className="streaming-indicator">
@@ -99,7 +99,7 @@ export function MessageBubble({
             {shouldShowBubble && (
               <div className="message-bubble">
                 {hasContent ? (
-                  message.content
+                  <div className="message-text">{message.content}</div>
                 ) : (
                   isAssistant && state === "streaming" && (
                     <div className="streaming-indicator">

@@ -18,11 +18,6 @@ export default defineConfig({
     trace: 'on-first-retry',
     video: 'on-first-retry',
     screenshot: 'only-on-failure'
-  },
-  webServer: {
-    command: 'npm run start',
-    port: 3000,
-    env: { SADIE_E2E: 'true' }
   }
 });
 
