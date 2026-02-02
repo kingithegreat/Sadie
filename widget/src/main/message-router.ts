@@ -233,6 +233,60 @@ export async function analyzeAndRouteMessage(message: string): Promise<RoutingDe
 // Summarize tool results into a human-readable assistant message. Keep this
 // deterministic and brief so the UI can present a helpful summary after tools
 // execute.
+function takeSentences(text: string, maxChars = 400, maxSentences = 3): string {
+  const cleaned = (text || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  let out = '';
+  let count = 0;
+  for (const part of cleaned.split(/(?<=[.!?])\s+/)) {
+    if (!part) continue;
+    const candidate = out ? `${out} ${part}` : part;
+    if (candidate.length > maxChars || count >= maxSentences) break;
+    out = candidate;
+    count++;
+  }
+  return out || cleaned.slice(0, maxChars);
+}
+
+function extractKeySnippets(text: string, maxItems = 2): string[] {
+  const sentences = (text || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/);
+  const interesting: string[] = [];
+  const signal = /(\bjan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec\b|\b\d{1,2}[\/\-]\d{1,2}\b|\b\d{1,2}\s?(am|pm)\b|\bvs\b|\bat\b)/i;
+  for (const s of sentences) {
+    if (!s) continue;
+    if (signal.test(s)) {
+      interesting.push(s.trim());
+      if (interesting.length >= maxItems) break;
+    }
+  }
+  return interesting;
+}
+
+function formatWebSearchResult(payload: any): string {
+  const res = payload?.result ?? payload;
+  if (!res) return '';
+  const parts: string[] = [];
+  const top = res.topResultContent;
+  const firstResult = Array.isArray(res.results) && res.results.length > 0 ? res.results[0] : undefined;
+  const content = (top?.contentText || top?.content || firstResult?.snippet || '').trim();
+
+  if (top?.title) parts.push(top.title);
+  const condensed = takeSentences(content, 320, 3);
+  if (condensed) parts.push(condensed);
+
+   // Surface up to two high-signal snippets (dates, times, vs/at) to answer schedule-like queries quickly.
+  const highlights = extractKeySnippets(content, 2);
+  if (highlights.length > 0) {
+    parts.push(highlights.map(h => `- ${h}`).join('\n'));
+  }
+
+  if (firstResult?.url) parts.push(`Top link: ${firstResult.title || firstResult.url} — ${firstResult.url}`);
+  else if (top?.url) parts.push(`Source: ${top.url}`);
+
+  if (res.note) parts.push(res.note);
+  return parts.filter(Boolean).join('\n');
+}
+
 function summarizeToolResults(results: any[]): string {
   if (!results || results.length === 0) return 'No results returned from tools.';
   const parts: string[] = [];
@@ -240,6 +294,11 @@ function summarizeToolResults(results: any[]): string {
     if (r === null || r === undefined) continue;
     if (r.success === false) {
       parts.push(`Tool failed: ${r.error || r.message || 'unknown error'}`);
+      continue;
+    }
+    const webSummary = formatWebSearchResult(r.result || r);
+    if (webSummary) {
+      parts.push(webSummary);
       continue;
     }
     // Heuristic extraction for common result shapes
