@@ -11,6 +11,10 @@ interface WindowPosition {
 export interface Settings {
   n8nUrl: string;
   ollamaUrl: string;
+  // Model selection
+  chatModel?: string;
+  uncensoredModel?: string;
+  visionModel?: string;
   theme: 'light' | 'dark' | 'system';
   alwaysOnTop: boolean;
   globalHotkey: string;
@@ -35,7 +39,11 @@ export interface Settings {
 
 const DEFAULT_SETTINGS: Settings = {
   n8nUrl: 'http://localhost:5678',
-  ollamaUrl: 'http://localhost:11434',
+  // Prefer IPv4 to avoid ::1 resolution issues on Windows
+  ollamaUrl: 'http://127.0.0.1:11434',
+  chatModel: 'llama3.2:3b',
+  uncensoredModel: 'dolphin-llama3:8b',
+  visionModel: 'llava',
   theme: 'system',
   alwaysOnTop: true,
   uncensoredMode: false,

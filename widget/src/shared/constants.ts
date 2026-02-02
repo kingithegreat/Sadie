@@ -6,7 +6,7 @@
 export const DEFAULT_N8N_URL = 'http://localhost:5678';
 export const SADIE_WEBHOOK_PATH = '/webhook/sadie/chat';
 export const HEALTH_PATH = '/healthz';
-export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+export const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 
 // User Settings
 export const DEFAULT_USER_ID = 'desktop_widget';

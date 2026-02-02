@@ -9,7 +9,7 @@ import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import axios from 'axios';
 
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 const COLLECTION_NAME = 'sadie_memories';
 const EMBEDDING_MODEL = 'nomic-embed-text';
 

@@ -71,7 +71,7 @@ const STORE_FILES = {
 // Default values
 const DEFAULT_PREFERENCES: UserPreferences = {
   theme: 'dark',
-  ollamaEndpoint: 'http://localhost:11434',
+  ollamaEndpoint: 'http://127.0.0.1:11434',
   n8nEndpoint: 'http://localhost:5678',
   defaultModel: 'phi4',
   hotkey: 'Ctrl+Shift+Space',

@@ -4,7 +4,7 @@ import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
 
-import { 
+import {
   getSettings, 
   saveSettings, 
   assertPermission, 
@@ -12,6 +12,7 @@ import {
   resetPermissions, 
   exportTelemetryConsent 
 } from './config-manager';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
 import {
   MemoryManager,
   StoredConversation,
@@ -38,6 +39,14 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
       return;
     }
+    // Align runtime uncensored flag with persisted settings at startup
+    try {
+      const initialSettings = getSettings();
+      setUncensoredMode(!!initialSettings.uncensoredMode);
+    } catch (e) {
+      console.error('[IPC] Failed to hydrate uncensored mode from settings:', (e as any)?.message || e);
+    }
+
     // Health check: verify n8n and Ollama statuses
     ipcMain.handle('sadie:check-connection', async () => {
       const settings = getSettings();
@@ -54,7 +63,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
       try {
         // Ollama may not expose /healthz; a simple GET on base URL will suffice for a quick check
-        const ollamaBase = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
+        const settings = getSettings();
+        const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || DEFAULT_OLLAMA_URL).trim();
         const r2 = await axios.get(ollamaBase, { timeout: 2000 });
         result.ollama = (r2 && r2.status && r2.status >= 200 && r2.status < 500) ? 'online' : 'offline';
       } catch (e) {
@@ -67,14 +77,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
     // Uncensored Mode Handlers
     ipcMain.handle('sadie:get-uncensored-mode', async () => {
-      const settings = getSettings();
-      return { enabled: !!settings.uncensoredMode };
+      try {
+        return { enabled: routerGetUncensoredMode() };
+      } catch (e) {
+        const settings = getSettings();
+        return { enabled: !!settings.uncensoredMode };
+      }
     });
 
     ipcMain.handle('sadie:set-uncensored-mode', async (_event, enabled: boolean) => {
       const settings = getSettings();
       settings.uncensoredMode = enabled;
       saveSettings(settings); // This function is already imported from config-manager
+      try { setUncensoredMode(enabled); } catch (e) { console.error('[IPC] Failed to set uncensored mode runtime flag:', (e as any)?.message || e); }
       return { success: true, enabled: settings.uncensoredMode };
     });
 

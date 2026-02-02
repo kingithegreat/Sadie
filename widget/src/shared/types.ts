@@ -81,6 +81,9 @@ export interface Settings {
   n8nUrl: string;
   widgetHotkey: string;
   uncensoredMode?: boolean;
+  chatModel?: string;
+  uncensoredModel?: string;
+  visionModel?: string;
   // First-run / telemetry
   firstRun?: boolean;
   telemetryEnabled?: boolean;

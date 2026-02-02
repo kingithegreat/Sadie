@@ -13,8 +13,8 @@ let mammoth: typeof import('mammoth') | null = null;
 
 async function getPdfParser() {
   if (!pdfParse) {
-    const mod = await import('pdf-parse');
-    pdfParse = mod;
+    // pdf-parse v1.1.1 exports the function directly
+    pdfParse = require('pdf-parse');
   }
   return pdfParse;
 }
@@ -57,8 +57,8 @@ async function parseDocumentContent(
   
   // PDF parsing
   if (mimeType === 'application/pdf' || ext === '.pdf') {
-    const pdf = await getPdfParser();
-    const result = await pdf(buffer);
+    const pdfParser = await getPdfParser();
+    const result = await pdfParser(buffer);
     return {
       text: result.text,
       pageCount: result.numpages

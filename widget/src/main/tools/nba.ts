@@ -148,17 +148,16 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       let events = board?.events || [];
 
       // If no events found for the requested date/range, fall back to a
-      // rolling 7-day window to avoid week-boundary and timezone issues.
-      // If events empty and either no date was given, or the date token is a
-      // fuzzy phrase like 'this week' / 'last week', fall back to a rolling
-      // 7-day window to be tolerant of week-boundaries and timezone shifts.
-      if ((!events || events.length === 0) && (!d || /week|last/i.test(d))) {
+      // rolling window to avoid week-boundary and timezone issues.
+      // Check both past 3 days and next 7 days to find upcoming games.
+      if ((!events || events.length === 0) && (!d || /week|last|next/i.test(d))) {
         const seen = new Set<string>();
         const agg: any[] = [];
         const now = new Date();
-        for (let i = 0; i < 7; i++) {
+        // Check past 3 days and next 7 days
+        for (let i = -3; i <= 7; i++) {
           const dt = new Date(now);
-          dt.setDate(now.getDate() - i);
+          dt.setDate(now.getDate() + i);
           const y = dt.getFullYear();
           const m = String(dt.getMonth() + 1).padStart(2, '0');
           const day = String(dt.getDate()).padStart(2, '0');

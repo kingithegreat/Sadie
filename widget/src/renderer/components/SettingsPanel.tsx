@@ -6,6 +6,9 @@ interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   widgetHotkey: string;
+  chatModel?: string;
+  uncensoredModel?: string;
+  visionModel?: string;
   uncensoredMode?: boolean;
   telemetryEnabled?: boolean;
   permissions?: Record<string, boolean>;
@@ -24,7 +27,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onSave,
   onClose
 }) => {
-  const [localSettings, setLocalSettings] = useState<Settings>(settings);
+  const defaultModels = {
+    chatModel: 'llama3.2:3b',
+    uncensoredModel: 'dolphin-llama3:8b',
+    visionModel: 'llava'
+  };
+
+  const [localSettings, setLocalSettings] = useState<Settings>({
+    ...settings,
+    chatModel: settings.chatModel || defaultModels.chatModel,
+    uncensoredModel: settings.uncensoredModel || defaultModels.uncensoredModel,
+    visionModel: settings.visionModel || defaultModels.visionModel
+  });
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, boolean>>(((settings as any).permissions || {}) as Record<string, boolean>);
   const [showTelemetryModal, setShowTelemetryModal] = useState(false);
@@ -79,7 +93,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Update local settings when props change
   useEffect(() => {
-    setLocalSettings(settings);
+    setLocalSettings({
+      ...settings,
+      chatModel: settings.chatModel || defaultModels.chatModel,
+      uncensoredModel: settings.uncensoredModel || defaultModels.uncensoredModel,
+      visionModel: settings.visionModel || defaultModels.visionModel
+    });
     setPermissions((settings as any).permissions || {});
   }, [settings]);
 
@@ -98,7 +117,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Update local settings when props change
   useEffect(() => {
-    setLocalSettings(settings);
+    setLocalSettings({
+      ...settings,
+      chatModel: settings.chatModel || defaultModels.chatModel,
+      uncensoredModel: settings.uncensoredModel || defaultModels.uncensoredModel,
+      visionModel: settings.visionModel || defaultModels.visionModel
+    });
   }, [settings]);
 
   const handleSave = () => {
@@ -152,6 +176,57 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }
             placeholder="http://localhost:5678"
           />
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Chat model</label>
+          <input
+            type="text"
+            className="setting-input"
+            value={localSettings.chatModel || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                chatModel: e.target.value || defaultModels.chatModel
+              })
+            }
+            placeholder={defaultModels.chatModel}
+          />
+          <small className="setting-hint">Used for standard chats with tool calling.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Uncensored model</label>
+          <input
+            type="text"
+            className="setting-input"
+            value={localSettings.uncensoredModel || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                uncensoredModel: e.target.value || defaultModels.uncensoredModel
+              })
+            }
+            placeholder={defaultModels.uncensoredModel}
+          />
+          <small className="setting-hint">Used when 🔓 Uncensored Mode is enabled (tools stay disabled).</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Vision model</label>
+          <input
+            type="text"
+            className="setting-input"
+            value={localSettings.visionModel || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                visionModel: e.target.value || defaultModels.visionModel
+              })
+            }
+            placeholder={defaultModels.visionModel}
+          />
+          <small className="setting-hint">Used automatically when images are attached.</small>
         </div>
 
         <div className="setting-group">

@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
+﻿import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { permissionRequester } from './permission-requester';
 import { looksLikeToolJson } from './tool-helpers';
@@ -280,7 +280,7 @@ function formatWebSearchResult(payload: any): string {
     parts.push(highlights.map(h => `- ${h}`).join('\n'));
   }
 
-  if (firstResult?.url) parts.push(`Top link: ${firstResult.title || firstResult.url} — ${firstResult.url}`);
+  if (firstResult?.url) parts.push(`Top link: ${firstResult.title || firstResult.url} ΓÇö ${firstResult.url}`);
   else if (top?.url) parts.push(`Source: ${top.url}`);
 
   if (res.note) parts.push(res.note);
@@ -430,6 +430,16 @@ interface ChatMessage {
   tool_calls?: any[];
 }
 
+// Simple greeting patterns that shouldn't trigger tool calls
+const SIMPLE_GREETING_PATTERNS = /^(hi|hello|hey|yo|sup|howdy|greetings|good\s*(morning|afternoon|evening)|what'?s\s*up|hiya)[\s!?.]*$/i;
+
+/**
+ * Check if a message is a simple greeting that doesn't need tools
+ */
+function isSimpleGreeting(message: string): boolean {
+  return SIMPLE_GREETING_PATTERNS.test(message.trim());
+}
+
 // Stream from Ollama with tool calling support
 export async function streamFromOllamaWithTools(
   message: string, 
@@ -441,7 +451,8 @@ export async function streamFromOllamaWithTools(
   onEnd: () => void, 
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
-  requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>
+  requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
+  options?: { hasDocuments?: boolean }
 ): Promise<{ cancel: () => void }> {
   const controller = new AbortController();
   let ended = false;
@@ -502,10 +513,18 @@ export async function streamFromOllamaWithTools(
     ...(imageData.length > 0 ? { images: imageData } : {})
   });
   
-  // Get tools (disable only for vision models as they don't support tools well)
-  const tools = hasImages ? undefined : getOllamaTools();
+  // Get tools (disable for vision models, models that don't support tools, and simple greetings)
+  // dolphin-llama3 doesn't support Ollama tool calling
+  const modelSupportsTools = !hasImages && model !== OLLAMA_UNCENSORED_MODEL;
+  const skipToolsForGreeting = isSimpleGreeting(message);
+  const hasDocuments = options?.hasDocuments ?? false;
   
-  console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, message="${message.substring(0, 30)}..."`);
+  // Only include document tools when documents are actually attached to THIS message
+  const tools = (modelSupportsTools && !skipToolsForGreeting) 
+    ? getOllamaTools({ excludeDocumentTools: !hasDocuments })
+    : undefined;
+  
+  console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, hasDocuments=${hasDocuments}, isGreeting=${skipToolsForGreeting}, message="${message.substring(0, 30)}..."`);
   
   // Tool execution context
   const toolContext: ToolContext = {
@@ -1106,11 +1125,17 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 
                 if (!hasUsefulResults) {
                   console.log('[SADIE] Tool results empty or failed, falling back to web search');
-                  // Fall back to web search
+                  // Fall back to web search - add context based on original intent
+                  let searchQuery = enhancedMessage;
+                  // If original call was NBA-related, add context to avoid wrong results
+                  const wasNbaQuery = intentResult.calls.some((c: any) => c.name === 'nba_query');
+                  if (wasNbaQuery && !/\b(nba|basketball|golden state)\b/i.test(searchQuery)) {
+                    searchQuery = `NBA basketball ${searchQuery}`;
+                  }
                   const webSearchCall: ToolCall = {
                     name: 'web_search',
                     arguments: {
-                      query: enhancedMessage,
+                      query: searchQuery,
                       maxResults: 3,
                       fetchTopResult: true
                     }
@@ -1128,13 +1153,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 shouldUseDirectTools = true;
               } catch (toolErr: any) {
                 console.error('[SADIE] Intent tool execution failed:', toolErr);
-                // Try web search as ultimate fallback
+                // Try web search as ultimate fallback - add context based on original intent
                 try {
                   console.log('[SADIE] Trying web search as fallback after error');
+                  let fallbackQuery = enhancedMessage;
+                  const wasNbaQuery = intentResult.calls.some((c: any) => c.name === 'nba_query');
+                  if (wasNbaQuery && !/\b(nba|basketball|golden state)\b/i.test(fallbackQuery)) {
+                    fallbackQuery = `NBA basketball ${fallbackQuery}`;
+                  }
                   const webSearchCall: ToolCall = {
                     name: 'web_search',
                     arguments: {
-                      query: enhancedMessage,
+                      query: fallbackQuery,
                       maxResults: 3,
                       fetchTopResult: true
                     }
@@ -1188,7 +1218,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   // Handle generic results with results array
                   else if (result.result.results && Array.isArray(result.result.results) && result.result.results.length > 0) {
                     result.result.results.slice(0, 3).forEach((item: any) => {
-                      if (item.title) responseText += `• ${item.title}\n`;
+                      if (item.title) responseText += `ΓÇó ${item.title}\n`;
                       if (item.snippet) responseText += `  ${item.snippet}\n`;
                       if (item.url) responseText += `  ${item.url}\n`;
                       responseText += '\n';
@@ -1229,6 +1259,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
             
             // Otherwise, use LLM with tool calling as usual
+            const hasCurrentDocuments = !!(request.documents && request.documents.length > 0);
             const handler = await streamFromOllamaWithTools(
               enhancedMessage,
               request.images,
@@ -1277,7 +1308,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 })();
               },
               requestConfirmation,
-              (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason)
+              (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
+              { hasDocuments: hasCurrentDocuments }
             );
 
             activeStreams.set(streamId, { destroy: handler.cancel });
@@ -1404,7 +1436,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // helps make cancel behavior deterministic in tests.
         try {
           if (E2E) {
-            // Don't await — fire and forget
+            // Don't await ΓÇö fire and forget
             axios.post(`${n8nUrl}/__sadie_e2e_cancel`, { streamId }).catch(() => {});
           }
         } catch (e) {}

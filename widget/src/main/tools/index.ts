@@ -56,10 +56,22 @@ export function getAllToolDefinitions(): ToolDefinition[] {
 }
 
 /**
- * Get tool definitions in Ollama format
+ * Document-related tool names that should only be available when documents are attached
  */
-export function getOllamaTools(): OllamaTool[] {
-  return getAllToolDefinitions().map(toOllamaTool);
+const DOCUMENT_TOOL_NAMES = ['parse_document', 'get_document_content', 'list_documents', 'search_document'];
+
+/**
+ * Get tool definitions in Ollama format
+ * @param options.excludeDocumentTools - If true, excludes document parsing tools (use when no docs attached)
+ */
+export function getOllamaTools(options?: { excludeDocumentTools?: boolean }): OllamaTool[] {
+  let tools = getAllToolDefinitions();
+  
+  if (options?.excludeDocumentTools) {
+    tools = tools.filter(t => !DOCUMENT_TOOL_NAMES.includes(t.name));
+  }
+  
+  return tools.map(toOllamaTool);
 }
 
 /**
