@@ -35,6 +35,39 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     visionModel: 'llava'
   };
 
+  const ollamaModels = [
+    {
+      id: 'llama3.2:3b',
+      name: 'Llama 3.2 (3B)',
+      description: 'Fast, efficient for everyday chat and short answers'
+    },
+    {
+      id: 'llama3.2:latest',
+      name: 'Llama 3.2',
+      description: 'Balanced model for conversation + coding tasks'
+    },
+    {
+      id: 'dolphin-llama3:8b',
+      name: 'Dolphin Llama 3',
+      description: 'Uncensored model for unrestricted chats (no tool calling)'
+    },
+    {
+      id: 'llava',
+      name: 'LLaVA Vision',
+      description: 'Multimodal model that handles screenshots and images'
+    },
+    {
+      id: 'codellama',
+      name: 'Code Llama',
+      description: 'Optimized for reasoning about code and documentation'
+    },
+    {
+      id: 'mistral:latest',
+      name: 'Mistral (latest)',
+      description: 'High-performance open model for reasoning-heavy prompts'
+    }
+  ];
+
   const [localSettings, setLocalSettings] = useState<Settings>({
     ...settings,
     chatModel: settings.chatModel || defaultModels.chatModel,
@@ -192,19 +225,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="setting-group">
           <label className="setting-label">Chat model</label>
-          <input
-            type="text"
-            className="setting-input"
-            value={localSettings.chatModel || ''}
-            onChange={(e) =>
-              setLocalSettings({
-                ...localSettings,
-                chatModel: e.target.value || defaultModels.chatModel
-              })
-            }
-            placeholder={defaultModels.chatModel}
-          />
-          <small className="setting-hint">Used for standard chats with tool calling.</small>
+          <div className="model-grid">
+            {ollamaModels.map((model) => (
+              <button
+                key={model.id}
+                className={`model-card ${localSettings.chatModel === model.id ? 'active' : ''}`}
+                onClick={() =>
+                  setLocalSettings({
+                    ...localSettings,
+                    chatModel: model.id
+                  })
+                }
+              >
+                <div className="model-card-label">{model.name}</div>
+                <p className="model-card-desc">{model.description}</p>
+              </button>
+            ))}
+          </div>
+          <small className="setting-hint">Used for standard chats with tool calling. Custom APIs override this.</small>
         </div>
 
         <div className="setting-group">
@@ -269,6 +307,29 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             Bring your own OpenAI, Anthropic, or custom API endpoint
           </small>
 
+          <div className="custom-api-field">
+            <label className="setting-label">Custom API URL</label>
+            <input
+              type="text"
+              className="setting-input"
+              value={localSettings.customLLM?.apiUrl || ''}
+              onChange={(e) =>
+                setLocalSettings({
+                  ...localSettings,
+                  customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
+                })
+              }
+              placeholder="https://api.openai.com/v1"
+            />
+            <small className="setting-hint">
+              {localSettings.customLLM?.provider === 'openai' && 'e.g., https://api.openai.com/v1'}
+              {localSettings.customLLM?.provider === 'anthropic' && 'e.g., https://api.anthropic.com/v1'}
+              {localSettings.customLLM?.provider === 'openrouter' && 'e.g., https://openrouter.ai/api/v1'}
+              {localSettings.customLLM?.provider === 'custom' && 'Your custom API endpoint'}
+              {!localSettings.customLLM?.provider && 'Enter the base URL for your provider'}
+            </small>
+          </div>
+
           {showCustomLLMSection && (
             <div className="ml-4 mt-3 space-y-3 border-l-2 border-zinc-700 pl-4">
               <div>
@@ -305,28 +366,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   <option value="custom">Custom</option>
                 </select>
                 <small className="setting-hint">API format/authentication style</small>
-              </div>
-
-              <div>
-                <label className="setting-label">API Base URL</label>
-                <input
-                  type="text"
-                  className="setting-input"
-                  value={localSettings.customLLM?.apiUrl || ''}
-                  onChange={(e) =>
-                    setLocalSettings({
-                      ...localSettings,
-                      customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
-                    })
-                  }
-                  placeholder="https://api.openai.com/v1"
-                />
-                <small className="setting-hint">
-                  {localSettings.customLLM?.provider === 'openai' && 'e.g., https://api.openai.com/v1'}
-                  {localSettings.customLLM?.provider === 'anthropic' && 'e.g., https://api.anthropic.com/v1'}
-                  {localSettings.customLLM?.provider === 'openrouter' && 'e.g., https://openrouter.ai/api/v1'}
-                  {localSettings.customLLM?.provider === 'custom' && 'Your custom API endpoint'}
-                </small>
               </div>
 
               <div>

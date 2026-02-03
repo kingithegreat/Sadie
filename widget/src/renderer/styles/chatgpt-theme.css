@@ -780,12 +780,14 @@ body {
   box-shadow: var(--shadow-lg);
   inline-size: 90%;
   max-inline-size: 480px;
-  max-block-size: 80vh;
+  max-block-size: 85vh;
   overflow: hidden;
   animation: slideUp 300ms ease;
   border: 1px solid var(--border-light);
   container-type: inline-size;
   container-name: settings;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes slideUp {
@@ -818,6 +820,33 @@ body {
   color: var(--text-primary);
 }
 
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--spacing-md);
+  max-height: calc(85vh - 80px);
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-body::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+  border-radius: 4px;
+}
+
+.settings-body::-webkit-scrollbar-thumb {
+  background: var(--bg-light);
+  border-radius: 4px;
+}
+
+.settings-body::-webkit-scrollbar-thumb:hover {
+  background: var(--border-medium);
+}
+
+.close-button,
 .settings-close {
   width: 32px;
   height: 32px;
@@ -832,8 +861,10 @@ body {
   justify-content: center;
 }
 
+.close-button:hover,
 .settings-close:hover {
   background: var(--bg-medium);
+  color: var(--text-primary);
 }
 
 .settings-content {
@@ -843,6 +874,48 @@ body {
 
 .settings-group {
   margin-bottom: var(--spacing-md);
+}
+
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.model-card {
+  background: var(--bg-medium);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--bg-dark);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.model-card:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+}
+
+.model-card.active {
+  border-color: var(--sadie-gold-500);
+  box-shadow: 0 10px 30px rgba(212, 175, 55, 0.15);
+}
+
+.model-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.model-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.custom-api-field {
+  margin-top: 12px;
 }
 
 .settings-label {

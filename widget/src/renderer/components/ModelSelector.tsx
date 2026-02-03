@@ -60,8 +60,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       type: 'ollama'
     },
     {
-      id: 'mistral',
-      name: 'Mistral',
+      id: 'mistral:latest',
+      name: 'Mistral (latest)',
       description: 'High-quality open model for complex reasoning',
       type: 'ollama'
     }
