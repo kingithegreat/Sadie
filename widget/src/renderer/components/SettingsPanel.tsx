@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
-import type { Settings as SharedSettings } from '../../shared/types';
+import type { Settings as SharedSettings, CustomLLMConfig } from '../../shared/types';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -14,6 +14,8 @@ interface Settings {
   permissions?: Record<string, boolean>;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
+  customLLM?: CustomLLMConfig;
+  useCustomLLM?: boolean;
 }
 
 interface SettingsPanelProps {
@@ -37,11 +39,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     ...settings,
     chatModel: settings.chatModel || defaultModels.chatModel,
     uncensoredModel: settings.uncensoredModel || defaultModels.uncensoredModel,
-    visionModel: settings.visionModel || defaultModels.visionModel
+    visionModel: settings.visionModel || defaultModels.visionModel,
+    useCustomLLM: settings.useCustomLLM || false,
+    customLLM: settings.customLLM || {
+      name: 'Custom LLM',
+      apiUrl: '',
+      apiKey: '',
+      provider: 'openai',
+      model: '',
+      enabled: false
+    }
   });
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, boolean>>(((settings as any).permissions || {}) as Record<string, boolean>);
   const [showTelemetryModal, setShowTelemetryModal] = useState(false);
+  const [showCustomLLMSection, setShowCustomLLMSection] = useState(false);
 
   const PERMISSION_DESCRIPTIONS: Record<string, string> = {
     read_file: 'Read the contents of a file (safe).',
@@ -227,6 +239,142 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             placeholder={defaultModels.visionModel}
           />
           <small className="setting-hint">Used automatically when images are attached.</small>
+        </div>
+
+        {/* Custom LLM API Section */}
+        <div className="setting-group">
+          <div className="flex items-center justify-between mb-2">
+            <label className="setting-label">Custom LLM API</label>
+            <button 
+              className="button button-secondary"
+              onClick={() => setShowCustomLLMSection(!showCustomLLMSection)}
+            >
+              {showCustomLLMSection ? 'Hide' : 'Configure'}
+            </button>
+          </div>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={localSettings.useCustomLLM || false}
+              onChange={(e) =>
+                setLocalSettings({
+                  ...localSettings,
+                  useCustomLLM: e.target.checked
+                })
+              }
+            />
+            <span>Use custom LLM API instead of Ollama</span>
+          </label>
+          <small className="setting-hint">
+            Bring your own OpenAI, Anthropic, or custom API endpoint
+          </small>
+
+          {showCustomLLMSection && (
+            <div className="ml-4 mt-3 space-y-3 border-l-2 border-zinc-700 pl-4">
+              <div>
+                <label className="setting-label">API Name</label>
+                <input
+                  type="text"
+                  className="setting-input"
+                  value={localSettings.customLLM?.name || ''}
+                  onChange={(e) =>
+                    setLocalSettings({
+                      ...localSettings,
+                      customLLM: { ...localSettings.customLLM!, name: e.target.value }
+                    })
+                  }
+                  placeholder="My Custom API"
+                />
+              </div>
+
+              <div>
+                <label className="setting-label">Provider</label>
+                <select
+                  className="setting-input"
+                  value={localSettings.customLLM?.provider || 'openai'}
+                  onChange={(e) =>
+                    setLocalSettings({
+                      ...localSettings,
+                      customLLM: { ...localSettings.customLLM!, provider: e.target.value as any }
+                    })
+                  }
+                >
+                  <option value="openai">OpenAI Compatible</option>
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <small className="setting-hint">API format/authentication style</small>
+              </div>
+
+              <div>
+                <label className="setting-label">API Base URL</label>
+                <input
+                  type="text"
+                  className="setting-input"
+                  value={localSettings.customLLM?.apiUrl || ''}
+                  onChange={(e) =>
+                    setLocalSettings({
+                      ...localSettings,
+                      customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
+                    })
+                  }
+                  placeholder="https://api.openai.com/v1"
+                />
+                <small className="setting-hint">
+                  {localSettings.customLLM?.provider === 'openai' && 'e.g., https://api.openai.com/v1'}
+                  {localSettings.customLLM?.provider === 'anthropic' && 'e.g., https://api.anthropic.com/v1'}
+                  {localSettings.customLLM?.provider === 'openrouter' && 'e.g., https://openrouter.ai/api/v1'}
+                  {localSettings.customLLM?.provider === 'custom' && 'Your custom API endpoint'}
+                </small>
+              </div>
+
+              <div>
+                <label className="setting-label">Model Name</label>
+                <input
+                  type="text"
+                  className="setting-input"
+                  value={localSettings.customLLM?.model || ''}
+                  onChange={(e) =>
+                    setLocalSettings({
+                      ...localSettings,
+                      customLLM: { ...localSettings.customLLM!, model: e.target.value }
+                    })
+                  }
+                  placeholder="gpt-4"
+                />
+                <small className="setting-hint">
+                  {localSettings.customLLM?.provider === 'openai' && 'e.g., gpt-4, gpt-3.5-turbo'}
+                  {localSettings.customLLM?.provider === 'anthropic' && 'e.g., claude-3-5-sonnet-20241022'}
+                  {localSettings.customLLM?.provider === 'openrouter' && 'e.g., anthropic/claude-3.5-sonnet'}
+                  {localSettings.customLLM?.provider === 'custom' && 'Model identifier for your API'}
+                </small>
+              </div>
+
+              <div>
+                <label className="setting-label">API Key</label>
+                <input
+                  type="password"
+                  className="setting-input"
+                  value={localSettings.customLLM?.apiKey || ''}
+                  onChange={(e) =>
+                    setLocalSettings({
+                      ...localSettings,
+                      customLLM: { ...localSettings.customLLM!, apiKey: e.target.value }
+                    })
+                  }
+                  placeholder="sk-..."
+                />
+                <small className="setting-hint">Stored locally, never sent to SADIE servers</small>
+              </div>
+
+              <div className="flex items-center gap-2 mt-2">
+                <div className="text-xs text-amber-500">
+                  ⚠️ Custom APIs may have different rate limits, pricing, and capabilities
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="setting-group">

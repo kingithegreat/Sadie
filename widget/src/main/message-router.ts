@@ -12,6 +12,7 @@ import { initializeTools, getOllamaTools, executeToolBatch, ToolCall, ToolContex
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
+import { streamFromCustomLLM, validateCustomLLMConfig } from './custom-llm-client';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -438,6 +439,62 @@ const SIMPLE_GREETING_PATTERNS = /^(hi|hello|hey|yo|sup|howdy|greetings|good\s*(
  */
 function isSimpleGreeting(message: string): boolean {
   return SIMPLE_GREETING_PATTERNS.test(message.trim());
+}
+
+// Wrapper function that routes to either Ollama or Custom LLM based on settings
+export async function streamFromLLM(
+  message: string, 
+  images: ImageAttachment[] | undefined,
+  conversationId: string,
+  onChunk: (text: string) => void, 
+  onToolCall: (toolName: string, args: any) => void,
+  onToolResult: (result: any) => void,
+  onEnd: () => void, 
+  onError: (err: any) => void,
+  requestConfirmation?: (msg: string) => Promise<boolean>,
+  requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
+  options?: { hasDocuments?: boolean }
+): Promise<{ cancel: () => void }> {
+  const settings = await getSettings();
+  
+  // Check if custom LLM is enabled and configured
+  if (settings.useCustomLLM && settings.customLLM) {
+    const validation = validateCustomLLMConfig(settings.customLLM);
+    if (validation.valid) {
+      console.log(`[SADIE] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})`);
+      
+      // Custom LLMs currently don't support tool calling or images
+      if (images && images.length > 0) {
+        onChunk('\n\n⚠️ Image attachments are not yet supported with custom LLM APIs. Using Ollama vision model instead.\n\n');
+        // Fall back to Ollama for images
+        return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
+      }
+      
+      const controller = new AbortController();
+      const history = getHistory(conversationId);
+      
+      streamFromCustomLLM(
+        message,
+        history.map(m => ({ role: m.role as any, content: m.content })),
+        settings.customLLM,
+        SADIE_SYSTEM_PROMPT,
+        onChunk,
+        onEnd,
+        onError,
+        controller.signal
+      );
+      
+      return {
+        cancel: () => controller.abort()
+      };
+    } else {
+      console.warn(`[SADIE] Invalid custom LLM config: ${validation.error}. Falling back to Ollama.`);
+      onChunk(`\n\n⚠️ Custom LLM configuration error: ${validation.error}\nFalling back to Ollama...\n\n`);
+    }
+  }
+  
+  // Default: use Ollama
+  return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
 }
 
 // Stream from Ollama with tool calling support
@@ -1260,7 +1317,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             
             // Otherwise, use LLM with tool calling as usual
             const hasCurrentDocuments = !!(request.documents && request.documents.length > 0);
-            const handler = await streamFromOllamaWithTools(
+            const handler = await streamFromLLM(
               enhancedMessage,
               request.images,
               convId,

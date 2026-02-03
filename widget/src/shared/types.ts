@@ -76,6 +76,15 @@ export interface MemoryResult<T = any> {
   error?: string;
 }
 
+export interface CustomLLMConfig {
+  name: string;
+  apiUrl: string;
+  apiKey?: string;
+  provider: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  model?: string;
+  enabled: boolean;
+}
+
 export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
@@ -84,6 +93,9 @@ export interface Settings {
   chatModel?: string;
   uncensoredModel?: string;
   visionModel?: string;
+  // Custom LLM API support
+  customLLM?: CustomLLMConfig;
+  useCustomLLM?: boolean;
   // First-run / telemetry
   firstRun?: boolean;
   telemetryEnabled?: boolean;
