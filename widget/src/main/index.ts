@@ -1,6 +1,6 @@
 // Main process for SADIE - Full implementation
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { createMainWindow, getMainWindow } from './window-manager';
+import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
 import { initializeTools } from './tools';

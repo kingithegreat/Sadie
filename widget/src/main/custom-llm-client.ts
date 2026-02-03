@@ -2,7 +2,7 @@
  * Custom LLM API client supporting multiple providers (OpenAI, Anthropic, OpenRouter, Custom)
  */
 import axios from 'axios';
-import type { CustomLLMConfig, ImageAttachment } from '../shared/types';
+import type { CustomLLMConfig } from '../shared/types';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';

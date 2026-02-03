@@ -458,10 +458,10 @@ export async function streamFromLLM(
   const settings = await getSettings();
   
   // Check if custom LLM is enabled and configured
-  if (settings.useCustomLLM && settings.customLLM) {
-    const validation = validateCustomLLMConfig(settings.customLLM);
+  if ((settings as any).useCustomLLM && (settings as any).customLLM) {
+    const validation = validateCustomLLMConfig((settings as any).customLLM);
     if (validation.valid) {
-      console.log(`[SADIE] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})`);
+      console.log(`[SADIE] Using custom LLM: ${(settings as any).customLLM.name} (${(settings as any).customLLM.provider})`);
       
       // Custom LLMs currently don't support tool calling or images
       if (images && images.length > 0) {
@@ -476,7 +476,7 @@ export async function streamFromLLM(
       streamFromCustomLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
-        settings.customLLM,
+        (settings as any).customLLM,
         SADIE_SYSTEM_PROMPT,
         onChunk,
         onEnd,
@@ -1160,7 +1160,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
                   executionId: `intent-${Date.now()}`,
                   requestConfirmation,
-                  requestPermission: (perms, reason) => permissionRequester.request(event.sender, streamId, perms, reason)
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 } as ToolContext);
                 
                 console.log('[SADIE] Intent tool results:', toolResults);
@@ -1201,7 +1201,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   toolResults = await executeToolBatch([webSearchCall], {
                     executionId: `websearch-${Date.now()}`,
                     requestConfirmation,
-                    requestPermission: (perms, reason) => permissionRequester.request(event.sender, streamId, perms, reason)
+                    requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                   } as ToolContext);
                   
                   console.log('[SADIE] Web search results:', toolResults);
@@ -1229,7 +1229,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   toolResults = await executeToolBatch([webSearchCall], {
                     executionId: `websearch-fallback-${Date.now()}`,
                     requestConfirmation,
-                    requestPermission: (perms, reason) => permissionRequester.request(event.sender, streamId, perms, reason)
+                    requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                   } as ToolContext);
                   shouldUseDirectTools = true;
                 } catch (webErr) {
