@@ -63,8 +63,34 @@ export interface OllamaTool {
   };
 }
 
+// OpenAI tool format (for custom APIs)
+export interface OpenAITool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      properties: Record<string, any>;
+      required: string[];
+    };
+  };
+}
+
 // Convert our tool definition to Ollama format
 export function toOllamaTool(tool: ToolDefinition): OllamaTool {
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters
+    }
+  };
+}
+
+// Convert our tool definition to OpenAI format (same as Ollama)
+export function toOpenAITool(tool: ToolDefinition): OpenAITool {
   return {
     type: 'function',
     function: {

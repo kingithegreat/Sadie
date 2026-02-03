@@ -76,6 +76,14 @@ export interface MemoryResult<T = any> {
   error?: string;
 }
 
+export interface ModelMetadata {
+  contextWindow: number;
+  maxTokens: number;
+  supportsTools: boolean;
+  supportsVision: boolean;
+  supportsStreaming: boolean;
+}
+
 export interface CustomLLMConfig {
   name: string;
   apiUrl: string;
@@ -83,6 +91,7 @@ export interface CustomLLMConfig {
   provider: 'openai' | 'anthropic' | 'openrouter' | 'custom';
   model?: string;
   enabled: boolean;
+  metadata?: ModelMetadata;
 }
 
 export interface Settings {
