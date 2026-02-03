@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ConnectionStatus } from '../../shared/types';
+import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
+import ModelSelector from './ModelSelector';
 
 interface StatusIndicatorProps {
   connectionStatus: ConnectionStatus;
@@ -11,6 +12,10 @@ interface StatusIndicatorProps {
   onDismissDiagnostic?: () => void;
   mode?: 'chat' | 'automation' | 'image';
   onModeChange?: (mode: 'chat' | 'automation' | 'image') => void;
+  currentModel?: string;
+  customLLM?: CustomLLMConfig;
+  useCustomLLM?: boolean;
+  onModelChange?: (model: string, useCustom: boolean) => void;
 } 
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
@@ -22,7 +27,11 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onCopyDiagnostic,
   onDismissDiagnostic,
   mode = 'chat',
-  onModeChange
+  onModeChange,
+  currentModel = 'llama3.2:3b',
+  customLLM,
+  useCustomLLM = false,
+  onModelChange
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -98,6 +107,17 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               </>
             )}
           </div>
+        )}
+        
+        {/* Model Selector */}
+        {onModelChange && (
+          <ModelSelector
+            currentModel={currentModel}
+            customLLM={customLLM}
+            useCustomLLM={useCustomLLM}
+            onModelChange={onModelChange}
+            onConfigureCustom={onSettingsClick}
+          />
         )}
         
         {/* Uncensored Mode Toggle */}

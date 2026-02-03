@@ -156,7 +156,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
         timeout: 0,
         signal
       }
-    );
+    ), 3, 1000); // 3 retries, 1 second base delay
 
     const stream = response.data as NodeJS.ReadableStream;
     let currentToolCall: { id: string; name: string; arguments: string } | null = null;
@@ -304,9 +304,9 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
 }
 
 /**
- * Validate and auto-configure API settings
+ * Auto-configure API settings based on model name
  */
-export function validateCustomLLMConfig(config: CustomLLMConfig): CustomLLMConfig {
+export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig {
   const validated = { ...config };
   
   // Auto-detect provider if not set correctly

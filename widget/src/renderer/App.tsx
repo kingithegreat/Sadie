@@ -751,6 +751,26 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
         mode={mode}
         onModeChange={setMode}
+        currentModel={settings.chatModel || 'llama3.2:3b'}
+        customLLM={settings.customLLM}
+        useCustomLLM={settings.useCustomLLM}
+        onModelChange={async (model: string, useCustom: boolean) => {
+          const newSettings = {
+            ...settings,
+            chatModel: model,
+            useCustomLLM: useCustom
+          };
+          setSettings(newSettings);
+          await saveSettings(newSettings);
+          // Add a system message to notify the user
+          setMessages(prev => [...prev, {
+            id: newId(),
+            role: 'system',
+            content: `Switched to ${useCustom ? (settings.customLLM?.name || 'Custom API') : model}`,
+            createdAt: Date.now(),
+            error: null
+          }]);
+        }}
       />
 
       {/* Main Content Area */}
