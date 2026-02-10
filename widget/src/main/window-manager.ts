@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import * as path from 'path';
 import { isDevelopment } from './env';
+import { is } from '@electron-toolkit/utils';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -62,8 +63,14 @@ export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Loading HTML from:', htmlPath);
   try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] [WINDOW] Loading HTML from: ${htmlPath}`); } catch (e) {}
 
-  // Load the renderer HTML
-  mainWindow.loadFile(htmlPath);
+  // Load the renderer — use Vite dev-server in dev mode for HMR, file in production
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    const devUrl = process.env['ELECTRON_RENDERER_URL'];
+    console.log('[WINDOW] Dev mode: loading from Vite dev server:', devUrl);
+    mainWindow.loadURL(devUrl);
+  } else {
+    mainWindow.loadFile(htmlPath);
+  }
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {

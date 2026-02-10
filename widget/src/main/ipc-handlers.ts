@@ -257,6 +257,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     return getSettingsPath();
   });
 
+  ipcMain.handle('sadie:get-env', async () => {
+    return {
+      isE2E: !!process.env.SADIE_E2E,
+      isPackagedBuild: app.isPackaged,
+      isReleaseBuild: app.isPackaged,
+      userDataPath: app.getPath('userData')
+    };
+  });
+
   ipcMain.handle('sadie:reset-permissions', async () => {
     try {
       const updated = resetPermissions();

@@ -411,6 +411,9 @@ body {
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
+.message-text.markdown-body {
+  white-space: normal;
+}
 
 /* Clickable hyperlinks in messages */
 .message-link {
@@ -447,6 +450,103 @@ body {
   box-shadow: var(--shadow-md);
 }
 .message-bubble:empty { display: none; }
+
+/* ============ Markdown body inside assistant messages ============ */
+.markdown-body {
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.markdown-body p {
+  margin: 0 0 0.6em 0;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body ul, .markdown-body ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.markdown-body li {
+  margin: 0.2em 0;
+}
+.markdown-body strong {
+  font-weight: 700;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  margin: 0.6em 0 0.3em;
+  font-weight: 700;
+}
+.markdown-body h1 { font-size: 1.3em; }
+.markdown-body h2 { font-size: 1.15em; }
+.markdown-body h3 { font-size: 1.05em; }
+
+/* Inline code */
+.inline-code {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 0.88em;
+}
+
+/* Code block wrapper */
+.code-block-wrapper {
+  margin: 0.6em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #2d2d2d;
+  padding: 6px 12px;
+  font-size: 0.78em;
+}
+.code-block-lang {
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.code-copy-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 0.85em;
+  padding: 2px 8px;
+  transition: all 0.15s ease;
+}
+.code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.code-block-pre {
+  margin: 0;
+  padding: 12px 14px;
+  background: #282c34;
+  color: #abb2bf;
+  border-radius: 0 0 8px 8px;
+  overflow-x: auto;
+  font-size: 0.85em;
+  font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 4;
+}
+.code-block-pre code {
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
 
 /* Message status footer */
 .message-footer {
