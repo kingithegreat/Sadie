@@ -2,6 +2,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles/chatgpt-theme.css";
+import "highlight.js/styles/atom-one-dark.css";
 
 const root = document.getElementById("root");
 

@@ -545,7 +545,12 @@ body {
   padding: 0;
   font-family: inherit;
   font-size: inherit;
-  color: inherit;
+  /* Let highlight.js theme control syntax colors */
+}
+/* Override hljs theme background — our .code-block-pre handles it */
+.code-block-pre code.hljs {
+  background: transparent;
+  padding: 0;
 }
 
 /* Message status footer */

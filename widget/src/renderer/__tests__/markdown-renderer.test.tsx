@@ -28,12 +28,13 @@ describe('MessageBubble markdown renderer', () => {
 
   test('renders fenced code block with language label and copy button', () => {
     const content = 'Here is code:\n\n```python\nprint("hello")\n```';
-    render(<MessageBubble message={makeMsg({ content })} onCancel={noop} onRetry={noop} />);
+    const { container } = render(<MessageBubble message={makeMsg({ content })} onCancel={noop} onRetry={noop} />);
 
     // Language label
     expect(screen.getByText('python')).toBeInTheDocument();
-    // Code content
-    expect(screen.getByText('print("hello")')).toBeInTheDocument();
+    // Code content (hljs splits into spans, so check via textContent)
+    const codeEl = container.querySelector('.code-block-pre code');
+    expect(codeEl?.textContent).toContain('print("hello")');
     // Copy buttons present (code block copy + response copy)
     const copyBtns = screen.getAllByText('📋 Copy');
     expect(copyBtns.length).toBeGreaterThanOrEqual(1);
@@ -41,10 +42,11 @@ describe('MessageBubble markdown renderer', () => {
 
   test('renders fenced code block without language as "code"', () => {
     const content = '```\nsome code\n```';
-    render(<MessageBubble message={makeMsg({ content })} onCancel={noop} onRetry={noop} />);
+    const { container } = render(<MessageBubble message={makeMsg({ content })} onCancel={noop} onRetry={noop} />);
 
     expect(screen.getByText('code')).toBeInTheDocument();
-    expect(screen.getByText('some code')).toBeInTheDocument();
+    const codeEl = container.querySelector('.code-block-pre code');
+    expect(codeEl?.textContent).toContain('some code');
   });
 
   test('code block copy button copies code and shows feedback', async () => {

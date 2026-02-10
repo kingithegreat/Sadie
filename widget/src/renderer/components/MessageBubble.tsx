@@ -1,5 +1,61 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import type { ChatMessage } from "../types";
+
+// highlight.js — core + common languages (tree-shaken)
+import hljs from 'highlight.js/lib/core';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import bash from 'highlight.js/lib/languages/bash';
+import json from 'highlight.js/lib/languages/json';
+import css from 'highlight.js/lib/languages/css';
+import xml from 'highlight.js/lib/languages/xml'; // also covers HTML
+import sql from 'highlight.js/lib/languages/sql';
+import java from 'highlight.js/lib/languages/java';
+import csharp from 'highlight.js/lib/languages/csharp';
+import cpp from 'highlight.js/lib/languages/cpp';
+import go from 'highlight.js/lib/languages/go';
+import rust from 'highlight.js/lib/languages/rust';
+import yaml from 'highlight.js/lib/languages/yaml';
+import markdown from 'highlight.js/lib/languages/markdown';
+import diff from 'highlight.js/lib/languages/diff';
+import ruby from 'highlight.js/lib/languages/ruby';
+import php from 'highlight.js/lib/languages/php';
+import powershell from 'highlight.js/lib/languages/powershell';
+
+// Register languages
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('js', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('ts', typescript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('py', python);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('sh', bash);
+hljs.registerLanguage('shell', bash);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('html', xml);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('csharp', csharp);
+hljs.registerLanguage('cs', csharp);
+hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('c', cpp);
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('rs', rust);
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('yml', yaml);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('diff', diff);
+hljs.registerLanguage('ruby', ruby);
+hljs.registerLanguage('rb', ruby);
+hljs.registerLanguage('php', php);
+hljs.registerLanguage('powershell', powershell);
+hljs.registerLanguage('ps1', powershell);
 
 /* ================================================================== */
 /*  Self-contained Markdown renderer — zero external dependencies      */
@@ -10,6 +66,21 @@ import type { ChatMessage } from "../types";
  */
 function CodeBlock({ language, children }: { language: string; children: string }) {
   const [copied, setCopied] = useState(false);
+  const codeRef = useRef<HTMLElement>(null);
+
+  // Apply syntax highlighting after render / when content changes
+  useEffect(() => {
+    if (codeRef.current) {
+      // Reset any previous highlighting so hljs re-processes
+      codeRef.current.removeAttribute('data-highlighted');
+      codeRef.current.textContent = children;
+      try {
+        hljs.highlightElement(codeRef.current);
+      } catch {
+        // If the language isn't registered, leave as plain text
+      }
+    }
+  }, [children, language]);
 
   const handleCopy = useCallback(() => {
     try {
@@ -21,6 +92,9 @@ function CodeBlock({ language, children }: { language: string; children: string 
     }
   }, [children]);
 
+  // Build the class name for hljs — e.g. "language-python"
+  const langClass = language ? `language-${language}` : '';
+
   return (
     <div className="code-block-wrapper">
       <div className="code-block-header">
@@ -30,7 +104,7 @@ function CodeBlock({ language, children }: { language: string; children: string 
         </button>
       </div>
       <pre className="code-block-pre">
-        <code>{children}</code>
+        <code ref={codeRef} className={langClass}>{children}</code>
       </pre>
     </div>
   );
