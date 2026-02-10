@@ -4,10 +4,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MessageBubble } from '../components/MessageBubble';
 import type { ChatMessage } from '../types';
 
-// Mock clipboard API
-const writeText = jest.fn().mockResolvedValue(undefined);
-Object.assign(navigator, {
-  clipboard: { writeText },
+// Mock clipboard via Electron's preload bridge
+const writeClipboard = jest.fn();
+beforeAll(() => {
+  (window as any).electron = { ...(window as any).electron, writeClipboard };
 });
 
 const noop = () => {};
@@ -23,7 +23,7 @@ function makeFinishedMsg(content: string): ChatMessage {
 }
 
 describe('copy full response button', () => {
-  beforeEach(() => writeText.mockClear());
+  beforeEach(() => writeClipboard.mockClear());
 
   test('shows Copy button when assistant message is finished', () => {
     render(<MessageBubble message={makeFinishedMsg('Hello world')} onCancel={noop} onRetry={noop} />);
@@ -47,14 +47,14 @@ describe('copy full response button', () => {
     expect(screen.queryByRole('button', { name: /copy response/i })).toBeNull();
   });
 
-  test('clicking Copy calls clipboard.writeText with full content', async () => {
+  test('clicking Copy calls writeClipboard with full content', async () => {
     const content = 'This is a full response with\nmultiple lines.';
     render(<MessageBubble message={makeFinishedMsg(content)} onCancel={noop} onRetry={noop} />);
 
     const copyBtn = screen.getByRole('button', { name: /copy response/i });
     fireEvent.click(copyBtn);
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(content));
+    await waitFor(() => expect(writeClipboard).toHaveBeenCalledWith(content));
   });
 
   test('shows "✓ Copied" feedback after clicking', async () => {

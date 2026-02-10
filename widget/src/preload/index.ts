@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
 import { debug as logDebug } from '../shared/logger';
 
 // Renderer diagnostics buffer
@@ -339,6 +339,11 @@ const electronAPI: ElectronAPI = {
   // Restart the app (for settings that require restart)
   restartApp: async (): Promise<void> => {
     return await ipcRenderer.invoke('sadie:restart-app');
+  },
+
+  // Clipboard helper — uses Electron native clipboard (works with contextIsolation)
+  writeClipboard: (text: string) => {
+    clipboard.writeText(text);
   }
 };
 

@@ -12,10 +12,13 @@ function CodeBlock({ language, children }: { language: string; children: string 
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(children).then(() => {
+    try {
+      window.electron?.writeClipboard?.(children);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    } catch (e) {
+      console.error('Failed to copy to clipboard:', e);
+    }
   }, [children]);
 
   return (
@@ -242,10 +245,13 @@ export function MessageBubble({
 
   const handleCopyMessage = useCallback(() => {
     if (!message.content) return;
-    navigator.clipboard.writeText(message.content).then(() => {
+    try {
+      window.electron?.writeClipboard?.(message.content);
       setCopiedMsg(true);
       setTimeout(() => setCopiedMsg(false), 2000);
-    });
+    } catch (e) {
+      console.error('Failed to copy message to clipboard:', e);
+    }
   }, [message.content]);
   return (
     <div

@@ -206,4 +206,7 @@ export interface ElectronAPI {
 
   // Image generation helper
   executeImageGenerate?: (params: { action: string; payload?: any }) => Promise<any>;
+
+  // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
+  writeClipboard?: (text: string) => void;
 }

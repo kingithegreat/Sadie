@@ -655,10 +655,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onSettingsClick={() => setSettingsOpen(true)}
         onMenuClick={() => setSidebarOpen(true)}
         backendDiagnostic={backendDiagnostic}
-        onCopyDiagnostic={async (text: string) => {
+        onCopyDiagnostic={(text: string) => {
           try {
-            await navigator.clipboard.writeText(text);
-            // Optionally show a small in-chat system message
+            window.electron?.writeClipboard?.(text);
             setMessages(prev => [...prev, { id: newId(), role: 'system', content: 'Diagnostic copied to clipboard', createdAt: Date.now(), error: null }]);
           } catch (e) {
             console.error('Failed to copy diagnostic to clipboard:', e);

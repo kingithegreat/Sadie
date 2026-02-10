@@ -4,10 +4,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MessageBubble } from '../components/MessageBubble';
 import type { ChatMessage } from '../types';
 
-// Mock clipboard API
-const writeText = jest.fn().mockResolvedValue(undefined);
-Object.assign(navigator, {
-  clipboard: { writeText },
+// Mock clipboard via Electron's preload bridge
+const writeClipboard = jest.fn();
+beforeAll(() => {
+  (window as any).electron = { ...(window as any).electron, writeClipboard };
 });
 
 function makeMsg(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -24,7 +24,7 @@ function makeMsg(overrides: Partial<ChatMessage> = {}): ChatMessage {
 const noop = () => {};
 
 describe('MessageBubble markdown renderer', () => {
-  beforeEach(() => writeText.mockClear());
+  beforeEach(() => writeClipboard.mockClear());
 
   test('renders fenced code block with language label and copy button', () => {
     const content = 'Here is code:\n\n```python\nprint("hello")\n```';
@@ -55,7 +55,7 @@ describe('MessageBubble markdown renderer', () => {
     const codeBlockCopyBtns = screen.getAllByText('📋 Copy');
     fireEvent.click(codeBlockCopyBtns[0]);
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('const x = 1;'));
+    await waitFor(() => expect(writeClipboard).toHaveBeenCalledWith('const x = 1;'));
     expect(screen.getByText('✓ Copied')).toBeInTheDocument();
   });
 
