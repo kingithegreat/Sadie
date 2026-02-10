@@ -16,6 +16,7 @@ interface StatusIndicatorProps {
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
   onModelChange?: (model: string, useCustom: boolean) => void;
+  uncensoredModel?: string;
 } 
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
@@ -31,7 +32,8 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   currentModel = 'llama3.2:3b',
   customLLM,
   useCustomLLM = false,
-  onModelChange
+  onModelChange,
+  uncensoredModel = 'dolphin-llama3:8b'
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -63,73 +65,80 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   return (
     <div className="app-header">
       <div className="header-left-group">
-        {onMenuClick && (
-          <button
-            onClick={onMenuClick}
-            className="menu-btn"
-            title="Conversations"
-            aria-label="Open conversations"
-          >
-            ☰
-          </button>
-        )}
-        <h1>✨ SADIE</h1>
-        
-        <div className="status-bar-inline">
-          <div className="status-item">
-            <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} />
-            <span>Ollama</span>
+        <div className="header-brand">
+          {onMenuClick && (
+            <button
+              onClick={onMenuClick}
+              className="menu-btn"
+              title="Conversations"
+              aria-label="Open conversations"
+            >
+              ☰
+            </button>
+          )}
+          <h1>✨ SADIE</h1>
+        </div>
+
+        <div className="header-connection">
+          <div className="status-bar-inline">
+            <div className="status-item">
+              <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} />
+              <span>Ollama</span>
+            </div>
+
+            <div className="status-item">
+              <span className={`status-dot ${getStatusClass(connectionStatus.n8n)}`} />
+              <span>n8n</span>
+            </div>
           </div>
 
-          <div className="status-item">
-            <span className={`status-dot ${getStatusClass(connectionStatus.n8n)}`} />
-            <span>n8n</span>
-          </div>
-
-
-        {/* Soft backend badge when n8n is offline */}
-        {connectionStatus.n8n === 'offline' && (
-          <div className="backend-badge" title="SADIE backend (n8n) is offline. Start n8n to restore functionality.">
-            <span className="backend-text">SADIE backend offline</span>
-            <button className="backend-retry" onClick={() => { try { (window as any).sadieCapture?.log('[Renderer] Retry connection (backend badge)'); } catch (e) {} ; onRefresh(); }} aria-label="Retry connection">↻</button>
-            {backendDiagnostic && (
-              <>
-                <button className="backend-detail" onClick={() => setDetailOpen(true)} title="Details">⋯</button>
-                {detailOpen && (
-                  <div className="backend-popover" role="dialog" aria-label="SADIE backend diagnostic">
-                    <pre className="backend-popover-text">{backendDiagnostic}</pre>
-                    <div className="backend-popover-actions">
-                      <button onClick={() => { onCopyDiagnostic?.(backendDiagnostic); setDetailOpen(false); }}>Copy</button>
-                      <button onClick={() => { setDetailOpen(false); onDismissDiagnostic?.(); }}>Dismiss</button>
+          {/* Soft backend badge when n8n is offline */}
+          {connectionStatus.n8n === 'offline' && (
+            <div className="backend-badge" title="SADIE backend (n8n) is offline. Start n8n to restore functionality.">
+              <span className="backend-text">SADIE backend offline</span>
+              <button className="backend-retry" onClick={() => { try { (window as any).sadieCapture?.log('[Renderer] Retry connection (backend badge)'); } catch (e) {} ; onRefresh(); }} aria-label="Retry connection">↻</button>
+              {backendDiagnostic && (
+                <>
+                  <button className="backend-detail" onClick={() => setDetailOpen(true)} title="Details">⋯</button>
+                  {detailOpen && (
+                    <div className="backend-popover" role="dialog" aria-label="SADIE backend diagnostic">
+                      <pre className="backend-popover-text">{backendDiagnostic}</pre>
+                      <div className="backend-popover-actions">
+                        <button onClick={() => { onCopyDiagnostic?.(backendDiagnostic); setDetailOpen(false); }}>Copy</button>
+                        <button onClick={() => { setDetailOpen(false); onDismissDiagnostic?.(); }}>Dismiss</button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-        
-        {/* Model Selector */}
-        {onModelChange && (
-          <ModelSelector
-            currentModel={currentModel}
-            customLLM={customLLM}
-            useCustomLLM={useCustomLLM}
-            onModelChange={onModelChange}
-            onConfigureCustom={onSettingsClick}
-          />
-        )}
-        
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="header-model">
+          {onModelChange && (
+            <ModelSelector
+              currentModel={currentModel}
+              customLLM={customLLM}
+              useCustomLLM={useCustomLLM}
+              onModelChange={onModelChange}
+              onConfigureCustom={onSettingsClick}
+              locked={uncensoredMode}
+              lockedModelId={uncensoredModel}
+              lockReason="Turn off 🔓 Uncensored Mode to switch models"
+            />
+          )}
+        </div>
+
         {/* Uncensored Mode Toggle */}
         <div 
           className={`uncensored-toggle ${uncensoredMode ? 'active' : ''}`}
           onClick={handleUncensoredToggle}
-          title={uncensoredMode ? 'Uncensored Mode ON (dolphin-llama3:8b)' : 'Uncensored Mode OFF (llama3.2:3b)'}
+          title={uncensoredMode ? 'Uncensored Mode ON (dolphin-llama3:8b)' : 'Safe Mode - using selected model'}
         >
           <span className="toggle-icon">{uncensoredMode ? '🔓' : '🔒'}</span>
           <span className="toggle-label">{uncensoredMode ? 'Uncensored' : 'Safe'}</span>
         </div>
-      </div>
       </div>
 
       <div className="header-actions">

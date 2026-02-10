@@ -12,6 +12,7 @@ import {
   resetPermissions, 
   exportTelemetryConsent 
 } from './config-manager';
+import { fetchAvailableCustomModels } from './custom-llm-client';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
 import {
   MemoryManager,
@@ -194,6 +195,27 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     } catch (err: any) {
       console.error('Error loading settings:', err.message);
       return getSettings();
+    }
+  });
+
+  ipcMain.handle('sadie:list-custom-llm-models', async (_event, payload) => {
+    try {
+      console.log('[IPC] Fetching custom LLM models with config:', {
+        apiUrl: payload?.apiUrl,
+        provider: payload?.provider,
+        hasApiKey: !!payload?.apiKey
+      });
+      
+      if (!payload?.apiUrl) {
+        return { success: false, error: 'API URL is required' };
+      }
+      
+      const models = await fetchAvailableCustomModels(payload || {});
+      console.log('[IPC] Successfully fetched', models.length, 'models');
+      return { success: true, models };
+    } catch (err: any) {
+      console.error('[IPC] Failed to fetch custom LLM models:', err?.message || err);
+      return { success: false, error: err?.message || 'Unable to fetch models' };
     }
   });
 

@@ -1,7 +1,7 @@
 ﻿import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { permissionRequester } from './permission-requester';
-import { looksLikeToolJson } from './tool-helpers';
+import { looksLikeToolJson, extractToolCallsFromText, extractProseToolCalls } from './tool-helpers';
 import axios from 'axios';
 import { debug as logDebug, error as logError } from '../shared/logger';
 import streamFromSadieProxy from './stream-proxy-client';
@@ -19,6 +19,9 @@ const PACKAGED = isPackagedBuild;
 
 const DEFAULT_TIMEOUT = 30000;
 const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
+
+// Track if we've already warned about custom LLM config (to avoid spamming)
+let customLLMWarningShown = false;
 
 // Router diagnostics buffer for capture tool
 (global as any).__SADIE_ROUTER_LOG_BUFFER ??= [];
@@ -167,42 +170,121 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   if (!userMessage || typeof userMessage !== 'string') return null;
   const m = userMessage.toLowerCase();
 
+  // If the message already contains embedded document content (from attachments),
+  // let the LLM summarize it directly — do NOT route to web search or other tools.
+  if (m.includes('=== document:') && m.includes('=== end of ')) {
+    return null; // LLM already has the document text in context
+  }
+
+  // ─── COMPOUND FILE INTENTS ───
+  // Check these FIRST so "make a file with NBA games" doesn't just return
+  // NBA results without writing a file.
+  const wantsFile = /\b(create|make|write|save|put|give\s+me)\b/i.test(m) &&
+                    /\b(file|document|note|text)\b/i.test(m);
+
+  if (wantsFile) {
+    // COMPOUND: weather/surf + file
+    if (/\b(weather|surf|conditions|forecast|temperature|swell|waves?)\b/i.test(m)) {
+      const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+today|\s+tomorrow|\s+on|\s+and|$)/i) ||
+                       m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+      let location = locMatch ? locMatch[1].trim() : '';
+      location = location.replace(/\s*(today|tomorrow|tonight|this week|next week|on my|on the|and)$/i, '').trim();
+      if (!location) location = 'your location';
+      return { calls: [
+        { name: '__compound_weather_file', arguments: { location, query: userMessage } }
+      ] };
+    }
+
+    // COMPOUND: NBA/sports + file
+    if (/\b(nba|basketball|game(s)?|scores?|schedule|season|remaining|upcoming)\b/i.test(m)) {
+      let teamQuery = '';
+      const nbaTeamsForFile = ['warriors', 'lakers', 'celtics', 'bulls', 'heat', 'nets', 'knicks', 'suns', 'bucks', 'nuggets',
+                       'clippers', 'spurs', 'rockets', 'mavericks', 'thunder', 'jazz', 'kings', 'pelicans', 'grizzlies',
+                       'hawks', 'hornets', 'cavaliers', 'pistons', 'pacers', 'magic', 'wizards', 'raptors', 'timberwolves', 'blazers', '76ers', 'sixers'];
+      for (const team of nbaTeamsForFile) {
+        if (m.includes(team)) { teamQuery = team; break; }
+      }
+      const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
+      const wantsSeason = /\b(season|remaining|upcoming|all)\b/i.test(m);
+      return { calls: [
+        { name: '__compound_nba_file', arguments: { teamQuery, dateRange, perPage: wantsSeason ? 50 : 10, query: userMessage } }
+      ] };
+    }
+
+    // COMPOUND: generic topic + file  (e.g. "give me a file with links about X")
+    // Extract the topic from the message
+    const topicMatch = userMessage.match(/(?:file|document|note|text)\s+(?:with|containing|about|on|of)\s+(.+?)$/i) ||
+                       userMessage.match(/(?:with|containing|about)\s+(?:links?\s+(?:to|about|on)\s+)?(.+?)$/i);
+    if (topicMatch) {
+      const topic = topicMatch[1].replace(/\s+/g, ' ').trim();
+      if (topic.length > 3) {
+        return { calls: [
+          { name: '__compound_search_file', arguments: { topic, query: userMessage } }
+        ] };
+      }
+    }
+  }
+
   // SPORTS / NBA intents - match team names and basketball terms
-  // Common NBA team names for fuzzy matching
   const nbaTeams = ['warriors', 'lakers', 'celtics', 'bulls', 'heat', 'nets', 'knicks', 'suns', 'bucks', 'nuggets', 
                    'clippers', 'spurs', 'rockets', 'mavericks', 'thunder', 'jazz', 'kings', 'pelicans', 'grizzlies',
                    'hawks', 'hornets', 'cavaliers', 'pistons', 'pacers', 'magic', 'wizards', 'raptors', 'timberwolves', 'blazers', '76ers', 'sixers'];
   const hasNbaTeam = nbaTeams.some(team => m.includes(team));
   
   if (hasNbaTeam || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) {
-    // Extract team name
     let teamQuery = '';
     for (const team of nbaTeams) {
-      if (m.includes(team)) {
-        teamQuery = team;
-        break;
-      }
+      if (m.includes(team)) { teamQuery = team; break; }
     }
     const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
-    const call = { name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } };
-    return { calls: [call] };
+    return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } }] };
   }
 
-  // WEATHER intents - very fuzzy match for weather/weater/wether/whether etc
-  if (/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy)\b/i.test(m)) {
-    // Extract location - look for "in <location>" pattern
-    const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|$)/i) ||
+  // WEATHER / SURF intents (standalone, no file creation)
+  if (/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|surf|swell|waves?)\b/i.test(m)) {
+    const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
                      m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';
-    // Remove trailing time words
-    location = location.replace(/\s*(tomorrow|today|tonight|this week|next week)$/i, '').trim();
+    location = location.replace(/\s*(tomorrow|today|tonight|this week|next week|give)$/i, '').trim();
     if (location) return { calls: [{ name: 'get_weather', arguments: { location } }] };
-    // If no location found, don't match - let LLM handle it
     return null;
   }
 
-  // WEB SEARCH intents
-  if (/\b(search for|find|who is|what is|look up|tell me about|google)\b/i.test(m)) {
+  // DOCUMENT / FILE READING intents
+  if (/\b(read|open|summarize|summar|analyse|analyze|parse|what'?s in|show me|review)\b/i.test(m) &&
+      (/\b(document|doc|file|pdf|cv|resume|report|letter|paper|essay|cover\s*letter)\b/i.test(m) ||
+       /\.(pdf|docx?|txt|md)\b/i.test(m))) {
+    let filePath = '';
+    const pathPatterns = [
+      /([a-zA-Z]:\\[^"'\n]+\.\w+)/i,
+      /([a-zA-Z]:\/[^"'\n]+\.\w+)/i,
+      /(~\/[^"'\s]+\.\w+)/i,
+      /((?:desktop|documents|downloads)\/[^"'\s]+\.\w+)/i,
+      /((?:desktop|documents|downloads)\\[^"'\s]+\.\w+)/i,
+      /([\w\s.-]+\.(?:pdf|docx?|txt|md))(?:\s|$)/i,
+    ];
+    for (const pattern of pathPatterns) {
+      const match = userMessage.match(pattern);
+      if (match) { filePath = match[1].trim(); break; }
+    }
+    if (filePath) {
+      return { calls: [{ name: 'parse_document_from_path', arguments: { path: filePath } }] };
+    }
+    // No exact filename — list the desktop to find matching files
+    return { calls: [{ name: 'list_directory', arguments: { path: 'Desktop' } }] };
+  }
+
+  // "what is this document" / "what is this" without attachment markers = LLM handles
+  // (attached docs are caught by the document-marker check at top)
+
+  // WEB SEARCH intents — be careful not to match "what is this document" etc.
+  if (/\b(search for|look up|tell me about|google)\b/i.test(m)) {
+    const q = userMessage.trim();
+    return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
+  }
+  // "who is X" / "what is X" — only match if no document/file words nearby
+  if (/\b(who is|what is|find)\b/i.test(m) &&
+      !/\b(this|document|doc|file|pdf|cv|resume|report|letter)\b/i.test(m)) {
     const q = userMessage.trim();
     return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
   }
@@ -305,8 +387,26 @@ function summarizeToolResults(results: any[]): string {
     // Heuristic extraction for common result shapes
     if (r.result && typeof r.result === 'string') parts.push(r.result);
     else if (r.result && typeof r.result === 'object') {
+      // Document parsing results
+      if (r.result.preview || r.result.word_count) {
+        let docSummary = `📄 **${r.result.filename || 'Document'}**`;
+        if (r.result.page_count) docSummary += ` (${r.result.page_count} pages, ${r.result.word_count} words)`;
+        else if (r.result.word_count) docSummary += ` (${r.result.word_count} words)`;
+        docSummary += '\n\n' + (r.result.content || r.result.preview || '');
+        parts.push(docSummary);
+      }
+      // Directory listing results
+      else if (r.result.entries && Array.isArray(r.result.entries)) {
+        let listing = `📂 Contents of ${r.result.path}:\n`;
+        for (const entry of r.result.entries.slice(0, 30)) {
+          const icon = entry.type === 'directory' ? '📁' : '📄';
+          const size = entry.size != null ? ` (${(entry.size / 1024).toFixed(1)} KB)` : '';
+          listing += `${icon} ${entry.name}${size}\n`;
+        }
+        parts.push(listing);
+      }
       // Try to stringify concise keys
-      if (r.result.summary) parts.push(r.result.summary);
+      else if (r.result.summary) parts.push(r.result.summary);
       else if (r.result.content) parts.push(r.result.content);
       else parts.push(JSON.stringify(r.result).slice(0, 400));
     } else if (r.output && typeof r.output === 'string') parts.push(r.output);
@@ -488,8 +588,12 @@ export async function streamFromLLM(
         cancel: () => controller.abort()
       };
     } else {
-      console.warn(`[SADIE] Invalid custom LLM config: ${validation.error}. Falling back to Ollama.`);
-      onChunk(`\n\n⚠️ Custom LLM configuration error: ${validation.error}\nFalling back to Ollama...\n\n`);
+      // Silently fall back to Ollama if custom LLM isn't fully configured
+      // Only log once per session to avoid spamming
+      if (!customLLMWarningShown) {
+        console.log(`[SADIE] Custom LLM not ready: ${validation.error}. Using Ollama.`);
+        customLLMWarningShown = true;
+      }
     }
   }
   
@@ -511,6 +615,11 @@ export async function streamFromOllamaWithTools(
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
   options?: { hasDocuments?: boolean }
 ): Promise<{ cancel: () => void }> {
+  const settings = getSettings();
+  const preferredChatModel = settings.chatModel || OLLAMA_CHAT_MODEL;
+  const preferredUncensoredModel = settings.uncensoredModel || OLLAMA_UNCENSORED_MODEL;
+  const preferredVisionModel = settings.visionModel || OLLAMA_VISION_MODEL;
+
   const controller = new AbortController();
   let ended = false;
   let chunkCount = 0;
@@ -534,8 +643,8 @@ export async function streamFromOllamaWithTools(
   // Check if we have images - use vision model if so (vision models typically don't support tools)
   const hasImages = images && images.length > 0;
   // Select model: vision > uncensored > normal
-  const chatModel = uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL;
-  const model = hasImages ? OLLAMA_VISION_MODEL : chatModel;
+  const chatModel = uncensoredModeEnabled ? preferredUncensoredModel : preferredChatModel;
+  const model = hasImages ? preferredVisionModel : chatModel;
   
   // Extract base64 image data for Ollama
   const imageData: string[] = [];
@@ -572,7 +681,7 @@ export async function streamFromOllamaWithTools(
   
   // Get tools (disable for vision models, models that don't support tools, and simple greetings)
   // dolphin-llama3 doesn't support Ollama tool calling
-  const modelSupportsTools = !hasImages && model !== OLLAMA_UNCENSORED_MODEL;
+  const modelSupportsTools = !hasImages && model !== preferredUncensoredModel;
   const skipToolsForGreeting = isSimpleGreeting(message);
   const hasDocuments = options?.hasDocuments ?? false;
   
@@ -613,6 +722,27 @@ export async function streamFromOllamaWithTools(
       
       let assistantContent = '';
       let pendingToolCalls: any[] = [];
+      // Buffer chunks so we can detect tool JSON before sending to the UI.
+      // Flush progressively after a short delay; if tool JSON is detected
+      // on stream end we replace the content.
+      const chunkBuffer: string[] = [];
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+      let flushedLength = 0; // how many chars of assistantContent we already sent
+
+      function scheduleFlush(): void {
+        if (flushTimer) return;
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          // Only flush if we have unflushed content and no tool_calls detected yet
+          if (flushedLength < assistantContent.length && pendingToolCalls.length === 0) {
+            const unflushed = assistantContent.slice(flushedLength);
+            // Quick check: if accumulated content is starting to look like tool JSON, hold off
+            if (looksLikeToolJson(assistantContent)) return;
+            onChunk(unflushed);
+            flushedLength = assistantContent.length;
+          }
+        }, 120); // Small delay to batch-check content
+      }
       
       await new Promise<void>((resolve, reject) => {
         stream.on('data', (chunk: Buffer) => {
@@ -626,7 +756,8 @@ export async function streamFromOllamaWithTools(
               if (parsed.message?.content) {
                 chunkCount++;
                 assistantContent += parsed.message.content;
-                onChunk(parsed.message.content);
+                chunkBuffer.push(parsed.message.content);
+                scheduleFlush();
               }
               
               // Handle tool calls
@@ -635,6 +766,7 @@ export async function streamFromOllamaWithTools(
               }
               
               if (parsed.done) {
+                if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
                 console.log(`[SADIE] Response done, chunks=${chunkCount}, toolCalls=${pendingToolCalls.length}`);
                 resolve();
               }
@@ -652,14 +784,49 @@ export async function streamFromOllamaWithTools(
       // looks like raw tool JSON, parse and route it through the tool
       // execution pipeline rather than rendering it as plain text.
       if (pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
-        try {
-          const parsed = JSON.parse(assistantContent);
-          if (parsed && (parsed.name || parsed.function)) {
-            pendingToolCalls = [parsed];
-            assistantContent = "I'm fetching that now...";
-            pushRouter('Detected inline tool JSON; routing to tool executor');
-          }
-        } catch (e) {}
+        // Try extracting tool calls from mixed text (models like mistral
+        // often embed tool JSON inside descriptive prose)
+        const extracted = extractToolCallsFromText(assistantContent);
+        if (extracted && extracted.length > 0) {
+          pendingToolCalls = extracted;
+          assistantContent = "I'm working on that now...";
+          pushRouter('Detected inline tool JSON in prose; routing to tool executor');
+        } else {
+          // Fall back to simple JSON parse for pure JSON output
+          try {
+            const parsed = JSON.parse(assistantContent.trim());
+            if (parsed && (parsed.name || parsed.function)) {
+              pendingToolCalls = [parsed];
+              assistantContent = "I'm fetching that now...";
+              pushRouter('Detected inline tool JSON; routing to tool executor');
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Final fallback: detect prose-style tool descriptions like
+      // "write_file path='...' content='...'" that models sometimes output
+      // instead of using the proper tool_call mechanism.
+      if (pendingToolCalls.length === 0) {
+        const proseCalls = extractProseToolCalls(assistantContent);
+        if (proseCalls && proseCalls.length > 0) {
+          pendingToolCalls = proseCalls;
+          assistantContent = "I'm working on that now...";
+          pushRouter(`Detected ${proseCalls.length} prose-style tool call(s); routing to tool executor`);
+        }
+      }
+
+      // Flush any remaining buffered content that wasn't sent during streaming.
+      // If tool JSON was detected, send the replacement message instead.
+      if (pendingToolCalls.length > 0 && flushedLength > 0) {
+        // We already sent some raw JSON to the UI — send a replacement signal
+        onChunk('\n___REPLACE___' + assistantContent);
+      } else if (pendingToolCalls.length > 0) {
+        // Never flushed, good — send the clean replacement message
+        onChunk(assistantContent);
+      } else if (flushedLength < assistantContent.length) {
+        // Normal text, flush remainder
+        onChunk(assistantContent.slice(flushedLength));
       }
 
       // Process tool calls if any
@@ -737,7 +904,23 @@ export async function streamFromOllamaWithTools(
         for (const result of batchResults) {
           console.log(`[SADIE] Tool result:`, result);
           onToolResult(result);
-          messages.push({ role: 'tool', content: JSON.stringify(result) });
+          // Format structured results so the LLM gets human-readable context
+          // instead of raw JSON which it often regurgitates verbatim
+          let toolContent = JSON.stringify(result);
+          const r = result?.result;
+          if (r && r.temperature && r.condition) {
+            // Weather result — format nicely for the LLM
+            toolContent = `Weather for ${r.location || 'the location'}:\n`;
+            toolContent += `Temperature: ${r.temperature.celsius || ''}`;
+            if (r.temperature.feelsLike) toolContent += ` (feels like ${r.temperature.feelsLike})`;
+            toolContent += `\nCondition: ${r.condition}`;
+            if (r.wind) toolContent += `\nWind: ${r.wind.speed || ''} ${r.wind.direction || ''}`;
+            if (r.humidity) toolContent += `\nHumidity: ${r.humidity}`;
+            if (r.visibility) toolContent += `\nVisibility: ${r.visibility}`;
+            if (r.uvIndex) toolContent += `\nUV Index: ${r.uvIndex}`;
+            if (r.precipitation) toolContent += `\nPrecipitation: ${r.precipitation}`;
+          }
+          messages.push({ role: 'tool', content: toolContent });
         }
 
         // Continue the conversation with tool results
@@ -1021,6 +1204,274 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           message: enhancedMessage.substring(0, 50)
         });
         
+        // ─── SMART ROUTING (applies to ALL modes: direct Ollama, proxy, n8n) ───
+        // Run intent detection BEFORE streaming so deterministic tool execution
+        // takes priority over unreliable LLM tool-calling.
+        {
+          const intentResult = await preProcessIntent(enhancedMessage);
+          console.log('[SADIE] preProcessIntent called with:', enhancedMessage.substring(0, 60));
+          console.log('[SADIE] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
+
+          if (intentResult && intentResult.calls && intentResult.calls.length > 0) {
+            console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
+            
+            // Ensure stream is tracked
+            if (!activeStreams.has(streamId)) {
+              activeStreams.set(streamId, { destroy: () => {} });
+            }
+
+            let toolResults: any[] | null = null;
+
+            // COMPOUND INTENT: weather → write_file chain
+            const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
+            if (isCompound) {
+              const { location, query } = intentResult.calls[0].arguments;
+              console.log('[SADIE] Compound intent: get weather for', location, 'then write file');
+              
+              // Step 1: Get weather
+              const weatherResults = await executeToolBatch(
+                [{ name: 'get_weather', arguments: { location } }] as ToolCall[],
+                { executionId: `compound-weather-${Date.now()}`, requestConfirmation,
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+              );
+              
+              // Extract weather content
+              let weatherContent = '';
+              const wr = weatherResults?.[0]?.result;
+              if (wr) {
+                if (wr.location) weatherContent += `Weather for ${wr.location}\n`;
+                if (wr.temperature) {
+                  weatherContent += `Temperature: ${wr.temperature.celsius || ''}`;
+                  if (wr.temperature.feelsLike) weatherContent += ` (feels like ${wr.temperature.feelsLike})`;
+                  weatherContent += '\n';
+                }
+                if (wr.condition) weatherContent += `Condition: ${wr.condition}\n`;
+                if (wr.wind) weatherContent += `Wind: ${wr.wind.speed || ''} ${wr.wind.direction || ''}\n`;
+                if (wr.humidity) weatherContent += `Humidity: ${wr.humidity}\n`;
+                if (wr.visibility) weatherContent += `Visibility: ${wr.visibility}\n`;
+                if (wr.uvIndex) weatherContent += `UV Index: ${wr.uvIndex}\n`;
+                if (wr.precipitation) weatherContent += `Precipitation: ${wr.precipitation}\n`;
+                if (!weatherContent.trim()) {
+                  weatherContent = typeof wr === 'string' ? wr : JSON.stringify(wr, null, 2);
+                }
+              } else {
+                const errMsg = weatherResults?.[0]?.error || 'Unknown error';
+                weatherContent = `Could not retrieve weather data for ${location}.\nError: ${errMsg}`;
+              }
+              
+              const isSurf = /\b(surf|swell|waves?|ocean|marine|beach)\b/i.test(query || '');
+              const fileLabel = isSurf ? 'surf_conditions' : 'weather';
+              const fileName = `${fileLabel}_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+              const now = new Date().toLocaleString();
+              const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${weatherContent}`;
+              
+              // Step 2: Write file to Desktop
+              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const desktopPath = require('path').join(HOME, 'Desktop', fileName);
+              let writeSuccess = false;
+              let writeError = '';
+              try {
+                require('fs').writeFileSync(desktopPath, fileContent, 'utf-8');
+                writeSuccess = true;
+                console.log('[SADIE] Compound: file written to', desktopPath);
+              } catch (writeErr: any) {
+                writeError = writeErr.message || String(writeErr);
+                console.error('[SADIE] Compound: file write FAILED:', writeError);
+              }
+              
+              if (writeSuccess) {
+                toolResults = [{ result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n✅ Saved to **${fileName}** on your Desktop.` } }];
+              } else {
+                toolResults = [{ result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n❌ Could not save file: ${writeError}` } }];
+              }
+            }
+            // COMPOUND INTENT: NBA → write_file chain
+            else if (intentResult.calls[0]?.name === '__compound_nba_file') {
+              const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
+              console.log('[SADIE] Compound NBA+file intent:', { teamQuery, dateRange, perPage });
+
+              const nbaResults = await executeToolBatch(
+                [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
+                { executionId: `compound-nba-${Date.now()}`, requestConfirmation,
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+              );
+
+              // Format NBA data
+              let nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n`;
+              const events = nbaResults?.[0]?.result?.events;
+              if (events && Array.isArray(events) && events.length > 0) {
+                for (const game of events) {
+                  const teams = game.competitions?.[0]?.competitors?.map((c: any) => {
+                    const score = c.score ? ` (${c.score})` : '';
+                    return `${c.team.displayName}${score}`;
+                  }).join(' vs ') || 'Unknown matchup';
+                  const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
+                  const date = game.date ? new Date(game.date).toLocaleDateString() : '';
+                  nbaContent += `${date ? date + ' — ' : ''}${teams} — ${status}\n`;
+                }
+                nbaContent += `\nTotal: ${events.length} games\n`;
+              } else {
+                nbaContent += 'No games found for the specified criteria.\n';
+                if (nbaResults?.[0]?.error) nbaContent += `Error: ${nbaResults[0].error}\n`;
+              }
+
+              // Write to file
+              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const teamSuffix = teamQuery ? `_${teamQuery}` : '';
+              const nbaFileName = `nba_games${teamSuffix}.txt`;
+              const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
+              let nbaWriteOk = false;
+              try {
+                require('fs').writeFileSync(nbaDesktopPath, nbaContent, 'utf-8');
+                nbaWriteOk = true;
+                console.log('[SADIE] Compound NBA: file written to', nbaDesktopPath);
+              } catch (e: any) {
+                console.error('[SADIE] Compound NBA: file write FAILED:', e.message);
+              }
+
+              const gameCount = events?.length || 0;
+              if (nbaWriteOk) {
+                toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n✅ Saved ${gameCount} games to **${nbaFileName}** on your Desktop.` } }];
+              } else {
+                toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n❌ Could not save file.` } }];
+              }
+            }
+            // COMPOUND INTENT: web_search → write_file chain
+            else if (intentResult.calls[0]?.name === '__compound_search_file') {
+              const { topic } = intentResult.calls[0].arguments;
+              console.log('[SADIE] Compound search+file intent:', topic);
+
+              const searchResults = await executeToolBatch(
+                [{ name: 'web_search', arguments: { query: topic, maxResults: 10, fetchTopResult: true } }] as ToolCall[],
+                { executionId: `compound-search-${Date.now()}`, requestConfirmation,
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+              );
+
+              // Format search results
+              let searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n`;
+              const sr = searchResults?.[0]?.result;
+              if (sr?.results && Array.isArray(sr.results) && sr.results.length > 0) {
+                for (let i = 0; i < sr.results.length; i++) {
+                  const item = sr.results[i];
+                  searchContent += `${i + 1}. ${item.title || 'Untitled'}\n`;
+                  if (item.snippet) searchContent += `   ${item.snippet}\n`;
+                  if (item.url) searchContent += `   ${item.url}\n`;
+                  searchContent += '\n';
+                }
+              }
+              if (sr?.topResultContent?.content || sr?.topResultContent?.contentText) {
+                const topContent = sr.topResultContent.content || sr.topResultContent.contentText;
+                searchContent += `\n--- Top Result Content ---\n${topContent.slice(0, 2000)}\n`;
+              }
+              if (!sr?.results?.length) {
+                searchContent += 'No search results found.\n';
+              }
+
+              // Write to file
+              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const safeFileName = topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
+              const searchFilePath = require('path').join(HOME, 'Desktop', safeFileName);
+              let searchWriteOk = false;
+              try {
+                require('fs').writeFileSync(searchFilePath, searchContent, 'utf-8');
+                searchWriteOk = true;
+                console.log('[SADIE] Compound search: file written to', searchFilePath);
+              } catch (e: any) {
+                console.error('[SADIE] Compound search: file write FAILED:', e.message);
+              }
+
+              if (searchWriteOk) {
+                toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n✅ Saved to **${safeFileName}** on your Desktop.` } }];
+              } else {
+                toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n❌ Could not save file.` } }];
+              }
+            } else {
+              // Normal single-step intent
+              toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
+                executionId: `intent-${Date.now()}`,
+                requestConfirmation,
+                requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+              } as ToolContext);
+            }
+            
+            // Format tool results into a nice response
+            let responseText = '';
+            for (const result of (toolResults || [])) {
+              if (!result?.result) continue;
+              // Handle compound summary
+              if (result.result.summary) {
+                responseText += result.result.summary + '\n';
+              }
+              // Handle NBA games
+              else if (result.result.events && result.result.events.length > 0) {
+                responseText += 'Here are the games:\n\n';
+                result.result.events.slice(0, 5).forEach((game: any) => {
+                  const teams = game.competitions?.[0]?.competitors?.map((c: any) => c.team.displayName).join(' vs ') || 'Unknown matchup';
+                  const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
+                  responseText += `${teams} - ${status}\n`;
+                });
+              }
+              // Handle weather results
+              else if (result.result.temperature && result.result.condition) {
+                responseText += `🌤️ **Weather for ${result.result.location || 'your location'}**\n\n`;
+                responseText += `Temperature: ${result.result.temperature.celsius || ''}`;
+                if (result.result.temperature.feelsLike) responseText += ` (feels like ${result.result.temperature.feelsLike})`;
+                responseText += '\n';
+                responseText += `Condition: ${result.result.condition}\n`;
+                if (result.result.wind) responseText += `Wind: ${result.result.wind.speed || ''} ${result.result.wind.direction || ''}\n`;
+                if (result.result.humidity) responseText += `Humidity: ${result.result.humidity}\n`;
+                if (result.result.uvIndex) responseText += `UV Index: ${result.result.uvIndex}\n`;
+                if (result.result.precipitation) responseText += `Precipitation: ${result.result.precipitation}\n`;
+                if (result.result.visibility) responseText += `Visibility: ${result.result.visibility}\n`;
+              }
+              // Handle web search results
+              else if (result.result.topResultContent) {
+                const topContent = result.result.topResultContent.content || result.result.topResultContent.contentText;
+                if (topContent) responseText += topContent + '\n\n';
+                if (result.result.topResultContent.url) responseText += `Source: ${result.result.topResultContent.url}\n`;
+                if (!topContent && result.result.note) responseText += `${result.result.note}\n`;
+              }
+              // Handle directory listing
+              else if (result.result.entries && Array.isArray(result.result.entries)) {
+                responseText += `📂 Contents of ${result.result.path}:\n\n`;
+                for (const entry of result.result.entries.slice(0, 30)) {
+                  const icon = entry.type === 'directory' ? '📁' : '📄';
+                  const size = entry.size != null ? ` (${(entry.size / 1024).toFixed(1)} KB)` : '';
+                  responseText += `${icon} ${entry.name}${size}\n`;
+                }
+              }
+              // Handle document parsing
+              else if (result.result.preview || result.result.word_count) {
+                responseText += `📄 **${result.result.filename || 'Document'}**`;
+                if (result.result.page_count) responseText += ` (${result.result.page_count} pages, ${result.result.word_count} words)`;
+                responseText += '\n\n' + (result.result.content || result.result.preview || '') + '\n';
+              }
+              // Handle generic content
+              else if (result.result.content) {
+                responseText += result.result.content + '\n';
+              }
+              // Last resort
+              else {
+                responseText += JSON.stringify(result.result).slice(0, 500) + '\n';
+              }
+            }
+            
+            if (!responseText.trim() && toolResults && toolResults.length > 0) {
+              responseText = JSON.stringify(toolResults[0]?.result || toolResults[0]).slice(0, 500);
+            }
+
+            if (responseText.trim()) {
+              addToHistory(convId, 'assistant', responseText);
+              try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              activeStreams.delete(streamId);
+              return;
+            }
+            // If formatting produced nothing, fall through to LLM streaming
+          }
+        }
+        // ─── END SMART ROUTING ───
+        
         if (useDirectOllama) {
           // Direct Ollama streaming - no n8n required
           const handler = await streamFromOllama(
@@ -1157,11 +1608,182 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               // Execute tools directly without involving the LLM
               try {
-                toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
-                  executionId: `intent-${Date.now()}`,
-                  requestConfirmation,
-                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
-                } as ToolContext);
+                // COMPOUND INTENT: weather → write_file chain
+                const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
+                if (isCompound) {
+                  const { location, query } = intentResult.calls[0].arguments;
+                  console.log('[SADIE] Compound intent: get weather for', location, 'then write file');
+                  
+                  // Step 1: Get weather
+                  const weatherResults = await executeToolBatch(
+                    [{ name: 'get_weather', arguments: { location } }] as ToolCall[],
+                    { executionId: `compound-weather-${Date.now()}`, requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+                  );
+                  console.log('[SADIE] Compound: weather result:', JSON.stringify(weatherResults?.[0]?.result || weatherResults?.[0]?.error || 'no result').slice(0, 300));
+                  
+                  // Extract weather content
+                  let weatherContent = '';
+                  const wr = weatherResults?.[0]?.result;
+                  if (wr) {
+                    // wttr.in result shape: { location, temperature: { celsius, fahrenheit, feelsLike }, condition, humidity, wind: { speed, direction }, visibility, uvIndex, precipitation }
+                    if (wr.location) weatherContent += `Weather for ${wr.location}\n`;
+                    if (wr.temperature) {
+                      weatherContent += `Temperature: ${wr.temperature.celsius || ''}`;
+                      if (wr.temperature.feelsLike) weatherContent += ` (feels like ${wr.temperature.feelsLike})`;
+                      weatherContent += '\n';
+                    }
+                    if (wr.condition) weatherContent += `Condition: ${wr.condition}\n`;
+                    if (wr.wind) weatherContent += `Wind: ${wr.wind.speed || ''} ${wr.wind.direction || ''}\n`;
+                    if (wr.humidity) weatherContent += `Humidity: ${wr.humidity}\n`;
+                    if (wr.visibility) weatherContent += `Visibility: ${wr.visibility}\n`;
+                    if (wr.uvIndex) weatherContent += `UV Index: ${wr.uvIndex}\n`;
+                    if (wr.precipitation) weatherContent += `Precipitation: ${wr.precipitation}\n`;
+                    // Fallback: stringify if we couldn't parse structured data
+                    if (!weatherContent.trim()) {
+                      weatherContent = typeof wr === 'string' ? wr : JSON.stringify(wr, null, 2);
+                    }
+                  } else {
+                    // Weather fetch failed — include error info
+                    const errMsg = weatherResults?.[0]?.error || 'Unknown error';
+                    weatherContent = `Could not retrieve weather data for ${location}.\nError: ${errMsg}`;
+                  }
+                  
+                  // Determine whether user wants surf or general weather
+                  const isSurf = /\b(surf|swell|waves?|ocean|marine|beach)\b/i.test(query || '');
+                  const fileLabel = isSurf ? 'surf_conditions' : 'weather';
+                  const fileName = `${fileLabel}_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+                  const now = new Date().toLocaleString();
+                  const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${weatherContent}`;
+                  
+                  // Step 2: Write file to Desktop — use direct fs.writeFile to bypass confirmation
+                  // (User explicitly asked us to create the file, no need to confirm again)
+                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const desktopPath = require('path').join(HOME, 'Desktop', fileName);
+                  let writeSuccess = false;
+                  let writeError = '';
+                  try {
+                    require('fs').writeFileSync(desktopPath, fileContent, 'utf-8');
+                    writeSuccess = true;
+                    console.log('[SADIE] Compound: file written successfully to', desktopPath);
+                  } catch (writeErr: any) {
+                    writeError = writeErr.message || String(writeErr);
+                    console.error('[SADIE] Compound: file write FAILED:', writeError);
+                  }
+                  
+                  // Build combined result
+                  if (writeSuccess) {
+                    toolResults = [
+                      { result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n✅ Saved to **${fileName}** on your Desktop.` } }
+                    ];
+                  } else {
+                    toolResults = [
+                      { result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n❌ Could not save file: ${writeError}` } }
+                    ];
+                  }
+                }
+                // COMPOUND INTENT: NBA → write_file chain
+                else if (intentResult.calls[0]?.name === '__compound_nba_file') {
+                  const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
+                  console.log('[SADIE] Compound NBA+file intent (n8n path):', { teamQuery, dateRange, perPage });
+
+                  const nbaResults = await executeToolBatch(
+                    [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
+                    { executionId: `compound-nba-${Date.now()}`, requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+                  );
+
+                  let nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n`;
+                  const events = nbaResults?.[0]?.result?.events;
+                  if (events && Array.isArray(events) && events.length > 0) {
+                    for (const game of events) {
+                      const teams = game.competitions?.[0]?.competitors?.map((c: any) => {
+                        const score = c.score ? ` (${c.score})` : '';
+                        return `${c.team.displayName}${score}`;
+                      }).join(' vs ') || 'Unknown matchup';
+                      const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
+                      const date = game.date ? new Date(game.date).toLocaleDateString() : '';
+                      nbaContent += `${date ? date + ' — ' : ''}${teams} — ${status}\n`;
+                    }
+                    nbaContent += `\nTotal: ${events.length} games\n`;
+                  } else {
+                    nbaContent += 'No games found for the specified criteria.\n';
+                    if (nbaResults?.[0]?.error) nbaContent += `Error: ${nbaResults[0].error}\n`;
+                  }
+
+                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const teamSuffix = teamQuery ? `_${teamQuery}` : '';
+                  const nbaFileName = `nba_games${teamSuffix}.txt`;
+                  const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
+                  let nbaWriteOk = false;
+                  try {
+                    require('fs').writeFileSync(nbaDesktopPath, nbaContent, 'utf-8');
+                    nbaWriteOk = true;
+                  } catch (e: any) {
+                    console.error('[SADIE] Compound NBA file write FAILED:', e.message);
+                  }
+
+                  const gameCount = events?.length || 0;
+                  if (nbaWriteOk) {
+                    toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n✅ Saved ${gameCount} games to **${nbaFileName}** on your Desktop.` } }];
+                  } else {
+                    toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n❌ Could not save file.` } }];
+                  }
+                }
+                // COMPOUND INTENT: web_search → write_file chain
+                else if (intentResult.calls[0]?.name === '__compound_search_file') {
+                  const { topic } = intentResult.calls[0].arguments;
+                  console.log('[SADIE] Compound search+file intent (n8n path):', topic);
+
+                  const searchResults = await executeToolBatch(
+                    [{ name: 'web_search', arguments: { query: topic, maxResults: 10, fetchTopResult: true } }] as ToolCall[],
+                    { executionId: `compound-search-${Date.now()}`, requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+                  );
+
+                  let searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n`;
+                  const sr = searchResults?.[0]?.result;
+                  if (sr?.results && Array.isArray(sr.results) && sr.results.length > 0) {
+                    for (let i = 0; i < sr.results.length; i++) {
+                      const item = sr.results[i];
+                      searchContent += `${i + 1}. ${item.title || 'Untitled'}\n`;
+                      if (item.snippet) searchContent += `   ${item.snippet}\n`;
+                      if (item.url) searchContent += `   ${item.url}\n`;
+                      searchContent += '\n';
+                    }
+                  }
+                  if (sr?.topResultContent?.content || sr?.topResultContent?.contentText) {
+                    const topContent = sr.topResultContent.content || sr.topResultContent.contentText;
+                    searchContent += `\n--- Top Result Content ---\n${topContent.slice(0, 2000)}\n`;
+                  }
+                  if (!sr?.results?.length) {
+                    searchContent += 'No search results found.\n';
+                  }
+
+                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const safeFileName = topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
+                  const searchFilePath = require('path').join(HOME, 'Desktop', safeFileName);
+                  let searchWriteOk = false;
+                  try {
+                    require('fs').writeFileSync(searchFilePath, searchContent, 'utf-8');
+                    searchWriteOk = true;
+                  } catch (e: any) {
+                    console.error('[SADIE] Compound search file write FAILED:', e.message);
+                  }
+
+                  if (searchWriteOk) {
+                    toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n✅ Saved to **${safeFileName}** on your Desktop.` } }];
+                  } else {
+                    toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n❌ Could not save file.` } }];
+                  }
+                } else {
+                  // Normal single-step intent
+                  toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
+                    executionId: `intent-${Date.now()}`,
+                    requestConfirmation,
+                    requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                  } as ToolContext);
+                }
                 
                 console.log('[SADIE] Intent tool results:', toolResults);
                 
@@ -1258,7 +1880,20 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
                       responseText += `${teams} - ${status}\n`;
                     });
-                  } 
+                  }
+                  // Handle weather results (wttr.in shape)
+                  else if (result.result.temperature && result.result.condition) {
+                    responseText += `🌤️ **Weather for ${result.result.location || 'your location'}**\n\n`;
+                    responseText += `Temperature: ${result.result.temperature.celsius || ''}`;
+                    if (result.result.temperature.feelsLike) responseText += ` (feels like ${result.result.temperature.feelsLike})`;
+                    responseText += '\n';
+                    responseText += `Condition: ${result.result.condition}\n`;
+                    if (result.result.wind) responseText += `Wind: ${result.result.wind.speed || ''} ${result.result.wind.direction || ''}\n`;
+                    if (result.result.humidity) responseText += `Humidity: ${result.result.humidity}\n`;
+                    if (result.result.uvIndex) responseText += `UV Index: ${result.result.uvIndex}\n`;
+                    if (result.result.precipitation) responseText += `Precipitation: ${result.result.precipitation}\n`;
+                    if (result.result.visibility) responseText += `Visibility: ${result.result.visibility}\n`;
+                  }
                   // Handle web search results
                   else if (result.result.topResultContent) {
                     const topContent = result.result.topResultContent.content || result.result.topResultContent.contentText;
@@ -1284,12 +1919,37 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       responseText += `${result.result.note}\n`;
                     }
                   }
+                  // Handle parsed document results (from parse_document_from_path)
+                  else if (result.result.preview || result.result.word_count) {
+                    responseText += `📄 **${result.result.filename || 'Document'}**`;
+                    if (result.result.page_count) responseText += ` (${result.result.page_count} pages, ${result.result.word_count} words)`;
+                    else if (result.result.word_count) responseText += ` (${result.result.word_count} words)`;
+                    responseText += '\n\n';
+                    const content = result.result.content || result.result.preview || '';
+                    responseText += content + '\n';
+                  }
+                  // Handle list_directory results
+                  else if (result.result.entries && Array.isArray(result.result.entries)) {
+                    responseText += `📂 Contents of ${result.result.path}:\n\n`;
+                    for (const entry of result.result.entries.slice(0, 30)) {
+                      const icon = entry.type === 'directory' ? '📁' : '📄';
+                      const size = entry.size != null ? ` (${(entry.size / 1024).toFixed(1)} KB)` : '';
+                      responseText += `${icon} ${entry.name}${size}\n`;
+                    }
+                    if (result.result.entries.length > 30) {
+                      responseText += `... and ${result.result.entries.length - 30} more items\n`;
+                    }
+                  }
                   // Handle plain content/summary
                   else if (result.result.content) {
                     responseText += result.result.content + '\n';
                   } else if (result.result.summary) {
                     responseText += result.result.summary + '\n';
-                  } 
+                  }
+                  // Handle write_file / file operation results (success + path)
+                  else if (result.result.success && result.result.path) {
+                    // Already shown via the compound summary, skip duplicating
+                  }
                   // Last resort: stringify
                   else {
                     responseText += JSON.stringify(result.result).slice(0, 500) + '\n';

@@ -35,6 +35,7 @@ const ALLOWED_CHANNELS = {
   HAS_PERMISSION: 'sadie:has-permission',
   RESET_PERMISSIONS: 'sadie:reset-permissions',
   EXPORT_CONSENT: 'sadie:export-consent',
+  LIST_CUSTOM_MODELS: 'sadie:list-custom-llm-models',
   READ_CONSENT_LOG: 'sadie:read-consent-log',
   SHOW_WINDOW: 'sadie:show-window',
   HIDE_WINDOW: 'sadie:hide-window',
@@ -222,6 +223,10 @@ const electronAPI: ElectronAPI = {
     }
     // If something went wrong, fallback to current Settings
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SETTINGS) as Settings;
+  },
+
+  listCustomLLMModels: async (config: { apiUrl: string; apiKey?: string; provider?: string }) => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.LIST_CUSTOM_MODELS, config);
   },
 
   resetPermissions: async (): Promise<Settings> => {

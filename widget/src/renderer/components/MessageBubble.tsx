@@ -1,4 +1,42 @@
+import React from "react";
 import type { ChatMessage } from "../types";
+
+/**
+ * Convert plain-text URLs into clickable <a> elements.
+ * Returns an array of strings and JSX <a> elements.
+ */
+function linkifyText(text: string): React.ReactNode[] {
+  const urlRegex = /(https?:\/\/[^\s<>"'`)\]]+)/gi;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    // Push text before the URL
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const url = match[1];
+    parts.push(
+      <a
+        key={key++}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="message-link"
+      >
+        {url}
+      </a>
+    );
+    lastIndex = urlRegex.lastIndex;
+  }
+  // Push remaining text after last URL
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : [text];
+}
 
 export function MessageBubble({
   message,
@@ -28,7 +66,7 @@ export function MessageBubble({
             {shouldShowBubble && (
               <div className="message-bubble">
                 {hasContent ? (
-                  <div className="message-text">{message.content}</div>
+                  <div className="message-text">{linkifyText(message.content!)}</div>
                 ) : (
                   isAssistant && state === "streaming" && (
                     <div className="streaming-indicator">
@@ -99,7 +137,7 @@ export function MessageBubble({
             {shouldShowBubble && (
               <div className="message-bubble">
                 {hasContent ? (
-                  <div className="message-text">{message.content}</div>
+                  <div className="message-text">{linkifyText(message.content!)}</div>
                 ) : (
                   isAssistant && state === "streaming" && (
                     <div className="streaming-indicator">

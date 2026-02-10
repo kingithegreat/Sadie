@@ -413,6 +413,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
             if (m.streamingState !== "streaming") return m; // ignore late chunks
+            // If chunk starts with ___REPLACE___, replace the entire content
+            // (used when tool JSON was partially streamed and needs to be cleaned)
+            const replaceMarker = '\n___REPLACE___';
+            if (payload.chunk.startsWith(replaceMarker)) {
+              return {
+                ...m,
+                content: payload.chunk.slice(replaceMarker.length),
+                updatedAt: Date.now(),
+              };
+            }
             return {
               ...m,
               content: m.content + payload.chunk,
@@ -754,6 +764,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         currentModel={settings.chatModel || 'llama3.2:3b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
+        uncensoredModel={settings.uncensoredModel || 'dolphin-llama3:8b'}
         onModelChange={async (model: string, useCustom: boolean) => {
           const newSettings = {
             ...settings,

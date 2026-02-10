@@ -4,6 +4,7 @@ import type { CustomLLMConfig } from '../../shared/types';
 interface ModelInfo {
   id: string;
   name: string;
+  shortName: string;
   description: string;
   type: 'ollama' | 'custom';
   provider?: string;
@@ -15,6 +16,9 @@ interface ModelSelectorProps {
   useCustomLLM?: boolean;
   onModelChange: (model: string, useCustom: boolean) => void;
   onConfigureCustom: () => void;
+  locked?: boolean;
+  lockedModelId?: string;
+  lockReason?: string;
 }
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({
@@ -22,47 +26,50 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   customLLM,
   useCustomLLM,
   onModelChange,
-  onConfigureCustom
+  onConfigureCustom,
+  locked = false,
+  lockedModelId,
+  lockReason
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Available Ollama models with descriptions
+  // Ordered by tool-calling capability (best first)
   const ollamaModels: ModelInfo[] = [
+    {
+      id: 'qwen2.5:7b',
+      name: 'Qwen 2.5 (7B)',
+      shortName: 'Qwen',
+      description: '⭐ Best for tools & function calling (4.4GB)',
+      type: 'ollama'
+    },
     {
       id: 'llama3.2:3b',
       name: 'Llama 3.2 (3B)',
-      description: 'Fast, efficient model for everyday chat and simple tasks',
-      type: 'ollama'
-    },
-    {
-      id: 'llama3.2:latest',
-      name: 'Llama 3.2',
-      description: 'Balanced performance for general conversation and coding',
-      type: 'ollama'
-    },
-    {
-      id: 'dolphin-llama3:8b',
-      name: 'Dolphin Llama 3',
-      description: 'Uncensored model for unrestricted conversations',
-      type: 'ollama'
-    },
-    {
-      id: 'llava',
-      name: 'LLaVA Vision',
-      description: 'Multimodal model for analyzing images and screenshots',
-      type: 'ollama'
-    },
-    {
-      id: 'codellama',
-      name: 'Code Llama',
-      description: 'Specialized for code generation and technical tasks',
+      shortName: 'Llama 3B',
+      description: 'Fast, good tool support (2GB)',
       type: 'ollama'
     },
     {
       id: 'mistral:latest',
-      name: 'Mistral (latest)',
-      description: 'High-quality open model for complex reasoning',
+      name: 'Mistral',
+      shortName: 'Mistral',
+      description: 'Great conversation, weaker tools (4.4GB)',
+      type: 'ollama'
+    },
+    {
+      id: 'dolphin-llama3:8b',
+      name: 'Dolphin Llama 3 (8B)',
+      shortName: 'Dolphin',
+      description: 'Uncensored chat, no tool calling (4.7GB)',
+      type: 'ollama'
+    },
+    {
+      id: 'llava:latest',
+      name: 'LLaVA Vision',
+      shortName: 'LLaVA',
+      description: 'Image analysis only (4.7GB)',
       type: 'ollama'
     }
   ];
@@ -72,6 +79,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     {
       id: 'custom',
       name: customLLM.name || 'Custom API',
+      shortName: customLLM.model?.split('/').pop()?.split(':')[0] || 'API',
       description: `${customLLM.provider?.toUpperCase() || 'Custom'} - ${customLLM.model || 'Not configured'}`,
       type: 'custom',
       provider: customLLM.provider
@@ -81,14 +89,62 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const allModels = [...customModels, ...ollamaModels];
 
   // Get current model display info
-  const getCurrentModelInfo = (): ModelInfo | undefined => {
+  const forcedModelId = lockedModelId || 'dolphin-llama3:8b';
+
+  const fallbackModel: ModelInfo = {
+    id: forcedModelId,
+    name: forcedModelId,
+    shortName: 'Dolphin',
+    description: 'Active while Uncensored Mode is enabled',
+    type: 'ollama'
+  };
+
+  const getCurrentModelInfo = (): ModelInfo => {
+    if (locked) {
+      return ollamaModels.find(m => m.id === forcedModelId) || fallbackModel;
+    }
     if (useCustomLLM && customModels.length > 0) {
       return customModels[0];
     }
-    return ollamaModels.find(m => m.id === currentModel) || ollamaModels[0];
+    return ollamaModels.find(m => m.id === currentModel) || {
+      id: currentModel,
+      name: currentModel,
+      shortName: currentModel.split(':')[0],
+      description: 'Currently selected model',
+      type: 'ollama'
+    };
   };
 
   const currentModelInfo = getCurrentModelInfo();
+
+  // Get current index for prev/next navigation
+  const currentIndex = allModels.findIndex(m => 
+    (useCustomLLM && m.type === 'custom') || m.id === currentModel
+  );
+
+  const handlePrevModel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (locked) return;
+    const prevIndex = currentIndex <= 0 ? allModels.length - 1 : currentIndex - 1;
+    const model = allModels[prevIndex];
+    if (model.type === 'custom') {
+      onModelChange(customLLM?.model || '', true);
+    } else {
+      onModelChange(model.id, false);
+    }
+  };
+
+  const handleNextModel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (locked) return;
+    const nextIndex = currentIndex >= allModels.length - 1 ? 0 : currentIndex + 1;
+    const model = allModels[nextIndex];
+    if (model.type === 'custom') {
+      onModelChange(customLLM?.model || '', true);
+    } else {
+      onModelChange(model.id, false);
+    }
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -105,6 +161,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   }, [isOpen]);
 
   const handleSelectModel = (model: ModelInfo) => {
+    if (locked) {
+      return;
+    }
+
     if (model.type === 'custom') {
       onModelChange(customLLM?.model || '', true);
     } else {
@@ -113,22 +173,64 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     setIsOpen(false);
   };
 
+  useEffect(() => {
+    if (locked) {
+      setIsOpen(false);
+    }
+  }, [locked]);
+
   return (
-    <div className="model-selector" ref={dropdownRef}>
-      <button 
-        className="model-selector-button"
-        onClick={() => setIsOpen(!isOpen)}
-        title="Switch AI model"
-      >
-        <div className="model-selector-current">
-          <span className="model-icon">🤖</span>
-          <div className="model-info">
-            <span className="model-name">{currentModelInfo?.name || 'Select Model'}</span>
-            <span className="model-desc">{currentModelInfo?.description || ''}</span>
+    <div className={`model-selector ${locked ? 'locked' : ''}`} ref={dropdownRef}>
+      <div className="model-selector-row">
+        {/* Prev button */}
+        <button
+          className="model-nav-btn"
+          onClick={handlePrevModel}
+          disabled={locked}
+          title="Previous model"
+          aria-label="Previous model"
+        >
+          ◀
+        </button>
+
+        {/* Main button showing current model */}
+        <button 
+          className="model-selector-button"
+          type="button"
+          onClick={() => {
+            if (!locked) {
+              setIsOpen(!isOpen);
+            }
+          }}
+          title={locked ? (lockReason || 'Turn off Uncensored Mode to switch models') : `Using ${currentModelInfo?.name} — click to see all models`}
+          aria-haspopup="menu"
+          aria-expanded={!locked && isOpen}
+        >
+          <div className="model-selector-current">
+            <span className="model-icon">{useCustomLLM ? '☁️' : '🦙'}</span>
+            <span className="model-name-display">{currentModelInfo?.shortName || currentModelInfo?.name || 'Select'}</span>
+            {locked && <span className="model-lock-badge">🔒</span>}
+            <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>▼</span>
           </div>
-          <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>▼</span>
+        </button>
+
+        {/* Next button */}
+        <button
+          className="model-nav-btn"
+          onClick={handleNextModel}
+          disabled={locked}
+          title="Next model"
+          aria-label="Next model"
+        >
+          ▶
+        </button>
+      </div>
+
+      {locked && (
+        <div className="model-lock-hint">
+          🔒 {lockReason || 'Turn off Uncensored Mode to switch models'}
         </div>
-      </button>
+      )}
 
       {isOpen && (
         <div className="model-dropdown">

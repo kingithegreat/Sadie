@@ -64,6 +64,7 @@ const DEFAULT_SETTINGS: Settings = {
     create_directory: true,
     get_file_info: true,
     copy_file: true,
+    parse_document_from_path: true,
     // Dangerous: disabled by default
     write_file: false,
     delete_file: false,
@@ -126,10 +127,11 @@ export function getSettings(): Settings {
     
     // Merge with defaults to ensure all keys exist
     const merged = { ...DEFAULT_SETTINGS, ...savedSettings } as Settings;
-    // If permissions are missing, ensure default
-    if (!merged.permissions) {
-      merged.permissions = DEFAULT_SETTINGS.permissions;
-    }
+    const mergedPermissions = {
+      ...(DEFAULT_SETTINGS.permissions || {}),
+      ...(savedSettings.permissions || {})
+    } as Record<string, boolean>;
+    merged.permissions = mergedPermissions;
     // If running in assessor demo mode, enforce safe defaults: telemetry off and dangerous permissions disabled
     const demoMode = process.argv?.includes('--demo') || process.env.SADIE_DEMO_MODE === '1' || process.env.SADIE_DEMO_MODE === 'true';
     if (demoMode) {

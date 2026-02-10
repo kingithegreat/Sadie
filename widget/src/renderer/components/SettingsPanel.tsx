@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
-import type { Settings as SharedSettings, CustomLLMConfig } from '../../shared/types';
+import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -30,63 +30,66 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose
 }) => {
   const defaultModels = {
-    chatModel: 'llama3.2:3b',
+    chatModel: 'qwen2.5:7b',
     uncensoredModel: 'dolphin-llama3:8b',
-    visionModel: 'llava'
+    visionModel: 'llava:latest'
   };
 
+  const defaultCustomLLM: CustomLLMConfig = {
+    name: 'Custom LLM',
+    apiUrl: '',
+    apiKey: '',
+    provider: 'openai',
+    model: '',
+    enabled: false
+  };
+
+  const buildLocalSettings = (source: SharedSettings): Settings => ({
+    ...source,
+    chatModel: source.chatModel || defaultModels.chatModel,
+    uncensoredModel: source.uncensoredModel || defaultModels.uncensoredModel,
+    visionModel: source.visionModel || defaultModels.visionModel,
+    useCustomLLM: source.useCustomLLM ?? false,
+    customLLM: source.customLLM ? { ...defaultCustomLLM, ...source.customLLM } : { ...defaultCustomLLM }
+  });
+
+  // Models ordered by tool-calling capability (best first)
   const ollamaModels = [
+    {
+      id: 'qwen2.5:7b',
+      name: 'Qwen 2.5 (7B)',
+      description: '⭐ Best for tools & actions - excellent function calling (4.4GB)'
+    },
     {
       id: 'llama3.2:3b',
       name: 'Llama 3.2 (3B)',
-      description: 'Fast, efficient for everyday chat and short answers'
-    },
-    {
-      id: 'llama3.2:latest',
-      name: 'Llama 3.2',
-      description: 'Balanced model for conversation + coding tasks'
-    },
-    {
-      id: 'dolphin-llama3:8b',
-      name: 'Dolphin Llama 3',
-      description: 'Uncensored model for unrestricted chats (no tool calling)'
-    },
-    {
-      id: 'llava',
-      name: 'LLaVA Vision',
-      description: 'Multimodal model that handles screenshots and images'
-    },
-    {
-      id: 'codellama',
-      name: 'Code Llama',
-      description: 'Optimized for reasoning about code and documentation'
+      description: 'Fast & lightweight, decent tool support (2GB)'
     },
     {
       id: 'mistral:latest',
-      name: 'Mistral (latest)',
-      description: 'High-performance open model for reasoning-heavy prompts'
+      name: 'Mistral',
+      description: 'Great conversation quality, weaker at tools (4.4GB)'
+    },
+    {
+      id: 'dolphin-llama3:8b',
+      name: 'Dolphin Llama 3 (8B)',
+      description: 'Uncensored chat, no tool calling (4.7GB)'
+    },
+    {
+      id: 'llava:latest',
+      name: 'LLaVA Vision',
+      description: 'For image/screenshot analysis (4.7GB)'
     }
   ];
 
-  const [localSettings, setLocalSettings] = useState<Settings>({
-    ...settings,
-    chatModel: settings.chatModel || defaultModels.chatModel,
-    uncensoredModel: settings.uncensoredModel || defaultModels.uncensoredModel,
-    visionModel: settings.visionModel || defaultModels.visionModel,
-    useCustomLLM: settings.useCustomLLM || false,
-    customLLM: settings.customLLM || {
-      name: 'Custom LLM',
-      apiUrl: '',
-      apiKey: '',
-      provider: 'openai',
-      model: '',
-      enabled: false
-    }
-  });
+  const [localSettings, setLocalSettings] = useState<Settings>(buildLocalSettings(settings));
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, boolean>>(((settings as any).permissions || {}) as Record<string, boolean>);
   const [showTelemetryModal, setShowTelemetryModal] = useState(false);
-  const [showCustomLLMSection, setShowCustomLLMSection] = useState(false);
+  const [availableModels, setAvailableModels] = useState<CustomModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelFetchError, setModelFetchError] = useState<string | null>(null);
+  const [modelsFetchedAt, setModelsFetchedAt] = useState<number | null>(null);
 
   const PERMISSION_DESCRIPTIONS: Record<string, string> = {
     read_file: 'Read the contents of a file (safe).',
@@ -94,6 +97,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     create_directory: 'Create a directory/folder in your home folder.',
     get_file_info: 'Get details about a file or folder (size, dates).',
     copy_file: 'Copy files and folders.',
+    parse_document_from_path: 'Parse PDF/Word/text files from a local path (read-only).',
     write_file: 'Write or modify files. Dangerous: could overwrite or leak sensitive data.',
     delete_file: 'Delete files or folders permanently. Dangerous: irreversible.',
     move_file: 'Move or rename files or folders. Dangerous: may overwrite.',
@@ -138,13 +142,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Update local settings when props change
   useEffect(() => {
-    setLocalSettings({
-      ...settings,
-      chatModel: settings.chatModel || defaultModels.chatModel,
-      uncensoredModel: settings.uncensoredModel || defaultModels.uncensoredModel,
-      visionModel: settings.visionModel || defaultModels.visionModel
-    });
+    setLocalSettings(buildLocalSettings(settings));
     setPermissions((settings as any).permissions || {});
+    setAvailableModels([]);
+    setModelFetchError(null);
+    setModelsFetchedAt(null);
   }, [settings]);
 
   // Load uncensored mode state on mount
@@ -160,24 +162,109 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     // Model switches immediately - no restart needed
   };
 
-  // Update local settings when props change
+  const selectedProvider = localSettings.customLLM?.provider || 'openai';
+  const providerRequiresApiKey = selectedProvider !== 'custom';
+  const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
+  const isConnected = availableModels.length > 0 && hasApiKey;
+
+  // Auto-set API URL based on provider
+  const getDefaultApiUrl = (provider: string) => {
+    switch (provider) {
+      case 'openai': return 'https://api.openai.com/v1';
+      case 'anthropic': return 'https://api.anthropic.com/v1';
+      case 'openrouter': return 'https://openrouter.ai/api/v1';
+      default: return '';
+    }
+  };
+
   useEffect(() => {
-    setLocalSettings({
-      ...settings,
-      chatModel: settings.chatModel || defaultModels.chatModel,
-      uncensoredModel: settings.uncensoredModel || defaultModels.uncensoredModel,
-      visionModel: settings.visionModel || defaultModels.visionModel
-    });
-  }, [settings]);
+    setAvailableModels([]);
+    setModelFetchError(null);
+    setModelsFetchedAt(null);
+  }, [localSettings.customLLM?.apiUrl, selectedProvider, localSettings.useCustomLLM]);
 
   const handleSave = () => {
-    onSave(localSettings);
+    const nextSettings: SharedSettings = {
+      ...localSettings,
+      customLLM: localSettings.customLLM ? { ...localSettings.customLLM, enabled: !!localSettings.useCustomLLM } : undefined
+    } as SharedSettings;
+    onSave(nextSettings);
     onClose();
   };
 
   const handleCancel = () => {
-    setLocalSettings(settings); // Reset to original
+    setLocalSettings(buildLocalSettings(settings)); // Reset to original
+    setAvailableModels([]);
+    setModelFetchError(null);
+    setModelsFetchedAt(null);
     onClose();
+  };
+
+  const handleFetchModels = async () => {
+    const apiKey = localSettings.customLLM?.apiKey?.trim();
+    const provider = selectedProvider;
+    
+    // Use default URL for known providers if not already set
+    let apiUrl = localSettings.customLLM?.apiUrl?.trim();
+    if (!apiUrl) {
+      apiUrl = getDefaultApiUrl(provider);
+    }
+
+    // Validate we have what we need
+    if (!apiUrl) {
+      setModelFetchError('Enter your API URL');
+      return;
+    }
+
+    if (providerRequiresApiKey && !apiKey) {
+      setModelFetchError('Enter your API key first');
+      return;
+    }
+
+    if (!(window as any).electron?.listCustomLLMModels) {
+      setModelFetchError('Update SADIE to fetch models automatically.');
+      return;
+    }
+
+    setModelsLoading(true);
+    setModelFetchError(null);
+
+    // Update local state with the resolved URL
+    setLocalSettings(prev => ({
+      ...prev,
+      customLLM: { ...(prev.customLLM || { ...defaultCustomLLM }), apiUrl }
+    }));
+
+    console.log('[Settings] Fetching models from:', apiUrl, 'provider:', provider);
+
+    try {
+      const result = await (window as any).electron.listCustomLLMModels({ apiUrl, apiKey, provider });
+      if (result?.success && Array.isArray(result.models)) {
+        setAvailableModels(result.models);
+        setModelsFetchedAt(Date.now());
+        // Auto-enable custom LLM and select first model
+        if (result.models.length > 0) {
+          setLocalSettings(prev => ({
+            ...prev,
+            useCustomLLM: true,
+            customLLM: { 
+              ...(prev.customLLM || { ...defaultCustomLLM }), 
+              model: prev.customLLM?.model || result.models[0].id,
+              apiUrl,
+              enabled: true
+            }
+          }));
+        }
+      } else {
+        throw new Error(result?.error || 'No models returned.');
+      }
+    } catch (err: any) {
+      setAvailableModels([]);
+      setModelsFetchedAt(null);
+      setModelFetchError(err?.message || 'Connection failed. Check your API key.');
+    } finally {
+      setModelsLoading(false);
+    }
   };
 
   return (
@@ -279,140 +366,128 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <small className="setting-hint">Used automatically when images are attached.</small>
         </div>
 
-        {/* Custom LLM API Section */}
-        <div className="setting-group">
-          <div className="flex items-center justify-between mb-2">
-            <label className="setting-label">Custom LLM API</label>
-            <button 
-              className="button button-secondary"
-              onClick={() => setShowCustomLLMSection(!showCustomLLMSection)}
+        {/* Custom LLM API Section - Simplified */}
+        <div className="setting-group custom-llm-section">
+          <label className="setting-label">☁️ Cloud API (OpenAI, Anthropic, etc.)</label>
+          
+          {/* Step 1: Provider Selection */}
+          <div className="provider-row">
+            <select
+              className="setting-input provider-select"
+              value={selectedProvider}
+              onChange={(e) => {
+                const newProvider = e.target.value as any;
+                setLocalSettings({
+                  ...localSettings,
+                  customLLM: { 
+                    ...localSettings.customLLM!, 
+                    provider: newProvider,
+                    apiUrl: getDefaultApiUrl(newProvider)
+                  }
+                });
+                setAvailableModels([]);
+                setModelFetchError(null);
+              }}
             >
-              {showCustomLLMSection ? 'Hide' : 'Configure'}
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="custom">Custom URL</option>
+            </select>
+          </div>
+
+          {/* Step 2: API Key (or URL for custom) */}
+          {selectedProvider === 'custom' ? (
+            <div className="api-key-row">
+              <input
+                type="text"
+                className="setting-input api-key-input"
+                value={localSettings.customLLM?.apiUrl || ''}
+                onChange={(e) =>
+                  setLocalSettings({
+                    ...localSettings,
+                    customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
+                  })
+                }
+                placeholder="https://your-api.com/v1"
+              />
+            </div>
+          ) : null}
+          
+          <div className="api-key-row">
+            <input
+              type="password"
+              className="setting-input api-key-input"
+              value={localSettings.customLLM?.apiKey || ''}
+              onChange={(e) =>
+                setLocalSettings({
+                  ...localSettings,
+                  customLLM: { ...localSettings.customLLM!, apiKey: e.target.value }
+                })
+              }
+              placeholder={selectedProvider === 'openai' ? 'sk-...' : selectedProvider === 'anthropic' ? 'sk-ant-...' : 'API Key'}
+            />
+            <button
+              type="button"
+              className={`button connect-btn ${isConnected ? 'connected' : ''}`}
+              onClick={handleFetchModels}
+              disabled={modelsLoading || (providerRequiresApiKey && !hasApiKey)}
+            >
+              {modelsLoading ? '...' : isConnected ? '✓ Connected' : 'Connect'}
             </button>
           </div>
-          <label className="setting-label">
-            <input
-              type="checkbox"
-              checked={localSettings.useCustomLLM || false}
-              onChange={(e) =>
-                setLocalSettings({
-                  ...localSettings,
-                  useCustomLLM: e.target.checked
-                })
-              }
-            />
-            <span>Use custom LLM API instead of Ollama</span>
-          </label>
-          <small className="setting-hint">
-            Bring your own OpenAI, Anthropic, or custom API endpoint
-          </small>
+          
+          {modelFetchError && (
+            <small className="setting-hint error-hint">{modelFetchError}</small>
+          )}
 
-          <div className="custom-api-field">
-            <label className="setting-label">Custom API URL</label>
-            <input
-              type="text"
-              className="setting-input"
-              value={localSettings.customLLM?.apiUrl || ''}
-              onChange={(e) =>
-                setLocalSettings({
-                  ...localSettings,
-                  customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
-                })
-              }
-              placeholder="https://api.openai.com/v1"
-            />
-            <small className="setting-hint">
-              {localSettings.customLLM?.provider === 'openai' && 'e.g., https://api.openai.com/v1'}
-              {localSettings.customLLM?.provider === 'anthropic' && 'e.g., https://api.anthropic.com/v1'}
-              {localSettings.customLLM?.provider === 'openrouter' && 'e.g., https://openrouter.ai/api/v1'}
-              {localSettings.customLLM?.provider === 'custom' && 'Your custom API endpoint'}
-              {!localSettings.customLLM?.provider && 'Enter the base URL for your provider'}
-            </small>
-          </div>
-
-          {showCustomLLMSection && (
-            <div className="ml-4 mt-3 space-y-3 border-l-2 border-zinc-700 pl-4">
-              <div>
-                <label className="setting-label">API Name</label>
-                <input
-                  type="text"
-                  className="setting-input"
-                  value={localSettings.customLLM?.name || ''}
-                  onChange={(e) =>
-                    setLocalSettings({
-                      ...localSettings,
-                      customLLM: { ...localSettings.customLLM!, name: e.target.value }
-                    })
-                  }
-                  placeholder="My Custom API"
-                />
-              </div>
-
-              <div>
-                <label className="setting-label">Provider</label>
-                <select
-                  className="setting-input"
-                  value={localSettings.customLLM?.provider || 'openai'}
-                  onChange={(e) =>
-                    setLocalSettings({
-                      ...localSettings,
-                      customLLM: { ...localSettings.customLLM!, provider: e.target.value as any }
-                    })
-                  }
-                >
-                  <option value="openai">OpenAI Compatible</option>
-                  <option value="anthropic">Anthropic (Claude)</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="custom">Custom</option>
-                </select>
-                <small className="setting-hint">API format/authentication style</small>
-              </div>
-
-              <div>
-                <label className="setting-label">Model Name</label>
-                <input
-                  type="text"
-                  className="setting-input"
-                  value={localSettings.customLLM?.model || ''}
-                  onChange={(e) =>
-                    setLocalSettings({
-                      ...localSettings,
-                      customLLM: { ...localSettings.customLLM!, model: e.target.value }
-                    })
-                  }
-                  placeholder="gpt-4"
-                />
-                <small className="setting-hint">
-                  {localSettings.customLLM?.provider === 'openai' && 'e.g., gpt-4, gpt-3.5-turbo'}
-                  {localSettings.customLLM?.provider === 'anthropic' && 'e.g., claude-3-5-sonnet-20241022'}
-                  {localSettings.customLLM?.provider === 'openrouter' && 'e.g., anthropic/claude-3.5-sonnet'}
-                  {localSettings.customLLM?.provider === 'custom' && 'Model identifier for your API'}
-                </small>
-              </div>
-
-              <div>
-                <label className="setting-label">API Key</label>
-                <input
-                  type="password"
-                  className="setting-input"
-                  value={localSettings.customLLM?.apiKey || ''}
-                  onChange={(e) =>
-                    setLocalSettings({
-                      ...localSettings,
-                      customLLM: { ...localSettings.customLLM!, apiKey: e.target.value }
-                    })
-                  }
-                  placeholder="sk-..."
-                />
-                <small className="setting-hint">Stored locally, never sent to SADIE servers</small>
-              </div>
-
-              <div className="flex items-center gap-2 mt-2">
-                <div className="text-xs text-amber-500">
-                  ⚠️ Custom APIs may have different rate limits, pricing, and capabilities
-                </div>
+          {/* Step 3: Model Selection - only show when connected */}
+          {isConnected && (
+            <div className="model-chips-section">
+              <label className="setting-label chip-label">Select Model</label>
+              <div className="custom-models-grid">
+                {availableModels.map((model) => (
+                  <button
+                    type="button"
+                    key={model.id}
+                    className={`custom-model-chip ${localSettings.customLLM?.model === model.id ? 'active' : ''}`}
+                    onClick={() =>
+                      setLocalSettings((prev) => ({
+                        ...prev,
+                        customLLM: { ...(prev.customLLM || { ...defaultCustomLLM }), model: model.id }
+                      }))
+                    }
+                  >
+                    <span className="chip-name">{model.name || model.id}</span>
+                  </button>
+                ))}
               </div>
             </div>
+          )}
+
+          {/* Status indicator */}
+          {localSettings.useCustomLLM && localSettings.customLLM?.model && (
+            <div className="custom-llm-status">
+              <span className="status-dot active"></span>
+              Using {localSettings.customLLM.model}
+            </div>
+          )}
+
+          {/* Disable toggle - only show when connected */}
+          {isConnected && (
+            <label className="setting-label disable-toggle">
+              <input
+                type="checkbox"
+                checked={localSettings.useCustomLLM || false}
+                onChange={(e) =>
+                  setLocalSettings({
+                    ...localSettings,
+                    useCustomLLM: e.target.checked
+                  })
+                }
+              />
+              <span>Use this API for all chats</span>
+            </label>
           )}
         </div>
 
@@ -442,7 +517,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <small className="setting-hint" style={{ color: uncensoredMode ? '#f59e0b' : undefined }}>
             {uncensoredMode 
               ? 'Using dolphin-llama3:8b - No content filters' 
-              : 'Using llama3.2:3b - Standard safety filters'}
+              : 'Using standard model with safety filters'}
           </small>
         </div>
 

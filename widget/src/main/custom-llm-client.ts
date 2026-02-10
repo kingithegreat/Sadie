@@ -3,7 +3,7 @@
  * Includes function calling support, retry logic, and provider auto-detection
  */
 import axios, { AxiosError } from 'axios';
-import type { CustomLLMConfig, ModelMetadata } from '../shared/types';
+import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
 import type { ToolDefinition, OpenAITool, toOpenAITool } from './tools/types';
 
 interface ChatMessage {
@@ -42,6 +42,28 @@ const MODEL_METADATA: Record<string, Partial<ModelMetadata>> = {
   'claude-3-opus': { contextWindow: 200000, maxTokens: 4096, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'claude-3-sonnet': { contextWindow: 200000, maxTokens: 4096, supportsTools: true, supportsVision: true, supportsStreaming: true },
 };
+
+const ANTHROPIC_MODELS: CustomModelInfo[] = [
+  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most capable Claude model', provider: 'anthropic' },
+  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast Claude 3.5 tier', provider: 'anthropic' },
+  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Creative + high cognitive load', provider: 'anthropic' },
+  { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', description: 'Balanced latency + IQ', provider: 'anthropic' },
+  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fast, cost-efficient', provider: 'anthropic' },
+];
+
+function trimTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, '');
+}
+
+function normalizeModelsPayload(payload: any): any[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.models)) return payload.models;
+  if (payload.data && Array.isArray(payload.data.data)) return payload.data.data;
+  if (typeof payload === 'object') return Object.values(payload);
+  return [];
+}
 
 /**
  * Auto-detect provider from model name
@@ -320,6 +342,84 @@ export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig
   }
   
   return validated;
+}
+
+export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig>): Promise<CustomModelInfo[]> {
+  if (!config || !config.apiUrl) {
+    throw new Error('Enter an API URL to fetch models.');
+  }
+
+  const provider = config.provider || 'openai';
+
+  if (provider === 'anthropic') {
+    return ANTHROPIC_MODELS;
+  }
+
+  const base = trimTrailingSlash(config.apiUrl);
+  const endpoint = /\/models$/i.test(base) ? base : `${base}/models`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  const needsApiKey = provider !== 'custom';
+  const apiKey = config.apiKey?.trim();
+
+  if (needsApiKey && !apiKey) {
+    throw new Error('Add your API key to connect to this provider.');
+  }
+
+  if (apiKey) {
+    const authHeader = provider === 'openrouter' ? `Bearer ${apiKey}` : `Bearer ${apiKey}`;
+    headers['Authorization'] = authHeader;
+  }
+
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://sadie-desktop.local';
+    headers['X-Title'] = 'SADIE Desktop';
+  }
+
+  try {
+    const response = await axios.get(endpoint, {
+      headers,
+      timeout: 10000
+    });
+
+    let list = normalizeModelsPayload(response.data);
+    if (!Array.isArray(list) || list.length === 0) {
+      throw new Error('No models were returned — double-check your endpoint.');
+    }
+
+    const mapped = list.map((item: any) => {
+      const id = item?.id || item?.model || item?.slug || item?.name;
+      if (!id) return null;
+      const contextWindow = item?.context_window || item?.context_length;
+      return {
+        id,
+        name: item?.display_name || item?.name || id,
+        description: item?.description || item?.owned_by || item?.organization || '',
+        provider,
+        contextWindow
+      } as CustomModelInfo;
+    }).filter(Boolean) as CustomModelInfo[];
+
+    if (mapped.length === 0) {
+      throw new Error('Models response could not be parsed.');
+    }
+
+    const seen = new Set<string>();
+    return mapped.filter(model => {
+      if (seen.has(model.id)) return false;
+      seen.add(model.id);
+      return true;
+    });
+  } catch (err: any) {
+    if (axios.isAxiosError(err)) {
+      const detail = (err.response?.data as any)?.error?.message || err.response?.statusText || err.message;
+      throw new Error(detail || 'Failed to reach custom API.');
+    }
+    throw err;
+  }
 }
 
 /**

@@ -84,6 +84,14 @@ export interface ModelMetadata {
   supportsStreaming: boolean;
 }
 
+export interface CustomModelInfo {
+  id: string;
+  name?: string;
+  description?: string;
+  provider?: string;
+  contextWindow?: number;
+}
+
 export interface CustomLLMConfig {
   name: string;
   apiUrl: string;
@@ -190,6 +198,8 @@ export interface ElectronAPI {
   captureLogs?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Test-only: invoke arbitrary IPC channels (E2E only)
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
+
+  listCustomLLMModels?: (config: { apiUrl: string; apiKey?: string; provider?: CustomLLMConfig['provider'] }) => Promise<{ success: boolean; models?: CustomModelInfo[]; error?: string }>;
 
   // Image generation helper
   executeImageGenerate?: (params: { action: string; payload?: any }) => Promise<any>;
