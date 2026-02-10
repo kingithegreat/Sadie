@@ -35,6 +35,9 @@ export interface Settings {
   // Misc / developer defaults
   defaultTeam?: string;
   uncensoredMode?: boolean;
+  // Web search API keys
+  tavilyApiKey?: string;
+  serperApiKey?: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {

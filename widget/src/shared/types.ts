@@ -121,6 +121,9 @@ export interface Settings {
   // Per-tool permissions (keys are tool names)
   permissions?: Record<string, boolean>;
   defaultTeam?: string;
+  // Web search API keys
+  tavilyApiKey?: string;
+  serperApiKey?: string;
 }
 
 export interface ConnectionStatus {

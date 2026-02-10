@@ -16,6 +16,8 @@ interface Settings {
   telemetryConsentVersion?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
+  tavilyApiKey?: string;
+  serperApiKey?: string;
 }
 
 interface SettingsPanelProps {
@@ -44,14 +46,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     enabled: false
   };
 
-  const buildLocalSettings = (source: SharedSettings): Settings => ({
-    ...source,
-    chatModel: source.chatModel || defaultModels.chatModel,
-    uncensoredModel: source.uncensoredModel || defaultModels.uncensoredModel,
-    visionModel: source.visionModel || defaultModels.visionModel,
-    useCustomLLM: source.useCustomLLM ?? false,
-    customLLM: source.customLLM ? { ...defaultCustomLLM, ...source.customLLM } : { ...defaultCustomLLM }
-  });
+  // Get the canonical API URL for known providers
+  const getDefaultApiUrl = (provider: string) => {
+    switch (provider) {
+      case 'openai': return 'https://api.openai.com/v1';
+      case 'anthropic': return 'https://api.anthropic.com/v1';
+      case 'openrouter': return 'https://openrouter.ai/api/v1';
+      default: return '';
+    }
+  };
+
+  const buildLocalSettings = (source: SharedSettings): Settings => {
+    const llm = source.customLLM ? { ...defaultCustomLLM, ...source.customLLM } : { ...defaultCustomLLM };
+    // Ensure known providers always have their canonical URL
+    const providerDefault = getDefaultApiUrl(llm.provider);
+    if (providerDefault) llm.apiUrl = providerDefault;
+    return {
+      ...source,
+      chatModel: source.chatModel || defaultModels.chatModel,
+      uncensoredModel: source.uncensoredModel || defaultModels.uncensoredModel,
+      visionModel: source.visionModel || defaultModels.visionModel,
+      useCustomLLM: source.useCustomLLM ?? false,
+      customLLM: llm,
+      tavilyApiKey: source.tavilyApiKey || '',
+      serperApiKey: source.serperApiKey || ''
+    };
+  };
 
   // Models ordered by tool-calling capability (best first)
   const ollamaModels = [
@@ -167,16 +187,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
   const isConnected = availableModels.length > 0 && hasApiKey;
 
-  // Auto-set API URL based on provider
-  const getDefaultApiUrl = (provider: string) => {
-    switch (provider) {
-      case 'openai': return 'https://api.openai.com/v1';
-      case 'anthropic': return 'https://api.anthropic.com/v1';
-      case 'openrouter': return 'https://openrouter.ai/api/v1';
-      default: return '';
-    }
-  };
-
   useEffect(() => {
     setAvailableModels([]);
     setModelFetchError(null);
@@ -184,9 +194,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, [localSettings.customLLM?.apiUrl, selectedProvider, localSettings.useCustomLLM]);
 
   const handleSave = () => {
+    const llmToSave = localSettings.customLLM ? { ...localSettings.customLLM, enabled: !!localSettings.useCustomLLM } : undefined;
+    // Ensure known providers always save with canonical URL
+    if (llmToSave) {
+      const canonicalUrl = getDefaultApiUrl(llmToSave.provider);
+      if (canonicalUrl) llmToSave.apiUrl = canonicalUrl;
+    }
     const nextSettings: SharedSettings = {
       ...localSettings,
-      customLLM: localSettings.customLLM ? { ...localSettings.customLLM, enabled: !!localSettings.useCustomLLM } : undefined
+      customLLM: llmToSave,
+      tavilyApiKey: localSettings.tavilyApiKey?.trim() || undefined,
+      serperApiKey: localSettings.serperApiKey?.trim() || undefined
     } as SharedSettings;
     onSave(nextSettings);
     onClose();
@@ -204,11 +222,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const apiKey = localSettings.customLLM?.apiKey?.trim();
     const provider = selectedProvider;
     
-    // Use default URL for known providers if not already set
-    let apiUrl = localSettings.customLLM?.apiUrl?.trim();
-    if (!apiUrl) {
-      apiUrl = getDefaultApiUrl(provider);
-    }
+    // For known providers, ALWAYS use the canonical URL (ignore any stale/wrong stored value)
+    const defaultUrl = getDefaultApiUrl(provider);
+    let apiUrl = defaultUrl || localSettings.customLLM?.apiUrl?.trim() || '';
 
     // Validate we have what we need
     if (!apiUrl) {
@@ -489,6 +505,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <span>Use this API for all chats</span>
             </label>
           )}
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">🔍 Search API Keys (optional)</label>
+          <small className="setting-hint" style={{ marginBottom: 8 }}>
+            Add API keys for higher-quality web search results. Falls back to DuckDuckGo scraping if no keys are set.
+          </small>
+          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 4 }}>Tavily API Key</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={localSettings.tavilyApiKey || ''}
+            placeholder="tvly-..."
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, tavilyApiKey: e.target.value })
+            }
+          />
+          <small className="setting-hint">Primary search — AI-optimized results. Get a key at <a href="https://tavily.com" target="_blank" rel="noreferrer">tavily.com</a></small>
+
+          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 8 }}>Serper.dev API Key</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={localSettings.serperApiKey || ''}
+            placeholder="Enter Serper.dev key..."
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, serperApiKey: e.target.value })
+            }
+          />
+          <small className="setting-hint">Secondary search — Google results via API. Get a key at <a href="https://serper.dev" target="_blank" rel="noreferrer">serper.dev</a></small>
         </div>
 
         <div className="setting-group">

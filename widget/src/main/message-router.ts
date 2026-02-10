@@ -8,11 +8,12 @@ import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { SADIE_SYSTEM_PROMPT } from '../shared/system-prompt';
-import { initializeTools, getOllamaTools, executeToolBatch, ToolCall, ToolContext } from './tools';
+import { initializeTools, getOllamaTools, getAllToolDefinitions, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
 import { streamFromCustomLLM, validateCustomLLMConfig } from './custom-llm-client';
+import { setTavilyApiKey, setSerperApiKey } from './tools/web';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -183,8 +184,21 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
                     /\b(file|document|note|text)\b/i.test(m);
 
   if (wantsFile) {
-    // COMPOUND: weather/surf + file
-    if (/\b(weather|surf|conditions|forecast|temperature|swell|waves?)\b/i.test(m)) {
+    // COMPOUND: surf/swell + file → use web search, not weather API
+    const isSurfFileQuery = /\b(surf|swell|waves?|tide|ocean|marine|break|beach\s*break)\b/i.test(m);
+    if (isSurfFileQuery) {
+      const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+today|\s+tomorrow|\s+on|\s+and|$)/i) ||
+                       m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+      let location = locMatch ? locMatch[1].trim() : '';
+      location = location.replace(/\s*(today|tomorrow|tonight|this week|next week|on my|on the|and)$/i, '').trim();
+      if (!location) location = 'New Zealand';
+      return { calls: [
+        { name: '__compound_surf_file', arguments: { location, query: userMessage } }
+      ] };
+    }
+
+    // COMPOUND: weather + file (no surf keywords)
+    if (/\b(weather|forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) {
       const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+today|\s+tomorrow|\s+on|\s+and|$)/i) ||
                        m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
       let location = locMatch ? locMatch[1].trim() : '';
@@ -240,8 +254,18 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } }] };
   }
 
-  // WEATHER / SURF intents (standalone, no file creation)
-  if (/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|surf|swell|waves?)\b/i.test(m)) {
+  // SURF / SWELL intents (standalone) — use web search for real surf data
+  if (/\b(surf|swell|waves?|tide|ocean\s*conditions|beach\s*break)\b/i.test(m) && !/\b(weather|temperature|rain|forecast)\b/i.test(m)) {
+    const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
+                     m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+    let location = locMatch ? locMatch[1].trim() : '';
+    location = location.replace(/\s*(tomorrow|today|tonight|this week|next week|give)$/i, '').trim();
+    if (!location) location = 'New Zealand';
+    return { calls: [{ name: '__surf_conditions', arguments: { location, query: userMessage } }] };
+  }
+
+  // WEATHER intents (standalone, no surf keywords)
+  if (/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) {
     const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
                      m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';
@@ -563,25 +587,93 @@ export async function streamFromLLM(
     if (validation.valid) {
       console.log(`[SADIE] Using custom LLM: ${(settings as any).customLLM.name} (${(settings as any).customLLM.provider})`);
       
-      // Custom LLMs currently don't support tool calling or images
+      // Fall back to Ollama for image attachments (custom APIs don't support vision yet)
       if (images && images.length > 0) {
-        onChunk('\n\n⚠️ Image attachments are not yet supported with custom LLM APIs. Using Ollama vision model instead.\n\n');
-        // Fall back to Ollama for images
+        onChunk('\n\n⚠️ Image attachments are not yet supported with cloud APIs. Using Ollama vision model instead.\n\n');
         return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
       }
       
       const controller = new AbortController();
       const history = getHistory(conversationId);
+      const customConfig = (settings as any).customLLM as import('../shared/types').CustomLLMConfig;
+      
+      // Get tool definitions for providers that support function calling
+      const providerSupportsTools = customConfig.provider === 'openai' || customConfig.provider === 'openrouter' || customConfig.provider === 'custom';
+      const toolDefs = providerSupportsTools ? getAllToolDefinitions() : undefined;
+      
+      // Track whether a tool call was received (to know if onEnd should be deferred)
+      let toolCallReceived = false;
+      
+      // Handle tool call round-trip: execute tool, then feed result back to LLM
+      const handleToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
+        toolCallReceived = true;
+        console.log(`[SADIE] Custom LLM tool call: ${tc.name}`, tc.arguments);
+        onToolCall(tc.name, tc.arguments);
+        
+        try {
+          const results = await executeToolBatch(
+            [{ name: tc.name, arguments: tc.arguments }] as ToolCall[],
+            {
+              executionId: `custom-llm-tool-${Date.now()}`,
+              requestConfirmation,
+              requestPermission: requestPermission as any
+            } as ToolContext
+          );
+          
+          const toolResult = results?.[0]?.result ?? results?.[0]?.error ?? 'No result';
+          onToolResult(toolResult);
+          console.log('[SADIE] Custom LLM tool result, sending follow-up...');
+          
+          // Send the tool result back to the LLM for a follow-up response
+          const updatedHistory = [
+            ...history.map(m => ({ role: m.role as any, content: m.content })),
+            { role: 'user' as const, content: message },
+            { role: 'assistant' as const, content: '', tool_calls: [{
+              id: tc.id || `call_${Date.now()}`,
+              type: 'function' as const,
+              function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
+            }] },
+            { role: 'tool' as const, content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult), tool_call_id: tc.id || `call_${Date.now()}` }
+          ];
+          
+          // Stream the follow-up (no tools this time to avoid infinite loops)
+          await streamFromCustomLLM(
+            '', // empty — context is in the history
+            updatedHistory,
+            customConfig,
+            SADIE_SYSTEM_PROMPT,
+            onChunk,
+            onEnd,
+            onError,
+            controller.signal
+          );
+        } catch (err: any) {
+          console.error('[SADIE] Custom LLM tool execution failed:', err.message);
+          onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
+          onEnd();
+        }
+      };
+      
+      // Wrap onEnd: if a tool call was received, the tool handler manages onEnd after the follow-up.
+      // If no tool call happened (plain text response), fire onEnd normally.
+      const wrappedOnEnd = () => {
+        if (!toolCallReceived) {
+          onEnd();
+        }
+        // else: handleToolCall will call onEnd after the follow-up stream completes
+      };
       
       streamFromCustomLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
-        (settings as any).customLLM,
+        customConfig,
         SADIE_SYSTEM_PROMPT,
         onChunk,
-        onEnd,
+        wrappedOnEnd,
         onError,
-        controller.signal
+        controller.signal,
+        toolDefs,
+        providerSupportsTools ? handleToolCall : undefined
       );
       
       return {
@@ -980,6 +1072,22 @@ async function streamFromOllama(
 export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string) {
     // Initialize tools system
     initializeTools();
+
+    // Load search API keys from persisted settings
+    try {
+      const settings = getSettings();
+      if (settings.tavilyApiKey) {
+        setTavilyApiKey(settings.tavilyApiKey);
+        console.log('[SADIE] Tavily API key loaded from settings');
+      }
+      if (settings.serperApiKey) {
+        setSerperApiKey(settings.serperApiKey);
+        console.log('[SADIE] Serper API key loaded from settings');
+      }
+    } catch (e) {
+      console.log('[SADIE] Could not load search API keys from settings');
+    }
+
     if (E2E) {
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Registering E2E mock streaming handlers');
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] n8nUrl in E2E =', n8nUrl);
@@ -1385,6 +1493,82 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               } else {
                 toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n❌ Could not save file.` } }];
               }
+            }
+            // STANDALONE SURF INTENT: web_search for surf conditions
+            else if (intentResult.calls[0]?.name === '__surf_conditions') {
+              const { location } = intentResult.calls[0].arguments;
+              console.log('[SADIE] Surf conditions intent:', location);
+
+              const surfResults = await executeToolBatch(
+                [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
+                { executionId: `surf-${Date.now()}`, requestConfirmation,
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+              );
+
+              let surfText = `🏄 **Surf Conditions — ${location}**\n\n`;
+              const sr = surfResults?.[0]?.result;
+              // Try to extract meaningful content from top result
+              const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
+              if (topContent) {
+                // Trim to a reasonable length and clean up
+                const cleaned = topContent.replace(/\s{3,}/g, '\n').slice(0, 1500);
+                surfText += cleaned + '\n\n';
+                if (sr?.topResultContent?.url) surfText += `Source: ${sr.topResultContent.url}\n`;
+              } else if (sr?.results && sr.results.length > 0) {
+                // Fallback: list search results
+                for (const item of sr.results.slice(0, 5)) {
+                  surfText += `• **${item.title || 'Untitled'}**\n`;
+                  if (item.snippet) surfText += `  ${item.snippet}\n`;
+                  if (item.url) surfText += `  ${item.url}\n`;
+                  surfText += '\n';
+                }
+              } else {
+                surfText += `Could not find surf conditions for ${location}. Try specifying a surf spot name.\n`;
+              }
+              toolResults = [{ result: { summary: surfText } }];
+            }
+            // COMPOUND SURF + FILE INTENT
+            else if (intentResult.calls[0]?.name === '__compound_surf_file') {
+              const { location } = intentResult.calls[0].arguments;
+              console.log('[SADIE] Compound surf+file intent:', location);
+
+              const surfResults = await executeToolBatch(
+                [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
+                { executionId: `compound-surf-${Date.now()}`, requestConfirmation,
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+              );
+
+              let surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n`;
+              const sr = surfResults?.[0]?.result;
+              const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
+              if (topContent) {
+                surfContent += topContent.replace(/\s{3,}/g, '\n').slice(0, 3000) + '\n';
+                if (sr?.topResultContent?.url) surfContent += `\nSource: ${sr.topResultContent.url}\n`;
+              } else if (sr?.results && sr.results.length > 0) {
+                for (const item of sr.results.slice(0, 5)) {
+                  surfContent += `${item.title || 'Untitled'}\n`;
+                  if (item.snippet) surfContent += `  ${item.snippet}\n`;
+                  if (item.url) surfContent += `  ${item.url}\n`;
+                  surfContent += '\n';
+                }
+              } else {
+                surfContent += 'No surf conditions found.\n';
+              }
+
+              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+              const surfFilePath = require('path').join(HOME, 'Desktop', surfFileName);
+              let surfWriteOk = false;
+              try {
+                require('fs').writeFileSync(surfFilePath, surfContent, 'utf-8');
+                surfWriteOk = true;
+                console.log('[SADIE] Compound surf: file written to', surfFilePath);
+              } catch (e: any) {
+                console.error('[SADIE] Compound surf: file write FAILED:', e.message);
+              }
+
+              const summary = `🏄 **Surf Conditions — ${location}**\n\n${surfContent}\n${surfWriteOk ? `✅ Saved to **${surfFileName}** on your Desktop.` : '❌ Could not save file.'}`;
+              toolResults = [{ result: { summary } }];
             } else {
               // Normal single-step intent
               toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
@@ -1776,6 +1960,78 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   } else {
                     toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n❌ Could not save file.` } }];
                   }
+                }
+                // STANDALONE SURF INTENT (n8n path): web_search for surf conditions
+                else if (intentResult.calls[0]?.name === '__surf_conditions') {
+                  const { location } = intentResult.calls[0].arguments;
+                  console.log('[SADIE] Surf conditions intent (n8n path):', location);
+
+                  const surfResults = await executeToolBatch(
+                    [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
+                    { executionId: `surf-${Date.now()}`, requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+                  );
+
+                  let surfText = `🏄 **Surf Conditions — ${location}**\n\n`;
+                  const sr = surfResults?.[0]?.result;
+                  const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
+                  if (topContent) {
+                    const cleaned = topContent.replace(/\s{3,}/g, '\n').slice(0, 1500);
+                    surfText += cleaned + '\n\n';
+                    if (sr?.topResultContent?.url) surfText += `Source: ${sr.topResultContent.url}\n`;
+                  } else if (sr?.results && sr.results.length > 0) {
+                    for (const item of sr.results.slice(0, 5)) {
+                      surfText += `• **${item.title || 'Untitled'}**\n`;
+                      if (item.snippet) surfText += `  ${item.snippet}\n`;
+                      if (item.url) surfText += `  ${item.url}\n`;
+                      surfText += '\n';
+                    }
+                  } else {
+                    surfText += `Could not find surf conditions for ${location}. Try specifying a surf spot name.\n`;
+                  }
+                  toolResults = [{ result: { summary: surfText } }];
+                }
+                // COMPOUND SURF + FILE INTENT (n8n path)
+                else if (intentResult.calls[0]?.name === '__compound_surf_file') {
+                  const { location } = intentResult.calls[0].arguments;
+                  console.log('[SADIE] Compound surf+file intent (n8n path):', location);
+
+                  const surfResults = await executeToolBatch(
+                    [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
+                    { executionId: `compound-surf-${Date.now()}`, requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+                  );
+
+                  let surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n`;
+                  const sr = surfResults?.[0]?.result;
+                  const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
+                  if (topContent) {
+                    surfContent += topContent.replace(/\s{3,}/g, '\n').slice(0, 3000) + '\n';
+                    if (sr?.topResultContent?.url) surfContent += `\nSource: ${sr.topResultContent.url}\n`;
+                  } else if (sr?.results && sr.results.length > 0) {
+                    for (const item of sr.results.slice(0, 5)) {
+                      surfContent += `${item.title || 'Untitled'}\n`;
+                      if (item.snippet) surfContent += `  ${item.snippet}\n`;
+                      if (item.url) surfContent += `  ${item.url}\n`;
+                      surfContent += '\n';
+                    }
+                  } else {
+                    surfContent += 'No surf conditions found.\n';
+                  }
+
+                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+                  const surfFilePath = require('path').join(HOME, 'Desktop', surfFileName);
+                  let surfWriteOk = false;
+                  try {
+                    require('fs').writeFileSync(surfFilePath, surfContent, 'utf-8');
+                    surfWriteOk = true;
+                  } catch (e: any) {
+                    console.error('[SADIE] Compound surf file write FAILED:', e.message);
+                  }
+
+                  const summary = `🏄 **Surf Conditions — ${location}**\n\n${surfContent}\n${surfWriteOk ? `✅ Saved to **${surfFileName}** on your Desktop.` : '❌ Could not save file.'}`;
+                  toolResults = [{ result: { summary } }];
                 } else {
                   // Normal single-step intent
                   toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {

@@ -13,6 +13,7 @@ import {
   exportTelemetryConsent 
 } from './config-manager';
 import { fetchAvailableCustomModels } from './custom-llm-client';
+import { setTavilyApiKey, setSerperApiKey } from './tools/web';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
 import {
   MemoryManager,
@@ -237,6 +238,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     try {
       const merged = { ...getSettings(), ...settings };
       saveSettings(merged);
+
+      // Refresh search API keys in memory
+      setTavilyApiKey(merged.tavilyApiKey || null);
+      setSerperApiKey(merged.serperApiKey || null);
+
       return { success: true, data: merged };
     } catch (err: any) {
       console.error('Error saving settings:', err.message);

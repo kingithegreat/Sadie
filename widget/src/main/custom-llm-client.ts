@@ -4,7 +4,8 @@
  */
 import axios, { AxiosError } from 'axios';
 import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
-import type { ToolDefinition, OpenAITool, toOpenAITool } from './tools/types';
+import type { ToolDefinition, OpenAITool } from './tools/types';
+import { toOpenAITool } from './tools/types';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -149,10 +150,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
   const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000, tools, onChunk, onToolCall, onEnd, onError, signal } = options;
   
   // Convert tools to OpenAI format
-  const openaiTools = tools?.map(tool => {
-    const { toOpenAITool } = require('./tools/types');
-    return toOpenAITool(tool);
-  });
+  const openaiTools = tools?.map(tool => toOpenAITool(tool));
   
   try {
     const response = await retryWithBackoff(() => axios.post(
@@ -182,6 +180,9 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
 
     const stream = response.data as NodeJS.ReadableStream;
     let currentToolCall: { id: string; name: string; arguments: string } | null = null;
+    let ended = false;
+    
+    const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
     
     stream.on('data', (chunk: Buffer) => {
       try {
@@ -200,7 +201,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
                 }
                 currentToolCall = null;
               }
-              onEnd();
+              safeEnd();
               return;
             }
             
@@ -248,7 +249,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
       }
     });
     
-    stream.on('end', () => onEnd());
+    stream.on('end', () => safeEnd());
     stream.on('error', (err) => onError(err));
   } catch (err: any) {
     onError(err);
@@ -261,9 +262,11 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
 async function streamAnthropic(options: StreamOptions): Promise<void> {
   const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000, onChunk, onEnd, onError, signal } = options;
   
-  // Anthropic requires system message to be separate
+  // Anthropic requires system message to be separate, and only accepts user/assistant roles
   const systemMessage = messages.find(m => m.role === 'system')?.content || '';
-  const anthropicMessages = messages.filter(m => m.role !== 'system');
+  const anthropicMessages = messages
+    .filter(m => m.role !== 'system' && m.role !== 'tool')
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
   
   try {
     const response = await axios.post(
@@ -289,6 +292,8 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
     );
 
     const stream = response.data as NodeJS.ReadableStream;
+    let ended = false;
+    const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
     
     stream.on('data', (chunk: Buffer) => {
       try {
@@ -305,7 +310,7 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
               }
               
               if (parsed.type === 'message_stop') {
-                onEnd();
+                safeEnd();
                 return;
               }
             } catch (e) {
@@ -318,7 +323,7 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
       }
     });
     
-    stream.on('end', () => onEnd());
+    stream.on('end', () => safeEnd());
     stream.on('error', (err) => onError(err));
   } catch (err: any) {
     onError(err);
@@ -439,8 +444,15 @@ export async function streamFromCustomLLM(
   onToolCall?: (toolCall: { name: string; arguments: any; id?: string }) => void
 ): Promise<{ cancel: () => void }> {
   
-  // Validate and enhance config
-  apiConfig = validateCustomLLMConfig(apiConfig);
+  // Validate config (don't assign — validateCustomLLMConfig returns {valid,error}, not a config)
+  const validation = validateCustomLLMConfig(apiConfig);
+  if (!validation.valid) {
+    onError(new Error(validation.error || 'Invalid custom LLM config'));
+    return { cancel: () => {} };
+  }
+  
+  // Auto-configure provider detection and metadata
+  apiConfig = autoConfigureCustomLLM(apiConfig);
   
   // Build messages array
   const messages: ChatMessage[] = [

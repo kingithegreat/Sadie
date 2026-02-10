@@ -12,6 +12,26 @@ import * as dns from 'dns';
 import * as net from 'net';
 import { isE2E } from '../env';
 
+// Search API keys — loaded from settings on first use
+let _tavilyApiKey: string | null = null;
+let _serperApiKey: string | null = null;
+
+export function setTavilyApiKey(key: string | null) {
+  _tavilyApiKey = key;
+}
+
+export function getTavilyApiKey(): string | null {
+  return _tavilyApiKey;
+}
+
+export function setSerperApiKey(key: string | null) {
+  _serperApiKey = key;
+}
+
+export function getSerperApiKey(): string | null {
+  return _serperApiKey;
+}
+
 // ============= TOOL DEFINITIONS =============
 
 export const webSearchDef: ToolDefinition = {
@@ -447,6 +467,185 @@ async function searchBrave(query: string, maxResults: number): Promise<Array<{ t
   return results;
 }
 
+// ============= TAVILY SEARCH (AI-optimized, structured JSON) =============
+
+interface TavilyResult {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
+  raw_content?: string;
+}
+
+interface TavilyResponse {
+  query: string;
+  answer?: string;
+  results: TavilyResult[];
+  response_time: number;
+}
+
+async function searchTavily(query: string, maxResults: number): Promise<{
+  results: Array<{ title: string; url: string; snippet: string }>;
+  topContent?: { url: string; title: string; content: string };
+  answer?: string;
+}> {
+  const apiKey = getTavilyApiKey();
+  if (!apiKey) throw new Error('Tavily API key not configured');
+
+  const body = JSON.stringify({
+    query,
+    max_results: maxResults,
+    include_answer: true,
+    include_raw_content: false,
+    search_depth: 'basic'
+  });
+
+  console.log('[SADIE Web] Searching Tavily for:', query);
+
+  const data = await new Promise<string>((resolve, reject) => {
+    const req = https.request('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        let errBody = '';
+        res.on('data', (c: Buffer) => errBody += c.toString());
+        res.on('end', () => reject(new Error(`Tavily HTTP ${res.statusCode}: ${errBody.slice(0, 200)}`)));
+        return;
+      }
+      let d = '';
+      res.on('data', (c: Buffer) => d += c.toString());
+      res.on('end', () => resolve(d));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Tavily timeout')); });
+    req.write(body);
+    req.end();
+  });
+
+  const json: TavilyResponse = JSON.parse(data);
+  console.log(`[SADIE Web] Tavily returned ${json.results?.length || 0} results in ${json.response_time}s`);
+
+  const results = (json.results || []).map(r => ({
+    title: r.title,
+    url: r.url,
+    snippet: r.content || ''
+  }));
+
+  // Tavily already gives us clean text content — use the top result
+  let topContent: { url: string; title: string; content: string } | undefined;
+  if (json.results && json.results.length > 0) {
+    const top = json.results[0];
+    topContent = {
+      url: top.url,
+      title: top.title,
+      content: top.content || ''
+    };
+  }
+
+  return { results, topContent, answer: json.answer };
+}
+
+/**
+ * Search using Serper.dev Google Search API (secondary paid provider).
+ * POST https://google.serper.dev/search
+ * Header: X-API-KEY
+ * Returns structured Google results as JSON — no HTML scraping.
+ */
+async function searchSerper(
+  query: string,
+  maxResults: number
+): Promise<{ results: Array<{ title: string; url: string; snippet: string }>; topContent?: { url: string; title: string; content: string } }> {
+  const apiKey = getSerperApiKey();
+  if (!apiKey) throw new Error('Serper API key not configured');
+
+  const body = JSON.stringify({
+    q: query,
+    num: maxResults
+  });
+
+  const raw = await new Promise<string>((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'google.serper.dev',
+        path: '/search',
+        method: 'POST',
+        headers: {
+          'X-API-KEY': apiKey,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        },
+        timeout: 15000
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c: Buffer) => (data += c.toString()));
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`Serper API ${res.statusCode}: ${data.substring(0, 200)}`));
+          } else {
+            resolve(data);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Serper request timed out')); });
+    req.write(body);
+    req.end();
+  });
+
+  const json = JSON.parse(raw);
+
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // Serper returns { organic: [{ title, link, snippet, ... }], answerBox?, knowledgeGraph?, ... }
+  if (json.organic && Array.isArray(json.organic)) {
+    for (const item of json.organic.slice(0, maxResults)) {
+      results.push({
+        title: item.title || '',
+        url: item.link || '',
+        snippet: item.snippet || ''
+      });
+    }
+  }
+
+  // Build topContent from answer box or knowledge graph if available
+  let topContent: { url: string; title: string; content: string } | undefined;
+
+  if (json.answerBox) {
+    const ab = json.answerBox;
+    topContent = {
+      url: ab.link || results[0]?.url || '',
+      title: ab.title || 'Answer',
+      content: ab.answer || ab.snippet || ab.snippetHighlighted || ''
+    };
+  } else if (json.knowledgeGraph) {
+    const kg = json.knowledgeGraph;
+    const kgParts: string[] = [];
+    if (kg.description) kgParts.push(kg.description);
+    if (kg.attributes) {
+      for (const [k, v] of Object.entries(kg.attributes)) {
+        kgParts.push(`${k}: ${v}`);
+      }
+    }
+    if (kgParts.length > 0) {
+      topContent = {
+        url: kg.descriptionLink || results[0]?.url || '',
+        title: kg.title || 'Knowledge Graph',
+        content: kgParts.join('\n')
+      };
+    }
+  }
+
+  return { results, topContent };
+}
+
 // ============= TOOL HANDLERS =============
 
 export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> => {
@@ -464,26 +663,64 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       return { success: true, result: { ...cached }, fromCache: true } as any;
     }
     let results: Array<{ title: string; url: string; snippet: string }> = [];
+    let tavilyAnswer: string | undefined;
+    let tavilyTopContent: { url: string; title: string; content: string } | undefined;
     
-    // Try multiple search engines - DuckDuckGo is most reliable for actual results
-    const searchEngines = [
-      { name: 'DuckDuckGo', fn: searchDuckDuckGo },
-      { name: 'Google', fn: searchGoogle },
-      { name: 'Brave', fn: searchBrave }
-    ];
-    
-    for (const engine of searchEngines) {
+    // Try Tavily first if API key is configured (best quality, AI-optimized)
+    const hasTavily = !!getTavilyApiKey();
+    if (hasTavily) {
       try {
-        console.log(`[SADIE Web] Trying ${engine.name}...`);
-        results = await engine.fn(query, maxResults);
-        
+        console.log('[SADIE Web] Trying Tavily (primary)...');
+        const tavilyResult = await searchTavily(query, maxResults);
+        results = tavilyResult.results;
+        tavilyAnswer = tavilyResult.answer;
+        tavilyTopContent = tavilyResult.topContent;
         if (results.length > 0) {
-          console.log(`[SADIE Web] ${engine.name} returned ${results.length} results`);
-          break;
+          console.log(`[SADIE Web] Tavily returned ${results.length} results`);
         }
       } catch (err: any) {
-        console.log(`[SADIE Web] ${engine.name} failed: ${err.message}`);
-        continue;
+        console.log(`[SADIE Web] Tavily failed: ${err.message}`);
+      }
+    }
+
+    // Try Serper.dev if Tavily unavailable/failed and Serper key is configured
+    if (results.length === 0 && getSerperApiKey()) {
+      try {
+        console.log('[SADIE Web] Trying Serper.dev (secondary)...');
+        const serperResult = await searchSerper(query, maxResults);
+        results = serperResult.results;
+        if (serperResult.topContent && serperResult.topContent.content.length > 50) {
+          tavilyTopContent = serperResult.topContent; // reuse the same variable for top content
+        }
+        if (results.length > 0) {
+          console.log(`[SADIE Web] Serper returned ${results.length} results`);
+        }
+      } catch (err: any) {
+        console.log(`[SADIE Web] Serper failed: ${err.message}`);
+      }
+    }
+
+    // Fallback to scraping-based engines if API providers unavailable or returned nothing
+    if (results.length === 0) {
+      const searchEngines = [
+        { name: 'DuckDuckGo', fn: searchDuckDuckGo },
+        { name: 'Google', fn: searchGoogle },
+        { name: 'Brave', fn: searchBrave }
+      ];
+      
+      for (const engine of searchEngines) {
+        try {
+          console.log(`[SADIE Web] Trying ${engine.name}...`);
+          results = await engine.fn(query, maxResults);
+          
+          if (results.length > 0) {
+            console.log(`[SADIE Web] ${engine.name} returned ${results.length} results`);
+            break;
+          }
+        } catch (err: any) {
+          console.log(`[SADIE Web] ${engine.name} failed: ${err.message}`);
+          continue;
+        }
       }
     }
     
@@ -503,8 +740,12 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     const fetchTop = args.fetchTopResult !== false; // Default to true
     let topContent: { url: string; title: string; content: string } | null = null;
     
-    if (fetchTop && results.length > 0) {
-      // Try to fetch the top result
+    // If Tavily already gave us clean content, use that directly (no extra HTTP fetches needed)
+    if (tavilyTopContent && tavilyTopContent.content.length > 100) {
+      topContent = tavilyTopContent;
+      console.log(`[SADIE Web] Using Tavily pre-cleaned content (${topContent.content.length} chars)`);
+    } else if (fetchTop && results.length > 0) {
+      // Fallback: fetch and parse HTML from top results
       for (let i = 0; i < Math.min(3, results.length); i++) {
         try {
           console.log(`[SADIE Web] Fetching content from: ${results[i].url}`);
@@ -534,7 +775,7 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       }
     }
     
-    const resultPayload = {
+    const resultPayload: any = {
       query,
       resultCount: results.length,
       results,
@@ -543,6 +784,11 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
         ? `I fetched the content from "${topContent.title}" - use this to answer the question.`
         : 'Could not fetch detailed content. You may need to use fetch_url on specific results.'
     };
+    // Include Tavily AI answer if available
+    if (tavilyAnswer) {
+      resultPayload.aiAnswer = tavilyAnswer;
+      resultPayload.note = `Tavily AI answer: ${tavilyAnswer}\n\nTop source: "${topContent?.title || 'N/A'}"`;
+    }
     setCache(cacheKey, resultPayload);
     return { success: true, result: resultPayload, fromCache: false } as any;
   } catch (err: any) {
