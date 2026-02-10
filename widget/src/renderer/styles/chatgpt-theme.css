@@ -594,6 +594,15 @@ body {
   color: var(--accent-primary);
 }
 
+/* Copy response button — slightly subtler until hovered */
+.copy-msg-btn {
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.copy-msg-btn:hover {
+  opacity: 1;
+}
+
 /* Streaming dots animation */
 .streaming-indicator {
   display: inline-flex;
@@ -2045,61 +2054,7 @@ body {
 
 /* End Safety helpers */
 
-/* ===================== Message / Bubble Layout Fixes ===================== */
-/* Limit bubble width for readability and fix avatar spacing */
-.message-wrapper {
-  max-width: 100%;
-  display: grid;
-  gap: 8px;
-  margin: 8px 0;
-  word-wrap: break-word;
-  white-space: pre-wrap;
-  /* Prevent bubbles from collapsing to extremely small widths which
-     can cause text to break between every character. Give a sensible
-     minimum width and avoid breaking inside words unless necessary. */
-  min-inline-size: 64px;
-  word-break: normal;
-}
-.message-wrapper.user {
-  justify-content: flex-end;
-  grid-template-columns: 1fr auto;
-}
-
-/* Assistant messages align left */
-.message-wrapper.assistant {
-  justify-content: flex-start;
-  grid-template-columns: auto 1fr;
-}
-
-/* Bubble styling - constrain width */
-.message-bubble {
-  max-width: 70%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  color: var(--text-dark, #000);
-  font-size: 15px;
-  line-height: 1.4;
-  overflow-wrap: break-word;
-}
-
-/* Avatar adjustments */
-.message-avatar {
-  align-self: flex-start;
-  font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Hide empty assistant bubbles (backend offline) */
-.message-bubble:empty {
-  display: none;
-}
-
-/* Slightly tighten spacing for compactness */
-.message-wrapper { margin-top: 12px; margin-bottom: 12px; }
-
-/* End message fixes */
+/* (Duplicate message/bubble overrides removed — canonical styles are above) */
 
 .message-avatar.assistant {
   background: linear-gradient(135deg, var(--sadie-charcoal-2), color-mix(in oklch, var(--sadie-charcoal-2), black 6%));

@@ -238,25 +238,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
   }, [conversationId]);
 
-  // Reserved for future streaming improvements
-  // @ts-expect-error - intentionally unused for future features
-  const _appendAssistantIfMissing = useCallback((assistantId: string) => {
-    setMessages(prev => {
-      if (prev.some(m => m.id === assistantId)) return prev;
-      return [
-        ...prev,
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
-          createdAt: Date.now(),
-          streamingState: "streaming",
-          error: null,
-          streamId: assistantId,
-        }
-      ];
-    });
-  }, []);
 
   /**
    * Save user settings to main process
@@ -328,68 +309,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
   };
 
-  /**
-   * Handle reply from n8n orchestrator via IPC
-   */
-  // Reserved for non-streaming response handling
-  // @ts-expect-error - intentionally unused for future features
-  const _handleSadieReply = (response: any) => {
-    // Check if response is an error
-    if (response.error || !response.success) {
-      setMessages(prev => [...prev, {
-        id: newId(),
-        role: 'assistant',
-        content: response.message || response.response || 'An error occurred.',
-        createdAt: Date.now(),
-        error: response.message || 'error'
-      }]);
-      setStatus({ n8n: 'offline', ollama: 'offline' });
-      return;
-    }
-
-    const data = response.data;
-
-    // Update status (n8n is online if we got a response)
-    setStatus({ n8n: 'online', ollama: 'online' });
-
-    // Check if action is blocked
-    if (data.status === 'blocked') {
-      setMessages(prev => [...prev, {
-        id: newId(),
-        role: 'assistant',
-        content: `⛔ ${data.message}\n\nViolations: ${data.violations?.join(', ') || 'Unknown'}`,
-        createdAt: Date.now(),
-        error: data.message || 'error'
-      }]);
-      return;
-    }
-
-    // Check if confirmation is needed
-    if (data.status === 'needs_confirmation' || data.requires_confirmation) {
-      setPendingToolCall(data.tool_call || null);
-      setPendingConfirmationData(data);
-      setAwaitingConfirmation(true);
-      
-      setMessages(prev => [...prev, {
-        id: newId(),
-        role: 'assistant',
-        content: data.message || 'This action requires your confirmation.',
-        createdAt: Date.now(),
-        error: null
-      }]);
-      return;
-    }
-
-    // Normal response
-    const assistantMessage = data.response || data.message || 'No response.';
-    setMessages(prev => [...prev, {
-      id: newId(),
-      role: 'assistant',
-      content: assistantMessage,
-      createdAt: Date.now(),
-      error: null
-    }]);
-  };
 
   /**
    * Send message to SADIE orchestrator
@@ -548,6 +467,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Persist user message
     persistMessage(userMsg);
 
+    // Auto-title conversation from first user message
+    if (messages.length === 0 && conversationId && text) {
+      const autoTitle = text.length > 40 ? text.slice(0, 40).trimEnd() + '…' : text;
+      try {
+        const convData = await window.electron.getConversation?.(conversationId);
+        if (convData?.success && convData.data) {
+          await (window as any).electron.saveConversation?.({
+            ...convData.data,
+            title: autoTitle,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to auto-title conversation:', err);
+      }
+    }
+
     // Assistant placeholder
     const assistantId = newId();
     const assistantPlaceholder: ChatMessage = {
@@ -615,33 +550,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
   }, [conversationId, subscribeToStream, unsubscribeStream, updateMessage, newId]);
 
-  // Reserved for UI cancel button integration
-  // @ts-expect-error - intentionally unused for future features
-  const _cancelStream = useCallback(async (assistantId: string) => {
-    // optimistic cancel right away
-    updateMessage(assistantId, m => ({
-      ...m,
-      streamingState: "cancelling",
-    }));
-
-    try {
-      await window.electron.cancelStream?.(assistantId);
-      // final authoritative state comes via onStreamEnd({cancelled:true})
-      // but if upstream never responds, we still present cancelled
-      updateMessage(assistantId, m => {
-        if (m.streamingState !== "cancelling") return m;
-        return { ...m, streamingState: "cancelled" };
-      });
-    } catch (err) {
-      console.error("cancel error", err);
-      updateMessage(assistantId, m => ({
-        ...m,
-        streamingState: "error",
-        error: "Cancel failed",
-      }));
-      unsubscribeStream(assistantId);
-    }
-  }, [unsubscribeStream, updateMessage]);
 
   /**
    * Handle confirmation approval
@@ -658,9 +566,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     setPendingConfirmationData(null);
   };
 
-  // Reserved for message retry functionality
-  // @ts-expect-error - intentionally unused for future features
-  const _retryMessage = useCallback(async (assistantId: string) => {
+  const retryMessage = useCallback(async (assistantId: string) => {
     const idx = messages.findIndex(m => m.id === assistantId);
     if (idx <= 0) return;
     const prevUser = messages[idx - 1];
@@ -790,6 +696,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           messages={messages}
           onSendMessage={handleSendMessage}
           onUserCancel={handleUserCancel}
+          onRetry={retryMessage}
         />
       ) : mode === 'automation' ? (
         <AutomationCenter />

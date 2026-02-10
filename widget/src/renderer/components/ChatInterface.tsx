@@ -9,9 +9,10 @@ interface ChatInterfaceProps {
   messages: ChatMessage[];
   onSendMessage: (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;
   onUserCancel?: (messageId: string) => void;
+  onRetry?: (messageId: string) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry }) => {
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';
     logDebug('[Renderer] sendMessage invoked', { text, documents: documents?.length || 0 });
@@ -28,7 +29,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
     <div className="chat-interface">
       {/* Scrollable message list */}
       <div className="messages-container">
-        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={() => {}} />
+        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} />
       </div>
 
       {/* Fixed input box at bottom */}

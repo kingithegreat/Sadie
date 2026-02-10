@@ -238,6 +238,15 @@ export function MessageBubble({
   const state = message.streamingState;
   const hasContent = Boolean(message.content && message.content.trim());
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
+  const [copiedMsg, setCopiedMsg] = useState(false);
+
+  const handleCopyMessage = useCallback(() => {
+    if (!message.content) return;
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopiedMsg(true);
+      setTimeout(() => setCopiedMsg(false), 2000);
+    });
+  }, [message.content]);
   return (
     <div
       className={`message-wrapper ${isUser ? "user" : "assistant"}`}
@@ -333,7 +342,18 @@ export function MessageBubble({
                   </>
                 )}
 
-                {state === "finished" && <span className="status-text">Done</span>}
+                {state === "finished" && (
+                  <>
+                    <span className="status-text">Done</span>
+                    <button
+                      className="message-action-btn copy-msg-btn"
+                      onClick={handleCopyMessage}
+                      aria-label="Copy response"
+                    >
+                      {copiedMsg ? '✓ Copied' : '📋 Copy'}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
