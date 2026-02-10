@@ -26,36 +26,45 @@ SADIE employs a multi-layer testing approach:
 
 ### Test Categories
 
-#### Environment Detection (`env.test.js`)
-| Test | Purpose | Validation |
-|------|---------|------------|
-| Runtime mode detection | Verify NODE_ENV parsing | Correct mode identification |
-| E2E flag detection | Check SADIE_E2E variable | Proper test mode gating |
-| Packaged build detection | Validate app.isPackaged | Release vs dev detection |
-| Environment sanitization | Test sanitizeEnvForPackaged | Variable removal in production |
+#### Main Process Tests (`src/main/__tests__/`)
 
-#### Configuration Management (`config-manager.test.js`)
-| Test | Purpose | Validation |
-|------|---------|------------|
-| Settings persistence | Save/load config files | Data integrity |
-| Path resolution | UserData directory handling | Cross-platform paths |
-| Error handling | Invalid config recovery | Graceful degradation |
-| Diagnostic logging | Release gating | Log suppression in prod |
+| Test File | Purpose | Key Assertions |
+|-----------|---------|----------------|
+| `config-manager.test.ts` | Settings persistence, path resolution, error recovery | Data integrity, cross-platform paths, graceful degradation |
+| `ipc-registration.test.ts` | IPC handler registration, idempotency, `sadie:check-connection`, `sadie:get-env` | Channel security, environment info |
+| `message-router-helpers.test.ts` | Message routing helper functions | Correct tool selection |
+| `permissions-smoke.test.ts` | Permission-allowed batch execution | CI smoke coverage |
+| `tools-batch.test.ts` | Atomic batch execution with permission preflight | Partial side-effect prevention |
+| `tools-alias.test.ts` | Tool alias resolution | Correct tool mapping |
+| `system-prompt-authority.test.ts` | System prompt integrity | Prompt not tampered |
+| `sports.test.ts` | Sports data tool routing | Correct API handling |
+| `runtime-nba-smoke.test.ts` | NBA query end-to-end smoke | Data parsing |
+| `routing-gating.test.ts` | Intent-to-tool routing gates | Correct gating logic |
+| `preprocess.test.ts` | Message preprocessing | Input sanitization |
 
-#### IPC Handlers (`ipc-handlers.test.js`)
-| Test | Purpose | Validation |
-|------|---------|------------|
-| Message validation | Input sanitization | Security boundaries |
-| Config operations | IPC channel security | Permission model |
-| Error responses | Exception handling | User feedback |
+#### Renderer Tests (`src/renderer/__tests__/`)
 
-#### Web Tools (`web.test.js`)
-| Test | Purpose | Validation |
-|------|---------|------------|
-| URL safety validation | SSRF prevention | Network security |
-| HTML parsing | Content extraction | Data processing |
-| Cache functionality | Performance optimization | Memory management |
-| Search engine integration | External API handling | Reliability |
+| Test File | Purpose | Key Assertions |
+|-----------|---------|----------------|
+| `cancel-flow.test.tsx` | Cancel button calls `cancelStream`, shows Cancelled badge, unmount cleanup | UI state transitions, unsubscribe on unmount |
+| `stream-chunks.test.tsx` | Message grows chunk-by-chunk, finalizes on stream end | Content accumulation, cancel button removed on finish, Copy button appears |
+| `stream-end-error.test.tsx` | `onStreamEnd` marks finished, `onStreamError` marks error and stops updates | Copy button on finish, Retry button on error, no further chunk updates after error |
+| `stream-cancel-confirmation.test.tsx` | Cancel during streaming, confirmation flow | State transitions |
+| `markdown-renderer.test.tsx` | Fenced code blocks, inline code, bold, italic, links, headings, lists | Correct DOM output, code block copy button |
+| `copy-response.test.tsx` | Copy full response button in message footer | Clipboard API called, visual feedback |
+| `retry-flow.test.tsx` | Retry button on error state re-sends message | Stream re-subscription, content reset |
+
+#### SSE Proxy Tests (`tools/sse-proxy/src/__tests__/`)
+
+| Test File | Purpose | Key Assertions |
+|-----------|---------|----------------|
+| `admin.test.ts` | Admin endpoints | Access control |
+| `auth.test.ts` | Authentication | Token validation |
+| `cancel-stream.test.ts` | Stream cancellation | Cleanup |
+| `encryption.test.ts` | Data encryption | Security |
+| `rate-limit.test.ts` | Rate limiting | Throttle enforcement |
+| `stream-integration.test.ts` | End-to-end streaming | Full pipeline |
+| `ws.test.ts` | WebSocket connections | Protocol handling |
 
 ### Running Unit Tests
 
@@ -86,18 +95,18 @@ E2E tests require:
 
 ### Test Suite Overview
 
-| Test File | Tests | Purpose | Runtime |
-|-----------|-------|---------|---------|
-| `first-run-modal.spec.js` | 1 test | Validate onboarding flow | ~10s |
-| `streaming-chat.spec.js` | 1 test | Test real-time responses | ~15s |
-| `upstream-error-handling.spec.js` | 1 test | Error recovery validation | ~8s |
-| `config-persistence.spec.js` | 1 test | Settings durability | ~12s |
-| **Total** | **4 tests** | **Complete workflow coverage** | **~45s** |
+| Test File | Purpose | Runtime |
+|-----------|---------|---------|
+| `src/renderer/e2e/first-run.e2e.spec.ts` | Validate onboarding flow | ~10s |
+| `src/renderer/e2e/streaming.e2e.spec.ts` | Test real-time streaming responses | ~15s |
+| `src/renderer/e2e/permission-flow.e2e.spec.ts` | Permission escalation flow | ~12s |
+| `src/renderer/e2e/document-summary.e2e.spec.ts` | Document upload and summarization | ~10s |
+| **Total** | **4 tests** | **~47s** |
 
 ### Detailed Test Specifications
 
 #### First Run Modal Test
-**File:** `e2e/first-run-modal.spec.js`
+**File:** `src/renderer/e2e/first-run.e2e.spec.ts`
 **Purpose:** Ensure new users see proper onboarding
 **Steps:**
 1. Launch app with clean userData
@@ -113,7 +122,7 @@ E2E tests require:
 - No duplicate modals
 
 #### Streaming Chat Test
-**File:** `e2e/streaming-chat.spec.js`
+**File:** `src/renderer/e2e/streaming.e2e.spec.ts`
 **Purpose:** Validate real-time AI interactions
 **Steps:**
 1. Send chat message
@@ -128,9 +137,9 @@ E2E tests require:
 - Error handling for connection issues
 - Response formatting
 
-#### Upstream Error Handling Test
-**File:** `e2e/upstream-error-handling.spec.js`
-**Purpose:** Test graceful failure modes
+#### Permission Flow Test
+**File:** `src/renderer/e2e/permission-flow.e2e.spec.ts`
+**Purpose:** Validate permission escalation flow
 **Steps:**
 1. Simulate Ollama disconnection
 2. Send message during outage
@@ -144,9 +153,9 @@ E2E tests require:
 - Recovery after service restoration
 - User feedback clarity
 
-#### Config Persistence Test
-**File:** `e2e/config-persistence.spec.js`
-**Purpose:** Ensure settings survive app restarts
+#### Document Summary Test
+**File:** `src/renderer/e2e/document-summary.e2e.spec.ts`
+**Purpose:** Ensure document upload and summarization works
 **Steps:**
 1. Launch app
 2. Modify settings (theme, model)
@@ -305,7 +314,7 @@ npx playwright test --headed --slowMo 1000
 ## Test Maintenance
 
 ### Adding New Tests
-1. Create test file in `e2e/` or `src/__tests__/`
+1. Create test file in `src/renderer/e2e/` (E2E) or `src/main/__tests__/` / `src/renderer/__tests__/` (unit)
 2. Follow existing patterns
 3. Add to CI configuration
 4. Update this matrix

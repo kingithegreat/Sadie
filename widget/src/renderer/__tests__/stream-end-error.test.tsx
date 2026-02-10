@@ -55,6 +55,8 @@ describe('stream end and error handling (renderer)', () => {
     // After end, final content remains and streaming UI is removed
     await waitFor(() => expect(screen.getByText('First chunk')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
+    // Copy response button should appear for finished messages
+    expect(screen.getByRole('button', { name: /copy response/i })).toBeInTheDocument();
     // No Error badge expected
     expect(screen.queryByText('Error')).toBeNull();
 
@@ -107,6 +109,8 @@ describe('stream end and error handling (renderer)', () => {
     // Error badge should appear and cancel button should disappear
     await waitFor(() => expect(screen.getByText('Error')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
+    // Retry button should appear for errored messages
+    expect(screen.getByText('↻ Retry')).toBeInTheDocument();
 
     // Message should no longer grow after error - simulate another chunk and ensure final text unchanged
     act(() => { chunkHandler?.({ streamId, chunk: 'more' }); });

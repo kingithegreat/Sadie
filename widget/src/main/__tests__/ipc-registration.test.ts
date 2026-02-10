@@ -11,6 +11,10 @@ jest.mock('electron', () => {
       on: jest.fn(),
     },
     BrowserWindow: jest.fn(),
+    app: {
+      isPackaged: false,
+      getPath: (name: string) => `/mock/${name}`,
+    },
   };
 });
 
@@ -29,6 +33,19 @@ describe('IPC registration', () => {
 
     // Second call should be a no-op (idempotent), not throw
     expect(() => registerIpcHandlers()).not.toThrow();
+  });
+
+  it('registers sadie:get-env handler', () => {
+    registerIpcHandlers();
+    expect(handles['sadie:get-env']).toBeDefined();
+  });
+
+  it('sadie:get-env handler returns environment info', async () => {
+    registerIpcHandlers();
+    const result = await handles['sadie:get-env']();
+    expect(result).toBeDefined();
+    expect(typeof result.isE2E).toBe('boolean');
+    expect(typeof result.userDataPath).toBe('string');
   });
 
   it('check-connection handler returns structured status', async () => {

@@ -67,9 +67,15 @@ Sadie/
 ├── widget/                 # Main Electron application
 │   ├── src/
 │   │   ├── main/          # Main process code
-│   │   ├── renderer/      # UI code
-│   │   └── preload/       # Context bridge
-│   ├── dist/              # Built output
+│   │   │   └── __tests__/ # Main process unit tests
+│   │   ├── renderer/      # UI code (React + Vite)
+│   │   │   ├── __tests__/ # Renderer unit tests
+│   │   │   ├── components/# React components
+│   │   │   ├── e2e/       # Playwright E2E specs
+│   │   │   └── styles/    # CSS
+│   │   ├── preload/       # Context bridge
+│   │   └── shared/        # Types & utils shared across processes
+│   ├── out/               # Built output (electron-vite)
 │   └── package.json
 ├── n8n-workflows/         # n8n workflow definitions
 ├── scripts/               # Build and utility scripts
@@ -83,7 +89,7 @@ Sadie/
 ```bash
 cd widget
 
-# Start with hot reload
+# Start with hot reload (electron-vite dev server + Electron)
 npm run dev
 
 # Or build and run manually
@@ -91,23 +97,13 @@ npm run build
 npm start
 ```
 
-#### Development Builds
+#### Production Build
 ```bash
-# Build main process only
-npm run build:main
-
-# Build renderer only
-npm run build:renderer
-
-# Full build
+# Full build (main + preload + renderer via electron-vite)
 npm run build
 ```
 
-#### Watch Mode for Development
-```bash
-# Watch for changes and rebuild
-npm run dev:watch
-```
+> **Note:** SADIE uses **electron-vite** (not Webpack). The `npm run dev` command starts the Vite dev server for the renderer with HMR and builds the main process. There are no separate `build:main` / `build:renderer` scripts — `npm run build` handles everything.
 
 ## Testing
 
@@ -142,33 +138,25 @@ npx playwright test --ui
 
 ## Code Changes and Rebuilding
 
+### Renderer Changes (React / CSS)
+When modifying `src/renderer/` files:
+- If `npm run dev` is running, **changes are applied automatically via HMR** — no rebuild needed.
+- The Vite dev server at `localhost:5173` serves the renderer with hot module replacement.
+
 ### Main Process Changes
 When modifying `src/main/` files:
-
 ```bash
-# Rebuild main process
-npm run build:main
-
-# Restart the application
+# electron-vite rebuilds the main process automatically in dev mode.
+# If needed, do a full rebuild:
+npm run build
 npm start
-```
-
-### Renderer Changes
-When modifying `src/renderer/` files:
-
-```bash
-# Rebuild renderer (usually auto with dev server)
-npm run build:renderer
 ```
 
 ### Preload Script Changes
 When modifying `src/preload/` files:
-
 ```bash
-# Rebuild preload
-npm run build:preload
-
-# Restart application (preload requires restart)
+# Preload scripts require a full restart:
+npm run build
 npm start
 ```
 

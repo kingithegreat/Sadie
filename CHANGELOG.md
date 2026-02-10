@@ -1,10 +1,30 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 — UI Polish, Markdown Rendering & Developer Cleanup
 
-- Atomic batch execution: tool batch precheck now verifies all required permissions before executing any tool, preventing partial side effects when some operations would be denied.
-- Permission escalation: user-facing confirmation flow supports `Allow once` (transient) and `Always allow` (persisted) with safe re-execution semantics.
-- Safety improvement: batch execution fails fast with `needs_confirmation` when permissions are missing, avoiding any tool-side partial effects.
+### Added
+- **Retry button** wired up: error-state assistant messages now have a functional "↻ Retry" button that re-sends the preceding user message.
+- **Copy full response** button: finished assistant messages show a "📋 Copy" button that copies the entire response to clipboard with visual feedback.
+- **Auto-title conversations**: the first user message automatically sets the conversation title (truncated to 40 characters) instead of "New Conversation".
+- **Custom markdown renderer** in MessageBubble: fenced code blocks with copy button, inline code, bold, italic, links, headings, lists — zero external dependencies.
+- **`sadie:get-env` IPC handler**: new IPC channel for retrieving environment info from the main process.
+
+### Fixed
+- **Vite dev server loading**: `window-manager.ts` now correctly loads from `ELECTRON_RENDERER_URL` in dev mode, enabling HMR and live code changes.
+- **Duplicate CSS removed**: deleted ~55 lines of conflicting message-bubble overrides in `chatgpt-theme.css` that silently shrank bubbles, stripped borders/shadows, and broke text colors.
+
+### Removed
+- Dead code cleanup: removed `_appendAssistantIfMissing`, `_handleSadieReply`, `_cancelStream` (~100 lines) and all `@ts-expect-error` suppressions from `App.tsx`.
+
+## v0.6.1 — Tool Routing Hardening and NBA Query Robustness
+
+### Improved
+- Tool routing hardening for more reliable intent-to-tool matching.
+- NBA query robustness with better sports data handling.
+- Serper.dev search integration (working) alongside Tavily (key-dependent).
+- Search API keys UI in Settings panel.
+- Web search upgraded: Tavily → Serper → DDG → Google → Brave fallback chain.
+- System prompt updated for code generation support.
 
 ## v0.6.0 — Permissions & Batch Execution
 

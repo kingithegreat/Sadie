@@ -78,6 +78,9 @@ describe('stream chunks (renderer)', () => {
     // Cancel button should disappear after finish
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
 
+    // Copy response button should appear after finish
+    expect(screen.getByRole('button', { name: /copy response/i })).toBeInTheDocument();
+
     // Ensure unsubscribe functions still exist and can be called (cleanup implicit on end)
     // The test ensures our mocks were returned; actual cleanup on app is tested elsewhere.
     expect(typeof chunkUnsub).toBe('function');
