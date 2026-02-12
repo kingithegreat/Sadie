@@ -1200,14 +1200,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const probe = await axios.get(streamUrl, { timeout: 3000, validateStatus: () => true });
               if (probe && probe.status >= 400) {
                 try { console.log('[E2E-TRACE] stream POST target probe returned error', { streamId, status: probe.status }); } catch (e) {}
-                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId, diagnostic: { url: streamUrl, httpStatus: probe.status, n8nResponded: true } }); } catch (e) {}
                 try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
                 try { activeStreams.delete(streamId); } catch (e) {}
                 return;
               }
             } catch (e: any) {
               try { console.log('[E2E-TRACE] stream POST target probe failed', { streamId, error: e?.message || e }); } catch (e) {}
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId, diagnostic: { url: streamUrl, errorText: e?.message || String(e), n8nResponded: false } }); } catch (e) {}
               try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
               try { activeStreams.delete(streamId); } catch (e) {}
               return;
@@ -2308,7 +2308,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               return;
             } catch (fallbackErr: any) {
               // If fallback also fails, emit stream-error and clean up
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId, diagnostic: { url: streamUrl, errorText: err?.message || String(err) } }); } catch (e) {}
               try { pushRouter(`direct stream fallback failed for streamId=${streamId} error=${fallbackErr?.message || fallbackErr}`); } catch (e) {}
               activeStreams.delete(streamId);
             }
