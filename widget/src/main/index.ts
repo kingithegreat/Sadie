@@ -11,6 +11,12 @@ let mainWindow: BrowserWindow | null = null;
 // Diagnostic log buffer for main process
 (global as any).__SADIE_MAIN_LOG_BUFFER ??= [];
 
+// Apply a safe, idempotent ipcMain.handle patch (keeps behavior local and
+// testable via `applyIpcHandlePatch`). See `src/main/utils/ipc-handle-patch.ts`.
+import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
+applyIpcHandlePatch();
+
+
 app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
   (global as any).__SADIE_MAIN_LOG_BUFFER.push('[MAIN] App ready');

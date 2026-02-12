@@ -97,6 +97,9 @@ async function findTeamByQuery(query: string) {
   }
 }
 
+export const FALLBACK_PAST_DAYS = 3;
+export const FALLBACK_FUTURE_DAYS = 30;
+
 async function findPlayerByName(query: string, perPage = 20) {
   // Try to find player by scanning rosters for a matching displayName
   const teamsResp = await fetchEspnJson('/teams');
@@ -118,6 +121,33 @@ async function findPlayerByName(query: string, perPage = 20) {
     } catch {}
   }
   return found;
+}
+
+/**
+ * Aggregates scoreboard events over a fallback window (past/future days).
+ * The optional `fetcher` is injected for testing to avoid network calls.
+ */
+export async function fetchEventsInWindow(fetcher: (path: string, params?: Record<string, string | number>) => Promise<any> = fetchEspnJson, nowDate: Date = new Date()) {
+  const seen = new Set<string>();
+  const agg: any[] = [];
+  // Check past FALLBACK_PAST_DAYS and next FALLBACK_FUTURE_DAYS
+  for (let i = -FALLBACK_PAST_DAYS; i <= FALLBACK_FUTURE_DAYS; i++) {
+    const dt = new Date(nowDate);
+    dt.setDate(nowDate.getDate() + i);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    const dateParam = `${y}${m}${day}`;
+    try {
+      const b = await fetcher('/scoreboard', { dates: dateParam });
+      const ev = b?.events || [];
+      for (const e of ev) {
+        const id = e?.id || JSON.stringify(e);
+        if (!seen.has(id)) { seen.add(id); agg.push(e); }
+      }
+    } catch (e) { /* ignore individual date fetch errors */ }
+  }
+  return agg;
 }
 
 export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> => {
@@ -149,29 +179,9 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
 
       // If no events found for the requested date/range, fall back to a
       // rolling window to avoid week-boundary and timezone issues.
-      // Check both past 3 days and next 7 days to find upcoming games.
+      // Check both past and future windows to find upcoming games. Use helper to make this testable.
       if ((!events || events.length === 0) && (!d || /week|last|next/i.test(d))) {
-        const seen = new Set<string>();
-        const agg: any[] = [];
-        const now = new Date();
-        // Check past 3 days and next 7 days
-        for (let i = -3; i <= 7; i++) {
-          const dt = new Date(now);
-          dt.setDate(now.getDate() + i);
-          const y = dt.getFullYear();
-          const m = String(dt.getMonth() + 1).padStart(2, '0');
-          const day = String(dt.getDate()).padStart(2, '0');
-          const dateParam = `${y}${m}${day}`;
-          try {
-            const b = await fetchEspnJson('/scoreboard', { dates: dateParam });
-            const ev = b?.events || [];
-            for (const e of ev) {
-              const id = e?.id || JSON.stringify(e);
-              if (!seen.has(id)) { seen.add(id); agg.push(e); }
-            }
-          } catch (e) { /* ignore individual date fetch errors */ }
-        }
-        events = agg;
+        events = await fetchEventsInWindow();
       }
       if (query) {
         const q = query.toLowerCase();
