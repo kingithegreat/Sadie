@@ -1,4 +1,5 @@
 import path from 'path';
+import * as fs from 'fs';
 import { _electron as electron, ElectronApplication, Page } from 'playwright';
 
 export async function launchElectronApp(env: Record<string, string | undefined>, userDataDir?: string) {
@@ -20,7 +21,14 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
   if (userDataDir) {
     args.push(`--user-data-dir=${userDataDir}`);
   }
-  args.push(path.join(__dirname, '../../../dist/main/index.js'));
+
+  // Prefer a packaged `dist/main/index.js` entry if present; fall back to
+  // the dev build output `out/main/index.js` which `electron-vite` produces.
+  const distEntry = path.join(__dirname, '../../../dist/main/index.js');
+  const outEntry = path.join(__dirname, '../../../out/main/index.js');
+  const entry = fs.existsSync(distEntry) ? distEntry : outEntry;
+  console.log('[E2E-LAUNCH] Using entrypoint:', entry);
+  args.push(entry);
 
   const app = await electron.launch({
     args,

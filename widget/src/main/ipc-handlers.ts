@@ -334,6 +334,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Dev/E2E debug: return main/renderer in-memory buffers and conversation store snapshot
+  ipcMain.handle('sadie:read-debug-logs', async () => {
+    try {
+      const rendererLogs = (global as any).__SADIE_RENDERER_LOGS || [];
+      const mainLogs = (global as any).__SADIE_MAIN_LOG_BUFFER || [];
+      const store = MemoryManager.loadConversationStore();
+      return { success: true, rendererLogs, mainLogs, conversationStore: store };
+    } catch (err: any) {
+      console.error('Failed to read debug logs:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
   // ============= Memory / Conversation Handlers =============
 
   /**
@@ -419,10 +432,14 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.handle('sadie:add-message', async (_event, { conversationId, message }: { conversationId: string; message: Message }) => {
     try {
+      console.log(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id} len=${String(message.content || '').length}`);
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER = (global as any).__SADIE_MAIN_LOG_BUFFER || []; (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id}`); } catch (e) {}
       const success = MemoryManager.addMessageToConversation(conversationId, message);
+      console.log(`[IPC] addMessage -> success=${success}`);
       return { success };
     } catch (err: any) {
       console.error('Error adding message:', err.message);
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] addMessage error=${String(err)}`); } catch (e) {}
       return { success: false, error: err.message };
     }
   });

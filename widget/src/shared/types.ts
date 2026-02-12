@@ -61,6 +61,8 @@ export interface StoredConversation {
   id: string;
   title: string;
   messages: Message[];
+  /** Optional per-conversation system prompt / guidelines */
+  systemPrompt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -191,6 +193,8 @@ export interface ElectronAPI {
   sendPermissionResponse?: (requestId: string, decision: 'allow_once'|'always_allow'|'cancel', missingPermissions?: string[]) => void;
   exportTelemetryConsent?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetPermissions?: () => Promise<Settings>;
+  // Debug helper exposed for dev/E2E: returns main + renderer log buffers and conversation store snapshot
+  readDebugLogs?: () => Promise<{ success: boolean; rendererLogs?: string[]; mainLogs?: string[]; conversationStore?: any; error?: string }>;
   
   // Diagnostic: get env info
   getEnv?: () => Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }>;

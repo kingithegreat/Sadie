@@ -76,6 +76,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
   const [backendDiagnostic, setBackendDiagnostic] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
 
     // active stream subscriptions by streamId (use Map for convenience)
@@ -102,6 +103,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             const convData = await window.electron.getConversation?.(store.activeConversationId);
             if (convData?.success && convData.data) {
               setConversationId(store.activeConversationId);
+              // Load per-conversation system prompt (if any)
+              setConversationSystemPrompt(convData.data.systemPrompt || '');
               // Convert stored messages to ChatMessage format
               const loadedMsgs: ChatMessage[] = convData.data.messages.map((m: SharedMessage) => ({
                 id: m.id ?? newId(),
@@ -120,6 +123,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             const newConv = await window.electron.createConversation?.();
             if (newConv?.success && newConv.data) {
               setConversationId(newConv.data.id);
+              setConversationSystemPrompt(newConv.data.systemPrompt || '');
             }
           }
         } else {
@@ -209,8 +213,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   }, []);
 
   // Helper to persist a message to the conversation store
-  const persistMessage = useCallback(async (msg: ChatMessage) => {
-    if (!conversationId) return;
+  // Accept an optional convIdOverride so callers can persist immediately after
+  // creating a new conversation without relying on state propagation.
+  const persistMessage = useCallback(async (msg: ChatMessage, convIdOverride?: string) => {
+    const convId = convIdOverride || conversationId;
+    if (!convId) return;
     try {
       // Map renderer StreamingState to shared type (exclude 'cancelling' which is renderer-only)
       const mappedStreamingState = msg.streamingState === 'cancelling' ? 'cancelled' : msg.streamingState;
@@ -222,9 +229,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         streamingState: mappedStreamingState as SharedMessage['streamingState'],
         error: !!msg.error,
       };
-      await window.electron.addMessage?.(conversationId, sharedMsg);
+      // Debug: log persistence attempt and result
+      try { (window as any).__SADIE_RENDERER_LOGS = (window as any).__SADIE_RENDERER_LOGS || []; (window as any).__SADIE_RENDERER_LOGS.push(`[Renderer] addMessage conv=${convId} id=${msg.id} len=${String(msg.content).length}`); } catch (e) {}
+      const res = await window.electron.addMessage?.(convId, sharedMsg);
+      try { (window as any).__SADIE_RENDERER_LOGS.push(`[Renderer] addMessage result=${JSON.stringify(res)}`); } catch (e) {}
     } catch (err) {
       console.error('Failed to persist message:', err);
+      try { (window as any).__SADIE_RENDERER_LOGS.push(`[Renderer] addMessage error=${String(err)}`); } catch (e) {}
     }
   }, [conversationId]);
 
@@ -252,6 +263,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   };
 
   /**
+   * Update per-conversation system prompt and persist it
+   */
+  const updateConversationSystemPrompt = async (prompt: string) => {
+    setConversationSystemPrompt(prompt);
+    if (!conversationId) return;
+    try {
+      const conv = await window.electron.getConversation?.(conversationId);
+      const stored = conv?.data || { id: conversationId, title: 'Conversation', messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      stored.systemPrompt = prompt;
+      await window.electron.saveConversation?.(stored);
+    } catch (err) {
+      console.error('Failed to persist conversation system prompt:', err);
+    }
+  };
+
+  /**
    * Handle creating a new conversation
    */
   const handleNewConversation = async () => {
@@ -259,6 +286,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       const result = await window.electron.createConversation?.();
       if (result?.success && result.data) {
         setConversationId(result.data.id);
+        setConversationSystemPrompt(result.data.systemPrompt || '');
         setMessages([]);
         await window.electron.setActiveConversation?.(result.data.id);
       }
@@ -275,6 +303,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       const convData = await window.electron.getConversation?.(id);
       if (convData?.success && convData.data) {
         setConversationId(id);
+        setConversationSystemPrompt(convData.data.systemPrompt || '');
         await window.electron.setActiveConversation?.(id);
         
         // Convert stored messages to ChatMessage format
@@ -454,6 +483,24 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       messageText = docInfo + (text ? '\n\n' + text : '\n\nPlease analyze this document.');
     }
 
+    // Ensure we have an active conversation before persisting messages.
+    // If none exists, create one and use its id for immediate persistence.
+    let activeConvId = conversationId;
+    if (!activeConvId) {
+      try {
+        const created = await window.electron.createConversation?.();
+        if (created?.success && created.data) {
+          activeConvId = created.data.id;
+          setConversationId(activeConvId);
+          setConversationSystemPrompt(created.data.systemPrompt || '');
+          // Persist active conversation selection
+          try { await window.electron.setActiveConversation?.(activeConvId); } catch (e) {}
+        }
+      } catch (e) {
+        console.error('Failed to create conversation before send:', e);
+      }
+    }
+
     // Add user message
     const userId = newId();
     const userMsg: ChatMessage = {
@@ -464,14 +511,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     };
     setMessages(prev => [...prev, userMsg]);
     
-    // Persist user message
-    persistMessage(userMsg);
+    // Persist user message (use created conversation id if we just made one)
+    persistMessage(userMsg, activeConvId ?? undefined);
 
     // Auto-title conversation from first user message
-    if (messages.length === 0 && conversationId && text) {
+    if (messages.length === 0 && (activeConvId || conversationId) && text) {
       const autoTitle = text.length > 40 ? text.slice(0, 40).trimEnd() + '…' : text;
       try {
-        const convData = await window.electron.getConversation?.(conversationId);
+        const convData = await window.electron.getConversation?.(activeConvId || conversationId || '');
         if (convData?.success && convData.data) {
           await (window as any).electron.saveConversation?.({
             ...convData.data,
@@ -495,7 +542,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     setMessages(prev => [...prev, assistantPlaceholder]);
     
     // Persist assistant placeholder (will be updated when streaming completes)
-    persistMessage(assistantPlaceholder);
+    persistMessage(assistantPlaceholder, activeConvId ?? undefined);
 
     // subscribe to stream updates before sending to avoid lost chunks
     subscribeToStream(assistantId, assistantId);
@@ -696,6 +743,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           onSendMessage={handleSendMessage}
           onUserCancel={handleUserCancel}
           onRetry={retryMessage}
+          systemPrompt={conversationSystemPrompt}
+          onUpdateSystemPrompt={updateConversationSystemPrompt}
         />
       ) : mode === 'automation' ? (
         <AutomationCenter />

@@ -15,6 +15,7 @@ import { getSettings, saveSettings } from './config-manager';
 import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey } from './tools/web';
+import { MemoryManager } from './memory-manager';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -756,15 +757,23 @@ export async function streamFromOllamaWithTools(
   
   // Build messages array for chat API - include conversation history
   const history = getHistory(conversationId);
-  const messages: ChatMessage[] = [
-    { role: 'system', content: SADIE_SYSTEM_PROMPT },
-  ];
-  
+
+  // If this conversation has a custom system prompt, prepend it to the default
+  const storedConv = MemoryManager.getConversation(conversationId);
+  const convPrompt = storedConv?.systemPrompt?.toString().trim();
+
+  const messages: ChatMessage[] = [];
+  if (convPrompt) {
+    messages.push({ role: 'system', content: convPrompt });
+  }
+  // Always include the global SADIE prompt after the conversation prompt
+  messages.push({ role: 'system', content: SADIE_SYSTEM_PROMPT });
+
   // Add conversation history (last N messages for context)
   for (const msg of history) {
     messages.push({ role: msg.role, content: msg.content });
   }
-  
+
   // Add current user message
   messages.push({ 
     role: 'user', 

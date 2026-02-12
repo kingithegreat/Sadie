@@ -33,6 +33,8 @@ export interface StoredConversation {
   id: string;
   title: string;
   messages: Message[];
+  /** Optional per-conversation system prompt (user-editable) */
+  systemPrompt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -197,6 +199,7 @@ export function createNewConversation(title?: string): StoredConversation {
     id,
     title: title || `Conversation ${new Date().toLocaleDateString()}`,
     messages: [],
+    systemPrompt: '',
     createdAt: now,
     updatedAt: now,
   };
@@ -210,6 +213,7 @@ export function createNewConversation(title?: string): StoredConversation {
 export function addMessageToConversation(conversationId: string, message: Message): boolean {
   const conversation = getConversation(conversationId);
   if (!conversation) {
+    console.warn(`[MemoryManager] addMessageToConversation: conversation not found conv=${conversationId}`);
     return false;
   }
   
@@ -226,8 +230,10 @@ export function addMessageToConversation(conversationId: string, message: Messag
     const preview = message.content.slice(0, 50);
     conversation.title = preview + (message.content.length > 50 ? '...' : '');
   }
-  
-  return saveConversation(conversation);
+
+  const res = saveConversation(conversation);
+  if (!res) console.error(`[MemoryManager] Failed to save conversation conv=${conversationId} after addMessage`);
+  return res;
 }
 
 export function updateMessageInConversation(

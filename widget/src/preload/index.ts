@@ -240,6 +240,10 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.EXPORT_CONSENT);
   },
 
+  readDebugLogs: async (): Promise<{ success: boolean; rendererLogs?: string[]; mainLogs?: string[]; conversationStore?: any; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:read-debug-logs');
+  },
+
   getMode: async (): Promise<{ demo: boolean }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_MODE);
   },
