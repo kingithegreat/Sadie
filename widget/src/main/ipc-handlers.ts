@@ -311,6 +311,29 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Read telemetry events (JSONL) for the Telemetry dashboard UI
+  ipcMain.handle('sadie:read-telemetry-events', async () => {
+    try {
+      const userData = app.getPath('userData');
+      const pathsToCheck = [
+        path.join(userData, 'logs', 'telemetry-events.log'),
+        path.join(os.homedir(), 'SADIE_DIAG', 'telemetry-events.log')
+      ];
+      const found = pathsToCheck.find(p => fs.existsSync(p));
+      if (!found) return { success: true, events: [] };
+      const data = fs.readFileSync(found, 'utf-8').trim();
+      if (!data) return { success: true, events: [] };
+      const lines = data.split('\n').filter(Boolean);
+      const events = lines.map(l => {
+        try { return JSON.parse(l); } catch { return null; }
+      }).filter(Boolean);
+      return { success: true, events };
+    } catch (err: any) {
+      console.error('Failed to read telemetry events:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
   // ============= Memory / Conversation Handlers =============
 
   /**

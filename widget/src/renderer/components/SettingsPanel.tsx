@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
+import TelemetryDashboard from './TelemetryDashboard';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 
 interface Settings {
@@ -133,6 +134,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const DANGEROUS_PERMISSIONS = new Set(['delete_file', 'move_file', 'launch_app', 'screenshot']);
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
+  const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
 
   const refreshTelemetryLog = async () => {
     try {
@@ -650,6 +652,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               if (r && r.success) alert(`Exported to ${r.path}`);
               else alert(`Export failed: ${r?.error}`);
             }}>Export</button>
+            <button className="button button-secondary" onClick={() => setShowTelemetryDashboard(true)}>Open Telemetry Dashboard</button>
           </div>
           <div style={{ maxHeight: 220, overflow: 'auto', background: '#0f1724', padding: 8, borderRadius: 6 }}>
             <pre style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace', color: '#cbd5e1', margin: 0, whiteSpace: 'pre-wrap' }}>{telemetryLogPreview()}</pre>
@@ -669,6 +672,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           }}
           onClose={() => setShowTelemetryModal(false)}
         />
+        {showTelemetryDashboard && <TelemetryDashboard open={showTelemetryDashboard} onClose={() => setShowTelemetryDashboard(false)} /> }
       </div>
 
       <div className="settings-footer">

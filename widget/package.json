@@ -21,6 +21,7 @@
     "e2e": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test",
     "e2e:headed": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test --headed",
     "capture-logs": "node ./scripts/capture-diagnostics.js",
+    "stream-metrics": "node ./scripts/stream-metrics.js",
     "clean-tests": "rmdir /s /q test-results playwright-report trace-output 2>nul || echo No test artifacts to clean",
     "release": "node ../scripts/preflight-env-check.js --require-production && npm run build && node ../scripts/preflight-env-check.js --scan-artifacts && npm run dist && node ../scripts/scan-package-integrity.js"
   },

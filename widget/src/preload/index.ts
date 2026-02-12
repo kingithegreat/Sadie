@@ -37,6 +37,7 @@ const ALLOWED_CHANNELS = {
   EXPORT_CONSENT: 'sadie:export-consent',
   LIST_CUSTOM_MODELS: 'sadie:list-custom-llm-models',
   READ_CONSENT_LOG: 'sadie:read-consent-log',
+  READ_TELEMETRY_EVENTS: 'sadie:read-telemetry-events',
   SHOW_WINDOW: 'sadie:show-window',
   HIDE_WINDOW: 'sadie:hide-window',
   STREAM_SEND: 'sadie:stream-message',
@@ -273,6 +274,10 @@ const electronAPI: ElectronAPI = {
 
   readConsentLog: async (): Promise<{ success: boolean; data?: string; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.READ_CONSENT_LOG);
+  },
+
+  readTelemetryEvents: async (): Promise<{ success: boolean; events?: any[]; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.READ_TELEMETRY_EVENTS);
   },
 
   hasPermission: async (toolName: string): Promise<{ success: boolean; allowed?: boolean; error?: string }> => {

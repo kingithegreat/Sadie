@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.1 — IPC hardening, stream diagnostics & telemetry dashboard
+
+### Added
+- Local telemetry events log (`telemetry-events.log`) and an in-app **Telemetry Dashboard** (Settings → Telemetry) showing recent events and stream-failure counts. ✅
+- `stream-metrics` helper script to summarize local telemetry events (`npm run stream-metrics`).
+
+### Fixed
+- Prevent crashes from duplicate `ipcMain.handle` registrations during dev/hot-reload cycles by making handler registration idempotent.
+- Improved `sadie:stream-error` payloads with richer diagnostics (url, httpStatus, n8nResponded, errorText) and recorded local telemetry events for stream failures.
+
+---
+
 ## v0.7.0 — UI Polish, Markdown Rendering & Developer Cleanup
 
 ### Added

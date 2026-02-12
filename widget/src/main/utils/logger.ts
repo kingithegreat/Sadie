@@ -73,4 +73,19 @@ export function logTelemetryConsent(action: 'consent_given' | 'consent_revoked',
   }
 }
 
-export default { initLogging, logStartup, logError };
+// Write a lightweight telemetry event (JSONL) to `telemetry-events.log` for
+// local metrics and offline analysis. Events are only recorded to disk; they
+// do not leave the user's machine unless the user or CI collects the log.
+export function logTelemetryEvent(event: string, details: Record<string, any> = {}) {
+  try {
+    ensureLogDir();
+    const LOG_DIR = getLogDir();
+    const EVENT_LOG = path.join(LOG_DIR, 'telemetry-events.log');
+    const entry = { timestamp: new Date().toISOString(), event, details };
+    fs.appendFileSync(EVENT_LOG, JSON.stringify(entry) + '\n');
+  } catch (err) {
+    console.error('Failed to write telemetry event:', err);
+  }
+}
+
+export default { initLogging, logStartup, logError, logTelemetryEvent };
