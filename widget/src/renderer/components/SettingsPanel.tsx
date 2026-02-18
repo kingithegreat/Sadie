@@ -19,6 +19,9 @@ interface Settings {
   useCustomLLM?: boolean;
   tavilyApiKey?: string;
   serperApiKey?: string;
+  anthropicApiKey?: string;
+  openaiApiKey?: string;
+  chatGuidelines?: string;
 }
 
 interface SettingsPanelProps {
@@ -62,6 +65,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     // Ensure known providers always have their canonical URL
     const providerDefault = getDefaultApiUrl(llm.provider);
     if (providerDefault) llm.apiUrl = providerDefault;
+    // Auto-fill API key from saved provider keys if not already set
+    if (!llm.apiKey) {
+      if (llm.provider === 'anthropic' && source.anthropicApiKey) {
+        llm.apiKey = source.anthropicApiKey;
+      } else if (llm.provider === 'openai' && source.openaiApiKey) {
+        llm.apiKey = source.openaiApiKey;
+      }
+    }
     return {
       ...source,
       chatModel: source.chatModel || defaultModels.chatModel,
@@ -70,7 +81,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       useCustomLLM: source.useCustomLLM ?? false,
       customLLM: llm,
       tavilyApiKey: source.tavilyApiKey || '',
-      serperApiKey: source.serperApiKey || ''
+      serperApiKey: source.serperApiKey || '',
+      anthropicApiKey: source.anthropicApiKey || '',
+      openaiApiKey: source.openaiApiKey || '',
+      chatGuidelines: source.chatGuidelines || ''
     };
   };
 
@@ -206,7 +220,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       ...localSettings,
       customLLM: llmToSave,
       tavilyApiKey: localSettings.tavilyApiKey?.trim() || undefined,
-      serperApiKey: localSettings.serperApiKey?.trim() || undefined
+      serperApiKey: localSettings.serperApiKey?.trim() || undefined,
+      anthropicApiKey: localSettings.anthropicApiKey?.trim() || undefined,
+      openaiApiKey: localSettings.openaiApiKey?.trim() || undefined,
+      chatGuidelines: localSettings.chatGuidelines?.trim() || undefined
     } as SharedSettings;
     onSave(nextSettings);
     onClose();
@@ -384,6 +401,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <small className="setting-hint">Used automatically when images are attached.</small>
         </div>
 
+        {/* Chat Guidelines Section */}
+        <div className="setting-group">
+          <label className="setting-label">📝 Chat Guidelines</label>
+          <textarea
+            className="setting-input setting-textarea"
+            value={localSettings.chatGuidelines || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                chatGuidelines: e.target.value
+              })
+            }
+            placeholder="Add custom instructions here... (e.g., 'Always respond in a friendly tone', 'Format code using markdown')"
+            rows={4}
+          />
+          <small className="setting-hint">Custom instructions appended to the system prompt for all conversations.</small>
+        </div>
+
         {/* Custom LLM API Section - Simplified */}
         <div className="setting-group custom-llm-section">
           <label className="setting-label">☁️ Cloud API (OpenAI, Anthropic, etc.)</label>
@@ -395,12 +430,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               value={selectedProvider}
               onChange={(e) => {
                 const newProvider = e.target.value as any;
+                // Auto-fill API key from saved keys when switching providers
+                let autoFillKey = localSettings.customLLM?.apiKey || '';
+                if (newProvider === 'anthropic' && localSettings.anthropicApiKey) {
+                  autoFillKey = localSettings.anthropicApiKey;
+                } else if (newProvider === 'openai' && localSettings.openaiApiKey) {
+                  autoFillKey = localSettings.openaiApiKey;
+                }
                 setLocalSettings({
                   ...localSettings,
                   customLLM: { 
                     ...localSettings.customLLM!, 
                     provider: newProvider,
-                    apiUrl: getDefaultApiUrl(newProvider)
+                    apiUrl: getDefaultApiUrl(newProvider),
+                    apiKey: autoFillKey
                   }
                 });
                 setAvailableModels([]);
@@ -510,7 +553,37 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="setting-group">
-          <label className="setting-label">🔍 Search API Keys (optional)</label>
+          <label className="setting-label">� LLM API Keys (optional)</label>
+          <small className="setting-hint" style={{ marginBottom: 8 }}>
+            Save your API keys here. They will auto-fill when you select the provider above.
+          </small>
+          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 4 }}>Anthropic API Key</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={localSettings.anthropicApiKey || ''}
+            placeholder="sk-ant-..."
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, anthropicApiKey: e.target.value })
+            }
+          />
+          <small className="setting-hint">For Claude models. Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer">console.anthropic.com</a></small>
+
+          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 8 }}>OpenAI API Key</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={localSettings.openaiApiKey || ''}
+            placeholder="sk-..."
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, openaiApiKey: e.target.value })
+            }
+          />
+          <small className="setting-hint">For GPT models. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noreferrer">platform.openai.com</a></small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">�🔍 Search API Keys (optional)</label>
           <small className="setting-hint" style={{ marginBottom: 8 }}>
             Add API keys for higher-quality web search results. Falls back to DuckDuckGo scraping if no keys are set.
           </small>

@@ -516,11 +516,19 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 
     // Only if decision.type === 'llm' do we call the upstream orchestrator/webhook.
     if (decision.type === 'llm') {
-      const response = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, request, {
-        timeout: DEFAULT_TIMEOUT,
-        headers: { 'Content-Type': 'application/json' }
-      });
-      return { success: true, data: response.data };
+      const targetUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
+      try {
+        try { pushRouter(`POSTing to n8n webhook = ${targetUrl}`); } catch (e) {}
+        const response = await axios.post(targetUrl, request, {
+          timeout: DEFAULT_TIMEOUT,
+          headers: { 'Content-Type': 'application/json' }
+        });
+        try { pushRouter(`n8n webhook POST succeeded, status=${response?.status}`); } catch (e) {}
+        return { success: true, data: response.data };
+      } catch (err: any) {
+        try { pushRouter(`n8n webhook POST failed: ${String(err?.message || err)}`); } catch (e) {}
+        throw err;
+      }
     }
 
     return { success: false, error: true, message: 'Unhandled routing decision' };
@@ -583,6 +591,12 @@ export async function streamFromLLM(
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
   
+  // Build system prompt with user's chat guidelines if set
+  const userGuidelines = (settings as any).chatGuidelines?.trim();
+  const systemPromptWithGuidelines = userGuidelines 
+    ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${userGuidelines}`
+    : SADIE_SYSTEM_PROMPT;
+
   // Check if custom LLM is enabled and configured
   if ((settings as any).useCustomLLM && (settings as any).customLLM) {
     const validation = validateCustomLLMConfig((settings as any).customLLM);
@@ -643,7 +657,7 @@ export async function streamFromLLM(
             '', // empty — context is in the history
             updatedHistory,
             customConfig,
-            SADIE_SYSTEM_PROMPT,
+            systemPromptWithGuidelines,
             onChunk,
             onEnd,
             onError,
@@ -669,7 +683,7 @@ export async function streamFromLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
         customConfig,
-        SADIE_SYSTEM_PROMPT,
+        systemPromptWithGuidelines,
         onChunk,
         wrappedOnEnd,
         onError,
@@ -767,7 +781,12 @@ export async function streamFromOllamaWithTools(
     messages.push({ role: 'system', content: convPrompt });
   }
   // Always include the global SADIE prompt after the conversation prompt
-  messages.push({ role: 'system', content: SADIE_SYSTEM_PROMPT });
+  // Append user's chat guidelines if set
+  const chatGuidelines = settings.chatGuidelines?.trim();
+  const systemPromptWithGuidelines = chatGuidelines 
+    ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${chatGuidelines}`
+    : SADIE_SYSTEM_PROMPT;
+  messages.push({ role: 'system', content: systemPromptWithGuidelines });
 
   // Add conversation history (last N messages for context)
   for (const msg of history) {
@@ -1148,6 +1167,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     
     // Streaming responses via HTTP chunked response (POST -> stream)
     ipcMain.on('sadie:stream-message', async (event: IpcMainEvent, request: SadieRequestWithImages & { streamId?: string }) => {
+      console.log('[DIAG] Received sadie:stream-message', { request, env: { SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, isE2E, NODE_ENV: process.env.NODE_ENV } });
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received sadie:stream-message', { request });
       try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) {}
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
@@ -1182,7 +1202,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       // Should we use direct Ollama mode? Honor the direct-ollama env only in E2E/test runs.
       // This lets Playwright packaged runs enable test-only behavior while keeping
       // release builds protected via `isReleaseBuild` in the env helper.
-      const useDirectOllama = isE2E && (process.env.SADIE_DIRECT_OLLAMA === 'true' || process.env.SADIE_DIRECT_OLLAMA === '1');
+      const useDirectOllama = isE2E;
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[DIAG] useDirectOllama calculation:', { isE2E, SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, useDirectOllama });
+        try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.SADIE_DIRECT_OLLAMA}`); } catch (e) {}
+      }
 
 
         try {
@@ -1669,6 +1693,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // ─── END SMART ROUTING ───
         
         if (useDirectOllama) {
+          if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct Ollama path');
+          try { pushRouter('Taking direct Ollama path'); } catch (e) {}
           // Direct Ollama streaming - no n8n required
           const handler = await streamFromOllama(
             enhancedMessage,
@@ -1677,6 +1703,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             (chunk) => {
               if (!activeStreams.has(streamId)) return;
               assistantResponse += chunk;
+              try { pushRouter(`OLLAMA emitted chunk streamId=${streamId} len=${String(chunk?.length ?? 0)}`); } catch (e) {}
               event.sender.send('sadie:stream-chunk', { chunk, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (ollama)', { streamId, chunkLen: chunk?.length ?? 0, snippet: String(chunk).substring(0, 120) });
@@ -1719,6 +1746,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // Only forward chunks while the stream is still active
               if (!activeStreams.has(streamId)) return;
               // forward raw chunk to renderer
+              try { pushRouter(`PROXY emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
               event.sender.send('sadie:stream-chunk', { chunk: chunk.toString?.() || String(chunk), streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
@@ -2250,10 +2278,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               request.images,
               convId,
               (chunk) => {
-                if (!activeStreams.has(streamId)) return;
-                try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
-                if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
-              },
+                  if (!activeStreams.has(streamId)) return;
+                  try { pushRouter(`LLM emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
+                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                  if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
+                },
               (toolName, args) => {
                 // notify renderer of tool call that will be executed
                 try { event.sender.send('sadie:tool-call', { toolName, args, streamId }); } catch (e) {}
@@ -2304,9 +2333,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
             // Attempt a non-streaming fallback to Ollama to retrieve a final message
             try {
+              // Patch: prepend conversation system prompt if provided by renderer
+              let systemPrompt = SADIE_SYSTEM_PROMPT;
+              if (reqAny.conversationPrompt && typeof reqAny.conversationPrompt === 'string') {
+                systemPrompt = reqAny.conversationPrompt;
+              }
               const fallbackBody = {
                 model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
-                messages: [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
+                messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: reqAny.message } ],
                 stream: false
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
