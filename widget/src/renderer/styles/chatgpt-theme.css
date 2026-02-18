@@ -434,6 +434,27 @@ body {
   color: #ffffff;
 }
 
+/* File links - special styling for clickable file paths */
+.file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(96, 165, 250, 0.15);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.file-link:hover {
+  background: rgba(96, 165, 250, 0.25);
+}
+.message-wrapper.user .file-link {
+  background: rgba(255, 255, 255, 0.15);
+}
+.message-wrapper.user .file-link:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 .message-wrapper.user .message-bubble {
   background: linear-gradient(120deg, color-mix(in oklch, var(--accent-primary) 85%, white 15%), var(--accent-dark));
   color: var(--text-dark);

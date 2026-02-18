@@ -38,6 +38,11 @@ export interface Settings {
   // Web search API keys
   tavilyApiKey?: string;
   serperApiKey?: string;
+  // LLM provider API keys
+  anthropicApiKey?: string;
+  openaiApiKey?: string;
+  // Custom chat guidelines appended to system prompt
+  chatGuidelines?: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {
