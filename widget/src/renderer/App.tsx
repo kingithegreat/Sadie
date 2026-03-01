@@ -267,10 +267,26 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    */
   const updateConversationSystemPrompt = async (prompt: string) => {
     setConversationSystemPrompt(prompt);
-    if (!conversationId) return;
+    let convId = conversationId;
+    if (!convId) {
+      // If no active conversation, create one to persist the system prompt
+      try {
+        const result = await window.electron.createConversation?.();
+        if (result?.success && result.data) {
+          convId = result.data.id;
+          setConversationId(convId);
+          setConversationSystemPrompt(prompt); // Ensure local state has the prompt
+          // Persist active conversation selection
+          try { await window.electron.setActiveConversation?.(convId); } catch (e) {}
+        }
+      } catch (err) {
+        console.error('Failed to create conversation for system prompt:', err);
+        return;
+      }
+    }
     try {
-      const conv = await window.electron.getConversation?.(conversationId);
-      const stored = conv?.data || { id: conversationId, title: 'Conversation', messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const conv = await window.electron.getConversation?.(convId);
+      const stored = conv?.data || { id: convId, title: 'Conversation', messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       stored.systemPrompt = prompt;
       await window.electron.saveConversation?.(stored);
     } catch (err) {

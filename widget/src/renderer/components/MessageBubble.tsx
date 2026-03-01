@@ -111,12 +111,32 @@ function CodeBlock({ language, children }: { language: string; children: string 
 }
 
 /**
+ * File link component that opens files via Electron shell
+ */
+function FileLink({ filePath, children, showFolder }: { filePath: string; children: React.ReactNode; showFolder?: boolean }) {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    if (showFolder) {
+      window.electron?.showInFolder?.(filePath);
+    } else {
+      window.electron?.openFile?.(filePath);
+    }
+  }, [filePath, showFolder]);
+
+  return (
+    <a href="#" onClick={handleClick} className="message-link file-link" title={showFolder ? 'Show in folder' : 'Open file'}>
+      {children}
+    </a>
+  );
+}
+
+/**
  * Parse inline markdown (bold, italic, inline code, links) into React nodes.
  */
 function parseInline(text: string, keyBase: number = 0): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  // Match: **bold**, *italic*, `code`, [text](url), bare URLs
-  const inlineRe = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`([^`]+?)`)|(\[([^\]]+)\]\(([^)]+)\))|(https?:\/\/[^\s<>"'`)\]]+)/g;
+  // Match: **bold**, *italic*, `code`, [text](url), bare URLs, file:// URLs
+  const inlineRe = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`([^`]+?)`)|(\[([^\]]+)\]\(([^)]+)\))|(https?:\/\/[^\s<>"'`)\]]+)|(file:\/\/([^\s<>"'`)\]]+))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let k = keyBase;
@@ -135,19 +155,30 @@ function parseInline(text: string, keyBase: number = 0): React.ReactNode[] {
       // `inline code`
       nodes.push(<code key={k++} className="inline-code">{m[6]}</code>);
     } else if (m[7]) {
-      // [text](url)
-      nodes.push(
-        <a key={k++} href={m[9]} target="_blank" rel="noopener noreferrer" className="message-link">
-          {m[8]}
-        </a>
-      );
+      // [text](url) - check if it's a file:// URL
+      const url = m[9];
+      const linkText = m[8];
+      if (url.startsWith('file://')) {
+        const filePath = decodeURIComponent(url.replace('file://', '').replace(/^\/+/, ''));
+        nodes.push(<FileLink key={k++} filePath={filePath}>{linkText}</FileLink>);
+      } else {
+        nodes.push(
+          <a key={k++} href={url} target="_blank" rel="noopener noreferrer" className="message-link">
+            {linkText}
+          </a>
+        );
+      }
     } else if (m[10]) {
-      // bare URL
+      // bare https:// URL
       nodes.push(
         <a key={k++} href={m[10]} target="_blank" rel="noopener noreferrer" className="message-link">
           {m[10]}
         </a>
       );
+    } else if (m[11]) {
+      // bare file:// URL
+      const filePath = decodeURIComponent(m[12].replace(/^\/+/, ''));
+      nodes.push(<FileLink key={k++} filePath={filePath}>📄 {filePath.split(/[/\\]/).pop()}</FileLink>);
     }
     last = inlineRe.lastIndex;
   }

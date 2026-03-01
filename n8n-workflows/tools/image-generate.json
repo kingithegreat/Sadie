@@ -1,66 +1,81 @@
 {
-  "name": "SADIE Image Generate (Hybrid)",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "image-generate",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "webhook-trigger",
-      "name": "Webhook Trigger",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [250, 300],
-      "webhookId": "sadie-image-generate"
-    },
-    {
-      "parameters": {
-        "jsCode": "const axios = require('axios');\nconst payload = $input.item.json || {};\nconst action = payload.action || 'generate';\nconst params = payload.payload || {};\nconst prompt = params.prompt || '';\nconst resolution = params.resolution || (params.width && params.height ? `${params.width}x${params.height}` : '512x512');\nconst [w,h] = resolution.split('x').map(n => Number(n));\nconst width = Number(w) || 512;\nconst height = Number(h) || 512;\nconst steps = params.steps || 20;\nconst backendPref = params.backend || 'hybrid';\n\n// Safety checks (quick on-chain checks; more thorough validation should run through safety-validator workflow)\nconst bannedTerms = ['porn','sex','pedo','child','rape','kill','bomb','terror'];\nif (bannedTerms.some(t => prompt.toLowerCase().includes(t))) {\n  return { json: { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt }, validation: { validated: false, policy: 'Phase 8 image rules' }, error: { message: 'Prompt rejected by safety filter', code: 'SAFETY_POLICY_REJECTED' } } };\n}\nif (width > 1536 || height > 1536) {\n  return { json: { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt, width, height }, validation: { validated: false, policy: 'Phase 8 image rules' }, error: { message: 'Resolution exceeds hard limit', code: 'SAFETY_POLICY_REJECTED' } } };\n}\n\n// Providers and env\nconst LOCAL_SD = process.env.LOCAL_SD_ENDPOINT || 'http://127.0.0.1:7860';\nconst COMFY = process.env.COMFY_ENDPOINT || 'http://127.0.0.1:8188';\nconst STABILITY_KEY = process.env.STABILITY_API_KEY || '';\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || '';\n\n// Helper: attempt AUTOMATIC1111\nasync function tryAutomatic1111() {\n  try {\n    const url = `${LOCAL_SD.replace(/\/$/,'')}/sdapi/v1/txt2img`;\n    const body = { prompt, steps, width, height, cfg_scale: params.cfg_scale || 7, sampler_name: params.sampler || 'Euler a' };\n    const r = await axios.post(url, body, { timeout: 120000 });\n    if (r && r.data && r.data.images && r.data.images.length > 0) {\n      const b64 = r.data.images[0];\n      // Optional seed info parsing\n      let seed = null;\n      try { const info = JSON.parse(r.data.info || '{}'); seed = info.seed; } catch(e){}\n      return { ok: true, base64: b64, seed, model: r.data.model || 'automatic1111' };\n    }\n  } catch (e) {\n    // ignore, return null\n  }\n  return null;\n}\n\n// Helper: attempt ComfyUI (best-effort)\nasync function tryComfy() {\n  try {\n    const url = `${COMFY.replace(/\/$/,'')}/api/generate`;\n    const body = { prompt, steps, width, height };\n    const r = await axios.post(url, body, { timeout: 120000 });\n    if (r && r.data && (r.data.image || (r.data.artifacts && r.data.artifacts.length))) {\n      const b64 = r.data.image || (r.data.artifacts && r.data.artifacts[0].base64);\n      return { ok: true, base64: b64, seed: (r.data.seed || null), model: r.data.model || 'comfyui' };\n    }\n  } catch (e) {}\n  return null;\n}\n\n// Helper: Stability AI\nasync function tryStability() {\n  if (!STABILITY_KEY) return null;\n  try {\n    const url = 'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image';\n    const r = await axios.post(url, { text_prompts: [{ text: prompt, weight: 1 }], cfg_scale: params.cfg_scale || 7, height, width, samples: 1, steps }, { headers: { Authorization: `Bearer ${STABILITY_KEY}`, 'Content-Type':'application/json' }, timeout: 120000 });\n    if (r && r.data && r.data.artifacts && r.data.artifacts.length > 0) {\n      return { ok: true, base64: r.data.artifacts[0].base64, seed: r.data.artifacts[0].seed, model: 'stability' };\n    }\n  } catch (e) {}\n  return null;\n}\n\n// Helper: OpenAI DALL·E\nasync function tryOpenAI() {\n  if (!OPENAI_KEY) return null;\n  try {\n    const url = 'https://api.openai.com/v1/images/generations';\n    const r = await axios.post(url, { prompt, n:1, size: `${width}x${height}` }, { headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' }, timeout: 120000 });\n    if (r && r.data && r.data.data && r.data.data.length > 0) {\n      // OpenAI returns data[0].b64_json\n      const b64 = r.data.data[0].b64_json;\n      return { ok: true, base64: b64, seed: null, model: 'openai' };\n    }\n  } catch (e) {}\n  return null;\n}\n\n// Routing logic\nlet result = null;\nlet source = null;\nif (backendPref === 'local') {\n  result = await tryAutomatic1111() || await tryComfy();\n  source = result ? (result.model === 'comfyui' ? 'comfyui' : 'local_sd') : null;\n} else if (backendPref === 'cloud') {\n  result = await tryStability() || await tryOpenAI();\n  source = result ? (result.model === 'openai' ? 'openai' : 'stability') : null;\n} else {\n  // hybrid: local first\n  result = await tryAutomatic1111();\n  if (result) source = 'local_sd';\n  if (!result) { result = await tryComfy(); if (result) source = 'comfyui'; }\n  if (!result) { result = await tryStability(); if (result) source = 'stability'; }\n  if (!result) { result = await tryOpenAI(); if (result) source = 'openai'; }\n}\n\nif (!result) {\n  return { json: { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt, width, height, steps }, validation: { validated: false, policy: 'Phase 8 image rules' }, error: { message: 'No available providers or generation failed', code: 'NO_PROVIDER_AVAILABLE' } } };\n}\n\n// Return unified JSON\nreturn { json: { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source, image: result.base64, metadata: { prompt, width, height, steps, seed: result.seed || '', model: result.model || '' }, validation: { validated: true, policy: 'Phase 8 image rules' }, error: { message: '', code: '' } } };"
-      },
-      "id": "router-and-generate",
-      "name": "Router & Generate",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [450, 300]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}"
-      },
-      "id": "respond",
-      "name": "Respond",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [650, 300]
-    }
-  ],
-  "connections": {
-    "webhook-trigger": {
-      "main": [
-        [
-          {
-            "node": "router-and-generate",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "router-and-generate": {
-      "main": [
-        [
-          {
-            "node": "respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
-  },
-  "settings": {},
-  "staticData": null
+    "name":  "SADIE Image Generate (Hybrid)",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "image-generate",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "webhook-trigger",
+                      "name":  "Webhook Trigger",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       250,
+                                       300
+                                   ],
+                      "webhookId":  "sadie-image-generate"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const axios = require(\u0027axios\u0027);\nconst payload = $input.item.json || {};\nconst action = payload.action || \u0027generate\u0027;\nconst params = payload.payload || {};\nconst prompt = params.prompt || \u0027\u0027;\nconst resolution = params.resolution || (params.width \u0026\u0026 params.height ? `${params.width}x${params.height}` : \u0027512x512\u0027);\nconst [w,h] = resolution.split(\u0027x\u0027).map(n =\u003e Number(n));\nconst width = Number(w) || 512;\nconst height = Number(h) || 512;\nconst steps = params.steps || 20;\nconst backendPref = params.backend || \u0027hybrid\u0027;\n\n// Safety checks (quick on-chain checks; more thorough validation should run through safety-validator workflow)\nconst bannedTerms = [\u0027porn\u0027,\u0027sex\u0027,\u0027pedo\u0027,\u0027child\u0027,\u0027rape\u0027,\u0027kill\u0027,\u0027bomb\u0027,\u0027terror\u0027];\nif (bannedTerms.some(t =\u003e prompt.toLowerCase().includes(t))) {\n  return { json: { status: \u0027failure\u0027, timestamp: new Date().toISOString(), operation: \u0027image_generate\u0027, source: null, image: null, metadata: { prompt }, validation: { validated: false, policy: \u0027Phase 8 image rules\u0027 }, error: { message: \u0027Prompt rejected by safety filter\u0027, code: \u0027SAFETY_POLICY_REJECTED\u0027 } } };\n}\nif (width \u003e 1536 || height \u003e 1536) {\n  return { json: { status: \u0027failure\u0027, timestamp: new Date().toISOString(), operation: \u0027image_generate\u0027, source: null, image: null, metadata: { prompt, width, height }, validation: { validated: false, policy: \u0027Phase 8 image rules\u0027 }, error: { message: \u0027Resolution exceeds hard limit\u0027, code: \u0027SAFETY_POLICY_REJECTED\u0027 } } };\n}\n\n// Providers and env\nconst LOCAL_SD = process.env.LOCAL_SD_ENDPOINT || \u0027http://127.0.0.1:7860\u0027;\nconst COMFY = process.env.COMFY_ENDPOINT || \u0027http://127.0.0.1:8188\u0027;\nconst STABILITY_KEY = process.env.STABILITY_API_KEY || \u0027\u0027;\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || \u0027\u0027;\n\n// Helper: attempt AUTOMATIC1111\nasync function tryAutomatic1111() {\n  try {\n    const url = `${LOCAL_SD.replace(//$/,\u0027\u0027)}/sdapi/v1/txt2img`;\n    const body = { prompt, steps, width, height, cfg_scale: params.cfg_scale || 7, sampler_name: params.sampler || \u0027Euler a\u0027 };\n    const r = await axios.post(url, body, { timeout: 120000 });\n    if (r \u0026\u0026 r.data \u0026\u0026 r.data.images \u0026\u0026 r.data.images.length \u003e 0) {\n      const b64 = r.data.images[0];\n      // Optional seed info parsing\n      let seed = null;\n      try { const info = JSON.parse(r.data.info || \u0027{}\u0027); seed = info.seed; } catch(e){}\n      return { ok: true, base64: b64, seed, model: r.data.model || \u0027automatic1111\u0027 };\n    }\n  } catch (e) {\n    // ignore, return null\n  }\n  return null;\n}\n\n// Helper: attempt ComfyUI (best-effort)\nasync function tryComfy() {\n  try {\n    const url = `${COMFY.replace(//$/,\u0027\u0027)}/api/generate`;\n    const body = { prompt, steps, width, height };\n    const r = await axios.post(url, body, { timeout: 120000 });\n    if (r \u0026\u0026 r.data \u0026\u0026 (r.data.image || (r.data.artifacts \u0026\u0026 r.data.artifacts.length))) {\n      const b64 = r.data.image || (r.data.artifacts \u0026\u0026 r.data.artifacts[0].base64);\n      return { ok: true, base64: b64, seed: (r.data.seed || null), model: r.data.model || \u0027comfyui\u0027 };\n    }\n  } catch (e) {}\n  return null;\n}\n\n// Helper: Stability AI\nasync function tryStability() {\n  if (!STABILITY_KEY) return null;\n  try {\n    const url = \u0027https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image\u0027;\n    const r = await axios.post(url, { text_prompts: [{ text: prompt, weight: 1 }], cfg_scale: params.cfg_scale || 7, height, width, samples: 1, steps }, { headers: { Authorization: `Bearer ${STABILITY_KEY}`, \u0027Content-Type\u0027:\u0027application/json\u0027 }, timeout: 120000 });\n    if (r \u0026\u0026 r.data \u0026\u0026 r.data.artifacts \u0026\u0026 r.data.artifacts.length \u003e 0) {\n      return { ok: true, base64: r.data.artifacts[0].base64, seed: r.data.artifacts[0].seed, model: \u0027stability\u0027 };\n    }\n  } catch (e) {}\n  return null;\n}\n\n// Helper: OpenAI DALLÃ‚Â·E\nasync function tryOpenAI() {\n  if (!OPENAI_KEY) return null;\n  try {\n    const url = \u0027https://api.openai.com/v1/images/generations\u0027;\n    const r = await axios.post(url, { prompt, n:1, size: `${width}x${height}` }, { headers: { Authorization: `Bearer ${OPENAI_KEY}`, \u0027Content-Type\u0027: \u0027application/json\u0027 }, timeout: 120000 });\n    if (r \u0026\u0026 r.data \u0026\u0026 r.data.data \u0026\u0026 r.data.data.length \u003e 0) {\n      // OpenAI returns data[0].b64_json\n      const b64 = r.data.data[0].b64_json;\n      return { ok: true, base64: b64, seed: null, model: \u0027openai\u0027 };\n    }\n  } catch (e) {}\n  return null;\n}\n\n// Routing logic\nlet result = null;\nlet source = null;\nif (backendPref === \u0027local\u0027) {\n  result = await tryAutomatic1111() || await tryComfy();\n  source = result ? (result.model === \u0027comfyui\u0027 ? \u0027comfyui\u0027 : \u0027local_sd\u0027) : null;\n} else if (backendPref === \u0027cloud\u0027) {\n  result = await tryStability() || await tryOpenAI();\n  source = result ? (result.model === \u0027openai\u0027 ? \u0027openai\u0027 : \u0027stability\u0027) : null;\n} else {\n  // hybrid: local first\n  result = await tryAutomatic1111();\n  if (result) source = \u0027local_sd\u0027;\n  if (!result) { result = await tryComfy(); if (result) source = \u0027comfyui\u0027; }\n  if (!result) { result = await tryStability(); if (result) source = \u0027stability\u0027; }\n  if (!result) { result = await tryOpenAI(); if (result) source = \u0027openai\u0027; }\n}\n\nif (!result) {\n  return { json: { status: \u0027failure\u0027, timestamp: new Date().toISOString(), operation: \u0027image_generate\u0027, source: null, image: null, metadata: { prompt, width, height, steps }, validation: { validated: false, policy: \u0027Phase 8 image rules\u0027 }, error: { message: \u0027No available providers or generation failed\u0027, code: \u0027NO_PROVIDER_AVAILABLE\u0027 } } };\n}\n\n// Return unified JSON\nreturn { json: { status: \u0027success\u0027, timestamp: new Date().toISOString(), operation: \u0027image_generate\u0027, source, image: result.base64, metadata: { prompt, width, height, steps, seed: result.seed || \u0027\u0027, model: result.model || \u0027\u0027 }, validation: { validated: true, policy: \u0027Phase 8 image rules\u0027 }, error: { message: \u0027\u0027, code: \u0027\u0027 } } };"
+                                     },
+                      "id":  "router-and-generate",
+                      "name":  "Router \u0026 Generate",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       450,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "={{ $json }}"
+                                     },
+                      "id":  "respond",
+                      "name":  "Respond",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       650,
+                                       300
+                                   ]
+                  }
+              ],
+    "connections":  {
+                        "webhook-trigger":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "router-and-generate",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "router-and-generate":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "respond",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                }
+                    },
+    "settings":  {
+
+                 },
+    "staticData":  null,
+    "active":  true,
+    "versionId":  "5a6535ed-15f7-4153-aa4d-ba38252b0744"
 }

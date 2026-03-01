@@ -1,0 +1,156 @@
+{
+    "name":  "SADIE Browser Automation Tool (Phase 6)",
+    "active":  true,
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "start",
+                      "name":  "Start",
+                      "type":  "n8n-nodes-base.start",
+                      "typeVersion":  1,
+                      "position":  [
+                                       240,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst action = (body.action || \u0027open_url\u0027).toLowerCase();\nconst allowed = [\u0027open_url\u0027,\u0027screenshot\u0027,\u0027close_browser\u0027];\nif (!allowed.includes(action)) {\n  throw new Error(\u0027Invalid action. Must be one of: \u0027 + allowed.join(\u0027, \u0027));\n}\nconst url = body.url || \u0027\u0027;\nconst confirmed = body.confirmed === true || body.confirmed === \u0027true\u0027;\nif (action === \u0027open_url\u0027 \u0026\u0026 !url) throw new Error(\u0027url is required for open_url action\u0027);\nconst urlPattern = /^https?:\\/\\//i;\nif (url \u0026\u0026 !urlPattern.test(url)) throw new Error(\u0027URL must begin with http:// or https://\u0027);\nreturn [{ json: { action, url, confirmed } }];"
+                                     },
+                      "id":  "parse-params",
+                      "name":  "Parse \u0026 Validate",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       460,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "command":  "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"browser\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\sadie\\config\\safety-rules.json\""
+                                     },
+                      "id":  "safety-validation",
+                      "name":  "Safety Validation",
+                      "type":  "n8n-nodes-base.executeCommand",
+                      "typeVersion":  1,
+                      "position":  [
+                                       680,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const raw = $input.first()?.json?.stdout ?? \u0027\u0027;\nlet validation;\ntry { validation = JSON.parse(raw); } catch { validation = { allowed: true }; }\nif (validation.allowed === false) {\n  throw new Error(\u0027Safety validation blocked browser operation: \u0027 + (validation.reason || \u0027policy\u0027));\n}\nconst params = $(\u0027Parse \u0026 Validate\u0027).first().json;\nreturn [{ json: params }];"
+                                     },
+                      "id":  "check-validation",
+                      "name":  "Check Validation",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       900,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "command":  "=powershell.exe -NoProfile -NonInteractive -Command \"$action=\u0027{{ $json.action }}\u0027; $url=\u0027{{ $json.url }}\u0027; if ($action -eq \u0027open_url\u0027) { Start-Process $url; $r=@{success=$true;action=\u0027open_url\u0027;url=$url} } elseif ($action -eq \u0027close_browser\u0027) { Get-Process -Name \u0027msedge\u0027,\u0027chrome\u0027,\u0027firefox\u0027 -ErrorAction SilentlyContinue | Stop-Process -Force; $r=@{success=$true;action=\u0027close_browser\u0027} } else { $r=@{success=$false;error=\\\"Action $action not supported via shell\\\"} }; $r | ConvertTo-Json -Compress\""
+                                     },
+                      "id":  "execute-browser",
+                      "name":  "Execute Browser Action",
+                      "type":  "n8n-nodes-base.executeCommand",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1120,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const raw = $input.first()?.json?.stdout ?? $input.first()?.json?.stderr ?? \u0027\u0027;\nlet result;\ntry { result = JSON.parse(raw); } catch { result = { success: false, error: raw || \u0027No output from browser action\u0027 }; }\nreturn [{ json: result }];"
+                                     },
+                      "id":  "format-result",
+                      "name":  "Format Result",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1340,
+                                       300
+                                   ]
+                  }
+              ],
+    "connections":  {
+                        "Start":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Parse \u0026 Validate",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Parse \u0026 Validate":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Safety Validation",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Safety Validation":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Check Validation",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Check Validation":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Execute Browser Action",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Execute Browser Action":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Format Result",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "tags":  [
+                 {
+                     "name":  "sadie"
+                 },
+                 {
+                     "name":  "tools"
+                 },
+                 {
+                     "name":  "browser"
+                 }
+             ],
+    "versionId":  "87dbce2d-3d82-4edf-b7cf-9e2a028d1181"
+}

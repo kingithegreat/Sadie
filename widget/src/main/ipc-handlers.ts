@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app } from 'electron';
+import { ipcMain, BrowserWindow, app, shell } from 'electron';
 import { getMainWindow } from './window-manager';
 import axios from 'axios';
 import * as path from 'path';
@@ -453,6 +453,48 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { success };
     } catch (err: any) {
       console.error('Error updating message:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Open a file in the system default application
+   */
+  ipcMain.handle('sadie:open-file', async (_event, filePath: string) => {
+    try {
+      if (!filePath) {
+        return { success: false, error: 'No file path provided' };
+      }
+      // Normalize path and check it exists
+      const normalizedPath = path.normalize(filePath);
+      if (!fs.existsSync(normalizedPath)) {
+        return { success: false, error: 'File not found' };
+      }
+      await shell.openPath(normalizedPath);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error opening file:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Show a file in the system file explorer (and select it)
+   */
+  ipcMain.handle('sadie:show-in-folder', async (_event, filePath: string) => {
+    try {
+      if (!filePath) {
+        return { success: false, error: 'No file path provided' };
+      }
+      // Normalize path and check it exists
+      const normalizedPath = path.normalize(filePath);
+      if (!fs.existsSync(normalizedPath)) {
+        return { success: false, error: 'File not found' };
+      }
+      shell.showItemInFolder(normalizedPath);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error showing in folder:', err.message);
       return { success: false, error: err.message };
     }
   });

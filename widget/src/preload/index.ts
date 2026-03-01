@@ -53,6 +53,19 @@ const ALLOWED_CHANNELS = {
   GET_CONFIG_PATH: 'sadie:get-config-path'
 };
 
+// Listen for router logs forwarded from main so tests and Playwright traces
+// can capture them in renderer console output. This is intentionally lightweight
+// and will not affect production behaviour.
+try {
+  ipcRenderer.on('sadie:router-log', (_ev, line) => {
+    try {
+      console.log('[ROUTER-LOG]', line);
+      (global as any).__SADIE_RENDERER_LOG_BUFFER = (global as any).__SADIE_RENDERER_LOG_BUFFER || [];
+      (global as any).__SADIE_RENDERER_LOG_BUFFER.push(`[ROUTER] ${String(line)}`);
+    } catch (e) {}
+  });
+} catch (e) {}
+
 // Create the API object
 const electronAPI: ElectronAPI = {
   /**
@@ -353,6 +366,16 @@ const electronAPI: ElectronAPI = {
   // Clipboard helper — uses Electron native clipboard (works with contextIsolation)
   writeClipboard: (text: string) => {
     clipboard.writeText(text);
+  },
+
+  // Open a file or folder in the system default application
+  openFile: async (filePath: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:open-file', filePath);
+  },
+
+  // Open a folder in the system file explorer and select the file
+  showInFolder: async (filePath: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:show-in-folder', filePath);
   }
 };
 

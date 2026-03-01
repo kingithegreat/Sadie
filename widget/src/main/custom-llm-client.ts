@@ -45,11 +45,21 @@ const MODEL_METADATA: Record<string, Partial<ModelMetadata>> = {
 };
 
 const ANTHROPIC_MODELS: CustomModelInfo[] = [
-  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most capable Claude model', provider: 'anthropic' },
-  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast Claude 3.5 tier', provider: 'anthropic' },
-  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Creative + high cognitive load', provider: 'anthropic' },
-  { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', description: 'Balanced latency + IQ', provider: 'anthropic' },
-  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fast, cost-efficient', provider: 'anthropic' },
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Latest, most capable model', provider: 'anthropic' },
+  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'High intelligence, fast', provider: 'anthropic' },
+  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast & affordable', provider: 'anthropic' },
+  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Complex tasks, creative', provider: 'anthropic' },
+  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fastest, cost-efficient', provider: 'anthropic' },
+];
+
+const OPENAI_MODELS: CustomModelInfo[] = [
+  { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', provider: 'openai' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable', provider: 'openai' },
+  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: '128K context, vision', provider: 'openai' },
+  { id: 'gpt-4', name: 'GPT-4', description: 'High intelligence', provider: 'openai' },
+  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast, cost-effective', provider: 'openai' },
+  { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning', provider: 'openai' },
+  { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning', provider: 'openai' },
 ];
 
 function trimTrailingSlash(url: string): string {
@@ -356,8 +366,13 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
 
   const provider = config.provider || 'openai';
 
+  // Return curated model lists for known providers
   if (provider === 'anthropic') {
     return ANTHROPIC_MODELS;
+  }
+
+  if (provider === 'openai') {
+    return OPENAI_MODELS;
   }
 
   const base = trimTrailingSlash(config.apiUrl);

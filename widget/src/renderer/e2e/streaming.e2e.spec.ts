@@ -19,6 +19,7 @@ test('streams chunks to UI', async () => {
     N8N_URL: upstream.baseUrl,
     PROXY_RETRY_ENABLED: 'false',
     SADIE_E2E: '1',
+    SADIE_E2E_BYPASS_MOCK: '0',
     NODE_ENV: 'test',
   });
   await waitForAppReady(page);
@@ -26,6 +27,42 @@ test('streams chunks to UI', async () => {
 
   await page.getByLabel('Message SADIE').fill('hello');
   await page.getByRole('button', { name: /send/i }).click();
+
+  // Fetch main-process router logs for debugging (E2E-only)
+  try {
+    // eslint-disable-next-line no-console
+    console.log('[E2E-DEBUG] requesting main router logs');
+    // @ts-ignore - test helper exposed by preload/main
+    const routerLogs = await page.evaluate(async () => await (window as any).electron.invoke('sadie:__e2e_get_router_logs'));
+    // eslint-disable-next-line no-console
+    console.log('[E2E-ROUTER-LOGS]', JSON.stringify(Array.isArray(routerLogs) ? routerLogs.slice(-200) : routerLogs, null, 2));
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[E2E-DEBUG] failed to fetch router logs', String(e));
+  }
+
+  // wait a moment and fetch logs again to catch any delayed events
+  try {
+    await page.waitForTimeout(2000);
+    // @ts-ignore
+    const routerLogs2 = await page.evaluate(async () => await (window as any).electron.invoke('sadie:__e2e_get_router_logs'));
+    // eslint-disable-next-line no-console
+    console.log('[E2E-ROUTER-LOGS-2]', JSON.stringify(Array.isArray(routerLogs2) ? routerLogs2.slice(-200) : routerLogs2, null, 2));
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[E2E-DEBUG] failed to fetch router logs (2)', String(e));
+  }
+
+  // Also fetch main/renderer debug buffers for additional context
+  try {
+    // @ts-ignore
+    const debug = await page.evaluate(async () => await (window as any).electron.invoke('sadie:read-debug-logs'));
+    // eslint-disable-next-line no-console
+    console.log('[E2E-DEBUG-LOGS]', JSON.stringify(debug, null, 2));
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[E2E-DEBUG] failed to read debug logs', String(e));
+  }
 
   // Wait for the assistant message that begins streaming (i.e. contains chunk-1)
   const assistantWithChunk = page.locator('[data-role="assistant-message"]:has-text("chunk-1")').first();
@@ -65,6 +102,7 @@ test('cancel stops stream', async () => {
     OPENAI_ENDPOINT: upstream.openaiEndpoint || upstream.baseUrl,
     PROXY_RETRY_ENABLED: 'false',
     SADIE_E2E: '1',
+    SADIE_E2E_BYPASS_MOCK: '0',
     NODE_ENV: 'test',
   });
   await waitForAppReady(page);
@@ -131,6 +169,7 @@ test('handles upstream error', async () => {
     OPENAI_ENDPOINT: `${base}/mock-sse`,
     PROXY_RETRY_ENABLED: 'false',
     SADIE_E2E: '0',
+    SADIE_E2E_BYPASS_MOCK: '0',
     SADIE_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
   });

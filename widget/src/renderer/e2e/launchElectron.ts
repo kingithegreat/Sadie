@@ -24,10 +24,13 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
 
   // Prefer a packaged `dist/main/index.js` entry if present; fall back to
   // the dev build output `out/main/index.js` which `electron-vite` produces.
+  // For E2E tests that need env vars like SADIE_DIRECT_OLLAMA, prefer dev build
+  // since packaged builds may not receive env vars correctly.
   const distEntry = path.join(__dirname, '../../../dist/main/index.js');
   const outEntry = path.join(__dirname, '../../../out/main/index.js');
-  const entry = fs.existsSync(distEntry) ? distEntry : outEntry;
-  console.log('[E2E-LAUNCH] Using entrypoint:', entry);
+  const needsDevBuild = mergedEnv.SADIE_DIRECT_OLLAMA === '1' || mergedEnv.SADIE_DIRECT_OLLAMA === 'true';
+  const entry = (needsDevBuild && fs.existsSync(outEntry)) ? outEntry : (fs.existsSync(distEntry) ? distEntry : outEntry);
+  console.log('[E2E-LAUNCH] Using entrypoint:', entry, needsDevBuild ? '(dev build for env vars)' : '(packaged build)');
   args.push(entry);
 
   const app = await electron.launch({

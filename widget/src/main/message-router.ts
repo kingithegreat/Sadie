@@ -16,11 +16,37 @@ import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
+import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
 
 const DEFAULT_TIMEOUT = 30000;
+
+/**
+ * Check user settings to decide whether automatic tool execution is enabled.
+ * Default is true for backwards compatibility; explicit false disables auto tools.
+ */
+function autoExecuteToolsEnabled(): boolean {
+  try {
+    const s: any = getSettings();
+    // Support multiple possible flag names for compatibility
+    if (s && (s.allowAutoTools === false || s.autoToolExecution === false || s.allowAutomaticToolExecution === false || s.autoExecuteTools === false)) return false;
+    return true;
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
+ * Format a file path as a clickable markdown link for the chat UI
+ * Uses file:// protocol which the renderer handles specially
+ */
+function formatFileLink(filePath: string, displayName?: string): string {
+  const encodedPath = encodeURIComponent(filePath).replace(/%2F/g, '/').replace(/%5C/g, '/').replace(/%3A/g, ':');
+  const name = displayName || require('path').basename(filePath);
+  return `[📄 ${name}](file://${encodedPath})`;
+}
 const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
 
 // Track if we've already warned about custom LLM config (to avoid spamming)
@@ -331,6 +357,11 @@ export async function analyzeAndRouteMessage(message: string): Promise<RoutingDe
   try {
     const pre = await preProcessIntent(message);
     if (pre && Array.isArray(pre.calls) && pre.calls.length > 0) {
+      // Respect user setting to disable automatic tool execution
+      if (!autoExecuteToolsEnabled()) {
+        console.log('[ROUTER] Automatic tool execution disabled by settings; routing to LLM');
+        return { type: 'llm' };
+      }
       return { type: 'tools', calls: pre.calls as ToolCall[] };
     }
     return { type: 'llm' };
@@ -431,6 +462,12 @@ function summarizeToolResults(results: any[]): string {
         }
         parts.push(listing);
       }
+      // File write results (write_file tool)
+      else if (r.result.path && r.result.message && (r.result.message.includes('written') || r.result.message.includes('appended'))) {
+        const fileLink = formatFileLink(r.result.path);
+        const sizeKb = r.result.size ? ` (${(r.result.size / 1024).toFixed(1)} KB)` : '';
+        parts.push(`✅ ${r.result.message}${sizeKb}\n\n${fileLink}`);
+      }
       // Try to stringify concise keys
       else if (r.result.summary) parts.push(r.result.summary);
       else if (r.result.content) parts.push(r.result.content);
@@ -516,11 +553,19 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 
     // Only if decision.type === 'llm' do we call the upstream orchestrator/webhook.
     if (decision.type === 'llm') {
-      const response = await axios.post(`${n8nUrl}${SADIE_WEBHOOK_PATH}`, request, {
-        timeout: DEFAULT_TIMEOUT,
-        headers: { 'Content-Type': 'application/json' }
-      });
-      return { success: true, data: response.data };
+      const targetUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
+      try {
+        try { pushRouter(`POSTing to n8n webhook = ${targetUrl}`); } catch (e) {}
+        const response = await axios.post(targetUrl, request, {
+          timeout: DEFAULT_TIMEOUT,
+          headers: { 'Content-Type': 'application/json' }
+        });
+        try { pushRouter(`n8n webhook POST succeeded, status=${response?.status}`); } catch (e) {}
+        return { success: true, data: response.data };
+      } catch (err: any) {
+        try { pushRouter(`n8n webhook POST failed: ${String(err?.message || err)}`); } catch (e) {}
+        throw err;
+      }
     }
 
     return { success: false, error: true, message: 'Unhandled routing decision' };
@@ -583,6 +628,12 @@ export async function streamFromLLM(
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
   
+  // Build system prompt with user's chat guidelines if set
+  const userGuidelines = (settings as any).chatGuidelines?.trim();
+  const systemPromptWithGuidelines = userGuidelines 
+    ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${userGuidelines}`
+    : SADIE_SYSTEM_PROMPT;
+
   // Check if custom LLM is enabled and configured
   if ((settings as any).useCustomLLM && (settings as any).customLLM) {
     const validation = validateCustomLLMConfig((settings as any).customLLM);
@@ -643,7 +694,7 @@ export async function streamFromLLM(
             '', // empty — context is in the history
             updatedHistory,
             customConfig,
-            SADIE_SYSTEM_PROMPT,
+            systemPromptWithGuidelines,
             onChunk,
             onEnd,
             onError,
@@ -669,7 +720,7 @@ export async function streamFromLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
         customConfig,
-        SADIE_SYSTEM_PROMPT,
+        systemPromptWithGuidelines,
         onChunk,
         wrappedOnEnd,
         onError,
@@ -767,7 +818,12 @@ export async function streamFromOllamaWithTools(
     messages.push({ role: 'system', content: convPrompt });
   }
   // Always include the global SADIE prompt after the conversation prompt
-  messages.push({ role: 'system', content: SADIE_SYSTEM_PROMPT });
+  // Append user's chat guidelines if set
+  const chatGuidelines = settings.chatGuidelines?.trim();
+  const systemPromptWithGuidelines = chatGuidelines 
+    ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${chatGuidelines}`
+    : SADIE_SYSTEM_PROMPT;
+  messages.push({ role: 'system', content: systemPromptWithGuidelines });
 
   // Add conversation history (last N messages for context)
   for (const msg of history) {
@@ -1148,6 +1204,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     
     // Streaming responses via HTTP chunked response (POST -> stream)
     ipcMain.on('sadie:stream-message', async (event: IpcMainEvent, request: SadieRequestWithImages & { streamId?: string }) => {
+      console.log('[DIAG] Received sadie:stream-message', { request, env: { SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, isE2E, NODE_ENV: process.env.NODE_ENV } });
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received sadie:stream-message', { request });
       try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) {}
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
@@ -1182,10 +1239,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       // Should we use direct Ollama mode? Honor the direct-ollama env only in E2E/test runs.
       // This lets Playwright packaged runs enable test-only behavior while keeping
       // release builds protected via `isReleaseBuild` in the env helper.
-      const useDirectOllama = isE2E && (process.env.SADIE_DIRECT_OLLAMA === 'true' || process.env.SADIE_DIRECT_OLLAMA === '1');
+      const useDirectOllama = isE2E;
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[DIAG] useDirectOllama calculation:', { isE2E, SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, useDirectOllama });
+        try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.SADIE_DIRECT_OLLAMA}`); } catch (e) {}
+      }
 
-
-        try {
+      try {
           const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${SADIE_WEBHOOK_PATH}/stream`;
           const streamUrl = N8N_STREAM_URL;
           if (process.env.NODE_ENV !== 'production') {
@@ -1333,20 +1393,23 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           console.log('[SADIE] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
 
           if (intentResult && intentResult.calls && intentResult.calls.length > 0) {
-            console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
-            
-            // Ensure stream is tracked
-            if (!activeStreams.has(streamId)) {
-              activeStreams.set(streamId, { destroy: () => {} });
-            }
+            if (!autoExecuteToolsEnabled()) {
+              console.log('[SADIE] Intent detected but automatic tool execution is disabled; proceeding with LLM path');
+            } else {
+              console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
+              
+              // Ensure stream is tracked
+              if (!activeStreams.has(streamId)) {
+                activeStreams.set(streamId, { destroy: () => {} });
+              }
 
-            let toolResults: any[] | null = null;
+              let toolResults: any[] | null = null;
 
             // COMPOUND INTENT: weather → write_file chain
             const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
             if (isCompound) {
               const { location, query } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound intent: get weather for', location, 'then write file');
+              console.log('[SADIE] Compound intent (enriched): get weather for', location, 'then write file');
               
               // Step 1: Get weather
               const weatherResults = await executeToolBatch(
@@ -1355,35 +1418,20 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
               );
               
-              // Extract weather content
-              let weatherContent = '';
-              const wr = weatherResults?.[0]?.result;
-              if (wr) {
-                if (wr.location) weatherContent += `Weather for ${wr.location}\n`;
-                if (wr.temperature) {
-                  weatherContent += `Temperature: ${wr.temperature.celsius || ''}`;
-                  if (wr.temperature.feelsLike) weatherContent += ` (feels like ${wr.temperature.feelsLike})`;
-                  weatherContent += '\n';
-                }
-                if (wr.condition) weatherContent += `Condition: ${wr.condition}\n`;
-                if (wr.wind) weatherContent += `Wind: ${wr.wind.speed || ''} ${wr.wind.direction || ''}\n`;
-                if (wr.humidity) weatherContent += `Humidity: ${wr.humidity}\n`;
-                if (wr.visibility) weatherContent += `Visibility: ${wr.visibility}\n`;
-                if (wr.uvIndex) weatherContent += `UV Index: ${wr.uvIndex}\n`;
-                if (wr.precipitation) weatherContent += `Precipitation: ${wr.precipitation}\n`;
-                if (!weatherContent.trim()) {
-                  weatherContent = typeof wr === 'string' ? wr : JSON.stringify(wr, null, 2);
-                }
-              } else {
-                const errMsg = weatherResults?.[0]?.error || 'Unknown error';
-                weatherContent = `Could not retrieve weather data for ${location}.\nError: ${errMsg}`;
-              }
-              
               const isSurf = /\b(surf|swell|waves?|ocean|marine|beach)\b/i.test(query || '');
+              const wr = weatherResults?.[0]?.result;
+              
+              // Use enrichment for detailed forecast with web context
+              const enriched = await enrichWeather(wr, location, {
+                maxWebResults: 3,
+                fetchContent: true,
+                customQuery: isSurf ? `${location} surf report wave height swell` : undefined
+              });
+              
               const fileLabel = isSurf ? 'surf_conditions' : 'weather';
               const fileName = `${fileLabel}_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
               const now = new Date().toLocaleString();
-              const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${weatherContent}`;
+              const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🌤️|🏄|📊/g, '')}`;
               
               // Step 2: Write file to Desktop
               const HOME = process.env.HOME || process.env.USERPROFILE || '';
@@ -1400,15 +1448,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               
               if (writeSuccess) {
-                toolResults = [{ result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n✅ Saved to **${fileName}** on your Desktop.` } }];
+                const fileLink = formatFileLink(desktopPath, fileName);
+                toolResults = [{ result: { summary: `${enriched.summary}\n\n✅ Saved to ${fileLink}` } }];
               } else {
-                toolResults = [{ result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n❌ Could not save file: ${writeError}` } }];
+                toolResults = [{ result: { summary: `${enriched.summary}\n\n❌ Could not save file: ${writeError}` } }];
               }
             }
-            // COMPOUND INTENT: NBA → write_file chain
+            // COMPOUND INTENT: NBA → write_file chain (with web enrichment)
             else if (intentResult.calls[0]?.name === '__compound_nba_file') {
               const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound NBA+file intent:', { teamQuery, dateRange, perPage });
+              console.log('[SADIE] Compound NBA+file intent (enriched):', { teamQuery, dateRange, perPage });
 
               const nbaResults = await executeToolBatch(
                 [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
@@ -1416,24 +1465,15 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
               );
 
-              // Format NBA data
-              let nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n`;
-              const events = nbaResults?.[0]?.result?.events;
-              if (events && Array.isArray(events) && events.length > 0) {
-                for (const game of events) {
-                  const teams = game.competitions?.[0]?.competitors?.map((c: any) => {
-                    const score = c.score ? ` (${c.score})` : '';
-                    return `${c.team.displayName}${score}`;
-                  }).join(' vs ') || 'Unknown matchup';
-                  const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
-                  const date = game.date ? new Date(game.date).toLocaleDateString() : '';
-                  nbaContent += `${date ? date + ' — ' : ''}${teams} — ${status}\n`;
-                }
-                nbaContent += `\nTotal: ${events.length} games\n`;
-              } else {
-                nbaContent += 'No games found for the specified criteria.\n';
-                if (nbaResults?.[0]?.error) nbaContent += `Error: ${nbaResults[0].error}\n`;
-              }
+              // Use enrichment for detailed results with web context
+              const events = nbaResults?.[0]?.result?.events || [];
+              const enriched = await enrichNbaGames(events, teamQuery || '', {
+                maxWebResults: 3,
+                fetchContent: true
+              });
+
+              // Build file content from enriched summary
+              const nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
               // Write to file
               const HOME = process.env.HOME || process.env.USERPROFILE || '';
@@ -1451,41 +1491,25 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
               const gameCount = events?.length || 0;
               if (nbaWriteOk) {
-                toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n✅ Saved ${gameCount} games to **${nbaFileName}** on your Desktop.` } }];
+                const fileLink = formatFileLink(nbaDesktopPath, nbaFileName);
+                toolResults = [{ result: { summary: `${enriched.summary}\n\n✅ Saved ${gameCount} games to ${fileLink}` } }];
               } else {
-                toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n❌ Could not save file.` } }];
+                toolResults = [{ result: { summary: `${enriched.summary}\n\n❌ Could not save file.` } }];
               }
             }
             // COMPOUND INTENT: web_search → write_file chain
             else if (intentResult.calls[0]?.name === '__compound_search_file') {
               const { topic } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound search+file intent:', topic);
+              console.log('[SADIE] Compound search+file intent (enriched):', topic);
 
-              const searchResults = await executeToolBatch(
-                [{ name: 'web_search', arguments: { query: topic, maxResults: 10, fetchTopResult: true } }] as ToolCall[],
-                { executionId: `compound-search-${Date.now()}`, requestConfirmation,
-                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
-              );
+              // Use enrichment for comprehensive results
+              const enriched = await enrichGenericQuery(topic, null, {
+                maxWebResults: 5,
+                fetchContent: true
+              });
 
-              // Format search results
-              let searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n`;
-              const sr = searchResults?.[0]?.result;
-              if (sr?.results && Array.isArray(sr.results) && sr.results.length > 0) {
-                for (let i = 0; i < sr.results.length; i++) {
-                  const item = sr.results[i];
-                  searchContent += `${i + 1}. ${item.title || 'Untitled'}\n`;
-                  if (item.snippet) searchContent += `   ${item.snippet}\n`;
-                  if (item.url) searchContent += `   ${item.url}\n`;
-                  searchContent += '\n';
-                }
-              }
-              if (sr?.topResultContent?.content || sr?.topResultContent?.contentText) {
-                const topContent = sr.topResultContent.content || sr.topResultContent.contentText;
-                searchContent += `\n--- Top Result Content ---\n${topContent.slice(0, 2000)}\n`;
-              }
-              if (!sr?.results?.length) {
-                searchContent += 'No search results found.\n';
-              }
+              // Build file content
+              const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '')}`;
 
               // Write to file
               const HOME = process.env.HOME || process.env.USERPROFILE || '';
@@ -1501,71 +1525,39 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
 
               if (searchWriteOk) {
-                toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n✅ Saved to **${safeFileName}** on your Desktop.` } }];
+                const fileLink = formatFileLink(searchFilePath, safeFileName);
+                toolResults = [{ result: { summary: `${enriched.summary}\n\n✅ Saved to ${fileLink}` } }];
               } else {
-                toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n❌ Could not save file.` } }];
+                toolResults = [{ result: { summary: `${enriched.summary}\n\n❌ Could not save file.` } }];
               }
             }
-            // STANDALONE SURF INTENT: web_search for surf conditions
+            // STANDALONE SURF INTENT: enriched surf conditions
             else if (intentResult.calls[0]?.name === '__surf_conditions') {
               const { location } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Surf conditions intent:', location);
+              console.log('[SADIE] Surf conditions intent (enriched):', location);
 
-              const surfResults = await executeToolBatch(
-                [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
-                { executionId: `surf-${Date.now()}`, requestConfirmation,
-                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
-              );
+              // Use enrichment for comprehensive surf data
+              const enriched = await enrichWeather(null, location, {
+                maxWebResults: 4,
+                fetchContent: true,
+                customQuery: `${location} surf report wave height swell period tide conditions today`
+              });
 
-              let surfText = `🏄 **Surf Conditions — ${location}**\n\n`;
-              const sr = surfResults?.[0]?.result;
-              // Try to extract meaningful content from top result
-              const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
-              if (topContent) {
-                // Trim to a reasonable length and clean up
-                const cleaned = topContent.replace(/\s{3,}/g, '\n').slice(0, 1500);
-                surfText += cleaned + '\n\n';
-                if (sr?.topResultContent?.url) surfText += `Source: ${sr.topResultContent.url}\n`;
-              } else if (sr?.results && sr.results.length > 0) {
-                // Fallback: list search results
-                for (const item of sr.results.slice(0, 5)) {
-                  surfText += `• **${item.title || 'Untitled'}**\n`;
-                  if (item.snippet) surfText += `  ${item.snippet}\n`;
-                  if (item.url) surfText += `  ${item.url}\n`;
-                  surfText += '\n';
-                }
-              } else {
-                surfText += `Could not find surf conditions for ${location}. Try specifying a surf spot name.\n`;
-              }
-              toolResults = [{ result: { summary: surfText } }];
+              toolResults = [{ result: { summary: enriched.summary } }];
             }
-            // COMPOUND SURF + FILE INTENT
+            // COMPOUND SURF + FILE INTENT (enriched)
             else if (intentResult.calls[0]?.name === '__compound_surf_file') {
               const { location } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound surf+file intent:', location);
+              console.log('[SADIE] Compound surf+file intent (enriched):', location);
 
-              const surfResults = await executeToolBatch(
-                [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
-                { executionId: `compound-surf-${Date.now()}`, requestConfirmation,
-                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
-              );
+              // Use enrichment for comprehensive surf data
+              const enriched = await enrichWeather(null, location, {
+                maxWebResults: 4,
+                fetchContent: true,
+                customQuery: `${location} surf report wave height swell period tide conditions today`
+              });
 
-              let surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n`;
-              const sr = surfResults?.[0]?.result;
-              const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
-              if (topContent) {
-                surfContent += topContent.replace(/\s{3,}/g, '\n').slice(0, 3000) + '\n';
-                if (sr?.topResultContent?.url) surfContent += `\nSource: ${sr.topResultContent.url}\n`;
-              } else if (sr?.results && sr.results.length > 0) {
-                for (const item of sr.results.slice(0, 5)) {
-                  surfContent += `${item.title || 'Untitled'}\n`;
-                  if (item.snippet) surfContent += `  ${item.snippet}\n`;
-                  if (item.url) surfContent += `  ${item.url}\n`;
-                  surfContent += '\n';
-                }
-              } else {
-                surfContent += 'No surf conditions found.\n';
-              }
+              const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🏄|📊/g, '')}`;
 
               const HOME = process.env.HOME || process.env.USERPROFILE || '';
               const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
@@ -1579,7 +1571,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 console.error('[SADIE] Compound surf: file write FAILED:', e.message);
               }
 
-              const summary = `🏄 **Surf Conditions — ${location}**\n\n${surfContent}\n${surfWriteOk ? `✅ Saved to **${surfFileName}** on your Desktop.` : '❌ Could not save file.'}`;
+              const fileLink = formatFileLink(surfFilePath, surfFileName);
+              const summary = `${enriched.summary}\n\n${surfWriteOk ? `✅ Saved to ${fileLink}` : '❌ Could not save file.'}`;
               toolResults = [{ result: { summary } }];
             } else {
               // Normal single-step intent
@@ -1669,6 +1662,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // ─── END SMART ROUTING ───
         
         if (useDirectOllama) {
+          if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct Ollama path');
+          try { pushRouter('Taking direct Ollama path'); } catch (e) {}
           // Direct Ollama streaming - no n8n required
           const handler = await streamFromOllama(
             enhancedMessage,
@@ -1677,6 +1672,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             (chunk) => {
               if (!activeStreams.has(streamId)) return;
               assistantResponse += chunk;
+              try { pushRouter(`OLLAMA emitted chunk streamId=${streamId} len=${String(chunk?.length ?? 0)}`); } catch (e) {}
               event.sender.send('sadie:stream-chunk', { chunk, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (ollama)', { streamId, chunkLen: chunk?.length ?? 0, snippet: String(chunk).substring(0, 120) });
@@ -1719,6 +1715,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // Only forward chunks while the stream is still active
               if (!activeStreams.has(streamId)) return;
               // forward raw chunk to renderer
+              try { pushRouter(`PROXY emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
               event.sender.send('sadie:stream-chunk', { chunk: chunk.toString?.() || String(chunk), streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
@@ -1799,16 +1796,20 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             let shouldUseDirectTools = false;
             let toolResults: any[] | null = null;
             
-            if (intentResult && intentResult.calls && intentResult.calls.length > 0) {
+            if (intentResult && intentResult.calls && intentResult.calls.length > 0 && !autoExecuteToolsEnabled()) {
+              console.log('[SADIE] Intent detected but automatic tool execution is disabled; proceeding with LLM/webhook path');
+            }
+
+            if (intentResult && intentResult.calls && intentResult.calls.length > 0 && autoExecuteToolsEnabled()) {
               console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
               
               // Execute tools directly without involving the LLM
               try {
-                // COMPOUND INTENT: weather → write_file chain
+                // COMPOUND INTENT: weather → write_file chain (enriched, n8n path)
                 const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
                 if (isCompound) {
                   const { location, query } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound intent: get weather for', location, 'then write file');
+                  console.log('[SADIE] Compound intent (n8n path, enriched): get weather for', location, 'then write file');
                   
                   // Step 1: Get weather
                   const weatherResults = await executeToolBatch(
@@ -1816,44 +1817,23 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     { executionId: `compound-weather-${Date.now()}`, requestConfirmation,
                       requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
                   );
-                  console.log('[SADIE] Compound: weather result:', JSON.stringify(weatherResults?.[0]?.result || weatherResults?.[0]?.error || 'no result').slice(0, 300));
                   
-                  // Extract weather content
-                  let weatherContent = '';
-                  const wr = weatherResults?.[0]?.result;
-                  if (wr) {
-                    // wttr.in result shape: { location, temperature: { celsius, fahrenheit, feelsLike }, condition, humidity, wind: { speed, direction }, visibility, uvIndex, precipitation }
-                    if (wr.location) weatherContent += `Weather for ${wr.location}\n`;
-                    if (wr.temperature) {
-                      weatherContent += `Temperature: ${wr.temperature.celsius || ''}`;
-                      if (wr.temperature.feelsLike) weatherContent += ` (feels like ${wr.temperature.feelsLike})`;
-                      weatherContent += '\n';
-                    }
-                    if (wr.condition) weatherContent += `Condition: ${wr.condition}\n`;
-                    if (wr.wind) weatherContent += `Wind: ${wr.wind.speed || ''} ${wr.wind.direction || ''}\n`;
-                    if (wr.humidity) weatherContent += `Humidity: ${wr.humidity}\n`;
-                    if (wr.visibility) weatherContent += `Visibility: ${wr.visibility}\n`;
-                    if (wr.uvIndex) weatherContent += `UV Index: ${wr.uvIndex}\n`;
-                    if (wr.precipitation) weatherContent += `Precipitation: ${wr.precipitation}\n`;
-                    // Fallback: stringify if we couldn't parse structured data
-                    if (!weatherContent.trim()) {
-                      weatherContent = typeof wr === 'string' ? wr : JSON.stringify(wr, null, 2);
-                    }
-                  } else {
-                    // Weather fetch failed — include error info
-                    const errMsg = weatherResults?.[0]?.error || 'Unknown error';
-                    weatherContent = `Could not retrieve weather data for ${location}.\nError: ${errMsg}`;
-                  }
-                  
-                  // Determine whether user wants surf or general weather
                   const isSurf = /\b(surf|swell|waves?|ocean|marine|beach)\b/i.test(query || '');
+                  const wr = weatherResults?.[0]?.result;
+                  
+                  // Use enrichment for detailed forecast with web context
+                  const enriched = await enrichWeather(wr, location, {
+                    maxWebResults: 3,
+                    fetchContent: true,
+                    customQuery: isSurf ? `${location} surf report wave height swell` : undefined
+                  });
+                  
                   const fileLabel = isSurf ? 'surf_conditions' : 'weather';
                   const fileName = `${fileLabel}_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
                   const now = new Date().toLocaleString();
-                  const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${weatherContent}`;
+                  const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🌤️|🏄|📊/g, '')}`;
                   
-                  // Step 2: Write file to Desktop — use direct fs.writeFile to bypass confirmation
-                  // (User explicitly asked us to create the file, no need to confirm again)
+                  // Step 2: Write file to Desktop
                   const HOME = process.env.HOME || process.env.USERPROFILE || '';
                   const desktopPath = require('path').join(HOME, 'Desktop', fileName);
                   let writeSuccess = false;
@@ -1869,19 +1849,20 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   
                   // Build combined result
                   if (writeSuccess) {
+                    const fileLink = formatFileLink(desktopPath, fileName);
                     toolResults = [
-                      { result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n✅ Saved to **${fileName}** on your Desktop.` } }
+                      { result: { summary: `${enriched.summary}\n\n✅ Saved to ${fileLink}` } }
                     ];
                   } else {
                     toolResults = [
-                      { result: { summary: `🌤️ **Weather for ${wr?.location || location}**\n\n${weatherContent}\n\n❌ Could not save file: ${writeError}` } }
+                      { result: { summary: `${enriched.summary}\n\n❌ Could not save file: ${writeError}` } }
                     ];
                   }
                 }
-                // COMPOUND INTENT: NBA → write_file chain
+                // COMPOUND INTENT: NBA → write_file chain (enriched, n8n path)
                 else if (intentResult.calls[0]?.name === '__compound_nba_file') {
                   const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound NBA+file intent (n8n path):', { teamQuery, dateRange, perPage });
+                  console.log('[SADIE] Compound NBA+file intent (n8n path, enriched):', { teamQuery, dateRange, perPage });
 
                   const nbaResults = await executeToolBatch(
                     [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
@@ -1889,23 +1870,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
                   );
 
-                  let nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n`;
-                  const events = nbaResults?.[0]?.result?.events;
-                  if (events && Array.isArray(events) && events.length > 0) {
-                    for (const game of events) {
-                      const teams = game.competitions?.[0]?.competitors?.map((c: any) => {
-                        const score = c.score ? ` (${c.score})` : '';
-                        return `${c.team.displayName}${score}`;
-                      }).join(' vs ') || 'Unknown matchup';
-                      const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
-                      const date = game.date ? new Date(game.date).toLocaleDateString() : '';
-                      nbaContent += `${date ? date + ' — ' : ''}${teams} — ${status}\n`;
-                    }
-                    nbaContent += `\nTotal: ${events.length} games\n`;
-                  } else {
-                    nbaContent += 'No games found for the specified criteria.\n';
-                    if (nbaResults?.[0]?.error) nbaContent += `Error: ${nbaResults[0].error}\n`;
-                  }
+                  // Use enrichment for detailed results
+                  const events = nbaResults?.[0]?.result?.events || [];
+                  const enriched = await enrichNbaGames(events, teamQuery || '', {
+                    maxWebResults: 3,
+                    fetchContent: true
+                  });
+
+                  const nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
                   const HOME = process.env.HOME || process.env.USERPROFILE || '';
                   const teamSuffix = teamQuery ? `_${teamQuery}` : '';
@@ -1921,40 +1893,24 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
                   const gameCount = events?.length || 0;
                   if (nbaWriteOk) {
-                    toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n✅ Saved ${gameCount} games to **${nbaFileName}** on your Desktop.` } }];
+                    const fileLink = formatFileLink(nbaDesktopPath, nbaFileName);
+                    toolResults = [{ result: { summary: `${enriched.summary}\n\n✅ Saved ${gameCount} games to ${fileLink}` } }];
                   } else {
-                    toolResults = [{ result: { summary: `🏀 **NBA Games**\n\n${nbaContent}\n❌ Could not save file.` } }];
+                    toolResults = [{ result: { summary: `${enriched.summary}\n\n❌ Could not save file.` } }];
                   }
                 }
-                // COMPOUND INTENT: web_search → write_file chain
+                // COMPOUND INTENT: web_search → write_file chain (enriched, n8n path)
                 else if (intentResult.calls[0]?.name === '__compound_search_file') {
                   const { topic } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound search+file intent (n8n path):', topic);
+                  console.log('[SADIE] Compound search+file intent (n8n path, enriched):', topic);
 
-                  const searchResults = await executeToolBatch(
-                    [{ name: 'web_search', arguments: { query: topic, maxResults: 10, fetchTopResult: true } }] as ToolCall[],
-                    { executionId: `compound-search-${Date.now()}`, requestConfirmation,
-                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
-                  );
+                  // Use enrichment for comprehensive results
+                  const enriched = await enrichGenericQuery(topic, null, {
+                    maxWebResults: 5,
+                    fetchContent: true
+                  });
 
-                  let searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n`;
-                  const sr = searchResults?.[0]?.result;
-                  if (sr?.results && Array.isArray(sr.results) && sr.results.length > 0) {
-                    for (let i = 0; i < sr.results.length; i++) {
-                      const item = sr.results[i];
-                      searchContent += `${i + 1}. ${item.title || 'Untitled'}\n`;
-                      if (item.snippet) searchContent += `   ${item.snippet}\n`;
-                      if (item.url) searchContent += `   ${item.url}\n`;
-                      searchContent += '\n';
-                    }
-                  }
-                  if (sr?.topResultContent?.content || sr?.topResultContent?.contentText) {
-                    const topContent = sr.topResultContent.content || sr.topResultContent.contentText;
-                    searchContent += `\n--- Top Result Content ---\n${topContent.slice(0, 2000)}\n`;
-                  }
-                  if (!sr?.results?.length) {
-                    searchContent += 'No search results found.\n';
-                  }
+                  const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '')}`;
 
                   const HOME = process.env.HOME || process.env.USERPROFILE || '';
                   const safeFileName = topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
@@ -1968,68 +1924,39 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   }
 
                   if (searchWriteOk) {
-                    toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n✅ Saved to **${safeFileName}** on your Desktop.` } }];
+                    const fileLink = formatFileLink(searchFilePath, safeFileName);
+                    toolResults = [{ result: { summary: `${enriched.summary}\n\n✅ Saved to ${fileLink}` } }];
                   } else {
-                    toolResults = [{ result: { summary: `📄 **${topic}**\n\n${searchContent}\n❌ Could not save file.` } }];
+                    toolResults = [{ result: { summary: `${enriched.summary}\n\n❌ Could not save file.` } }];
                   }
                 }
-                // STANDALONE SURF INTENT (n8n path): web_search for surf conditions
+                // STANDALONE SURF INTENT (n8n path, enriched): web_search for surf conditions
                 else if (intentResult.calls[0]?.name === '__surf_conditions') {
                   const { location } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Surf conditions intent (n8n path):', location);
+                  console.log('[SADIE] Surf conditions intent (n8n path, enriched):', location);
 
-                  const surfResults = await executeToolBatch(
-                    [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
-                    { executionId: `surf-${Date.now()}`, requestConfirmation,
-                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
-                  );
+                  // Use enrichment for comprehensive surf data
+                  const enriched = await enrichWeather(null, location, {
+                    maxWebResults: 4,
+                    fetchContent: true,
+                    customQuery: `${location} surf report wave height swell period tide conditions today`
+                  });
 
-                  let surfText = `🏄 **Surf Conditions — ${location}**\n\n`;
-                  const sr = surfResults?.[0]?.result;
-                  const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
-                  if (topContent) {
-                    const cleaned = topContent.replace(/\s{3,}/g, '\n').slice(0, 1500);
-                    surfText += cleaned + '\n\n';
-                    if (sr?.topResultContent?.url) surfText += `Source: ${sr.topResultContent.url}\n`;
-                  } else if (sr?.results && sr.results.length > 0) {
-                    for (const item of sr.results.slice(0, 5)) {
-                      surfText += `• **${item.title || 'Untitled'}**\n`;
-                      if (item.snippet) surfText += `  ${item.snippet}\n`;
-                      if (item.url) surfText += `  ${item.url}\n`;
-                      surfText += '\n';
-                    }
-                  } else {
-                    surfText += `Could not find surf conditions for ${location}. Try specifying a surf spot name.\n`;
-                  }
-                  toolResults = [{ result: { summary: surfText } }];
+                  toolResults = [{ result: { summary: enriched.summary } }];
                 }
-                // COMPOUND SURF + FILE INTENT (n8n path)
+                // COMPOUND SURF + FILE INTENT (n8n path, enriched)
                 else if (intentResult.calls[0]?.name === '__compound_surf_file') {
                   const { location } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound surf+file intent (n8n path):', location);
+                  console.log('[SADIE] Compound surf+file intent (n8n path, enriched):', location);
 
-                  const surfResults = await executeToolBatch(
-                    [{ name: 'web_search', arguments: { query: `surf conditions swell height ${location} today`, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
-                    { executionId: `compound-surf-${Date.now()}`, requestConfirmation,
-                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
-                  );
+                  // Use enrichment for comprehensive surf data
+                  const enriched = await enrichWeather(null, location, {
+                    maxWebResults: 4,
+                    fetchContent: true,
+                    customQuery: `${location} surf report wave height swell period tide conditions today`
+                  });
 
-                  let surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n`;
-                  const sr = surfResults?.[0]?.result;
-                  const topContent = sr?.topResultContent?.content || sr?.topResultContent?.contentText || '';
-                  if (topContent) {
-                    surfContent += topContent.replace(/\s{3,}/g, '\n').slice(0, 3000) + '\n';
-                    if (sr?.topResultContent?.url) surfContent += `\nSource: ${sr.topResultContent.url}\n`;
-                  } else if (sr?.results && sr.results.length > 0) {
-                    for (const item of sr.results.slice(0, 5)) {
-                      surfContent += `${item.title || 'Untitled'}\n`;
-                      if (item.snippet) surfContent += `  ${item.snippet}\n`;
-                      if (item.url) surfContent += `  ${item.url}\n`;
-                      surfContent += '\n';
-                    }
-                  } else {
-                    surfContent += 'No surf conditions found.\n';
-                  }
+                  const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🏄|📊/g, '')}`;
 
                   const HOME = process.env.HOME || process.env.USERPROFILE || '';
                   const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
@@ -2042,7 +1969,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     console.error('[SADIE] Compound surf file write FAILED:', e.message);
                   }
 
-                  const summary = `🏄 **Surf Conditions — ${location}**\n\n${surfContent}\n${surfWriteOk ? `✅ Saved to **${surfFileName}** on your Desktop.` : '❌ Could not save file.'}`;
+                  const fileLink = formatFileLink(surfFilePath, surfFileName);
+                  const summary = `${enriched.summary}\n\n${surfWriteOk ? `✅ Saved to ${fileLink}` : '❌ Could not save file.'}`;
                   toolResults = [{ result: { summary } }];
                 } else {
                   // Normal single-step intent
@@ -2250,10 +2178,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               request.images,
               convId,
               (chunk) => {
-                if (!activeStreams.has(streamId)) return;
-                try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
-                if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
-              },
+                  if (!activeStreams.has(streamId)) return;
+                  try { pushRouter(`LLM emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
+                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                  if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
+                },
               (toolName, args) => {
                 // notify renderer of tool call that will be executed
                 try { event.sender.send('sadie:tool-call', { toolName, args, streamId }); } catch (e) {}
@@ -2304,9 +2233,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
             // Attempt a non-streaming fallback to Ollama to retrieve a final message
             try {
+              // Patch: prepend conversation system prompt if provided by renderer
+              let systemPrompt = SADIE_SYSTEM_PROMPT;
+              if (reqAny.conversationPrompt && typeof reqAny.conversationPrompt === 'string') {
+                systemPrompt = reqAny.conversationPrompt;
+              }
               const fallbackBody = {
                 model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
-                messages: [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
+                messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: reqAny.message } ],
                 stream: false
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
@@ -2327,6 +2261,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
           }
         }
+        } // end SMART ROUTING bare block
       } catch (error: any) {
         // n8n failed - either fall back to direct Ollama (if explicitly enabled),
         // or return an error to the renderer. Do NOT fall back to Ollama silently
