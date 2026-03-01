@@ -8,7 +8,11 @@
     "email_manager",
     "voice_tool",
     "planning_agent",
-    "api_tool"
+    "api_tool",
+    "clipboard",
+    "calendar",
+    "web_search",
+    "browser_automation"
   ],
   "tool_descriptions": {
     "file_manager": "Read, write, search, and organize files within allowed directories",
@@ -16,10 +20,14 @@
     "search_tool": "Search for files on the local system using Everything Search",
     "system_info": "Query system information like disk space, processes, and network status",
     "vision_tool": "Analyze screenshots, extract text with OCR, describe images",
-    "email_manager": "Send and manage emails (requires configuration)",
+    "email_manager": "Send, draft, and list emails via Microsoft Outlook (requires confirmation to send)",
     "voice_tool": "Transcribe audio to text using Whisper",
     "planning_agent": "Break down complex tasks into sequential steps",
-    "api_tool": "Make HTTP requests to approved APIs"
+    "api_tool": "Make HTTP requests to approved APIs",
+    "clipboard": "Read from or write to the Windows clipboard",
+    "calendar": "List, query, and add calendar events via Microsoft Outlook",
+    "web_search": "Search the web using DuckDuckGo and return summarised results",
+    "browser_automation": "Open URLs or control the system browser via PowerShell"
   },
   "tool_risk_levels": {
     "file_manager": "medium",
@@ -30,11 +38,19 @@
     "email_manager": "high",
     "voice_tool": "low",
     "planning_agent": "medium",
-    "api_tool": "high"
+    "api_tool": "high",
+    "clipboard": "medium",
+    "calendar": "medium",
+    "web_search": "low",
+    "browser_automation": "medium"
   },
   "disabled_tools": [],
   "experimental_tools": [
     "planning_agent",
-    "api_tool"
+    "api_tool",
+    "clipboard",
+    "calendar",
+    "web_search",
+    "browser_automation"
   ]
 }
