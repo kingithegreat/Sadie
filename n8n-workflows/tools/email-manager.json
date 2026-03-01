@@ -1,73 +1,156 @@
 {
-  "name": "SADIE Email Manager Tool (Phase 6)",
-  "active": true,
-  "nodes": [
-    {
-      "parameters": {},
-      "id": "start",
-      "name": "Start",
-      "type": "n8n-nodes-base.start",
-      "typeVersion": 1,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst action = (body.action || 'list_inbox').toLowerCase();\nconst allowed = ['draft','send','list_inbox'];\nif (!allowed.includes(action)) {\n  throw new Error('Invalid action. Must be one of: ' + allowed.join(', '));\n}\nconst to        = body.to      || '';\nconst subject   = body.subject || '';\nconst bodyText  = body.body    || '';\nconst cc        = body.cc      || '';\nconst count     = Number(body.count) || 10;\nconst confirmed = body.confirmed === true || body.confirmed === 'true';\nif (action === 'send' && !confirmed) {\n  throw new Error('send requires confirmed=true — user must explicitly approve sending email');\n}\nreturn [{ json: { action, to, subject, bodyText, cc, count, confirmed } }];"
-      },
-      "id": "parse-params",
-      "name": "Parse Parameters",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [460, 300]
-    },
-    {
-      "parameters": {
-        "command": "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"email\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\sadie\\config\\safety-rules.json\""
-      },
-      "id": "safety-validation",
-      "name": "Safety Validation",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const raw = $input.first()?.json?.stdout ?? '';\nlet validation;\ntry { validation = JSON.parse(raw); } catch { validation = { allowed: true }; }\nif (validation.allowed === false) {\n  throw new Error('Safety validation blocked email operation: ' + (validation.reason || 'policy'));\n}\nconst params = $('Parse Parameters').first().json;\nreturn [{ json: params }];"
-      },
-      "id": "check-validation",
-      "name": "Check Validation",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [900, 300]
-    },
-    {
-      "parameters": {
-        "command": "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\EmailOps.ps1\" -Action \"{{ $json.action }}\" -To \"{{ $json.to }}\" -Subject \"{{ $json.subject }}\" -Body \"{{ $json.bodyText }}\" -Cc \"{{ $json.cc }}\" -Count {{ $json.count }} -Confirmed {{ $json.confirmed }}"
-      },
-      "id": "execute-email",
-      "name": "Execute Email Op",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [1120, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const raw = $input.first()?.json?.stdout ?? $input.first()?.json?.stderr ?? '';\nlet result;\ntry { result = JSON.parse(raw); } catch { result = { success: false, error: raw || 'No output from EmailOps.ps1' }; }\nreturn [{ json: result }];"
-      },
-      "id": "format-result",
-      "name": "Format Result",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1340, 300]
-    }
-  ],
-  "connections": {
-    "Start": { "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]] },
-    "Parse Parameters": { "main": [[{ "node": "Safety Validation", "type": "main", "index": 0 }]] },
-    "Safety Validation": { "main": [[{ "node": "Check Validation", "type": "main", "index": 0 }]] },
-    "Check Validation": { "main": [[{ "node": "Execute Email Op", "type": "main", "index": 0 }]] },
-    "Execute Email Op": { "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]] }
-  },
-  "settings": { "executionOrder": "v1" },
-  "tags": [{ "name": "sadie" }, { "name": "tools" }, { "name": "email" }]
+    "name":  "SADIE Email Manager Tool (Phase 6)",
+    "active":  true,
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "start",
+                      "name":  "Start",
+                      "type":  "n8n-nodes-base.start",
+                      "typeVersion":  1,
+                      "position":  [
+                                       240,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst action = (body.action || \u0027list_inbox\u0027).toLowerCase();\nconst allowed = [\u0027draft\u0027,\u0027send\u0027,\u0027list_inbox\u0027];\nif (!allowed.includes(action)) {\n  throw new Error(\u0027Invalid action. Must be one of: \u0027 + allowed.join(\u0027, \u0027));\n}\nconst to        = body.to      || \u0027\u0027;\nconst subject   = body.subject || \u0027\u0027;\nconst bodyText  = body.body    || \u0027\u0027;\nconst cc        = body.cc      || \u0027\u0027;\nconst count     = Number(body.count) || 10;\nconst confirmed = body.confirmed === true || body.confirmed === \u0027true\u0027;\nif (action === \u0027send\u0027 \u0026\u0026 !confirmed) {\n  throw new Error(\u0027send requires confirmed=true â€” user must explicitly approve sending email\u0027);\n}\nreturn [{ json: { action, to, subject, bodyText, cc, count, confirmed } }];"
+                                     },
+                      "id":  "parse-params",
+                      "name":  "Parse Parameters",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       460,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "command":  "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"email\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\sadie\\config\\safety-rules.json\""
+                                     },
+                      "id":  "safety-validation",
+                      "name":  "Safety Validation",
+                      "type":  "n8n-nodes-base.executeCommand",
+                      "typeVersion":  1,
+                      "position":  [
+                                       680,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const raw = $input.first()?.json?.stdout ?? \u0027\u0027;\nlet validation;\ntry { validation = JSON.parse(raw); } catch { validation = { allowed: true }; }\nif (validation.allowed === false) {\n  throw new Error(\u0027Safety validation blocked email operation: \u0027 + (validation.reason || \u0027policy\u0027));\n}\nconst params = $(\u0027Parse Parameters\u0027).first().json;\nreturn [{ json: params }];"
+                                     },
+                      "id":  "check-validation",
+                      "name":  "Check Validation",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       900,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "command":  "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\EmailOps.ps1\" -Action \"{{ $json.action }}\" -To \"{{ $json.to }}\" -Subject \"{{ $json.subject }}\" -Body \"{{ $json.bodyText }}\" -Cc \"{{ $json.cc }}\" -Count {{ $json.count }} -Confirmed {{ $json.confirmed }}"
+                                     },
+                      "id":  "execute-email",
+                      "name":  "Execute Email Op",
+                      "type":  "n8n-nodes-base.executeCommand",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1120,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const raw = $input.first()?.json?.stdout ?? $input.first()?.json?.stderr ?? \u0027\u0027;\nlet result;\ntry { result = JSON.parse(raw); } catch { result = { success: false, error: raw || \u0027No output from EmailOps.ps1\u0027 }; }\nreturn [{ json: result }];"
+                                     },
+                      "id":  "format-result",
+                      "name":  "Format Result",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1340,
+                                       300
+                                   ]
+                  }
+              ],
+    "connections":  {
+                        "Start":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Parse Parameters",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Parse Parameters":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Safety Validation",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Safety Validation":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Check Validation",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Check Validation":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Execute Email Op",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Execute Email Op":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Format Result",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "tags":  [
+                 {
+                     "name":  "sadie"
+                 },
+                 {
+                     "name":  "tools"
+                 },
+                 {
+                     "name":  "email"
+                 }
+             ],
+    "versionId":  "01cb06c1-b821-44f3-b0eb-0634cb062da2"
 }

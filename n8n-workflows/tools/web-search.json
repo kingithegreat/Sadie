@@ -1,51 +1,108 @@
 {
-  "name": "SADIE Web Search Tool (Phase 6)",
-  "active": true,
-  "nodes": [
-    {
-      "parameters": {},
-      "id": "start",
-      "name": "Start",
-      "type": "n8n-nodes-base.start",
-      "typeVersion": 1,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst query = (body.query || body.q || '').trim();\nconst count = Math.min(Number(body.count) || 5, 10);\nconst safe  = body.safe !== false;\nif (!query) throw new Error('query parameter is required');\nreturn [{ json: { query, count, safe } }];"
-      },
-      "id": "parse-params",
-      "name": "Parse Parameters",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [460, 300]
-    },
-    {
-      "parameters": {
-        "command": "=powershell.exe -NoProfile -NonInteractive -Command \"$q = [uri]::EscapeDataString('{{ $json.query }}'); $r = Invoke-RestMethod -Uri \\\"https://api.duckduckgo.com/?q=$q&format=json&no_html=1&skip_disambig=1\\\" -TimeoutSec 10; $r | ConvertTo-Json -Depth 5 -Compress\""
-      },
-      "id": "ddg-search",
-      "name": "DuckDuckGo Search",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const raw = $input.first()?.json?.stdout ?? '';\nconst params = $('Parse Parameters').first().json;\nlet ddg;\ntry { ddg = JSON.parse(raw); } catch { ddg = null; }\nconst results = [];\nif (ddg) {\n  if (ddg.AbstractText) results.push({ title: ddg.Heading || params.query, snippet: ddg.AbstractText, url: ddg.AbstractURL || ddg.AbstractSource });\n  const topics = ddg.RelatedTopics || [];\n  for (const t of topics.slice(0, params.count - results.length)) {\n    if (t.Text && t.FirstURL) results.push({ title: t.Text.substring(0, 80), snippet: t.Text, url: t.FirstURL });\n  }\n}\nreturn [{ json: { success: true, query: params.query, count: results.length, results } }];"
-      },
-      "id": "format-result",
-      "name": "Format Results",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [900, 300]
-    }
-  ],
-  "connections": {
-    "Start": { "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]] },
-    "Parse Parameters": { "main": [[{ "node": "DuckDuckGo Search", "type": "main", "index": 0 }]] },
-    "DuckDuckGo Search": { "main": [[{ "node": "Format Results", "type": "main", "index": 0 }]] }
-  },
-  "settings": { "executionOrder": "v1" },
-  "tags": [{ "name": "sadie" }, { "name": "tools" }, { "name": "web-search" }]
+    "name":  "SADIE Web Search Tool (Phase 6)",
+    "active":  true,
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "start",
+                      "name":  "Start",
+                      "type":  "n8n-nodes-base.start",
+                      "typeVersion":  1,
+                      "position":  [
+                                       240,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst query = (body.query || body.q || \u0027\u0027).trim();\nconst count = Math.min(Number(body.count) || 5, 10);\nconst safe  = body.safe !== false;\nif (!query) throw new Error(\u0027query parameter is required\u0027);\nreturn [{ json: { query, count, safe } }];"
+                                     },
+                      "id":  "parse-params",
+                      "name":  "Parse Parameters",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       460,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "command":  "=powershell.exe -NoProfile -NonInteractive -Command \"$q = [uri]::EscapeDataString(\u0027{{ $json.query }}\u0027); $r = Invoke-RestMethod -Uri \\\"https://api.duckduckgo.com/?q=$q\u0026format=json\u0026no_html=1\u0026skip_disambig=1\\\" -TimeoutSec 10; $r | ConvertTo-Json -Depth 5 -Compress\""
+                                     },
+                      "id":  "ddg-search",
+                      "name":  "DuckDuckGo Search",
+                      "type":  "n8n-nodes-base.executeCommand",
+                      "typeVersion":  1,
+                      "position":  [
+                                       680,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const raw = $input.first()?.json?.stdout ?? \u0027\u0027;\nconst params = $(\u0027Parse Parameters\u0027).first().json;\nlet ddg;\ntry { ddg = JSON.parse(raw); } catch { ddg = null; }\nconst results = [];\nif (ddg) {\n  if (ddg.AbstractText) results.push({ title: ddg.Heading || params.query, snippet: ddg.AbstractText, url: ddg.AbstractURL || ddg.AbstractSource });\n  const topics = ddg.RelatedTopics || [];\n  for (const t of topics.slice(0, params.count - results.length)) {\n    if (t.Text \u0026\u0026 t.FirstURL) results.push({ title: t.Text.substring(0, 80), snippet: t.Text, url: t.FirstURL });\n  }\n}\nreturn [{ json: { success: true, query: params.query, count: results.length, results } }];"
+                                     },
+                      "id":  "format-result",
+                      "name":  "Format Results",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       900,
+                                       300
+                                   ]
+                  }
+              ],
+    "connections":  {
+                        "Start":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Parse Parameters",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Parse Parameters":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "DuckDuckGo Search",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "DuckDuckGo Search":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Format Results",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "tags":  [
+                 {
+                     "name":  "sadie"
+                 },
+                 {
+                     "name":  "tools"
+                 },
+                 {
+                     "name":  "web-search"
+                 }
+             ],
+    "versionId":  "d9532d4b-de87-4790-ab0f-9f941468d36a"
 }
