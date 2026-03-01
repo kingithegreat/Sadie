@@ -24,6 +24,21 @@ const PACKAGED = isPackagedBuild;
 const DEFAULT_TIMEOUT = 30000;
 
 /**
+ * Check user settings to decide whether automatic tool execution is enabled.
+ * Default is true for backwards compatibility; explicit false disables auto tools.
+ */
+function autoExecuteToolsEnabled(): boolean {
+  try {
+    const s: any = getSettings();
+    // Support multiple possible flag names for compatibility
+    if (s && (s.allowAutoTools === false || s.autoToolExecution === false || s.allowAutomaticToolExecution === false || s.autoExecuteTools === false)) return false;
+    return true;
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
  * Format a file path as a clickable markdown link for the chat UI
  * Uses file:// protocol which the renderer handles specially
  */
@@ -342,6 +357,11 @@ export async function analyzeAndRouteMessage(message: string): Promise<RoutingDe
   try {
     const pre = await preProcessIntent(message);
     if (pre && Array.isArray(pre.calls) && pre.calls.length > 0) {
+      // Respect user setting to disable automatic tool execution
+      if (!autoExecuteToolsEnabled()) {
+        console.log('[ROUTER] Automatic tool execution disabled by settings; routing to LLM');
+        return { type: 'llm' };
+      }
       return { type: 'tools', calls: pre.calls as ToolCall[] };
     }
     return { type: 'llm' };
@@ -1225,8 +1245,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.SADIE_DIRECT_OLLAMA}`); } catch (e) {}
       }
 
-
-        try {
+      try {
           const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${SADIE_WEBHOOK_PATH}/stream`;
           const streamUrl = N8N_STREAM_URL;
           if (process.env.NODE_ENV !== 'production') {
@@ -1374,14 +1393,17 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           console.log('[SADIE] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
 
           if (intentResult && intentResult.calls && intentResult.calls.length > 0) {
-            console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
-            
-            // Ensure stream is tracked
-            if (!activeStreams.has(streamId)) {
-              activeStreams.set(streamId, { destroy: () => {} });
-            }
+            if (!autoExecuteToolsEnabled()) {
+              console.log('[SADIE] Intent detected but automatic tool execution is disabled; proceeding with LLM path');
+            } else {
+              console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
+              
+              // Ensure stream is tracked
+              if (!activeStreams.has(streamId)) {
+                activeStreams.set(streamId, { destroy: () => {} });
+              }
 
-            let toolResults: any[] | null = null;
+              let toolResults: any[] | null = null;
 
             // COMPOUND INTENT: weather → write_file chain
             const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
@@ -1774,7 +1796,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             let shouldUseDirectTools = false;
             let toolResults: any[] | null = null;
             
-            if (intentResult && intentResult.calls && intentResult.calls.length > 0) {
+            if (intentResult && intentResult.calls && intentResult.calls.length > 0 && !autoExecuteToolsEnabled()) {
+              console.log('[SADIE] Intent detected but automatic tool execution is disabled; proceeding with LLM/webhook path');
+            }
+
+            if (intentResult && intentResult.calls && intentResult.calls.length > 0 && autoExecuteToolsEnabled()) {
               console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
               
               // Execute tools directly without involving the LLM
@@ -2235,6 +2261,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
           }
         }
+        } // end SMART ROUTING bare block
       } catch (error: any) {
         // n8n failed - either fall back to direct Ollama (if explicitly enabled),
         // or return an error to the renderer. Do NOT fall back to Ollama silently
