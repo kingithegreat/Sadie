@@ -4,9 +4,19 @@
   "description": "Standalone ToolRegistry module for SADIE",
   "main": "src/toolRegistry.ts",
   "scripts": {
-    "test": "npx ts-node src/test.ts"
+    "smoke": "npx ts-node src/test.ts",
+    "test": "npx jest"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": ["<rootDir>/src"],
+    "testMatch": ["**/__tests__/**/*.test.ts"]
   },
   "devDependencies": {
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "@types/jest": "^29.5.14",
     "@types/json-stable-stringify": "^1.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
