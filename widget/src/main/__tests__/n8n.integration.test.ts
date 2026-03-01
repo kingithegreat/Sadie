@@ -25,7 +25,7 @@ describe('n8n integration (mock endpoints)', () => {
   jest.setTimeout(10000);
 
   test('processIncomingRequest - successful LLM response from n8n', async () => {
-    const { server, port } = await startMockServer((req, body, res) => {
+    const { server, port } = await startMockServer((req, _body, res) => {
       if (req.method === 'POST' && req.url === '/webhook/sadie/chat') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ assistant: { role: 'assistant', content: 'Hello from n8n' } }));

@@ -17,10 +17,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Start docker services
         run: docker compose up -d
+
+      - name: Wait for n8n to be ready
+        run: |
+          echo "Waiting for n8n..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5678/healthz >/dev/null 2>&1; then
+              echo "n8n is ready after ${i}s"
+              break
+            fi
+            sleep 2
+          done
+          echo "n8n wait complete"
 
       - name: Install widget dependencies
         run: npm ci --prefix widget
