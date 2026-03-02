@@ -84,6 +84,12 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      { "from": "../docker-compose.yml", "to": "docker-compose.yml" },
+      { "from": "../config", "to": "config" },
+      { "from": "../n8n-workflows", "to": "n8n-workflows" },
+      { "from": "../scripts/start-n8n.ps1", "to": "scripts/start-n8n.ps1" }
+    ],
     "win": {
       "target": [
         {
@@ -94,7 +100,9 @@
         }
       ],
       "icon": "build/icon.ico",
-      "sign": false
+      "sign": null,
+      "signAndEditExecutable": false,
+      "signingHashAlgorithms": []
     },
     "nsis": {
       "oneClick": false,

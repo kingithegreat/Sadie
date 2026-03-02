@@ -6,6 +6,7 @@ import { registerMessageRouter } from './message-router';
 import { initializeTools } from './tools';
 import { getSettings } from './config-manager';
 import { isE2E } from './env';
+import { ensureN8nRunning } from './n8n-lifecycle';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -37,7 +38,16 @@ app.whenReady().then(async () => {
   
   // Create the main window first
   mainWindow = createMainWindow();
-  
+
+  // Ensure n8n backend is running (auto-starts Docker container if needed)
+  ensureN8nRunning((status) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sadie:n8n-status', { status });
+      }
+    } catch (e) {}
+  }).catch((e) => console.error('[MAIN] n8n lifecycle error:', e));
+
   // Register message router with proper parameters
   const settings = getSettings();
   // Allow E2E or env-based override for the n8n URL so tests can route to a

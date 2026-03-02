@@ -74,21 +74,51 @@
 ### Prerequisites
 - Node.js 18+ and npm
 - Windows 10+, macOS 10.15+, or Linux
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — required for the n8n workflow engine
+- [Ollama](https://ollama.com/) — required for local LLM inference
 
-### Installation
+### End-User Installation (Windows)
+
+1. **Download** `SADIE Setup 0.7.0.exe` from the [Releases](https://github.com/kingithegreat/Sadie/releases) page
+2. **Start Docker Desktop** and ensure it is running
+3. **Start n8n** (first run only):
+   ```powershell
+   docker-compose up -d
+   ```
+   > After this, SADIE will auto-start n8n on every subsequent launch.
+4. **Pull an LLM model** (first run only):
+   ```powershell
+   ollama pull llama3.2:3b
+   ```
+5. **Run the installer** — SADIE installs to `%LocalAppData%\Programs\SADIE` by default
+6. **Launch SADIE** from the Start Menu or Desktop shortcut
+
+### Developer Setup
 
 1. **Clone the repository**
    ```bash
    git clone https://github.com/kingithegreat/sadie.git
-   cd sadie/widget
+   cd sadie
    ```
 
-2. **Install dependencies**
+2. **Generate a local encryption key**
+   ```powershell
+   .\scripts\generate-env.ps1
+   ```
+   This creates a `.env` file with a random `N8N_ENCRYPTION_KEY`. Never commit `.env`.
+
+3. **Start n8n**
+   ```powershell
+   docker-compose up -d
+   ```
+
+4. **Install dependencies**
    ```bash
+   cd widget
    npm install
    ```
 
-3. **Install Playwright browsers** (for E2E testing)
+5. **Install Playwright browsers** (for E2E testing)
    ```bash
    npx playwright install --with-deps
    ```
@@ -97,6 +127,7 @@
 
 1. **Start development mode**
    ```bash
+   cd widget
    npm run dev
    ```
 
@@ -114,13 +145,16 @@
 
 1. **Build for production**
    ```bash
+   cd widget
    npm run build
    ```
 
-2. **Package application**
+2. **Package application** (unsigned — install certificate for distribution)
    ```bash
+   cd widget
    npm run dist
    ```
+   Output: `widget/dist-electron/SADIE Setup 0.7.0.exe`
 
 ## 📋 Usage
 

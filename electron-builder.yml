@@ -6,10 +6,20 @@ directories:
 files:
   - out/**
   - scripts/**
+  - "!scripts/tools/powershell/**"
+extraResources:
+  - from: "../docker-compose.yml"
+    to: "docker-compose.yml"
+  - from: "../config"
+    to: "config"
+  - from: "../n8n-workflows"
+    to: "n8n-workflows"
 win:
   target:
     - nsis
   icon: build/icon.ico
+  signAndEditExecutable: false
+  signingHashAlgorithms: []
 nsis:
   oneClick: false
   perMachine: false
