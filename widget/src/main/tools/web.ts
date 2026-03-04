@@ -901,15 +901,127 @@ export const getWeatherHandler: ToolHandler = async (args): Promise<ToolResult> 
   }
 };
 
+// ============= IMAGE GENERATE TOOL =============
+
+export const imageGenerateDef: ToolDefinition = {
+  name: 'image_generate',
+  description:
+    'Generate an image from a text prompt. ' +
+    'Tries local Stable Diffusion (AUTOMATIC1111 / ComfyUI) first, ' +
+    'then falls back to Stability AI or DALL·E if API keys are configured. ' +
+    'Returns a base64-encoded image.',
+  category: 'utility',
+  requiresConfirmation: false,
+  parameters: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        description: 'Text description of the image to generate'
+      },
+      width: {
+        type: 'number',
+        description: 'Image width in pixels (default: 512, max: 1024)',
+        default: 512
+      },
+      height: {
+        type: 'number',
+        description: 'Image height in pixels (default: 512, max: 1024)',
+        default: 512
+      },
+      steps: {
+        type: 'number',
+        description: 'Number of diffusion steps (default: 20)',
+        default: 20
+      },
+      backend: {
+        type: 'string',
+        description: '"local" (SD/ComfyUI), "cloud" (Stability/OpenAI), or "hybrid" (local first, default)',
+        enum: ['local', 'cloud', 'hybrid'],
+        default: 'hybrid'
+      }
+    },
+    required: ['prompt']
+  }
+};
+
+export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  try {
+    const prompt = String(args.prompt || '').trim();
+    if (!prompt) return { success: false, error: 'prompt is required' };
+
+    const width = Math.min(Math.max(64, Number(args.width) || 512), 1024);
+    const height = Math.min(Math.max(64, Number(args.height) || 512), 1024);
+    const steps = Math.min(Math.max(1, Number(args.steps) || 20), 50);
+    const backend = String(args.backend || 'hybrid');
+
+    // Call n8n image-generate webhook
+    const n8nBase = process.env.N8N_BASE_URL || 'http://localhost:5678';
+    const webhookUrl = `${n8nBase}/webhook/sadie-image-generate`;
+
+    const payload = JSON.stringify({
+      action: 'generate',
+      payload: { prompt, width, height, steps, backend }
+    });
+
+    const result = await new Promise<any>((resolve, reject) => {
+      const lib = webhookUrl.startsWith('https') ? require('https') : require('http');
+      const url = new URL(webhookUrl);
+      const options = {
+        hostname: url.hostname,
+        port: url.port || (webhookUrl.startsWith('https') ? 443 : 80),
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        },
+        timeout: 150000
+      };
+      const req = lib.request(options, (res: any) => {
+        let data = '';
+        res.on('data', (c: Buffer) => (data += c.toString()));
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch { resolve({ status: 'failure', error: { message: data } }); }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('image_generate timed out')); });
+      req.write(payload);
+      req.end();
+    });
+
+    if (result.status !== 'success') {
+      return {
+        success: false,
+        error: result.error?.message || 'Image generation failed'
+      };
+    }
+
+    return {
+      success: true,
+      result: {
+        image_base64: result.image,
+        source: result.source,
+        metadata: result.metadata
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: `image_generate failed: ${err.message}` };
+  }
+};
+
 // Export all definitions and handlers
 export const webToolDefs = [
   webSearchDef,
   fetchUrlDef,
-  getWeatherDef
+  getWeatherDef,
+  imageGenerateDef
 ];
 
 export const webToolHandlers: Record<string, ToolHandler> = {
   'web_search': webSearchHandler,
   'fetch_url': fetchUrlHandler,
-  'get_weather': getWeatherHandler
+  'get_weather': getWeatherHandler,
+  'image_generate': imageGenerateHandler
 };

@@ -23,6 +23,14 @@ import { memoryToolDefs, memoryToolHandlers } from './memory';
 import { documentToolDefs, documentToolHandlers } from './documents';
 import { nbaQueryDef, nbaQueryHandler } from './nba';
 import sports from './sports';
+import { notificationToolDefs, notificationToolHandlers } from './notification';
+import { codeRunnerToolDefs, codeRunnerToolHandlers } from './code-runner';
+import { reminderToolDefs, reminderToolHandlers } from './reminder';
+import { processManagerToolDefs, processManagerToolHandlers } from './process-manager';
+import { contactsToolDefs, contactsToolHandlers } from './contacts';
+import { newsToolDefs, newsToolHandlers } from './news';
+import { gitToolDefs, gitToolHandlers } from './git';
+import { diffToolDefs, diffToolHandlers } from './diff';
 
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
@@ -368,7 +376,55 @@ export function initializeTools(): void {
   registerTool(nbaQueryDef.name, nbaQueryDef, nbaQueryHandler);
   // Register sports report tool
   registerTool(sports.definition.name, sports.definition, sports.handler);
-  
+
+  // Register notification tools
+  for (const def of notificationToolDefs) {
+    const handler = notificationToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register code runner tools
+  for (const def of codeRunnerToolDefs) {
+    const handler = codeRunnerToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register reminder tools
+  for (const def of reminderToolDefs) {
+    const handler = reminderToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register process manager tools
+  for (const def of processManagerToolDefs) {
+    const handler = processManagerToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register contacts tools
+  for (const def of contactsToolDefs) {
+    const handler = contactsToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register news tools
+  for (const def of newsToolDefs) {
+    const handler = newsToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register git tools
+  for (const def of gitToolDefs) {
+    const handler = gitToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register diff tools
+  for (const def of diffToolDefs) {
+    const handler = diffToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
   console.log(`[SADIE Tools] Initialized ${toolRegistry.size} tools`);
 }
 

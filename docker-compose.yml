@@ -38,8 +38,22 @@ services:
     networks:
       - sadie-network
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: sadie-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - sadie-network
+
 volumes:
   n8n_data:
+    driver: local
+  qdrant_data:
     driver: local
 
 networks:
