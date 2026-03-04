@@ -457,6 +457,13 @@ export function MessageBubble({
                   <>
                     <span className="status-text">Done</span>
                     <button
+                      className="message-action-btn"
+                      onClick={() => onRetry(message.id!)}
+                      aria-label="Regenerate response"
+                    >
+                      ↻ Regenerate
+                    </button>
+                    <button
                       className="message-action-btn copy-msg-btn"
                       onClick={handleCopyMessage}
                       aria-label="Copy response"

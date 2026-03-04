@@ -183,9 +183,30 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       if ((!events || events.length === 0) && (!d || /week|last|next/i.test(d))) {
         events = await fetchEventsInWindow();
       }
+
+      const filterByQuery = (evts: any[], q: string) =>
+        evts.filter((e: any) =>
+          (e.name || '').toLowerCase().includes(q) ||
+          (e.shortName || '').toLowerCase().includes(q) ||
+          (e.competitions || []).some((c: any) =>
+            (c.competitors || []).some((co: any) =>
+              (co.team?.displayName || '').toLowerCase().includes(q)
+            )
+          )
+        );
+
       if (query) {
         const q = query.toLowerCase();
-        events = events.filter((e: any) => (e.name || '').toLowerCase().includes(q) || (e.shortName || '').toLowerCase().includes(q) || (e.competitions || []).some((c: any) => (c.competitors || []).some((co: any) => (co.team?.displayName || '').toLowerCase().includes(q))));
+        let filtered = filterByQuery(events, q);
+
+        // If the team has no game today, expand the search to the rolling window
+        // so the user sees the next upcoming game instead of an empty result.
+        if (filtered.length === 0 && (!d || /week|last|next/i.test(d))) {
+          const windowEvents = await fetchEventsInWindow();
+          filtered = filterByQuery(windowEvents, q);
+        }
+
+        events = filtered;
       }
       return { success: true, result: { query, resultCount: events.length, events } };
     }

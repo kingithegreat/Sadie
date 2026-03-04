@@ -278,7 +278,19 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     for (const team of nbaTeams) {
       if (m.includes(team)) { teamQuery = team; break; }
     }
-    const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
+    let dateRange = '';
+    if (/last week|last_7_days|last 7 days/i.test(m)) {
+      dateRange = 'last_7_days';
+    } else if (/this week/i.test(m)) {
+      dateRange = 'last_7_days';
+    } else if (/tomorrow/i.test(m)) {
+      const d = new Date(); d.setDate(d.getDate() + 1);
+      dateRange = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    } else {
+      // Default to today so ESPN returns current day's games
+      const d = new Date();
+      dateRange = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    }
     return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } }] };
   }
 
@@ -1408,32 +1420,35 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // COMPOUND INTENT: weather → write_file chain
             const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
             if (isCompound) {
-              const { location, query } = intentResult.calls[0].arguments;
+              const { location } = intentResult.calls[0].arguments;
               console.log('[SADIE] Compound intent (enriched): get weather for', location, 'then write file');
-              
-              // Step 1: Get weather
+
+              // Step 1: Get structured weather from API
               const weatherResults = await executeToolBatch(
                 [{ name: 'get_weather', arguments: { location } }] as ToolCall[],
                 { executionId: `compound-weather-${Date.now()}`, requestConfirmation,
                   requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
               );
-              
-              const isSurf = /\b(surf|swell|waves?|ocean|marine|beach)\b/i.test(query || '');
               const wr = weatherResults?.[0]?.result;
-              
-              // Use enrichment for detailed forecast with web context
-              const enriched = await enrichWeather(wr, location, {
-                maxWebResults: 3,
-                fetchContent: true,
-                customQuery: isSurf ? `${location} surf report wave height swell` : undefined
-              });
-              
-              const fileLabel = isSurf ? 'surf_conditions' : 'weather';
+
+              // Build clean text summary from structured API data
+              let weatherSummary = `🌤️ **Weather for ${location}**\n\n`;
+              if (wr?.temperature) {
+                weatherSummary += `**Temperature:** ${wr.temperature.celsius || wr.temperature.fahrenheit || ''}${wr.temperature.feelsLike ? ` (feels like ${wr.temperature.feelsLike})` : ''}\n`;
+              }
+              if (wr?.condition) weatherSummary += `**Condition:** ${wr.condition}\n`;
+              if (wr?.wind) weatherSummary += `**Wind:** ${wr.wind.speed || ''} ${wr.wind.direction || ''}\n`;
+              if (wr?.humidity) weatherSummary += `**Humidity:** ${wr.humidity}\n`;
+              if (wr?.uvIndex) weatherSummary += `**UV Index:** ${wr.uvIndex}\n`;
+              if (wr?.precipitation) weatherSummary += `**Precipitation:** ${wr.precipitation}\n`;
+              if (wr?.visibility) weatherSummary += `**Visibility:** ${wr.visibility}\n`;
+              if (wr?.text) weatherSummary += `\n${wr.text}\n`;
+
+              // Step 2: Write file to Desktop
+              const fileLabel = 'weather';
               const fileName = `${fileLabel}_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
               const now = new Date().toLocaleString();
-              const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🌤️|🏄|📊/g, '')}`;
-              
-              // Step 2: Write file to Desktop
+              const fileContent = `Weather Report for ${location}\nGenerated: ${now}\n\n${weatherSummary.replace(/\*\*/g, '').replace(/🌤️|📊/g, '')}`;
               const HOME = process.env.HOME || process.env.USERPROFILE || '';
               const desktopPath = require('path').join(HOME, 'Desktop', fileName);
               let writeSuccess = false;
@@ -1446,12 +1461,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 writeError = writeErr.message || String(writeErr);
                 console.error('[SADIE] Compound: file write FAILED:', writeError);
               }
-              
+
               if (writeSuccess) {
                 const fileLink = formatFileLink(desktopPath, fileName);
-                toolResults = [{ result: { summary: `${enriched.summary}\n\n✅ Saved to ${fileLink}` } }];
+                toolResults = [{ result: { summary: `${weatherSummary}\n✅ Saved to ${fileLink}` } }];
               } else {
-                toolResults = [{ result: { summary: `${enriched.summary}\n\n❌ Could not save file: ${writeError}` } }];
+                toolResults = [{ result: { summary: `${weatherSummary}\n❌ Could not save file: ${writeError}` } }];
               }
             }
             // COMPOUND INTENT: NBA → write_file chain (with web enrichment)
@@ -1536,31 +1551,71 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const { location } = intentResult.calls[0].arguments;
               console.log('[SADIE] Surf conditions intent (enriched):', location);
 
-              // Use enrichment for comprehensive surf data
-              const enriched = await enrichWeather(null, location, {
-                maxWebResults: 4,
-                fetchContent: true,
-                customQuery: `${location} surf report wave height swell period tide conditions today`
-              });
+              // Fetch web search results for surf data
+              const surfSearchResult = await executeToolBatch(
+                [{ name: 'web_search', arguments: { query: `${location} surf report wave height swell period conditions today`, maxResults: 4, fetchTopResult: true } }] as ToolCall[],
+                { executionId: `surf-${Date.now()}`, requestConfirmation,
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+              );
 
-              toolResults = [{ result: { summary: enriched.summary } }];
+              // Route through LLM synthesis (same as web search path)
+              const sr = surfSearchResult?.[0]?.result;
+              if (sr) {
+                const contextParts: string[] = [];
+                if (sr.aiAnswer) contextParts.push(`Summary: ${sr.aiAnswer}`);
+                if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
+                  const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
+                  const cleaned = raw.split(/\n/).filter((l: string) => !/(\[&>|]:h-|]:w-|class=|style=)/.test(l)).join(' ').trim();
+                  contextParts.push(takeSentences(cleaned, 1500, 10));
+                  if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
+                }
+                if (Array.isArray(sr.results) && sr.results.length > 0) {
+                  contextParts.push(sr.results.slice(0, 4).map((r: any, i: number) =>
+                    `${i + 1}. ${r.title}: ${r.snippet}${r.url ? ` (${r.url})` : ''}`
+                  ).join('\n'));
+                }
+                const searchContext = contextParts.filter(Boolean).join('\n\n');
+                const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing the search results above, give a clear surf report for ${location} today. Include wave height, swell period/direction, wind, and any relevant conditions. Be concise.`;
+
+                const handler = await streamFromLLM(
+                  augmentedMessage, undefined, convId,
+                  (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
+                  () => {}, () => {},
+                  () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
+                  (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'Surf LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
+                  requestConfirmation,
+                  (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                );
+                activeStreams.set(streamId, { destroy: handler.cancel });
+                return;
+              }
+
+              // Fallback if search returned nothing
+              toolResults = [{ result: { summary: `🏄 No surf data found for ${location}. Try checking a surf forecast site like Surf-Forecast.com or Swellwatch.` } }];
             }
-            // COMPOUND SURF + FILE INTENT (enriched)
+            // COMPOUND SURF + FILE INTENT
             else if (intentResult.calls[0]?.name === '__compound_surf_file') {
               const { location } = intentResult.calls[0].arguments;
               console.log('[SADIE] Compound surf+file intent (enriched):', location);
 
-              // Use enrichment for comprehensive surf data
-              const enriched = await enrichWeather(null, location, {
-                maxWebResults: 4,
-                fetchContent: true,
-                customQuery: `${location} surf report wave height swell period tide conditions today`
-              });
+              // Fetch surf data via web search
+              const surfResults = await executeToolBatch(
+                [{ name: 'web_search', arguments: { query: `${location} surf report wave height swell period conditions today`, maxResults: 4, fetchTopResult: true } }] as ToolCall[],
+                { executionId: `surf-file-${Date.now()}`, requestConfirmation,
+                  requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+              );
+              const sr = surfResults?.[0]?.result;
 
-              const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🏄|📊/g, '')}`;
+              // Build snippet list for file
+              let surfSummary = `🏄 Surf Conditions — ${location}\n`;
+              if (sr?.aiAnswer) surfSummary += `\n${sr.aiAnswer}\n`;
+              else if (Array.isArray(sr?.results) && sr.results.length > 0) {
+                sr.results.slice(0, 5).forEach((r: any) => { surfSummary += `\n• ${r.title}\n  ${r.snippet || ''}\n  ${r.url || ''}`; });
+              }
 
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
               const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+              const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${surfSummary}`;
+              const HOME = process.env.HOME || process.env.USERPROFILE || '';
               const surfFilePath = require('path').join(HOME, 'Desktop', surfFileName);
               let surfWriteOk = false;
               try {
@@ -1572,8 +1627,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
 
               const fileLink = formatFileLink(surfFilePath, surfFileName);
-              const summary = `${enriched.summary}\n\n${surfWriteOk ? `✅ Saved to ${fileLink}` : '❌ Could not save file.'}`;
-              toolResults = [{ result: { summary } }];
+              toolResults = [{ result: { summary: `${surfSummary}\n\n${surfWriteOk ? `✅ Saved to ${fileLink}` : '❌ Could not save file.'}` } }];
             } else {
               // Normal single-step intent
               toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
@@ -1583,6 +1637,64 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               } as ToolContext);
             }
             
+            // ── WEB SEARCH: feed results to LLM for synthesis instead of dumping raw text ──
+            const webSearchResult = (toolResults || []).find(
+              (r: any) => r?.result && (r.result.results || r.result.topResultContent || r.result.aiAnswer)
+            );
+            if (webSearchResult) {
+              // Build a concise context block from the search result
+              const sr = webSearchResult.result;
+              const contextParts: string[] = [];
+
+              if (sr.aiAnswer) {
+                contextParts.push(`AI Summary: ${sr.aiAnswer}`);
+              }
+              if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
+                const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
+                // Strip obvious CSS/HTML noise: skip lines that look like class attribute soup
+                const cleaned = raw.split(/\n/).filter((l: string) => !/(\[&>|]:h-|]:w-|]:mb-|]:rounded|]:overflow|]:max-h-)/.test(l)).join(' ').trim();
+                contextParts.push(takeSentences(cleaned, 1200, 8));
+                if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
+              }
+              if (Array.isArray(sr.results) && sr.results.length > 0) {
+                const snippets = sr.results.slice(0, 5).map((r: any, i: number) =>
+                  `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
+                ).join('\n');
+                contextParts.push(`Search results:\n${snippets}`);
+              }
+
+              const searchContext = contextParts.filter(Boolean).join('\n\n');
+              const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing only the search results above, answer this question concisely: ${enhancedMessage}`;
+
+              // Stream the LLM synthesis
+              const handler = await streamFromLLM(
+                augmentedMessage,
+                undefined,
+                convId,
+                (chunk) => {
+                  if (!activeStreams.has(streamId)) return;
+                  assistantResponse += chunk;
+                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                },
+                () => {}, // onToolCall — not expected in synthesis pass
+                () => {}, // onToolResult — not expected
+                () => {
+                  if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
+                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                  activeStreams.delete(streamId);
+                },
+                (err) => {
+                  try { event.sender.send('sadie:stream-error', { error: true, message: 'LLM synthesis error', details: err?.message || err, streamId }); } catch (e) {}
+                  activeStreams.delete(streamId);
+                },
+                requestConfirmation,
+                (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+              );
+              activeStreams.set(streamId, { destroy: handler.cancel });
+              return;
+            }
+            // ── END WEB SEARCH SYNTHESIS ──
+
             // Format tool results into a nice response
             let responseText = '';
             for (const result of (toolResults || [])) {
@@ -1591,14 +1703,39 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (result.result.summary) {
                 responseText += result.result.summary + '\n';
               }
-              // Handle NBA games
+              // Handle NBA games — use enrichNbaGames so news/highlights are included
               else if (result.result.events && result.result.events.length > 0) {
-                responseText += 'Here are the games:\n\n';
-                result.result.events.slice(0, 5).forEach((game: any) => {
-                  const teams = game.competitions?.[0]?.competitors?.map((c: any) => c.team.displayName).join(' vs ') || 'Unknown matchup';
+                try {
+                  const enriched = await enrichNbaGames(result.result.events, result.result.query || '', {
+                    maxWebResults: 3,
+                    fetchContent: true,
+                    context: {
+                      executionId: `nba-enrich-${Date.now()}`,
+                      requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                    } as ToolContext
+                  });
+                  responseText += enriched.summary + '\n';
+                } catch (enrichErr: any) {
+                  // Fallback to basic formatting if enrichment fails
+                  console.error('[SADIE] NBA enrichment failed, using basic format:', enrichErr?.message);
+                  const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+                  responseText += `🏀 **NBA Games — ${today}**\n\n`;
+                  result.result.events.slice(0, 10).forEach((game: any) => {
+                  const comps = game.competitions?.[0];
+                  const competitors = comps?.competitors || [];
+                  const sorted = [...competitors].sort((a: any, b: any) => (a.homeAway === 'home' ? 1 : -1) - (b.homeAway === 'home' ? 1 : -1));
+                  const away = sorted[0]; const home = sorted[1];
+                  const awayName = away?.team?.displayName || 'Away';
+                  const homeName = home?.team?.displayName || 'Home';
+                  const awayScore = away?.score; const homeScore = home?.score;
+                  const scores = (awayScore != null && homeScore != null) ? ` ${awayScore}–${homeScore}` : '';
                   const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
-                  responseText += `${teams} - ${status}\n`;
-                });
+                  const gameTime = game.date ? new Date(game.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : '';
+                  const timeStr = status === 'Scheduled' && gameTime ? ` — ${gameTime}` : '';
+                  responseText += `**${awayName}** @ **${homeName}**${scores}\n📍 ${status}${timeStr}\n\n`;
+                  });
+                }
               }
               // Handle weather results
               else if (result.result.temperature && result.result.condition) {
@@ -1614,11 +1751,28 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 if (result.result.visibility) responseText += `Visibility: ${result.result.visibility}\n`;
               }
               // Handle web search results
-              else if (result.result.topResultContent) {
-                const topContent = result.result.topResultContent.content || result.result.topResultContent.contentText;
-                if (topContent) responseText += topContent + '\n\n';
-                if (result.result.topResultContent.url) responseText += `Source: ${result.result.topResultContent.url}\n`;
-                if (!topContent && result.result.note) responseText += `${result.result.note}\n`;
+              else if (result.result.topResultContent || result.result.aiAnswer || (result.result.results && Array.isArray(result.result.results))) {
+                // Prefer Tavily AI answer — it's already a synthesis
+                if (result.result.aiAnswer) {
+                  responseText += result.result.aiAnswer + '\n';
+                  const firstResult = Array.isArray(result.result.results) && result.result.results[0];
+                  if (firstResult?.url) responseText += `\nSource: ${firstResult.title || firstResult.url} — ${firstResult.url}\n`;
+                } else {
+                  // Use formatWebSearchResult which already applies takeSentences truncation
+                  const formatted = formatWebSearchResult(result);
+                  if (formatted) {
+                    responseText += formatted + '\n';
+                  } else if (Array.isArray(result.result.results) && result.result.results.length > 0) {
+                    // Last resort: numbered snippet list
+                    responseText += `Here are the top results for "${result.result.query || 'your search'}":\n\n`;
+                    result.result.results.slice(0, 5).forEach((r: any, i: number) => {
+                      responseText += `**${i + 1}. ${r.title || 'Result'}**\n`;
+                      if (r.snippet) responseText += `${r.snippet}\n`;
+                      if (r.url) responseText += `${r.url}\n`;
+                      responseText += '\n';
+                    });
+                  }
+                }
               }
               // Handle directory listing
               else if (result.result.entries && Array.isArray(result.result.entries)) {
