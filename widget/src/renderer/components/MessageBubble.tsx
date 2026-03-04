@@ -288,6 +288,38 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
     return <div className="message-text">{linkifyText(content)}</div>;
   }
 
+  // Split content into segments — plain text parts vs inline images
+  const IMAGE_TOKEN = '__SADIE_IMAGE__:';
+  if (!isUser && content.includes(IMAGE_TOKEN)) {
+    const segments = content.split(IMAGE_TOKEN);
+    return (
+      <div className="message-text markdown-body">
+        {segments.map((seg, idx) => {
+          if (idx === 0) {
+            // Text before the first image token (may be empty)
+            return seg.trim() ? <React.Fragment key={idx}>{renderMarkdown(seg)}</React.Fragment> : null;
+          }
+          // Each subsequent segment starts with the raw base64 data; the rest is text
+          const newline = seg.indexOf('\n');
+          const b64 = newline === -1 ? seg.trim() : seg.slice(0, newline).trim();
+          const rest = newline === -1 ? '' : seg.slice(newline + 1);
+          return (
+            <React.Fragment key={idx}>
+              {b64 && (
+                <img
+                  src={`data:image/png;base64,${b64}`}
+                  alt="Generated image"
+                  style={{ maxWidth: '100%', borderRadius: 8, marginTop: 8, display: 'block' }}
+                />
+              )}
+              {rest.trim() && renderMarkdown(rest)}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className="message-text markdown-body">
       {renderMarkdown(content)}

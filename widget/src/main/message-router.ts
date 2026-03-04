@@ -341,6 +341,15 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   // "what is this document" / "what is this" without attachment markers = LLM handles
   // (attached docs are caught by the document-marker check at top)
 
+  // IMAGE GENERATION intents
+  if (/\b(draw|generate|create|make|paint|sketch|render|design)\b.{0,30}\b(image|picture|photo|illustration|art|portrait|wallpaper|logo|icon|scene)\b/i.test(m) ||
+      /\b(image|picture|photo|illustration)\b.{0,20}\b(of|showing|with|featuring)\b/i.test(m)) {
+    const prompt = userMessage
+      .replace(/^(draw|generate|create|make|paint|sketch|render|design)\s*(me\s*)?(an?\s*|a\s+)?/i, '')
+      .trim();
+    return { calls: [{ name: 'image_generate', arguments: { prompt, width: 512, height: 512, steps: 20 } }] };
+  }
+
   // WEB SEARCH intents — be careful not to match "what is this document" etc.
   if (/\b(search for|look up|tell me about|google)\b/i.test(m)) {
     const q = userMessage.trim();
@@ -1694,6 +1703,23 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               return;
             }
             // ── END WEB SEARCH SYNTHESIS ──
+
+            // ── IMAGE GENERATION: send base64 to renderer as special chunk ──
+            const imageResult = (toolResults || []).find(
+              (r: any) => r?.result?.image_base64
+            );
+            if (imageResult) {
+              const b64 = imageResult.result.image_base64 as string;
+              const chunk = `__SADIE_IMAGE__:${b64}`;
+              const caption = `\n🎨 Generated image for: *${intentResult.calls[0]?.arguments?.prompt || message}*`;
+              try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+              addToHistory(convId, 'assistant', caption + '\n' + chunk);
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              activeStreams.delete(streamId);
+              return;
+            }
+            // ── END IMAGE GENERATION ──
 
             // Format tool results into a nice response
             let responseText = '';
