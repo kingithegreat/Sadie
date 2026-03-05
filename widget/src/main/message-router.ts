@@ -723,12 +723,18 @@ function buildSearchContext(sr: any, charBudget = 3000): string {
 
 /**
  * Wrap search context in a synthesis prompt that forces the model to answer
- * directly from evidence — suppressing the "check YouTube/CFR" padding pattern.
+ * directly from evidence — suppressing the "check YouTube/CFR" padding pattern
+ * and prohibiting the "I'm unable to fetch" false disclaimer.
  */
 function makeSynthesisPrompt(searchContext: string, question: string): string {
   return `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\n` +
-    `Using ONLY the search results above, answer the following question directly and concisely. ` +
-    `Report the key facts you found and cite sources inline (e.g. "According to [title], ..."). ` +
+    `IMPORTANT: You have already been given the search results above. ` +
+    `DO NOT say you are unable to fetch, access, or retrieve information — you have the results. ` +
+    `DO NOT start your response with any disclaimer such as "I'm unable to fetch", ` +
+    `"I cannot access", "I don't have real-time access", or anything similar. ` +
+    `Answer directly and immediately.\n\n` +
+    `Using ONLY the search results above, answer the following question concisely. ` +
+    `Report the key facts and cite sources inline (e.g. "According to [title], ..."). ` +
     `If the results contain limited information, state what was found — do NOT suggest the user ` +
     `check YouTube, news websites, Wikipedia, or any other source.\n\n` +
     `Question: ${question}`;
@@ -1248,6 +1254,18 @@ export async function streamFromOllamaWithTools(
     messages.push({
       role: 'system',
       content: `[Prior conversation context — older turns compressed for brevity]\n${digest}`
+    });
+  }
+
+  // For synthesis calls inject a system override that cancels the default
+  // "offer alternatives when you can't help" instruction — the model already
+  // has search results and must answer from them without hedging.
+  if (isSynthesisCall && !uncensoredModeEnabled) {
+    messages.push({
+      role: 'system',
+      content: 'You are answering from pre-fetched search results. ' +
+        'Do NOT say you cannot fetch, access, or retrieve information. ' +
+        'Do NOT offer to look something up. Answer directly from the results provided.'
     });
   }
 
