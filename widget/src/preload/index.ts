@@ -392,7 +392,14 @@ const electronAPI: ElectronAPI = {
   // List all registered tool definitions
   listTools: async (): Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }> => {
     return await ipcRenderer.invoke('sadie:list-tools');
-  }
+  },
+
+  // ── MCP Server Management ──────────────────────────────────────────────────
+  mcpListServers: async () => ipcRenderer.invoke('sadie:mcp-list-servers'),
+  mcpGetStatus: async () => ipcRenderer.invoke('sadie:mcp-get-status'),
+  mcpAddServer: async (config: any) => ipcRenderer.invoke('sadie:mcp-add-server', config),
+  mcpRemoveServer: async (name: string) => ipcRenderer.invoke('sadie:mcp-remove-server', name),
+  mcpToggleServer: async (name: string, enabled: boolean) => ipcRenderer.invoke('sadie:mcp-toggle-server', name, enabled)
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.

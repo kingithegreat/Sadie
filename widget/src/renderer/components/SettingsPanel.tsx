@@ -174,6 +174,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
   const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
 
+  // MCP server management state
+  const [mcpServers, setMcpServers] = useState<any[]>([]);
+  const [mcpStatus, setMcpStatus] = useState<any[]>([]);
+  const [showMcpForm, setShowMcpForm] = useState(false);
+  const [mcpForm, setMcpForm] = useState({
+    type: 'stdio' as 'stdio' | 'sse',
+    name: '',
+    command: '',
+    args: '',
+    env: '',
+    url: '',
+    enabled: true
+  });
+
   const refreshTelemetryLog = async () => {
     try {
       const r = await (window as any).electron?.readConsentLog?.();
@@ -215,6 +229,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setUncensoredMode(result?.enabled || false);
     });
   }, []);
+
+  // Load MCP server list on mount
+  const loadMcpServers = async () => {
+    try {
+      const servers = await (window as any).electron?.mcpListServers?.();
+      const status = await (window as any).electron?.mcpGetStatus?.();
+      if (servers) setMcpServers(servers);
+      if (status) setMcpStatus(status);
+    } catch (e) { /* silently ignore if IPC not yet ready */ }
+  };
+
+  useEffect(() => { loadMcpServers(); }, []);
 
   const handleUncensoredToggle = async (enabled: boolean) => {
     setUncensoredMode(enabled);
@@ -823,6 +849,190 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onClose={() => setShowTelemetryModal(false)}
         />
         {showTelemetryDashboard && <TelemetryDashboard open={showTelemetryDashboard} onClose={() => setShowTelemetryDashboard(false)} /> }
+      </div>
+
+      {/* ── MCP Servers ───────────────────────────────────────────────────── */}
+      <div className="settings-section">
+        <h3 className="settings-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          🔌 MCP Servers
+          <small style={{ fontWeight: 400, fontSize: '0.75em', color: '#71717a' }}>
+            — extend SADIE with any Model Context Protocol server
+          </small>
+        </h3>
+
+        {/* Connected server list */}
+        {mcpServers.length === 0 ? (
+          <p style={{ fontSize: '0.85em', color: '#71717a', margin: '4px 0 12px' }}>
+            No MCP servers configured. Add one below.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+            {mcpServers.map((srv: any) => {
+              const live = mcpStatus.find((s: any) => s.name === srv.name);
+              return (
+                <div
+                  key={srv.name}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    background: '#27272a', borderRadius: 6, padding: '6px 10px', fontSize: '0.85em'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span
+                      style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: live ? '#22c55e' : (srv.enabled === false ? '#71717a' : '#ef4444'),
+                        display: 'inline-block', flexShrink: 0
+                      }}
+                    />
+                    <span style={{ fontWeight: 500 }}>{srv.name}</span>
+                    <span style={{ color: '#71717a' }}>
+                      {srv.type === 'stdio' ? srv.command : srv.url}
+                    </span>
+                    {live && (
+                      <span style={{ color: '#86efac', fontSize: '0.9em' }}>
+                        {live.toolCount} tool{live.toolCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      className="button button-secondary"
+                      style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                      onClick={async () => {
+                        await (window as any).electron?.mcpToggleServer?.(srv.name, srv.enabled === false);
+                        loadMcpServers();
+                      }}
+                    >
+                      {srv.enabled === false ? 'Enable' : 'Disable'}
+                    </button>
+                    <button
+                      className="button button-secondary"
+                      style={{ padding: '2px 8px', fontSize: '0.8em', color: '#f87171' }}
+                      onClick={async () => {
+                        if (confirm(`Remove MCP server "${srv.name}"?`)) {
+                          await (window as any).electron?.mcpRemoveServer?.(srv.name);
+                          loadMcpServers();
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Add server form */}
+        {showMcpForm ? (
+          <div style={{ background: '#27272a', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select
+                  className="setting-input"
+                  style={{ width: 'auto', flexShrink: 0 }}
+                  value={mcpForm.type}
+                  onChange={(e) => setMcpForm({ ...mcpForm, type: e.target.value as 'stdio' | 'sse' })}
+                >
+                  <option value="stdio">stdio (local)</option>
+                  <option value="sse">SSE (remote)</option>
+                </select>
+                <input
+                  className="setting-input"
+                  placeholder="Server name (e.g. brave-search)"
+                  value={mcpForm.name}
+                  onChange={(e) => setMcpForm({ ...mcpForm, name: e.target.value })}
+                />
+              </div>
+              {mcpForm.type === 'stdio' ? (
+                <>
+                  <input
+                    className="setting-input"
+                    placeholder="Command (e.g. npx)"
+                    value={mcpForm.command}
+                    onChange={(e) => setMcpForm({ ...mcpForm, command: e.target.value })}
+                  />
+                  <input
+                    className="setting-input"
+                    placeholder='Args, space-separated (e.g. -y @modelcontextprotocol/server-brave-search)'
+                    value={mcpForm.args}
+                    onChange={(e) => setMcpForm({ ...mcpForm, args: e.target.value })}
+                  />
+                  <input
+                    className="setting-input"
+                    placeholder='Env vars as JSON (e.g. {"BRAVE_API_KEY":"your-key"})'
+                    value={mcpForm.env}
+                    onChange={(e) => setMcpForm({ ...mcpForm, env: e.target.value })}
+                  />
+                </>
+              ) : (
+                <input
+                  className="setting-input"
+                  placeholder="SSE URL (e.g. http://localhost:3000/sse)"
+                  value={mcpForm.url}
+                  onChange={(e) => setMcpForm({ ...mcpForm, url: e.target.value })}
+                />
+              )}
+              <small style={{ color: '#71717a', fontSize: '0.8em' }}>
+                Changes take effect after restarting SADIE.
+              </small>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="button button-save"
+                  style={{ padding: '4px 14px' }}
+                  onClick={async () => {
+                    if (!mcpForm.name.trim()) return;
+                    let envParsed: Record<string, string> | undefined;
+                    try {
+                      if (mcpForm.env.trim()) envParsed = JSON.parse(mcpForm.env);
+                    } catch {
+                      alert('Invalid env JSON');
+                      return;
+                    }
+                    const config: any = mcpForm.type === 'stdio'
+                      ? {
+                          type: 'stdio',
+                          name: mcpForm.name.trim(),
+                          command: mcpForm.command.trim(),
+                          args: mcpForm.args.trim() ? mcpForm.args.trim().split(/\s+/) : [],
+                          env: envParsed,
+                          enabled: true
+                        }
+                      : {
+                          type: 'sse',
+                          name: mcpForm.name.trim(),
+                          url: mcpForm.url.trim(),
+                          enabled: true
+                        };
+                    await (window as any).electron?.mcpAddServer?.(config);
+                    setMcpForm({ type: 'stdio', name: '', command: '', args: '', env: '', url: '', enabled: true });
+                    setShowMcpForm(false);
+                    loadMcpServers();
+                  }}
+                >
+                  Add Server
+                </button>
+                <button
+                  className="button button-cancel"
+                  style={{ padding: '4px 14px' }}
+                  onClick={() => setShowMcpForm(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="button button-secondary"
+            style={{ fontSize: '0.85em' }}
+            onClick={() => setShowMcpForm(true)}
+          >
+            + Add MCP Server
+          </button>
+        )}
       </div>
 
       <div className="settings-footer">

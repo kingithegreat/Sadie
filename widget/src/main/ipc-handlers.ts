@@ -18,6 +18,12 @@ import { setTavilyApiKey, setSerperApiKey } from './tools/web';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import {
+  loadMcpConfig,
+  saveMcpConfig,
+  getMcpStatus,
+  type McpServerConfig
+} from './mcp-client';
+import {
   MemoryManager,
   StoredConversation,
 } from './memory-manager';
@@ -588,6 +594,44 @@ try {
         }
       );
     });
+  });
+
+  // ── MCP Server Management ───────────────────────────────────────────────────
+
+  ipcMain.handle('sadie:mcp-get-status', async () => {
+    return getMcpStatus();
+  });
+
+  ipcMain.handle('sadie:mcp-list-servers', async () => {
+    return loadMcpConfig().servers;
+  });
+
+  ipcMain.handle('sadie:mcp-add-server', async (_event, config: McpServerConfig) => {
+    const current = loadMcpConfig();
+    // Replace if same name already exists, otherwise append
+    const idx = current.servers.findIndex(s => s.name === config.name);
+    if (idx >= 0) {
+      current.servers[idx] = config;
+    } else {
+      current.servers.push(config);
+    }
+    saveMcpConfig(current);
+    return { success: true };
+  });
+
+  ipcMain.handle('sadie:mcp-remove-server', async (_event, name: string) => {
+    const current = loadMcpConfig();
+    current.servers = current.servers.filter(s => s.name !== name);
+    saveMcpConfig(current);
+    return { success: true };
+  });
+
+  ipcMain.handle('sadie:mcp-toggle-server', async (_event, name: string, enabled: boolean) => {
+    const current = loadMcpConfig();
+    const server = current.servers.find(s => s.name === name);
+    if (server) server.enabled = enabled;
+    saveMcpConfig(current);
+    return { success: true };
   });
 
   // Mark registration complete
