@@ -188,10 +188,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       setPermissionRequestData({ requestId: data.requestId, missingPermissions: data.missingPermissions, reason: data.reason, streamId: data.streamId });
       setPermissionModalOpen(true);
     });
-    
+
+    const reminderUnsub = window.electron.onReminderFired?.((data) => {
+      setMessages(prev => [...prev, {
+        id: `rem-${Date.now()}`,
+        role: 'system' as const,
+        content: `⏰ **Reminder:** ${data.message}`,
+        createdAt: Date.now(),
+        error: null,
+      }]);
+    });
+
     return () => {
       unsubscribe?.();
       permUnsub?.();
+      reminderUnsub?.();
     };
   }, []);
 

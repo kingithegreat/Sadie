@@ -6,7 +6,7 @@
  * process restart (purely in-memory; no persistence layer required).
  */
 
-import { Notification } from 'electron';
+import { Notification, BrowserWindow } from 'electron';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 // ---- State ----
@@ -35,6 +35,16 @@ function fireReminder(id: string) {
     n.show();
   } catch {
     // Electron not available in test environments — silently swallow
+  }
+  // Broadcast to renderer so the chat shows a system message
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('sadie:reminder-fired', { message: r.message, label: r.label });
+      }
+    }
+  } catch {
+    // ignore if no window
   }
 }
 

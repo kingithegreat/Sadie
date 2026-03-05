@@ -207,6 +207,12 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.HIDE_WINDOW, listener);
   },
 
+  onReminderFired: (cb: (data: { message: string; label: string }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: { message: string; label: string }) => cb(data);
+    ipcRenderer.on('sadie:reminder-fired', listener);
+    return () => ipcRenderer.removeListener('sadie:reminder-fired', listener);
+  },
+
   removeShowWindowListener: () => {
     ipcRenderer.removeAllListeners(ALLOWED_CHANNELS.SHOW_WINDOW);
   },

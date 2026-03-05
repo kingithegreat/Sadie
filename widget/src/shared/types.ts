@@ -220,4 +220,5 @@ export interface ElectronAPI {
   writeClipboard?: (text: string) => void;
   exportChat?: (markdown: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   listTools?: () => Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }>;
+  onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;
 }
