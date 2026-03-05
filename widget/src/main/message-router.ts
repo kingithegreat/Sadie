@@ -2047,11 +2047,24 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             
             // ── WEB SEARCH: feed results to LLM for synthesis instead of dumping raw text ──
             const webSearchResult = (toolResults || []).find(
-              (r: any) => r?.result && (r.result.results || r.result.topResultContent || r.result.aiAnswer)
+              (r: any) => r?.result && (
+                (Array.isArray(r.result.sources) && r.result.sources.length > 0) ||
+                r.result.results || r.result.topResultContent || r.result.aiAnswer
+              )
             );
             if (webSearchResult) {
               const sr = webSearchResult.result;
               const searchContext = buildSearchContext(sr);
+              if (!searchContext) {
+                // Web search ran but returned empty content — tell the user
+                const noResultMsg = `I searched the web for that but couldn't retrieve useful content. Try rephrasing, or check a news source directly.`;
+                addToHistory(convId, 'user', enhancedMessage);
+                addToHistory(convId, 'assistant', noResultMsg);
+                try { event.sender.send('sadie:stream-chunk', { chunk: noResultMsg, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                activeStreams.delete(streamId);
+                return;
+              }
               const augmentedMessage = makeSynthesisPrompt(searchContext, enhancedMessage);
 
               // Stream the LLM synthesis
