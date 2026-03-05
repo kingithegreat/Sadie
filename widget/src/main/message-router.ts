@@ -503,6 +503,18 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     return { calls: [{ name: 'image_generate', arguments: { prompt, width: 512, height: 512, steps: 20 } }] };
   }
 
+  // CURRENT EVENTS / GEOPOLITICAL intents — force web_search for real-time topics
+  if (
+    /\b(current|ongoing|latest|recent)\s+(war|conflict|crisis|situation|attack|battle|invasion|protest|unrest|fighting|ceasefire|sanctions?|tensions?|strike|hostilities)\b/i.test(m) ||
+    /\b(war|conflict|invasion|battle|fighting|military\s+operation|ceasefire|airstrike|bombardment)\s+(in|between|against|with)\b/i.test(m) ||
+    /\bwhat'?s?\s+(going\s+on|happening)\s+(in|with|between)\b/i.test(m) ||
+    /\b(situation|crisis|status|update)\s+(in|on)\s+\w/i.test(m) ||
+    /\b(is\s+there|are\s+there|has\s+there\s+been)\s+.{0,25}\b(war|fighting|conflict|protests?|crisis|invasion|attack)\b/i.test(m) ||
+    /\b(iran|iraq|ukraine|russia|gaza|israel|palestine|taiwan|china|north\s*korea|sudan|yemen|syria|myanmar|afghanistan)\b.{0,40}\b(war|conflict|invasion|attack|crisis|protest|situation|news|update|happening)\b/i.test(m)
+  ) {
+    return { calls: [{ name: 'web_search', arguments: { query: userMessage.trim(), maxResults: 5, fetchTopResult: true } }] };
+  }
+
   // WEB SEARCH intents — be careful not to match "what is this document" etc.
   if (/\b(search for|look up|tell me about|google)\b/i.test(m)) {
     const q = userMessage.trim();
