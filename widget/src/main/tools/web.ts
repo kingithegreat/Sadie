@@ -321,10 +321,11 @@ function extractMainContent(html: string): string {
 
 // ============= SEARCH HELPERS =============
 
-// Filter out unwanted domains
+// Filter out search-engine pages (not content sources) from scraper results.
+// Wikipedia is intentionally NOT blocked here — it's one of the best free
+// sources of factual and current-events content.
 function isAllowedDomain(url: string): boolean {
   const blockedDomains = [
-    'wikipedia.org',
     'duckduckgo.com',
     'google.com/search',
     'bing.com/search',
@@ -390,7 +391,7 @@ async function searchGoogle(query: string, maxResults: number): Promise<Array<{ 
   return results;
 }
 
-// Search using DuckDuckGo (fallback)
+// Search using DuckDuckGo HTML (fallback — scraper, brittle)
 async function searchDuckDuckGo(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
@@ -400,39 +401,66 @@ async function searchDuckDuckGo(query: string, maxResults: number): Promise<Arra
   console.log('[SADIE Web] DDG response length:', html.length);
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
-  
-  // Split by result divs
-  const resultBlocks = html.split(/<div class="result\s+results_links/gi);
-  
-  for (let i = 1; i < resultBlocks.length && results.length < maxResults; i++) {
-    const block = resultBlocks[i];
-    
-    if (block.includes('result--ad')) continue;
-    
-    const titleMatch = block.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]+)/i);
-    if (!titleMatch) continue;
-    
-    const rawUrl = titleMatch[1];
-    const title = stripHtml(titleMatch[2]).trim();
-    
-    const snippetMatch = block.match(/<a[^>]*class="result__snippet"[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/a>/i);
-    const snippet = snippetMatch ? stripHtml(snippetMatch[1]).trim() : '';
-    
-    if (!rawUrl || !title) continue;
-    
-    let finalUrl = rawUrl;
-    const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
-    if (uddgMatch) {
-      try {
-        finalUrl = decodeURIComponent(uddgMatch[1]);
-      } catch {
-        finalUrl = rawUrl;
+
+  // DDG HTML structure as of 2024–2025: result items use class="result results_links"
+  // Try splitting on the result container class patterns
+  const blockSplitters = [
+    /<div class="result\s+results_links/gi,
+    /<div class="results_links/gi,
+    /<div class="web-result/gi,
+  ];
+
+  for (const splitter of blockSplitters) {
+    const resultBlocks = html.split(splitter);
+    if (resultBlocks.length < 2) continue;
+
+    for (let i = 1; i < resultBlocks.length && results.length < maxResults; i++) {
+      const block = resultBlocks[i];
+      if (block.includes('result--ad')) continue;
+
+      // Title + URL: <a class="result__a" href="...">Title</a>
+      //   OR newer: <h2 class="result__title"><a href="...">Title</a></h2>
+      const titleMatch =
+        block.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i) ||
+        block.match(/<h2[^>]*><a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a><\/h2>/i);
+      if (!titleMatch) continue;
+
+      const rawUrl = titleMatch[1];
+      const title = stripHtml(titleMatch[2]).trim();
+
+      // Snippet: <a class="result__snippet" ...> or <div class="result__snippet">
+      const snippetMatch =
+        block.match(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i) ||
+        block.match(/<div[^>]*class="[^"]*snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      const snippet = snippetMatch ? stripHtml(snippetMatch[1]).trim() : '';
+
+      if (!rawUrl || !title) continue;
+
+      // Decode DDG redirect URL (/url?uddg=...)
+      let finalUrl = rawUrl;
+      const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
+      if (uddgMatch) {
+        try { finalUrl = decodeURIComponent(uddgMatch[1]); } catch { finalUrl = rawUrl; }
       }
+
+      if (!isAllowedDomain(finalUrl)) continue;
+      results.push({ title, url: finalUrl, snippet });
     }
-    
-    if (!isAllowedDomain(finalUrl)) continue;
-    
-    results.push({ title, url: finalUrl, snippet });
+
+    if (results.length > 0) break; // found results with this splitter, stop trying
+  }
+
+  // Last-resort: extract any external https links with meaningful anchor text
+  if (results.length === 0) {
+    const linkPat = /<a[^>]*href="(https?:\/\/(?!(?:www\.)?duckduckgo\.com)[^"]+)"[^>]*>([^<]{10,100})<\/a>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = linkPat.exec(html)) !== null && results.length < maxResults) {
+      const url = m[1];
+      const title = stripHtml(m[2]).trim();
+      if (!isAllowedDomain(url)) continue;
+      if (results.some(r => r.url === url)) continue;
+      results.push({ title, url, snippet: '' });
+    }
   }
   
   return results;
@@ -479,6 +507,71 @@ async function searchBrave(query: string, maxResults: number): Promise<Array<{ t
   }
   
   return results;
+}
+
+// ============= DUCKDUCKGO INSTANT ANSWER API (free, no key) =============
+// Uses DDG's structured JSON endpoint — not HTML scraping. Returns instant
+// answers, abstracts (usually from Wikipedia), and related topic links.
+// Reliable for factual and current-events queries without any API key.
+
+async function searchDDGInstant(query: string): Promise<{
+  results: Array<{ title: string; url: string; snippet: string }>;
+  sources: Array<{ url: string; title: string; content: string }>;
+  answer?: string;
+} | null> {
+  const encodedQuery = encodeURIComponent(query);
+  const apiUrl = `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`;
+
+  console.log('[SADIE Web] Querying DDG Instant Answer API for:', query);
+  const raw = await httpGet(apiUrl, { 'Accept': 'application/json' });
+  const json = JSON.parse(raw);
+
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const sources: Array<{ url: string; title: string; content: string }> = [];
+  let answer: string | undefined;
+
+  // Direct answer (e.g. "What is 2+2?")
+  if (json.Answer) answer = String(json.Answer);
+
+  // Abstract — usually sourced from Wikipedia or other authoritative sources
+  if (json.AbstractText && json.AbstractURL) {
+    const content = String(json.AbstractText);
+    const url = String(json.AbstractURL);
+    const title = String(json.Heading || json.AbstractSource || query);
+    results.push({ title, url, snippet: content.slice(0, 300) });
+    if (content.length > 50) {
+      sources.push({ url, title, content });
+    }
+    if (!answer && content) answer = content;
+  }
+
+  // Related topics — each has a text snippet and link
+  if (Array.isArray(json.RelatedTopics)) {
+    for (const topic of json.RelatedTopics) {
+      // Some entries are sub-groups ({Topics: [...]}), skip them
+      if (!topic.FirstURL || !topic.Text) continue;
+      const url = String(topic.FirstURL);
+      const text = String(topic.Text);
+      const title = text.split(' - ')[0]?.trim() || text.slice(0, 80);
+      results.push({ title, url, snippet: text.slice(0, 300) });
+      if (text.length > 50) {
+        sources.push({ url, title, content: text });
+      }
+      if (results.length >= 8) break;
+    }
+  }
+
+  // Results block (less common but used for some queries)
+  if (Array.isArray(json.Results)) {
+    for (const r of json.Results) {
+      if (!r.FirstURL || !r.Text) continue;
+      results.push({ title: r.Text.slice(0, 80), url: r.FirstURL, snippet: r.Text });
+    }
+  }
+
+  if (results.length === 0 && !answer) return null;
+  console.log(`[SADIE Web] DDG Instant returned ${results.length} results, answer=${!!answer}`);
+  return { results, sources, answer };
 }
 
 // ============= TAVILY SEARCH (AI-optimized, structured JSON) =============
@@ -710,6 +803,24 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
         }
       } catch (err: any) {
         console.log(`[SADIE Web] Serper failed: ${err.message}`);
+      }
+    }
+
+    // DDG Instant Answer API — free structured JSON, no key needed.
+    // Use when no paid API key is configured OR as a supplement to add an
+    // authoritative abstract (often Wikipedia-sourced) alongside scraper results.
+    if (results.length === 0) {
+      try {
+        console.log('[SADIE Web] Trying DDG Instant Answer API (free)...');
+        const ddgInstant = await searchDDGInstant(query);
+        if (ddgInstant && ddgInstant.results.length > 0) {
+          results = ddgInstant.results;
+          tavilySources = ddgInstant.sources.slice(0, fetchResultCount);
+          if (ddgInstant.answer) tavilyAnswer = ddgInstant.answer;
+          console.log(`[SADIE Web] DDG Instant returned ${results.length} results`);
+        }
+      } catch (err: any) {
+        console.log(`[SADIE Web] DDG Instant failed: ${err.message}`);
       }
     }
 
