@@ -1873,12 +1873,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const away = sorted[0]; const home = sorted[1];
                   const awayName = away?.team?.displayName || 'Away';
                   const homeName = home?.team?.displayName || 'Home';
+                  const isScheduled = game.status?.type?.state === 'pre' || game.status?.type?.description === 'Scheduled';
                   const awayScore = away?.score; const homeScore = home?.score;
-                  const scores = (awayScore != null && homeScore != null) ? ` ${awayScore}–${homeScore}` : '';
-                  const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
-                  const gameTime = game.date ? new Date(game.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : '';
-                  const timeStr = status === 'Scheduled' && gameTime ? ` — ${gameTime}` : '';
-                  responseText += `**${awayName}** @ **${homeName}**${scores}\n📍 ${status}${timeStr}\n\n`;
+                  const scores = (!isScheduled && awayScore != null && homeScore != null) ? ` **${awayScore}–${homeScore}**` : '';
+                  const statusDetail = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
+                  const gameTime = game.date ? new Date(game.date).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : '';
+                  const timeStr = isScheduled && gameTime ? gameTime : statusDetail;
+                  responseText += `**${awayName}** @ **${homeName}**${scores}\n📍 ${timeStr}\n\n`;
                   });
                 }
               }

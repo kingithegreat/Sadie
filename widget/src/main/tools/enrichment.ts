@@ -275,26 +275,41 @@ function formatNbaGame(event: any): FormattedGame | null {
     
     const awayTeam = away.team?.displayName || away.team?.name || 'Away';
     const homeTeam = home.team?.displayName || home.team?.name || 'Home';
-    const awayScore = away.score || '—';
-    const homeScore = home.score || '—';
     const awayRecord = away.records?.[0]?.summary || '';
     const homeRecord = home.records?.[0]?.summary || '';
     
     teams.push(awayTeam, homeTeam);
     
     // Get game status
-    const status = event.status?.type?.description || 'Scheduled';
-    const gameTime = event.date ? new Date(event.date).toLocaleString() : '';
+    const statusDesc = event.status?.type?.description || 'Scheduled';
+    const statusShort = event.status?.type?.shortDetail || statusDesc;
+    const isScheduled = event.status?.type?.state === 'pre' || statusDesc === 'Scheduled';
+    const isInProgress = event.status?.type?.state === 'in';
+    const isFinal = event.status?.type?.state === 'post';
+
+    // Only show scores when the game is live or finished
+    let scoreStr = '';
+    if (!isScheduled) {
+      const awayScore = away.score ?? '—';
+      const homeScore = home.score ?? '—';
+      scoreStr = ` **${awayScore}–${homeScore}**`;
+    }
+
+    // Game time in ET (ESPN dates are UTC)
+    let gameTimeStr = '';
+    if (event.date) {
+      const d = new Date(event.date);
+      gameTimeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+    }
     
     // Format nicely
-    formatted = `**${awayTeam}** ${awayScore} @ **${homeTeam}** ${homeScore}`;
+    formatted = `**${awayTeam}** @ **${homeTeam}**${scoreStr}`;
     if (awayRecord || homeRecord) {
       formatted += `\n  ${awayTeam} (${awayRecord}) vs ${homeTeam} (${homeRecord})`;
     }
-    formatted += `\n  📍 ${status}`;
-    if (status === 'Scheduled' && gameTime) {
-      formatted += ` — ${gameTime}`;
-    }
+    formatted += `\n  📍 ${isScheduled ? `${gameTimeStr}` : statusShort}`;
+    if (isFinal) formatted += ' ✅';
+    if (isInProgress) formatted += ' 🔴 Live';
     
     // Add leaders if available
     const leaders = comp?.leaders || [];
@@ -321,6 +336,15 @@ function formatNbaGame(event: any): FormattedGame | null {
   return { formatted, teams };
 }
 
+// Known boilerplate patterns to reject
+const HIGHLIGHT_BLOCKLIST = [
+  /youtube|google llc|copyright|privacy policy|terms of service|how .* works|test new features/i,
+  /press copyright|contact us|creators|advertise|developers/i,
+  /about press|feature\s*&copy/i,
+  /subscribe|newsletter|sign up|log in|create account/i,
+  /cookie|gdpr|ccpa|consent/i,
+];
+
 function extractHighlights(content: string): string | null {
   if (!content) return null;
   
@@ -330,18 +354,22 @@ function extractHighlights(content: string): string | null {
     .replace(/\s+/g, ' ')
     .trim();
   
-  // Look for key sentences about scores, highlights
-  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 20);
-  const relevant = sentences.filter(s => 
-    /\b(score[ds]?|points?|win|won|defeat|beat|lead|quarter|half|final)\b/i.test(s)
-  ).slice(0, 5);
+  // Split and filter sentences
+  const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 25);
+  
+  // Prefer basketball-relevant sentences
+  const relevant = sentences.filter(s => {
+    if (HIGHLIGHT_BLOCKLIST.some(re => re.test(s))) return false;
+    return /\b(score[ds]?|points?|win|won|defeat|beat|lead|quarter|half|final|basket|rebound|assist|three|dunk)\b/i.test(s);
+  }).slice(0, 4);
   
   if (relevant.length > 0) {
-    return relevant.map(s => `• ${s.trim()}`).join('\n');
+    return relevant.map(s => `• ${s}`).join('\n');
   }
   
-  // Return first few sentences as fallback
-  return sentences.slice(0, 3).map(s => `• ${s.trim()}`).join('\n');
+  // Fallback: any clean non-boilerplate sentences
+  const clean = sentences.filter(s => !HIGHLIGHT_BLOCKLIST.some(re => re.test(s))).slice(0, 3);
+  return clean.length > 0 ? clean.map(s => `• ${s}`).join('\n') : null;
 }
 
 function extractWeatherDetails(content: string, isSurf: boolean): string | null {
