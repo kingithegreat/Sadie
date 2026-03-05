@@ -405,9 +405,14 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     ];
     let source = 'bbc';
     for (const [re, s] of sourceKeywords) { if (re.test(m)) { source = s; break; } }
-    const topicMatch = m.match(/\b(?:about|on|covering)\s+(.+?)(?:\s+news|\s+headlines|$)/i);
-    const topic_filter = topicMatch ? topicMatch[1].trim() : undefined;
-    return { calls: [{ name: 'get_news', arguments: { source, limit: 10, ...(topic_filter ? { topic_filter } : {}) } }] };
+    // Extract topic from patterns like:
+    //   "news on the war" / "news about X" / "latest war news" / "what's happening with X"
+    const topicMatch =
+      m.match(/\b(?:about|on|covering|regarding)\s+(?:the\s+)?(.+?)(?:\s+news|\s+headlines|\s*$)/i) ||
+      m.match(/\b(?:latest|recent|current)\s+(.+?)\s+news\b/i) ||
+      m.match(/\bnews\s+(?:about|on|regarding)\s+(?:the\s+)?(.+?)(?:\s+news|\s+headlines|\s*$)/i);
+    const topic_filter = topicMatch ? topicMatch[1].replace(/\s*\?$/, '').trim() : undefined;
+    return { calls: [{ name: 'get_news', arguments: { source, limit: 15, ...(topic_filter ? { topic_filter } : {}), _originalQuery: userMessage } }] };
   }
 
   // PROCESS MANAGER intents
@@ -2023,13 +2028,52 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               // Handle news headlines
               else if (result.result.items && Array.isArray(result.result.items)) {
-                responseText += `📰 **${result.result.source || 'News'}**\n\n`;
-                (result.result.items as any[]).forEach((item: any, i: number) => {
-                  responseText += `**${i + 1}. ${item.title}**\n`;
-                  if (item.summary) responseText += `${String(item.summary).slice(0, 200)}\n`;
-                  if (item.link) responseText += `${item.link}\n`;
-                  responseText += '\n';
-                });
+                if (result.result.items.length === 0) {
+                  // RSS returned no matching articles — fall back to web search
+                  const originalQuery = result.result._originalQuery || intentResult.calls[0]?.arguments?._originalQuery || enhancedMessage;
+                  const fallbackResults = await executeToolBatch(
+                    [{ name: 'web_search', arguments: { query: originalQuery, maxResults: 5, fetchTopResult: true } }] as ToolCall[],
+                    { executionId: `news-fallback-${Date.now()}`, requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+                  );
+                  const sr = fallbackResults?.[0]?.result;
+                  if (sr) {
+                    const contextParts: string[] = [];
+                    if (sr.aiAnswer) contextParts.push(`AI Summary: ${sr.aiAnswer}`);
+                    if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
+                      const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
+                      contextParts.push(takeSentences(raw, 1200, 8));
+                      if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
+                    }
+                    if (Array.isArray(sr.results) && sr.results.length > 0) {
+                      contextParts.push(sr.results.slice(0, 5).map((r: any, i: number) =>
+                        `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
+                      ).join('\n'));
+                    }
+                    const searchContext = contextParts.filter(Boolean).join('\n\n');
+                    const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing the search results above, answer this news question concisely and directly: ${originalQuery}`;
+                    const handler = await streamFromLLM(
+                      augmentedMessage, undefined, convId,
+                      (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
+                      () => {}, () => {},
+                      () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
+                      (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'News LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
+                      requestConfirmation,
+                      (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                    );
+                    activeStreams.set(streamId, { destroy: handler.cancel });
+                    return;
+                  }
+                  responseText += `📰 No articles found for that topic. Try rephrasing or asking me to search the web.\n`;
+                } else {
+                  responseText += `📰 **${result.result.source || 'News'}**\n\n`;
+                  (result.result.items as any[]).forEach((item: any, i: number) => {
+                    responseText += `**${i + 1}. ${item.title}**\n`;
+                    if (item.summary) responseText += `${String(item.summary).slice(0, 200)}\n`;
+                    if (item.link) responseText += `${item.link}\n`;
+                    responseText += '\n';
+                  });
+                }
               }
               // Handle git status
               else if (result.result.branch !== undefined && result.result.staged !== undefined) {

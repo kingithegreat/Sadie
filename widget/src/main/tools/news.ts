@@ -152,7 +152,8 @@ export const getNewsHandler: ToolHandler = async (args): Promise<ToolResult> => 
           link: i.link,
           published: i.published,
           summary: i.description.slice(0, 300)
-        }))
+        })),
+        _topicFilter: filter || undefined
       }
     };
   } catch (err: any) {
