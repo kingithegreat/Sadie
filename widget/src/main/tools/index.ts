@@ -278,6 +278,8 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `${args.append ? 'Append to' : 'Overwrite'} file "${args.path}"?`;
     case 'create_docx':
       return `Create Word document "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
+    case 'create_spreadsheet':
+      return `Create spreadsheet "${args.path}" with ${Array.isArray(args.rows) ? args.rows.length : '?'} rows?`;
     default:
       return `Execute ${toolName} with: ${JSON.stringify(args)}?`;
   }

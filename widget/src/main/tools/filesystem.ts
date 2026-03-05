@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import ExcelJS from 'exceljs';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
@@ -354,6 +355,100 @@ export const createDocxHandler: ToolHandler = async (args, _context): Promise<To
   }
 };
 
+export const createSpreadsheetDef: ToolDefinition = {
+  name: 'create_spreadsheet',
+  description: 'Create a Microsoft Excel (.xlsx) spreadsheet. Accepts data as a 2-D array of rows (first row is treated as the header). Use this whenever the user asks to create a spreadsheet, Excel file, or table of data.',
+  category: 'filesystem',
+  requiresConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'File path for the .xlsx file (e.g. "Desktop/budget.xlsx")'
+      },
+      sheet_name: {
+        type: 'string',
+        description: 'Name of the worksheet tab (default: "Sheet1")'
+      },
+      rows: {
+        type: 'array',
+        description: 'Array of rows. Each row is an array of cell values (strings or numbers). The first row is used as the column header.'
+      }
+    },
+    required: ['path', 'rows']
+  }
+};
+
+export const createSpreadsheetHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
+  const validation = validatePath(args.path);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+
+  let resolvedPath = validation.resolved;
+  if (!resolvedPath.toLowerCase().endsWith('.xlsx')) {
+    resolvedPath += '.xlsx';
+  }
+
+  const rows: any[][] = args.rows;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { success: false, error: 'rows must be a non-empty array of arrays' };
+  }
+
+  try {
+    await fsPromises.mkdir(path.dirname(resolvedPath), { recursive: true });
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'SADIE';
+    workbook.created = new Date();
+
+    const sheetName = (args.sheet_name as string | undefined)?.trim() || 'Sheet1';
+    const sheet = workbook.addWorksheet(sheetName);
+
+    // First row → bold header
+    const headerRow = sheet.addRow(rows[0]);
+    headerRow.eachCell(cell => {
+      cell.font = { bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4472C4' }
+      };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    });
+
+    // Remaining rows
+    for (let i = 1; i < rows.length; i++) {
+      sheet.addRow(rows[i]);
+    }
+
+    // Auto-fit column widths (max 50 chars)
+    sheet.columns.forEach(col => {
+      let maxLen = 10;
+      col.eachCell?.({ includeEmpty: false }, cell => {
+        const len = String(cell.value ?? '').length;
+        if (len > maxLen) maxLen = len;
+      });
+      col.width = Math.min(maxLen + 2, 50);
+    });
+
+    await workbook.xlsx.writeFile(resolvedPath);
+
+    return {
+      success: true,
+      result: {
+        path: resolvedPath,
+        message: `Spreadsheet created at ${resolvedPath}`,
+        rows: rows.length,
+        columns: rows[0].length
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: `Failed to create spreadsheet: ${err.message}` };
+  }
+};
+
 export const getFileInfoDef: ToolDefinition = {
   name: 'get_file_info',
   description: 'Get detailed information about a file or directory (size, dates, permissions)',
@@ -685,5 +780,6 @@ export const fileSystemTools = {
   delete_file: { definition: deleteFileDef, handler: deleteFileHandler },
   write_file: { definition: writeFileDef, handler: writeFileHandler },
   create_docx: { definition: createDocxDef, handler: createDocxHandler },
+  create_spreadsheet: { definition: createSpreadsheetDef, handler: createSpreadsheetHandler },
   get_file_info: { definition: getFileInfoDef, handler: getFileInfoHandler },
 };
