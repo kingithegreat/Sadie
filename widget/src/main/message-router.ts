@@ -825,7 +825,11 @@ export async function streamFromLLM(
       const customConfig = (settings as any).customLLM as import('../shared/types').CustomLLMConfig;
       
       // Get tool definitions for providers that support function calling
-      const providerSupportsTools = customConfig.provider === 'openai' || customConfig.provider === 'openrouter' || customConfig.provider === 'custom';
+      // anthropic is now included following the Anthropic tool calling implementation
+      const providerSupportsTools = customConfig.provider === 'openai'
+        || customConfig.provider === 'anthropic'
+        || customConfig.provider === 'openrouter'
+        || customConfig.provider === 'custom';
       const toolDefs = providerSupportsTools ? getAllToolDefinitions() : undefined;
       
       // Track whether a tool call was received (to know if onEnd should be deferred)
@@ -945,15 +949,52 @@ export async function streamFromLLM(
       console.log(`[SADIE] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
       const controller = new AbortController();
       const history = getHistory(conversationId);
+
+      // Code API supports tools for all non-custom providers
+      const codeProviderSupportsTools = codeApiProvider === 'openai'
+        || codeApiProvider === 'anthropic'
+        || codeApiProvider === 'openrouter';
+      const codeToolDefs = codeProviderSupportsTools ? getAllToolDefinitions() : undefined;
+
+      let codeToolCallReceived = false;
+      const handleCodeToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
+        codeToolCallReceived = true;
+        console.log(`[SADIE] Code API tool call: ${tc.name}`, tc.arguments);
+        onToolCall(tc.name, tc.arguments);
+        try {
+          const results = await executeToolBatch(
+            [{ name: tc.name, arguments: tc.arguments }] as ToolCall[],
+            { executionId: `code-api-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext
+          );
+          const toolResult = results?.[0]?.result ?? results?.[0]?.error ?? 'No result';
+          onToolResult(toolResult);
+          const updatedHistory = [
+            ...history.map(m => ({ role: m.role as any, content: m.content })),
+            { role: 'user' as const, content: message },
+            { role: 'assistant' as const, content: '', tool_calls: [{ id: tc.id || `call_${Date.now()}`, type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.arguments) } }] },
+            { role: 'tool' as const, content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult), tool_call_id: tc.id || `call_${Date.now()}` }
+          ];
+          await streamFromCustomLLM('', updatedHistory, codeApiConfig, systemPromptWithGuidelines, onChunk, onEnd, onError, controller.signal);
+        } catch (err: any) {
+          console.error('[SADIE] Code API tool execution failed:', err.message);
+          onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
+          onEnd();
+        }
+      };
+
+      const codeWrappedOnEnd = () => { if (!codeToolCallReceived) onEnd(); };
+
       streamFromCustomLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
         codeApiConfig,
         systemPromptWithGuidelines,
         onChunk,
-        onEnd,
+        codeWrappedOnEnd,
         onError,
-        controller.signal
+        controller.signal,
+        codeToolDefs,
+        codeProviderSupportsTools ? handleCodeToolCall : undefined
       );
       return { cancel: () => controller.abort() };
     } else {
