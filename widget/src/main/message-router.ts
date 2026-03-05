@@ -341,6 +341,111 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   // "what is this document" / "what is this" without attachment markers = LLM handles
   // (attached docs are caught by the document-marker check at top)
 
+  // REMINDER intents
+  if (/\bremind\s+me\b/i.test(m) || /\bset\s+a?\s*reminder\b/i.test(m)) {
+    const delayMatch = m.match(/\bin\s+(\d+)\s*(second|sec|minute|min|hour|hr)s?\b/i);
+    let delay_seconds = 60;
+    if (delayMatch) {
+      const num = parseInt(delayMatch[1]);
+      const unit = delayMatch[2].toLowerCase();
+      if (/^s/.test(unit)) delay_seconds = num;
+      else if (/^m/.test(unit)) delay_seconds = num * 60;
+      else if (/^h/.test(unit)) delay_seconds = num * 3600;
+    }
+    const msgMatch = userMessage.match(/remind\s+me\s+(?:in\s+[\w\s]+\s+)?to\s+(.+)/i) ||
+                     userMessage.match(/(?:reminder|remind\s+me)\s*[:—-]\s*(.+)/i);
+    const message = msgMatch ? msgMatch[1].trim() :
+      userMessage.replace(/^(set\s+a?\s*reminder|remind\s+me)\s*/i, '').trim() || 'This is your reminder';
+    return { calls: [{ name: 'set_reminder', arguments: { message, delay_seconds, label: message.slice(0, 40) } }] };
+  }
+  if (/\b(show|list|what|see)\s+.{0,15}(my\s+)?reminder/i.test(m)) {
+    return { calls: [{ name: 'list_reminders', arguments: {} }] };
+  }
+
+  // NOTIFICATION intent
+  if (/\b(notify\s+me|send\s+(?:me\s+)?a\s+notification|show\s+a\s+notification|alert\s+me)\b/i.test(m)) {
+    const bodyMatch = userMessage.match(/(?:saying|that|:)\s*(.+)/i);
+    const body = bodyMatch ? bodyMatch[1].trim() :
+      userMessage.replace(/^(notify\s+me|send\s+(me\s+)?a\s+notification|show\s+a?\s+notification|alert\s+me)\s*/i, '').trim() || 'Notification from SADIE';
+    return { calls: [{ name: 'show_notification', arguments: { title: 'SADIE', body } }] };
+  }
+
+  // NEWS intents
+  if (/\b(news|headlines|top\s*stories?|latest\s*news|what'?s\s+happening|what'?s\s+new)\b/i.test(m) &&
+      !/\b(document|doc|file|pdf)\b/i.test(m)) {
+    const sourceKeywords: [RegExp, string][] = [
+      [/\btechcrunch\b/i, 'techcrunch'],
+      [/\bhacker\s*news\b/i, 'hacker_news'],
+      [/\bars\s*technica\b/i, 'ars_technica'],
+      [/\bguardian\b/i, 'guardian'],
+      [/\breuters\b/i, 'reuters'],
+      [/\bnpr\b/i, 'npr'],
+      [/\bespn\b/i, 'espn'],
+      [/\bsports?\s+news\b/i, 'espn'],
+      [/\btech\s+news\b/i, 'techcrunch'],
+    ];
+    let source = 'bbc';
+    for (const [re, s] of sourceKeywords) { if (re.test(m)) { source = s; break; } }
+    const topicMatch = m.match(/\b(?:about|on|covering)\s+(.+?)(?:\s+news|\s+headlines|$)/i);
+    const topic_filter = topicMatch ? topicMatch[1].trim() : undefined;
+    return { calls: [{ name: 'get_news', arguments: { source, limit: 10, ...(topic_filter ? { topic_filter } : {}) } }] };
+  }
+
+  // PROCESS MANAGER intents
+  if (/\b(what|which|show|list)\b.{0,20}\bprocesses?\b/i.test(m) ||
+      /\bprocesses?\s+(are\s+)?running\b/i.test(m) ||
+      /\bwhat'?s\s+(using|taking|consuming)\b.{0,20}\b(memory|ram|cpu)\b/i.test(m) ||
+      /\btask\s+manager\b/i.test(m)) {
+    const sort_by = /\b(memory|ram)\b/i.test(m) ? 'memory' : 'cpu';
+    const filterMatch = m.match(/\b(?:call|name|for|like)\w*\s+(\w+)\b/i);
+    return { calls: [{ name: 'list_processes', arguments: { sort_by, limit: 20, ...(filterMatch ? { filter: filterMatch[1] } : {}) } }] };
+  }
+  if (/\b(kill|stop|end|terminate)\b.{0,20}\b(process|task|program|app)\b/i.test(m)) {
+    const nameMatch = m.match(/\b(?:kill|stop|end|terminate)\s+(?:the\s+)?(?:process\s+)?(\w+)/i);
+    return { calls: [{ name: 'kill_process', arguments: { name: nameMatch?.[1] || '' } }] };
+  }
+
+  // CONTACTS intents
+  if (/\b(find|search|look\s*up|get)\b.{0,25}\bcontact/i.test(m) ||
+      /\b(contact|email|phone)\s+(for|of)\s+\w/i.test(m)) {
+    const qMatch = userMessage.match(/(?:find|search|look\s*up)\s+(?:contact\s+)?(.+?)(?:\s+in\s+contacts|\s*$)/i) ||
+                   userMessage.match(/(?:contact|email|phone)\s+(?:for|of)\s+(.+)/i);
+    return { calls: [{ name: 'search_contacts', arguments: { query: qMatch?.[1]?.trim() || userMessage } }] };
+  }
+  if (/\b(add|save|create)\s+(?:a?\s*(?:new\s+)?)?contact\b/i.test(m)) {
+    const nameMatch = userMessage.match(/contact\s+(?:for\s+)?(.+?)(?:\s+with\s+|\s+email\s+|\s+phone\s+|$)/i);
+    const emailMatch = userMessage.match(/\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b/);
+    const phoneMatch = userMessage.match(/\b(\+?[\d][\d\s\-().]{6,})\b/);
+    return { calls: [{ name: 'add_contact', arguments: {
+      name: nameMatch?.[1]?.trim() || '',
+      ...(emailMatch ? { email: emailMatch[1] } : {}),
+      ...(phoneMatch ? { phone: phoneMatch[1].trim() } : {})
+    } }] };
+  }
+
+  // GIT intents
+  if (/\bgit\s+status\b/i.test(m) || /\b(what'?s\s+changed|working\s+tree|staged\s+files?)\b/i.test(m)) {
+    return { calls: [{ name: 'git_status', arguments: {} }] };
+  }
+  if (/\bgit\s+log\b/i.test(m) || /\b(show|recent|last)\s+commits?\b/i.test(m) || /\bcommit\s+history\b/i.test(m)) {
+    const limitMatch = m.match(/last\s+(\d+)\s+commits?/i);
+    return { calls: [{ name: 'git_log', arguments: { limit: limitMatch ? parseInt(limitMatch[1]) : 10 } }] };
+  }
+  if (/\bgit\s+diff\b/i.test(m)) {
+    return { calls: [{ name: 'git_diff', arguments: { target: /\bstaged\b/i.test(m) ? 'staged' : 'unstaged' } }] };
+  }
+
+  // RUN CODE intent (when code is provided inline)
+  if (/\b(run|execute)\s+(?:this\s+)?(?:python|powershell)\b/i.test(m) ||
+      (/\b(run|execute)\s+(?:this\s+)?(?:code|script)\b/i.test(m) && /```/.test(userMessage))) {
+    const langMatch = m.match(/\b(python|powershell)\b/i);
+    const lang = (langMatch?.[1]?.toLowerCase() === 'powershell') ? 'powershell' : 'python';
+    const codeBlock = userMessage.match(/```(?:\w+)?\n?([\s\S]+?)```/);
+    const codeAfterColon = userMessage.match(/(?:python|powershell|code|script)\s*:\s*(.+)/is);
+    const code = (codeBlock?.[1] || codeAfterColon?.[1] || '').trim();
+    if (code) return { calls: [{ name: 'run_code', arguments: { language: lang, code } }] };
+  }
+
   // IMAGE GENERATION intents
   if (/\b(draw|generate|create|make|paint|sketch|render|design)\b.{0,30}\b(image|picture|photo|illustration|art|portrait|wallpaper|logo|icon|scene)\b/i.test(m) ||
       /\b(image|picture|photo|illustration)\b.{0,20}\b(of|showing|with|featuring)\b/i.test(m)) {
@@ -1828,6 +1933,105 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 responseText += `📄 **${result.result.filename || 'Document'}**`;
                 if (result.result.page_count) responseText += ` (${result.result.page_count} pages, ${result.result.word_count} words)`;
                 responseText += '\n\n' + (result.result.content || result.result.preview || '') + '\n';
+              }
+              // Handle news headlines
+              else if (result.result.items && Array.isArray(result.result.items)) {
+                responseText += `📰 **${result.result.source || 'News'}**\n\n`;
+                (result.result.items as any[]).forEach((item: any, i: number) => {
+                  responseText += `**${i + 1}. ${item.title}**\n`;
+                  if (item.summary) responseText += `${String(item.summary).slice(0, 200)}\n`;
+                  if (item.link) responseText += `${item.link}\n`;
+                  responseText += '\n';
+                });
+              }
+              // Handle git status
+              else if (result.result.branch !== undefined && result.result.staged !== undefined) {
+                const r = result.result;
+                if (r.clean) {
+                  responseText += `✅ **Git Status** — \`${r.branch}\`\nWorking tree clean.\n`;
+                } else {
+                  responseText += `📋 **Git Status** — \`${r.branch}\`\n\n`;
+                  if (r.staged?.length) responseText += `**Staged:**\n${(r.staged as string[]).map(f => `  ✅ ${f}`).join('\n')}\n\n`;
+                  if (r.unstaged?.length) responseText += `**Unstaged:**\n${(r.unstaged as string[]).map(f => `  📝 ${f}`).join('\n')}\n\n`;
+                  if (r.untracked?.length) responseText += `**Untracked:**\n${(r.untracked as string[]).map(f => `  ❓ ${f}`).join('\n')}\n`;
+                }
+              }
+              // Handle git log
+              else if (result.result.commits && Array.isArray(result.result.commits)) {
+                responseText += `📜 **Git Log** (${result.result.count} commits)\n\n`;
+                (result.result.commits as any[]).forEach((c: any) => {
+                  responseText += `\`${String(c.hash).slice(0, 7)}\` **${c.message}**\n  👤 ${c.author} — ${c.date}\n\n`;
+                });
+              }
+              // Handle git diff
+              else if (result.result.diff !== undefined) {
+                if (!String(result.result.diff).trim()) {
+                  responseText += '✅ No changes.\n';
+                } else {
+                  responseText += `\`\`\`diff\n${String(result.result.diff).slice(0, 6000)}\n\`\`\`\n`;
+                  if (result.result.truncated) responseText += `\n*(diff truncated — ${result.result.total_chars} chars total)*\n`;
+                }
+              }
+              // Handle process list
+              else if (result.result.processes && Array.isArray(result.result.processes)) {
+                responseText += `⚙️ **Processes** (top ${result.result.count})\n\n`;
+                (result.result.processes as any[]).slice(0, 20).forEach((p: any) => {
+                  const cpu = p.CpuPercent != null ? ` CPU:${Number(p.CpuPercent).toFixed(1)}%` : '';
+                  const mem = p.WorkingSetMB != null ? ` RAM:${Number(p.WorkingSetMB).toFixed(0)}MB` : '';
+                  responseText += `**${p.Name || p.ProcessName}** (PID ${p.Id || p.PID})${cpu}${mem}\n`;
+                });
+              }
+              // Handle contacts search
+              else if (result.result.contacts !== undefined) {
+                if (result.result.count === 0) {
+                  responseText += '🔍 No contacts found.\n';
+                } else {
+                  responseText += `👤 **Contacts** (${result.result.count} found)\n\n`;
+                  (result.result.contacts as any[]).slice(0, 10).forEach((c: any) => {
+                    responseText += `**${c.name || c.displayName}**\n`;
+                    if (c.email) responseText += `  📧 ${c.email}\n`;
+                    if (c.phone) responseText += `  📞 ${c.phone}\n`;
+                    if (c.company) responseText += `  🏢 ${c.company}\n`;
+                    responseText += '\n';
+                  });
+                }
+              }
+              // Handle contact added
+              else if (result.result.added) {
+                const c = result.result.added as any;
+                responseText += `✅ Contact saved: **${c.name}**${c.email ? ` <${c.email}>` : ''}\n`;
+              }
+              // Handle reminder set
+              else if (result.result.fire_at && result.result.id) {
+                const fireDate = new Date(result.result.fire_at as string).toLocaleString();
+                responseText += `⏰ Reminder set!\n**"${result.result.message}"**\n🕐 Fires at: ${fireDate}\n`;
+              }
+              // Handle reminders list
+              else if (result.result.reminders !== undefined) {
+                if (result.result.count === 0) {
+                  responseText += '⏰ No pending reminders.\n';
+                } else {
+                  responseText += `⏰ **Pending Reminders** (${result.result.count})\n\n`;
+                  (result.result.reminders as any[]).forEach((r: any) => {
+                    responseText += `**${r.message}**\n🕐 ${new Date(r.fireAt).toLocaleString()}\nID: \`${r.id}\`\n\n`;
+                  });
+                }
+              }
+              // Handle notification confirmed
+              else if (result.result.title !== undefined && result.result.body !== undefined) {
+                responseText += `🔔 Notification shown: **${result.result.title}** — ${result.result.body}\n`;
+              }
+              // Handle run_code output
+              else if (result.result.stdout !== undefined || result.result.stderr !== undefined) {
+                if (String(result.result.stdout || '').trim()) {
+                  responseText += `\`\`\`\n${String(result.result.stdout).slice(0, 3000)}\n\`\`\`\n`;
+                }
+                if (String(result.result.stderr || '').trim()) {
+                  responseText += `⚠️ stderr:\n\`\`\`\n${String(result.result.stderr).slice(0, 1000)}\n\`\`\`\n`;
+                }
+                if (result.result.exit_code !== undefined && result.result.exit_code !== 0) {
+                  responseText += `Exit code: ${result.result.exit_code}\n`;
+                }
               }
               // Handle generic content
               else if (result.result.content) {
