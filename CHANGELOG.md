@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.1 — Synthesis Cloud Routing & Voice Button Fix
+
+### Added
+- **Synthesis cloud routing**: Web-search synthesis (web queries, surf reports, news fallback) now routes through the configured cloud LLM (`useCustomLLM` + `customLLM` settings) when active. Falls back to local Ollama when no cloud LLM is configured.
+
+### Fixed
+- **Voice mic button now always visible in Electron**: The microphone button was previously hidden because it only checked `window.SpeechRecognition` (absent in Electron's renderer). It now also checks for `electron.startSpeechRecognition` (Windows SAPI), so the button appears in all Electron builds.
+
+### No-op
+- Scheduler UI for reminders/tasks was already fully wired in v0.8.0 — no changes required.
+
+---
+
 ## v0.8.0 — Word Documents, Code Cloud API & UI Polish
 
 ### Added

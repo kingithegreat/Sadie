@@ -742,6 +742,40 @@ export function makeSynthesisPrompt(searchContext: string, question: string): st
     `Question: ${question}`;
 }
 
+/**
+ * Route a synthesis call to the best available model.
+ * Uses the cloud LLM when one is configured; falls back to local Ollama otherwise.
+ */
+async function synthesisStream(
+  augmentedMessage: string,
+  convId: string,
+  onChunk: (t: string) => void,
+  onEnd: () => void,
+  onError: (e: any) => void,
+  signal?: AbortSignal,
+  requestConfirmation?: any,
+  requestPermission?: any
+): Promise<{ cancel: () => void }> {
+  const settings = getSettings() as any;
+  const cloudCfg = settings?.customLLM;
+  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  if (isCloudActive) {
+    const history = getHistory(convId).map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    return streamFromCustomLLM(
+      augmentedMessage, history, cloudCfg,
+      'You are answering from pre-fetched search results. DO NOT say you are unable to fetch information — the results are already provided. Answer directly from the results.',
+      onChunk, onEnd, onError, signal
+    );
+  }
+  return streamFromOllamaWithTools(
+    augmentedMessage, undefined, convId,
+    onChunk, () => {}, () => {},
+    onEnd, onError,
+    requestConfirmation, requestPermission,
+    { noTools: true }
+  );
+}
+
 function summarizeToolResults(results: any[]): string {
   if (!results || results.length === 0) return 'No results returned from tools.';
   const parts: string[] = [];
@@ -2021,15 +2055,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   `Give a clear surf report for ${location} today. Include wave height, swell period/direction, wind, and any relevant conditions. Be concise.`
                 );
 
-                const handler = await streamFromOllamaWithTools(
-                  augmentedMessage, undefined, convId,
+                const handler = await synthesisStream(
+                  augmentedMessage, convId,
                   (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
-                  () => {}, () => {},
                   () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
                   (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'Surf LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
-                  requestConfirmation,
-                  (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
-                  { noTools: true }
+                  undefined, requestConfirmation,
+                  (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 );
                 activeStreams.set(streamId, { destroy: handler.cancel });
                 return;
@@ -2104,18 +2136,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               const augmentedMessage = makeSynthesisPrompt(searchContext, enhancedMessage);
 
-              // Always synthesize with Ollama — cloud model setting must not break tool synthesis
-              const handler = await streamFromOllamaWithTools(
-                augmentedMessage,
-                undefined,
-                convId,
+              const handler = await synthesisStream(
+                augmentedMessage, convId,
                 (chunk) => {
                   if (!activeStreams.has(streamId)) return;
                   assistantResponse += chunk;
                   try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
                 },
-                () => {},
-                () => {},
                 () => {
                   if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
                   try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
@@ -2125,9 +2152,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   try { event.sender.send('sadie:stream-error', { error: true, message: 'LLM synthesis error', details: err?.message || err, streamId }); } catch (e) {}
                   activeStreams.delete(streamId);
                 },
-                requestConfirmation,
-                (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
-                { noTools: true }
+                undefined, requestConfirmation,
+                (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
               );
               activeStreams.set(streamId, { destroy: handler.cancel });
               return;
@@ -2334,15 +2360,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   if (sr) {
                     const searchContext = buildSearchContext(sr);
                     const augmentedMessage = makeSynthesisPrompt(searchContext, originalQuery);
-                    const handler = await streamFromOllamaWithTools(
-                      augmentedMessage, undefined, convId,
+                    const handler = await synthesisStream(
+                      augmentedMessage, convId,
                       (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
-                      () => {}, () => {},
                       () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
                       (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'News LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
-                      requestConfirmation,
-                      (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
-                      { noTools: true }
+                      undefined, requestConfirmation,
+                      (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                     );
                     activeStreams.set(streamId, { destroy: handler.cancel });
                     return;
@@ -2922,14 +2946,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       const augMsg = makeSynthesisPrompt(searchContext, enhancedMessage);
                       addToHistory(convId, 'user', enhancedMessage);
                       let synthResponse = '';
-                      const synthHandler = await streamFromOllamaWithTools(
-                        augMsg, undefined, convId,
+                      const synthHandler = await synthesisStream(
+                        augMsg, convId,
                         (chunk) => {
                           if (!activeStreams.has(streamId)) return;
                           synthResponse += chunk;
                           try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
                         },
-                        () => {}, () => {},
                         () => {
                           if (synthResponse.trim()) addToHistory(convId, 'assistant', synthResponse);
                           try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
@@ -2939,9 +2962,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                           try { event.sender.send('sadie:stream-error', { error: true, message: 'Search synthesis error', details: err?.message || err, streamId }); } catch (e) {}
                           activeStreams.delete(streamId);
                         },
-                        requestConfirmation,
-                        (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
-                        { noTools: true }
+                        undefined, requestConfirmation,
+                        (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                       );
                       activeStreams.set(streamId, { destroy: synthHandler.cancel });
                       return;

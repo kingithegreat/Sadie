@@ -83,7 +83,9 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   // Check for speech recognition support
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setSpeechSupported(!!SpeechRecognition);
+    // Also show the mic button when running inside Electron — Windows SAPI is available there
+    const hasSapi = typeof (window as any).electron?.startSpeechRecognition === 'function';
+    setSpeechSupported(!!(SpeechRecognition || hasSapi));
   }, []);
 
   // Initialize speech recognition (online mode - requires internet)
