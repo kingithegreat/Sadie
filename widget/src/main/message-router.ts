@@ -199,6 +199,11 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   if (!userMessage || typeof userMessage !== 'string') return null;
   const m = userMessage.toLowerCase();
 
+  // HELP / CAPABILITY CARD — must be first so "help" doesn't hit other patterns
+  if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can sadie do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(userMessage.trim())) {
+    return { calls: [{ name: '__help', arguments: {} }] };
+  }
+
   // If the message already contains embedded document content (from attachments),
   // let the LLM summarize it directly — do NOT route to web search or other tools.
   if (m.includes('=== document:') && m.includes('=== end of ')) {
@@ -1821,6 +1826,58 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               return;
             }
             // ── END WEB SEARCH SYNTHESIS ──
+
+            // ── HELP / CAPABILITY CARD ──
+            if (intentResult.calls[0]?.name === '__help') {
+              const helpCard = [
+                '# ✨ What can SADIE do?',
+                '',
+                '## 🌐 Web & Search',
+                '- **Search the web** — _"search for…"_ / _"look up…"_',
+                '- **Weather** — _"what\'s the weather in Auckland?"_',
+                '- **Surf conditions** — _"what\'s the surf in Tauranga?"_',
+                '- **News** — _"show me tech news"_ / _"what\'s happening today?"_',
+                '',
+                '## 🏀 Sports',
+                '- **NBA games & scores** — _"what games are on today?"_ / _"NBA results"_',
+                '- **Team schedule** — _"when do the Warriors play next?"_',
+                '',
+                '## 📁 Files & Documents',
+                '- **Read files** — _"read my resume"_ / _"summarise this PDF"_',
+                '- **Create files** — _"make a note about…"_ / _"save this to a file"_',
+                '- **List files** — _"what\'s on my Desktop?"_',
+                '',
+                '## 💻 Code & System',
+                '- **Run code** — _"run this Python: print(1+1)"_ / _"calculate 2^32 in Python"_',
+                '- **Processes** — _"what processes are running?"_ / _"kill process chrome"_',
+                '- **Git** — _"git status"_ / _"show recent commits"_ / _"git diff"_',
+                '',
+                '## 🧠 Memory & Contacts',
+                '- **Remember things** — _"remember that…"_ / _"what do you know about…?"_',
+                '- **Contacts** — _"find contact John"_ / _"add contact…"_',
+                '',
+                '## ⏰ Reminders & Notifications',
+                '- **Set reminders** — _"remind me in 10 minutes to…"_',
+                '- **List reminders** — _"what are my reminders?"_',
+                '- **Notifications** — _"notify me that…"_',
+                '',
+                '## 🖼️ Images',
+                '- **Generate images** — _"draw me a cat"_ / _"generate an image of…"_',
+                '- **Attach images** — use the 📷 button in the input box',
+                '',
+                '## 📋 Tips',
+                '- Use `🔧` in the header to browse all available tools',
+                '- Use `💾` to export this conversation as Markdown',
+                '- Use `🎤` in the input box for voice input',
+                '- Shift+Enter for a new line in the input box',
+              ].join('\n');
+              try { event.sender.send('sadie:stream-chunk', { chunk: helpCard, streamId }); } catch (e) {}
+              addToHistory(convId, 'assistant', helpCard);
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              activeStreams.delete(streamId);
+              return;
+            }
+            // ── END HELP CARD ──
 
             // ── IMAGE GENERATION: send base64 to renderer as special chunk ──
             const isImageIntent = intentResult.calls[0]?.name === 'image_generate';
