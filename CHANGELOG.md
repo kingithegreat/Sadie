@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.9.0 — Search, Planning & API Tools
+
+### Added
+- **`search_files` tool**: Find files and folders on the local filesystem by name pattern. Uses Everything Search (`es.exe`) when available for instant results, falls back to PowerShell `Get-ChildItem -Recurse`. Supports wildcards (`*.pdf`, `report*`). Searches within the user home directory tree; path-traversal is blocked.
+- **`plan_task` tool**: Break a complex goal into a numbered list of ordered steps and save the plan locally (`~/sadie-plans.json`). Call this when the user asks to "make a plan" or "what steps do I need to…". Plans survive across sessions.
+- **`get_plans` tool**: Retrieve recently saved plans by ID, goal, and step count.
+- **`api_request` tool**: Make HTTPS GET or POST requests to an approved allowlist of public API hosts (weather, finance, sports, GitHub, etc.). Full SSRF protection — private IPs, loopback, `.local`/`.internal` domains, non-https URLs, and non-allowlisted hosts are all blocked. The allowlist can be extended via `config/api-allowlist.json`.
+- **42 new tests** covering all three tools (50 total suites / 418 tests).
+
+### Changed
+- Intent routing in `preProcessIntent` extended with patterns for file-search queries, planning requests, and plan-list queries.
+- Result formatting extended with rendering for search hits (🔍), saved plans (📋), plan lists, and API responses (🌐).
+
+---
+
 ## v0.8.1 — Synthesis Cloud Routing & Voice Button Fix
 
 ### Added

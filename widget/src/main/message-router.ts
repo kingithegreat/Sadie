@@ -568,6 +568,27 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     return { calls: [{ name: 'email_list', arguments: { limit } }] };
   }
 
+  // SEARCH intents (local file search)
+  if (/\b(find|search\s+(?:for)?|look\s+(?:for)?|locate|where\s+is)\b.{0,30}\b(file|folder|document|pdf|docx?|spreadsheet|image|photo|video|mp3|zip)\b/i.test(m) ||
+      /\b(find|search|locate)\b.{0,20}\b(on\s+(?:my\s+)?(?:computer|pc|disk|drive|machine))\b/i.test(m)) {
+    const queryMatch =
+      userMessage.match(/(?:find|search\s+for?|locate)\s+["']?(.+?)["']?\s*(?:on\s+my|in\s+my|file|$)/i) ||
+      userMessage.match(/(?:where\s+is|find)\s+["']?(.+?)["']?/i);
+    const query = queryMatch ? queryMatch[1].trim() : userMessage.replace(/^(find|search|locate)\s*/i, '').trim();
+    if (query) return { calls: [{ name: 'search_files', arguments: { query, limit: 30 } }] };
+  }
+
+  // PLANNING intents
+  if (/\b(make\s+a\s+plan|create\s+a\s+plan|help\s+me\s+plan|plan\s+(?:out|for|to)|what\s+steps|how\s+(?:do|should)\s+(?:i|we)\s+(do|accomplish|achieve|complete|start))\b/i.test(m)) {
+    const goalMatch = userMessage.match(/\b(?:plan|plans?)?\s*(?:for|to|how\s+to)?\s*(.{5,})/i);
+    const goal = goalMatch ? goalMatch[1].trim().replace(/\?$/, '') : userMessage;
+    return { calls: [{ name: 'plan_task', arguments: { goal, steps: [] } }] };
+  }
+  if (/\b(show|list|get|view)\b.{0,20}\bplans?\b/i.test(m) ||
+      /\bwhat\s+plans?\s+do\s+i\s+have\b/i.test(m)) {
+    return { calls: [{ name: 'get_plans', arguments: { limit: 5 } }] };
+  }
+
   // NOTIFICATION intent
   if (/\b(notify\s+me|send\s+(?:me\s+)?a\s+notification|show\s+a\s+notification|alert\s+me)\b/i.test(m)) {
     const bodyMatch = userMessage.match(/(?:saying|that|:)\s*(.+)/i);
@@ -2657,6 +2678,55 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     responseText += `• **${em.subject || '(no subject)'}** — ${em.from || ''}  ${received} ${flag}\n`;
                     if (em.preview) responseText += `  ${String(em.preview).slice(0, 100)}…\n`;
                   }
+                }
+              }
+              // Handle file search results
+              else if (result.result.results !== undefined && result.result.query !== undefined) {
+                const hits: any[] = result.result.results || [];
+                if (hits.length === 0) {
+                  responseText += `🔍 No files found matching **"${result.result.query}"**`;
+                  if (result.result.root) responseText += ` in \`${result.result.root}\``;
+                  responseText += `.\n`;
+                } else {
+                  responseText += `🔍 Found **${hits.length}** result${hits.length !== 1 ? 's' : ''} for **"${result.result.query}"**:\n\n`;
+                  for (const hit of hits) {
+                    const icon = hit.type === 'folder' ? '📁' : '📄';
+                    const size = hit.size !== undefined ? ` (${hit.size < 1024 ? hit.size + ' B' : hit.size < 1048576 ? (hit.size / 1024).toFixed(1) + ' KB' : (hit.size / 1048576).toFixed(1) + ' MB'})` : '';
+                    responseText += `${icon} \`${hit.path}\`${size}\n`;
+                  }
+                }
+              }
+              // Handle plan saved
+              else if (result.result.planId !== undefined && result.result.steps !== undefined) {
+                const steps: string[] = result.result.steps || [];
+                responseText += `📋 **Plan saved** — _${result.result.goal}_\n\n`;
+                steps.forEach((step: string, i: number) => {
+                  responseText += `${i + 1}. ${step}\n`;
+                });
+              }
+              // Handle plan list
+              else if (result.result.plans !== undefined) {
+                const plans: any[] = result.result.plans || [];
+                if (plans.length === 0) {
+                  responseText += `📋 No saved plans yet.\n`;
+                } else {
+                  responseText += `📋 **Saved Plans** (${plans.length})\n\n`;
+                  for (const p of plans) {
+                    responseText += `**${p.goal}** — ${p.stepCount} step${p.stepCount !== 1 ? 's' : ''} _(${p.id})_\n`;
+                  }
+                }
+              }
+              // Handle api_request result
+              else if (result.result.url !== undefined && result.result.status !== undefined) {
+                const status = result.result.status as number;
+                if (status >= 200 && status < 300) {
+                  const body = result.result.isJson
+                    ? '```json\n' + JSON.stringify(result.result.body, null, 2).slice(0, 3000) + '\n```'
+                    : String(result.result.body ?? '').slice(0, 3000);
+                  responseText += `🌐 **API Response** (HTTP ${status})\n${body}\n`;
+                } else {
+                  responseText += `🌐 **API Request Failed** — HTTP ${status}\n`;
+                  if (result.result.body) responseText += String(result.result.body).slice(0, 500) + '\n';
                 }
               }
               // Handle run_code output

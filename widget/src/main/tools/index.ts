@@ -35,6 +35,9 @@ import { emailToolDefs, emailToolHandlers } from './email';
 import { newsToolDefs, newsToolHandlers } from './news';
 import { gitToolDefs, gitToolHandlers } from './git';
 import { diffToolDefs, diffToolHandlers } from './diff';
+import { searchToolDefs, searchToolHandlers } from './search';
+import { planningToolDefs, planningToolHandlers } from './planning';
+import { apiToolDefs, apiToolHandlers } from './api-tool';
 import { initializeMcpServers, seedMcpDefaults } from '../mcp-client';
 
 // Global tool registry
@@ -457,6 +460,24 @@ export function initializeTools(): void {
   // Register email tools
   for (const def of emailToolDefs) {
     const handler = emailToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register search tool (local file search)
+  for (const def of searchToolDefs) {
+    const handler = searchToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register planning agent tools
+  for (const def of planningToolDefs) {
+    const handler = planningToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register API tool
+  for (const def of apiToolDefs) {
+    const handler = apiToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
