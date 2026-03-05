@@ -93,15 +93,20 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div className="settings-overlay" role="presentation" onClick={onClose}>
       <div
         className="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Available Tools"
         style={{ maxHeight: '80vh', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}
         onClick={e => e.stopPropagation()}
+        onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
+        tabIndex={-1}
       >
         <div className="settings-header">
           <h2 style={{ margin: 0, fontSize: 15 }}>🔧 Available Tools ({tools.length})</h2>
-          <button className="close-button" onClick={onClose}>✕</button>
+          <button className="close-button" onClick={onClose} aria-label="Close tools panel">✕</button>
         </div>
 
         {/* Search */}
@@ -110,6 +115,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ onClose }) => {
             className="setting-input"
             style={{ width: '100%' }}
             placeholder="Search tools…"
+            aria-label="Search tools"
             value={search}
             onChange={e => setSearch(e.target.value)}
             autoFocus
@@ -129,6 +135,9 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ onClose }) => {
               {/* Category header */}
               <button
                 onClick={() => toggleCat(cat)}
+                aria-expanded={expandedCats.has(cat)}
+                aria-controls={`tools-cat-${cat}`}
+                aria-label={`${prettyCat(cat)} tools, ${grouped[cat].length} tool${grouped[cat].length === 1 ? '' : 's'}`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, width: '100%',
                   background: 'none', border: 'none', cursor: 'pointer',
@@ -145,10 +154,12 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ onClose }) => {
 
               {/* Tool cards */}
               {expandedCats.has(cat) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div id={`tools-cat-${cat}`} role="list" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {grouped[cat].map(tool => (
                     <div
                       key={tool.name}
+                      role="listitem"
+                      tabIndex={0}
                       style={{
                         background: '#111', border: '1px solid #27272a',
                         borderRadius: 8, padding: '8px 12px',

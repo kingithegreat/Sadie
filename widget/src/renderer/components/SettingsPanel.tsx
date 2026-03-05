@@ -377,11 +377,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   return (
-    <div className="settings-overlay">
-      <div className="settings-panel">
+    <div className="settings-overlay" role="presentation" onClick={onClose}>
+      <div
+        className="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
+        tabIndex={-1}
+      >
       <div className="settings-header">
         <h2>Settings</h2>
-        <button className="close-button" onClick={onClose}>
+        <button className="close-button" onClick={onClose} aria-label="Close settings">
           ✕
         </button>
       </div>

@@ -31,7 +31,7 @@ export function MessageList({
   }
 
   return (
-    <div className="message-list">
+    <div className="message-list" role="log" aria-live="polite" aria-label="Conversation messages">
       {messages.map((m) => (
         <MessageBubble
           key={m.id}
