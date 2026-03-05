@@ -20,7 +20,7 @@ import * as http from 'http';
 const mockHttpRequest = http.request as jest.Mock;
 
 function mockN8nResponse(body: object, statusCode = 200) {
-  const json = JSON.stringify(body);
+  const json = Buffer.from(JSON.stringify(body));
   const mockRes: any = {
     statusCode,
     on: jest.fn((event: string, handler: Function) => {
@@ -70,17 +70,13 @@ describe('imageGenerateHandler', () => {
   });
 
   test('returns image on success', async () => {
-    mockN8nResponse({
-      status: 'success',
-      image: 'base64encodedimage==',
-      source: 'local_sd',
-      metadata: { prompt: 'a cat', width: 512, height: 512 }
-    });
+    // Mock the AUTOMATIC1111 SD API response format
+    mockN8nResponse({ images: ['base64encodedimage=='] });
 
     const res = await imageGenerateHandler({ prompt: 'a cat' }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.image_base64).toBe('base64encodedimage==');
-    expect(res.result.source).toBe('local_sd');
+    expect(res.result.source).toBe('automatic1111');
   });
 
   test('returns error when n8n reports failure', async () => {
@@ -91,20 +87,21 @@ describe('imageGenerateHandler', () => {
 
     const res = await imageGenerateHandler({ prompt: 'a dog' }, {} as any);
     expect(res.success).toBe(false);
-    expect(res.error).toContain('No provider available');
+    expect(res.error).toContain('No image backend available');
   });
 
   test('clamps width and height to max 1024', async () => {
-    mockN8nResponse({ status: 'success', image: 'x', source: 'test', metadata: {} });
-
+    // Mock SD API response (images[] not present → returns null, but clamping still runs)
+    mockN8nResponse({ images: [] });
     const res = await imageGenerateHandler({ prompt: 'big', width: 2000, height: 2000 }, {} as any);
-    // Should not reject — clamped to 1024 internally
+    // Should not throw — clamped to 1024 internally
     // handler sends request; check write was called with clamped values
     const writeCall = (mockHttpRequest.mock.results[0]?.value as any)?.write?.mock?.calls?.[0]?.[0];
     if (writeCall) {
       const parsed = JSON.parse(writeCall);
-      expect(parsed.payload.width).toBeLessThanOrEqual(1024);
-      expect(parsed.payload.height).toBeLessThanOrEqual(1024);
+      // SD API body has width/height directly, not nested under .payload
+      expect(parsed.width).toBeLessThanOrEqual(1024);
+      expect(parsed.height).toBeLessThanOrEqual(1024);
     }
   });
 });

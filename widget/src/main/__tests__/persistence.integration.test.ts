@@ -1,18 +1,36 @@
 // Integration test: ensure messages persist to conversation-history.json via MemoryManager
-jest.mock('electron', () => ({ app: { isPackaged: false, getPath: jest.fn(() => process.env.TEST_USERDATA || '') } }));
+import os from 'os';
 
-import { createNewConversation, addMessageToConversation, getConversation } from '../memory-manager';
-import { existsSync, readFileSync } from 'fs';
+jest.mock('electron', () => ({
+  app: { isPackaged: true, getPath: jest.fn(() => process.env.TEST_USERDATA || os.tmpdir()) }
+}));
+
+import { createNewConversation, addMessageToConversation, getConversation, __flushWritesSync } from '../memory-manager';
+import { existsSync, readFileSync, mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
+
+let tmpDir: string;
+
+beforeAll(() => {
+  tmpDir = mkdtempSync(join(os.tmpdir(), 'sadie-persist-test-'));
+  process.env.TEST_USERDATA = tmpDir;
+});
+
+afterAll(() => {
+  delete process.env.TEST_USERDATA;
+  try { rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+});
 
 describe('persistence integration', () => {
   test('create conversation and add message persists to disk', () => {
     const conv = createNewConversation('persistence-test');
     expect(conv).toBeDefined();
+    __flushWritesSync(); // flush createNewConversation writes before reading back
 
     const msg = { id: 'm1', role: 'user', content: 'hello persistence', timestamp: new Date().toISOString() } as any;
     const ok = addMessageToConversation(conv.id, msg);
     expect(ok).toBe(true);
+    __flushWritesSync(); // flush addMessage writes before reading back
 
     const reloaded = getConversation(conv.id);
     expect(reloaded).not.toBeNull();

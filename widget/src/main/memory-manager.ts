@@ -139,6 +139,25 @@ function flushWrite(filePath: string): void {
   });
 }
 
+/**
+ * Testing helper — synchronously flushes all queued async writes to disk.
+ * Call this in tests between a save and a subsequent read to avoid race
+ * conditions caused by the async write queue.
+ * @internal Do not call in production code.
+ */
+export function __flushWritesSync(): void {
+  for (const [filePath, entry] of Array.from(_writeQueue.entries())) {
+    _writeQueue.delete(filePath);
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, entry.data, 'utf-8');
+      entry.resolve(true);
+    } catch (err) {
+      entry.resolve(false);
+    }
+  }
+}
+
 function writeJsonFile<T>(filename: string, data: T): boolean {
   const storePath = getMemoryStorePath();
   ensureDir(storePath);

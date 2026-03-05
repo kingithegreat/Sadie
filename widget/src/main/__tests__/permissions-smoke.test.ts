@@ -1,3 +1,21 @@
+// jest.mock is hoisted before imports — mock electron BEFORE tools/index.ts loads
+// so mcp-client.ts sees a valid app when seedMcpDefaults() calls app.getPath().
+jest.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: jest.fn(() => require('os').tmpdir()),
+    getAppPath: jest.fn(() => require('os').tmpdir()),
+  },
+  ipcMain: { on: jest.fn(), handle: jest.fn() },
+  BrowserWindow: jest.fn().mockImplementation(() => ({
+    webContents: { send: jest.fn() },
+  })),
+  Notification: jest.fn().mockImplementation(() => ({ show: jest.fn() })),
+  shell: { openExternal: jest.fn(), openPath: jest.fn() },
+  dialog: { showMessageBox: jest.fn(), showOpenDialog: jest.fn() },
+  nativeTheme: { themeSource: 'system' },
+}));
+
 import os from 'os';
 import * as fs from 'fs';
 import path from 'path';
