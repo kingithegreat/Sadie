@@ -29,6 +29,7 @@
     "@vitejs/plugin-react": "^5.1.2",
     "@xenova/transformers": "^2.17.2",
     "axios": "^1.6.2",
+    "docx": "^9.6.0",
     "dotenv": "^16.3.1",
     "electron-reload": "^2.0.0-alpha.1",
     "highlight.js": "^11.11.1",
@@ -85,10 +86,22 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "../docker-compose.yml", "to": "docker-compose.yml" },
-      { "from": "../config", "to": "config" },
-      { "from": "../n8n-workflows", "to": "n8n-workflows" },
-      { "from": "../scripts/start-n8n.ps1", "to": "scripts/start-n8n.ps1" }
+      {
+        "from": "../docker-compose.yml",
+        "to": "docker-compose.yml"
+      },
+      {
+        "from": "../config",
+        "to": "config"
+      },
+      {
+        "from": "../n8n-workflows",
+        "to": "n8n-workflows"
+      },
+      {
+        "from": "../scripts/start-n8n.ps1",
+        "to": "scripts/start-n8n.ps1"
+      }
     ],
     "win": {
       "target": [

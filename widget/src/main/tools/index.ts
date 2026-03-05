@@ -276,6 +276,8 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `Move "${args.source}" to "${args.destination}"?`;
     case 'write_file':
       return `${args.append ? 'Append to' : 'Overwrite'} file "${args.path}"?`;
+    case 'create_docx':
+      return `Create Word document "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
     default:
       return `Execute ${toolName} with: ${JSON.stringify(args)}?`;
   }

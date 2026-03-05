@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
@@ -243,6 +244,113 @@ export const writeFileDef: ToolDefinition = {
       }
     },
     required: ['path', 'content']
+  }
+};
+
+export const createDocxDef: ToolDefinition = {
+  name: 'create_docx',
+  description: 'Create a Microsoft Word (.docx) document with formatted text, headings, and paragraphs. Use this whenever the user asks to create a Word document, .docx file, or formatted document.',
+  category: 'filesystem',
+  requiresConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'The file path for the .docx file (e.g. "Desktop/report.docx")'
+      },
+      title: {
+        type: 'string',
+        description: 'Document title shown as the first heading'
+      },
+      content: {
+        type: 'string',
+        description: 'The document body. Use "# Heading", "## Subheading" for headings, blank lines for paragraph breaks.'
+      }
+    },
+    required: ['path', 'content']
+  }
+};
+
+export const createDocxHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
+  const validation = validatePath(args.path);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+
+  // Ensure the path ends with .docx
+  let resolvedPath = validation.resolved;
+  if (!resolvedPath.toLowerCase().endsWith('.docx')) {
+    resolvedPath += '.docx';
+  }
+
+  try {
+    // Ensure parent directory exists
+    await fsPromises.mkdir(path.dirname(resolvedPath), { recursive: true });
+
+    const children: Paragraph[] = [];
+
+    // Optional document title as Heading1
+    if (args.title) {
+      children.push(
+        new Paragraph({
+          text: args.title,
+          heading: HeadingLevel.HEADING_1,
+          spacing: { after: 200 }
+        })
+      );
+    }
+
+    // Parse content: split on blank lines, detect heading levels
+    const rawLines: string[] = (args.content as string).split('\n');
+    let buffer = '';
+
+    const flushBuffer = () => {
+      const trimmed = buffer.trim();
+      if (!trimmed) return;
+      if (trimmed.startsWith('### ')) {
+        children.push(new Paragraph({ text: trimmed.slice(4), heading: HeadingLevel.HEADING_3, spacing: { after: 120 } }));
+      } else if (trimmed.startsWith('## ')) {
+        children.push(new Paragraph({ text: trimmed.slice(3), heading: HeadingLevel.HEADING_2, spacing: { after: 160 } }));
+      } else if (trimmed.startsWith('# ')) {
+        children.push(new Paragraph({ text: trimmed.slice(2), heading: HeadingLevel.HEADING_1, spacing: { after: 200 } }));
+      } else {
+        children.push(
+          new Paragraph({
+            children: [new TextRun(trimmed)],
+            spacing: { after: 120 }
+          })
+        );
+      }
+      buffer = '';
+    };
+
+    for (const line of rawLines) {
+      if (line.trim() === '') {
+        flushBuffer();
+      } else {
+        buffer += (buffer ? '\n' : '') + line;
+      }
+    }
+    flushBuffer();
+
+    const doc = new Document({
+      sections: [{ children }]
+    });
+
+    const buf = await Packer.toBuffer(doc);
+    await fsPromises.writeFile(resolvedPath, buf);
+
+    return {
+      success: true,
+      result: {
+        path: resolvedPath,
+        message: `Word document created successfully at ${resolvedPath}`,
+        size: buf.length
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: `Failed to create Word document: ${err.message}` };
   }
 };
 
@@ -576,5 +684,6 @@ export const fileSystemTools = {
   copy_file: { definition: copyFileDef, handler: copyFileHandler },
   delete_file: { definition: deleteFileDef, handler: deleteFileHandler },
   write_file: { definition: writeFileDef, handler: writeFileHandler },
+  create_docx: { definition: createDocxDef, handler: createDocxHandler },
   get_file_info: { definition: getFileInfoDef, handler: getFileInfoHandler },
 };
