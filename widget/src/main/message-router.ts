@@ -489,6 +489,36 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     return { calls: [{ name: 'list_reminders', arguments: {} }] };
   }
 
+  // CALENDAR intents
+  if (/\b(what|show|list|do i have|any|my)\b.{0,25}\b(meeting|event|appointment|calendar|schedule)\b/i.test(m) ||
+      /\b(calendar|schedule)\b.{0,25}\b(today|tomorrow|this week|next week|this month)\b/i.test(m) ||
+      /\bmy (day|week|schedule|agenda)\b/i.test(m)) {
+    const daysMatch = m.match(/\bnext\s+(\d+)\s+days?\b/i);
+    const days = daysMatch ? parseInt(daysMatch[1]) :
+      /\btoday\b/i.test(m) ? 1 :
+      /\bthis week\b/i.test(m) || /\bmy (day|week|agenda)\b/i.test(m) ? 7 :
+      /\bnext week\b/i.test(m) ? 14 : 7;
+    return { calls: [{ name: 'list_calendar_events', arguments: { days_ahead: days } }] };
+  }
+  if (/\b(add|create|schedule|book|make)\b.{0,25}\b(event|meeting|appointment|calendar)\b/i.test(m)) {
+    // Extract title — text after "schedule/add/book a [meeting|event|appointment]" up to "at" or "on"
+    const titleMatch = userMessage.match(
+      /\b(?:add|create|schedule|book|make)\b\s+(?:a\s+|an\s+)?(?:meeting|event|appointment|calendar\s+event)?\s*(?:called|titled|named|:)?\s*["']?([^"']+?)["']?\s*(?:at|on|,|\bon\b|$)/i
+    );
+    const title = titleMatch ? titleMatch[1].trim() : 'New Event';
+    // Extract datetime: look for "at HH:MM" / "at 3pm" / "on <date>"
+    const timeMatch = userMessage.match(/\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+    const dateMatch = userMessage.match(/\bon\s+([A-Za-z]+ \d{1,2}(?:,?\s*\d{4})?|\d{4}-\d{2}-\d{2})/i);
+    let startBase = dateMatch ? dateMatch[1] : 'today';
+    let startTime = timeMatch ? timeMatch[1] : '09:00';
+    const startDt = new Date(`${startBase} ${startTime}`);
+    const resolvedStart = isNaN(startDt.getTime())
+      ? new Date(Date.now() + 86400000).toISOString().slice(0, 16)
+      : startDt.toISOString().slice(0, 16);
+    const resolvedEnd = new Date(new Date(resolvedStart).getTime() + 3600000).toISOString().slice(0, 16);
+    return { calls: [{ name: 'add_calendar_event', arguments: { title, start: resolvedStart, end: resolvedEnd } }] };
+  }
+
   // NOTIFICATION intent
   if (/\b(notify\s+me|send\s+(?:me\s+)?a\s+notification|show\s+a\s+notification|alert\s+me)\b/i.test(m)) {
     const bodyMatch = userMessage.match(/(?:saying|that|:)\s*(.+)/i);
@@ -2498,6 +2528,33 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     responseText += `**${r.message}**\n🕐 ${new Date(r.fireAt).toLocaleString()}\nID: \`${r.id}\`\n\n`;
                   });
                 }
+              }
+              // Handle calendar event list
+              else if (result.result.events !== undefined) {
+                const events: any[] = result.result.events || [];
+                if (events.length === 0) {
+                  const days = result.result.days_ahead ?? 7;
+                  responseText += `📅 No events found in the next ${days} day${days === 1 ? '' : 's'}.\n`;
+                } else {
+                  responseText += `📅 **Upcoming Events** (${events.length})\n\n`;
+                  for (const ev of events) {
+                    const start = ev.start ? new Date(ev.start).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+                    const end   = ev.end   ? new Date(ev.end).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+                    responseText += `• **${ev.title}** — ${start}${end ? ` → ${end}` : ''}${ev.location ? ` 📍 ${ev.location}` : ''}\n`;
+                  }
+                }
+              }
+              // Handle calendar event added
+              else if (result.result.added !== undefined) {
+                const ev = result.result.added;
+                const start = ev.start ? new Date(ev.start).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ev.start;
+                const where = result.result.savedToOutlook ? 'Outlook + local store' : 'local calendar store';
+                responseText += `📅 **Event added!**\n**${ev.title}** on ${start}${ev.location ? ` @ ${ev.location}` : ''}\n_Saved to ${where}_\n`;
+              }
+              // Handle calendar event deleted
+              else if (result.result.deleted !== undefined) {
+                const ev = result.result.deleted;
+                responseText += `🗑️ Event **"${ev.title}"** removed from your local calendar.\n`;
               }
               // Handle notification confirmed
               else if (result.result.title !== undefined && result.result.body !== undefined) {

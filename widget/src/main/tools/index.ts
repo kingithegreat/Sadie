@@ -28,6 +28,7 @@ import { codeRunnerToolDefs, codeRunnerToolHandlers } from './code-runner';
 import { reminderToolDefs, reminderToolHandlers } from './reminder';
 import { processManagerToolDefs, processManagerToolHandlers } from './process-manager';
 import { contactsToolDefs, contactsToolHandlers } from './contacts';
+import { calendarToolDefs, calendarToolHandlers } from './calendar';
 import { newsToolDefs, newsToolHandlers } from './news';
 import { gitToolDefs, gitToolHandlers } from './git';
 import { diffToolDefs, diffToolHandlers } from './diff';
@@ -429,6 +430,12 @@ export function initializeTools(): void {
   // Register diff tools
   for (const def of diffToolDefs) {
     const handler = diffToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register calendar tools
+  for (const def of calendarToolDefs) {
+    const handler = calendarToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
