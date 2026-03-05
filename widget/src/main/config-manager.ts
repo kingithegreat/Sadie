@@ -15,6 +15,7 @@ export interface Settings {
   chatModel?: string;
   uncensoredModel?: string;
   visionModel?: string;
+  codeModel?: string;
   theme: 'light' | 'dark' | 'system';
   alwaysOnTop: boolean;
   globalHotkey: string;
@@ -52,6 +53,7 @@ const DEFAULT_SETTINGS: Settings = {
   chatModel: 'llama3.2:3b',
   uncensoredModel: 'dolphin-llama3:8b',
   visionModel: 'llava',
+  codeModel: '',
   theme: 'system',
   alwaysOnTop: true,
   uncensoredMode: false,

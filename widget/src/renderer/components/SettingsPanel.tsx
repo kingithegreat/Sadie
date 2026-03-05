@@ -38,7 +38,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const defaultModels = {
     chatModel: 'qwen2.5:7b',
     uncensoredModel: 'dolphin-llama3:8b',
-    visionModel: 'llava:latest'
+    visionModel: 'llava:latest',
+    codeModel: 'qwen2.5-coder:7b'
   };
 
   const defaultCustomLLM: CustomLLMConfig = {
@@ -78,6 +79,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       chatModel: source.chatModel || defaultModels.chatModel,
       uncensoredModel: source.uncensoredModel || defaultModels.uncensoredModel,
       visionModel: source.visionModel || defaultModels.visionModel,
+      codeModel: source.codeModel ?? '',
       useCustomLLM: source.useCustomLLM ?? false,
       customLLM: llm,
       tavilyApiKey: source.tavilyApiKey || '',
@@ -94,6 +96,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       id: 'qwen2.5:7b',
       name: 'Qwen 2.5 (7B)',
       description: '⭐ Best for tools & actions - excellent function calling (4.4GB)'
+    },
+    {
+      id: 'qwen2.5-coder:7b',
+      name: 'Qwen 2.5 Coder (7B)',
+      description: '💻 Best for coding — specialised code model (4.4GB)'
+    },
+    {
+      id: 'deepseek-coder-v2:latest',
+      name: 'DeepSeek Coder V2',
+      description: '💻 Excellent code completion & debugging (8.9GB)'
     },
     {
       id: 'llama3.2:3b',
@@ -401,7 +413,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <small className="setting-hint">Used automatically when images are attached.</small>
         </div>
 
-        {/* Chat Guidelines Section */}
+        <div className="setting-group">
+          <label className="setting-label">💻 Code model</label>
+          <input
+            type="text"
+            className="setting-input"
+            value={(localSettings as any).codeModel || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                codeModel: e.target.value
+              } as any)
+            }
+            placeholder={defaultModels.codeModel}
+          />
+          <small className="setting-hint">Auto-used for coding questions. Leave blank to use the chat model. Recommended: <code>qwen2.5-coder:7b</code> or <code>deepseek-coder-v2:latest</code>.</small>
+        </div>
         <div className="setting-group">
           <label className="setting-label">📝 Chat Guidelines</label>
           <textarea

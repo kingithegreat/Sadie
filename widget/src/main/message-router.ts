@@ -914,6 +914,11 @@ export async function streamFromOllamaWithTools(
   const preferredChatModel = settings.chatModel || OLLAMA_CHAT_MODEL;
   const preferredUncensoredModel = settings.uncensoredModel || OLLAMA_UNCENSORED_MODEL;
   const preferredVisionModel = settings.visionModel || OLLAMA_VISION_MODEL;
+  // Use code model when a coding-heavy query is detected and a code model is configured
+  const preferredCodeModel = (settings as any).codeModel?.trim() || '';
+  const isCodingQuery = preferredCodeModel
+    ? /\b(write|create|generate|fix|debug|refactor|optimise|optimize|implement|explain this code|review.*code|code.*review|function|class|algorithm|regex|sql|query|script|bash|python|javascript|typescript|html|css|java|c\+\+|golang|rust|react|api)\b/i.test(message)
+    : false;
 
   const controller = new AbortController();
   let ended = false;
@@ -937,9 +942,12 @@ export async function streamFromOllamaWithTools(
   
   // Check if we have images - use vision model if so (vision models typically don't support tools)
   const hasImages = images && images.length > 0;
-  // Select model: vision > uncensored > normal
-  const chatModel = uncensoredModeEnabled ? preferredUncensoredModel : preferredChatModel;
+  // Select model: vision > uncensored > code > normal
+  const baseChatModel = uncensoredModeEnabled ? preferredUncensoredModel
+    : (isCodingQuery ? preferredCodeModel : preferredChatModel);
+  const chatModel = baseChatModel || preferredChatModel;
   const model = hasImages ? preferredVisionModel : chatModel;
+  if (isCodingQuery) console.log(`[SADIE] Coding query detected — using code model: ${model}`);
   
   // Extract base64 image data for Ollama
   const imageData: string[] = [];
