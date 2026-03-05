@@ -324,7 +324,8 @@ function extractMainContent(html: string): string {
 // Filter out search-engine pages (not content sources) from scraper results.
 // Wikipedia is intentionally NOT blocked here — it's one of the best free
 // sources of factual and current-events content.
-function isAllowedDomain(url: string): boolean {
+/** Exported so the allow-list can be verified in unit tests. */
+export function isAllowedDomain(url: string): boolean {
   const blockedDomains = [
     'duckduckgo.com',
     'google.com/search',
@@ -813,11 +814,22 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       try {
         console.log('[SADIE Web] Trying DDG Instant Answer API (free)...');
         const ddgInstant = await searchDDGInstant(query);
-        if (ddgInstant && ddgInstant.results.length > 0) {
-          results = ddgInstant.results;
-          tavilySources = ddgInstant.sources.slice(0, fetchResultCount);
-          if (ddgInstant.answer) tavilyAnswer = ddgInstant.answer;
-          console.log(`[SADIE Web] DDG Instant returned ${results.length} results`);
+        if (ddgInstant) {
+          if (ddgInstant.results.length > 0) {
+            results = ddgInstant.results;
+            tavilySources = ddgInstant.sources.slice(0, fetchResultCount);
+            console.log(`[SADIE Web] DDG Instant returned ${results.length} results`);
+          } else if (ddgInstant.answer) {
+            // Instant answer with no related topics (e.g. math/factual queries).
+            // Create a synthetic result so the payload includes the answer.
+            results = [{ title: 'Instant Answer', url: 'https://duckduckgo.com', snippet: ddgInstant.answer }];
+            console.log('[SADIE Web] DDG Instant answer-only: created synthetic result');
+          }
+          // Always capture the instant answer if present (e.g. 'speed of light = X')
+          if (ddgInstant.answer) {
+            tavilyAnswer = ddgInstant.answer;
+            console.log('[SADIE Web] DDG Instant answer captured');
+          }
         }
       } catch (err: any) {
         console.log(`[SADIE Web] DDG Instant failed: ${err.message}`);

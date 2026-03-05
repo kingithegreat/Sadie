@@ -725,8 +725,10 @@ function buildSearchContext(sr: any, charBudget = 3000): string {
  * Wrap search context in a synthesis prompt that forces the model to answer
  * directly from evidence — suppressing the "check YouTube/CFR" padding pattern
  * and prohibiting the "I'm unable to fetch" false disclaimer.
+ *
+ * Exported so it can be unit-tested without spinning up Electron.
  */
-function makeSynthesisPrompt(searchContext: string, question: string): string {
+export function makeSynthesisPrompt(searchContext: string, question: string): string {
   return `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\n` +
     `IMPORTANT: You have already been given the search results above. ` +
     `DO NOT say you are unable to fetch, access, or retrieve information — you have the results. ` +
