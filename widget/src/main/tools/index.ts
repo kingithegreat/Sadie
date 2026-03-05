@@ -29,6 +29,9 @@ import { reminderToolDefs, reminderToolHandlers } from './reminder';
 import { processManagerToolDefs, processManagerToolHandlers } from './process-manager';
 import { contactsToolDefs, contactsToolHandlers } from './contacts';
 import { calendarToolDefs, calendarToolHandlers } from './calendar';
+import { clipboardToolDefs, clipboardToolHandlers } from './clipboard';
+import { browserToolDefs, browserToolHandlers } from './browser';
+import { emailToolDefs, emailToolHandlers } from './email';
 import { newsToolDefs, newsToolHandlers } from './news';
 import { gitToolDefs, gitToolHandlers } from './git';
 import { diffToolDefs, diffToolHandlers } from './diff';
@@ -436,6 +439,24 @@ export function initializeTools(): void {
   // Register calendar tools
   for (const def of calendarToolDefs) {
     const handler = calendarToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register clipboard tools
+  for (const def of clipboardToolDefs) {
+    const handler = clipboardToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register browser tools
+  for (const def of browserToolDefs) {
+    const handler = browserToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register email tools
+  for (const def of emailToolDefs) {
+    const handler = emailToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

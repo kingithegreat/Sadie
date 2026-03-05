@@ -519,6 +519,55 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     return { calls: [{ name: 'add_calendar_event', arguments: { title, start: resolvedStart, end: resolvedEnd } }] };
   }
 
+  // CLIPBOARD intents
+  if (/\b(what'?s?\s+(?:on\s+my\s+clipboard|in\s+my\s+clipboard)|(?:read|show|get|paste|check)\s+(?:my\s+)?clipboard)\b/i.test(m)) {
+    return { calls: [{ name: 'clipboard_read', arguments: {} }] };
+  }
+  if (/\b(copy|write|put|set)\b.{0,30}\b(to\s+(?:my\s+)?clipboard|on\s+(?:my\s+)?clipboard)\b/i.test(m)) {
+    const textMatch = userMessage.match(/(?:copy|write|put|set)\s+["']?(.+?)["']?\s+(?:to|on)\s+(?:my\s+)?clipboard/i);
+    const text = textMatch ? textMatch[1].trim() : '';
+    if (text) return { calls: [{ name: 'clipboard_write', arguments: { text } }] };
+  }
+
+  // BROWSER intents
+  if (/\b(open|launch|browse|navigate\s+to|go\s+to)\b.{0,40}\b(in\s+(?:the\s+)?browser|in\s+chrome|in\s+edge|in\s+firefox)\b/i.test(m) ||
+      /\b(open|launch|browse)\s+(https?:\/\/\S+)/i.test(m)) {
+    const urlMatch = userMessage.match(/https?:\/\/[^\s]+/i) ||
+                     userMessage.match(/(?:open|launch|browse|go\s+to)\s+([\w.-]+\.(?:com|org|net|io|co|dev|app)[^\s]*)/i);
+    const raw = urlMatch ? urlMatch[0] : '';
+    const url = raw.startsWith('http') ? raw : `https://${raw}`;
+    if (url && url.length > 8) return { calls: [{ name: 'open_in_browser', arguments: { url } }] };
+  }
+  if (/\b(search\s+(?:the\s+web|google|bing|duckduckgo)\s+for|google\s+it|look\s+up.{0,15}in\s+(?:(?:a|the)\s+)?browser)\b/i.test(m)) {
+    const queryMatch = userMessage.match(
+      /(?:search\s+(?:the\s+web|google|bing|duckduckgo)\s+for|google\s+it\s+for|search\s+for)\s+["']?(.+?)["']?$/i
+    );
+    const query = queryMatch ? queryMatch[1].trim() : userMessage.replace(/^.*?(for|it)\s+/, '').trim();
+    if (query) return { calls: [{ name: 'browser_search', arguments: { query } }] };
+  }
+
+  // EMAIL intents
+  if (/\b(send|write|compose|draft)\b.{0,30}\b(email|mail|message)\b/i.test(m)) {
+    // Try to extract "to <address>" and "subject <text>"
+    const toMatch      = userMessage.match(/\bto\s+([\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})/i);
+    const subjectMatch = userMessage.match(/\b(?:subject|re|about|regarding)[:\s]+([^,\.\n]{3,60})/i);
+    const isDraft      = /\bdraft\b/i.test(m);
+    if (toMatch) {
+      const toolName = isDraft ? 'email_draft' : 'email_send';
+      return { calls: [{ name: toolName, arguments: {
+        to: toMatch[1],
+        subject: subjectMatch ? subjectMatch[1].trim() : '',
+        body: '',
+      } }] };
+    }
+  }
+  if (/\b(check|show|list|read|see)\b.{0,20}\b(email|inbox|mail)\b/i.test(m) ||
+      /\bwhat'?s\s+in\s+my\s+(inbox|email|mail)\b/i.test(m)) {
+    const limitMatch = userMessage.match(/(\d+)\s+(?:email|message)/i);
+    const limit = limitMatch ? parseInt(limitMatch[1]) : 10;
+    return { calls: [{ name: 'email_list', arguments: { limit } }] };
+  }
+
   // NOTIFICATION intent
   if (/\b(notify\s+me|send\s+(?:me\s+)?a\s+notification|show\s+a\s+notification|alert\s+me)\b/i.test(m)) {
     const bodyMatch = userMessage.match(/(?:saying|that|:)\s*(.+)/i);
@@ -2559,6 +2608,56 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // Handle notification confirmed
               else if (result.result.title !== undefined && result.result.body !== undefined) {
                 responseText += `🔔 Notification shown: **${result.result.title}** — ${result.result.body}\n`;
+              }
+              // Handle clipboard read
+              else if (result.result.empty !== undefined && result.result.content !== undefined) {
+                if (result.result.empty) {
+                  responseText += `📋 Clipboard is empty.\n`;
+                } else {
+                  responseText += `📋 **Clipboard content** (${result.result.length} chars):\n\`\`\`\n${String(result.result.content).slice(0, 2000)}\n\`\`\`\n`;
+                }
+              }
+              // Handle clipboard write
+              else if (result.result.copied === true && result.result.preview !== undefined) {
+                responseText += `📋 **Copied to clipboard!** (${result.result.length} chars)\n> ${result.result.preview}\n`;
+              }
+              // Handle browser open
+              else if (result.result.opened === true && result.result.url !== undefined) {
+                if (result.result.query !== undefined) {
+                  responseText += `🌎 Opened **"${result.result.query}"** in your browser (${result.result.engine || 'google'}).\n`;
+                } else {
+                  responseText += `🌎 Opened **${result.result.url}** in your browser.\n`;
+                }
+              }
+              // Handle email sent
+              else if (result.result.sent === true && result.result.to !== undefined) {
+                const to = Array.isArray(result.result.to) ? result.result.to.join(', ') : result.result.to;
+                responseText += `📧 Email sent to **${to}**\nSubject: _${result.result.subject}_\n`;
+              }
+              // Handle email drafted (Outlook unavailable fallback)
+              else if (result.result.sent === false && result.result.draftSaved === true) {
+                responseText += `📧 Outlook unavailable — email saved as local draft (id: ${result.result.draftId}).\nTo: ${(result.result.to as string[]).join(', ')} | Subject: _${result.result.subject}_\n`;
+              }
+              // Handle email draft confirmed
+              else if (result.result.drafted === true) {
+                const to = Array.isArray(result.result.to) ? result.result.to.join(', ') : result.result.to;
+                const where = result.result.savedToOutlook ? 'Outlook Drafts' : 'local draft store';
+                responseText += `📝 Draft saved to ${where}\nTo: **${to}** | Subject: _${result.result.subject}_\n`;
+              }
+              // Handle email list
+              else if (result.result.emails !== undefined) {
+                const emails: any[] = result.result.emails || [];
+                if (emails.length === 0) {
+                  responseText += `📭 No emails found in your inbox.\n`;
+                } else {
+                  responseText += `📬 **Inbox** (${emails.length} messages)\n\n`;
+                  for (const em of emails) {
+                    const received = em.received ? new Date(em.received).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+                    const flag = em.isDraft ? '✏️ (draft)' : '';
+                    responseText += `• **${em.subject || '(no subject)'}** — ${em.from || ''}  ${received} ${flag}\n`;
+                    if (em.preview) responseText += `  ${String(em.preview).slice(0, 100)}…\n`;
+                  }
+                }
               }
               // Handle run_code output
               else if (result.result.stdout !== undefined || result.result.stderr !== undefined) {
