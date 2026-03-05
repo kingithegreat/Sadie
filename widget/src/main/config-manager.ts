@@ -84,6 +84,9 @@ const DEFAULT_SETTINGS: Settings = {
     // Allow read-only network or info operations
     web_search: true,
     nba_query: true,
+    get_news: true,
+    list_news_feeds: true,
+    get_weather: true,
     generate_sports_report: false
   },
 
