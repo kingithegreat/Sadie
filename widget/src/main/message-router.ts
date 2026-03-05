@@ -291,7 +291,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
       if (m.includes(team)) { teamQuery = team; break; }
     }
     // Detect when user wants finished game results (not just the schedule)
-    const wantsResults = /\b(result[s]?|who won|who win|final[s]?|finished|were[' ]?the scores?|what were.*scores?|scores?.*today|scores?.*last night|did.*play|played.*today|last night)\b/i.test(m);
+    const wantsResults = /\b(result[s]?|who won|who win|final[s]?|finished|were[' ]?the scores?|what were.*scores?|scores?.*today|scores?.*last night|scores?.*tonight|any games?.*finish|games?.*finish|tonight'?s? results?|today'?s? results?|did.*play|played.*today|last night|recap)\b/i.test(m);
     let dateRange = '';
     if (/last week|last_7_days|last 7 days/i.test(m)) {
       dateRange = 'last_7_days';

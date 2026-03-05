@@ -534,13 +534,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
     // Auto-title conversation from first user message
     if (messages.length === 0 && (activeConvId || conversationId) && text) {
-      const autoTitle = text.length > 40 ? text.slice(0, 40).trimEnd() + '…' : text;
+      // Strip leading question words and filler to produce a compact title
+      const cleaned = text
+        .replace(/^(what('?s| is| are| were)?|who('?s| is| are)?|how('?s| is| are| do| does)?|can you|could you|please|tell me|show me|give me|do you know|i want to know)\s+/i, '')
+        .replace(/\bin the nba\b/i, 'NBA')
+        .replace(/\btoday\b/i, 'today')
+        .trim();
+      const titleSource = cleaned || text;
+      const autoTitle = titleSource.length > 45 ? titleSource.slice(0, 45).trimEnd() + '…' : titleSource;
+      // Capitalise first letter
+      const finalTitle = autoTitle.charAt(0).toUpperCase() + autoTitle.slice(1);
       try {
         const convData = await window.electron.getConversation?.(activeConvId || conversationId || '');
         if (convData?.success && convData.data) {
           await (window as any).electron.saveConversation?.({
             ...convData.data,
-            title: autoTitle,
+            title: finalTitle,
           });
         }
       } catch (err) {
