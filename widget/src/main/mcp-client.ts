@@ -15,6 +15,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // ─── Config types ─────────────────────────────────────────────────────────────
 
@@ -184,6 +185,77 @@ async function connectServer(
 
   connectedServers.push({ config, client, toolNames });
   console.log(`[MCP] "${config.name}" registered ${toolNames.length} tool(s).`);
+}
+
+// ─── Default server catalogue ────────────────────────────────────────────────
+
+function getDefaultServers(): McpServerConfig[] {
+  const home = os.homedir();
+  return [
+    {
+      type: 'stdio',
+      name: 'filesystem',
+      command: 'cmd',
+      args: [
+        '/c', 'npx', '-y', '@modelcontextprotocol/server-filesystem',
+        path.join(home, 'Desktop'),
+        path.join(home, 'Documents'),
+        path.join(home, 'Downloads'),
+      ],
+      enabled: true,
+    },
+    {
+      type: 'stdio',
+      name: 'memory',
+      command: 'cmd',
+      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-memory'],
+      enabled: true,
+    },
+    {
+      type: 'stdio',
+      name: 'fetch',
+      command: 'cmd',
+      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-fetch'],
+      enabled: true,
+    },
+    {
+      type: 'stdio',
+      name: 'playwright',
+      command: 'cmd',
+      args: ['/c', 'npx', '-y', '@playwright/mcp@latest', '--headless'],
+      enabled: false, // opt-in: heavy, needs Playwright browsers installed
+    },
+    {
+      type: 'stdio',
+      name: 'brave-search',
+      command: 'cmd',
+      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-brave-search'],
+      env: { BRAVE_API_KEY: '' },
+      enabled: false, // set BRAVE_API_KEY and enable
+    },
+    {
+      type: 'stdio',
+      name: 'github',
+      command: 'cmd',
+      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-github'],
+      env: { GITHUB_TOKEN: '' },
+      enabled: false, // set GITHUB_TOKEN and enable
+    },
+  ];
+}
+
+/**
+ * Write default MCP server configs to userData on first run.
+ * Skips if the file already exists (respects user customisations).
+ */
+export function seedMcpDefaults(): void {
+  const cfgPath = mcpConfigPath();
+  if (fs.existsSync(cfgPath)) return;
+  const defaults: McpServersFile = { servers: getDefaultServers() };
+  const dir = path.dirname(cfgPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(cfgPath, JSON.stringify(defaults, null, 2), 'utf-8');
+  console.log('[MCP] Seeded default server configs to', cfgPath);
 }
 
 /**

@@ -31,7 +31,7 @@ import { contactsToolDefs, contactsToolHandlers } from './contacts';
 import { newsToolDefs, newsToolHandlers } from './news';
 import { gitToolDefs, gitToolHandlers } from './git';
 import { diffToolDefs, diffToolHandlers } from './diff';
-import { initializeMcpServers } from '../mcp-client';
+import { initializeMcpServers, seedMcpDefaults } from '../mcp-client';
 
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
@@ -434,7 +434,8 @@ export function initializeTools(): void {
 
   console.log(`[SADIE Tools] Initialized ${toolRegistry.size} tools`);
 
-  // Connect MCP servers and register their tools (async, non-blocking)
+  // Seed default MCP server configs on first run, then connect
+  seedMcpDefaults();
   initializeMcpServers(registerTool).catch(e =>
     console.warn('[MCP] Server initialization failed:', e)
   );
