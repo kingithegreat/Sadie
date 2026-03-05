@@ -355,6 +355,14 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:start-speech-recognition');
   },
 
+  // TTS (text-to-speech) — uses Web Speech API in renderer via main process
+  ttsSpeak: async (text: string, rate?: number): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:tts-speak', text, rate);
+  },
+  ttsStop: async (): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:tts-stop');
+  },
+
   // Uncensored mode toggle
   setUncensoredMode: async (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> => {
     return await ipcRenderer.invoke('sadie:set-uncensored-mode', enabled);

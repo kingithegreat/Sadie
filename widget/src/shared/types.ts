@@ -187,6 +187,10 @@ export interface ElectronAPI {
   
   // Speech recognition (Windows SAPI - offline capable)
   startSpeechRecognition?: () => Promise<{ success: boolean; text: string; error?: string }>;
+
+  // TTS (text-to-speech)
+  ttsSpeak?: (text: string, rate?: number) => Promise<{ success: boolean; error?: string }>;
+  ttsStop?: () => Promise<{ success: boolean; error?: string }>;
   
   // Uncensored mode toggle
   setUncensoredMode?: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;

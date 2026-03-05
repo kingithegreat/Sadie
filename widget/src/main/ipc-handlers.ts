@@ -17,6 +17,7 @@ import { fetchAvailableCustomModels } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey } from './tools/web';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
+import { speakHandler, stopSpeakingHandler } from './tools/voice';
 import {
   loadMcpConfig,
   saveMcpConfig,
@@ -594,6 +595,16 @@ try {
         }
       );
     });
+  });
+
+  // ── TTS (text-to-speech) ────────────────────────────────────────────────────
+  // Uses Web Speech API in the renderer via executeJavaScript (no extra deps, works offline)
+  ipcMain.handle('sadie:tts-speak', async (_event, text: string, rate?: number) => {
+    return speakHandler({ text, rate: rate ?? 1.0 });
+  });
+
+  ipcMain.handle('sadie:tts-stop', async () => {
+    return stopSpeakingHandler({});
   });
 
   // ── MCP Server Management ───────────────────────────────────────────────────

@@ -437,6 +437,7 @@ export function MessageBubble({
   const hasContent = Boolean(message.content && message.content.trim());
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
   const [copiedMsg, setCopiedMsg] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
 
   const handleCopyMessage = useCallback(() => {
     if (!message.content) return;
@@ -448,6 +449,18 @@ export function MessageBubble({
       console.error('Failed to copy message to clipboard:', e);
     }
   }, [message.content]);
+
+  const handleSpeak = useCallback(async () => {
+    if (!message.content) return;
+    if (speaking) {
+      await window.electron?.ttsStop?.();
+      setSpeaking(false);
+    } else {
+      setSpeaking(true);
+      await window.electron?.ttsSpeak?.(message.content);
+      setSpeaking(false);
+    }
+  }, [message.content, speaking]);
   return (
     <div
       className={`message-wrapper ${isUser ? "user" : "assistant"}`}
@@ -559,6 +572,13 @@ export function MessageBubble({
                       aria-label="Copy response"
                     >
                       {copiedMsg ? '✓ Copied' : '📋 Copy'}
+                    </button>
+                    <button
+                      className={`message-action-btn speak-btn${speaking ? ' speaking' : ''}`}
+                      onClick={handleSpeak}
+                      aria-label={speaking ? 'Stop speaking' : 'Speak response'}
+                    >
+                      {speaking ? '⏹ Stop' : '🔊 Speak'}
                     </button>
                   </>
                 )}
