@@ -15,6 +15,7 @@ import {
 import { fetchAvailableCustomModels } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey } from './tools/web';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
+import { getAllToolDefinitions } from './tools/index';
 import {
   MemoryManager,
   StoredConversation,
@@ -282,6 +283,20 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return result;
     } catch (err: any) {
       console.error('Error exporting telemetry consent:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // List all registered tools
+  ipcMain.handle('sadie:list-tools', async () => {
+    try {
+      const tools = getAllToolDefinitions().map(t => ({
+        name: t.name,
+        description: t.description,
+        category: t.category || 'utility',
+      }));
+      return { success: true, tools };
+    } catch (err: any) {
       return { success: false, error: err.message };
     }
   });

@@ -381,6 +381,11 @@ const electronAPI: ElectronAPI = {
   // Export chat history as a markdown file to the Desktop
   exportChat: async (markdown: string): Promise<{ success: boolean; path?: string; error?: string }> => {
     return await ipcRenderer.invoke('sadie:export-chat', markdown);
+  },
+
+  // List all registered tool definitions
+  listTools: async (): Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:list-tools');
   }
 };
 

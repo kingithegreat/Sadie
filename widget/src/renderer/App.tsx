@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { debug as logDebug } from '../shared/logger';
 import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
+import ToolsPanel from "./components/ToolsPanel";
 import ActionConfirmation from "./components/ActionConfirmation";
 import SettingsPanel from "./components/SettingsPanel";
 import FirstRunModal from './components/FirstRunModal';
@@ -66,6 +67,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
   const [permissionRequestData, setPermissionRequestData] = useState<{ requestId?: string; missingPermissions?: string[]; reason?: string; streamId?: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settings, setSettings] = useState<SharedSettings>({
     alwaysOnTop: true,
@@ -716,6 +718,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         connectionStatus={status} 
         onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) { setStatus(c); if (c.n8n === 'online') setBackendDiagnostic(null); } } catch (e) { /* ignore */ } }} 
         onSettingsClick={() => setSettingsOpen(true)}
+        onToolsClick={() => setToolsOpen(true)}
         onMenuClick={() => setSidebarOpen(true)}
         onExportChat={async () => {
           const lines: string[] = [`# SADIE Chat Export\n_Exported: ${new Date().toLocaleString()}_\n`];
@@ -802,6 +805,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {/* Tools Panel */}
+      {toolsOpen && <ToolsPanel onClose={() => setToolsOpen(false)} />}
 
       {/* Permission Modal (appears when main requests permission escalation) */}
       <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />

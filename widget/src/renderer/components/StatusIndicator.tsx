@@ -8,6 +8,7 @@ interface StatusIndicatorProps {
   onSettingsClick: () => void;
   onMenuClick?: () => void;
   onExportChat?: () => void;
+  onToolsClick?: () => void;
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
@@ -26,6 +27,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onSettingsClick,
   onMenuClick,
   onExportChat,
+  onToolsClick,
   backendDiagnostic,
   onCopyDiagnostic,
   onDismissDiagnostic,
@@ -179,6 +181,16 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
             aria-label="Export chat"
           >
             💾
+          </button>
+        )}
+        {onToolsClick && (
+          <button
+            onClick={onToolsClick}
+            className="header-btn"
+            title="Available tools"
+            aria-label="View tools"
+          >
+            🔧
           </button>
         )}
         <button
