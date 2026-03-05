@@ -673,6 +673,67 @@ function formatWebSearchResult(payload: any): string {
   return parts.filter(Boolean).join('\n');
 }
 
+/**
+ * Build a rich search context string from a web_search result payload.
+ * Prefers the multi-source `sources[]` array (parallel-fetched page content),
+ * falls back to legacy topResultContent + results[].snippet.
+ * Returns the context string and an inline source attribution block.
+ */
+function buildSearchContext(sr: any, charBudget = 3000): string {
+  const parts: string[] = [];
+
+  // Prefer Tavily AI answer — already synthesised
+  if (sr.aiAnswer) parts.push(`Summary: ${sr.aiAnswer}`);
+
+  // Best path: use sources[] with full fetched page content
+  if (Array.isArray(sr.sources) && sr.sources.length > 0) {
+    const perSrc = Math.floor(charBudget / sr.sources.length);
+    sr.sources.forEach((src: any, i: number) => {
+      const raw = (src.content || '').replace(/\s+/g, ' ').trim();
+      const condensed = takeSentences(raw, perSrc, 6);
+      if (!condensed && !src.title) return;
+      const header = src.title ? `[${i + 1}] ${src.title}` : `[${i + 1}]`;
+      const url = src.url ? ` — ${src.url}` : '';
+      parts.push(`${header}${url}\n${condensed || '(no content)'}`);
+    });
+    return parts.filter(Boolean).join('\n\n');
+  }
+
+  // Legacy path: topResultContent + snippets
+  if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
+    const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '')
+      .replace(/\s+/g, ' ').trim();
+    const cleaned = raw.split(/\n/).filter((l: string) =>
+      !/(\[&>|]:h-|]:w-|]:mb-|]:rounded|]:overflow|]:max-h-)/.test(l)
+    ).join(' ').trim();
+    const condensed = takeSentences(cleaned, charBudget, 8);
+    if (condensed) parts.push(condensed);
+    if (sr.topResultContent.url) parts.push(`Source: ${sr.topResultContent.url}`);
+  }
+
+  if (Array.isArray(sr.results) && sr.results.length > 0) {
+    const snippets = sr.results.slice(0, 5).map((r: any, i: number) =>
+      `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
+    ).join('\n');
+    if (snippets) parts.push(snippets);
+  }
+
+  return parts.filter(Boolean).join('\n\n');
+}
+
+/**
+ * Wrap search context in a synthesis prompt that forces the model to answer
+ * directly from evidence — suppressing the "check YouTube/CFR" padding pattern.
+ */
+function makeSynthesisPrompt(searchContext: string, question: string): string {
+  return `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\n` +
+    `Using ONLY the search results above, answer the following question directly and concisely. ` +
+    `Report the key facts you found and cite sources inline (e.g. "According to [title], ..."). ` +
+    `If the results contain limited information, state what was found — do NOT suggest the user ` +
+    `check YouTube, news websites, Wikipedia, or any other source.\n\n` +
+    `Question: ${question}`;
+}
+
 function summarizeToolResults(results: any[]): string {
   if (!results || results.length === 0) return 'No results returned from tools.';
   const parts: string[] = [];
@@ -1918,21 +1979,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // Route through LLM synthesis (same as web search path)
               const sr = surfSearchResult?.[0]?.result;
               if (sr) {
-                const contextParts: string[] = [];
-                if (sr.aiAnswer) contextParts.push(`Summary: ${sr.aiAnswer}`);
-                if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
-                  const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
-                  const cleaned = raw.split(/\n/).filter((l: string) => !/(\[&>|]:h-|]:w-|class=|style=)/.test(l)).join(' ').trim();
-                  contextParts.push(takeSentences(cleaned, 1500, 10));
-                  if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
-                }
-                if (Array.isArray(sr.results) && sr.results.length > 0) {
-                  contextParts.push(sr.results.slice(0, 4).map((r: any, i: number) =>
-                    `${i + 1}. ${r.title}: ${r.snippet}${r.url ? ` (${r.url})` : ''}`
-                  ).join('\n'));
-                }
-                const searchContext = contextParts.filter(Boolean).join('\n\n');
-                const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing the search results above, give a clear surf report for ${location} today. Include wave height, swell period/direction, wind, and any relevant conditions. Be concise.`;
+                const searchContext = buildSearchContext(sr, 3500);
+                const augmentedMessage = makeSynthesisPrompt(
+                  searchContext,
+                  `Give a clear surf report for ${location} today. Include wave height, swell period/direction, wind, and any relevant conditions. Be concise.`
+                );
 
                 const handler = await streamFromLLM(
                   augmentedMessage, undefined, convId,
@@ -1999,29 +2050,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               (r: any) => r?.result && (r.result.results || r.result.topResultContent || r.result.aiAnswer)
             );
             if (webSearchResult) {
-              // Build a concise context block from the search result
               const sr = webSearchResult.result;
-              const contextParts: string[] = [];
-
-              if (sr.aiAnswer) {
-                contextParts.push(`AI Summary: ${sr.aiAnswer}`);
-              }
-              if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
-                const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
-                // Strip obvious CSS/HTML noise: skip lines that look like class attribute soup
-                const cleaned = raw.split(/\n/).filter((l: string) => !/(\[&>|]:h-|]:w-|]:mb-|]:rounded|]:overflow|]:max-h-)/.test(l)).join(' ').trim();
-                contextParts.push(takeSentences(cleaned, 1200, 8));
-                if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
-              }
-              if (Array.isArray(sr.results) && sr.results.length > 0) {
-                const snippets = sr.results.slice(0, 5).map((r: any, i: number) =>
-                  `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
-                ).join('\n');
-                contextParts.push(`Search results:\n${snippets}`);
-              }
-
-              const searchContext = contextParts.filter(Boolean).join('\n\n');
-              const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing only the search results above, answer this question concisely and directly — do not list snippets, give a real answer: ${enhancedMessage}`;
+              const searchContext = buildSearchContext(sr);
+              const augmentedMessage = makeSynthesisPrompt(searchContext, enhancedMessage);
 
               // Stream the LLM synthesis
               const handler = await streamFromLLM(
@@ -2250,20 +2281,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   );
                   const sr = fallbackResults?.[0]?.result;
                   if (sr) {
-                    const contextParts: string[] = [];
-                    if (sr.aiAnswer) contextParts.push(`AI Summary: ${sr.aiAnswer}`);
-                    if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
-                      const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
-                      contextParts.push(takeSentences(raw, 1200, 8));
-                      if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
-                    }
-                    if (Array.isArray(sr.results) && sr.results.length > 0) {
-                      contextParts.push(sr.results.slice(0, 5).map((r: any, i: number) =>
-                        `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
-                      ).join('\n'));
-                    }
-                    const searchContext = contextParts.filter(Boolean).join('\n\n');
-                    const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing the search results above, answer this news question concisely and directly: ${originalQuery}`;
+                    const searchContext = buildSearchContext(sr);
+                    const augmentedMessage = makeSynthesisPrompt(searchContext, originalQuery);
                     const handler = await streamFromLLM(
                       augmentedMessage, undefined, convId,
                       (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
@@ -2844,25 +2863,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     if (result.result.visibility) responseText += `Visibility: ${result.result.visibility}\n`;
                   }
                   // Handle web search results — route through LLM for synthesis
-                  else if (result.result.topResultContent || (result.result.results && Array.isArray(result.result.results))) {
+                  else if (result.result.sources || result.result.topResultContent || (result.result.results && Array.isArray(result.result.results))) {
                     const sr = result.result;
-                    const contextParts: string[] = [];
-                    if (sr.aiAnswer) contextParts.push(`AI Summary: ${sr.aiAnswer}`);
-                    if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
-                      const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
-                      const cleaned = raw.split(/\n/).filter((l: string) => !/(\[&>|]:h-|]:w-|]:mb-|]:rounded|]:overflow|]:max-h-)/.test(l)).join(' ').trim();
-                      contextParts.push(takeSentences(cleaned, 1200, 8));
-                      if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
-                    }
-                    if (Array.isArray(sr.results) && sr.results.length > 0) {
-                      const snippets = sr.results.slice(0, 5).map((r: any, i: number) =>
-                        `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
-                      ).join('\n');
-                      contextParts.push(`Search results:\n${snippets}`);
-                    }
-                    const searchContext = contextParts.filter(Boolean).join('\n\n');
+                    const searchContext = buildSearchContext(sr);
                     if (searchContext) {
-                      const augMsg = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing only the search results above, answer this question concisely and directly — do not list snippets, give a real answer: ${enhancedMessage}`;
+                      const augMsg = makeSynthesisPrompt(searchContext, enhancedMessage);
                       addToHistory(convId, 'user', enhancedMessage);
                       let synthResponse = '';
                       const synthHandler = await streamFromLLM(
