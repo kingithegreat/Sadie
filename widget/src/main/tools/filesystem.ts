@@ -10,6 +10,7 @@ import * as path from 'path';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType } from 'docx';
 import ExcelJS from 'exceljs';
 import * as mammoth from 'mammoth';
+import PDFDocument from 'pdfkit';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
@@ -843,6 +844,103 @@ export const getFileInfoHandler: ToolHandler = async (args, _context): Promise<T
   }
 };
 
+export const createPdfDef: ToolDefinition = {
+  name: 'create_pdf',
+  description: 'Create a PDF document from text content. Supports headings (# ## ###), bullet lists (- or *), and plain paragraphs. Use this when the user asks to create a PDF, export as PDF, or generate a portable document.',
+  category: 'filesystem',
+  requiresConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'File path for the PDF (e.g. "Desktop/report.pdf")'
+      },
+      title: {
+        type: 'string',
+        description: 'Document title shown at the top of the first page'
+      },
+      content: {
+        type: 'string',
+        description: 'Document body. Use "# Heading", "## Subheading", "### Sub-subheading" for headings, "- item" or "* item" for bullets, blank lines for paragraph breaks.'
+      }
+    },
+    required: ['path', 'content']
+  }
+};
+
+export const createPdfHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
+  const validation = validatePath(args.path);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+
+  let resolvedPath = validation.resolved;
+  if (!resolvedPath.toLowerCase().endsWith('.pdf')) {
+    resolvedPath += '.pdf';
+  }
+
+  try {
+    await fsPromises.mkdir(path.dirname(resolvedPath), { recursive: true });
+
+    await new Promise<void>((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 60, size: 'A4' });
+      const stream = fs.createWriteStream(resolvedPath);
+      doc.pipe(stream);
+
+      // Title
+      if (args.title) {
+        doc.fontSize(22).font('Helvetica-Bold').text(args.title, { align: 'center' });
+        doc.moveDown(1.2);
+      }
+
+      const lines: string[] = (args.content as string).split('\n');
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+
+        if (trimmed === '') {
+          doc.moveDown(0.5);
+          continue;
+        }
+
+        if (trimmed.startsWith('### ')) {
+          doc.fontSize(13).font('Helvetica-Bold').text(trimmed.slice(4));
+          doc.moveDown(0.4);
+        } else if (trimmed.startsWith('## ')) {
+          doc.fontSize(16).font('Helvetica-Bold').text(trimmed.slice(3));
+          doc.moveDown(0.5);
+        } else if (trimmed.startsWith('# ')) {
+          doc.fontSize(20).font('Helvetica-Bold').text(trimmed.slice(2));
+          doc.moveDown(0.6);
+        } else if (/^[-*\u2022] /.test(trimmed)) {
+          doc.fontSize(11).font('Helvetica').text('• ' + trimmed.replace(/^[-*\u2022] /, ''), { indent: 20 });
+          doc.moveDown(0.3);
+        } else {
+          doc.fontSize(11).font('Helvetica').text(trimmed);
+          doc.moveDown(0.4);
+        }
+      }
+
+      doc.end();
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    });
+
+    const size = (await fsPromises.stat(resolvedPath)).size;
+    return {
+      success: true,
+      result: {
+        path: resolvedPath,
+        message: `PDF created at ${resolvedPath}`,
+        size
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: `Failed to create PDF: ${err.message}` };
+  }
+};
+
 // Export all tools as a map for easy registration
 
 export const searchFilesDef: ToolDefinition = {
@@ -1000,5 +1098,6 @@ export const fileSystemTools = {
   write_file: { definition: writeFileDef, handler: writeFileHandler },
   create_docx: { definition: createDocxDef, handler: createDocxHandler },
   create_spreadsheet: { definition: createSpreadsheetDef, handler: createSpreadsheetHandler },
+  create_pdf: { definition: createPdfDef, handler: createPdfHandler },
   get_file_info: { definition: getFileInfoDef, handler: getFileInfoHandler },
 };

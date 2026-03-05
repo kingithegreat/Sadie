@@ -280,6 +280,8 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `Create Word document "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
     case 'create_spreadsheet':
       return `Create spreadsheet "${args.path}" with ${Array.isArray(args.rows) ? args.rows.length : '?'} rows?`;
+    case 'create_pdf':
+      return `Create PDF "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
     default:
       return `Execute ${toolName} with: ${JSON.stringify(args)}?`;
   }
