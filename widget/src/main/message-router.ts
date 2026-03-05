@@ -954,16 +954,19 @@ export async function streamFromOllamaWithTools(
   const convPrompt = storedConv?.systemPrompt?.toString().trim();
 
   const messages: ChatMessage[] = [];
-  if (convPrompt) {
-    messages.push({ role: 'system', content: convPrompt });
+  // In uncensored mode skip ALL system prompts so the model runs completely unfiltered
+  if (!uncensoredModeEnabled) {
+    if (convPrompt) {
+      messages.push({ role: 'system', content: convPrompt });
+    }
+    // Always include the global SADIE prompt after the conversation prompt
+    // Append user's chat guidelines if set
+    const chatGuidelines = settings.chatGuidelines?.trim();
+    const systemPromptWithGuidelines = chatGuidelines
+      ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${chatGuidelines}`
+      : SADIE_SYSTEM_PROMPT;
+    messages.push({ role: 'system', content: systemPromptWithGuidelines });
   }
-  // Always include the global SADIE prompt after the conversation prompt
-  // Append user's chat guidelines if set
-  const chatGuidelines = settings.chatGuidelines?.trim();
-  const systemPromptWithGuidelines = chatGuidelines 
-    ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${chatGuidelines}`
-    : SADIE_SYSTEM_PROMPT;
-  messages.push({ role: 'system', content: systemPromptWithGuidelines });
 
   // Add conversation history (last N messages for context)
   for (const msg of history) {
@@ -2667,7 +2670,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   try {
                     const fallbackBody = {
                       model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
-                      messages: [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
+                      messages: uncensoredModeEnabled
+                        ? [ { role: 'user', content: reqAny.message } ]
+                        : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
                       stream: false
                     };
                     const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
@@ -2705,7 +2710,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               const fallbackBody = {
                 model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
-                messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: reqAny.message } ],
+                messages: uncensoredModeEnabled
+                  ? [ { role: 'user', content: reqAny.message } ]
+                  : [ { role: 'system', content: systemPrompt }, { role: 'user', content: reqAny.message } ],
                 stream: false
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
@@ -2735,7 +2742,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             try {
               const fallbackBody = {
                 model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
-                messages: [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
+                messages: uncensoredModeEnabled
+                  ? [ { role: 'user', content: reqAny.message } ]
+                  : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
                 stream: false
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
