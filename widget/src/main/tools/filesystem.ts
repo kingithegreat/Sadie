@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import ExcelJS from 'exceljs';
+import * as mammoth from 'mammoth';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
@@ -532,7 +533,26 @@ export const readFileHandler: ToolHandler = async (args, _context): Promise<Tool
     if (stats.size > 5 * 1024 * 1024) {
       return { success: false, error: 'File is too large (max 5MB)' };
     }
-    
+
+    // .docx — extract plain text via mammoth
+    if (validation.resolved.toLowerCase().endsWith('.docx')) {
+      const result = await mammoth.extractRawText({ path: validation.resolved });
+      const lines = result.value.split('\n');
+      const maxLines = args.maxLines || 300;
+      const truncated = lines.length > maxLines;
+      return {
+        success: true,
+        result: {
+          path: validation.resolved,
+          content: lines.slice(0, maxLines).join('\n'),
+          totalLines: lines.length,
+          truncated,
+          size: stats.size,
+          format: 'docx'
+        }
+      };
+    }
+
     const content = await fsPromises.readFile(validation.resolved, 'utf-8');
     const lines = content.split('\n');
     const maxLines = args.maxLines || 100;
