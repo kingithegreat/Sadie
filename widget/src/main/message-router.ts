@@ -1799,7 +1799,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
 
               const searchContext = contextParts.filter(Boolean).join('\n\n');
-              const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing only the search results above, answer this question concisely: ${enhancedMessage}`;
+              const augmentedMessage = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing only the search results above, answer this question concisely and directly — do not list snippets, give a real answer: ${enhancedMessage}`;
 
               // Stream the LLM synthesis
               const handler = await streamFromLLM(
@@ -2558,29 +2558,50 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     if (result.result.precipitation) responseText += `Precipitation: ${result.result.precipitation}\n`;
                     if (result.result.visibility) responseText += `Visibility: ${result.result.visibility}\n`;
                   }
-                  // Handle web search results
-                  else if (result.result.topResultContent) {
-                    const topContent = result.result.topResultContent.content || result.result.topResultContent.contentText;
-                    if (topContent) {
-                      responseText += topContent + '\n\n';
+                  // Handle web search results — route through LLM for synthesis
+                  else if (result.result.topResultContent || (result.result.results && Array.isArray(result.result.results))) {
+                    const sr = result.result;
+                    const contextParts: string[] = [];
+                    if (sr.aiAnswer) contextParts.push(`AI Summary: ${sr.aiAnswer}`);
+                    if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
+                      const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '').replace(/\s+/g, ' ').trim();
+                      const cleaned = raw.split(/\n/).filter((l: string) => !/(\[&>|]:h-|]:w-|]:mb-|]:rounded|]:overflow|]:max-h-)/.test(l)).join(' ').trim();
+                      contextParts.push(takeSentences(cleaned, 1200, 8));
+                      if (sr.topResultContent.url) contextParts.push(`Source: ${sr.topResultContent.url}`);
                     }
-                    if (result.result.topResultContent.url) {
-                      responseText += `Source: ${result.result.topResultContent.url}\n`;
+                    if (Array.isArray(sr.results) && sr.results.length > 0) {
+                      const snippets = sr.results.slice(0, 5).map((r: any, i: number) =>
+                        `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
+                      ).join('\n');
+                      contextParts.push(`Search results:\n${snippets}`);
                     }
-                    if (!topContent && result.result.note) {
-                      responseText += `${result.result.note}\n`;
-                    }
-                  }
-                  // Handle generic results with results array
-                  else if (result.result.results && Array.isArray(result.result.results) && result.result.results.length > 0) {
-                    result.result.results.slice(0, 3).forEach((item: any) => {
-                      if (item.title) responseText += `ΓÇó ${item.title}\n`;
-                      if (item.snippet) responseText += `  ${item.snippet}\n`;
-                      if (item.url) responseText += `  ${item.url}\n`;
-                      responseText += '\n';
-                    });
-                    if (result.result.note) {
-                      responseText += `${result.result.note}\n`;
+                    const searchContext = contextParts.filter(Boolean).join('\n\n');
+                    if (searchContext) {
+                      const augMsg = `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\nUsing only the search results above, answer this question concisely and directly — do not list snippets, give a real answer: ${enhancedMessage}`;
+                      addToHistory(convId, 'user', enhancedMessage);
+                      let synthResponse = '';
+                      const synthHandler = await streamFromLLM(
+                        augMsg, undefined, convId,
+                        (chunk) => {
+                          if (!activeStreams.has(streamId)) return;
+                          synthResponse += chunk;
+                          try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                        },
+                        () => {}, () => {},
+                        () => {
+                          if (synthResponse.trim()) addToHistory(convId, 'assistant', synthResponse);
+                          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                          activeStreams.delete(streamId);
+                        },
+                        (err) => {
+                          try { event.sender.send('sadie:stream-error', { error: true, message: 'Search synthesis error', details: err?.message || err, streamId }); } catch (e) {}
+                          activeStreams.delete(streamId);
+                        },
+                        requestConfirmation,
+                        (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                      );
+                      activeStreams.set(streamId, { destroy: synthHandler.cancel });
+                      return;
                     }
                   }
                   // Handle parsed document results (from parse_document_from_path)
