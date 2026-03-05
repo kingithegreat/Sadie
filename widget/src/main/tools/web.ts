@@ -12,9 +12,10 @@ import * as dns from 'dns';
 import * as net from 'net';
 import { isE2E } from '../env';
 
-// Search API keys — loaded from settings on first use
+// Search/image API keys — loaded from settings on first use
 let _tavilyApiKey: string | null = null;
 let _serperApiKey: string | null = null;
+let _openaiApiKey: string | null = null;
 
 export function setTavilyApiKey(key: string | null) {
   _tavilyApiKey = key;
@@ -30,6 +31,14 @@ export function setSerperApiKey(key: string | null) {
 
 export function getSerperApiKey(): string | null {
   return _serperApiKey;
+}
+
+export function setOpenaiApiKey(key: string | null) {
+  _openaiApiKey = key;
+}
+
+export function getOpenaiApiKey(): string | null {
+  return _openaiApiKey;
 }
 
 // ============= TOOL DEFINITIONS =============
@@ -945,6 +954,116 @@ export const imageGenerateDef: ToolDefinition = {
   }
 };
 
+// ── Shared HTTP POST helper used by image backends ──────────────────────────
+function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, string> = {}, timeoutMs = 120000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const lib = urlStr.startsWith('https') ? https : http;
+    const url = new URL(urlStr);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || (urlStr.startsWith('https') ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        ...extraHeaders
+      },
+      timeout: timeoutMs
+    };
+    const req = lib.request(options, (res: any) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString();
+        try { resolve(JSON.parse(body)); } catch { resolve({ _raw: body }); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('request timed out')); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── Backend 1: AUTOMATIC1111 / stable-diffusion-webui ────────────────────────
+async function tryAutomatic1111(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
+  try {
+    const url = 'http://127.0.0.1:7860/sdapi/v1/txt2img';
+    const payload = JSON.stringify({ prompt, negative_prompt: '', width, height, steps, cfg_scale: 7, sampler_name: 'Euler a' });
+    const res = await httpPost(url, payload, {}, 180000);
+    const b64 = res?.images?.[0];
+    return b64 ? (b64 as string) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Backend 2: ComfyUI simple prompt ─────────────────────────────────────────
+async function tryComfyUI(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
+  try {
+    // ComfyUI requires a workflow JSON — use the minimal KSampler workflow
+    const workflow = {
+      "3": { class_type: 'KSampler', inputs: { seed: Math.floor(Math.random() * 1e9), steps, cfg: 7, sampler_name: 'euler', scheduler: 'normal', denoise: 1, model: ["4", 0], positive: ["6", 0], negative: ["7", 0], latent_image: ["5", 0] } },
+      "4": { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'v1-5-pruned-emaonly.ckpt' } },
+      "5": { class_type: 'EmptyLatentImage', inputs: { batch_size: 1, height, width } },
+      "6": { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ["4", 1] } },
+      "7": { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ["4", 1] } },
+      "8": { class_type: 'VAEDecode', inputs: { samples: ["3", 0], vae: ["4", 2] } },
+      "9": { class_type: 'SaveImage', inputs: { filename_prefix: 'sadie', images: ["8", 0] } }
+    };
+    const promptRes = await httpPost('http://127.0.0.1:8188/prompt', JSON.stringify({ prompt: workflow }), {}, 30000);
+    if (!promptRes?.prompt_id) return null;
+
+    // Poll for result
+    const promptId = promptRes.prompt_id as string;
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const history = await new Promise<any>((res2, rej2) => {
+        const req = http.get(`http://127.0.0.1:8188/history/${promptId}`, (r) => {
+          let d = ''; r.on('data', (c: Buffer) => d += c); r.on('end', () => { try { res2(JSON.parse(d)); } catch { res2({}); } });
+        }); req.on('error', rej2);
+      });
+      const outputs = history?.[promptId]?.outputs;
+      if (outputs) {
+        for (const node of Object.values(outputs) as any[]) {
+          if (node?.images?.[0]) {
+            const img = node.images[0];
+            const imgData = await new Promise<Buffer>((r3, e3) => {
+              const url = `http://127.0.0.1:8188/view?filename=${img.filename}&subfolder=${img.subfolder || ''}&type=${img.type || 'output'}`;
+              http.get(url, (response) => {
+                const chunks: Buffer[] = [];
+                response.on('data', (c: Buffer) => chunks.push(c));
+                response.on('end', () => r3(Buffer.concat(chunks)));
+              }).on('error', e3);
+            });
+            return imgData.toString('base64');
+          }
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Backend 3: OpenAI DALL-E 3 ───────────────────────────────────────────────
+async function tryDallE(prompt: string, width: number, height: number): Promise<string | null> {
+  const key = _openaiApiKey;
+  if (!key) return null;
+  try {
+    // DALL-E 3 supports: 1024x1024, 1792x1024, 1024x1792
+    const size = width > height ? '1792x1024' : width < height ? '1024x1792' : '1024x1024';
+    const payload = JSON.stringify({ model: 'dall-e-3', prompt, n: 1, size, response_format: 'b64_json' });
+    const res = await httpPost('https://api.openai.com/v1/images/generations', payload, { Authorization: `Bearer ${key}` }, 120000);
+    const b64 = res?.data?.[0]?.b64_json as string | undefined;
+    return b64 || null;
+  } catch {
+    return null;
+  }
+}
+
 export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
     const prompt = String(args.prompt || '').trim();
@@ -955,57 +1074,36 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     const steps = Math.min(Math.max(1, Number(args.steps) || 20), 50);
     const backend = String(args.backend || 'hybrid');
 
-    // Call n8n image-generate webhook
-    const n8nBase = process.env.N8N_BASE_URL || 'http://localhost:5678';
-    const webhookUrl = `${n8nBase}/webhook/sadie-image-generate`;
+    let image_base64: string | null = null;
+    let source = '';
 
-    const payload = JSON.stringify({
-      action: 'generate',
-      payload: { prompt, width, height, steps, backend }
-    });
+    if (backend !== 'cloud') {
+      // Try local backends first
+      image_base64 = await tryAutomatic1111(prompt, width, height, steps);
+      if (image_base64) { source = 'automatic1111'; }
+      if (!image_base64) {
+        image_base64 = await tryComfyUI(prompt, width, height, steps);
+        if (image_base64) { source = 'comfyui'; }
+      }
+    }
 
-    const result = await new Promise<any>((resolve, reject) => {
-      const lib = webhookUrl.startsWith('https') ? require('https') : require('http');
-      const url = new URL(webhookUrl);
-      const options = {
-        hostname: url.hostname,
-        port: url.port || (webhookUrl.startsWith('https') ? 443 : 80),
-        path: url.pathname + url.search,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        },
-        timeout: 150000
-      };
-      const req = lib.request(options, (res: any) => {
-        let data = '';
-        res.on('data', (c: Buffer) => (data += c.toString()));
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)); } catch { resolve({ status: 'failure', error: { message: data } }); }
-        });
-      });
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('image_generate timed out')); });
-      req.write(payload);
-      req.end();
-    });
+    if (!image_base64 && backend !== 'local') {
+      // Fall back to DALL-E 3
+      image_base64 = await tryDallE(prompt, width, height);
+      if (image_base64) { source = 'dall-e-3'; }
+    }
 
-    if (result.status !== 'success') {
+    if (!image_base64) {
+      const hasKey = Boolean(_openaiApiKey);
       return {
         success: false,
-        error: result.error?.message || 'Image generation failed'
+        error: hasKey
+          ? 'All image backends failed. Local SD/ComfyUI unreachable and DALL-E request failed.'
+          : 'No image backend available. Add your OpenAI API key in Settings to enable DALL-E 3, or run Stable Diffusion locally on port 7860.'
       };
     }
 
-    return {
-      success: true,
-      result: {
-        image_base64: result.image,
-        source: result.source,
-        metadata: result.metadata
-      }
-    };
+    return { success: true, result: { image_base64, source, metadata: { prompt, width, height } } };
   } catch (err: any) {
     return { success: false, error: `image_generate failed: ${err.message}` };
   }

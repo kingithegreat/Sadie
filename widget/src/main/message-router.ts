@@ -14,7 +14,7 @@ import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
 import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig } from './custom-llm-client';
-import { setTavilyApiKey, setSerperApiKey } from './tools/web';
+import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 
@@ -1171,6 +1171,10 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         setSerperApiKey(settings.serperApiKey);
         console.log('[SADIE] Serper API key loaded from settings');
       }
+      if (settings.openaiApiKey) {
+        setOpenaiApiKey(settings.openaiApiKey);
+        console.log('[SADIE] OpenAI API key loaded from settings');
+      }
     } catch (e) {
       console.log('[SADIE] Could not load search API keys from settings');
     }
@@ -1705,16 +1709,26 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // ── END WEB SEARCH SYNTHESIS ──
 
             // ── IMAGE GENERATION: send base64 to renderer as special chunk ──
-            const imageResult = (toolResults || []).find(
-              (r: any) => r?.result?.image_base64
-            );
-            if (imageResult) {
-              const b64 = imageResult.result.image_base64 as string;
-              const chunk = `__SADIE_IMAGE__:${b64}`;
-              const caption = `\n🎨 Generated image for: *${intentResult.calls[0]?.arguments?.prompt || message}*`;
-              try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) {}
-              try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
-              addToHistory(convId, 'assistant', caption + '\n' + chunk);
+            const isImageIntent = intentResult.calls[0]?.name === 'image_generate';
+            if (isImageIntent) {
+              const imageResult = (toolResults || []).find(
+                (r: any) => r?.result?.image_base64
+              );
+              if (imageResult) {
+                const b64 = imageResult.result.image_base64 as string;
+                const caption = `🎨 Generated: *${intentResult.calls[0]?.arguments?.prompt || message}*\n`;
+                const imgChunk = `__SADIE_IMAGE__:${b64}`;
+                try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-chunk', { chunk: imgChunk, streamId }); } catch (e) {}
+                addToHistory(convId, 'assistant', caption + imgChunk);
+              } else {
+                // Tool failed — give a clear error instead of falling through to LLM
+                const failedResult = (toolResults || []).find((r: any) => r?.error || r?.success === false);
+                const errDetail = failedResult?.error || 'n8n webhook not reachable';
+                const errMsg = `❌ Image generation is not available right now.\n\nThe \`image_generate\` tool requires **n8n** to be running locally with the webhook \`/webhook/sadie-image-generate\` configured to connect to an image API (e.g. Stable Diffusion, ComfyUI, or DALL-E).\n\nError: \`${errDetail}\``;
+                try { event.sender.send('sadie:stream-chunk', { chunk: errMsg, streamId }); } catch (e) {}
+                addToHistory(convId, 'assistant', errMsg);
+              }
               try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
               activeStreams.delete(streamId);
               return;
