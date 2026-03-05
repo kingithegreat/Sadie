@@ -21,6 +21,10 @@ interface Settings {
   serperApiKey?: string;
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  codeModel?: string;
+  codeApiKey?: string;
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  codeApiUrl?: string;
   chatGuidelines?: string;
 }
 
@@ -39,7 +43,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     chatModel: 'qwen2.5:7b',
     uncensoredModel: 'dolphin-llama3:8b',
     visionModel: 'llava:latest',
-    codeModel: 'qwen2.5-coder:7b'
+    codeModel: 'qwen2.5-coder:3b'
   };
 
   const defaultCustomLLM: CustomLLMConfig = {
@@ -86,6 +90,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       serperApiKey: source.serperApiKey || '',
       anthropicApiKey: source.anthropicApiKey || '',
       openaiApiKey: source.openaiApiKey || '',
+      codeApiKey: source.codeApiKey || '',
+      codeApiProvider: source.codeApiProvider || 'openai',
+      codeApiUrl: source.codeApiUrl || '',
       chatGuidelines: source.chatGuidelines || ''
     };
   };
@@ -96,6 +103,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       id: 'qwen2.5:7b',
       name: 'Qwen 2.5 (7B)',
       description: '⭐ Best for tools & actions - excellent function calling (4.4GB)'
+    },
+    {
+      id: 'qwen2.5-coder:3b',
+      name: 'Qwen 2.5 Coder (3B)',
+      description: '💻 Best for your GPU — fits in 4GB VRAM comfortably (2GB) ⭐'
     },
     {
       id: 'qwen2.5-coder:7b',
@@ -231,6 +243,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const nextSettings: SharedSettings = {
       ...localSettings,
       customLLM: llmToSave,
+      codeModel: (localSettings as any).codeModel?.trim() || undefined,
+      codeApiKey: (localSettings as any).codeApiKey?.trim() || undefined,
+      codeApiProvider: (localSettings as any).codeApiProvider || undefined,
+      codeApiUrl: (localSettings as any).codeApiUrl?.trim() || undefined,
       tavilyApiKey: localSettings.tavilyApiKey?.trim() || undefined,
       serperApiKey: localSettings.serperApiKey?.trim() || undefined,
       anthropicApiKey: localSettings.anthropicApiKey?.trim() || undefined,
@@ -427,7 +443,41 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }
             placeholder={defaultModels.codeModel}
           />
-          <small className="setting-hint">Auto-used for coding questions. Leave blank to use the chat model. Recommended: <code>qwen2.5-coder:7b</code> or <code>deepseek-coder-v2:latest</code>.</small>
+          <small className="setting-hint">Local Ollama model for coding. Leave blank to use the chat model. Recommended for your GPU: <code>qwen2.5-coder:3b</code> (~2GB VRAM). If a Code API key is set below, it takes priority over this.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">🔑 Code model — Cloud API (optional)</label>
+          <div className="api-key-row">
+            <select
+              className="setting-input provider-select"
+              title="Code API provider"
+              value={(localSettings as any).codeApiProvider || 'openai'}
+              onChange={(e) => setLocalSettings({ ...localSettings, codeApiProvider: e.target.value as any } as any)}
+            >
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="custom">Custom URL</option>
+            </select>
+            <input
+              type="password"
+              className="setting-input api-key-input"
+              value={(localSettings as any).codeApiKey || ''}
+              onChange={(e) => setLocalSettings({ ...localSettings, codeApiKey: e.target.value } as any)}
+              placeholder="API key (sk-...)" 
+            />
+          </div>
+          {(localSettings as any).codeApiProvider === 'custom' && (
+            <input
+              type="text"
+              className="setting-input"
+              value={(localSettings as any).codeApiUrl || ''}
+              onChange={(e) => setLocalSettings({ ...localSettings, codeApiUrl: e.target.value } as any)}
+              placeholder="Custom API base URL (e.g. http://localhost:8080/v1)"
+            />
+          )}
+          <small className="setting-hint">Paste an API key to route all coding queries to a cloud model. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-opus-4-20250514</code>). Leave blank to use local Ollama.</small>
         </div>
         <div className="setting-group">
           <label className="setting-label">📝 Chat Guidelines</label>

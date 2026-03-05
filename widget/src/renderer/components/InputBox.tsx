@@ -67,7 +67,18 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
+  const [uncensoredMode, setUncensoredMode] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  // Sync uncensored mode from main process and listen for toggle events
+  useEffect(() => {
+    (window as any).electron?.getUncensoredMode?.().then((result: { enabled: boolean }) => {
+      setUncensoredMode(result?.enabled || false);
+    });
+    const handler = (e: Event) => setUncensoredMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener('sadie:uncensored-mode-changed', handler);
+    return () => window.removeEventListener('sadie:uncensored-mode-changed', handler);
+  }, []);
 
   // Check for speech recognition support
   useEffect(() => {
@@ -432,7 +443,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   };
 
   return (
-    <div ref={dropRef} className={`input-box ${isDragging ? 'dragging' : ''}`} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+    <div ref={dropRef} className={`input-box ${isDragging ? 'dragging' : ''} ${uncensoredMode ? 'uncensored' : ''}`} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
       {isDragging && (
         <div className="drop-overlay" role="status" aria-live="polite"><div className="drop-inner">📥 Drop files to attach</div></div>
       )}
@@ -465,12 +476,9 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
       {attachedImages.length > 0 && (
         <div className="image-preview-gallery">
           {attachedImages.map((img) => (
-            <div key={img.id} className="image-preview">
+            <div key={img.id} className="image-preview" title={img.filename ?? 'image'}>
               {img.url && <img src={img.url} alt={img.filename} className="image-thumb" />}
-              <div className="image-meta">
-                <div className="image-filename">{img.filename ?? 'image'}</div>
-                <button className="remove-image" onClick={() => removeAttachment(img.id)} title="Remove image">Remove</button>
-              </div>
+              <button className="remove-image" onClick={() => removeAttachment(img.id)} title="Remove image" aria-label={`Remove ${img.filename}`}>✕</button>
             </div>
           ))}
         </div>

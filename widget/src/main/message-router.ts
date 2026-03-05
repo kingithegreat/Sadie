@@ -891,7 +891,52 @@ export async function streamFromLLM(
       }
     }
   }
-  
+
+  // Code model cloud API: if a coding query is detected and a code API key is configured, route to the cloud API
+  const codeApiKey = ((settings as any).codeApiKey || '').trim();
+  const codeApiProvider = (settings as any).codeApiProvider || 'openai';
+  const codeApiUrl = ((settings as any).codeApiUrl || '').trim();
+  const preferredCodeModelForApi = ((settings as any).codeModel || '').trim();
+  const isCodingQueryForApi = codeApiKey && preferredCodeModelForApi
+    ? /\b(write|create|generate|fix|debug|refactor|optimise|optimize|implement|explain this code|review.*code|code.*review|function|class|algorithm|regex|sql|query|script|bash|python|javascript|typescript|html|css|java|c\+\+|golang|rust|react|api)\b/i.test(message)
+    : false;
+
+  if (isCodingQueryForApi && !images?.length) {
+    const defaultApiUrls: Record<string, string> = {
+      openai: 'https://api.openai.com/v1',
+      anthropic: 'https://api.anthropic.com/v1',
+      openrouter: 'https://openrouter.ai/api/v1',
+    };
+    const apiUrl = codeApiUrl || defaultApiUrls[codeApiProvider] || '';
+    const codeApiConfig: import('../shared/types').CustomLLMConfig = {
+      name: `Code API (${codeApiProvider})`,
+      apiUrl,
+      apiKey: codeApiKey,
+      provider: codeApiProvider,
+      model: preferredCodeModelForApi,
+      enabled: true
+    };
+    const codeValidation = validateCustomLLMConfig(codeApiConfig);
+    if (codeValidation.valid) {
+      console.log(`[SADIE] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
+      const controller = new AbortController();
+      const history = getHistory(conversationId);
+      streamFromCustomLLM(
+        message,
+        history.map(m => ({ role: m.role as any, content: m.content })),
+        codeApiConfig,
+        systemPromptWithGuidelines,
+        onChunk,
+        onEnd,
+        onError,
+        controller.signal
+      );
+      return { cancel: () => controller.abort() };
+    } else {
+      console.log(`[SADIE] Code API not ready: ${codeValidation.error}. Falling back to Ollama.`);
+    }
+  }
+
   // Default: use Ollama
   return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
 }

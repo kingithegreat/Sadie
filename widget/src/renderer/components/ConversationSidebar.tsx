@@ -90,18 +90,24 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    if (days === 0) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (days === 1) {
-      return 'Yesterday';
-    } else if (days < 7) {
-      return date.toLocaleDateString([], { weekday: 'short' });
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHrs = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffHrs < 24) return `${diffHrs}h ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'short' });
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const formatFullDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
   };
 
   if (!isOpen) return null;
@@ -155,8 +161,9 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                   <>
                     <div className="conv-info">
                       <div className="conv-title">{conv.title || 'Untitled'}</div>
-                      <div className="conv-meta">
-                        {conv.messageCount || 0} messages · {formatDate(conv.updatedAt)}
+                      <div className="conv-meta" title={formatFullDate(conv.updatedAt)}>
+                        <span className="conv-msg-count">{conv.messageCount || 0}</span>
+                        <span className="conv-time">{formatDate(conv.updatedAt)}</span>
                       </div>
                     </div>
                     <div className="conv-actions">

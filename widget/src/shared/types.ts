@@ -129,6 +129,11 @@ export interface Settings {
   // LLM provider API keys
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  // Code model routing
+  codeModel?: string;
+  codeApiKey?: string;
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  codeApiUrl?: string;
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;
 }

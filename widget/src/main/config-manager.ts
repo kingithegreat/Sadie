@@ -42,6 +42,10 @@ export interface Settings {
   // LLM provider API keys
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
+  codeApiKey?: string;
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  codeApiUrl?: string;
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;
 }

@@ -53,6 +53,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     const newValue = !uncensoredMode;
     setUncensoredMode(newValue);
     await (window as any).electron?.setUncensoredMode?.(newValue);
+    window.dispatchEvent(new CustomEvent('sadie:uncensored-mode-changed', { detail: newValue }));
   };
 
   const getStatusClass = (status: 'online' | 'offline' | 'checking') => {
