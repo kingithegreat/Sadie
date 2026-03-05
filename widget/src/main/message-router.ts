@@ -189,6 +189,48 @@ export function clearHistory(conversationId: string) {
   conversationDigest.delete(conversationId);
 }
 
+// ─── MCP Memory helpers ───────────────────────────────────────────────────────
+// These use the `memory` MCP server (registered as mcp_memory_*) to give SADIE
+// a persistent knowledge graph that survives process restarts.
+// All calls are best-effort — failures are silently swallowed so they never
+// break the chat flow.
+
+const MCP_MEMORY_SEARCH = 'mcp_memory_search_nodes';
+const MCP_MEMORY_ADD_OBS = 'mcp_memory_add_observations';
+
+/** Query the knowledge graph and return a compact context string, or null. */
+async function recallMemory(query: string): Promise<string | null> {
+  try {
+    const results = await executeToolBatch(
+      [{ name: MCP_MEMORY_SEARCH, arguments: { query } }],
+      { executionId: `mem-recall-${Date.now()}` } as any
+    );
+    const text = results?.[0]?.result?.text?.trim();
+    return text && text.length > 10 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Extract notable facts from a user turn and store them in the knowledge graph. */
+async function memorizeIfUseful(userMsg: string): Promise<void> {
+  const m = userMsg.toLowerCase();
+  // Only persist if the message contains a self-disclosure or preference
+  const isUseful =
+    /\b(i(?:'m| am)\s+\w|my name|i live|i work|i prefer|i like|i love|i hate|i dislike|i use|i have|i own|remind me|remember that|note that)\b/i.test(m);
+  if (!isUseful) return;
+  try {
+    await executeToolBatch(
+      [{ name: MCP_MEMORY_ADD_OBS, arguments: {
+          observations: [{ entityName: 'User', contents: [userMsg.slice(0, 400)] }]
+      }}],
+      { executionId: `mem-store-${Date.now()}` } as any
+    );
+  } catch {
+    // Ignore — memory MCP may not be running
+  }
+}
+
 function mapErrorToSadieResponse(error: any): SadieResponse {
   if (error.code === 'ECONNREFUSED') {
     return {
@@ -1135,6 +1177,19 @@ export async function streamFromOllamaWithTools(
       role: 'system',
       content: `[Prior conversation context — older turns compressed for brevity]\n${digest}`
     });
+  }
+
+  // Recall persisted facts from MCP memory knowledge graph
+  if (!uncensoredModeEnabled) {
+    const recalled = await recallMemory(message).catch(() => null);
+    if (recalled) {
+      messages.push({
+        role: 'system',
+        content: `[Remembered facts about the user from prior sessions]\n${recalled}`
+      });
+    }
+    // Fire-and-forget: persist any self-disclosures in this user message
+    memorizeIfUseful(message).catch(() => {});
   }
   for (const msg of history) {
     messages.push({ role: msg.role, content: msg.content });
