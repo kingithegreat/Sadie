@@ -142,6 +142,8 @@ interface ConversationMessage {
 const conversationHistory: Map<string, ConversationMessage[]> = new Map();
 // Rolling text summaries of messages older than MAX_HISTORY_MESSAGES
 const conversationDigest: Map<string, string> = new Map();
+// Tracks which conversationIds have already been seeded from disk this session
+const hydratedConversations = new Set<string>();
 
 // Keep last 50 messages in the active window; compress any beyond that into a
 // rolling digest so context is never lost, only compacted.
@@ -187,6 +189,46 @@ function getHistory(conversationId: string): ConversationMessage[] {
 export function clearHistory(conversationId: string) {
   conversationHistory.delete(conversationId);
   conversationDigest.delete(conversationId);
+  hydratedConversations.delete(conversationId);
+}
+
+/**
+ * Seed the in-memory conversationHistory from MemoryManager the first time a
+ * conversation is accessed in a new process session. This restores LLM context
+ * after an app restart or a conversation switch without requiring a full re-send.
+ * Marked exported so it can be called explicitly by the IPC layer on switch.
+ */
+export function ensureHydrated(conversationId: string): void {
+  if (!conversationId || hydratedConversations.has(conversationId)) return;
+  hydratedConversations.add(conversationId); // mark before async so races are safe
+  // Skip if in-memory history already has entries (current session added them first)
+  if (conversationHistory.has(conversationId) && conversationHistory.get(conversationId)!.length > 0) return;
+  try {
+    const stored = MemoryManager.getConversation(conversationId);
+    if (!stored || !stored.messages || stored.messages.length === 0) return;
+    const msgs: ConversationMessage[] = stored.messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        timestamp: Date.parse(m.timestamp) || Date.now(),
+      }));
+    if (msgs.length === 0) return;
+    // Apply the same compression logic to avoid blowing up context on long histories
+    if (msgs.length > MAX_HISTORY_MESSAGES) {
+      const overflow = msgs.slice(0, msgs.length - MAX_HISTORY_MESSAGES);
+      const compressed = compressTurns(overflow);
+      const existing = conversationDigest.get(conversationId);
+      conversationDigest.set(conversationId, existing ? `${existing} | ${compressed}` : compressed);
+      conversationHistory.set(conversationId, msgs.slice(msgs.length - MAX_HISTORY_MESSAGES));
+    } else {
+      conversationHistory.set(conversationId, msgs);
+    }
+    console.log(`[SADIE] Hydrated ${conversationId}: ${msgs.length} messages from persistent store`);
+  } catch (err) {
+    // Non-fatal — worst case the LLM just has no prior context
+    console.warn(`[SADIE] ensureHydrated failed for ${conversationId}:`, err);
+  }
 }
 
 // ─── MCP Memory helpers ───────────────────────────────────────────────────────
@@ -1261,6 +1303,8 @@ export async function streamFromOllamaWithTools(
   }
   
   // Build messages array for chat API - include conversation history
+  // Hydrate from persistent store on first access this session (restores context after restart/switch)
+  ensureHydrated(conversationId);
   const history = getHistory(conversationId);
 
   // If this conversation has a custom system prompt, prepend it to the default

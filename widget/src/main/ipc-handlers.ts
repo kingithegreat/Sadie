@@ -15,7 +15,7 @@ import {
 } from './config-manager';
 import { fetchAvailableCustomModels } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey } from './tools/web';
-import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
 import { listJobs, addJob, removeJob, toggleJob } from './scheduler';
@@ -457,6 +457,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('sadie:set-active-conversation', async (_event, conversationId: string | null) => {
     try {
       const success = MemoryManager.setActiveConversation(conversationId);
+      // Pre-warm LLM context so first message in this conversation has full history
+      if (conversationId) ensureHydrated(conversationId);
       return { success };
     } catch (err: any) {
       console.error('Error setting active conversation:', err.message);
