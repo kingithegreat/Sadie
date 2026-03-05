@@ -218,4 +218,5 @@ export interface ElectronAPI {
 
   // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
   writeClipboard?: (text: string) => void;
+  exportChat?: (markdown: string) => Promise<{ success: boolean; path?: string; error?: string }>;
 }

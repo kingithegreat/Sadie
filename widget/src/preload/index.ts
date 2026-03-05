@@ -376,6 +376,11 @@ const electronAPI: ElectronAPI = {
   // Open a folder in the system file explorer and select the file
   showInFolder: async (filePath: string): Promise<{ success: boolean; error?: string }> => {
     return await ipcRenderer.invoke('sadie:show-in-folder', filePath);
+  },
+
+  // Export chat history as a markdown file to the Desktop
+  exportChat: async (markdown: string): Promise<{ success: boolean; path?: string; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:export-chat', markdown);
   }
 };
 

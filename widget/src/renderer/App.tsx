@@ -717,6 +717,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) { setStatus(c); if (c.n8n === 'online') setBackendDiagnostic(null); } } catch (e) { /* ignore */ } }} 
         onSettingsClick={() => setSettingsOpen(true)}
         onMenuClick={() => setSidebarOpen(true)}
+        onExportChat={async () => {
+          const lines: string[] = [`# SADIE Chat Export\n_Exported: ${new Date().toLocaleString()}_\n`];
+          for (const m of messages) {
+            if (m.role === 'system') continue;
+            const label = m.role === 'user' ? '**You**' : '**SADIE**';
+            const ts = new Date(m.createdAt).toLocaleTimeString();
+            lines.push(`### ${label} — ${ts}\n${m.content}\n`);
+          }
+          const markdown = lines.join('\n---\n\n');
+          const result = await window.electron.exportChat?.(markdown);
+          setMessages(prev => [...prev, {
+            id: newId(), role: 'system',
+            content: result?.success ? `Chat exported to Desktop: ${result.path?.split(/[\\/]/).pop()}` : `Export failed: ${result?.error}`,
+            createdAt: Date.now(), error: null
+          }]);
+        }}
         backendDiagnostic={backendDiagnostic}
         onCopyDiagnostic={(text: string) => {
           try {

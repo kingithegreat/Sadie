@@ -286,6 +286,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Export chat history as markdown
+  ipcMain.handle('sadie:export-chat', async (_event, markdown: string) => {
+    try {
+      const desktop = app.getPath('desktop');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filePath = path.join(desktop, `sadie-chat-${ts}.md`);
+      fs.writeFileSync(filePath, markdown, 'utf-8');
+      return { success: true, path: filePath };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // E2E ping helper - used by tests to ensure main is responsive
   ipcMain.handle('sadie:__e2e_ping', async () => {
     try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; (global as any).__SADIE_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) {}
