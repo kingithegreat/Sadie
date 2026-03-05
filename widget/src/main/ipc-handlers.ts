@@ -18,6 +18,7 @@ import { setTavilyApiKey, setSerperApiKey } from './tools/web';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
+import { listJobs, addJob, removeJob, toggleJob } from './scheduler';
 import {
   loadMcpConfig,
   saveMcpConfig,
@@ -595,6 +596,31 @@ try {
         }
       );
     });
+  });
+
+  // ── Scheduler ──────────────────────────────────────────────────────────────────
+  ipcMain.handle('sadie:scheduler-list', () => listJobs());
+
+  ipcMain.handle('sadie:scheduler-add', (_event, input: any) => {
+    const { name, message, intervalMinutes, dailyTime, enabled } = input || {};
+    if (!name || !message) return { success: false, error: 'name and message are required' };
+    const job = addJob({
+      name: String(name).slice(0, 80),
+      message: String(message).slice(0, 500),
+      intervalMinutes: Math.max(1, Number(intervalMinutes) || 60),
+      dailyTime: dailyTime ? String(dailyTime) : undefined,
+      enabled: enabled !== false,
+    });
+    return { success: true, job };
+  });
+
+  ipcMain.handle('sadie:scheduler-remove', (_event, id: string) => {
+    return { success: removeJob(id) };
+  });
+
+  ipcMain.handle('sadie:scheduler-toggle', (_event, id: string, enabled: boolean) => {
+    const job = toggleJob(id, enabled);
+    return job ? { success: true, job } : { success: false, error: 'Job not found' };
   });
 
   // ── TTS (text-to-speech) ────────────────────────────────────────────────────

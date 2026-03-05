@@ -144,6 +144,17 @@ export interface ConnectionStatus {
   lastChecked?: string;
 }
 
+export interface ScheduledJob {
+  id: string;
+  name: string;
+  message: string;
+  intervalMinutes: number;
+  dailyTime?: string;
+  enabled: boolean;
+  lastFiredAt?: number;
+  createdAt: number;
+}
+
 export interface ElectronAPI {
   sendMessage: (request: SadieRequest) => Promise<SadieResponse>;
   getSettings: () => Promise<Settings>;
@@ -191,6 +202,12 @@ export interface ElectronAPI {
   // TTS (text-to-speech)
   ttsSpeak?: (text: string, rate?: number) => Promise<{ success: boolean; error?: string }>;
   ttsStop?: () => Promise<{ success: boolean; error?: string }>;
+
+  // Scheduler
+  schedulerList?: () => Promise<ScheduledJob[]>;
+  schedulerAdd?: (input: Omit<ScheduledJob, 'id' | 'createdAt'>) => Promise<{ success: boolean; job?: ScheduledJob; error?: string }>;
+  schedulerRemove?: (id: string) => Promise<{ success: boolean }>;
+  schedulerToggle?: (id: string, enabled: boolean) => Promise<{ success: boolean; job?: ScheduledJob; error?: string }>;
   
   // Uncensored mode toggle
   setUncensoredMode?: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;

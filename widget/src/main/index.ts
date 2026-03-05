@@ -7,6 +7,7 @@ import { initializeTools } from './tools';
 import { getSettings } from './config-manager';
 import { isE2E } from './env';
 import { ensureN8nRunning } from './n8n-lifecycle';
+import { initScheduler } from './scheduler';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -35,6 +36,13 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers BEFORE creating window
   registerIpcHandlers();
+
+  // Start background job scheduler
+  try {
+    initScheduler();
+  } catch (e) {
+    console.error('[MAIN] Scheduler init error:', e);
+  }
   
   // Create the main window first
   mainWindow = createMainWindow();

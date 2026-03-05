@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
-import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo } from '../../shared/types';
+import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob } from '../../shared/types';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -173,6 +173,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
   const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
+
+  // Scheduler state
+  const [scheduledJobs, setScheduledJobs] = useState<ScheduledJob[]>([]);
+  const [showJobForm, setShowJobForm] = useState(false);
+  const [jobForm, setJobForm] = useState({
+    name: '',
+    message: '',
+    mode: 'interval' as 'interval' | 'daily',
+    intervalMinutes: 60,
+    dailyTime: '09:00',
+  });
+
+  const loadJobs = async () => {
+    try {
+      const jobs = await (window as any).electron?.schedulerList?.();
+      if (Array.isArray(jobs)) setScheduledJobs(jobs);
+    } catch { /* IPC not yet ready */ }
+  };
+
+  useEffect(() => { loadJobs(); }, []);
 
   // MCP server management state
   const [mcpServers, setMcpServers] = useState<any[]>([]);
@@ -849,6 +869,155 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onClose={() => setShowTelemetryModal(false)}
         />
         {showTelemetryDashboard && <TelemetryDashboard open={showTelemetryDashboard} onClose={() => setShowTelemetryDashboard(false)} /> }
+      </div>
+
+      {/* ── Scheduled Jobs ─────────────────────────────────────────────────── */}
+      <div className="settings-section">
+        <h3 className="settings-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          ⏰ Scheduled Jobs
+          <small style={{ fontWeight: 400, fontSize: '0.75em', color: '#71717a' }}>
+            — recurring messages and reminders while SADIE is open
+          </small>
+        </h3>
+
+        {scheduledJobs.length === 0 ? (
+          <p style={{ fontSize: '0.85em', color: '#71717a', margin: '4px 0 12px' }}>
+            No scheduled jobs yet. Add one below.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+            {scheduledJobs.map((job) => (
+              <div
+                key={job.id}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#27272a', borderRadius: 6, padding: '6px 10px', fontSize: '0.85em'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <span
+                    style={{
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: job.enabled ? '#22c55e' : '#71717a',
+                      display: 'inline-block'
+                    }}
+                  />
+                  <span style={{ fontWeight: 500 }}>{job.name}</span>
+                  <span style={{ color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {job.dailyTime ? `daily @ ${job.dailyTime}` : `every ${job.intervalMinutes} min`}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button
+                    className="button button-secondary"
+                    style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                    onClick={async () => {
+                      await (window as any).electron?.schedulerToggle?.(job.id, !job.enabled);
+                      loadJobs();
+                    }}
+                  >
+                    {job.enabled ? 'Pause' : 'Resume'}
+                  </button>
+                  <button
+                    className="button button-secondary"
+                    style={{ padding: '2px 8px', fontSize: '0.8em', color: '#f87171' }}
+                    onClick={async () => {
+                      if (confirm(`Delete job "${job.name}"?`)) {
+                        await (window as any).electron?.schedulerRemove?.(job.id);
+                        loadJobs();
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showJobForm ? (
+          <div style={{ background: '#27272a', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <input
+                className="setting-input"
+                placeholder="Job name (e.g. Morning briefing)"
+                value={jobForm.name}
+                onChange={(e) => setJobForm({ ...jobForm, name: e.target.value })}
+              />
+              <input
+                className="setting-input"
+                placeholder="Message to show in chat when job fires"
+                value={jobForm.message}
+                onChange={(e) => setJobForm({ ...jobForm, message: e.target.value })}
+              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  className="setting-input"
+                  style={{ width: 'auto', flexShrink: 0 }}
+                  value={jobForm.mode}
+                  onChange={(e) => setJobForm({ ...jobForm, mode: e.target.value as 'interval' | 'daily' })}
+                >
+                  <option value="interval">Every N minutes</option>
+                  <option value="daily">Daily at time</option>
+                </select>
+                {jobForm.mode === 'interval' ? (
+                  <input
+                    className="setting-input"
+                    type="number"
+                    min={1}
+                    placeholder="Minutes (e.g. 60)"
+                    value={jobForm.intervalMinutes}
+                    onChange={(e) => setJobForm({ ...jobForm, intervalMinutes: Math.max(1, Number(e.target.value)) })}
+                  />
+                ) : (
+                  <input
+                    className="setting-input"
+                    type="time"
+                    value={jobForm.dailyTime}
+                    onChange={(e) => setJobForm({ ...jobForm, dailyTime: e.target.value })}
+                  />
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="button button-save"
+                  style={{ padding: '4px 14px' }}
+                  onClick={async () => {
+                    if (!jobForm.name.trim() || !jobForm.message.trim()) return;
+                    await (window as any).electron?.schedulerAdd?.({
+                      name: jobForm.name.trim(),
+                      message: jobForm.message.trim(),
+                      intervalMinutes: jobForm.intervalMinutes,
+                      dailyTime: jobForm.mode === 'daily' ? jobForm.dailyTime : undefined,
+                      enabled: true,
+                    });
+                    setJobForm({ name: '', message: '', mode: 'interval', intervalMinutes: 60, dailyTime: '09:00' });
+                    setShowJobForm(false);
+                    loadJobs();
+                  }}
+                >
+                  Add Job
+                </button>
+                <button
+                  className="button button-cancel"
+                  style={{ padding: '4px 14px' }}
+                  onClick={() => setShowJobForm(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="button button-secondary"
+            style={{ fontSize: '0.85em' }}
+            onClick={() => setShowJobForm(true)}
+          >
+            + Add Job
+          </button>
+        )}
       </div>
 
       {/* ── MCP Servers ───────────────────────────────────────────────────── */}

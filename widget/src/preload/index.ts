@@ -363,6 +363,12 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:tts-stop');
   },
 
+  // Scheduler — recurring / daily jobs
+  schedulerList: async () => ipcRenderer.invoke('sadie:scheduler-list'),
+  schedulerAdd: async (input: any) => ipcRenderer.invoke('sadie:scheduler-add', input),
+  schedulerRemove: async (id: string) => ipcRenderer.invoke('sadie:scheduler-remove', id),
+  schedulerToggle: async (id: string, enabled: boolean) => ipcRenderer.invoke('sadie:scheduler-toggle', id, enabled),
+
   // Uncensored mode toggle
   setUncensoredMode: async (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> => {
     return await ipcRenderer.invoke('sadie:set-uncensored-mode', enabled);
