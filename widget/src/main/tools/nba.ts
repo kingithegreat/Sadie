@@ -172,6 +172,7 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
     if (type === 'games') {
       // Use ESPN scoreboard; date format: YYYYMMDD (or YYYY-MM-DD)
       const d = (date || '').replace(/-/g, '');
+      const wantsResults = !!args.wantsResults;
       const params: any = {};
       if (d) params.dates = d;
       const board = await fetchEspnJson('/scoreboard', params);
@@ -182,6 +183,19 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       // Check both past and future windows to find upcoming games. Use helper to make this testable.
       if ((!events || events.length === 0) && (!d || /week|last|next/i.test(d))) {
         events = await fetchEventsInWindow();
+      }
+
+      // If the user wants results but all games are still scheduled, try the previous day
+      // (handles NZ/AU users whose system date is ahead of US Eastern time)
+      if (wantsResults && d && events.length > 0 && events.every((e: any) => e.status?.type?.state === 'pre')) {
+        try {
+          const prevD = new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T12:00:00`);
+          prevD.setDate(prevD.getDate() - 1);
+          const prevDate = `${prevD.getFullYear()}${String(prevD.getMonth()+1).padStart(2,'0')}${String(prevD.getDate()).padStart(2,'0')}`;
+          const prevBoard = await fetchEspnJson('/scoreboard', { dates: prevDate });
+          const prevFinished = (prevBoard?.events || []).filter((e: any) => e.status?.type?.state === 'post');
+          if (prevFinished.length > 0) events = prevFinished;
+        } catch { /* keep today's events */ }
       }
 
       const filterByQuery = (evts: any[], q: string) =>
@@ -208,7 +222,7 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
 
         events = filtered;
       }
-      return { success: true, result: { query, resultCount: events.length, events } };
+      return { success: true, result: { query, resultCount: events.length, events, allScheduled: events.length > 0 && events.every((e: any) => e.status?.type?.state === 'pre') } };
     }
 
     if (type === 'teams') {

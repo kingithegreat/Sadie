@@ -272,26 +272,35 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
                    'clippers', 'spurs', 'rockets', 'mavericks', 'thunder', 'jazz', 'kings', 'pelicans', 'grizzlies',
                    'hawks', 'hornets', 'cavaliers', 'pistons', 'pacers', 'magic', 'wizards', 'raptors', 'timberwolves', 'blazers', '76ers', 'sixers'];
   const hasNbaTeam = nbaTeams.some(team => m.includes(team));
+
+  // Helper: return YYYYMMDD string for America/New_York timezone + optional day offset
+  const getEtDate = (dayOffset = 0): string => {
+    const d = new Date();
+    d.setDate(d.getDate() + dayOffset);
+    return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).replace(/-/g, '');
+  };
   
   if (hasNbaTeam || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) {
     let teamQuery = '';
     for (const team of nbaTeams) {
       if (m.includes(team)) { teamQuery = team; break; }
     }
+    // Detect when user wants finished game results (not just the schedule)
+    const wantsResults = /\b(result[s]?|who won|who win|final[s]?|finished|were[' ]?the scores?|did.*play|played.*today|last night)\b/i.test(m);
     let dateRange = '';
     if (/last week|last_7_days|last 7 days/i.test(m)) {
       dateRange = 'last_7_days';
     } else if (/this week/i.test(m)) {
       dateRange = 'last_7_days';
     } else if (/tomorrow/i.test(m)) {
-      const d = new Date(); d.setDate(d.getDate() + 1);
-      dateRange = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+      dateRange = getEtDate(1);
+    } else if (/yesterday/i.test(m)) {
+      dateRange = getEtDate(-1);
     } else {
-      // Default to today so ESPN returns current day's games
-      const d = new Date();
-      dateRange = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+      // Use America/New_York date — prevents NZ system date querying wrong US slate
+      dateRange = getEtDate(0);
     }
-    return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery } }] };
+    return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery, wantsResults } }] };
   }
 
   // SURF / SWELL intents (standalone) — use web search for real surf data

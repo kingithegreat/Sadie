@@ -85,8 +85,16 @@ export async function enrichNbaGames(
     console.error('[Enrichment] Web search failed:', e);
   }
   
+  // Check if all games are still scheduled (no results yet)
+  const allScheduled = events.length > 0 && events.every((e: any) => e.status?.type?.state === 'pre');
+
   // Build comprehensive summary
-  let summary = `🏀 **NBA Games**\n\n`;
+  const dateLabel = events[0]?.date
+    ? new Date(events[0].date).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric' })
+    : '';
+  let summary = allScheduled
+    ? `🏀 **NBA Tonight${dateLabel ? ` — ${dateLabel}` : ''} (ET)**\n_No games have finished yet — here's tonight's schedule:_\n\n`
+    : `🏀 **NBA Games**\n\n`;
   
   if (formattedGames.length > 0) {
     summary += formattedGames.join('\n\n');
