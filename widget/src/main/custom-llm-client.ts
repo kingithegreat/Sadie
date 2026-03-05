@@ -5,7 +5,7 @@
 import axios from 'axios';
 import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
 import type { ToolDefinition } from './tools/types';
-import { toOpenAITool } from './tools/types';
+import { toOpenAITool, toAnthropicTool } from './tools/types';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -267,17 +267,69 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
 }
 
 /**
- * Stream from Anthropic API (different format)
+ * Convert a messages array from OpenAI format to Anthropic format.
+ * - System messages are separated out.
+ * - tool (tool_result) messages are grouped into user content arrays.
+ * - assistant messages with tool_calls are converted to tool_use content arrays.
+ */
+function toAnthropicMessages(messages: ChatMessage[]): { system: string; messages: any[] } {
+  const system = messages.find(m => m.role === 'system')?.content || '';
+  const result: any[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'system') continue;
+
+    if (msg.role === 'tool') {
+      // Anthropic tool results go as user messages with content array.
+      // Merge consecutive tool results into one user message.
+      const last = result[result.length - 1];
+      const resultBlock = {
+        type: 'tool_result',
+        tool_use_id: msg.tool_call_id || '',
+        content: msg.content
+      };
+      if (last && last.role === 'user' && Array.isArray(last.content)) {
+        last.content.push(resultBlock);
+      } else {
+        result.push({ role: 'user', content: [resultBlock] });
+      }
+      continue;
+    }
+
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      // Convert OpenAI tool_calls to Anthropic tool_use content blocks.
+      const content: any[] = [];
+      if (msg.content) content.push({ type: 'text', text: msg.content });
+      for (const tc of msg.tool_calls) {
+        let input: Record<string, any> = {};
+        try { input = JSON.parse(tc.function.arguments || '{}'); } catch { /* ignore */ }
+        content.push({
+          type: 'tool_use',
+          id: tc.id,
+          name: tc.function.name,
+          input
+        });
+      }
+      result.push({ role: 'assistant', content });
+      continue;
+    }
+
+    result.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content });
+  }
+
+  return { system, messages: result };
+}
+
+/**
+ * Stream from Anthropic API with tool calling support.
  */
 async function streamAnthropic(options: StreamOptions): Promise<void> {
-  const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000, onChunk, onEnd, onError, signal } = options;
-  
-  // Anthropic requires system message to be separate, and only accepts user/assistant roles
-  const systemMessage = messages.find(m => m.role === 'system')?.content || '';
-  const anthropicMessages = messages
-    .filter(m => m.role !== 'system' && m.role !== 'tool')
-    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
-  
+  const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000,
+          tools, onChunk, onToolCall, onEnd, onError, signal } = options;
+
+  const { system, messages: anthropicMessages } = toAnthropicMessages(messages);
+  const anthropicTools = tools && tools.length > 0 ? tools.map(toAnthropicTool) : undefined;
+
   try {
     const response = await axios.post(
       `${apiConfig.apiUrl}/messages`,
@@ -285,9 +337,10 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
         model: model || apiConfig.model || 'claude-3-5-sonnet-20241022',
         max_tokens: maxTokens,
         temperature,
-        system: systemMessage,
+        system,
         messages: anthropicMessages,
-        stream: true
+        stream: true,
+        ...(anthropicTools && anthropicTools.length > 0 ? { tools: anthropicTools } : {})
       },
       {
         headers: {
@@ -304,35 +357,60 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
     const stream = response.data as NodeJS.ReadableStream;
     let ended = false;
     const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
-    
+
+    // Track in-progress tool_use blocks by index
+    type ToolUseBlock = { id: string; name: string; jsonBuf: string };
+    const toolBlocks = new Map<number, ToolUseBlock>();
+
     stream.on('data', (chunk: Buffer) => {
       try {
-        const lines = chunk.toString('utf8').split('\n').filter(line => line.trim());
+        const lines = chunk.toString('utf8').split('\n').filter(l => l.trim());
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.substring(6);
-            
-            try {
-              const parsed = JSON.parse(data);
-              
-              if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                onChunk(parsed.delta.text);
+          if (!line.startsWith('data: ')) continue;
+          const data = line.substring(6);
+          let parsed: any;
+          try { parsed = JSON.parse(data); } catch { continue; }
+
+          switch (parsed.type) {
+            case 'content_block_start': {
+              const cb = parsed.content_block;
+              if (cb?.type === 'tool_use') {
+                toolBlocks.set(parsed.index, { id: cb.id, name: cb.name, jsonBuf: '' });
               }
-              
-              if (parsed.type === 'message_stop') {
-                safeEnd();
-                return;
-              }
-            } catch (e) {
-              // Ignore parsing errors
+              break;
             }
+            case 'content_block_delta': {
+              const delta = parsed.delta;
+              if (delta?.type === 'text_delta' && delta.text) {
+                onChunk(delta.text);
+              } else if (delta?.type === 'input_json_delta' && delta.partial_json) {
+                const block = toolBlocks.get(parsed.index);
+                if (block) block.jsonBuf += delta.partial_json;
+              }
+              break;
+            }
+            case 'content_block_stop': {
+              const block = toolBlocks.get(parsed.index);
+              if (block && onToolCall) {
+                let input: Record<string, any> = {};
+                try { input = JSON.parse(block.jsonBuf || '{}'); } catch {
+                  console.error('[Custom LLM] Anthropic: could not parse tool input JSON');
+                }
+                onToolCall({ id: block.id, name: block.name, arguments: input });
+                toolBlocks.delete(parsed.index);
+              }
+              break;
+            }
+            case 'message_stop':
+              safeEnd();
+              break;
           }
         }
       } catch (e) {
         console.error('[Custom LLM] Error processing Anthropic chunk:', e);
       }
     });
-    
+
     stream.on('end', () => safeEnd());
     stream.on('error', (err) => onError(err));
   } catch (err: any) {

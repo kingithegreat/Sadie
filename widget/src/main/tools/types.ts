@@ -101,6 +101,30 @@ export function toOpenAITool(tool: ToolDefinition): OpenAITool {
   };
 }
 
+// Anthropic tool format
+export interface AnthropicTool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: 'object';
+    properties: Record<string, any>;
+    required: string[];
+  };
+}
+
+// Convert our tool definition to Anthropic format
+export function toAnthropicTool(tool: ToolDefinition): AnthropicTool {
+  return {
+    name: tool.name,
+    description: tool.description,
+    input_schema: {
+      type: 'object',
+      properties: tool.parameters.properties,
+      required: tool.parameters.required
+    }
+  };
+}
+
 // Tool execution context - passed to tool handlers
 export interface ToolContext {
   // Unique ID for this tool execution
