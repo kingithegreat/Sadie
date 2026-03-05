@@ -1985,7 +1985,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   `Give a clear surf report for ${location} today. Include wave height, swell period/direction, wind, and any relevant conditions. Be concise.`
                 );
 
-                const handler = await streamFromLLM(
+                const handler = await streamFromOllamaWithTools(
                   augmentedMessage, undefined, convId,
                   (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
                   () => {}, () => {},
@@ -2067,8 +2067,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               const augmentedMessage = makeSynthesisPrompt(searchContext, enhancedMessage);
 
-              // Stream the LLM synthesis
-              const handler = await streamFromLLM(
+              // Always synthesize with Ollama — cloud model setting must not break tool synthesis
+              const handler = await streamFromOllamaWithTools(
                 augmentedMessage,
                 undefined,
                 convId,
@@ -2077,8 +2077,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   assistantResponse += chunk;
                   try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
                 },
-                () => {}, // onToolCall — not expected in synthesis pass
-                () => {}, // onToolResult — not expected
+                () => {},
+                () => {},
                 () => {
                   if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
                   try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
@@ -2296,7 +2296,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   if (sr) {
                     const searchContext = buildSearchContext(sr);
                     const augmentedMessage = makeSynthesisPrompt(searchContext, originalQuery);
-                    const handler = await streamFromLLM(
+                    const handler = await streamFromOllamaWithTools(
                       augmentedMessage, undefined, convId,
                       (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
                       () => {}, () => {},
@@ -2883,7 +2883,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       const augMsg = makeSynthesisPrompt(searchContext, enhancedMessage);
                       addToHistory(convId, 'user', enhancedMessage);
                       let synthResponse = '';
-                      const synthHandler = await streamFromLLM(
+                      const synthHandler = await streamFromOllamaWithTools(
                         augMsg, undefined, convId,
                         (chunk) => {
                           if (!activeStreams.has(streamId)) return;
