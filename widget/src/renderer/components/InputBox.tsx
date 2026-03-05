@@ -85,7 +85,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     if ((window as any).electron?.startSpeechRecognition) {
       console.log('[Voice] Using Windows SAPI...');
       setIsListening(true);
-      setErrorMessage('Listening... speak now (10 sec timeout)');
+      setErrorMessage('🎤 Listening… speak now');
       
       try {
         const result = await (window as any).electron.startSpeechRecognition();
@@ -95,22 +95,20 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
         if (result.success && result.text) {
           setInputValue(prev => prev + (prev ? ' ' : '') + result.text);
           setErrorMessage(null);
-        } else if (!result.text) {
-          setErrorMessage('No speech detected. Try again.');
+        } else if (result.success && !result.text) {
+          setErrorMessage('No speech detected — try speaking louder or check your microphone.');
         } else {
-          setErrorMessage(result.error || 'Speech recognition failed');
+          setErrorMessage('Voice error: ' + (result.error || 'Speech recognition failed'));
         }
       } catch (err: any) {
         console.error('[Voice] Error:', err);
         setIsListening(false);
-        setErrorMessage('Speech recognition error: ' + (err.message || err));
+        setErrorMessage('Voice error: ' + (err.message || String(err)));
       }
       return;
     }
-    
-    console.log('[Voice] Falling back to Web Speech API...');
 
-    // Fallback to Web Speech API (requires internet)
+    // Fallback to Web Speech API (requires internet / Chromium speech service)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setErrorMessage('Speech recognition not supported in this browser.');

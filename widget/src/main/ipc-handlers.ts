@@ -533,22 +533,23 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.handle('sadie:start-speech-recognition', async () => {
     const { exec } = require('child_process');
-    
+    const os = require('os');
+    const path = require('path');
+    const fs = require('fs');
+
     return new Promise((resolve) => {
-      // PowerShell script to use Windows Speech Recognition
+      // PowerShell script to use Windows Speech Recognition (SAPI — fully offline)
       const psScript = `
 Add-Type -AssemblyName System.Speech
 $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
 $recognizer.SetInputToDefaultAudioDevice()
 
-# Create a simple grammar that accepts any dictation
 $dictation = New-Object System.Speech.Recognition.DictationGrammar
 $recognizer.LoadGrammar($dictation)
 
-# Listen for 10 seconds max
 $recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(5)
-$recognizer.BabbleTimeout = [TimeSpan]::FromSeconds(3)
-$recognizer.EndSilenceTimeout = [TimeSpan]::FromSeconds(1)
+$recognizer.BabbleTimeout         = [TimeSpan]::FromSeconds(3)
+$recognizer.EndSilenceTimeout     = [TimeSpan]::FromSeconds(1)
 
 try {
     $result = $recognizer.Recognize([TimeSpan]::FromSeconds(10))
@@ -563,13 +564,22 @@ try {
     $recognizer.Dispose()
 }
 `;
+      // Write to a temp file so no inline escaping is needed
+      const tmpFile = path.join(os.tmpdir(), 'sadie-voice.ps1');
+      try {
+        fs.writeFileSync(tmpFile, psScript, 'utf8');
+      } catch (writeErr: any) {
+        resolve({ success: false, error: 'Could not write temp script: ' + writeErr.message, text: '' });
+        return;
+      }
 
-      exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
-        { timeout: 15000 }, 
-        (error: any, stdout: string, _stderr: string) => {
+      exec(`powershell -ExecutionPolicy Bypass -NonInteractive -File "${tmpFile}"`,
+        { timeout: 15000 },
+        (error: any, stdout: string, stderr: string) => {
+          try { fs.unlinkSync(tmpFile); } catch (_) {}
           if (error) {
-            console.error('Speech recognition error:', error.message);
-            resolve({ success: false, error: 'Speech recognition failed', text: '' });
+            console.error('[Voice] SAPI error:', error.message, stderr);
+            resolve({ success: false, error: 'Speech recognition failed: ' + (error.message || ''), text: '' });
           } else {
             const text = stdout.trim();
             resolve({ success: true, text });
