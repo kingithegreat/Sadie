@@ -1151,8 +1151,12 @@ export async function streamFromOllamaWithTools(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean }
+  options?: { hasDocuments?: boolean; noTools?: boolean }
 ): Promise<{ cancel: () => void }> {
+  // Synthesis calls pass pre-fetched search results — we must NOT offer tools or
+  // the LLM will call web_search again, doubling the context and potentially
+  // overflowing the model's context window which causes an Ollama error.
+  const isSynthesisCall = options?.noTools === true || message.startsWith('[SEARCH RESULTS]');
   const settings = getSettings();
   const preferredChatModel = settings.chatModel || OLLAMA_CHAT_MODEL;
   const preferredUncensoredModel = settings.uncensoredModel || OLLAMA_UNCENSORED_MODEL;
@@ -1240,8 +1244,11 @@ export async function streamFromOllamaWithTools(
     });
   }
 
-  // Recall persisted facts from MCP memory knowledge graph
-  if (!uncensoredModeEnabled) {
+  // Recall persisted facts from MCP memory knowledge graph.
+  // Skip for synthesis calls — the message is not a real user query so memory
+  // recall is irrelevant and the 3000-char search-results string would be a
+  // useless (and expensive) knowledge-graph query.
+  if (!uncensoredModeEnabled && !isSynthesisCall) {
     const recalled = await recallMemory(message).catch(() => null);
     if (recalled) {
       messages.push({
@@ -1269,8 +1276,10 @@ export async function streamFromOllamaWithTools(
   const skipToolsForGreeting = isSimpleGreeting(message);
   const hasDocuments = options?.hasDocuments ?? false;
   
-  // Only include document tools when documents are actually attached to THIS message
-  const tools = (modelSupportsTools && !skipToolsForGreeting) 
+  // Only include document tools when documents are actually attached to THIS message.
+  // Never offer tools for synthesis calls — the model already has the data it needs
+  // and offering tools causes it to redundantly call web_search, blowing the context.
+  const tools = (modelSupportsTools && !skipToolsForGreeting && !isSynthesisCall) 
     ? getOllamaTools({ excludeDocumentTools: !hasDocuments })
     : undefined;
   
@@ -1992,7 +2001,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
                   (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'Surf LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
                   requestConfirmation,
-                  (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                  (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
+                  { noTools: true }
                 );
                 activeStreams.set(streamId, { destroy: handler.cancel });
                 return;
@@ -2089,7 +2099,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   activeStreams.delete(streamId);
                 },
                 requestConfirmation,
-                (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
+                { noTools: true }
               );
               activeStreams.set(streamId, { destroy: handler.cancel });
               return;
@@ -2303,7 +2314,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
                       (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'News LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
                       requestConfirmation,
-                      (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                      (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
+                      { noTools: true }
                     );
                     activeStreams.set(streamId, { destroy: handler.cancel });
                     return;
@@ -2901,7 +2913,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                           activeStreams.delete(streamId);
                         },
                         requestConfirmation,
-                        (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                        (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason),
+                        { noTools: true }
                       );
                       activeStreams.set(streamId, { destroy: synthHandler.cancel });
                       return;
