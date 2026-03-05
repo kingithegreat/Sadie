@@ -1158,7 +1158,14 @@ export async function streamFromOllamaWithTools(
   // overflowing the model's context window which causes an Ollama error.
   const isSynthesisCall = options?.noTools === true || message.startsWith('[SEARCH RESULTS]');
   const settings = getSettings();
-  const preferredChatModel = settings.chatModel || OLLAMA_CHAT_MODEL;
+  // When the user has a custom/cloud LLM active, settings.chatModel is the cloud
+  // model name (e.g. 'claude-sonnet-4-20250514'). This function ALWAYS talks to
+  // local Ollama, so we must not forward a cloud model name — fall back to the
+  // Ollama default instead.
+  const isCustomLLMActive = !!(settings as any).useCustomLLM && !!(settings as any).customLLM;
+  const preferredChatModel = isCustomLLMActive
+    ? OLLAMA_CHAT_MODEL
+    : (settings.chatModel || OLLAMA_CHAT_MODEL);
   const preferredUncensoredModel = settings.uncensoredModel || OLLAMA_UNCENSORED_MODEL;
   const preferredVisionModel = settings.visionModel || OLLAMA_VISION_MODEL;
   // Use code model when a coding-heavy query is detected and a code model is configured
