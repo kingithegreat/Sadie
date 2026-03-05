@@ -2,9 +2,9 @@
  * Custom LLM API client supporting multiple providers (OpenAI, Anthropic, OpenRouter, Custom)
  * Includes function calling support, retry logic, and provider auto-detection
  */
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
-import type { ToolDefinition, OpenAITool } from './tools/types';
+import type { ToolDefinition } from './tools/types';
 import { toOpenAITool } from './tools/types';
 
 interface ChatMessage {

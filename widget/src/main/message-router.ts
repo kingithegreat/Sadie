@@ -1953,7 +1953,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               );
               if (imageResult) {
                 const b64 = imageResult.result.image_base64 as string;
-                const caption = `🎨 Generated: *${intentResult.calls[0]?.arguments?.prompt || message}*\n`;
+                const caption = `🎨 Generated: *${intentResult.calls[0]?.arguments?.prompt || request.message}*\n`;
                 const imgChunk = `__SADIE_IMAGE__:${b64}`;
                 try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) {}
                 try { event.sender.send('sadie:stream-chunk', { chunk: imgChunk, streamId }); } catch (e) {}

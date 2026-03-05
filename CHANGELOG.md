@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.8.0 — Word Documents, Code Cloud API & UI Polish
+
+### Added
+- **`create_docx` tool**: SADIE can now generate real Microsoft Word (`.docx`) files using the `docx` package. Supports `# Heading`, `## Subheading`, `### Sub-subheading`, paragraphs, and an optional document title. Files go anywhere under the home directory. Requires confirmation before writing.
+- **Code cloud API routing**: Settings panel now has a "Code model — Cloud API" section. Set a provider (OpenAI / Anthropic / OpenRouter / Custom), an API key, and an optional base URL. Coding queries are automatically routed to the cloud model instead of Ollama when the key is present.
+- **`qwen2.5-coder:3b` added to model picker** with "Best for your GPU" label and set as the default code model.
+- **Uncensored mode amber border**: The input box gets an amber glow when uncensored mode is active (cross-component sync via `CustomEvent` bus — no prop-drilling).
+- **Sidebar timestamps & message count badges**: Conversation list shows granular relative times ("just now", "5m ago", "Yesterday", weekday) and a pill badge with the message count.
+- **Image thumbnail strip**: Attached images render as 72×72 cover thumbnails with an overlay × button (no filename clutter beneath).
+
+### Fixed
+- `write_file` / `codeApiKey` fields now correctly trimmed/cleaned in `handleSave` — previously the spread could leave stale values on save.
+- Unused `AxiosError` and `OpenAITool` imports removed from `custom-llm-client.ts`.
+- Missing `os` import added to `ipc-handlers.ts` (prevented `os.homedir()` call in telemetry path from compiling).
+- Undefined `message` reference in `message-router.ts` image-caption line fixed to `request.message`.
+
+### Removed
+- Root-level temp/debug artefacts: `tmp_chat.json`, `tmp_tool_call.json`, `tmp_database.sqlite`, `execution.log.jsonl`, `run-*.json`, `tmp/`, `widget/tmp/` — none were referenced by any build step.
+
+---
+
 ## v0.7.1 — IPC hardening, stream diagnostics & telemetry dashboard
 
 ### Added
