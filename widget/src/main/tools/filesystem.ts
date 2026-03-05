@@ -771,9 +771,155 @@ export const getFileInfoHandler: ToolHandler = async (args, _context): Promise<T
 };
 
 // Export all tools as a map for easy registration
+
+export const searchFilesDef: ToolDefinition = {
+  name: 'search_files',
+  description: 'Search for files by name pattern or search inside file contents for matching text. Use this when the user asks to find files, locate something on disk, or search for text within files.',
+  category: 'filesystem',
+  parameters: {
+    type: 'object',
+    properties: {
+      directory: {
+        type: 'string',
+        description: 'Directory to search in (e.g. "Desktop", "Documents", "~"). Defaults to home directory.'
+      },
+      filename_pattern: {
+        type: 'string',
+        description: 'Glob-style pattern to match filenames (e.g. "*.txt", "report*", "*.js"). Leave empty to search all files.'
+      },
+      content_query: {
+        type: 'string',
+        description: 'Text or regex pattern to search for inside file contents. Leave empty to only match by filename.'
+      },
+      case_sensitive: {
+        type: 'boolean',
+        description: 'Whether the content search is case-sensitive (default: false)',
+        default: false
+      },
+      max_results: {
+        type: 'number',
+        description: 'Maximum number of results to return (default: 20, max: 100)',
+        default: 20
+      }
+    },
+    required: ['directory']
+  }
+};
+
+export const searchFilesHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
+  const dirArg = (args.directory as string) || '~';
+  const validation = validatePath(dirArg);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+
+  const searchDir = validation.resolved;
+  const filenamePattern: string = (args.filename_pattern as string | undefined) || '';
+  const contentQuery: string = (args.content_query as string | undefined) || '';
+  const caseSensitive: boolean = !!(args.case_sensitive);
+  const maxResults: number = Math.min(Number(args.max_results) || 20, 100);
+
+  // Build filename regex from glob pattern
+  const filenameRegex: RegExp | null = filenamePattern
+    ? new RegExp(
+        '^' + filenamePattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+        caseSensitive ? '' : 'i'
+      )
+    : null;
+
+  const contentRegex: RegExp | null = contentQuery
+    ? new RegExp(contentQuery, caseSensitive ? '' : 'i')
+    : null;
+
+  const results: Array<{ file: string; matches?: Array<{ line: number; text: string }> }> = [];
+
+  const SKIP_DIRS = new Set(['node_modules', '.git', '$RECYCLE.BIN', 'System Volume Information']);
+  const TEXT_EXTENSIONS = new Set([
+    '.txt', '.md', '.json', '.csv', '.log', '.ts', '.tsx', '.js', '.jsx',
+    '.html', '.htm', '.css', '.xml', '.yaml', '.yml', '.toml', '.ini',
+    '.cfg', '.conf', '.sh', '.bat', '.ps1', '.py', '.rb', '.go', '.rs',
+    '.c', '.cpp', '.h', '.java', '.cs', '.sql', '.env', '.gitignore',
+    '.editorconfig', '.prettierrc', '.eslintrc', '.rtf'
+  ]);
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (results.length >= maxResults) return;
+    if (depth > 6) return; // cap recursion depth
+
+    let entries;
+    try {
+      entries = await fsPromises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (results.length >= maxResults) return;
+      if (entry.name.startsWith('.') && entry.name !== '.env') continue;
+
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        await walk(fullPath, depth + 1);
+      } else {
+        // Check filename match
+        const nameOk = filenameRegex ? filenameRegex.test(entry.name) : true;
+        if (!nameOk) continue;
+
+        if (contentRegex) {
+          // Only scan readable text files
+          const ext = path.extname(entry.name).toLowerCase();
+          if (!TEXT_EXTENSIONS.has(ext)) continue;
+
+          let fileSize = 0;
+          try { fileSize = (await fsPromises.stat(fullPath)).size; } catch { continue; }
+          if (fileSize > 2 * 1024 * 1024) continue; // skip files >2MB
+
+          let content: string;
+          try { content = await fsPromises.readFile(fullPath, 'utf-8'); } catch { continue; }
+
+          const lines = content.split('\n');
+          const matchingLines: Array<{ line: number; text: string }> = [];
+          for (let i = 0; i < lines.length; i++) {
+            if (contentRegex.test(lines[i])) {
+              matchingLines.push({ line: i + 1, text: lines[i].trim().slice(0, 120) });
+              if (matchingLines.length >= 5) break; // max 5 matching lines per file
+            }
+          }
+          if (matchingLines.length > 0) {
+            results.push({ file: fullPath, matches: matchingLines });
+          }
+        } else {
+          // Filename-only match
+          results.push({ file: fullPath });
+        }
+      }
+    }
+  }
+
+  try {
+    await walk(searchDir, 0);
+  } catch (err: any) {
+    return { success: false, error: `Search failed: ${err.message}` };
+  }
+
+  return {
+    success: true,
+    result: {
+      directory: searchDir,
+      filename_pattern: filenamePattern || '(any)',
+      content_query: contentQuery || '(none)',
+      count: results.length,
+      results
+    }
+  };
+};
+
 export const fileSystemTools = {
   list_directory: { definition: listDirectoryDef, handler: listDirectoryHandler },
   read_file: { definition: readFileDef, handler: readFileHandler },
+  search_files: { definition: searchFilesDef, handler: searchFilesHandler },
   create_directory: { definition: createDirectoryDef, handler: createDirectoryHandler },
   move_file: { definition: moveFileDef, handler: moveFileHandler },
   copy_file: { definition: copyFileDef, handler: copyFileHandler },
