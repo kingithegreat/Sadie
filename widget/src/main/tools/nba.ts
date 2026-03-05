@@ -18,8 +18,8 @@ export const nbaQueryDef: ToolDefinition = {
     properties: {
       type: {
         type: 'string',
-        description: 'Type of query: games, teams, players, teams_roster, news',
-        enum: ['games', 'teams', 'players', 'stats', 'roster', 'news']
+        description: 'Type of query: games, teams, players, stats, roster, news, standings',
+        enum: ['games', 'teams', 'players', 'stats', 'roster', 'news', 'standings']
       },
       query: {
         type: 'string',
@@ -265,7 +265,45 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       return { success: false, error: 'Stats queries not implemented. Use players/games/roster/news.' };
     }
 
-    return { success: false, error: 'Invalid type. Use games, teams, players, roster, or news.' };
+    if (type === 'standings') {
+      // ESPN standings API (different base URL)
+      const standingsUrl = 'https://site.api.espn.com/apis/v2/sports/basketball/nba/standings';
+      const raw = await httpsGet(standingsUrl);
+      // ESPN returns { children: [ { name: 'Eastern Conference', standings: { entries: [...] } }, ... ] }
+      const conferences: any[] = raw?.children || [];
+      const result: { conference: string; teams: { rank: number; name: string; wins: number; losses: number; pct: string; gb: string; streak: string }[] }[] = [];
+      for (const conf of conferences) {
+        const confName: string = conf.name || conf.abbreviation || 'Conference';
+        const entries: any[] = conf.standings?.entries || [];
+        const teams = entries.map((entry: any) => {
+          const team = entry.team || {};
+          const stats: any[] = entry.stats || [];
+          const getStat = (n: string) => stats.find((s: any) => s.name === n || s.abbreviation === n);
+          const wins = Number(getStat('wins')?.value ?? getStat('W')?.value ?? 0);
+          const losses = Number(getStat('losses')?.value ?? getStat('L')?.value ?? 0);
+          const pctRaw = getStat('winPercent')?.value ?? getStat('PCT')?.value;
+          const pct = pctRaw != null ? Number(pctRaw).toFixed(3) : '-';
+          const gbRaw = getStat('gamesBehind')?.value ?? getStat('GB')?.value;
+          const gb = gbRaw != null ? String(gbRaw) : '-';
+          const streakVal = getStat('streak')?.displayValue ?? getStat('streak')?.value ?? '';
+          return {
+            rank: entry.note?.rank ?? 0,
+            name: team.displayName || team.shortDisplayName || team.name || 'Unknown',
+            wins,
+            losses,
+            pct,
+            gb,
+            streak: String(streakVal)
+          };
+        });
+        // sort by wins desc (API sometimes doesn't guarantee order)
+        teams.sort((a, b) => b.wins - a.wins || a.losses - b.losses);
+        result.push({ conference: confName, teams });
+      }
+      return { success: true, result: { standings: result } };
+    }
+
+    return { success: false, error: 'Invalid type. Use games, teams, players, roster, news, or standings.' };
   } catch (err: any) {
     return { success: false, error: `NBA query failed: ${err.message}` };
   }

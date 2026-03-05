@@ -285,6 +285,11 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).replace(/-/g, '');
   };
   
+  // STANDINGS: check before the general NBA block to avoid falling through to 'games'
+  if (/\b(nba|basketball)\b/i.test(m) && /\bstanding(s)?\b/i.test(m)) {
+    return { calls: [{ name: 'nba_query', arguments: { type: 'standings' } }] };
+  }
+
   if (hasNbaTeam || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) {
     let teamQuery = '';
     for (const team of nbaTeams) {
@@ -1917,6 +1922,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (result.result.summary) {
                 responseText += result.result.summary + '\n';
               }
+              // Handle NBA standings
+              else if (result.result.standings && Array.isArray(result.result.standings)) {
+                result.result.standings.forEach((conf: any) => {
+                  responseText += `🏀 **${conf.conference}**\n\n`;
+                  responseText += `| # | Team | W | L | PCT | GB | Streak |\n`;
+                  responseText += `|---|------|---|---|-----|----|--------|\n`;
+                  conf.teams.forEach((t: any, i: number) => {
+                    responseText += `| ${i + 1} | ${t.name} | ${t.wins} | ${t.losses} | ${t.pct} | ${t.gb} | ${t.streak || '-'} |\n`;
+                  });
+                  responseText += '\n';
+                });
+              }
               // Handle NBA games — use enrichNbaGames so news/highlights are included
               else if (result.result.events && result.result.events.length > 0) {
                 try {
@@ -2536,8 +2553,20 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               let responseText = '';
               for (const result of toolResults) {
                 if (result.result) {
+                  // Handle NBA standings
+                  if (result.result.standings && Array.isArray(result.result.standings)) {
+                    result.result.standings.forEach((conf: any) => {
+                      responseText += `🏀 **${conf.conference}**\n\n`;
+                      responseText += `| # | Team | W | L | PCT | GB | Streak |\n`;
+                      responseText += `|---|------|---|---|-----|----|--------|\n`;
+                      conf.teams.forEach((t: any, i: number) => {
+                        responseText += `| ${i + 1} | ${t.name} | ${t.wins} | ${t.losses} | ${t.pct} | ${t.gb} | ${t.streak || '-'} |\n`;
+                      });
+                      responseText += '\n';
+                    });
+                  }
                   // Handle NBA games
-                  if (result.result.events && result.result.events.length > 0) {
+                  else if (result.result.events && result.result.events.length > 0) {
                     responseText += 'Here are the games:\n\n';
                     result.result.events.slice(0, 5).forEach((game: any) => {
                       const teams = game.competitions?.[0]?.competitors?.map((c: any) => c.team.displayName).join(' vs ') || 'Unknown matchup';
