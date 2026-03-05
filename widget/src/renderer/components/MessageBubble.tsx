@@ -222,6 +222,64 @@ function renderMarkdown(content: string): React.ReactNode[] {
         continue;
       }
 
+      // Horizontal rule
+      if (/^[-*_]{3,}\s*$/.test(line)) {
+        result.push(<hr key={key++} className="md-hr" />);
+        i++;
+        continue;
+      }
+
+      // Markdown table: lines containing | that look like a table
+      // First row is header, second row is separator (---|---), rest are body
+      if (line.includes('|') && i + 1 < lines.length && /^[\s|:-]+$/.test(lines[i + 1])) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].includes('|')) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        if (tableLines.length >= 2) {
+          const parseRow = (row: string) =>
+            row.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+          const headerCells = parseRow(tableLines[0]);
+          // tableLines[1] is the separator row — skip it
+          const bodyRows = tableLines.slice(2);
+          // Detect per-column alignment from separator
+          const sepCells = parseRow(tableLines[1]);
+          const aligns = sepCells.map(s => {
+            if (s.startsWith(':') && s.endsWith(':')) return 'center';
+            if (s.endsWith(':')) return 'right';
+            return 'left';
+          });
+          result.push(
+            <div key={key++} className="md-table-wrapper">
+              <table className="md-table">
+                <thead>
+                  <tr>
+                    {headerCells.map((cell, ci) => (
+                      <th key={ci} style={{ textAlign: aligns[ci] as any }}>
+                        {parseInline(cell, key * 1000 + ci)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {bodyRows.map((row, ri) => (
+                    <tr key={ri}>
+                      {parseRow(row).map((cell, ci) => (
+                        <td key={ci} style={{ textAlign: aligns[ci] as any }}>
+                          {parseInline(cell, key * 1000 + ri * 100 + ci)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+          continue;
+        }
+      }
+
       // Headings
       const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
       if (headingMatch) {
