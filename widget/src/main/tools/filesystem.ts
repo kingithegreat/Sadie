@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType } from 'docx';
 import ExcelJS from 'exceljs';
 import * as mammoth from 'mammoth';
 
@@ -251,7 +251,7 @@ export const writeFileDef: ToolDefinition = {
 
 export const createDocxDef: ToolDefinition = {
   name: 'create_docx',
-  description: 'Create a Microsoft Word (.docx) document with formatted text, headings, and paragraphs. Use this whenever the user asks to create a Word document, .docx file, or formatted document.',
+  description: 'Create a Microsoft Word (.docx) document with formatted text, headings, bullet lists, and tables. Use this whenever the user asks to create a Word document, .docx file, or formatted document. Supports: "# Heading", "## Subheading", "### Sub-subheading", "- bullet item", "* bullet item", and markdown tables (| col1 | col2 |).',
   category: 'filesystem',
   requiresConfirmation: true,
   parameters: {
@@ -267,7 +267,7 @@ export const createDocxDef: ToolDefinition = {
       },
       content: {
         type: 'string',
-        description: 'The document body. Use "# Heading", "## Subheading" for headings, blank lines for paragraph breaks.'
+        description: 'The document body. Use "# Heading", "## Subheading", "### Sub-subheading" for headings, "- item" or "* item" for bullet lists, "| col1 | col2 |" rows for tables, blank lines for paragraph breaks.'
       }
     },
     required: ['path', 'content']
@@ -290,7 +290,7 @@ export const createDocxHandler: ToolHandler = async (args, _context): Promise<To
     // Ensure parent directory exists
     await fsPromises.mkdir(path.dirname(resolvedPath), { recursive: true });
 
-    const children: Paragraph[] = [];
+    const children: (Paragraph | Table)[] = [];
 
     // Optional document title as Heading1
     if (args.title) {
@@ -303,38 +303,91 @@ export const createDocxHandler: ToolHandler = async (args, _context): Promise<To
       );
     }
 
-    // Parse content: split on blank lines, detect heading levels
-    const rawLines: string[] = (args.content as string).split('\n');
-    let buffer = '';
+    // ---- helpers ----
+    const isBullet = (l: string) => /^[\-\*\u2022] /.test(l.trimStart());
+    const isTableRow = (l: string) => l.trimStart().startsWith('|') && l.trimEnd().endsWith('|');
+    const isSeparatorRow = (l: string) => /^[\|\s\-:]+$/.test(l); // e.g. |---|---|
 
-    const flushBuffer = () => {
-      const trimmed = buffer.trim();
-      if (!trimmed) return;
-      if (trimmed.startsWith('### ')) {
-        children.push(new Paragraph({ text: trimmed.slice(4), heading: HeadingLevel.HEADING_3, spacing: { after: 120 } }));
-      } else if (trimmed.startsWith('## ')) {
-        children.push(new Paragraph({ text: trimmed.slice(3), heading: HeadingLevel.HEADING_2, spacing: { after: 160 } }));
-      } else if (trimmed.startsWith('# ')) {
-        children.push(new Paragraph({ text: trimmed.slice(2), heading: HeadingLevel.HEADING_1, spacing: { after: 200 } }));
-      } else {
-        children.push(
-          new Paragraph({
-            children: [new TextRun(trimmed)],
-            spacing: { after: 120 }
-          })
-        );
-      }
-      buffer = '';
+    const makeParagraph = (text: string): Paragraph => {
+      if (text.startsWith('### ')) return new Paragraph({ text: text.slice(4), heading: HeadingLevel.HEADING_3, spacing: { after: 120 } });
+      if (text.startsWith('## '))  return new Paragraph({ text: text.slice(3), heading: HeadingLevel.HEADING_2, spacing: { after: 160 } });
+      if (text.startsWith('# '))   return new Paragraph({ text: text.slice(2), heading: HeadingLevel.HEADING_1, spacing: { after: 200 } });
+      return new Paragraph({ children: [new TextRun(text)], spacing: { after: 120 } });
     };
 
-    for (const line of rawLines) {
-      if (line.trim() === '') {
-        flushBuffer();
-      } else {
-        buffer += (buffer ? '\n' : '') + line;
+    const makeBullet = (text: string): Paragraph =>
+      new Paragraph({
+        children: [new TextRun(text.trimStart().replace(/^[\-\*\u2022] /, ''))],
+        bullet: { level: 0 },
+        spacing: { after: 80 }
+      });
+
+    const makeTable = (tableLines: string[]): Table => {
+      const dataLines = tableLines.filter(l => !isSeparatorRow(l));
+      const rows = dataLines.map((line, rowIdx) => {
+        const cells = line.split('|').map(c => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
+        return new TableRow({
+          children: cells.map(cellText =>
+            new TableCell({
+              children: [new Paragraph({
+                children: [new TextRun({ text: cellText, bold: rowIdx === 0 })],
+                alignment: AlignmentType.LEFT
+              })],
+              width: { size: Math.floor(9000 / Math.max(cells.length, 1)), type: WidthType.DXA }
+            })
+          ),
+          tableHeader: rowIdx === 0
+        });
+      });
+      return new Table({
+        rows,
+        width: { size: 9000, type: WidthType.DXA },
+        borders: {
+          top:    { style: BorderStyle.SINGLE, size: 1 },
+          bottom: { style: BorderStyle.SINGLE, size: 1 },
+          left:   { style: BorderStyle.SINGLE, size: 1 },
+          right:  { style: BorderStyle.SINGLE, size: 1 },
+          insideHorizontal: { style: BorderStyle.SINGLE, size: 1 },
+          insideVertical:   { style: BorderStyle.SINGLE, size: 1 }
+        }
+      });
+    };
+
+    // ---- parse lines ----
+    const rawLines: string[] = (args.content as string).split('\n');
+    let i = 0;
+    while (i < rawLines.length) {
+      const line = rawLines[i];
+
+      if (line.trim() === '') { i++; continue; }
+
+      // Table block
+      if (isTableRow(line)) {
+        const tableLines: string[] = [];
+        while (i < rawLines.length && isTableRow(rawLines[i])) {
+          tableLines.push(rawLines[i]);
+          i++;
+        }
+        if (tableLines.filter(l => !isSeparatorRow(l)).length > 0) {
+          children.push(makeTable(tableLines));
+          children.push(new Paragraph({ text: '', spacing: { after: 120 } })); // gap after table
+        }
+        continue;
       }
+
+      // Bullet block
+      if (isBullet(line)) {
+        while (i < rawLines.length && (isBullet(rawLines[i]) || rawLines[i].trim() === '')) {
+          if (rawLines[i].trim() !== '') children.push(makeBullet(rawLines[i]));
+          i++;
+        }
+        continue;
+      }
+
+      // Paragraph / heading
+      children.push(makeParagraph(line.trim()));
+      i++;
     }
-    flushBuffer();
 
     const doc = new Document({
       sections: [{ children }]
