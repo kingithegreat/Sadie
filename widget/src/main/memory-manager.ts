@@ -115,18 +115,39 @@ function readJsonFile<T>(filename: string, defaultValue: T): T {
   return defaultValue;
 }
 
+// Write queue: one pending write per file to avoid concurrent corruption.
+// If a write is already in-flight we swap the pending payload so the latest
+// data always wins on the next flush.
+const _writeQueue = new Map<string, { data: string; resolve: (ok: boolean) => void }>();
+const _writeInFlight = new Set<string>();
+
+function flushWrite(filePath: string): void {
+  const entry = _writeQueue.get(filePath);
+  if (!entry || _writeInFlight.has(filePath)) return;
+  _writeQueue.delete(filePath);
+  _writeInFlight.add(filePath);
+  fs.writeFile(filePath, entry.data, 'utf-8', (err) => {
+    _writeInFlight.delete(filePath);
+    if (err) {
+      console.error(`[MemoryManager] Async write failed for ${path.basename(filePath)}:`, err);
+      entry.resolve(false);
+    } else {
+      entry.resolve(true);
+    }
+    // Flush next pending write for this file if one arrived while in-flight
+    if (_writeQueue.has(filePath)) flushWrite(filePath);
+  });
+}
+
 function writeJsonFile<T>(filename: string, data: T): boolean {
   const storePath = getMemoryStorePath();
   ensureDir(storePath);
   const filePath = path.join(storePath, filename);
-  
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    return true;
-  } catch (err) {
-    console.error(`[MemoryManager] Error writing ${filename}:`, err);
-    return false;
-  }
+  const serialised = JSON.stringify(data, null, 2);
+  // Fire-and-forget async write; queue deduplication ensures no torn writes.
+  _writeQueue.set(filePath, { data: serialised, resolve: () => {} });
+  setImmediate(() => flushWrite(filePath));
+  return true;
 }
 
 // ============= User Preferences =============

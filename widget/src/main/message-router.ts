@@ -140,19 +140,42 @@ interface ConversationMessage {
 
 // Store conversation history by conversation_id (limited to last N messages)
 const conversationHistory: Map<string, ConversationMessage[]> = new Map();
-const MAX_HISTORY_MESSAGES = 20; // Keep last 20 messages per conversation
+// Rolling text summaries of messages older than MAX_HISTORY_MESSAGES
+const conversationDigest: Map<string, string> = new Map();
+
+// Keep last 50 messages in the active window; compress any beyond that into a
+// rolling digest so context is never lost, only compacted.
+const MAX_HISTORY_MESSAGES = 50;
+// How many to compress at once when the window overflows
+const COMPRESS_BATCH = 20;
+
+/** Compact a batch of messages into a brief prose digest line. */
+function compressTurns(turns: ConversationMessage[]): string {
+  return turns.map(t => {
+    const speaker = t.role === 'user' ? 'User' : 'Assistant';
+    // Trim very long messages to keep the digest tight
+    const snippet = t.content.length > 200 ? t.content.slice(0, 200) + '…' : t.content;
+    return `${speaker}: ${snippet}`;
+  }).join(' | ');
+}
 
 function addToHistory(conversationId: string, role: 'user' | 'assistant', content: string) {
   if (!conversationHistory.has(conversationId)) {
     conversationHistory.set(conversationId, []);
   }
-  
+
   const history = conversationHistory.get(conversationId)!;
   history.push({ role, content, timestamp: Date.now() });
-  
-  // Trim to max size
-  while (history.length > MAX_HISTORY_MESSAGES) {
-    history.shift();
+
+  // When the window overflows, compress the oldest batch into the digest
+  if (history.length > MAX_HISTORY_MESSAGES) {
+    const batch = history.splice(0, COMPRESS_BATCH);
+    const compressed = compressTurns(batch);
+    const existing = conversationDigest.get(conversationId);
+    conversationDigest.set(
+      conversationId,
+      existing ? `${existing} | ${compressed}` : compressed
+    );
   }
 }
 
@@ -163,6 +186,7 @@ function getHistory(conversationId: string): ConversationMessage[] {
 // Exported for potential future use and testing
 export function clearHistory(conversationId: string) {
   conversationHistory.delete(conversationId);
+  conversationDigest.delete(conversationId);
 }
 
 function mapErrorToSadieResponse(error: any): SadieResponse {
@@ -1032,6 +1056,15 @@ export async function streamFromOllamaWithTools(
   }
 
   // Add conversation history (last N messages for context)
+  // If there is a rolling digest of older messages, inject it as a brief system
+  // context addendum so nothing is fully lost when the window compresses.
+  const digest = conversationDigest.get(conversationId);
+  if (digest && !uncensoredModeEnabled) {
+    messages.push({
+      role: 'system',
+      content: `[Prior conversation context — older turns compressed for brevity]\n${digest}`
+    });
+  }
   for (const msg of history) {
     messages.push({ role: msg.role, content: msg.content });
   }
