@@ -138,11 +138,28 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         <div 
           className={`uncensored-toggle ${uncensoredMode ? 'active' : ''}`}
           onClick={handleUncensoredToggle}
-          title={uncensoredMode ? 'Uncensored Mode ON (dolphin-llama3:8b)' : 'Safe Mode - using selected model'}
+          title={uncensoredMode ? 'Uncensored Mode ON — no system prompt, no tools' : 'Safe Mode - using selected model'}
         >
           <span className="toggle-icon">{uncensoredMode ? '🔓' : '🔒'}</span>
           <span className="toggle-label">{uncensoredMode ? 'Uncensored' : 'Safe'}</span>
         </div>
+        {uncensoredMode && (
+          <div
+            style={{
+              fontSize: 10,
+              color: '#f59e0b',
+              background: 'rgba(245,158,11,0.1)',
+              border: '1px solid rgba(245,158,11,0.3)',
+              borderRadius: 5,
+              padding: '2px 7px',
+              marginLeft: 4,
+              whiteSpace: 'nowrap',
+            }}
+            title="Tool calling is disabled in Uncensored Mode"
+          >
+            ⚠️ tools off
+          </div>
+        )}
       </div>
 
       <div className="header-actions">
