@@ -580,22 +580,40 @@ function formatWebSearchResult(payload: any): string {
   const res = payload?.result ?? payload;
   if (!res) return '';
   const parts: string[] = [];
-  const top = res.topResultContent;
+
   const firstResult = Array.isArray(res.results) && res.results.length > 0 ? res.results[0] : undefined;
-  const content = (top?.contentText || top?.content || firstResult?.snippet || '').trim();
 
-  if (top?.title) parts.push(top.title);
-  const condensed = takeSentences(content, 320, 3);
-  if (condensed) parts.push(condensed);
+  // Use sources[] array (multi-result) if present, fall back to legacy topResultContent
+  const sources: Array<{ url: string; title: string; content: string }> =
+    Array.isArray(res.sources) && res.sources.length > 0
+      ? res.sources
+      : (res.topResultContent ? [res.topResultContent] : []);
 
-   // Surface up to two high-signal snippets (dates, times, vs/at) to answer schedule-like queries quickly.
-  const highlights = extractKeySnippets(content, 2);
-  if (highlights.length > 0) {
-    parts.push(highlights.map(h => `- ${h}`).join('\n'));
+  if (sources.length > 0) {
+    // Respect a total character budget across all sources so the prompt doesn't balloon
+    const TOTAL_BUDGET = 4000;
+    const perSource = Math.floor(TOTAL_BUDGET / sources.length);
+    sources.forEach((src, i) => {
+      const raw = (src.content || '').replace(/\s+/g, ' ').trim();
+      const condensed = takeSentences(raw, perSource, 4);
+      if (i === 0) {
+        if (src.title) parts.push(src.title);
+        if (condensed) parts.push(condensed);
+        const highlights = extractKeySnippets(raw, 2);
+        if (highlights.length > 0) parts.push(highlights.map(h => `- ${h}`).join('\n'));
+        if (src.url) parts.push(`Source: ${src.url}`);
+      } else {
+        // Additional sources separated clearly for the model
+        const section: string[] = [`\n--- Source ${i + 1}: ${src.title || src.url}`];
+        if (condensed) section.push(condensed);
+        if (src.url) section.push(`URL: ${src.url}`);
+        parts.push(section.join('\n'));
+      }
+    });
+  } else if (firstResult?.snippet) {
+    parts.push(firstResult.snippet);
+    if (firstResult.url) parts.push(`Top link: ${firstResult.title || firstResult.url} — ${firstResult.url}`);
   }
-
-  if (firstResult?.url) parts.push(`Top link: ${firstResult.title || firstResult.url} ΓÇö ${firstResult.url}`);
-  else if (top?.url) parts.push(`Source: ${top.url}`);
 
   if (res.note) parts.push(res.note);
   return parts.filter(Boolean).join('\n');

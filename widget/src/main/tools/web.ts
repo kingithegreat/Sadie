@@ -45,7 +45,7 @@ export function getOpenaiApiKey(): string | null {
 
 export const webSearchDef: ToolDefinition = {
   name: 'web_search',
-  description: 'Search the web and get results. By default, automatically fetches content from the top result to provide actual information. Use this when the user asks about current events, sports, news, facts you\'re unsure about, or anything that requires up-to-date information.',
+  description: 'Search the web and get results. Automatically fetches and summarises content from multiple top sources to provide accurate, up-to-date answers. Use this when the user asks about current events, sports, news, facts you\'re unsure about, or anything that requires up-to-date information.',
   category: 'web',
   parameters: {
     type: 'object',
@@ -56,12 +56,17 @@ export const webSearchDef: ToolDefinition = {
       },
       maxResults: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 5, max: 10)',
+        description: 'Maximum number of search results to return (default: 5, max: 10)',
         default: 5
+      },
+      fetchResultCount: {
+        type: 'number',
+        description: 'Number of top results to fetch full content from and summarise (default: 3, max: 5). Higher values give more complete answers but take slightly longer.',
+        default: 3
       },
       fetchTopResult: {
         type: 'boolean',
-        description: 'Automatically fetch and include content from the top result (default: true)',
+        description: 'Automatically fetch content from top results (default: true)',
         default: true
       }
     },
@@ -495,7 +500,7 @@ interface TavilyResponse {
 
 async function searchTavily(query: string, maxResults: number): Promise<{
   results: Array<{ title: string; url: string; snippet: string }>;
-  topContent?: { url: string; title: string; content: string };
+  sources: Array<{ url: string; title: string; content: string }>;
   answer?: string;
 }> {
   const apiKey = getTavilyApiKey();
@@ -546,18 +551,16 @@ async function searchTavily(query: string, maxResults: number): Promise<{
     snippet: r.content || ''
   }));
 
-  // Tavily already gives us clean text content — use the top result
-  let topContent: { url: string; title: string; content: string } | undefined;
-  if (json.results && json.results.length > 0) {
-    const top = json.results[0];
-    topContent = {
-      url: top.url,
-      title: top.title,
-      content: top.content || ''
-    };
-  }
+  // Collect clean content from ALL results Tavily returned (it already pre-cleans them)
+  const sources: Array<{ url: string; title: string; content: string }> = (json.results || [])
+    .filter(r => r.content && r.content.length > 50)
+    .map(r => ({
+      url: r.url,
+      title: r.title,
+      content: r.content
+    }));
 
-  return { results, topContent, answer: json.answer };
+  return { results, sources, answer: json.answer };
 }
 
 /**
@@ -673,8 +676,9 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     }
     let results: Array<{ title: string; url: string; snippet: string }> = [];
     let tavilyAnswer: string | undefined;
-    let tavilyTopContent: { url: string; title: string; content: string } | undefined;
-    
+    let tavilySources: Array<{ url: string; title: string; content: string }> = [];
+    const fetchResultCount = Math.min(Math.max(1, args.fetchResultCount || 3), 5);
+
     // Try Tavily first if API key is configured (best quality, AI-optimized)
     const hasTavily = !!getTavilyApiKey();
     if (hasTavily) {
@@ -683,9 +687,9 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
         const tavilyResult = await searchTavily(query, maxResults);
         results = tavilyResult.results;
         tavilyAnswer = tavilyResult.answer;
-        tavilyTopContent = tavilyResult.topContent;
+        tavilySources = tavilyResult.sources.slice(0, fetchResultCount);
         if (results.length > 0) {
-          console.log(`[SADIE Web] Tavily returned ${results.length} results`);
+          console.log(`[SADIE Web] Tavily returned ${results.length} results, ${tavilySources.length} with content`);
         }
       } catch (err: any) {
         console.log(`[SADIE Web] Tavily failed: ${err.message}`);
@@ -699,7 +703,7 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
         const serperResult = await searchSerper(query, maxResults);
         results = serperResult.results;
         if (serperResult.topContent && serperResult.topContent.content.length > 50) {
-          tavilyTopContent = serperResult.topContent; // reuse the same variable for top content
+          tavilySources = [serperResult.topContent];
         }
         if (results.length > 0) {
           console.log(`[SADIE Web] Serper returned ${results.length} results`);
@@ -745,58 +749,54 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       };
     }
     
-    // Automatically fetch content from top result(s) for better answers
+    // Fetch full content from top N results
     const fetchTop = args.fetchTopResult !== false; // Default to true
-    let topContent: { url: string; title: string; content: string } | null = null;
-    
-    // If Tavily already gave us clean content, use that directly (no extra HTTP fetches needed)
-    if (tavilyTopContent && tavilyTopContent.content.length > 100) {
-      topContent = tavilyTopContent;
-      console.log(`[SADIE Web] Using Tavily pre-cleaned content (${topContent.content.length} chars)`);
+    let sources: Array<{ url: string; title: string; content: string }> = [];
+
+    if (tavilySources.length > 0) {
+      // Tavily already provides clean pre-extracted text — use all of them directly
+      sources = tavilySources;
+      console.log(`[SADIE Web] Using ${sources.length} Tavily pre-cleaned source(s)`);
     } else if (fetchTop && results.length > 0) {
-      // Fallback: fetch and parse HTML from top results
-      for (let i = 0; i < Math.min(3, results.length); i++) {
-        try {
-          console.log(`[SADIE Web] Fetching content from: ${results[i].url}`);
-          const html = await httpGet(results[i].url);
-          
-          // Extract title
+      // Fallback: fetch top N URLs in parallel
+      const toFetch = results.slice(0, fetchResultCount);
+      console.log(`[SADIE Web] Parallel-fetching ${toFetch.length} result(s)...`);
+      const fetchResults = await Promise.allSettled(
+        toFetch.map(async (r) => {
+          const html = await httpGet(r.url);
           const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-          const title = titleMatch ? stripHtml(titleMatch[1]).trim() : results[i].title;
-          
-          // Extract content
+          const title = titleMatch ? stripHtml(titleMatch[1]).trim() : r.title;
           let content = extractMainContent(html);
-          
-          // Only use if we got meaningful content
-          if (content.length > 200) {
-            // Truncate to reasonable size
-            if (content.length > 3000) {
-              content = content.substring(0, 3000) + '... [truncated]';
-            }
-            topContent = { url: results[i].url, title, content };
-            console.log(`[SADIE Web] Got ${content.length} chars from ${results[i].url}`);
-            break;
-          }
-        } catch (err: any) {
-          console.log(`[SADIE Web] Failed to fetch ${results[i].url}: ${err.message}`);
-          continue;
+          if (content.length < 200) throw new Error('Too little content');
+          if (content.length > 2500) content = content.substring(0, 2500) + '... [truncated]';
+          return { url: r.url, title, content };
+        })
+      );
+      for (const res of fetchResults) {
+        if (res.status === 'fulfilled') {
+          sources.push(res.value);
+        } else {
+          console.log(`[SADIE Web] Fetch failed: ${(res as PromiseRejectedResult).reason?.message}`);
         }
       }
+      console.log(`[SADIE Web] Got content from ${sources.length}/${toFetch.length} source(s)`);
     }
-    
+
+    const topContent = sources[0] ?? null;
     const resultPayload: any = {
       query,
       resultCount: results.length,
       results,
+      sources,
+      // Keep topResultContent for backward-compat with any code that reads it
       topResultContent: topContent,
-      note: topContent 
-        ? `I fetched the content from "${topContent.title}" - use this to answer the question.`
-        : 'Could not fetch detailed content. You may need to use fetch_url on specific results.'
+      note: sources.length > 0
+        ? `Fetched content from ${sources.length} source(s): ${sources.map(s => `"${s.title}"`).join(', ')}`
+        : 'Could not fetch detailed content. You may need to use fetch_url on specific results.',
     };
     // Include Tavily AI answer if available
     if (tavilyAnswer) {
       resultPayload.aiAnswer = tavilyAnswer;
-      resultPayload.note = `Tavily AI answer: ${tavilyAnswer}\n\nTop source: "${topContent?.title || 'N/A'}"`;
     }
     setCache(cacheKey, resultPayload);
     return { success: true, result: resultPayload, fromCache: false } as any;
