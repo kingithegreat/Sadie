@@ -18,6 +18,7 @@ services:
       - GENERIC_TIMEZONE=Pacific/Auckland
       - N8N_LOG_LEVEL=info
       - N8N_LOG_OUTPUT=console
+      - N8N_WORKFLOW_HISTORY_ENABLED=false
       
     volumes:
       # Persistent data

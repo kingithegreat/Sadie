@@ -1,156 +1,160 @@
 {
-    "name":  "SADIE Clipboard Tool (Phase 6)",
-    "active":  true,
-    "nodes":  [
-                  {
-                      "parameters":  {
-
-                                     },
-                      "id":  "start",
-                      "name":  "Start",
-                      "type":  "n8n-nodes-base.start",
-                      "typeVersion":  1,
-                      "position":  [
-                                       240,
-                                       300
-                                   ]
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst action = (body.action || \u0027read\u0027).toLowerCase();\nconst content = body.content || \u0027\u0027;\nconst confirmed = body.confirmed === true || body.confirmed === \u0027true\u0027;\nif (![\u0027read\u0027,\u0027write\u0027,\u0027clear\u0027].includes(action)) {\n  throw new Error(\u0027Invalid action. Must be: read, write, or clear\u0027);\n}\nreturn [{ json: { action, content, confirmed } }];"
-                                     },
-                      "id":  "parse-params",
-                      "name":  "Parse Parameters",
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       460,
-                                       300
-                                   ]
-                  },
-                  {
-                      "parameters":  {
-                                         "command":  "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"clipboard\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\sadie\\config\\safety-rules.json\""
-                                     },
-                      "id":  "safety-validation",
-                      "name":  "Safety Validation",
-                      "type":  "n8n-nodes-base.executeCommand",
-                      "typeVersion":  1,
-                      "position":  [
-                                       680,
-                                       300
-                                   ]
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "const raw = $input.first()?.json?.stdout ?? \u0027\u0027;\nlet validation;\ntry { validation = JSON.parse(raw); } catch { validation = { allowed: true }; }\nif (validation.allowed === false) {\n  throw new Error(\u0027Safety validation blocked clipboard operation: \u0027 + (validation.reason || \u0027policy\u0027));\n}\nconst params = $(\u0027Parse Parameters\u0027).first().json;\nreturn [{ json: params }];"
-                                     },
-                      "id":  "check-validation",
-                      "name":  "Check Validation",
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       900,
-                                       300
-                                   ]
-                  },
-                  {
-                      "parameters":  {
-                                         "command":  "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\ClipboardOps.ps1\" -Action \"{{ $json.action }}\" -Content \"{{ $json.content }}\" -Confirmed {{ $json.confirmed }}"
-                                     },
-                      "id":  "execute-clipboard",
-                      "name":  "Execute Clipboard Op",
-                      "type":  "n8n-nodes-base.executeCommand",
-                      "typeVersion":  1,
-                      "position":  [
-                                       1120,
-                                       300
-                                   ]
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "const raw = $input.first()?.json?.stdout ?? $input.first()?.json?.stderr ?? \u0027\u0027;\nlet result;\ntry { result = JSON.parse(raw); } catch { result = { success: false, error: raw || \u0027No output from ClipboardOps.ps1\u0027 }; }\nreturn [{ json: result }];"
-                                     },
-                      "id":  "format-result",
-                      "name":  "Format Result",
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       1340,
-                                       300
-                                   ]
-                  }
-              ],
-    "connections":  {
-                        "Start":  {
-                                      "main":  [
-                                                   [
-                                                       {
-                                                           "node":  "Parse Parameters",
-                                                           "type":  "main",
-                                                           "index":  0
-                                                       }
-                                                   ]
-                                               ]
-                                  },
-                        "Parse Parameters":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "Safety Validation",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "Safety Validation":  {
-                                                  "main":  [
-                                                               [
-                                                                   {
-                                                                       "node":  "Check Validation",
-                                                                       "type":  "main",
-                                                                       "index":  0
-                                                                   }
-                                                               ]
-                                                           ]
-                                              },
-                        "Check Validation":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "Execute Clipboard Op",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "Execute Clipboard Op":  {
-                                                     "main":  [
-                                                                  [
-                                                                      {
-                                                                          "node":  "Format Result",
-                                                                          "type":  "main",
-                                                                          "index":  0
-                                                                      }
-                                                                  ]
-                                                              ]
-                                                 }
-                    },
-    "settings":  {
-                     "executionOrder":  "v1"
-                 },
-    "tags":  [
-                 {
-                     "name":  "sadie"
-                 },
-                 {
-                     "name":  "tools"
-                 },
-                 {
-                     "name":  "clipboard"
-                 }
-             ],
-    "versionId":  "64d7aa6f-23df-4566-8374-63185e0ffcb7"
+  "name": "SADIE Clipboard Tool (Phase 6)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "start",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie/tools/clipboard",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "1dc2c508-af44-42c0-beb7-bb0caaaef56f"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst action = (body.action || 'read').toLowerCase();\nconst content = body.content || '';\nconst confirmed = body.confirmed === true || body.confirmed === 'true';\nif (!['read','write','clear'].includes(action)) {\n  throw new Error('Invalid action. Must be: read, write, or clear');\n}\nreturn [{ json: { action, content, confirmed } }];"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"clipboard\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\sadie\\config\\safety-rules.json\""
+      },
+      "id": "safety-validation",
+      "name": "Safety Validation",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first()?.json?.stdout ?? '';\nlet validation;\ntry { validation = JSON.parse(raw); } catch { validation = { allowed: true }; }\nif (validation.allowed === false) {\n  throw new Error('Safety validation blocked clipboard operation: ' + (validation.reason || 'policy'));\n}\nconst params = $('Parse Parameters').first().json;\nreturn [{ json: params }];"
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\ClipboardOps.ps1\" -Action \"{{ $json.action }}\" -Content \"{{ $json.content }}\" -Confirmed {{ $json.confirmed }}"
+      },
+      "id": "execute-clipboard",
+      "name": "Execute Clipboard Op",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first()?.json?.stdout ?? $input.first()?.json?.stderr ?? '';\nlet result;\ntry { result = JSON.parse(raw); } catch { result = { success: false, error: raw || 'No output from ClipboardOps.ps1' }; }\nreturn [{ json: result }];"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Safety Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Validation": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Execute Clipboard Op",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Clipboard Op": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "sadie"
+    },
+    {
+      "name": "tools"
+    },
+    {
+      "name": "clipboard"
+    }
+  ],
+  "versionId": "64d7aa6f-23df-4566-8374-63185e0ffcb7"
 }
