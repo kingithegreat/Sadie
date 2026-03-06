@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.5 — Model-aware prompts and memory path fix
+
+### Fixed
+- **Memory path hardcoding** (`tools/memory.ts`): JSON fallback stores (`memories.json`, `conversation-history.json`) were written to `~/Desktop/sadie/memory/json-store` unconditionally. Now uses the same dev/prod split as `memory-manager.ts`: dev → project root `memory/json-store`; packaged → Electron `userData` folder. Uses lazy `require('electron')` (with `catch` fallback) so Jest tests continue to work without the Electron binary.
+
+### Added
+- **Model-aware system prompt** (`shared/system-prompt.ts`, `message-router.ts`): `SADIE_SYSTEM_PROMPT_COMPACT` (~400 tokens) added alongside the full ~1500-token prompt. `isSmallModel()` detects <=3B models by name pattern (`:1b`, `:3b`, `phi-3`, `gemma:2b`, `tinyllama`, etc.). `getSystemPromptForModel()` selects the appropriate variant and appends user guidelines. Both `streamFromLLM` and `streamFromOllamaWithTools` now use it, giving `llama3.2:3b` ~1100 extra tokens of usable context per turn.
+
+---
+
 ## v0.9.4 — Image UX polish and Pollinations availability cache
 
 ### Fixed

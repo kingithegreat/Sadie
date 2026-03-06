@@ -13,17 +13,32 @@ import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 const COLLECTION_NAME = 'sadie_memories';
 const EMBEDDING_MODEL = 'nomic-embed-text';
 
-// Paths for JSON fallback stores
-const JSON_STORE_DIR = path.join(os.homedir(), 'Desktop', 'sadie', 'memory', 'json-store');
-const MEMORIES_JSON = path.join(JSON_STORE_DIR, 'memories.json');
-const HISTORY_JSON = path.join(JSON_STORE_DIR, 'conversation-history.json');
+// Resolve the JSON fallback store directory the same way memory-manager.ts does:
+// dev  → project-root/memory/json-store  (4 levels up from widget/out/main/tools)
+// prod → %APPDATA%/sadie/memory/json-store  (Electron userData)
+// Uses require() lazily so Jest’s electron mock is active before the call.
+function getJsonStoreDir(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as typeof import('electron');
+    if (!app.isPackaged) {
+      return path.resolve(__dirname, '..', '..', '..', '..', 'memory', 'json-store');
+    }
+    return path.join(app.getPath('userData'), 'memory', 'json-store');
+  } catch {
+    // Fallback for test/CI environments where Electron binary isn’t installed
+    return path.resolve(__dirname, '..', '..', '..', '..', 'memory', 'json-store');
+  }
+}
+
+function getMemoriesJson(): string { return path.join(getJsonStoreDir(), 'memories.json'); }
+function getHistoryJson(): string { return path.join(getJsonStoreDir(), 'conversation-history.json'); }
 
 // Maximum stored conversation turns (oldest trimmed first)
 const MAX_HISTORY_TURNS = 200;
@@ -76,8 +91,9 @@ interface MemoryRecord {
 
 function readMemoriesJson(): MemoryRecord[] {
   try {
-    if (!fs.existsSync(MEMORIES_JSON)) return [];
-    const raw = fs.readFileSync(MEMORIES_JSON, 'utf8');
+    const p = getMemoriesJson();
+    if (!fs.existsSync(p)) return [];
+    const raw = fs.readFileSync(p, 'utf8');
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -86,8 +102,9 @@ function readMemoriesJson(): MemoryRecord[] {
 }
 
 function writeMemoriesJson(memories: MemoryRecord[]): void {
-  fs.mkdirSync(JSON_STORE_DIR, { recursive: true });
-  fs.writeFileSync(MEMORIES_JSON, JSON.stringify(memories, null, 2), 'utf8');
+  const dir = getJsonStoreDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(getMemoriesJson(), JSON.stringify(memories, null, 2), 'utf8');
 }
 
 /** Very simple keyword relevance: count matching words, normalised to 0-1. */
@@ -116,16 +133,18 @@ interface ConversationStore {
 
 function readHistoryJson(): ConversationStore {
   try {
-    if (!fs.existsSync(HISTORY_JSON)) return { conversations: [], activeConversationId: null };
-    return JSON.parse(fs.readFileSync(HISTORY_JSON, 'utf8')) as ConversationStore;
+    const p = getHistoryJson();
+    if (!fs.existsSync(p)) return { conversations: [], activeConversationId: null };
+    return JSON.parse(fs.readFileSync(p, 'utf8')) as ConversationStore;
   } catch {
     return { conversations: [], activeConversationId: null };
   }
 }
 
 function writeHistoryJson(store: ConversationStore): void {
-  fs.mkdirSync(JSON_STORE_DIR, { recursive: true });
-  fs.writeFileSync(HISTORY_JSON, JSON.stringify(store, null, 2), 'utf8');
+  const dir = getJsonStoreDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(getHistoryJson(), JSON.stringify(store, null, 2), 'utf8');
 }
 
 // ============= TOOL DEFINITIONS =============
