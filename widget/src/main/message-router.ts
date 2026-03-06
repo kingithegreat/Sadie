@@ -357,7 +357,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
                        'clippers', 'spurs', 'rockets', 'mavericks', 'thunder', 'jazz', 'kings', 'pelicans', 'grizzlies',
                        'hawks', 'hornets', 'cavaliers', 'pistons', 'pacers', 'magic', 'wizards', 'raptors', 'timberwolves', 'blazers', '76ers', 'sixers'];
       for (const team of nbaTeamsForFile) {
-        if (m.includes(team)) { teamQuery = team; break; }
+        if (new RegExp(`\\b${team}\\b`, 'i').test(m)) { teamQuery = team; break; }
       }
       const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
       const wantsSeason = /\b(season|remaining|upcoming|all)\b/i.test(m);
@@ -384,7 +384,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   const nbaTeams = ['warriors', 'lakers', 'celtics', 'bulls', 'heat', 'nets', 'knicks', 'suns', 'bucks', 'nuggets', 
                    'clippers', 'spurs', 'rockets', 'mavericks', 'thunder', 'jazz', 'kings', 'pelicans', 'grizzlies',
                    'hawks', 'hornets', 'cavaliers', 'pistons', 'pacers', 'magic', 'wizards', 'raptors', 'timberwolves', 'blazers', '76ers', 'sixers'];
-  const hasNbaTeam = nbaTeams.some(team => m.includes(team));
+  const hasNbaTeam = nbaTeams.some(team => new RegExp(`\\b${team}\\b`, 'i').test(m));
 
   // Helper: return YYYYMMDD string for America/New_York timezone + optional day offset
   const getEtDate = (dayOffset = 0): string => {
@@ -680,7 +680,8 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
 
   // IMAGE GENERATION intents
   if (/\b(draw|generate|create|make|paint|sketch|render|design)\b.{0,30}\b(image|picture|photo|illustration|art|portrait|wallpaper|logo|icon|scene)\b/i.test(m) ||
-      /\b(image|picture|photo|illustration)\b.{0,20}\b(of|showing|with|featuring)\b/i.test(m)) {
+      /\b(image|picture|photo|illustration)\b.{0,20}\b(of|showing|with|featuring)\b/i.test(m) ||
+      /^(draw|paint|sketch|generate\s+(?:an?\s+)?image\s+of)\s+/i.test(m)) {
     const prompt = userMessage
       .replace(/^(draw|generate|create|make|paint|sketch|render|design)\s*(me\s*)?(an?\s*|a\s+)?/i, '')
       .trim();
