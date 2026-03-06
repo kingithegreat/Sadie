@@ -150,7 +150,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [availableModels, setAvailableModels] = useState<CustomModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelFetchError, setModelFetchError] = useState<string | null>(null);
-  const [modelsFetchedAt, setModelsFetchedAt] = useState<number | null>(null);
+  const [_modelsFetchedAt, setModelsFetchedAt] = useState<number | null>(null);
 
   const PERMISSION_DESCRIPTIONS: Record<string, string> = {
     read_file: 'Read the contents of a file (safe).',
@@ -472,6 +472,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="setting-group">
           <label className="setting-label">Vision model</label>
           <select
+            aria-label="Vision model"
             className="setting-input"
             value={[
               'llava:latest', 'llava:7b', 'llava:13b',
@@ -500,8 +501,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           ].includes(localSettings.visionModel || '')) && (
             <input
               type="text"
-              className="setting-input"
-              style={{ marginTop: 6 }}
+              className="setting-input sp-vision-input"
               value={localSettings.visionModel || ''}
               onChange={(e) =>
                 setLocalSettings({
@@ -589,6 +589,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           {/* Step 1: Provider Selection */}
           <div className="provider-row">
             <select
+              aria-label="Cloud API provider"
               className="setting-input provider-select"
               value={selectedProvider}
               onChange={(e) => {
@@ -717,10 +718,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="setting-group">
           <label className="setting-label">� LLM API Keys (optional)</label>
-          <small className="setting-hint" style={{ marginBottom: 8 }}>
+          <small className="setting-hint sp-hint-mb">
             Save your API keys here. They will auto-fill when you select the provider above.
           </small>
-          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 4 }}>Anthropic API Key</label>
+          <label className="setting-sub-label sp-sub-label">Anthropic API Key</label>
           <input
             type="password"
             className="setting-input"
@@ -730,9 +731,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               setLocalSettings({ ...localSettings, anthropicApiKey: e.target.value })
             }
           />
-          <small className="setting-hint">For Claude models. Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer">console.anthropic.com</a></small>
+          <small className="setting-hint">For Claude models. Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer noopener">console.anthropic.com</a></small>
 
-          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 8 }}>OpenAI API Key</label>
+          <label className="setting-sub-label sp-sub-label-mt8">OpenAI API Key</label>
           <input
             type="password"
             className="setting-input"
@@ -742,15 +743,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               setLocalSettings({ ...localSettings, openaiApiKey: e.target.value })
             }
           />
-          <small className="setting-hint">For GPT models and DALL-E 3 image generation. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noreferrer">platform.openai.com</a></small>
+          <small className="setting-hint">For GPT models and DALL-E 3 image generation. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noreferrer noopener">platform.openai.com</a></small>
         </div>
 
         <div className="setting-group">
           <label className="setting-label">🎨 Image Generation</label>
-          <small className="setting-hint" style={{ marginBottom: 8 }}>
-            Images are generated via Stable Horde (free community-powered AI). Register at <a href="https://stablehorde.net" target="_blank" rel="noreferrer">stablehorde.net</a> for a free API key and faster generation.
+          <small className="setting-hint sp-hint-mb">
+            Images are generated via Stable Horde (free community-powered AI). Register at <a href="https://stablehorde.net" target="_blank" rel="noreferrer noopener">stablehorde.net</a> for a free API key and faster generation.
           </small>
-          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 4 }}>Stable Horde API Key</label>
+          <label className="setting-sub-label sp-sub-label">Stable Horde API Key</label>
           <input
             type="password"
             className="setting-input"
@@ -765,10 +766,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="setting-group">
           <label className="setting-label">�🔍 Search API Keys (optional)</label>
-          <small className="setting-hint" style={{ marginBottom: 8 }}>
+          <small className="setting-hint sp-hint-mb">
             Add API keys for higher-quality web search results. Falls back to DuckDuckGo scraping if no keys are set.
           </small>
-          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 4 }}>Tavily API Key</label>
+          <label className="setting-sub-label sp-sub-label">Tavily API Key</label>
           <input
             type="password"
             className="setting-input"
@@ -778,9 +779,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               setLocalSettings({ ...localSettings, tavilyApiKey: e.target.value })
             }
           />
-          <small className="setting-hint">Primary search — AI-optimized results. Get a key at <a href="https://tavily.com" target="_blank" rel="noreferrer">tavily.com</a></small>
+          <small className="setting-hint">Primary search — AI-optimized results. Get a key at <a href="https://tavily.com" target="_blank" rel="noreferrer noopener">tavily.com</a></small>
 
-          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 8 }}>Serper.dev API Key</label>
+          <label className="setting-sub-label sp-sub-label-mt8">Serper.dev API Key</label>
           <input
             type="password"
             className="setting-input"
@@ -790,7 +791,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               setLocalSettings({ ...localSettings, serperApiKey: e.target.value })
             }
           />
-          <small className="setting-hint">Secondary search — Google results via API. Get a key at <a href="https://serper.dev" target="_blank" rel="noreferrer">serper.dev</a></small>
+          <small className="setting-hint">Secondary search — Google results via API. Get a key at <a href="https://serper.dev" target="_blank" rel="noreferrer noopener">serper.dev</a></small>
         </div>
 
         <div className="setting-group">
@@ -798,6 +799,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <input
             type="text"
             className="setting-input"
+            aria-label="Widget hotkey"
             value={localSettings.widgetHotkey}
             readOnly
             disabled
@@ -816,7 +818,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             />
             <span>🔓 Uncensored Mode</span>
           </label>
-          <small className="setting-hint" style={{ color: uncensoredMode ? '#f59e0b' : undefined }}>
+          <small className={`setting-hint${uncensoredMode ? ' sp-hint-warning' : ''}`}>
             {uncensoredMode 
               ? 'Using dolphin-llama3:8b - No content filters' 
               : 'Using standard model with safety filters'}
@@ -832,7 +834,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             />
             <span>🛡️ Telemetry (anonymous, opt-in)</span>
           </label>
-          <small className="setting-hint" style={{ marginTop: 4, display: 'block' }}>
+          <small className="setting-hint sp-hint-block">
             Tool usage events are logged <strong>locally on this device only</strong>. Nothing is sent to an external server.
             Consent is recorded with a timestamp and can be reviewed or revoked in the Telemetry Consent Log below.
           </small>
@@ -860,12 +862,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       }}
                     />
                     <span className="ml-2">
-                      {isDangerous && <span style={{ color: '#f59e0b', marginRight: 4 }}>⚠</span>}
+                      {isDangerous && <span className="sp-warn-icon">⚠</span>}
                       {k.replace(/_/g, ' ')}
                     </span>
                   </label>
                   <div>
-                    <small style={{ color: isDangerous ? '#f59e0b' : undefined }} className={isDangerous ? undefined : 'text-zinc-500'}>
+                    <small className={isDangerous ? 'sp-perm-danger' : 'text-zinc-500'}>
                       {PERMISSION_DESCRIPTIONS[k] || 'No description available.'}
                     </small>
                   </div>
@@ -920,8 +922,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }}>Export</button>
             <button className="button button-secondary" onClick={() => setShowTelemetryDashboard(true)}>Open Telemetry Dashboard</button>
           </div>
-          <div style={{ maxHeight: 220, overflow: 'auto', background: '#0f1724', padding: 8, borderRadius: 6 }}>
-            <pre style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace', color: '#cbd5e1', margin: 0, whiteSpace: 'pre-wrap' }}>{telemetryLogPreview()}</pre>
+          <div className="sp-telemetry-log">
+            <pre className="sp-telemetry-pre">{telemetryLogPreview()}</pre>
           </div>
         </div>
         <TelemetryConsentModal
@@ -943,44 +945,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
       {/* ── Scheduled Jobs ─────────────────────────────────────────────────── */}
       <div className="settings-section">
-        <h3 className="settings-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <h3 className="settings-section-title sp-section-title">
           ⏰ Scheduled Jobs
-          <small style={{ fontWeight: 400, fontSize: '0.75em', color: '#71717a' }}>
+          <small className="sp-section-subtitle">
             — recurring messages and reminders while SADIE is open
           </small>
         </h3>
 
         {scheduledJobs.length === 0 ? (
-          <p style={{ fontSize: '0.85em', color: '#71717a', margin: '4px 0 12px' }}>
+          <p className="sp-empty-hint">
             No scheduled jobs yet. Add one below.
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+          <div className="sp-list">
             {scheduledJobs.map((job) => (
               <div
                 key={job.id}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  background: '#27272a', borderRadius: 6, padding: '6px 10px', fontSize: '0.85em'
-                }}
+                className="sp-list-row"
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <div className="sp-list-row-left">
                   <span
-                    style={{
-                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                      background: job.enabled ? '#22c55e' : '#71717a',
-                      display: 'inline-block'
-                    }}
+                    className={job.enabled ? 'sp-status-dot-on' : 'sp-status-dot-off'}
                   />
-                  <span style={{ fontWeight: 500 }}>{job.name}</span>
-                  <span style={{ color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span className="sp-list-name">{job.name}</span>
+                  <span className="sp-list-meta">
                     {job.dailyTime ? `daily @ ${job.dailyTime}` : `every ${job.intervalMinutes} min`}
                   </span>
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <div className="sp-list-actions">
                   <button
-                    className="button button-secondary"
-                    style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                    className="button button-secondary sp-btn-sm"
                     onClick={async () => {
                       await (window as any).electron?.schedulerToggle?.(job.id, !job.enabled);
                       loadJobs();
@@ -989,8 +983,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     {job.enabled ? 'Pause' : 'Resume'}
                   </button>
                   <button
-                    className="button button-secondary"
-                    style={{ padding: '2px 8px', fontSize: '0.8em', color: '#f87171' }}
+                    className="button button-secondary sp-btn-sm-danger"
                     onClick={async () => {
                       if (confirm(`Delete job "${job.name}"?`)) {
                         await (window as any).electron?.schedulerRemove?.(job.id);
@@ -1007,8 +1000,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         )}
 
         {showJobForm ? (
-          <div style={{ background: '#27272a', borderRadius: 8, padding: 12, marginBottom: 8 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="sp-form-box">
+            <div className="sp-form-col">
               <input
                 className="setting-input"
                 placeholder="Job name (e.g. Morning briefing)"
@@ -1021,10 +1014,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 value={jobForm.message}
                 onChange={(e) => setJobForm({ ...jobForm, message: e.target.value })}
               />
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div className="sp-form-row">
                 <select
-                  className="setting-input"
-                  style={{ width: 'auto', flexShrink: 0 }}
+                  aria-label="Job frequency type"
+                  className="setting-input sp-select-auto"
                   value={jobForm.mode}
                   onChange={(e) => setJobForm({ ...jobForm, mode: e.target.value as 'interval' | 'daily' })}
                 >
@@ -1033,6 +1026,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </select>
                 {jobForm.mode === 'interval' ? (
                   <input
+                    aria-label="Job interval in minutes"
                     className="setting-input"
                     type="number"
                     min={1}
@@ -1042,6 +1036,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   />
                 ) : (
                   <input
+                    aria-label="Daily job time"
                     className="setting-input"
                     type="time"
                     value={jobForm.dailyTime}
@@ -1049,10 +1044,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   />
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="sp-mcp-actions">
                 <button
-                  className="button button-save"
-                  style={{ padding: '4px 14px' }}
+                  className="button button-save sp-btn-save-sm"
                   onClick={async () => {
                     if (!jobForm.name.trim() || !jobForm.message.trim()) return;
                     await (window as any).electron?.schedulerAdd?.({
@@ -1070,8 +1064,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   Add Job
                 </button>
                 <button
-                  className="button button-cancel"
-                  style={{ padding: '4px 14px' }}
+                  className="button button-cancel sp-btn-save-sm"
                   onClick={() => setShowJobForm(false)}
                 >
                   Cancel
@@ -1081,8 +1074,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         ) : (
           <button
-            className="button button-secondary"
-            style={{ fontSize: '0.85em' }}
+            className="button button-secondary sp-add-job-btn"
             onClick={() => setShowJobForm(true)}
           >
             + Add Job
@@ -1092,52 +1084,44 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
       {/* ── MCP Servers ───────────────────────────────────────────────────── */}
       <div className="settings-section">
-        <h3 className="settings-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <h3 className="settings-section-title sp-section-title">
           🔌 MCP Servers
-          <small style={{ fontWeight: 400, fontSize: '0.75em', color: '#71717a' }}>
+          <small className="sp-section-subtitle">
             — extend SADIE with any Model Context Protocol server
           </small>
         </h3>
 
         {/* Connected server list */}
         {mcpServers.length === 0 ? (
-          <p style={{ fontSize: '0.85em', color: '#71717a', margin: '4px 0 12px' }}>
+          <p className="sp-empty-hint">
             No MCP servers configured. Add one below.
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+          <div className="sp-list">
             {mcpServers.map((srv: any) => {
               const live = mcpStatus.find((s: any) => s.name === srv.name);
               return (
                 <div
                   key={srv.name}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    background: '#27272a', borderRadius: 6, padding: '6px 10px', fontSize: '0.85em'
-                  }}
+                  className="sp-list-row"
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div className="sp-list-row-left">
                     <span
-                      style={{
-                        width: 8, height: 8, borderRadius: '50%',
-                        background: live ? '#22c55e' : (srv.enabled === false ? '#71717a' : '#ef4444'),
-                        display: 'inline-block', flexShrink: 0
-                      }}
+                      className={live ? 'sp-status-dot-on' : (srv.enabled === false ? 'sp-status-dot-off' : 'sp-status-dot-err')}
                     />
-                    <span style={{ fontWeight: 500 }}>{srv.name}</span>
-                    <span style={{ color: '#71717a' }}>
+                    <span className="sp-list-name">{srv.name}</span>
+                    <span className="sp-list-meta">
                       {srv.type === 'stdio' ? srv.command : srv.url}
                     </span>
                     {live && (
-                      <span style={{ color: '#86efac', fontSize: '0.9em' }}>
+                      <span className="sp-mcp-tools">
                         {live.toolCount} tool{live.toolCount !== 1 ? 's' : ''}
                       </span>
                     )}
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div className="sp-list-actions">
                     <button
-                      className="button button-secondary"
-                      style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                      className="button button-secondary sp-btn-sm"
                       onClick={async () => {
                         await (window as any).electron?.mcpToggleServer?.(srv.name, srv.enabled === false);
                         loadMcpServers();
@@ -1146,8 +1130,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       {srv.enabled === false ? 'Enable' : 'Disable'}
                     </button>
                     <button
-                      className="button button-secondary"
-                      style={{ padding: '2px 8px', fontSize: '0.8em', color: '#f87171' }}
+                      className="button button-secondary sp-btn-sm-danger"
                       onClick={async () => {
                         if (confirm(`Remove MCP server "${srv.name}"?`)) {
                           await (window as any).electron?.mcpRemoveServer?.(srv.name);
@@ -1166,12 +1149,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {/* Add server form */}
         {showMcpForm ? (
-          <div style={{ background: '#27272a', borderRadius: 8, padding: 12, marginBottom: 8 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', gap: 8 }}>
+          <div className="sp-form-box">
+            <div className="sp-form-col">
+              <div className="sp-form-row">
                 <select
-                  className="setting-input"
-                  style={{ width: 'auto', flexShrink: 0 }}
+                  aria-label="MCP server type"
+                  className="setting-input sp-select-auto"
                   value={mcpForm.type}
                   onChange={(e) => setMcpForm({ ...mcpForm, type: e.target.value as 'stdio' | 'sse' })}
                 >
@@ -1214,13 +1197,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   onChange={(e) => setMcpForm({ ...mcpForm, url: e.target.value })}
                 />
               )}
-              <small style={{ color: '#71717a', fontSize: '0.8em' }}>
+              <small className="sp-mcp-hint">
                 Changes take effect after restarting SADIE.
               </small>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="sp-mcp-actions">
                 <button
-                  className="button button-save"
-                  style={{ padding: '4px 14px' }}
+                  className="button button-save sp-btn-save-sm"
                   onClick={async () => {
                     if (!mcpForm.name.trim()) return;
                     let envParsed: Record<string, string> | undefined;
@@ -1254,8 +1236,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   Add Server
                 </button>
                 <button
-                  className="button button-cancel"
-                  style={{ padding: '4px 14px' }}
+                  className="button button-cancel sp-btn-save-sm"
                   onClick={() => setShowMcpForm(false)}
                 >
                   Cancel
@@ -1265,8 +1246,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         ) : (
           <button
-            className="button button-secondary"
-            style={{ fontSize: '0.85em' }}
+            className="button button-secondary sp-add-job-btn"
             onClick={() => setShowMcpForm(true)}
           >
             + Add MCP Server
