@@ -1,0 +1,818 @@
+# SADIE API Reference
+
+This document describes the full public surface of SADIE: the IPC channels exposed through the preload bridge, the tool schemas the LLM may call, and the permission model that gates tool execution.
+
+---
+
+## Contents
+
+1. [Preload Bridge (`window.electron`)](#1-preload-bridge-windowelectron)
+2. [IPC Channel Reference](#2-ipc-channel-reference)
+3. [Tool Schemas](#3-tool-schemas)
+4. [Permission System](#4-permission-system)
+5. [Safety Rules & Path Restrictions](#5-safety-rules--path-restrictions)
+6. [Shared Types](#6-shared-types)
+
+---
+
+## 1. Preload Bridge (`window.electron`)
+
+The renderer process communicates with the main process exclusively through the context-isolated preload bridge. Every method maps 1:1 to a named IPC channel. The full TypeScript type is `ElectronAPI` (`widget/src/shared/types.ts`).
+
+### Messaging
+
+| Method | Description |
+|---|---|
+| `sendMessage(request: SadieRequest): Promise<SadieResponse>` | Send a single non-streaming message and receive a complete response. |
+| `sendStreamMessage(request: SadieRequestWithImages): Promise<void>` | Start a streaming conversation turn. Chunks arrive via `onStreamChunk`. |
+| `cancelStream(streamId?: string): void` | Cancel an in-progress stream. Omitting `streamId` cancels all active streams. |
+
+### Stream Events
+
+| Method | Event fired | Payload |
+|---|---|---|
+| `onStreamChunk(cb)` | `sadie:stream-chunk` | `{ streamId?: string; chunk: string }` |
+| `onStreamEnd(cb)` | `sadie:stream-end` | `{ streamId?: string; cancelled?: boolean }` |
+| `onStreamError(cb)` | `sadie:stream-error` | `{ streamId?: string; error?: string }` |
+| `subscribeToStream(streamId, handlers)` | all three above | filtered by `streamId` |
+
+### Confirmation & Permission Modals
+
+| Method | Description |
+|---|---|
+| `onConfirmationRequest(cb)` | Fires when a tool requires explicit user approval. Payload: `{ confirmationId, message, streamId }`. |
+| `sendConfirmationResponse(id, confirmed)` | Reply to a confirmation request. |
+| `onPermissionRequest(cb)` | Fires when a tool requires a permission the user hasn't granted. Payload: `{ requestId, missingPermissions, reason, streamId? }`. |
+| `sendPermissionResponse(id, decision, missingPermissions?)` | Reply with `'allow_once'`, `'always_allow'`, or `'cancel'`. |
+
+### Settings
+
+| Method | Returns | Description |
+|---|---|---|
+| `getSettings()` | `Promise<Settings>` | Read current user settings. |
+| `saveSettings(partial)` | `Promise<Settings>` | Merge and persist a partial settings update. |
+| `resetPermissions()` | `Promise<Settings>` | Reset all tool permissions to their defaults. |
+| `hasPermission(toolName)` | `Promise<{ success, allowed? }>` | Check whether a specific named permission is currently granted. |
+
+### Telemetry & Consent
+
+| Method | Description |
+|---|---|
+| `exportTelemetryConsent()` | Write a consent-snapshot JSON to `logs/` and return its path. |
+| `readConsentLog()` | Read the raw `telemetry-consent.log` content. |
+| `readTelemetryEvents()` | Read all locally-stored telemetry events. |
+
+### Conversations & Memory
+
+| Method | Description |
+|---|---|
+| `loadConversations()` | Load the full conversation store. |
+| `getConversation(id)` | Fetch a single conversation by ID. |
+| `createConversation(title?)` | Create and persist a new conversation. |
+| `saveConversation(conv)` | Save (overwrite) a conversation. |
+| `deleteConversation(id)` | Delete a conversation. |
+| `setActiveConversation(id \| null)` | Mark the active conversation. |
+| `addMessage(convId, message)` | Append a message to a conversation. |
+| `updateMessage(convId, msgId, updates)` | Patch a message. |
+
+### System Utilities
+
+| Method | Description |
+|---|---|
+| `checkConnection()` | Probe n8n and Ollama reachability. Returns `{ n8n, ollama, lastChecked }`. |
+| `getMode()` | Returns `{ demo: boolean }`. |
+| `getEnv()` | Returns `{ isE2E, isPackagedBuild, isReleaseBuild, userDataPath }`. |
+| `getConfigPath()` | Absolute path to the active `config.json`. |
+| `listTools()` | List all registered tools with name, description, and category. |
+| `openFile(path)` | Open a file with the system default application. |
+| `showInFolder(path)` | Reveal a file in the system file explorer. |
+| `exportChat(markdown)` | Write chat history markdown to the Desktop; returns `{ success, path? }`. |
+| `writeClipboard(text)` | Write text to the system clipboard. |
+| `minimizeWindow()` | Minimize the widget window. |
+| `closeWindow()` | Close the widget window. |
+| `restartApp()` | Restart the Electron process. |
+
+### Voice & TTS
+
+| Method | Description |
+|---|---|
+| `startSpeechRecognition()` | Start Windows SAPI offline speech recognition. Returns `{ success, text }`. |
+| `ttsSpeak(text, rate?)` | Speak text aloud via system TTS. |
+| `ttsStop()` | Stop current TTS playback. |
+
+### Uncensored Mode
+
+| Method | Description |
+|---|---|
+| `getUncensoredMode()` | Returns `{ enabled: boolean }`. |
+| `setUncensoredMode(enabled)` | Toggle uncensored mode; persisted to settings. |
+
+### Scheduler
+
+| Method | Description |
+|---|---|
+| `schedulerList()` | List all scheduled jobs. |
+| `schedulerAdd(input)` | Add a scheduled job. |
+| `schedulerRemove(id)` | Remove a job by ID. |
+| `schedulerToggle(id, enabled)` | Enable or disable a job. |
+
+### MCP Servers
+
+| Method | Description |
+|---|---|
+| `mcpListServers()` | List configured MCP servers. |
+| `mcpGetStatus()` | Get connection status of all MCP servers. |
+| `mcpAddServer(config)` | Add a new MCP server definition. |
+| `mcpRemoveServer(name)` | Remove an MCP server by name. |
+| `mcpToggleServer(name, enabled)` | Enable or disable an MCP server. |
+
+---
+
+## 2. IPC Channel Reference
+
+The table below lists every named IPC channel. Direction: **R→M** = renderer sends / main handles; **M→R** = main pushes to renderer.
+
+### Request/Response (invoke)
+
+| Channel | Dir | Description |
+|---|---|---|
+| `sadie:send-message` | R→M | Non-streaming chat message. |
+| `sadie:get-settings` | R→M | Read current settings. |
+| `sadie:save-settings` | R→M | Merge-save settings. Returns `{ success, data }`. |
+| `sadie:reset-permissions` | R→M | Reset all tool permissions. |
+| `sadie:has-permission` | R→M | Check a named permission. |
+| `sadie:export-consent` | R→M | Export consent snapshot. |
+| `sadie:read-consent-log` | R→M | Read consent log file. |
+| `sadie:read-telemetry-events` | R→M | Read telemetry events. |
+| `sadie:list-custom-llm-models` | R→M | Probe a custom LLM endpoint for available models. |
+| `sadie:check-connection` | R→M | Probe n8n + Ollama health. |
+| `sadie:get-mode` | R→M | Returns `{ demo }`. |
+| `sadie:get-env` | R→M | Returns runtime env flags. |
+| `sadie:get-config-path` | R→M | Returns config file path. |
+| `sadie:list-tools` | R→M | Returns registered tool list. |
+| `sadie:get-uncensored-mode` | R→M | Returns `{ enabled }`. |
+| `sadie:set-uncensored-mode` | R→M | Toggle uncensored mode. |
+| `sadie:read-debug-logs` | R→M | Read renderer + main log buffers (dev only). |
+| `sadie:capture-logs` | R→M | Write log snapshot to disk. |
+| `sadie:open-file` | R→M | Open file with OS default app. |
+| `sadie:show-in-folder` | R→M | Reveal file in explorer. |
+| `sadie:export-chat` | R→M | Export markdown chat to Desktop. |
+| `sadie:restart-app` | R→M | Restart the process. |
+| `sadie:tts-speak` | R→M | TTS speak. |
+| `sadie:tts-stop` | R→M | TTS stop. |
+| `sadie:start-speech-recognition` | R→M | Windows SAPI recognition. |
+| `sadie:scheduler-list` | R→M | List jobs. |
+| `sadie:scheduler-add` | R→M | Add job. |
+| `sadie:scheduler-remove` | R→M | Remove job. |
+| `sadie:scheduler-toggle` | R→M | Toggle job. |
+| `sadie:load-conversations` | R→M | Load conversation store. |
+| `sadie:get-conversation` | R→M | Get single conversation. |
+| `sadie:create-conversation` | R→M | Create conversation. |
+| `sadie:save-conversation` | R→M | Save conversation. |
+| `sadie:delete-conversation` | R→M | Delete conversation. |
+| `sadie:set-active-conversation` | R→M | Set active conversation. |
+| `sadie:add-message` | R→M | Append message. |
+| `sadie:update-message` | R→M | Patch message. |
+| `sadie:mcp-list-servers` | R→M | List MCP servers. |
+| `sadie:mcp-get-status` | R→M | MCP connection status. |
+| `sadie:mcp-add-server` | R→M | Add MCP server. |
+| `sadie:mcp-remove-server` | R→M | Remove MCP server. |
+| `sadie:mcp-toggle-server` | R→M | Toggle MCP server. |
+| `sadie:automation:image:generate` | R→M | Generate image via SD/cloud. |
+
+### Fire-and-forget (send)
+
+| Channel | Dir | Payload | Description |
+|---|---|---|---|
+| `sadie:stream-message` | R→M | `SadieRequestWithImages` | Start streaming turn. |
+| `sadie:stream-cancel` | R→M | `{ streamId? }` | Cancel stream. |
+| `sadie:confirmation-response` | R→M | `{ confirmationId, confirmed }` | User confirmation reply. |
+| `sadie:permission-response` | R→M | `{ requestId, decision, missingPermissions? }` | User permission reply. |
+| `window-minimize` | R→M | — | Minimize window. |
+| `window-close` | R→M | — | Close window. |
+
+### Main → Renderer (push)
+
+| Channel | Payload | Description |
+|---|---|---|
+| `sadie:reply` | `SadieResponse` | Non-streaming reply. |
+| `sadie:stream-chunk` | `{ streamId, chunk }` | One streaming token chunk. |
+| `sadie:stream-end` | `{ streamId, cancelled? }` | Stream completed or cancelled. |
+| `sadie:stream-error` | `{ streamId, error, message?, details? }` | Stream error (e.g. n8n unavailable). |
+| `sadie:confirmation-request` | `{ confirmationId, message, streamId }` | Dangerous tool needs approval. |
+| `sadie:permission-request` | `{ requestId, missingPermissions, reason, streamId? }` | Tool needs a permission grant. |
+| `sadie:show-window` | — | Show / focus widget. |
+| `sadie:hide-window` | — | Hide widget. |
+| `sadie:reminder-fired` | `{ message, label }` | A scheduled reminder fired. |
+| `sadie:router-log` | `string` | Diagnostic log line from message router (dev / E2E only). |
+| `sadie:append-renderer-log` | `string` | Renderer log forwarded to main for persistence. |
+
+---
+
+## 3. Tool Schemas
+
+Tools are JSON-Schema typed objects callable by the LLM during a conversation turn. `required` parameters must always be supplied; optional parameters have defaults noted below.
+
+Tools marked **⚠ Requires confirmation** present an approval modal before execution. Tools marked **🔒 Permission required** will trigger the permission modal if the matching setting is not enabled.
+
+---
+
+### Filesystem
+
+#### `list_directory`
+List the contents of a directory.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | ✓ | — | Directory path to list. |
+| `showHidden` | boolean | | `false` | Include hidden files. |
+
+**Returns:** Array of entries with `name`, `type`, `size`, `modified`.
+
+---
+
+#### `read_file`
+Read the text content of a file.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | ✓ | — | File path. |
+| `maxLines` | number | | `100` | Maximum lines to read. |
+
+**Returns:** `{ content: string, lines: number, truncated: boolean }`
+
+---
+
+#### `write_file` ⚠
+Write or append content to a file.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | ✓ | — | Destination file path. |
+| `content` | string | ✓ | — | Content to write. |
+| `append` | boolean | | `false` | Append instead of overwrite. |
+
+---
+
+#### `create_directory`
+Create a new directory. The path **must** include the new folder name.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Full path including new folder name (e.g. `Desktop/myfolder`). |
+
+---
+
+#### `copy_file`
+Copy a file or directory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `source` | string | ✓ | Source path. |
+| `destination` | string | ✓ | Destination path. |
+
+---
+
+#### `move_file` ⚠
+Move or rename a file or directory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `source` | string | ✓ | Source path. |
+| `destination` | string | ✓ | Destination path. |
+
+---
+
+#### `delete_file` ⚠
+Delete a file or directory.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | ✓ | — | Path to delete. |
+| `recursive` | boolean | | `false` | Delete directories recursively. |
+
+---
+
+#### `get_file_info`
+Get metadata for a file or directory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | File or directory path. |
+
+**Returns:** `{ name, size, created, modified, type, extension }`
+
+---
+
+#### `search_files`
+Find files by name pattern within an allowed directory.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `directory` | string | ✓ | — | Root directory to search. |
+| `pattern` | string | ✓ | — | Glob or substring pattern. |
+| `maxResults` | number | | `20` | Max results returned. |
+
+---
+
+#### `create_docx` ⚠
+Create a formatted `.docx` Word document. Markdown headings (`#`, `##`, `###`), bullet lists (`-`, `*`), and tables (`| col | col |`) are supported.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Output `.docx` path (e.g. `Desktop/report.docx`). |
+| `title` | string | ✓ | Document title (rendered as H1). |
+| `content` | string | ✓ | Markdown-formatted body text. |
+
+---
+
+#### `create_spreadsheet` ⚠
+Create an `.xlsx` Excel spreadsheet.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Output `.xlsx` path. |
+| `title` | string | ✓ | Sheet title. |
+| `content` | string | ✓ | Tab-separated or CSV-formatted data. |
+
+---
+
+#### `create_pdf` ⚠
+Create a `.pdf` document from Markdown content.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Output `.pdf` path. |
+| `title` | string | ✓ | Document title. |
+| `content` | string | ✓ | Markdown body text. |
+
+---
+
+### Web
+
+#### `web_search`
+Search the web. Automatically tries providers in order: Tavily → Serper → DDG Instant → DuckDuckGo → Google → Brave. Results are cached for 10 minutes.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | ✓ | — | Search query. Include dates when time-sensitive. |
+| `maxResults` | number | | `5` | Maximum results (max 10). |
+| `fetchResultCount` | number | | `3` | Top results to fetch full content from (max 5). |
+| `fetchTopResult` | boolean | | `true` | Auto-fetch content from top result. |
+
+**Returns:** `{ results: [{title, url, snippet}], sources: [{url, title, content}], answer? }`
+
+**API keys (optional, set via Settings):**
+- `TAVILY_API_KEY` — enables Tavily (highest quality). Falls back to free providers if absent.
+- `SERPER_API_KEY` — enables Serper (second priority). Falls back if absent.
+
+---
+
+#### `fetch_url`
+Fetch and extract the text content of a URL. Private/local addresses are blocked (SSRF protection).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `url` | string | ✓ | — | Must start with `http://` or `https://`. |
+| `maxLength` | number | | `5000` | Maximum characters to return. |
+
+**Returns:** `{ content: string, url: string, truncated: boolean }`
+
+**Blocked:** `file://`, `localhost`, `127.x.x.x`, `10.x.x.x`, `172.16–31.x.x`, `192.168.x.x`, and other RFC-1918 ranges.
+
+---
+
+#### `get_weather`
+Get current weather using wttr.in (no API key required).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `location` | string | ✓ | City name or location (e.g. `"London"`, `"New York"`). |
+
+**Returns:** Formatted weather report string.
+
+---
+
+#### `image_generate`
+Generate an image from a text prompt. Routes to local Stable Diffusion (`localhost:7860`), ComfyUI (`localhost:8188`), or DALL-E 3 (requires `OPENAI_API_KEY`).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `prompt` | string | ✓ | — | Image description. |
+| `width` | number | | `512` | Image width (px). |
+| `height` | number | | `512` | Image height (px). |
+| `steps` | number | | `20` | Sampling steps. |
+| `provider` | string | | `'auto'` | `'sd'`, `'comfyui'`, `'dalle3'`, or `'auto'`. |
+
+---
+
+### System
+
+#### `get_system_info`
+Return system hardware and software information.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `category` | string | | `'all'` — or one of `'cpu'`, `'memory'`, `'disk'`, `'os'`, `'network'`. |
+
+---
+
+#### `get_clipboard`
+Read the current clipboard text.
+
+_(No parameters.)_
+
+---
+
+#### `set_clipboard`
+Write text to the clipboard.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `text` | string | ✓ | Text to write. |
+
+---
+
+#### `open_url`
+Open a URL in the default system browser.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `url` | string | ✓ | URL to open (must be `http://` or `https://`). |
+
+---
+
+#### `launch_app` 🔒
+Launch a desktop application by name or executable path.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `app` | string | ✓ | Application name (e.g. `"Notepad"`) or executable path. |
+
+**Required permission:** `launch_app` must be enabled in Settings → Permissions.
+
+---
+
+#### `calculate`
+Evaluate a mathematical expression.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `expression` | string | ✓ | Math expression (e.g. `"(12 * 8) / 4"`). |
+
+---
+
+#### `screenshot` 🔒
+Capture a screenshot of the screen.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `monitor` | number | | `0` | Monitor index. |
+| `format` | string | | `'png'` | Output format (`'png'` or `'jpg'`). |
+
+**Required permission:** `screenshot` must be enabled in Settings → Permissions.
+
+---
+
+#### `get_current_time`
+Return the current date and time.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `timezone` | string | | IANA timezone string (e.g. `"America/New_York"`). Defaults to system timezone. |
+
+---
+
+### Memory
+
+#### `remember`
+Persist a named fact in long-term memory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | ✓ | Memory key/name. |
+| `value` | string | ✓ | Value to store. |
+
+---
+
+#### `recall`
+Retrieve a value from long-term memory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | ✓ | Memory key to look up. Supports substring match. |
+
+---
+
+#### `forget` ⚠
+Delete a memory entry.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | ✓ | Memory key to delete. |
+
+---
+
+#### `list_memories`
+List all stored memory keys.
+
+_(No parameters.)_
+
+---
+
+#### `save_conversation`
+Save the current conversation to persistent storage.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | | Optional title for the conversation. |
+
+---
+
+#### `get_conversation_history`
+Retrieve conversation history.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `limit` | number | | `50` | Max messages to return. |
+| `conversationId` | string | | current | Specific conversation ID. |
+
+---
+
+#### `clear_conversation_history` ⚠
+Clear the message history of a conversation.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `conversationId` | string | | Defaults to the current conversation. |
+
+---
+
+### Voice
+
+#### `speak`
+Speak text aloud using the system TTS engine.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `text` | string | ✓ | — | Text to speak. |
+| `rate` | number | | `1.0` | Speech rate (0.5 – 2.0). |
+| `voice` | string | | system default | Voice name from `get_voices`. |
+
+---
+
+#### `stop_speaking`
+Stop any current TTS playback.
+
+_(No parameters.)_
+
+---
+
+#### `get_voices`
+List available TTS voices on this machine.
+
+_(No parameters.)_
+
+---
+
+### Sports / NBA
+
+#### `nba_query`
+Query live NBA data including scores, standings, team rosters, and player stats.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | ✓ | Natural language query (e.g. `"Warriors score tonight"`, `"NBA standings"`). |
+| `team` | string | | Team abbreviation to focus on (e.g. `"GSW"`, `"LAL"`). |
+
+**Data source:** ESPN public API (no key required).
+
+---
+
+#### `generate_sports_report` 🔒
+Generate a formatted sports report and save it as a file.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `sport` | string | ✓ | Sport type (e.g. `"nba"`, `"nfl"`). |
+| `team` | string | | Team filter. |
+| `outputPath` | string | | Where to save the report. Defaults to Desktop. |
+
+**Required permission:** `write_file`.
+
+---
+
+### Documents
+
+#### `parse_document`
+Parse document content from a base64-encoded file payload.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `data` | string | ✓ | Base64-encoded file content. |
+| `mimeType` | string | ✓ | MIME type (e.g. `"application/pdf"`, `"application/vnd.openxmlformats-officedocument.wordprocessingml.document"`). |
+
+---
+
+#### `parse_document_from_path`
+Parse a document by file path.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Absolute path to the file. |
+
+---
+
+#### `get_document_content`
+Alias for `parse_document_from_path` — convenience wrapper.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Absolute path to the file. |
+
+---
+
+#### `list_documents`
+List readable documents in a directory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | ✓ | Directory to scan. |
+
+---
+
+#### `search_document`
+Search for a text pattern within a document.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Document path. |
+| `query` | string | ✓ | Search term. |
+
+---
+
+## 4. Permission System
+
+SADIE uses a two-layer permission model at tool execution time.
+
+### 4.1 Settings Permissions (persistent)
+
+Stored in the user's `config.json` under `permissions`. Toggleable from **Settings → Permissions**. Defaults:
+
+| Permission key | Default | Controls |
+|---|---|---|
+| `write_file` | `false` | Creating/writing/overwriting files |
+| `delete_file` | `false` | Deleting files or directories |
+| `move_file` | `false` | Moving or renaming files |
+| `launch_app` | `false` | Launching desktop applications |
+| `screenshot` | `false` | Capturing screen content |
+| `run_command` | `false` | Running shell commands |
+| `kill_process` | `false` | Terminating processes |
+| `email_send` | `false` | Sending emails via Outlook |
+| `git_commit` | `false` | Creating git commits |
+
+### 4.2 Requires-Confirmation (per-tool)
+
+Some tools always pause for explicit approval regardless of the permissions above. This catches dangerous operations that warrant a one-time human review:
+
+- `delete_file`, `move_file`, `write_file`, `create_docx`, `create_spreadsheet`, `create_pdf`
+- `forget` (memory deletion)
+- `clear_conversation_history`
+- `git_commit`
+- `kill_process`, `email_send`
+
+When the confirmation modal appears, the user chooses **Approve** or **Cancel**. There is no "always allow" path for confirmation-gated tools.
+
+### 4.3 Allow Once / Always Allow
+
+For permission-gated (but not confirmation-gated) tools, the permission modal offers:
+
+| Choice | Effect |
+|---|---|
+| **Allow once** | Grants the permission only for this execution. Not persisted. |
+| **Always allow** | Adds the permission to the user's persistent settings. |
+| **Cancel** | Rejects the tool call; the LLM is informed the operation was denied. |
+
+### 4.4 Batch Execution and Fail-Fast
+
+`executeToolBatch()` performs a preflight permission check across all tools in a batch before executing any of them. If any tool is missing a required permission the entire batch returns `{ status: 'needs_confirmation', missingPermissions }` — no side-effects occur. The router then prompts the user once and retries with `overrideAllowed` if the user chooses Allow once / Always allow.
+
+---
+
+## 5. Safety Rules & Path Restrictions
+
+Defined in `config/safety-rules.json`.
+
+### Allowed Directories (file tools)
+
+By default, file tools (`read_file`, `write_file`, `list_directory`, etc.) are restricted to:
+
+- `~/Documents`
+- `~/Desktop`
+- `~/Downloads`
+
+Paths outside this set are rejected before execution. The allowlist is configurable.
+
+### Blocked Directories (always)
+
+| Path | Reason |
+|---|---|
+| `C:\Windows` | System files |
+| `C:\Program Files`, `C:\Program Files (x86)` | Installed software |
+| `C:\ProgramData` | Shared apps data |
+| `%APPDATA%` | User application data |
+
+### Blocked File Extensions
+
+`.exe`, `.dll`, `.sys`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.com`, `.scr`, `.msi`
+
+### Confirmation-Required Operations (file)
+
+| Operation | Requires confirmation |
+|---|---|
+| `delete` | Yes |
+| `execute` | Yes |
+| `move` | No (permission instead) |
+| `write` | No (permission instead) |
+
+### System Commands
+
+Only an explicit allowlist of read-only PowerShell commands may be used without confirmation (`Get-Process`, `Get-ComputerInfo`, `Get-Disk`, etc.). Destructive commands (`Stop-Process`, `Remove-Item`, `Format-Volume`, etc.) are blocked unconditionally.
+
+### Network / URL Safety
+
+- `fetch_url` and `web_search` reject private network addresses (RFC-1918, loopback) before any HTTP call.
+- `api_request` may only reach hosts in `config/api-allowlist.json` plus `localhost` / `127.0.0.1`.
+- Max file size for uploads: **50 MB**. Max email attachment: **25 MB**.
+
+---
+
+## 6. Shared Types
+
+Key TypeScript types from `widget/src/shared/types.ts`:
+
+```typescript
+interface SadieRequest {
+  message: string;
+  conversation_id?: string;
+  user_id?: string;
+  streamId?: string;
+}
+
+interface SadieRequestWithImages extends SadieRequest {
+  images?: string[];          // base64-encoded image strings
+  attachments?: Attachment[]; // file attachments
+}
+
+interface SadieResponse {
+  success: boolean;
+  data?: any;
+  error?: boolean;
+  message?: string;
+  details?: string;
+  response?: string;
+}
+
+interface Settings {
+  ollamaUrl: string;
+  n8nUrl: string;
+  model: string;
+  codeModel?: string;
+  telemetryEnabled: boolean;
+  telemetryConsentVersion?: string;
+  permissions: Record<string, boolean>;
+  hotkey?: string;
+  uncensoredMode?: boolean;
+  tavilyApiKey?: string;
+  serperApiKey?: string;
+  openaiApiKey?: string;
+  defaultNbaTeam?: string;
+}
+
+interface StoredConversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp: string;
+  toolName?: string;
+  toolResult?: any;
+}
+
+type MemoryResult<T = void> =
+  | { success: true; data: T }
+  | { success: false; error: string };
+
+interface ConnectionStatus {
+  n8n: 'online' | 'offline' | 'checking';
+  ollama: 'online' | 'offline' | 'checking';
+  lastChecked: string;
+}
+```
