@@ -637,7 +637,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }
       unsubscribeStream(assistantId);
     }
-  }, [conversationId, subscribeToStream, unsubscribeStream, updateMessage, newId]);
+  }, [conversationId, conversationSystemPrompt, subscribeToStream, unsubscribeStream, updateMessage, newId]);
 
 
   /**

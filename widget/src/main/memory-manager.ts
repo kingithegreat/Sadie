@@ -14,8 +14,8 @@ function getMemoryStorePath(): string {
   // In production, this would be relative to the app installation
   const isDev = !app.isPackaged;
   if (isDev) {
-    // Go up from widget/dist/main to widget, then up to sadie root
-    return path.resolve(__dirname, '..', '..', '..', '..', 'memory', 'json-store');
+    // Go up from widget/out/main (3 levels) to reach the sadie project root
+    return path.resolve(__dirname, '..', '..', '..', 'memory', 'json-store');
   }
   // In production, use userData folder for persistence
   return path.join(app.getPath('userData'), 'memory', 'json-store');

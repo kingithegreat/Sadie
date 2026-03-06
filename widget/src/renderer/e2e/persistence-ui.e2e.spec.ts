@@ -11,6 +11,8 @@ test('UI -> message persistence and debug logs available', async () => {
   const convs = await page.evaluate(async () => (window as any).electron.loadConversations?.());
   if (!convs || !convs.data || !convs.data.activeConversationId) {
     await page.getByRole('button', { name: /new chat/i }).click();
+    // Wait for the async handleNewConversation IPC round-trips to complete
+    await page.waitForTimeout(1000);
   }
 
   // Send a user message
