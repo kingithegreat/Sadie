@@ -1471,6 +1471,7 @@ body {
 .space-y-3 > * + * { margin-top: var(--spacing-md); }
 .flex { display: flex; }
 .justify-end { justify-content: flex-end; }
+.token-counter-bar { display: flex; justify-content: flex-end; padding: 2px 12px 0; background: transparent; }
 .justify-start { justify-content: flex-start; }
 .max-w-\[78\%\] { max-width: 78%; }
 .rounded-2xl { border-radius: var(--radius-lg); }

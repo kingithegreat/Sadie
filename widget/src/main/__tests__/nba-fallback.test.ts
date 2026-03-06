@@ -11,7 +11,7 @@ test('fetchEventsInWindow aggregates events across the fallback window', async (
   const d = String(targetDate.getDate()).padStart(2, '0');
   const targetDateParam = `${y}${m}${d}`;
 
-  const fakeFetcher = jest.fn(async (path: string, params?: Record<string, string | number>) => {
+  const fakeFetcher = jest.fn(async (_path: string, params?: Record<string, string | number>) => {
     const dates = params?.dates as string | undefined;
     if (dates === targetDateParam) {
       return { events: [{ id: 'evt-1', name: 'Team A at Team B' }] };

@@ -335,8 +335,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }
     }
     try {
-      const conv = await window.electron.getConversation?.(convId);
-      const stored = conv?.data || { id: convId, title: 'Conversation', messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const conv = await window.electron.getConversation?.(convId!);
+      const stored: import('../shared/types').StoredConversation = conv?.data || { id: convId!, title: 'Conversation', messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       stored.systemPrompt = prompt;
       await window.electron.saveConversation?.(stored);
     } catch (err) {
@@ -839,7 +839,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
       {/* Token counter — shown in chat mode */}
       {mode === 'chat' && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 12px 0', background: 'transparent' }}>
+        <div className="token-counter-bar">
           <TokenCounter messages={messages} model={settings.chatModel || 'llama3.2:3b'} />
         </div>
       )}
