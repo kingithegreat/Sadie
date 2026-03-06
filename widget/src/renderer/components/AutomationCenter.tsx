@@ -201,6 +201,7 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = () => {
                 <label className="toggle">
                   <input
                     type="checkbox"
+                    aria-label={`Enable ${automation.name}`}
                     checked={automation.enabled}
                     onChange={() => toggleAutomation(automation.id)}
                   />
