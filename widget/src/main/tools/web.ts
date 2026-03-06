@@ -1134,6 +1134,12 @@ function httpGetBuffer(urlStr: string, timeoutMs = 30000): Promise<Buffer> {
         resolve(httpGetBuffer(res.headers.location as string, timeoutMs));
         return;
       }
+      // Fail fast on error status codes — don't wait for the body
+      if (res.statusCode >= 400) {
+        res.resume(); // drain so the socket is released
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
       const chunks: Buffer[] = [];
       res.on('data', (c: Buffer) => chunks.push(c));
       res.on('end', () => resolve(Buffer.concat(chunks)));
