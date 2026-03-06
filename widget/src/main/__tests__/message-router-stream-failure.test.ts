@@ -22,7 +22,7 @@ jest.mock('../../main/utils/logger', () => ({
 
 // Mock axios probe to simulate n8n probe error
 import axios from 'axios';
-jest.spyOn(axios, 'get').mockImplementation(async (url: string) => {
+jest.spyOn(axios, 'get').mockImplementation(async (_url: string) => {
   return { status: 502 } as any; // simulate probe returning 502
 });
 
@@ -53,9 +53,9 @@ describe('message-router telemetry on upstream failures', () => {
     expect(mockLogTelemetryEvent).toHaveBeenCalled();
     const call = mockLogTelemetryEvent.mock.calls.find(c => c[0] === 'stream_failure');
     expect(call).toBeDefined();
-    const details = call![1];
+    const details = call![1] as Record<string, unknown>;
     expect(details).toHaveProperty('reason');
-    expect(details.reason).toMatch(/n8n_probe_error|n8n_probe_failed/);
+    expect(String(details.reason)).toMatch(/n8n_probe_error|n8n_probe_failed/);
     expect(details).toHaveProperty('url');
     expect(details).toHaveProperty('streamId', 's-1');
   });

@@ -52,7 +52,7 @@ describe('tool definition shapes', () => {
       expect(def.description.length).toBeGreaterThan(0);
 
       expect(typeof def.category).toBe('string');
-      expect(def.category.length).toBeGreaterThan(0);
+      expect((def.category ?? '').length).toBeGreaterThan(0);
 
       expect(def.parameters).toBeDefined();
       expect(def.parameters.type).toBe('object');

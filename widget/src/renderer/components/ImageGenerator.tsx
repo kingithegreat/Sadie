@@ -122,7 +122,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
 
       {generatedImage && (
         <div className="image-display">
-          <img src={generatedImage} alt="Generated" style={{ maxWidth: '100%', maxHeight: '60vh' }} />
+          <img src={generatedImage} alt="Generated" className="img-gen-result" />
           <div className="image-actions">
             <button onClick={() => setGeneratedImage(null)}>Clear</button>
             <a href={generatedImage} download={`sadie-image-${Date.now()}.png`}><button>Download</button></a>

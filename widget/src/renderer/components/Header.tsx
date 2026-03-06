@@ -23,7 +23,7 @@ export function Header({
           {connectionStatus}
         </span>
         {demoMode && (
-          <span style={{ marginLeft: 8, padding: '2px 8px', background: '#f59e0b', color: '#04111a', borderRadius: 6, fontSize: 11 }}>
+          <span className="header-demo-badge">
             Demo Mode
           </span>
         )}

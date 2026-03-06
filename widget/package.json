@@ -127,5 +127,6 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
-  }
+  },
+  "browserslist": ["chrome >= 130"]
 }

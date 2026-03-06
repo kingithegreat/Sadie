@@ -148,16 +148,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         </div>
         {uncensoredMode && (
           <div
-            style={{
-              fontSize: 10,
-              color: '#f59e0b',
-              background: 'rgba(245,158,11,0.1)',
-              border: '1px solid rgba(245,158,11,0.3)',
-              borderRadius: 5,
-              padding: '2px 7px',
-              marginLeft: 4,
-              whiteSpace: 'nowrap',
-            }}
+            className="uncensored-warning-badge"
             title="Tool calling is disabled in Uncensored Mode"
           >
             ⚠️ tools off

@@ -256,7 +256,7 @@ function renderMarkdown(content: string): React.ReactNode[] {
                 <thead>
                   <tr>
                     {headerCells.map((cell, ci) => (
-                      <th key={ci} style={{ textAlign: aligns[ci] as any }}>
+                      <th key={ci} className={`md-table-align-${aligns[ci]}`}>
                         {parseInline(cell, key * 1000 + ci)}
                       </th>
                     ))}
@@ -266,7 +266,7 @@ function renderMarkdown(content: string): React.ReactNode[] {
                   {bodyRows.map((row, ri) => (
                     <tr key={ri}>
                       {parseRow(row).map((cell, ci) => (
-                        <td key={ci} style={{ textAlign: aligns[ci] as any }}>
+                        <td key={ci} className={`md-table-align-${aligns[ci]}`}>
                           {parseInline(cell, key * 1000 + ri * 100 + ci)}
                         </td>
                       ))}
@@ -378,7 +378,7 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
                 <img
                   src={`data:${detectImageMime(b64)};base64,${b64}`}
                   alt="Generated image"
-                  style={{ maxWidth: '100%', borderRadius: 8, marginTop: 8, display: 'block' }}
+                  className="md-generated-img"
                 />
               )}
               {rest.trim() && renderMarkdown(rest)}
@@ -485,7 +485,7 @@ export function MessageBubble({
           <div className="message-content">
             {/* Image thumbnails attached to this user message */}
             {message.images && message.images.length > 0 && (
-              <div className="user-image-previews" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: message.content ? 6 : 0 }}>
+              <div className={`user-image-previews user-image-previews-row${message.content ? '' : ' no-margin'}`}>
                 {message.images.map((img, i) => (
                   img.url ? (
                     <img
@@ -493,7 +493,7 @@ export function MessageBubble({
                       src={img.url}
                       alt={img.filename || 'attached image'}
                       title={img.filename || 'attached image'}
-                      style={{ maxWidth: 220, maxHeight: 160, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.15)' }}
+                      className="message-image-thumb"
                     />
                   ) : null
                 ))}
@@ -560,13 +560,13 @@ export function MessageBubble({
                 )}
 
                 {state === "cancelling" && (
-                  <span className="status-text" style={{ color: "#FCD34D" }}>
+                  <span className="status-text status-text-warning">
                     Stopping...
                   </span>
                 )}
 
                 {state === "cancelled" && (
-                  <span className="status-text" style={{ color: "#FCD34D" }}>
+                  <span className="status-text status-text-warning">
                     Cancelled
                   </span>
                 )}

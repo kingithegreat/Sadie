@@ -495,9 +495,9 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
         <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" />
 
         <div className="input-actions">
-          <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFileChange} />
-          <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple style={{ display: 'none' }} onChange={handleDocChange} />
-          <input ref={ragInputRef} type="file" accept="*" style={{ display: 'none' }} onChange={handleRagFileChange} />
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden-file-input" aria-label="Attach images" onChange={handleFileChange} />
+          <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple className="hidden-file-input" aria-label="Attach documents" onChange={handleDocChange} />
+          <input ref={ragInputRef} type="file" accept="*" className="hidden-file-input" aria-label="Index file for RAG" onChange={handleRagFileChange} />
           <button className="attach-button" title="Attach images" onClick={handleAttachClick}>📷</button>
           <button className="attach-button" title="Attach documents (PDF, Word, Text)" onClick={handleDocAttachClick}>📄</button>
           <button
@@ -508,13 +508,9 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
           >{ragStatus === 'indexing' ? '⏳' : '📎'}</button>
           {speechSupported && (
             <button 
-              className={`voice-button ${isListening ? 'listening' : ''}`} 
+              className={`voice-button ${isListening ? 'listening voice-btn-active' : 'voice-btn-idle'}`} 
               title={isListening ? 'Stop listening' : 'Voice input'} 
               onClick={toggleVoiceInput}
-              style={{
-                background: isListening ? '#ff3b30' : 'transparent',
-                animation: isListening ? 'pulse 1.5s infinite' : 'none'
-              }}
             >
               🎤
             </button>
@@ -556,14 +552,13 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
       {ragStatus && ragStatus !== 'indexing' && (
         <div
           role="status"
-          className="rag-status-banner"
-          style={{ color: ragStatus.ok ? '#34c759' : '#ff3b30', marginTop: 6, fontSize: '0.82rem' }}
+          className={`rag-status-banner ${ragStatus.ok ? 'rag-status-ok' : 'rag-status-err'}`}
         >
           {ragStatus.message}
         </div>
       )}
 
-      {errorMessage && <div role="alert" className="image-error" style={{ color: '#ff3b30', marginTop: 8 }}>{errorMessage}</div>}
+      {errorMessage && <div role="alert" className="image-error input-error-msg">{errorMessage}</div>}
     </div>
   );
 }
