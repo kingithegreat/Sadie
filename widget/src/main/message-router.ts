@@ -7,7 +7,7 @@ import { debug as logDebug, error as logError } from '../shared/logger';
 import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
-import { SADIE_SYSTEM_PROMPT } from '../shared/system-prompt';
+import { SADIE_SYSTEM_PROMPT, SADIE_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
 import { initializeTools, getOllamaTools, getAllToolDefinitions, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
@@ -1072,6 +1072,25 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'llava';
 // Default model for chat (should support tools)
 const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
+
+/**
+ * Returns true for models with <=3B parameters based on their name.
+ * Small models get the compact system prompt to preserve usable context.
+ */
+function isSmallModel(modelName: string): boolean {
+  const n = modelName.toLowerCase();
+  // Explicit small-size tags
+  if (/[:\-_]([1-3]b)\b/.test(n)) return true;
+  // Known small model families
+  if (/\b(phi[- ]?[123]|phi[- ]?mini|gemma:2b|qwen[:\-_]?[0-9]*[:\-_]?[01]\.?[05]b|smollm|tinyllama|tinydolphin)\b/.test(n)) return true;
+  return false;
+}
+
+/** Select the appropriate system prompt based on model size. */
+function getSystemPromptForModel(modelName: string, guidelines?: string): string {
+  const base = isSmallModel(modelName) ? SADIE_SYSTEM_PROMPT_COMPACT : SADIE_SYSTEM_PROMPT;
+  return guidelines?.trim() ? `${base}\n\n## User Guidelines\n${guidelines.trim()}` : base;
+}
 // Uncensored model
 const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-llama3:8b';
 
@@ -1120,11 +1139,9 @@ export async function streamFromLLM(
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
   
-  // Build system prompt with user's chat guidelines if set
-  const userGuidelines = (settings as any).chatGuidelines?.trim();
-  const systemPromptWithGuidelines = userGuidelines 
-    ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${userGuidelines}`
-    : SADIE_SYSTEM_PROMPT;
+  // Build system prompt — compact variant for small models (<=3B)
+  const activeModel = (settings as any).chatModel || OLLAMA_CHAT_MODEL;
+  const systemPromptWithGuidelines = getSystemPromptForModel(activeModel, (settings as any).chatGuidelines);
 
   // Check if custom LLM is enabled and configured
   if ((settings as any).useCustomLLM && (settings as any).customLLM) {
@@ -1424,9 +1441,7 @@ export async function streamFromOllamaWithTools(
     // Always include the global SADIE prompt after the conversation prompt
     // Append user's chat guidelines if set
     const chatGuidelines = settings.chatGuidelines?.trim();
-    const systemPromptWithGuidelines = chatGuidelines
-      ? `${SADIE_SYSTEM_PROMPT}\n\n## User Guidelines\n${chatGuidelines}`
-      : SADIE_SYSTEM_PROMPT;
+    const systemPromptWithGuidelines = getSystemPromptForModel(model, chatGuidelines);
     messages.push({ role: 'system', content: systemPromptWithGuidelines });
   }
 
