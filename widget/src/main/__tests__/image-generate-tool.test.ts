@@ -87,7 +87,7 @@ describe('imageGenerateHandler', () => {
 
     const res = await imageGenerateHandler({ prompt: 'a dog' }, {} as any);
     expect(res.success).toBe(false);
-    expect(res.error).toContain('No image backend available');
+    expect(res.error).toContain('All image backends failed');
   });
 
   test('clamps width and height to max 1024', async () => {

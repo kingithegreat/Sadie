@@ -1050,7 +1050,8 @@ export const imageGenerateDef: ToolDefinition = {
   description:
     'Generate an image from a text prompt. ' +
     'Tries local Stable Diffusion (AUTOMATIC1111 / ComfyUI) first, ' +
-    'then falls back to Stability AI or DALL·E if API keys are configured. ' +
+    'then Pollinations.ai (free, no API key), ' +
+    'then falls back to DALL·E if an OpenAI API key is configured. ' +
     'Returns a base64-encoded image.',
   category: 'utility',
   requiresConfirmation: false,
@@ -1078,7 +1079,7 @@ export const imageGenerateDef: ToolDefinition = {
       },
       backend: {
         type: 'string',
-        description: '"local" (SD/ComfyUI), "cloud" (Stability/OpenAI), or "hybrid" (local first, default)',
+        description: '"local" (SD/ComfyUI only), "cloud" (Pollinations free → DALL-E), or "hybrid" (local first, then Pollinations, default)',
         enum: ['local', 'cloud', 'hybrid'],
         default: 'hybrid'
       }
@@ -1117,6 +1118,39 @@ function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, 
     req.write(payload);
     req.end();
   });
+}
+
+// ── Buffer GET (for binary responses like images) ──────────────────────────
+function httpGetBuffer(urlStr: string, timeoutMs = 30000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const lib = urlStr.startsWith('https') ? https : http;
+    const req = lib.get(urlStr, { timeout: timeoutMs } as any, (res: any) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        resolve(httpGetBuffer(res.headers.location as string, timeoutMs));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('httpGetBuffer timed out')); });
+  });
+}
+
+// ── Backend 0: Pollinations.ai (free, no API key required) ───────────────────
+async function tryPollinations(prompt: string, width: number, height: number): Promise<string | null> {
+  try {
+    const seed = Math.floor(Math.random() * 1e9);
+    const encodedPrompt = encodeURIComponent(prompt);
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`;
+    const buf = await httpGetBuffer(url, 60000);
+    // A valid image should be at least a few KB; reject obviously invalid responses
+    if (!buf || buf.length < 1024) return null;
+    return buf.toString('base64');
+  } catch {
+    return null;
+  }
 }
 
 // ── Backend 1: AUTOMATIC1111 / stable-diffusion-webui ────────────────────────
@@ -1221,18 +1255,24 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     }
 
     if (!image_base64 && backend !== 'local') {
-      // Fall back to DALL-E 3
+      // Try Pollinations.ai — free, no API key required
+      image_base64 = await tryPollinations(prompt, width, height);
+      if (image_base64) { source = 'pollinations'; }
+    }
+
+    if (!image_base64 && backend !== 'local') {
+      // Fall back to DALL-E 3 if OpenAI key is set
       image_base64 = await tryDallE(prompt, width, height);
       if (image_base64) { source = 'dall-e-3'; }
     }
 
     if (!image_base64) {
-      const hasKey = Boolean(_openaiApiKey);
       return {
         success: false,
-        error: hasKey
-          ? 'All image backends failed. Local SD/ComfyUI unreachable and DALL-E request failed.'
-          : 'No image backend available. Add your OpenAI API key in Settings to enable DALL-E 3, or run Stable Diffusion locally on port 7860.'
+        error: 'All image backends failed. ' +
+          'Pollinations.ai (free) was tried — check your internet connection. ' +
+          'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
+          'For DALL-E 3, add an OpenAI API key in Settings.'
       };
     }
 
