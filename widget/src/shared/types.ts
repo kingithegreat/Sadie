@@ -251,4 +251,7 @@ export interface ElectronAPI {
   exportChat?: (markdown: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   listTools?: () => Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }>;
   onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;
+
+  // RAG: index a local file path from main process
+  ragIndex?: (filePath: string) => Promise<{ success: boolean; result?: { doc_id: string; filename: string; chunks_indexed: number; message: string }; error?: string }>;
 }

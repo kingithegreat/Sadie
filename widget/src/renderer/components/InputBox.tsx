@@ -68,6 +68,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
+  const [ragStatus, setRagStatus] = useState<null | 'indexing' | { ok: boolean; message: string }>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Sync uncensored mode from main process and listen for toggle events
@@ -216,6 +217,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const docInputRef = useRef<HTMLInputElement | null>(null);
+  const ragInputRef = useRef<HTMLInputElement | null>(null);
   const dropRef = useRef<HTMLDivElement | null>(null);
 
   const { MAX_IMAGES, MAX_PER_IMAGE_BYTES: MAX_PER_IMAGE, MAX_TOTAL_BYTES: MAX_TOTAL } = IMAGE_LIMITS;
@@ -408,9 +410,45 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   const handleAttachClick = () => fileInputRef.current?.click();
   const handleDocAttachClick = () => docInputRef.current?.click();
 
+  const handleRagIndex = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    const file = files[0];
+    // In Electron, File objects have a .path property with the OS path
+    const osPath: string = (file as any).path || '';
+    if (!osPath) {
+      setRagStatus({ ok: false, message: 'RAG indexing requires the desktop app (file path unavailable in browser).' });
+      setTimeout(() => setRagStatus(null), 4000);
+      return;
+    }
+    setRagStatus('indexing');
+    try {
+      const result = await (window as any).electron?.ragIndex?.(osPath);
+      if (result?.success) {
+        const { filename, chunks_indexed } = result.result || {};
+        setRagStatus({ ok: true, message: `✅ Indexed “${filename || file.name}” (${chunks_indexed ?? '?'} chunks) — ask me anything about it!` });
+      } else {
+        setRagStatus({ ok: false, message: `❌ RAG index failed: ${result?.error || 'unknown error'}` });
+      }
+    } catch (err: any) {
+      setRagStatus({ ok: false, message: `❌ RAG index error: ${err?.message || String(err)}` });
+    }
+    setTimeout(() => setRagStatus(null), 6000);
+  }, []);
+
+  const handleRagFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length) await handleRagIndex(Array.from(files));
+    if (ragInputRef.current) ragInputRef.current.value = '';
+  };
+
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!isDragging) setIsDragging(true); };
   const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
+  const looksLikeRagFile = (file: File): boolean => {
+    const ext = ('.' + file.name.split('.').pop()?.toLowerCase()) as string;
+    return ['.pdf', '.docx', '.doc', '.txt', '.md', '.json', '.csv', '.ts', '.tsx', '.js', '.jsx', '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.xml', '.yaml', '.yml', '.log', '.ini', '.toml', '.sh', '.ps1', '.bat'].includes(ext);
+  };
+
   const handleDrop = async (e: React.DragEvent) => { 
     e.preventDefault(); 
     e.stopPropagation(); 
@@ -418,8 +456,11 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     const files = Array.from(e.dataTransfer.files);
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     const docFiles = files.filter(f => isDocumentFile(f) && !f.type.startsWith('image/'));
+    const ragFiles = files.filter(f => !f.type.startsWith('image/') && !isDocumentFile(f) && looksLikeRagFile(f));
     if (imageFiles.length) await processFiles(imageFiles);
     if (docFiles.length) await processDocuments(docFiles);
+    // Index non-image, non-chat-document files into RAG automatically
+    if (ragFiles.length) await handleRagIndex(ragFiles);
   };
 
   const removeAttachment = (id: string) => {
@@ -456,8 +497,15 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
         <div className="input-actions">
           <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFileChange} />
           <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple style={{ display: 'none' }} onChange={handleDocChange} />
+          <input ref={ragInputRef} type="file" accept="*" style={{ display: 'none' }} onChange={handleRagFileChange} />
           <button className="attach-button" title="Attach images" onClick={handleAttachClick}>📷</button>
           <button className="attach-button" title="Attach documents (PDF, Word, Text)" onClick={handleDocAttachClick}>📄</button>
+          <button
+            className="attach-button rag-index-button"
+            title="Index file for RAG — ask questions about any document"
+            onClick={() => ragInputRef.current?.click()}
+            disabled={ragStatus === 'indexing'}
+          >{ragStatus === 'indexing' ? '⏳' : '📎'}</button>
           {speechSupported && (
             <button 
               className={`voice-button ${isListening ? 'listening' : ''}`} 
@@ -502,6 +550,16 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
               <button className="remove-document" onClick={() => removeDocument(doc.id)} title="Remove document">✕</button>
             </div>
           ))}
+        </div>
+      )}
+
+      {ragStatus && ragStatus !== 'indexing' && (
+        <div
+          role="status"
+          className="rag-status-banner"
+          style={{ color: ragStatus.ok ? '#34c759' : '#ff3b30', marginTop: 6, fontSize: '0.82rem' }}
+        >
+          {ragStatus.message}
         </div>
       )}
 

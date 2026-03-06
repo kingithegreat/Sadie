@@ -15,6 +15,7 @@ import {
 } from './config-manager';
 import { fetchAvailableCustomModels } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey } from './tools/web';
+import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
@@ -298,6 +299,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // List all registered tools
+  // ── RAG: index a local file (called from the renderer drag-and-drop UI) ──
+  ipcMain.handle('sadie:rag-index', async (_event, filePath: string) => {
+    try {
+      if (!filePath || typeof filePath !== 'string') {
+        return { success: false, error: 'filePath is required' };
+      }
+      const result = await ragToolHandlers.rag_index({ path: filePath });
+      return result;
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   ipcMain.handle('sadie:list-tools', async () => {
     try {
       const tools = getAllToolDefinitions().map(t => ({

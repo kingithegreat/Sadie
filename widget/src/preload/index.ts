@@ -408,6 +408,11 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:list-tools');
   },
 
+  // RAG: index a local file by its OS path
+  ragIndex: async (filePath: string) => {
+    return await ipcRenderer.invoke('sadie:rag-index', filePath);
+  },
+
   // ── MCP Server Management ──────────────────────────────────────────────────
   mcpListServers: async () => ipcRenderer.invoke('sadie:mcp-list-servers'),
   mcpGetStatus: async () => ipcRenderer.invoke('sadie:mcp-get-status'),

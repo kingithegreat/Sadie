@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.9 — RAG drag-and-drop UI
+
+### Added
+- **RAG index button (📎)** in the chat input toolbar: click to pick any file (PDF, Word, code, text) and index it into the RAG engine. Shows a live "⏳ indexing…" spinner on the button while work is in progress, then a green "✅ Indexed …" status banner (auto-dismisses after 6 s).
+- **Drag-and-drop to RAG**: files dropped onto the input area that aren't images or chat-attachable documents are automatically forwarded to `rag_index` so users can drag a `.ts`, `.py`, `.log`, or similar file straight onto the chat window.
+- **`sadie:rag-index` IPC channel**: direct bridge from renderer → main process `ragToolHandlers.rag_index` so the UI never needs to go through the full message router.
+- **`ElectronAPI.ragIndex`** type and preload exposure so the call is fully typed and sandbox-safe.
+
 ## v0.9.8 — RAG: local document semantic search
 
 ### Added
