@@ -93,7 +93,8 @@ const DEFAULT_SETTINGS: Settings = {
     get_news: true,
     list_news_feeds: true,
     get_weather: true,
-    generate_sports_report: false
+    generate_sports_report: false,
+    image_generate: true
   },
 
   // Default NBA team for new users

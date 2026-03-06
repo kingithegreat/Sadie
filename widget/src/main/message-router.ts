@@ -2381,9 +2381,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 addToHistory(convId, 'assistant', caption + imgChunk);
               } else {
                 // Tool failed — give a clear error instead of falling through to LLM
-                const failedResult = (toolResults || []).find((r: any) => r?.error || r?.success === false);
-                const errDetail = failedResult?.error || 'n8n webhook not reachable';
-                const errMsg = `❌ Image generation is not available right now.\n\nThe \`image_generate\` tool requires **n8n** to be running locally with the webhook \`/webhook/sadie-image-generate\` configured to connect to an image API (e.g. Stable Diffusion, ComfyUI, or DALL-E).\n\nError: \`${errDetail}\``;
+                const failedResult = (toolResults || []).find((r: any) => r?.error || r?.reason || r?.success === false);
+                const errDetail = failedResult?.error || failedResult?.reason || 'Image generation failed — check your internet connection (Pollinations.ai is used as a free backend)';
+                const errMsg = `❌ Image generation failed.\n\nError: \`${errDetail}\``;
                 try { event.sender.send('sadie:stream-chunk', { chunk: errMsg, streamId }); } catch (e) {}
                 addToHistory(convId, 'assistant', errMsg);
               }
