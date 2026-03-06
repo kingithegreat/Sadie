@@ -11,6 +11,8 @@ import ConversationSidebar from "./components/ConversationSidebar";
 // @ts-ignore - Component exists but TypeScript cache issue
 import { AutomationCenter } from "./components/AutomationCenter";
 import ImageGenerator from "./components/ImageGenerator";
+import TokenCounter from "./components/TokenCounter";
+import RagPanel from "./components/RagPanel";
 import type {
   ChatMessage,
   StreamingState
@@ -69,6 +71,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [ragPanelOpen, setRagPanelOpen] = useState(false);
   const [settings, setSettings] = useState<SharedSettings>({
     alwaysOnTop: true,
     n8nUrl: 'http://localhost:5678',
@@ -747,6 +750,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) { setStatus(c); if (c.n8n === 'online') setBackendDiagnostic(null); } } catch (e) { /* ignore */ } }} 
         onSettingsClick={() => setSettingsOpen(true)}
         onToolsClick={() => setToolsOpen(true)}
+        onRagClick={() => setRagPanelOpen(true)}
         onMenuClick={() => setSidebarOpen(true)}
         onExportChat={async () => {
           const lines: string[] = [`# SADIE Chat Export\n_Exported: ${new Date().toLocaleString()}_\n`];
@@ -799,6 +803,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         }}
       />
 
+      {/* Token counter — shown in chat mode */}
+      {mode === 'chat' && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 12px 0', background: 'transparent' }}>
+          <TokenCounter messages={messages} model={settings.chatModel || 'llama3.2:3b'} />
+        </div>
+      )}
+
       {/* Main Content Area */}
       {mode === 'chat' ? (
         <ChatInterface 
@@ -836,6 +847,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
       {/* Tools Panel */}
       {toolsOpen && <ToolsPanel onClose={() => setToolsOpen(false)} />}
+
+      {/* RAG Index Panel */}
+      <RagPanel isOpen={ragPanelOpen} onClose={() => setRagPanelOpen(false)} />
 
       {/* Permission Modal (appears when main requests permission escalation) */}
       <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />

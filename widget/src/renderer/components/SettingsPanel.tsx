@@ -471,19 +471,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="setting-group">
           <label className="setting-label">Vision model</label>
-          <input
-            type="text"
+          <select
             className="setting-input"
-            value={localSettings.visionModel || ''}
-            onChange={(e) =>
-              setLocalSettings({
-                ...localSettings,
-                visionModel: e.target.value || defaultModels.visionModel
-              })
-            }
-            placeholder={defaultModels.visionModel}
-          />
-          <small className="setting-hint">Used automatically when images are attached.</small>
+            value={[
+              'llava:latest', 'llava:7b', 'llava:13b',
+              'llava-llama3:latest', 'bakllava:latest',
+              'moondream:latest', 'minicpm-v:latest',
+            ].includes(localSettings.visionModel || '') ? (localSettings.visionModel || 'llava:latest') : '__custom__'}
+            onChange={(e) => {
+              if (e.target.value !== '__custom__') {
+                setLocalSettings({ ...localSettings, visionModel: e.target.value });
+              }
+            }}
+          >
+            <option value="llava:latest">llava:latest (recommended, 4.7 GB)</option>
+            <option value="llava:7b">llava:7b (4.7 GB)</option>
+            <option value="llava:13b">llava:13b (8.0 GB)</option>
+            <option value="llava-llama3:latest">llava-llama3:latest (5.5 GB)</option>
+            <option value="bakllava:latest">bakllava:latest (4.7 GB)</option>
+            <option value="moondream:latest">moondream:latest (1.7 GB, fast)</option>
+            <option value="minicpm-v:latest">minicpm-v:latest (5.6 GB)</option>
+            <option value="__custom__">Custom…</option>
+          </select>
+          {(![
+            'llava:latest', 'llava:7b', 'llava:13b',
+            'llava-llama3:latest', 'bakllava:latest',
+            'moondream:latest', 'minicpm-v:latest',
+          ].includes(localSettings.visionModel || '')) && (
+            <input
+              type="text"
+              className="setting-input"
+              style={{ marginTop: 6 }}
+              value={localSettings.visionModel || ''}
+              onChange={(e) =>
+                setLocalSettings({
+                  ...localSettings,
+                  visionModel: e.target.value || defaultModels.visionModel
+                })
+              }
+              placeholder={defaultModels.visionModel}
+            />
+          )}
+          <small className="setting-hint">Used automatically when images are attached. Must be a vision-capable Ollama model.</small>
         </div>
 
         <div className="setting-group">

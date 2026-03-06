@@ -413,6 +413,16 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:rag-index', filePath);
   },
 
+  // RAG: list all indexed documents
+  ragList: async () => {
+    return await ipcRenderer.invoke('sadie:rag-list');
+  },
+
+  // RAG: remove a document from the index by doc_id
+  ragClear: async (docId: string) => {
+    return await ipcRenderer.invoke('sadie:rag-clear', docId);
+  },
+
   // ── MCP Server Management ──────────────────────────────────────────────────
   mcpListServers: async () => ipcRenderer.invoke('sadie:mcp-list-servers'),
   mcpGetStatus: async () => ipcRenderer.invoke('sadie:mcp-get-status'),

@@ -40,7 +40,7 @@ import { planningToolDefs, planningToolHandlers } from './planning';
 import { apiToolDefs, apiToolHandlers } from './api-tool';
 import { ragToolDefs, ragToolHandlers } from './rag';
 import { visionToolDefs, visionToolHandlers } from './vision';
-import { initializeMcpServers, seedMcpDefaults } from '../mcp-client';
+import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
@@ -497,7 +497,8 @@ export function initializeTools(): void {
 
   console.log(`[SADIE Tools] Initialized ${toolRegistry.size} tools`);
 
-  // Seed default MCP server configs on first run, then connect
+  // Auto-discover servers from Cursor / Claude Desktop / VS Code, then seed defaults
+  discoverExternalMcpServers();
   seedMcpDefaults();
   initializeMcpServers(registerTool).catch(e =>
     console.warn('[MCP] Server initialization failed:', e)

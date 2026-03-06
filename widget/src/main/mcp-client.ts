@@ -259,6 +259,93 @@ export function seedMcpDefaults(): void {
 }
 
 /**
+ * Scan well-known external MCP config files (Cursor, Claude Desktop, VS Code Insiders)
+ * and merge any servers not already known into SADIE's own config.
+ *
+ * Only adds new entries — never removes or modifies existing ones, so manual
+ * customisations are always preserved.
+ */
+export function discoverExternalMcpServers(): void {
+  const home = os.homedir();
+
+  // Candidate external config paths (Windows + macOS/Linux variants)
+  const candidatePaths: string[] = [
+    // Cursor
+    path.join(home, '.cursor', 'mcp.json'),
+    path.join(home, 'AppData', 'Roaming', 'Cursor', 'User', 'mcp.json'),
+    // Claude Desktop (Anthropic)
+    path.join(home, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json'),
+    path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
+    // VS Code Insiders MCP
+    path.join(home, 'AppData', 'Roaming', 'Code - Insiders', 'User', 'mcp.json'),
+    path.join(home, '.config', 'Code - Insiders', 'User', 'mcp.json'),
+    // Generic ~/.config/mcp
+    path.join(home, '.config', 'mcp', 'servers.json'),
+  ];
+
+  const current = loadMcpConfig();
+  const existingNames = new Set(current.servers.map(s => s.name));
+  let added = 0;
+
+  for (const filePath of candidatePaths) {
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+      // Different tools use different shapes — normalise to McpServerConfig[]
+      const entries: McpServerConfig[] = [];
+
+      // Shape 1: { servers: [...] } — SADIE / generic
+      if (Array.isArray(raw?.servers)) {
+        entries.push(...(raw.servers as any[]));
+      }
+
+      // Shape 2: { mcpServers: { name: { command, args, env } } } — Cursor / Claude Desktop
+      if (raw?.mcpServers && typeof raw.mcpServers === 'object') {
+        for (const [name, cfg] of Object.entries(raw.mcpServers as Record<string, any>)) {
+          if (cfg.command) {
+            entries.push({
+              type: 'stdio',
+              name,
+              command: cfg.command,
+              args: cfg.args ?? [],
+              env: cfg.env ?? {},
+              enabled: true,
+            } satisfies McpStdioConfig);
+          } else if (cfg.url) {
+            entries.push({
+              type: 'sse',
+              name,
+              url: cfg.url,
+              enabled: true,
+            } satisfies McpSseConfig);
+          }
+        }
+      }
+
+      for (const entry of entries) {
+        if (!entry.name || existingNames.has(entry.name)) continue;
+        // Validate minimally
+        if (entry.type === 'stdio' && !(entry as McpStdioConfig).command) continue;
+        if (entry.type === 'sse' && !(entry as McpSseConfig).url) continue;
+
+        current.servers.push({ ...entry, enabled: false }); // disabled by default — user opts in
+        existingNames.add(entry.name);
+        added++;
+        console.log(`[MCP] Auto-discovered server "${entry.name}" from ${filePath} (disabled by default)`);
+      }
+    } catch (err) {
+      console.warn(`[MCP] Failed to parse external config at ${filePath}:`, err);
+    }
+  }
+
+  if (added > 0) {
+    saveMcpConfig(current);
+    console.log(`[MCP] Auto-discovery: added ${added} new server(s) to config (all disabled by default — enable in Settings)`);
+  }
+}
+
+/**
  * Disconnect all connected MCP servers (call on app quit).
  */
 export async function shutdownMcpServers(): Promise<void> {

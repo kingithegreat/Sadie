@@ -312,6 +312,27 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // ── RAG: list all indexed documents ──
+  ipcMain.handle('sadie:rag-list', async () => {
+    try {
+      return await ragToolHandlers.rag_list({});
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── RAG: remove a document from the index ──
+  ipcMain.handle('sadie:rag-clear', async (_event, docId: string) => {
+    try {
+      if (!docId || typeof docId !== 'string') {
+        return { success: false, error: 'doc_id is required' };
+      }
+      return await ragToolHandlers.rag_clear({ doc_id: docId });
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   ipcMain.handle('sadie:list-tools', async () => {
     try {
       const tools = getAllToolDefinitions().map(t => ({

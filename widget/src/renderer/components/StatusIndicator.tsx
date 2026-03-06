@@ -9,6 +9,7 @@ interface StatusIndicatorProps {
   onMenuClick?: () => void;
   onExportChat?: () => void;
   onToolsClick?: () => void;
+  onRagClick?: () => void;
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
@@ -28,6 +29,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onMenuClick,
   onExportChat,
   onToolsClick,
+  onRagClick,
   backendDiagnostic,
   onCopyDiagnostic,
   onDismissDiagnostic,
@@ -199,6 +201,16 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
             aria-label="Export chat"
           >
             💾
+          </button>
+        )}
+        {onRagClick && (
+          <button
+            onClick={onRagClick}
+            className="header-btn"
+            title="RAG index — view & manage indexed documents"
+            aria-label="RAG index"
+          >
+            📚
           </button>
         )}
         {onToolsClick && (
