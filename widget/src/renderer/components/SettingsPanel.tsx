@@ -780,36 +780,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               checked={true}
               disabled
             />
-            <span>🛡️ Telemetry (required, anonymous)</span>
+            <span>🛡️ Telemetry (anonymous, opt-in)</span>
           </label>
+          <small className="setting-hint" style={{ marginTop: 4, display: 'block' }}>
+            Tool usage events are logged <strong>locally on this device only</strong>. Nothing is sent to an external server.
+            Consent is recorded with a timestamp and can be reviewed or revoked in the Telemetry Consent Log below.
+          </small>
         </div>
 
         <div className="setting-group">
           <label className="setting-label">Permissions</label>
           <small className="setting-hint">Enable or disable specific tools.</small>
           <div className="permission-grid space-y-2">
-            {Object.keys(permissions).map((k) => (
-              <div key={k} className="flex items-start gap-3">
-                <label className="setting-label inline-flex items-center mr-3">
-                  <input
-                    type="checkbox"
-                    checked={!!permissions[k]}
-                    onChange={(e) => {
-                      const next = { ...permissions, [k]: e.target.checked };
-                      setPermissions(next);
-                      setLocalSettings({ ...localSettings, permissions: next } as any);
-                    }}
-                  />
-                  <span className="ml-2">{k.replace(/_/g, ' ')}</span>
-                </label>
-                <div>
-                  <small className="text-zinc-500">{PERMISSION_DESCRIPTIONS[k] || 'No description available.'}</small>
-                  {DANGEROUS_PERMISSIONS.has(k) && (
-                    <small style={{ color: '#f59e0b', display: 'block' }}>{PERMISSION_DESCRIPTIONS[k]}</small>
-                  )}
+            {Object.keys(permissions).map((k) => {
+              const isDangerous = DANGEROUS_PERMISSIONS.has(k);
+              return (
+                <div key={k} className="flex items-start gap-3">
+                  <label
+                    className="setting-label inline-flex items-center mr-3"
+                    title={isDangerous ? `⚠ Dangerous — ${PERMISSION_DESCRIPTIONS[k] || k}` : (PERMISSION_DESCRIPTIONS[k] || k)}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!permissions[k]}
+                      onChange={(e) => {
+                        const next = { ...permissions, [k]: e.target.checked };
+                        setPermissions(next);
+                        setLocalSettings({ ...localSettings, permissions: next } as any);
+                      }}
+                    />
+                    <span className="ml-2">
+                      {isDangerous && <span style={{ color: '#f59e0b', marginRight: 4 }}>⚠</span>}
+                      {k.replace(/_/g, ' ')}
+                    </span>
+                  </label>
+                  <div>
+                    <small style={{ color: isDangerous ? '#f59e0b' : undefined }} className={isDangerous ? undefined : 'text-zinc-500'}>
+                      {PERMISSION_DESCRIPTIONS[k] || 'No description available.'}
+                    </small>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         <div className="setting-group">
