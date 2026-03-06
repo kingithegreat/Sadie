@@ -25,11 +25,10 @@ export const TitleBar: React.FC = () => {
 
   return (
     <header
-      className={`sadie-titlebar${isDragging ? " sadie-titlebar--dragging" : ""}`}
+      className={`sadie-titlebar draggable-region${isDragging ? " sadie-titlebar--dragging" : ""}`}
       role="banner"
       aria-label="Window Title Bar"
       tabIndex={-1}
-      style={{ WebkitAppRegion: 'drag' } as any}
     >
       <div className="sadie-titlebar__controls" aria-label="Window Controls">
         {/* macOS traffic lights */}

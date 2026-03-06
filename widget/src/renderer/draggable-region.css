@@ -1,3 +1,4 @@
+/* stylelint-disable property-no-vendor-prefix -- Electron only, -webkit-app-region is intentional */
 .draggable-region {
   -webkit-app-region: drag;
 }

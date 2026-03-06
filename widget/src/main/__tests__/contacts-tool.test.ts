@@ -38,9 +38,6 @@ const HOME = os.homedir();
 const TEMP_CONTACTS = path.join(HOME, `sadie-test-contacts-${Date.now()}.json`);
 
 // Patch LOCAL_CONTACTS_PATH by mocking fs.promises
-const originalReadFile = fs.promises.readFile;
-const originalWriteFile = fs.promises.writeFile;
-const originalMkdir = fs.promises.mkdir;
 
 beforeEach(() => {
   jest.clearAllMocks();

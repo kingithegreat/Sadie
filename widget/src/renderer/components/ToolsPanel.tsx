@@ -95,25 +95,23 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ onClose }) => {
   return (
     <div className="settings-overlay" role="presentation" onClick={onClose}>
       <div
-        className="settings-panel"
+        className="settings-panel tools-panel-col"
         role="dialog"
         aria-modal="true"
         aria-label="Available Tools"
-        style={{ maxHeight: '80vh', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}
         onClick={e => e.stopPropagation()}
         onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
         tabIndex={-1}
       >
         <div className="settings-header">
-          <h2 style={{ margin: 0, fontSize: 15 }}>🔧 Available Tools ({tools.length})</h2>
+          <h2 className="tools-panel-title">🔧 Available Tools ({tools.length})</h2>
           <button className="close-button" onClick={onClose} aria-label="Close tools panel">✕</button>
         </div>
 
         {/* Search */}
-        <div style={{ padding: '10px 16px 0' }}>
+        <div className="tools-search-bar">
           <input
-            className="setting-input"
-            style={{ width: '100%' }}
+            className="setting-input tools-search-input"
             placeholder="Search tools…"
             aria-label="Search tools"
             value={search}
@@ -122,55 +120,46 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ onClose }) => {
           />
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 16px' }}>
-          {loading && <p style={{ color: '#888', fontSize: 13 }}>Loading tools…</p>}
-          {error && <p style={{ color: '#ff3b30', fontSize: 13 }}>{error}</p>}
+        <div className="tools-list-body">
+          {loading && <p className="tools-hint">Loading tools…</p>}
+          {error && <p className="tools-error">{error}</p>}
 
           {!loading && filtered.length === 0 && (
-            <p style={{ color: '#888', fontSize: 13 }}>No tools match "{search}"</p>
+            <p className="tools-hint">No tools match "{search}"</p>
           )}
 
           {categories.map(cat => (
-            <div key={cat} style={{ marginBottom: 8 }}>
+            <div key={cat} className="tools-cat-group">
               {/* Category header */}
               <button
                 onClick={() => toggleCat(cat)}
                 aria-expanded={expandedCats.has(cat)}
                 aria-controls={`tools-cat-${cat}`}
                 aria-label={`${prettyCat(cat)} tools, ${grouped[cat].length} tool${grouped[cat].length === 1 ? '' : 's'}`}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, width: '100%',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#a1a1aa', fontSize: 11, fontWeight: 600,
-                  textTransform: 'uppercase', letterSpacing: '0.07em',
-                  padding: '4px 0', marginBottom: 4,
-                }}
+                className="tools-cat-btn"
               >
                 <span>{categoryIcon(cat)}</span>
                 <span>{prettyCat(cat)}</span>
-                <span style={{ color: '#52525b', marginLeft: 4 }}>({grouped[cat].length})</span>
-                <span style={{ marginLeft: 'auto' }}>{expandedCats.has(cat) ? '▾' : '▸'}</span>
+                <span className="tools-cat-count">({grouped[cat].length})</span>
+                <span className="tools-cat-arrow">{expandedCats.has(cat) ? '▾' : '▸'}</span>
               </button>
 
               {/* Tool cards */}
               {expandedCats.has(cat) && (
-                <div id={`tools-cat-${cat}`} role="list" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div id={`tools-cat-${cat}`} role="list" className="tools-card-list">
                   {grouped[cat].map(tool => (
                     <div
                       key={tool.name}
                       role="listitem"
                       tabIndex={0}
-                      style={{
-                        background: '#111', border: '1px solid #27272a',
-                        borderRadius: 8, padding: '8px 12px',
-                      }}
+                      className="tools-card"
                     >
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                        <code style={{ fontSize: 12, color: '#22d3ee', fontFamily: 'monospace' }}>
+                      <div className="tools-card-header">
+                        <code className="tools-card-name">
                           {tool.name}
                         </code>
                       </div>
-                      <p style={{ margin: '3px 0 0', fontSize: 12, color: '#a1a1aa', lineHeight: 1.4 }}>
+                      <p className="tools-card-desc">
                         {tool.description}
                       </p>
                     </div>

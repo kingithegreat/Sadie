@@ -93,7 +93,7 @@ describe('imageGenerateHandler', () => {
   test('clamps width and height to max 1024', async () => {
     // Mock SD API response (images[] not present → returns null, but clamping still runs)
     mockN8nResponse({ images: [] });
-    const res = await imageGenerateHandler({ prompt: 'big', width: 2000, height: 2000 }, {} as any);
+    await imageGenerateHandler({ prompt: 'big', width: 2000, height: 2000 }, {} as any);
     // Should not throw — clamped to 1024 internally
     // handler sends request; check write was called with clamped values
     const writeCall = (mockHttpRequest.mock.results[0]?.value as any)?.write?.mock?.calls?.[0]?.[0];

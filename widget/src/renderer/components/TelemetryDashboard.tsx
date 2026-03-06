@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function TelemetryDashboard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [events, setEvents] = useState<any[]>([]);
@@ -60,12 +60,12 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
               </div>
 
               <div className="mb-3 text-sm text-zinc-400">Recent events (most recent first)</div>
-              <div style={{ maxHeight: 320, overflow: 'auto' }} className="rounded bg-zinc-900 border border-zinc-800 p-2">
+              <div className="rounded bg-zinc-900 border border-zinc-800 p-2 telemetry-event-list">
                 {events.length === 0 && <div className="text-zinc-500">No telemetry events recorded.</div>}
                 {events.map((e, idx) => (
                   <div key={idx} className="p-2 border-b border-zinc-800 last:border-b-0 text-sm">
                     <div className="text-zinc-400">{new Date(e.timestamp).toLocaleString()} — <strong>{e.event}</strong></div>
-                    <pre style={{ whiteSpace: 'pre-wrap', margin: 0, color: '#9ca3af' }}>{JSON.stringify(e.details || {}, null, 2)}</pre>
+                    <pre className="telemetry-event-pre">{JSON.stringify(e.details || {}, null, 2)}</pre>
                   </div>
                 ))}
               </div>

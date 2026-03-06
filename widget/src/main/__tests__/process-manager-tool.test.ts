@@ -26,7 +26,7 @@ function mockExecReject(message: string) {
 
 import {
   listProcessesHandler,
-  getProcessInfoHandler,
+  getProcessInfoHandler as _getProcessInfoHandler,
   killProcessHandler,
   listProcessesDef,
   killProcessDef

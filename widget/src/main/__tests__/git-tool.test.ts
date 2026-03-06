@@ -17,13 +17,7 @@ function mockExecResolve(stdout: string) {
   });
 }
 
-function mockExecReject(msg: string) {
-  mockExecImpl.mockImplementation((_cmd: string, _opts: any, cb?: Function) => {
-    const callback = typeof _opts === 'function' ? _opts : cb;
-    if (callback) callback(new Error(msg), { stdout: '', stderr: msg });
-    return { on: jest.fn() };
-  });
-}
+// mockExecReject helper intentionally omitted — reserved for future negative-path tests
 
 import {
   gitStatusHandler,
