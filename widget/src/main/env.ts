@@ -9,9 +9,10 @@ export const isPackagedBuild = app?.isPackaged === true;
 export const isProduction = isPackagedBuild || process.env.NODE_ENV === 'production';
 export const isDevelopment = !isPackagedBuild && process.env.NODE_ENV === 'development';
 
-// E2E detection: enable when running under test or when SADIE_E2E is explicitly set.
-// Do NOT gate this by packaging here so Playwright-packaged runs can enable E2E.
-export const isE2E = (process.env.NODE_ENV === 'test') || (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true');
+// E2E detection: enable only when SADIE_E2E is explicitly set.
+// NODE_ENV=test is the Jest environment — it must NOT be treated as an E2E run,
+// otherwise the n8n probe guard and mock paths fire in unit tests too.
+export const isE2E = process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true';
 
 export const isDemoMode = process.argv?.includes('--demo') || process.env.SADIE_DEMO_MODE === '1' || process.env.SADIE_DEMO_MODE === 'true';
 

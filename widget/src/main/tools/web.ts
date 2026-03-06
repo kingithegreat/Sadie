@@ -752,6 +752,83 @@ async function searchSerper(
   return { results, topContent };
 }
 
+// ============= SEARCH PROVIDER REGISTRY =============
+// Unified return shape for every provider.
+interface SearchProviderResult {
+  results: Array<{ title: string; url: string; snippet: string }>;
+  sources: Array<{ url: string; title: string; content: string }>;
+  answer?: string;
+}
+
+// Common strategy interface — each provider implements search() and reports
+// whether it is currently available (e.g. API key present).
+interface SearchProvider {
+  name: string;
+  available(): boolean;
+  search(query: string, maxResults: number, fetchCount: number): Promise<SearchProviderResult | null>;
+}
+
+const SEARCH_PROVIDERS: SearchProvider[] = [
+  {
+    name: 'Tavily',
+    available: () => !!getTavilyApiKey(),
+    search: async (query, max, fetchCount) => {
+      const r = await searchTavily(query, max);
+      return { results: r.results, sources: r.sources.slice(0, fetchCount), answer: r.answer };
+    }
+  },
+  {
+    name: 'Serper',
+    available: () => !!getSerperApiKey(),
+    search: async (query, max) => {
+      const r = await searchSerper(query, max);
+      const sources = (r.topContent && r.topContent.content.length > 50) ? [r.topContent] : [];
+      return { results: r.results, sources };
+    }
+  },
+  {
+    name: 'DDG Instant',
+    available: () => true,
+    search: async (query, _max, fetchCount) => {
+      const r = await searchDDGInstant(query);
+      if (!r) return null;
+      // Instant answer with no related topics — synthesise a single result so
+      // the payload always has something for the LLM to work with.
+      const results = r.results.length > 0
+        ? r.results
+        : r.answer
+          ? [{ title: 'Instant Answer', url: 'https://duckduckgo.com', snippet: r.answer }]
+          : [];
+      if (results.length === 0) return null;
+      return { results, sources: r.sources.slice(0, fetchCount), answer: r.answer };
+    }
+  },
+  {
+    name: 'DuckDuckGo',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchDuckDuckGo(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  },
+  {
+    name: 'Google',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchGoogle(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  },
+  {
+    name: 'Brave',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchBrave(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  }
+];
+
 // ============= TOOL HANDLERS =============
 
 export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> => {
@@ -768,95 +845,28 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     if (cached) {
       return { success: true, result: { ...cached }, fromCache: true } as any;
     }
+
+    const fetchResultCount = Math.min(Math.max(1, args.fetchResultCount || 3), 5);
+
+    // Try each provider in order until one returns results.
     let results: Array<{ title: string; url: string; snippet: string }> = [];
     let tavilyAnswer: string | undefined;
     let tavilySources: Array<{ url: string; title: string; content: string }> = [];
-    const fetchResultCount = Math.min(Math.max(1, args.fetchResultCount || 3), 5);
 
-    // Try Tavily first if API key is configured (best quality, AI-optimized)
-    const hasTavily = !!getTavilyApiKey();
-    if (hasTavily) {
+    for (const provider of SEARCH_PROVIDERS) {
+      if (!provider.available()) continue;
       try {
-        console.log('[SADIE Web] Trying Tavily (primary)...');
-        const tavilyResult = await searchTavily(query, maxResults);
-        results = tavilyResult.results;
-        tavilyAnswer = tavilyResult.answer;
-        tavilySources = tavilyResult.sources.slice(0, fetchResultCount);
-        if (results.length > 0) {
-          console.log(`[SADIE Web] Tavily returned ${results.length} results, ${tavilySources.length} with content`);
+        console.log(`[SADIE Web] Trying ${provider.name}...`);
+        const providerResult = await provider.search(query, maxResults, fetchResultCount);
+        if (providerResult && providerResult.results.length > 0) {
+          results = providerResult.results;
+          tavilySources = providerResult.sources;
+          if (providerResult.answer) tavilyAnswer = providerResult.answer;
+          console.log(`[SADIE Web] ${provider.name} returned ${results.length} results`);
+          break;
         }
       } catch (err: any) {
-        console.log(`[SADIE Web] Tavily failed: ${err.message}`);
-      }
-    }
-
-    // Try Serper.dev if Tavily unavailable/failed and Serper key is configured
-    if (results.length === 0 && getSerperApiKey()) {
-      try {
-        console.log('[SADIE Web] Trying Serper.dev (secondary)...');
-        const serperResult = await searchSerper(query, maxResults);
-        results = serperResult.results;
-        if (serperResult.topContent && serperResult.topContent.content.length > 50) {
-          tavilySources = [serperResult.topContent];
-        }
-        if (results.length > 0) {
-          console.log(`[SADIE Web] Serper returned ${results.length} results`);
-        }
-      } catch (err: any) {
-        console.log(`[SADIE Web] Serper failed: ${err.message}`);
-      }
-    }
-
-    // DDG Instant Answer API — free structured JSON, no key needed.
-    // Use when no paid API key is configured OR as a supplement to add an
-    // authoritative abstract (often Wikipedia-sourced) alongside scraper results.
-    if (results.length === 0) {
-      try {
-        console.log('[SADIE Web] Trying DDG Instant Answer API (free)...');
-        const ddgInstant = await searchDDGInstant(query);
-        if (ddgInstant) {
-          if (ddgInstant.results.length > 0) {
-            results = ddgInstant.results;
-            tavilySources = ddgInstant.sources.slice(0, fetchResultCount);
-            console.log(`[SADIE Web] DDG Instant returned ${results.length} results`);
-          } else if (ddgInstant.answer) {
-            // Instant answer with no related topics (e.g. math/factual queries).
-            // Create a synthetic result so the payload includes the answer.
-            results = [{ title: 'Instant Answer', url: 'https://duckduckgo.com', snippet: ddgInstant.answer }];
-            console.log('[SADIE Web] DDG Instant answer-only: created synthetic result');
-          }
-          // Always capture the instant answer if present (e.g. 'speed of light = X')
-          if (ddgInstant.answer) {
-            tavilyAnswer = ddgInstant.answer;
-            console.log('[SADIE Web] DDG Instant answer captured');
-          }
-        }
-      } catch (err: any) {
-        console.log(`[SADIE Web] DDG Instant failed: ${err.message}`);
-      }
-    }
-
-    // Fallback to scraping-based engines if API providers unavailable or returned nothing
-    if (results.length === 0) {
-      const searchEngines = [
-        { name: 'DuckDuckGo', fn: searchDuckDuckGo },
-        { name: 'Google', fn: searchGoogle },
-        { name: 'Brave', fn: searchBrave }
-      ];
-      
-      for (const engine of searchEngines) {
-        try {
-          console.log(`[SADIE Web] Trying ${engine.name}...`);
-          results = await engine.fn(query, maxResults);
-          
-          if (results.length > 0) {
-            console.log(`[SADIE Web] ${engine.name} returned ${results.length} results`);
-            break;
-          }
-        } catch (err: any) {
-          console.log(`[SADIE Web] ${engine.name} failed: ${err.message}`);
-          continue;
-        }
+        console.log(`[SADIE Web] ${provider.name} failed: ${err.message}`);
       }
     }
     
