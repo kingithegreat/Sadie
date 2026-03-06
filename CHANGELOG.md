@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.6 — isSmallModel tests + phi regex fix
+
+### Added
+- **`isSmallModel` / `getSystemPromptForModel` unit tests** (`__tests__/model-prompt-selection.test.ts`): 36 cases covering small/large model classification, compact vs full prompt selection, and guidelines injection.
+
+### Fixed
+- **Latent regex bug in `isSmallModel`**: `phi[- ]?[123]` matched the family prefix regardless of downstream size tag, so `phi3:14b` was incorrectly treated as small. Pattern updated to `phi[- ]?[0-9]?[- ]?mini` so only explicit mini variants qualify; `:3b` size-tag rule still catches `phi3:3b`.
+
 ## v0.9.5 — Model-aware prompts and memory path fix
 
 ### Fixed
