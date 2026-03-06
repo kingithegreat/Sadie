@@ -53,7 +53,7 @@ describe('clipboardWriteHandler', () => {
   test('requires text arg', async () => {
     // No exec needed; validation happens before exec
     mockPS('');
-    const res = await clipboardWriteHandler({ text: undefined }, {} as any);
+    await clipboardWriteHandler({ text: undefined }, {} as any);
     // text is coerced to 'undefined' string — still works but let's check empty string
     const resEmpty = await clipboardWriteHandler({ text: '' }, {} as any);
     // Should still succeed (empty clipboard write is valid)

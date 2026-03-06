@@ -76,46 +76,16 @@ const TokenCounter: React.FC<TokenCounterProps> = ({ messages, model }) => {
     <div
       className="token-counter"
       title={`~${remaining.toLocaleString()} tokens remaining of ${limit.toLocaleString()} (used ~${estTokens.toLocaleString()}, estimated via chars ÷ 4)`}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '2px 10px',
-        borderRadius: 8,
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        fontSize: 11,
-        color: '#aaa',
-        userSelect: 'none',
-        whiteSpace: 'nowrap',
-        minWidth: 130,
-      }}
+      style={{ '--token-color': color, '--token-bar-width': `${pctDisplay}%` } as React.CSSProperties}
     >
       {/* Depletion bar: fills as context fills up */}
-      <div
-        style={{
-          width: 48,
-          height: 4,
-          borderRadius: 2,
-          background: 'rgba(255,255,255,0.12)',
-          overflow: 'hidden',
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            width: `${pctDisplay}%`,
-            height: '100%',
-            background: color,
-            borderRadius: 2,
-            transition: 'width 300ms ease, background 300ms ease',
-          }}
-        />
+      <div className="token-bar-track">
+        <div className="token-bar-fill" />
       </div>
-      <span style={{ color, fontWeight: 500 }}>
+      <span className="token-remaining">
         ~{fmtNum(remaining)}
       </span>
-      <span style={{ color: '#555' }}>left</span>
+      <span className="token-label">left</span>
     </div>
   );
 };

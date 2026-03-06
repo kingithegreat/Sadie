@@ -1473,6 +1473,12 @@ body {
 .flex { display: flex; }
 .justify-end { justify-content: flex-end; }
 .token-counter-bar { display: flex; justify-content: flex-end; padding: 2px 12px 0; background: transparent; }
+/* ── TokenCounter component styles ───────────────────────────────────────── */
+.token-counter { display: flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #aaa; user-select: none; white-space: nowrap; min-width: 130px; }
+.token-bar-track { width: 48px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; flex-shrink: 0; }
+.token-bar-fill { width: var(--token-bar-width, 0%); height: 100%; background: var(--token-color, #34c759); border-radius: 2px; transition: width 300ms ease, background 300ms ease; }
+.token-remaining { color: var(--token-color, #34c759); font-weight: 500; }
+.token-label { color: #555; }
 
 /* ── SettingsPanel extracted inline styles ────────────────────────────────── */
 .sp-hint-mb { margin-bottom: 8px; }

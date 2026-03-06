@@ -153,7 +153,7 @@ describe('webSearchHandler — DDG Instant fallback', () => {
       query: 'us iran war 2026 test-ddg-fallback',
       maxResults: 5,
       fetchTopResult: false, // avoid second round of fetches
-    });
+    }, {} as any);
 
     expect(result.success).toBe(true);
     const r = (result as any).result;
@@ -182,7 +182,7 @@ describe('webSearchHandler — DDG Instant fallback', () => {
       query: 'speed of light test-ddg-answer',
       maxResults: 3,
       fetchTopResult: false,
-    });
+    }, {} as any);
 
     expect(result.success).toBe(true);
     const r = (result as any).result;
@@ -207,7 +207,7 @@ describe('webSearchHandler — DDG Instant fallback', () => {
       query: 'xyzzy-nonexistent-query-test-empty',
       maxResults: 3,
       fetchTopResult: false,
-    });
+    }, {} as any);
 
     expect(result.success).toBe(true);
     const r = (result as any).result;
@@ -249,7 +249,7 @@ describe('webSearchHandler — Tavily priority', () => {
       query: 'iran war tavily-priority-test',
       maxResults: 3,
       fetchTopResult: false,
-    });
+    }, {} as any);
 
     expect(result.success).toBe(true);
     const r = (result as any).result;

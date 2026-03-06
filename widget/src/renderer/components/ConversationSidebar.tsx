@@ -160,6 +160,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                 {editingId === conv.id ? (
                   <input
                     className="edit-title-input"
+                    aria-label="Edit conversation title"
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
                     onBlur={() => handleSaveEdit(conv.id)}

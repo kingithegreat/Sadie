@@ -3,8 +3,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
 // Mock fs so we don't write to disk during tests
 jest.mock('fs', () => ({
