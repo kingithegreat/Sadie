@@ -1,6 +1,6 @@
 {
   "name": "sadie-tool-registry",
-  "version": "0.8.1",
+  "version": "0.9.6",
   "description": "Standalone ToolRegistry module for SADIE",
   "main": "src/toolRegistry.ts",
   "scripts": {

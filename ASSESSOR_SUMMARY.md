@@ -1,7 +1,7 @@
 # SADIE Assessor Summary
 
-> **Version**: v0.9.6 (March 7, 2026)
-> **Test Results**: 422/422 unit tests passing · 12/12 E2E tests passing · 16/16 n8n workflows active  
+> **Version**: v0.9.7 (March 7, 2026)
+> **Test Results**: 463/463 unit tests passing · 12/12 E2E tests passing · 16/16 n8n workflows active  
 > **Full API Reference**: [docs/api-reference.md](docs/api-reference.md) — IPC channels, tool schemas, permission system (818 lines)
 
 ## What is SADIE?
@@ -45,7 +45,7 @@ SADIE (Sophisticated AI Desktop Interactive Environment) is a cross-platform Ele
 ## How Testing Validates All Functionality
 
 ### Test Coverage Strategy
-- **Unit Tests (Jest)**: 418 tests passing, validating all tools, IPC handlers, security, streaming, and config components
+- **Unit Tests (Jest)**: 463 tests passing, validating all tools, IPC handlers, security, streaming, and config components
 - **E2E Tests (Playwright)**: 12 tests passing — complete user workflow validation including first-run, streaming chat, config persistence, and error recovery
 - **Integration Tests**: IPC communication and component interaction verification
 - **Security Tests**: Runtime hardening and attack vector validation
@@ -87,7 +87,7 @@ SADIE (Sophisticated AI Desktop Interactive Environment) is a cross-platform Ele
 ## Engineering Quality Assessment
 
 SADIE demonstrates professional-grade software engineering with:
-- **Comprehensive Testing**: 418 unit + 12 E2E tests, all passing (100% pass rate)
+- **Comprehensive Testing**: 463 unit + 12 E2E tests, all passing (100% pass rate)
 - **Security-First Design**: Defense-in-depth with multiple protection layers
 - **Production Readiness**: CI/CD pipeline with integrity guarantees
 - **Maintainable Architecture**: Modular design with clear separation of concerns

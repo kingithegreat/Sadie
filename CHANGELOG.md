@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.7 — NBA NZ/AU timezone tests + installer + docs sync
+
+### Added
+- **NBA NZ/AU timezone edge-case tests** (`__tests__/nba-nz-timezone.test.ts`): 5 tests covering the `wantsResults` previous-day fallback — fires when today's games are all pre-game, skips when `wantsResults=false`, falls back gracefully when yesterday also has no finished games or network fails, and does not fire when live games are in progress.
+- **Windows NSIS installer** (`dist-electron/SADIE Setup 0.9.6.exe`, 148 MB): `npm run dist` now correctly passes `--config ../electron-builder.yml`; per-user install, custom directory chooser, desktop + start menu shortcuts.
+
+### Fixed
+- `widget/package.json` and root `package.json` version bumped to `0.9.6` (were `0.8.1`).
+- ASSESSOR_SUMMARY test counts synced to 463/463.
+
 ## v0.9.6 — isSmallModel tests + phi regex fix
 
 ### Added
