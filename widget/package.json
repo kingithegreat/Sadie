@@ -1,6 +1,6 @@
 {
   "name": "sadie-widget",
-  "version": "0.8.1",
+  "version": "0.9.6",
   "description": "SADIE - Structured AI Desktop Intelligence Engine Widget",
   "main": "out/main/index.js",
   "type": "commonjs",
@@ -15,7 +15,7 @@
     "build": "electron-vite build",
     "dev": "electron-vite dev",
     "predist": "powershell -NoProfile -ExecutionPolicy Bypass -File \"..\\scripts\\generate-icon.ps1\"",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --config ../electron-builder.yml",
     "postinstall": "electron-builder install-app-deps",
     "e2e:install": "playwright install --with-deps",
     "e2e": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test",
