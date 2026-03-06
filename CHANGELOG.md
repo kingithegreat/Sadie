@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.9.2 — n8n workflow activation: all 16 workflows live
+
+### Fixed
+- **All 16 n8n workflows now activate on startup**: Replaced `n8n-nodes-base.start` (ignored by
+  `checkIfWorkflowCanBeActivated`) with `n8n-nodes-base.webhook` (typeVersion 1.1) as the trigger
+  node in all 10 tool workflows.
+- **Switch node schema mismatch** (`memory-manager`, `vision-tool`): Upgraded `n8n-nodes-base.switch`
+  typeVersion 1 → 3 in both `workflow_entity` and `workflow_history`. The v1 schema's
+  `getNodeParameters` threw "Could not find property option" for v3-format parameters stored in the
+  DB, preventing the Workflow constructor from completing.
+- **WorkflowHistoryService crash**: Added `N8N_WORKFLOW_HISTORY_ENABLED=false` to `docker-compose.yml`
+  to prevent the history service from crashing on startup.
+
+### Changed
+- All 10 tool workflow source JSONs in `n8n-workflows/tools/` updated to match the working DB state
+  (webhook triggers, correct Switch typeVersion).
+
+---
+
 ## v0.9.1 — Phase 6 hardening: search refactor, docs, UX polish
 
 ### Changed
