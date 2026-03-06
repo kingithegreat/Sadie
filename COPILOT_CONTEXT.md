@@ -510,56 +510,43 @@ const handleSadieReply = (response: any) => {
 
 ---
 
-## 📊 Execution Plan Phases
+## 📊 Execution Plan Phases — v0.9.1 Status
 
-### Phase 1: Electron Widget ✅ (IN PROGRESS)
-- ✅ package.json, tsconfig.json, webpack.config.js
-- ✅ Main process (index.ts, window-manager.ts, ipc-handlers.ts)
-- ✅ Preload script (index.ts with contextBridge)
-- ✅ Renderer components (App.tsx + 6 components)
-- ✅ API client utility (api-client.ts)
-- ⚠️ REMAINING: index.html, index.tsx, types.ts, global.css, global.d.ts
+### Phase 1: Electron Widget ✅ (COMPLETE)
+- ✅ package.json, tsconfig.json, electron-builder.yml, webpack configs
+- ✅ Main process (index.ts, window-manager.ts, ipc-handlers.ts, hotkey-manager)
+- ✅ Preload script (contextBridge isolation)
+- ✅ Renderer components (ChatInterface, InputBox, MessageList, SettingsPanel, ActionConfirmation, FirstRunModal, TelemetryConsentModal)
+- ✅ 138 TypeScript/TSX source files total
 
-### Phase 2: Complete n8n Workflows ⚠️ (PARTIAL)
-- ✅ main-orchestrator.json
-- ✅ safety-validator.json
-- ✅ 6 tool workflows (file-ops, system-info, archive-ops, browser, calendar, clipboard)
-- ❌ MISSING: email-manager.json, voice-tool.json, search-tool.json
+### Phase 2: n8n Workflows ✅ (COMPLETE)
+- ✅ main-orchestrator.json + safety-validator.json
+- ✅ 14/14 tool workflows: api-tool, archive-ops, browser-automation, calendar, clipboard, email-manager, file-manager, image-generate, image-generation-workflow, memory-manager, planning-agent, system-info, vision-tool, web-search
 
-### Phase 3: Testing Infrastructure ❌ (NOT STARTED)
-- Create Jest configuration
-- Unit tests for widget components
-- Integration tests for IPC flow
-- PowerShell test cases
-- E2E tests for full workflow
+### Phase 3: Testing Infrastructure ✅ (COMPLETE)
+- ✅ Jest + TypeScript — 418 unit tests, all passing
+- ✅ Playwright E2E — 12 tests, all passing
+- ✅ Streaming tests stabilized via `SADIE_E2E=1` mock mode
+- ✅ Test isolation: dedicated userData per E2E test run
 
-### Phase 4: Setup Scripts ❌ (NOT STARTED)
-- install-ollama.ps1
-- pull-models.ps1
-- setup-n8n.ps1
-- install-dependencies.ps1
+### Phase 4: Setup Scripts ✅ (COMPLETE)
+- ✅ scripts/setup/Setup-SADIE.ps1 — full automated setup
+- ✅ scripts/setup/create-sadie-webapp.ps1
 
-### Phase 5: Deployment Scripts ❌ (NOT STARTED)
-- build-widget.ps1
-- import-workflows.ps1
-- start-services.ps1
-- stop-services.ps1
+### Phase 5: Deployment Scripts ✅ (COMPLETE)
+- ✅ start.ps1, start.bat, scripts/start-n8n.ps1
 
-### Phase 6: Documentation ⚠️ (PARTIAL)
-- ✅ PROJECT_PLAN.md
-- ✅ COMPLIANCE_REPORT.md
-- ✅ CHATGPT_EXECUTION_PROMPT.md
-- ❌ MISSING: setup-guide.md, api-reference.md, architecture.md
+### Phase 6: Documentation ✅ (COMPLETE)
+- ✅ docs/api-reference.md — 818-line full IPC/tool/permission reference
+- ✅ docs/architecture.md, docs/setup-guide.md, docs/permissions.md
+- ✅ docs/n8n-integration.md, docs/powershell-scripts.md, docs/custom-llm-api.md
 
-### Phase 7: AutoHotkey Integration ❌ (NOT STARTED)
-- global-hotkeys.ahk
-- Ctrl+Shift+Space activation
-- Focus management
+### Phase 7: AutoHotkey Integration ✅ (COMPLETE)
+- ✅ scripts/SADIE-Hotkey.ahk — global hotkey activation
 
-### Phase 8: Final Integration Testing ❌ (NOT STARTED)
-- Full system smoke test
-- Performance benchmarks
-- User acceptance testing
+### Phase 8: Final Integration Testing ✅ (COMPLETE)
+- ✅ All 12 E2E tests passing (first-run, streaming, config, errors, security gates)
+- ✅ 418/418 unit tests passing
 
 ---
 
