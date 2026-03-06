@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.9.1 — Phase 6 hardening: search refactor, docs, UX polish
+
+### Changed
+- **`web_search` provider registry** (`web.ts`): replaced the 4-branch ad-hoc cascade with a
+  typed `SearchProvider` interface + `SEARCH_PROVIDERS` registry (Tavily → Serper → DDG Instant →
+  DuckDuckGo → Google → Brave). Single `for` loop replaces ~80 lines of duplicated `if` blocks.
+- **`isE2E` isolation fix** (`env.ts`): removed `NODE_ENV === 'test'` from the `isE2E` constant.
+  The flag now only activates when `SADIE_E2E=1|true` is explicitly set (all Playwright specs
+  already do this). Unit tests no longer see `isE2E=true`, so the n8n probe fires correctly →
+  418/418 unit tests now pass (was 417/418 pre-existing failure).
+- **Permission toggles** (`SettingsPanel.tsx`): dangerous tools (`delete_file`, `move_file`,
+  `launch_app`, `screenshot`) now show a ⚠ amber icon inline in the label and render their
+  description text in amber. Tooltip (`title` attr) gives hover / screen-reader context.
+- **Telemetry label** (`SettingsPanel.tsx`): updated from "required, anonymous" → "anonymous,
+  opt-in". A privacy hint is added below: clarifies events are stored locally only, nothing
+  leaves the device, and consent can be reviewed/revoked in the Telemetry Consent Log.
+
+### Added
+- **`docs/api-reference.md`**: full reference for the IPC channel surface (~50 channels), all
+  tool schemas (filesystem, web, system, memory, voice, sports/NBA, documents) with parameter
+  tables and return shapes, the permission system (persistent settings, confirmation-gated tools,
+  allow-once / always-allow, batch fail-fast), safety rules / path restrictions, and all shared
+  TypeScript types.
+
+### Fixed
+- **E2E streaming suite** (12/12 pass): n8n probe guard, hydration race, async write-queue dedup,
+  auto-title clobber, write-through cache, and inline conversation prompt — all stabilised in the
+  preceding session (committed `1728ba0`).
+
+---
+
 ## v0.9.0 — Search, Planning & API Tools
 
 ### Added
