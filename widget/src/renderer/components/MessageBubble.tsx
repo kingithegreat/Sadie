@@ -361,8 +361,12 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
       <div className="message-text markdown-body">
         {segments.map((seg, idx) => {
           if (idx === 0) {
-            // Text before the first image token (may be empty)
-            return seg.trim() ? <React.Fragment key={idx}>{renderMarkdown(seg)}</React.Fragment> : null;
+            // Text before the first image token — strip the ⏳ progress line if present
+            const cleaned = seg
+              .split('\n')
+              .filter(line => !line.trimStart().startsWith('⏳ Generating image'))
+              .join('\n');
+            return cleaned.trim() ? <React.Fragment key={idx}>{renderMarkdown(cleaned)}</React.Fragment> : null;
           }
           // Each subsequent segment starts with the raw base64 data; the rest is text
           const newline = seg.indexOf('\n');
