@@ -428,7 +428,18 @@ const electronAPI: ElectronAPI = {
   mcpGetStatus: async () => ipcRenderer.invoke('sadie:mcp-get-status'),
   mcpAddServer: async (config: any) => ipcRenderer.invoke('sadie:mcp-add-server', config),
   mcpRemoveServer: async (name: string) => ipcRenderer.invoke('sadie:mcp-remove-server', name),
-  mcpToggleServer: async (name: string, enabled: boolean) => ipcRenderer.invoke('sadie:mcp-toggle-server', name, enabled)
+  mcpToggleServer: async (name: string, enabled: boolean) => ipcRenderer.invoke('sadie:mcp-toggle-server', name, enabled),
+
+  // Auto-generate a conversation title from the first user+assistant exchange
+  generateTitle: async (args: { conversationId: string; userMessage: string; assistantReply: string }) =>
+    ipcRenderer.invoke('sadie:generate-title', args),
+
+  // Subscribe to title-updated push events from main process
+  onTitleUpdated: (cb: (data: { conversationId: string; title: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { conversationId: string; title: string }) => cb(data);
+    ipcRenderer.on('sadie:title-updated', handler);
+    return () => ipcRenderer.removeListener('sadie:title-updated', handler);
+  },
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.

@@ -72,6 +72,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
+  // Track which conversations have had a title generated to avoid duplicates
+  const titleGeneratedRef = useRef<Set<string>>(new Set());
   const [settings, setSettings] = useState<SharedSettings>({
     alwaysOnTop: true,
     n8nUrl: 'http://localhost:5678',
@@ -202,10 +204,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }]);
     });
 
+    // Subscribe to title updates pushed from main (keeps sidebar title in sync)
+    const titleUnsub = window.electron.onTitleUpdated?.((data) => {
+      // Dispatch a custom DOM event so ConversationSidebar can patch its local list
+      window.dispatchEvent(new CustomEvent('sadie:title-updated', { detail: data }));
+    });
+
     return () => {
       unsubscribe?.();
       permUnsub?.();
       reminderUnsub?.();
+      titleUnsub?.();
     };
   }, []);
 
@@ -220,6 +229,31 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     window.addEventListener('sadie:capture-saved', onSaved as EventListener);
     return () => window.removeEventListener('sadie:capture-saved', onSaved as EventListener);
   }, [newId]);
+
+  // Auto-generate conversation title after the first assistant reply finishes
+  useEffect(() => {
+    if (!conversationId) return;
+    // Already generated for this conversation — skip
+    if (titleGeneratedRef.current.has(conversationId)) return;
+
+    const nonSystem = messages.filter(m => m.role !== 'system');
+    const userMsgs = nonSystem.filter(m => m.role === 'user');
+    const assistantMsgs = nonSystem.filter(m => m.role === 'assistant');
+
+    // Trigger exactly once: first user + first assistant reply that has finished streaming
+    if (userMsgs.length !== 1 || assistantMsgs.length !== 1) return;
+    const assistant = assistantMsgs[0];
+    if (assistant.streamingState && assistant.streamingState !== 'finished') return;
+    if (!assistant.content || assistant.content.length < 10) return;
+
+    titleGeneratedRef.current.add(conversationId);
+
+    window.electron.generateTitle?.({
+      conversationId,
+      userMessage: userMsgs[0].content || '',
+      assistantReply: assistant.content,
+    }).catch(() => { /* best-effort, silent fail */ });
+  }, [messages, conversationId]);
 
   /**
    * Load user settings from main process

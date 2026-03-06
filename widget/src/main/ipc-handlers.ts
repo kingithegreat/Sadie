@@ -533,6 +533,60 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   /**
+   * Auto-generate a short conversation title from the first exchange.
+   * Calls Ollama non-streaming with a minimal prompt, saves to memory,
+   * and pushes the result back to the renderer via sadie:title-updated.
+   */
+  ipcMain.handle('sadie:generate-title', async (_event, {
+    conversationId,
+    userMessage,
+    assistantReply,
+  }: { conversationId: string; userMessage: string; assistantReply: string }) => {
+    try {
+      const settings = getSettings();
+      const ollamaBase = (process.env.OLLAMA_URL || (settings as any).ollamaUrl || DEFAULT_OLLAMA_URL).trim();
+      const model = settings.chatModel || 'llama3.2:3b';
+
+      // Trim inputs so the title prompt stays tiny
+      const userSnippet = userMessage.slice(0, 200);
+      const assistantSnippet = assistantReply.slice(0, 200);
+
+      const prompt =
+        `Generate a short conversation title (4-6 words max, no punctuation, no quotes) that captures what this exchange is about.\n` +
+        `User: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:`;
+
+      const resp = await axios.post(
+        `${ollamaBase}/api/generate`,
+        { model, prompt, stream: false, options: { temperature: 0.3, num_predict: 20 } },
+        { timeout: 8000 }
+      );
+
+      let title: string = resp.data?.response ?? '';
+      // Sanitise: strip surrounding quotes, newlines, leading/trailing whitespace, cap length
+      title = title.replace(/^["'\s]+|["'\s]+$/g, '').replace(/\n.*/g, '').trim();
+      if (!title || title.length < 2) return { success: false, error: 'Empty title response' };
+      if (title.length > 60) title = title.slice(0, 57) + '…';
+
+      // Persist to conversation store
+      const conv = MemoryManager.getConversation(conversationId);
+      if (conv) {
+        conv.title = title;
+        MemoryManager.saveConversation(conv);
+      }
+
+      // Push to renderer so sidebar updates live
+      const win = mainWindow ?? getMainWindow();
+      win?.webContents.send('sadie:title-updated', { conversationId, title });
+
+      return { success: true, title };
+    } catch (err: any) {
+      // Non-fatal: title generation is best-effort
+      console.warn('[IPC] generate-title failed:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
    * Open a file in the system default application
    */
   ipcMain.handle('sadie:open-file', async (_event, filePath: string) => {

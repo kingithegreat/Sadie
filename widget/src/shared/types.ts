@@ -258,4 +258,8 @@ export interface ElectronAPI {
   ragList?: () => Promise<{ success: boolean; result?: { total_documents: number; total_chunks: number; documents: Array<{ doc_id: string; filename: string; chunk_count: number }> }; error?: string }>;
   // RAG: remove a document from the index by doc_id
   ragClear?: (docId: string) => Promise<{ success: boolean; result?: { removed_chunks: number; message: string }; error?: string }>;
+  // Auto-generate a short title for a conversation from the first exchange
+  generateTitle?: (args: { conversationId: string; userMessage: string; assistantReply: string }) => Promise<{ success: boolean; title?: string; error?: string }>;
+  // Push event: fires when main process updates a conversation title
+  onTitleUpdated?: (cb: (data: { conversationId: string; title: string }) => void) => () => void;
 }

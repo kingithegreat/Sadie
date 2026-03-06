@@ -54,6 +54,19 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     }
   }, [isOpen, loadConversations]);
 
+  // Patch title in local list when main process auto-generates one
+  useEffect(() => {
+    const onTitleUpdated = (e: Event) => {
+      const { conversationId, title } = (e as CustomEvent).detail ?? {};
+      if (!conversationId || !title) return;
+      setConversations(prev =>
+        prev.map(c => c.id === conversationId ? { ...c, title } : c)
+      );
+    };
+    window.addEventListener('sadie:title-updated', onTitleUpdated);
+    return () => window.removeEventListener('sadie:title-updated', onTitleUpdated);
+  }, []);
+
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Delete this conversation?')) {
