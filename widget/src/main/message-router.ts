@@ -301,6 +301,50 @@ function mapErrorToSadieResponse(error: any): SadieResponse {
   };
 }
 
+// ── Music link helpers ──────────────────────────────────────────────────────
+
+/**
+ * Extracts a list of song (or track) titles from a message that contains a
+ * numbered/bulleted list.  Lines that look like navigation / intent text are
+ * filtered out so only actual song entries are returned.
+ */
+function extractSongList(text: string): string[] {
+  const songs: string[] = [];
+  for (const rawLine of text.split('\n')) {
+    // Match lines that start with: "1." / "1)" / "•" / "-" / "*"
+    const match = rawLine.match(/^\s*(?:\d+[\.\)]\s*|[-•*]\s*)\*{0,2}(.+?)\*{0,2}\s*$/);
+    if (!match) continue;
+    const song = match[1].replace(/\*\*/g, '').trim();
+    // Filter out non-song-looking lines (navigation text, headers, etc.)
+    if (
+      song.length < 3 || song.length > 120 ||
+      /^(give|youtube|spotify|music|link|google|search|please|here|these|songs?|can |could |i want|the links|watch|listen|find)/i.test(song)
+    ) continue;
+    songs.push(song);
+  }
+  return songs;
+}
+
+/**
+ * Builds a formatted markdown response with YouTube search links for each song.
+ */
+export function buildMusicLinksResponse(songs: string[]): string {
+  if (!songs || songs.length === 0) {
+    return (
+      "I couldn't find a song list in your message. " +
+      "Please list the songs you'd like YouTube links for, e.g.:\n" +
+      "```\n1. Song Name - Artist\n2. Another Song - Artist\n```"
+    );
+  }
+  const links = songs.map((song: string) => {
+    const q = encodeURIComponent(song);
+    return `- [${song}](https://www.youtube.com/results?search_query=${q})`;
+  });
+  return `🎵 **YouTube Search Links**\n\n${links.join('\n')}\n\n_Click any link to open the YouTube search for that song._`;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+
 // Exported deterministic intent router so it can be used by the message handler
 // and imported directly by unit tests.
 export async function preProcessIntent(userMessage: string): Promise<{ calls: any[] } | null> {
@@ -380,11 +424,30 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     }
   }
 
+  // ── MUSIC LINK INTENT — build YouTube search URLs from a song list ──
+  // Must be BEFORE NBA so a message like "give me YouTube links for these songs" (which
+  // might contain pasted NBA team names as context) routes here instead.
+  const wantsMusicLinks =
+    (/\b(youtube|spotify|apple\s*music|soundcloud)\b/i.test(m) && /\blinks?\b/i.test(m)) ||
+    (/\blinks?\b/i.test(m) && /\b(songs?|tracks?|music)\b/i.test(m) && /\b(youtube|spotify|streaming|online)\b/i.test(m));
+  if (wantsMusicLinks) {
+    const songs = extractSongList(userMessage);
+    return { calls: [{ name: '__music_links', arguments: { songs, query: userMessage } }] };
+  }
+
   // SPORTS / NBA intents - match team names and basketball terms
   const nbaTeams = ['warriors', 'lakers', 'celtics', 'bulls', 'heat', 'nets', 'knicks', 'suns', 'bucks', 'nuggets', 
                    'clippers', 'spurs', 'rockets', 'mavericks', 'thunder', 'jazz', 'kings', 'pelicans', 'grizzlies',
                    'hawks', 'hornets', 'cavaliers', 'pistons', 'pacers', 'magic', 'wizards', 'raptors', 'timberwolves', 'blazers', '76ers', 'sixers'];
   const hasNbaTeam = nbaTeams.some(team => new RegExp(`\\b${team}\\b`, 'i').test(m));
+
+  // Guard: treat bare team-name matches as NBA intent only for short/direct queries.
+  // Long messages often contain NBA data as pasted context (e.g. previous responses)
+  // but the actual user intent (at the end) may be completely different.
+  // Also suppress NBA routing when clear music/content signals are present.
+  const hasMusicOrContentIntent = /\b(song(s)?|music|rap|hip.?hop|artist|album|track|playlist|lyrics|links?)\b/i.test(m);
+  const nbaTeamIsIntent = hasNbaTeam && !hasMusicOrContentIntent &&
+    (m.length < 300 || /\b(play(ed|ing)?|game|score|won|beat|vs\.?|versus|match|result|roster|stat)\b/i.test(m));
 
   // Helper: return YYYYMMDD string for America/New_York timezone + optional day offset
   const getEtDate = (dayOffset = 0): string => {
@@ -394,11 +457,11 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   };
   
   // STANDINGS: check before the general NBA block to avoid falling through to 'games'
-  if (/\b(nba|basketball)\b/i.test(m) && /\bstanding(s)?\b/i.test(m)) {
+  if (/\b(nba|basketball)\b/i.test(m) && /\bstanding(s)?\b/i.test(m) && !hasMusicOrContentIntent) {
     return { calls: [{ name: 'nba_query', arguments: { type: 'standings' } }] };
   }
 
-  if (hasNbaTeam || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) {
+  if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) && !hasMusicOrContentIntent) {
     let teamQuery = '';
     for (const team of nbaTeams) {
       if (m.includes(team)) { teamQuery = team; break; }
@@ -2074,6 +2137,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
               let toolResults: any[] | null = null;
 
+            // ── MUSIC LINKS: no external tool needed — construct YouTube URLs directly ──
+            if (intentResult.calls[0]?.name === '__music_links') {
+              const { songs } = intentResult.calls[0].arguments;
+              const response = buildMusicLinksResponse(songs);
+              addToHistory(convId, 'assistant', response);
+              try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              activeStreams.delete(streamId);
+              return;
+            }
+            // ── END MUSIC LINKS ──
+
             // COMPOUND INTENT: weather → write_file chain
             const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
             if (isCompound) {
@@ -2942,6 +3017,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               // Execute tools directly without involving the LLM
               try {
+                // ── MUSIC LINKS (n8n path): no external tool needed ──
+                if (intentResult.calls[0]?.name === '__music_links') {
+                  const { songs } = intentResult.calls[0].arguments;
+                  const response = buildMusicLinksResponse(songs);
+                  addToHistory(convId, 'assistant', response);
+                  try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                  activeStreams.delete(streamId);
+                  return;
+                }
+                // ── END MUSIC LINKS ──
+
                 // COMPOUND INTENT: weather → write_file chain (enriched, n8n path)
                 const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
                 if (isCompound) {
