@@ -1150,16 +1150,30 @@ function httpGetBuffer(urlStr: string, timeoutMs = 30000): Promise<Buffer> {
 }
 
 // ── Backend 0: Pollinations.ai (free, no API key required) ───────────────────
+// Cache Pollinations availability so we don't burn an HTTPS round-trip on every
+// image request when the service is known-down.  The "down" state expires after
+// 5 minutes so we transparently recover when Pollinations comes back.
+let _pollinationsLastFailAt = 0;
+const POLLINATIONS_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
+
 async function tryPollinations(prompt: string, width: number, height: number): Promise<string | null> {
+  // Skip quickly if we recently saw a failure
+  if (Date.now() - _pollinationsLastFailAt < POLLINATIONS_BACKOFF_MS) return null;
+
   try {
     const seed = Math.floor(Math.random() * 1e9);
     const encodedPrompt = encodeURIComponent(prompt);
     const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`;
     const buf = await httpGetBuffer(url, 60000);
     // A valid image should be at least a few KB; reject obviously invalid responses
-    if (!buf || buf.length < 1024) return null;
+    if (!buf || buf.length < 1024) {
+      _pollinationsLastFailAt = Date.now();
+      return null;
+    }
+    _pollinationsLastFailAt = 0; // successful — clear any cached failure
     return buf.toString('base64');
   } catch {
+    _pollinationsLastFailAt = Date.now();
     return null;
   }
 }

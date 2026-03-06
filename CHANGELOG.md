@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.4 — Image UX polish and Pollinations availability cache
+
+### Fixed
+- **Progress line persists after image arrives**: `MessageBubble.tsx` now strips any line starting with `⏳ Generating image` from the text segment before the `__SADIE_IMAGE__:` token, so the finished message shows only the image (and any real caption text).
+
+### Changed
+- **Pollinations.ai availability cache** (`web.ts`): After any HTTP failure from Pollinations.ai, the result is cached for 5 minutes (`POLLINATIONS_BACKOFF_MS`). Subsequent `image_generate` calls skip the HTTPS round-trip entirely and go straight to Stable Horde. The cache clears on success so the service is transparently retried when it recovers.
+
+---
+
 ## v0.9.3 — Image generation: Stable Horde backend, API key, progress indicator
 
 ### Fixed
