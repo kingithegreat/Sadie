@@ -1077,17 +1077,17 @@ const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
  * Returns true for models with <=3B parameters based on their name.
  * Small models get the compact system prompt to preserve usable context.
  */
-function isSmallModel(modelName: string): boolean {
+export function isSmallModel(modelName: string): boolean {
   const n = modelName.toLowerCase();
   // Explicit small-size tags
   if (/[:\-_]([1-3]b)\b/.test(n)) return true;
-  // Known small model families
-  if (/\b(phi[- ]?[123]|phi[- ]?mini|gemma:2b|qwen[:\-_]?[0-9]*[:\-_]?[01]\.?[05]b|smollm|tinyllama|tinydolphin)\b/.test(n)) return true;
+  // Known small model families (phi3 alone is NOT small — it ships in 3.8b and 14b; only mini variants qualify)
+  if (/\b(phi[- ]?[0-9]?[- ]?mini|gemma:2b|qwen[:\-_]?[0-9]*[:\-_]?[01]\.?[05]b|smollm|tinyllama|tinydolphin)\b/.test(n)) return true;
   return false;
 }
 
 /** Select the appropriate system prompt based on model size. */
-function getSystemPromptForModel(modelName: string, guidelines?: string): string {
+export function getSystemPromptForModel(modelName: string, guidelines?: string): string {
   const base = isSmallModel(modelName) ? SADIE_SYSTEM_PROMPT_COMPACT : SADIE_SYSTEM_PROMPT;
   return guidelines?.trim() ? `${base}\n\n## User Guidelines\n${guidelines.trim()}` : base;
 }
