@@ -3,6 +3,8 @@ export interface SadieRequest {
   conversation_id: string;
   message: string;
   timestamp?: string;
+  /** Per-conversation system prompt supplied by the renderer (avoids disk read race) */
+  conversationPrompt?: string;
 }
 
 export interface ImageAttachment {

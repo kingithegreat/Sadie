@@ -10,7 +10,9 @@ export async function waitForAppReady(page: Page, opts?: { timeout?: number }) {
   await page.waitForFunction(() => {
     try {
       if (document.body && document.body.hasAttribute && document.body.hasAttribute('data-app-ready')) return true;
-      const anchors = ['[data-testid="sadie-app-root"]', '[data-testid="main-app-root"]', '[data-role="assistant-message"]'];
+      // Prefer the hydrated variant which means conversation init has completed
+      if (document.querySelector('[data-testid="sadie-app-root"][data-hydrated="true"]')) return true;
+      const anchors = ['[data-testid="main-app-root"]', '[data-role="assistant-message"]'];
       return anchors.some(s => Boolean(document.querySelector(s)));
     } catch (e) {
       return false;

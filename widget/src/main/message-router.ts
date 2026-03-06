@@ -1335,7 +1335,7 @@ export async function streamFromOllamaWithTools(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; noTools?: boolean }
+  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string }
 ): Promise<{ cancel: () => void }> {
   // Synthesis calls pass pre-fetched search results — we must NOT offer tools or
   // the LLM will call web_search again, doubling the context and potentially
@@ -1407,9 +1407,12 @@ export async function streamFromOllamaWithTools(
   ensureHydrated(conversationId);
   const history = getHistory(conversationId);
 
-  // If this conversation has a custom system prompt, prepend it to the default
-  const storedConv = MemoryManager.getConversation(conversationId);
-  const convPrompt = storedConv?.systemPrompt?.toString().trim();
+  // If this conversation has a custom system prompt, prepend it to the default.
+  // Prefer the prompt passed inline via options (from renderer state) to avoid
+  // a disk-read race when the IPC save hasn't flushed yet. Fall back to disk.
+  const inlinePrompt = options?.conversationPrompt?.toString().trim();
+  const storedConv = inlinePrompt ? null : MemoryManager.getConversation(conversationId);
+  const convPrompt = inlinePrompt || storedConv?.systemPrompt?.toString().trim();
 
   const messages: ChatMessage[] = [];
   // In uncensored mode skip ALL system prompts so the model runs completely unfiltered
@@ -1760,7 +1763,8 @@ async function streamFromOllama(
   onChunk: (text: string) => void, 
   onEnd: () => void, 
   onError: (err: any) => void,
-  requestConfirmation?: (msg: string) => Promise<boolean>
+  requestConfirmation?: (msg: string) => Promise<boolean>,
+  options?: { conversationPrompt?: string }
 ): Promise<{ cancel: () => void }> {
   return streamFromOllamaWithTools(
     message,
@@ -1771,7 +1775,9 @@ async function streamFromOllama(
     () => {}, // ignore tool results
     onEnd,
     onError,
-    requestConfirmation
+    requestConfirmation,
+    undefined,
+    options
   );
 }
 
@@ -1909,7 +1915,10 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           // the renderer reliably receives the error event instead of staying
           // stuck in 'streaming' state. This check runs only in test mode to
           // avoid additional latency in production runs.
-          if (process.env.NODE_ENV === 'test') {
+          // Skip the probe when isE2E=true: in E2E runs the E2E mock or direct-Ollama
+          // path handles the request — n8n is never contacted, so probing it would
+          // incorrectly abort tests that don't spin up an n8n instance.
+          if (process.env.NODE_ENV === 'test' && !isE2E) {
             try {
               const probe = await axios.get(streamUrl, { timeout: 3000, validateStatus: () => true });
               if (probe && probe.status >= 400) {
@@ -2802,7 +2811,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                           }
               activeStreams.delete(streamId);
             },
-            requestConfirmation // Pass confirmation requester
+            requestConfirmation, // Pass confirmation requester
+            { conversationPrompt: reqAny.conversationPrompt || undefined }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           return;

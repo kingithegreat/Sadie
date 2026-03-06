@@ -185,6 +185,16 @@ export function savePreferences(prefs: Partial<UserPreferences>): UserPreference
 // ============= Conversations =============
 
 export function loadConversationStore(): ConversationStore {
+  // Check in-memory write queue first to avoid stale-disk reads when a write is pending.
+  const filePath = path.join(getMemoryStorePath(), STORE_FILES.conversations);
+  const pending = _writeQueue.get(filePath);
+  if (pending) {
+    try {
+      return JSON.parse(pending.data) as ConversationStore;
+    } catch {
+      // fall through to disk read
+    }
+  }
   return readJsonFile(STORE_FILES.conversations, DEFAULT_CONVERSATION_STORE);
 }
 
@@ -243,10 +253,16 @@ export function createNewConversation(title?: string): StoredConversation {
     createdAt: now,
     updatedAt: now,
   };
-  
-  saveConversation(conversation);
-  setActiveConversation(id);
-  
+
+  // Single atomic write: add conversation AND set it active in one store update.
+  // Previously two separate writes (saveConversation + setActiveConversation) would
+  // race through the async write queue — the second read would see stale disk state
+  // and the deduplication map would silently drop the first write.
+  const store = loadConversationStore();
+  store.conversations.push(conversation);
+  store.activeConversationId = id;
+  saveConversationStore(store);
+
   return conversation;
 }
 

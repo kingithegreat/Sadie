@@ -541,7 +541,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     setMessages(prev => [...prev, userMsg]);
     
     // Persist user message (use created conversation id if we just made one)
-    persistMessage(userMsg, activeConvId ?? undefined);
+    // Await here so the auto-title saveConversation below reads a consistent
+    // snapshot — if we were fire-and-forget, the title save could overwrite
+    // and silently discard the newly-added message.
+    await persistMessage(userMsg, activeConvId ?? undefined);
 
     // Auto-title conversation from first user message
     if (messages.length === 0 && (activeConvId || conversationId) && text) {
@@ -591,6 +594,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       conversation_id: conversationId || 'default',
       message: messageText,
       timestamp: new Date().toISOString(),
+      conversationPrompt: conversationSystemPrompt || undefined,
     };
     if (images && images.length > 0) {
       streamRequest.images = images;
@@ -722,7 +726,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
   return (
-    <div className="app-container">
+    <div className="app-container" data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined}>
       {/* Conversation Sidebar */}
       <ConversationSidebar
         isOpen={sidebarOpen}
