@@ -21,6 +21,7 @@ interface Settings {
   serperApiKey?: string;
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  stableHordeApiKey?: string;
   codeModel?: string;
   codeApiKey?: string;
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
@@ -90,6 +91,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       serperApiKey: source.serperApiKey || '',
       anthropicApiKey: source.anthropicApiKey || '',
       openaiApiKey: source.openaiApiKey || '',
+      stableHordeApiKey: source.stableHordeApiKey || '',
       codeApiKey: source.codeApiKey || '',
       codeApiProvider: source.codeApiProvider || 'openai',
       codeApiUrl: source.codeApiUrl || '',
@@ -297,6 +299,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       serperApiKey: localSettings.serperApiKey?.trim() || undefined,
       anthropicApiKey: localSettings.anthropicApiKey?.trim() || undefined,
       openaiApiKey: localSettings.openaiApiKey?.trim() || undefined,
+      stableHordeApiKey: (localSettings as any).stableHordeApiKey?.trim() || undefined,
       chatGuidelines: localSettings.chatGuidelines?.trim() || undefined
     } as SharedSettings;
     onSave(nextSettings);
@@ -710,7 +713,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               setLocalSettings({ ...localSettings, openaiApiKey: e.target.value })
             }
           />
-          <small className="setting-hint">For GPT models. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noreferrer">platform.openai.com</a></small>
+          <small className="setting-hint">For GPT models and DALL-E 3 image generation. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noreferrer">platform.openai.com</a></small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">🎨 Image Generation</label>
+          <small className="setting-hint" style={{ marginBottom: 8 }}>
+            Images are generated via Stable Horde (free community-powered AI). Register at <a href="https://stablehorde.net" target="_blank" rel="noreferrer">stablehorde.net</a> for a free API key and faster generation.
+          </small>
+          <label className="setting-sub-label" style={{ fontSize: '0.85em', marginTop: 4 }}>Stable Horde API Key</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={(localSettings as any).stableHordeApiKey || ''}
+            placeholder="Anonymous (slow) — paste your free key for faster results"
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, stableHordeApiKey: e.target.value } as any)
+            }
+          />
+          <small className="setting-hint">Without a key, generation uses the anonymous queue (~60-120 s). A free registered key drops this to ~10-20 s.</small>
         </div>
 
         <div className="setting-group">

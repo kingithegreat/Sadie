@@ -16,9 +16,14 @@ import { isE2E } from '../env';
 let _tavilyApiKey: string | null = null;
 let _serperApiKey: string | null = null;
 let _openaiApiKey: string | null = null;
+let _stableHordeApiKey: string | null = null;
 
 export function setTavilyApiKey(key: string | null) {
   _tavilyApiKey = key;
+}
+
+export function setStableHordeApiKey(key: string | null) {
+  _stableHordeApiKey = key;
 }
 
 export function getTavilyApiKey(): string | null {
@@ -1160,6 +1165,8 @@ async function tryStableHorde(prompt: string, width: number, height: number): Pr
     const w = Math.round(Math.min(width, 1024) / 64) * 64 || 512;
     const h = Math.round(Math.min(height, 1024) / 64) * 64 || 512;
 
+    const apiKey = (_stableHordeApiKey && _stableHordeApiKey.trim()) ? _stableHordeApiKey.trim() : '0000000000';
+
     const body = JSON.stringify({
       prompt,
       params: { sampler_name: 'k_euler_a', width: w, height: h, steps: 20, n: 1, karras: true },
@@ -1174,7 +1181,7 @@ async function tryStableHorde(prompt: string, width: number, height: number): Pr
     const submitRes = await httpPost(
       'https://stablehorde.net/api/v2/generate/async',
       body,
-      { apikey: '0000000000', 'Client-Agent': 'SADIE:1.0:local' },
+      { apikey: apiKey, 'Client-Agent': 'SADIE:1.0:local' },
       30000
     );
 
@@ -1185,7 +1192,7 @@ async function tryStableHorde(prompt: string, width: number, height: number): Pr
     const hordeGet = (path: string): Promise<any> => new Promise((resolve, reject) => {
       const req = https.get(
         `https://stablehorde.net${path}`,
-        { headers: { apikey: '0000000000' }, timeout: 10000 } as any,
+        { headers: { apikey: apiKey }, timeout: 10000 } as any,
         (res: any) => {
           const chunks: Buffer[] = [];
           res.on('data', (c: Buffer) => chunks.push(c));

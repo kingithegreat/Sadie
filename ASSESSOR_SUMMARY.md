@@ -1,7 +1,7 @@
 # SADIE Assessor Summary
 
-> **Version**: v0.9.2 (commit `5cdbf9a`, March 6, 2026)  
-> **Test Results**: 418/418 unit tests passing · 12/12 E2E tests passing · 16/16 n8n workflows active  
+> **Version**: v0.9.3 (March 7, 2026)
+> **Test Results**: 422/422 unit tests passing · 12/12 E2E tests passing · 16/16 n8n workflows active  
 > **Full API Reference**: [docs/api-reference.md](docs/api-reference.md) — IPC channels, tool schemas, permission system (818 lines)
 
 ## What is SADIE?

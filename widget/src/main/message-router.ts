@@ -2261,6 +2261,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               toolResults = [{ result: { summary: `${surfSummary}\n\n${surfWriteOk ? `✅ Saved to ${fileLink}` : '❌ Could not save file.'}` } }];
             } else {
               // Normal single-step intent
+              // For image generation, send a progress indicator immediately so the UI
+              // doesn't appear frozen while waiting for Stable Horde (~60-120 s)
+              if (intentResult.calls[0]?.name === 'image_generate') {
+                try { event.sender.send('sadie:stream-chunk', { chunk: '⏳ Generating image, please wait…', streamId }); } catch (e) {}
+              }
               toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
                 executionId: `intent-${Date.now()}`,
                 requestConfirmation,

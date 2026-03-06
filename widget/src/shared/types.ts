@@ -131,6 +131,8 @@ export interface Settings {
   // LLM provider API keys
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  // Image generation API keys
+  stableHordeApiKey?: string;
   // Code model routing
   codeModel?: string;
   codeApiKey?: string;

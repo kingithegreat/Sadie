@@ -14,7 +14,7 @@ import {
   exportTelemetryConsent 
 } from './config-manager';
 import { fetchAvailableCustomModels } from './custom-llm-client';
-import { setTavilyApiKey, setSerperApiKey } from './tools/web';
+import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey } from './tools/web';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
@@ -252,6 +252,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // Refresh search API keys in memory
       setTavilyApiKey(merged.tavilyApiKey || null);
       setSerperApiKey(merged.serperApiKey || null);
+      setStableHordeApiKey(merged.stableHordeApiKey || null);
 
       return { success: true, data: merged };
     } catch (err: any) {

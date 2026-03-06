@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.9.3 — Image generation: Stable Horde backend, API key, progress indicator
+
+### Fixed
+- **`image_generate` permission denied**: `image_generate` was missing from `DEFAULT_SETTINGS.permissions`, causing `assertPermission` to return `false` and `executeToolBatch` to short-circuit with a permission-denied result. The stale `'n8n webhook not reachable'` default was shown because the result shape had a `.reason` field (not `.error`). Fixed both by adding `image_generate: true` to defaults and checking `r?.reason` alongside `r?.error` in the error extraction.
+- **Wrong image MIME type**: `MessageBubble.tsx` hardcoded `data:image/png;base64,…` for all generated images. Stable Horde returns WebP. Fixed with magic-bytes detection (`UklGR` → `image/webp`, `/9j/` → `image/jpeg`, else `image/png`).
+
+### Added
+- **Stable Horde backend** (`web.ts`): `tryStableHorde()` submits a job to the free community-powered Stable Horde network, polls `/check/{id}` every 6 s until done, then fetches the base64 image from `/status/{id}`. Wired into `imageGenerateHandler` after Pollinations.ai in the fallback cascade.
+- **Stable Horde API key setting** (`SettingsPanel.tsx`, `types.ts`, `ipc-handlers.ts`, `web.ts`): New "Image Generation" settings section with a password field for the Stable Horde API key. Without a key the anonymous queue (~60-120 s) is used; a free registered key drops generation time to ~10-20 s.
+- **Image generation progress indicator** (`message-router.ts`): Sends `⏳ Generating image, please wait…` as a stream chunk immediately after the `image_generate` intent is detected, before the `executeToolBatch` call, so the UI doesn't appear frozen during Stable Horde generation.
+
+### Changed
+- **Conversation / system-prompt test fixes**: `conversationSystemPrompt` added to `handleSendMessage` `useCallback` deps (stale closure fix); `getMemoryStorePath` dev path corrected from 4 to 3 levels up; `persistence-ui.e2e.spec.ts` waits 1 s after new-chat click to let async IPC settle.
+- **Test count**: 422/422 unit tests (up from 418), 12/12 E2E tests.
+
+---
+
 ## v0.9.2 — n8n workflow activation: all 16 workflows live
 
 ### Fixed
