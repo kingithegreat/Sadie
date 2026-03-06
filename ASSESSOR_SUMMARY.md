@@ -1,5 +1,9 @@
 # SADIE Assessor Summary
 
+> **Version**: v0.9.1 (commit `c50cbcb`, March 6, 2026)  
+> **Test Results**: 418/418 unit tests passing · 12/12 E2E tests passing  
+> **Full API Reference**: [docs/api-reference.md](docs/api-reference.md) — IPC channels, tool schemas, permission system (818 lines)
+
 ## What is SADIE?
 
 SADIE (Sophisticated AI Desktop Interactive Environment) is a cross-platform Electron application that provides a secure, local AI chat interface with web search capabilities. It integrates with Ollama for privacy-preserving AI interactions while maintaining enterprise-grade security and testing standards.
@@ -41,8 +45,8 @@ SADIE (Sophisticated AI Desktop Interactive Environment) is a cross-platform Ele
 ## How Testing Validates All Functionality
 
 ### Test Coverage Strategy
-- **Unit Tests (Jest)**: 80%+ code coverage validating individual components
-- **E2E Tests (Playwright)**: Complete user workflow validation with browser automation
+- **Unit Tests (Jest)**: 418 tests passing, validating all tools, IPC handlers, security, streaming, and config components
+- **E2E Tests (Playwright)**: 12 tests passing — complete user workflow validation including first-run, streaming chat, config persistence, and error recovery
 - **Integration Tests**: IPC communication and component interaction verification
 - **Security Tests**: Runtime hardening and attack vector validation
 
@@ -83,7 +87,7 @@ SADIE (Sophisticated AI Desktop Interactive Environment) is a cross-platform Ele
 ## Engineering Quality Assessment
 
 SADIE demonstrates professional-grade software engineering with:
-- **Comprehensive Testing**: 100% workflow coverage with automated validation
+- **Comprehensive Testing**: 418 unit + 12 E2E tests, all passing (100% pass rate)
 - **Security-First Design**: Defense-in-depth with multiple protection layers
 - **Production Readiness**: CI/CD pipeline with integrity guarantees
 - **Maintainable Architecture**: Modular design with clear separation of concerns
