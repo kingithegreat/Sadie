@@ -481,8 +481,24 @@ export function MessageBubble({
     >
       {isUser ? (
         <>
-          {/* USER: content first, avatar second */}
+          {/* USER: content first (+ image thumbnails), avatar second */}
           <div className="message-content">
+            {/* Image thumbnails attached to this user message */}
+            {message.images && message.images.length > 0 && (
+              <div className="user-image-previews" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: message.content ? 6 : 0 }}>
+                {message.images.map((img, i) => (
+                  img.url ? (
+                    <img
+                      key={i}
+                      src={img.url}
+                      alt={img.filename || 'attached image'}
+                      title={img.filename || 'attached image'}
+                      style={{ maxWidth: 220, maxHeight: 160, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.15)' }}
+                    />
+                  ) : null
+                ))}
+              </div>
+            )}
             {shouldShowBubble && (
               <div className="message-bubble">
                 {hasContent ? (

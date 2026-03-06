@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.0 — Vision: image analysis & in-chat image thumbnails
+
+### Added
+- **`vision_describe` tool**: SADIE can now read a local image file and describe its contents in detail (colours, objects, text, layout) using the configured Ollama multimodal model (`llava` by default).
+- **`vision_query` tool**: ask any specific question about a local image — extract text from a screenshot, count objects, identify colours, etc. Sends the image as base64 to Ollama `/api/generate`.
+- **Image thumbnails in user message bubble**: when a user attaches image(s) and sends a message, the image previews now render inline in the user's chat bubble (max 220 × 160 px, rounded corners).
+- **`ChatMessage.images`** field on the renderer type — stores preview URLs (objectURL / dataURL) alongside the message so thumbnails survive re-renders.
+- **16 unit tests** (`__tests__/vision-tools.test.ts`): covers home-dir guard, missing file, directory path, unsupported extension, Ollama success, Ollama error, multi-chunk NDJSON streaming, prompt passthrough, and tool definition shape.
+
 ## v0.9.9 — RAG drag-and-drop UI
 
 ### Added

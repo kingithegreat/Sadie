@@ -39,6 +39,7 @@ import { searchToolDefs, searchToolHandlers } from './search';
 import { planningToolDefs, planningToolHandlers } from './planning';
 import { apiToolDefs, apiToolHandlers } from './api-tool';
 import { ragToolDefs, ragToolHandlers } from './rag';
+import { visionToolDefs, visionToolHandlers } from './vision';
 import { initializeMcpServers, seedMcpDefaults } from '../mcp-client';
 
 // Global tool registry
@@ -485,6 +486,12 @@ export function initializeTools(): void {
   // Register RAG tools (local document semantic search)
   for (const def of ragToolDefs) {
     const handler = ragToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register vision tools (image analysis via Ollama multimodal)
+  for (const def of visionToolDefs) {
+    const handler = visionToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

@@ -14,6 +14,9 @@ export type ChatMessage = {
   createdAt: number;
   updatedAt?: number;
 
+  // user only — image attachment previews (url = objectURL or dataURL, renderer-only)
+  images?: Array<{ url: string; filename?: string }>;
+
   // assistant only
   streamId?: string;
   streamingState?: StreamingState;

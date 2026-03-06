@@ -537,6 +537,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       role: 'user',
       content: messageText,
       createdAt: Date.now(),
+      // Store preview URLs so the bubble can render image thumbnails
+      ...(images && images.length > 0
+        ? { images: images.map(img => ({ url: img.url || img.dataUrl || (img.data ? `data:${img.mimeType || 'image/png'};base64,${img.data}` : ''), filename: img.filename })).filter(i => i.url) }
+        : {}),
     };
     setMessages(prev => [...prev, userMsg]);
     
