@@ -1153,6 +1153,67 @@ async function tryPollinations(prompt: string, width: number, height: number): P
   }
 }
 
+// ── Backend 0b: Stable Horde (free community-powered distributed inference) ──
+async function tryStableHorde(prompt: string, width: number, height: number): Promise<string | null> {
+  try {
+    // Stable Horde requires dimensions to be multiples of 64
+    const w = Math.round(Math.min(width, 1024) / 64) * 64 || 512;
+    const h = Math.round(Math.min(height, 1024) / 64) * 64 || 512;
+
+    const body = JSON.stringify({
+      prompt,
+      params: { sampler_name: 'k_euler_a', width: w, height: h, steps: 20, n: 1, karras: true },
+      nsfw: false,
+      censor_nsfw: true,
+      r2: false,
+      shared: false,
+      slow_workers: true,
+      models: ['stable_diffusion']
+    });
+
+    const submitRes = await httpPost(
+      'https://stablehorde.net/api/v2/generate/async',
+      body,
+      { apikey: '0000000000', 'Client-Agent': 'SADIE:1.0:local' },
+      30000
+    );
+
+    const jobId = submitRes?.id;
+    if (!jobId) return null;
+
+    // Helper: JSON GET for hardcoded Stable Horde URLs (no SSRF risk)
+    const hordeGet = (path: string): Promise<any> => new Promise((resolve, reject) => {
+      const req = https.get(
+        `https://stablehorde.net${path}`,
+        { headers: { apikey: '0000000000' }, timeout: 10000 } as any,
+        (res: any) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { resolve(null); } });
+        }
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('horde GET timeout')); });
+    });
+
+    // Poll for completion — max 120 seconds, check every 6 s
+    const started = Date.now();
+    while (Date.now() - started < 120000) {
+      await new Promise(r => setTimeout(r, 6000));
+      const check = await hordeGet(`/api/v2/generate/check/${jobId}`).catch(() => null);
+      if (!check?.done) continue;
+
+      const status = await hordeGet(`/api/v2/generate/status/${jobId}`).catch(() => null);
+      const img = status?.generations?.[0]?.img as string | undefined;
+      if (img && img.length > 100) return img; // already base64 PNG
+      return null;
+    }
+    return null; // timed out
+  } catch {
+    return null;
+  }
+}
+
 // ── Backend 1: AUTOMATIC1111 / stable-diffusion-webui ────────────────────────
 async function tryAutomatic1111(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
   try {
@@ -1261,6 +1322,12 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     }
 
     if (!image_base64 && backend !== 'local') {
+      // Try Stable Horde — free community-powered distributed inference
+      image_base64 = await tryStableHorde(prompt, width, height);
+      if (image_base64) { source = 'stable-horde'; }
+    }
+
+    if (!image_base64 && backend !== 'local') {
       // Fall back to DALL-E 3 if OpenAI key is set
       image_base64 = await tryDallE(prompt, width, height);
       if (image_base64) { source = 'dall-e-3'; }
@@ -1270,7 +1337,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
       return {
         success: false,
         error: 'All image backends failed. ' +
-          'Pollinations.ai (free) was tried — check your internet connection. ' +
+          'Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
           'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
           'For DALL-E 3, add an OpenAI API key in Settings.'
       };

@@ -348,6 +348,13 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
 
   // Split content into segments — plain text parts vs inline images
   const IMAGE_TOKEN = '__SADIE_IMAGE__:';
+  // Detect image MIME type from base64 magic bytes prefix
+  const detectImageMime = (b64: string): string => {
+    if (b64.startsWith('/9j/')) return 'image/jpeg';
+    if (b64.startsWith('UklGR')) return 'image/webp';
+    if (b64.startsWith('R0lGOD')) return 'image/gif';
+    return 'image/png'; // default (covers iVBOR... PNG prefix)
+  };
   if (!isUser && content.includes(IMAGE_TOKEN)) {
     const segments = content.split(IMAGE_TOKEN);
     return (
@@ -365,7 +372,7 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
             <React.Fragment key={idx}>
               {b64 && (
                 <img
-                  src={`data:image/png;base64,${b64}`}
+                  src={`data:${detectImageMime(b64)};base64,${b64}`}
                   alt="Generated image"
                   style={{ maxWidth: '100%', borderRadius: 8, marginTop: 8, display: 'block' }}
                 />
