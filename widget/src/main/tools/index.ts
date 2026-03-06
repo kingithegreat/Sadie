@@ -38,6 +38,7 @@ import { diffToolDefs, diffToolHandlers } from './diff';
 import { searchToolDefs, searchToolHandlers } from './search';
 import { planningToolDefs, planningToolHandlers } from './planning';
 import { apiToolDefs, apiToolHandlers } from './api-tool';
+import { ragToolDefs, ragToolHandlers } from './rag';
 import { initializeMcpServers, seedMcpDefaults } from '../mcp-client';
 
 // Global tool registry
@@ -478,6 +479,12 @@ export function initializeTools(): void {
   // Register API tool
   for (const def of apiToolDefs) {
     const handler = apiToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register RAG tools (local document semantic search)
+  for (const def of ragToolDefs) {
+    const handler = ragToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

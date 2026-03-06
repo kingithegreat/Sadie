@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.9.8 — RAG: local document semantic search
+
+### Added
+- **`rag_index` tool**: indexes any local file (PDF, Word, plain text, code, CSV, Markdown) into overlapping 200-word chunks stored in `userData/memory/rag-index.json`. Index persists between sessions.
+- **`rag_query` tool**: TF-IDF cosine similarity search across all indexed documents (or one specific doc via `doc_id`). Returns top-k most relevant excerpts ranked by relevance score. Works offline, no model download.
+- **`rag_list` tool**: lists all indexed documents and their chunk counts.
+- **`rag_clear` tool**: removes a specific document from the index.
+- **31 unit tests** (`__tests__/rag-tools.test.ts`) covering chunking, tokenisation, cosine similarity, all four handlers, home-dir access guard, re-index deduplication, and edge cases.
+
 ## v0.9.7 — NBA NZ/AU timezone tests + installer + docs sync
 
 ### Added
