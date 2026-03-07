@@ -20,6 +20,10 @@ let mainWindow: BrowserWindow | null = null;
 import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
 applyIpcHandlePatch();
 
+// Remove the Chrome automation flag that Cloudflare and anti-bot systems
+// (used by Claude, ChatGPT, Gemini) use as their primary detection signal.
+// MUST be called before app.whenReady().
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 
 app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');

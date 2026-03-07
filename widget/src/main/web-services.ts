@@ -43,8 +43,7 @@ function createServiceWindow(id: ServiceId): BrowserWindow {
       partition: svc.partition,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
-      // Webview preload compiled alongside the main preload
+      sandbox: true, // sandbox=true is required — sandbox=false is detectable by Cloudflare
       preload: path.join(__dirname, '../preload/webview.js'),
     },
   });

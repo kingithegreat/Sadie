@@ -12,29 +12,58 @@
  */
 
 try {
-  // 1. Remove webdriver flag — the #1 signal sites use to detect automation
-  Object.defineProperty(navigator, 'webdriver', {
-    get: () => undefined,
-    configurable: true,
-  });
+  // 1. Remove webdriver flag
+  Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
 
-  // 2. Minimal window.chrome stub so pages don't bail out on missing chrome APIs
+  // 2. Full window.chrome stub — Cloudflare checks loadTimes, csi, and app
   if (!(window as any).chrome) {
-    Object.defineProperty(window, 'chrome', {
-      value: { runtime: {} },
-      writable: false,
-      enumerable: true,
-      configurable: false,
-    });
+    const chrome = {
+      app: {
+        isInstalled: false,
+        InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+      },
+      runtime: {
+        OnInstalledReason: {},
+        OnRestartRequiredReason: {},
+        PlatformArch: {},
+        PlatformNaclArch: {},
+        PlatformOs: {},
+        RequestUpdateCheckStatus: {},
+        id: undefined,
+        connect: () => {},
+        sendMessage: () => {},
+        getManifest: () => ({}),
+      },
+      loadTimes: function() { return {}; },
+      csi:        function() { return { startE: Date.now(), onloadT: Date.now(), pageT: Date.now(), tran: 15 }; },
+    };
+    Object.defineProperty(window, 'chrome', { value: chrome, enumerable: true, configurable: false, writable: false });
   }
 
-  // 3. Ensure navigator.plugins is non-empty (Electron webview defaults to 0)
+  // 3. Non-empty plugins list
   if (navigator.plugins.length === 0) {
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => [1, 2, 3, 4, 5],
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5], configurable: true });
+  }
+
+  // 4. Non-empty mimeTypes list
+  if (navigator.mimeTypes.length === 0) {
+    Object.defineProperty(navigator, 'mimeTypes', { get: () => [1], configurable: true });
+  }
+
+  // 5. Convincing permissions stub — automation returns 'denied' for notifications
+  const origQuery = window.navigator.permissions?.query?.bind(window.navigator.permissions);
+  if (origQuery) {
+    Object.defineProperty(navigator.permissions, 'query', {
+      value: (params: any) => {
+        if (params?.name === 'notifications') {
+          return Promise.resolve({ state: Notification.permission } as PermissionStatus);
+        }
+        return origQuery(params);
+      },
       configurable: true,
     });
   }
 } catch (_e) {
-  // Never crash — a failing preload would break all webviews
+  // Never crash
 }
