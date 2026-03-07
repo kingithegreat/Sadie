@@ -632,7 +632,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Prepare stream request
     const streamRequest: (SadieRequestWithImages & { streamId?: string }) = {
       user_id: 'desktop_user',
-      conversation_id: conversationId || 'default',
+      conversation_id: activeConvId || conversationId || 'default',
       message: messageText,
       timestamp: new Date().toISOString(),
       conversationPrompt: conversationSystemPrompt || undefined,
