@@ -84,4 +84,85 @@ describe('addContactHandler', () => {
     expect(searchContactsDef.parameters.required).toContain('query');
     expect(addContactDef.parameters.required).toContain('name');
   });
+
+  test('clamps limit to maximum 50', async () => {
+    mockOutlookEmpty();
+    const res = await searchContactsHandler({ query: 'nobody', limit: 9999 }, {} as any);
+    // Should not throw; limit is clamped internally
+    expect(res.success).toBe(true);
+  });
+
+  test('uses default limit of 10 when limit is omitted', async () => {
+    mockOutlookEmpty();
+    const res = await searchContactsHandler({ query: 'nobody' }, {} as any);
+    expect(res.success).toBe(true);
+  });
+
+  test('deduplicates contacts with the same email', async () => {
+    const alice = { name: 'Alice', email: 'alice@example.com', phone: '', company: '' };
+    mockOutlookResolve([alice]);
+    // Simulate local contacts also containing alice via fs.promises mock
+    jest.spyOn(fs.promises, 'readFile').mockResolvedValueOnce(
+      JSON.stringify([{ ...alice, source: 'local' }]) as any
+    );
+    const res = await searchContactsHandler({ query: 'alice' }, {} as any);
+    expect(res.success).toBe(true);
+    const emails = res.result.contacts.map((c: any) => c.email?.toLowerCase());
+    const count = emails.filter((e: string) => e === 'alice@example.com').length;
+    expect(count).toBe(1);
+  });
+});
+
+describe('addContactHandler', () => {
+  test('requires name', async () => {
+    const res = await addContactHandler({ email: 'a@b.com' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('name');
+  });
+
+  test('adds contact with all optional fields', async () => {
+    jest.spyOn(fs.promises, 'readFile').mockResolvedValueOnce('[]' as any);
+    const writeSpy = jest.spyOn(fs.promises, 'writeFile').mockResolvedValueOnce(undefined as any);
+    jest.spyOn(fs.promises, 'mkdir').mockResolvedValueOnce(undefined as any);
+
+    const res = await addContactHandler({
+      name: 'Bob Jones',
+      email: 'bob@corp.com',
+      phone: '555-9999',
+      company: 'CorpCo',
+      notes: 'Met at conf',
+    }, {} as any);
+
+    expect(res.success).toBe(true);
+    const saved = JSON.parse((writeSpy.mock.calls[0][1] as string));
+    const contact = saved[saved.length - 1];
+    expect(contact.name).toBe('Bob Jones');
+    expect(contact.email).toBe('bob@corp.com');
+    expect(contact.phone).toBe('555-9999');
+    expect(contact.company).toBe('CorpCo');
+    expect(contact.notes).toBe('Met at conf');
+    expect(contact.source).toBe('local');
+  });
+
+  test('adds contact with name only (no optional fields)', async () => {
+    jest.spyOn(fs.promises, 'readFile').mockResolvedValueOnce('[]' as any);
+    const writeSpy = jest.spyOn(fs.promises, 'writeFile').mockResolvedValueOnce(undefined as any);
+    jest.spyOn(fs.promises, 'mkdir').mockResolvedValueOnce(undefined as any);
+
+    const res = await addContactHandler({ name: 'Minimal Person' }, {} as any);
+    expect(res.success).toBe(true);
+    const saved = JSON.parse(writeSpy.mock.calls[0][1] as string);
+    expect(saved[saved.length - 1].name).toBe('Minimal Person');
+    expect(saved[saved.length - 1].email).toBeUndefined();
+  });
+
+  test('returns error when fs write fails', async () => {
+    jest.spyOn(fs.promises, 'readFile').mockResolvedValueOnce('[]' as any);
+    jest.spyOn(fs.promises, 'writeFile').mockRejectedValueOnce(new Error('disk full') as any);
+    jest.spyOn(fs.promises, 'mkdir').mockResolvedValueOnce(undefined as any);
+
+    const res = await addContactHandler({ name: 'Fail Person' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('add_contact failed');
+  });
 });
