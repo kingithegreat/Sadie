@@ -6,11 +6,15 @@
 // Prevent axios from making real HTTP calls
 jest.mock('axios');
 
+import { EventEmitter } from 'events';
+import axios from 'axios';
+
 import {
   getModelMetadata,
   validateCustomLLMConfig,
   autoConfigureCustomLLM,
   fetchAvailableCustomModels,
+  streamFromCustomLLM,
 } from '../custom-llm-client';
 
 describe('getModelMetadata', () => {
@@ -179,5 +183,231 @@ describe('fetchAvailableCustomModels', () => {
     await expect(
       fetchAvailableCustomModels({ apiUrl: 'https://openrouter.ai/api/v1', provider: 'openrouter' })
     ).rejects.toThrow();
+  });
+});
+
+// ─── fetchAvailableCustomModels – HTTP branches ───────────────────────────────
+
+describe('fetchAvailableCustomModels – HTTP call branches', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('custom provider with no apiKey calls axios.get successfully (direct array)', async () => {
+    const data = [
+      { id: 'my-model', name: 'My Model', description: 'local', owned_by: 'me' },
+    ];
+    (axios.get as jest.Mock).mockResolvedValue({ data });
+
+    const models = await fetchAvailableCustomModels({ apiUrl: 'http://localhost:11434', provider: 'custom' });
+    expect(models.length).toBe(1);
+    expect(models[0].id).toBe('my-model');
+    expect(models[0].provider).toBe('custom');
+  });
+
+  test('payload wrapped in .data array is normalised', async () => {
+    const data = { data: [{ id: 'wrapped-model', name: 'Wrapped' }] };
+    (axios.get as jest.Mock).mockResolvedValue({ data });
+
+    const models = await fetchAvailableCustomModels({ apiUrl: 'http://localhost:8080', provider: 'custom' });
+    expect(models[0].id).toBe('wrapped-model');
+  });
+
+  test('payload with .models array is normalised', async () => {
+    const data = { models: [{ id: 'models-key', name: 'Models Key Model' }] };
+    (axios.get as jest.Mock).mockResolvedValue({ data });
+
+    const models = await fetchAvailableCustomModels({ apiUrl: 'http://localhost:8080', provider: 'custom' });
+    expect(models[0].id).toBe('models-key');
+  });
+
+  test('empty models list throws error', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: [] });
+
+    await expect(
+      fetchAvailableCustomModels({ apiUrl: 'http://localhost:1234', provider: 'custom' })
+    ).rejects.toThrow();
+  });
+
+  test('axios error is reformatted with detail message', async () => {
+    const axiosErr: any = new Error('404');
+    axiosErr.isAxiosError = true;
+    axiosErr.response = { status: 404, statusText: 'Not Found', data: { error: { message: 'endpoint missing' } } };
+    (axios.get as jest.Mock).mockRejectedValue(axiosErr);
+    (axios.isAxiosError as jest.Mock).mockReturnValue(true);
+
+    await expect(
+      fetchAvailableCustomModels({ apiUrl: 'http://localhost:9999', provider: 'custom' })
+    ).rejects.toThrow('endpoint missing');
+  });
+
+  test('non-axios error is re-thrown as-is', async () => {
+    const nativeErr = new TypeError('socket hang up');
+    (axios.get as jest.Mock).mockRejectedValue(nativeErr);
+    (axios.isAxiosError as jest.Mock).mockReturnValue(false);
+
+    await expect(
+      fetchAvailableCustomModels({ apiUrl: 'http://localhost:9999', provider: 'custom' })
+    ).rejects.toThrow('socket hang up');
+  });
+
+  test('openrouter with apiKey calls axios.get', async () => {
+    const data = [{ id: 'openrouter/model', name: 'OpenRouter Model', description: '', owned_by: 'openrouter' }];
+    (axios.get as jest.Mock).mockResolvedValue({ data });
+
+    const models = await fetchAvailableCustomModels({
+      apiUrl: 'https://openrouter.ai/api/v1',
+      provider: 'openrouter',
+      apiKey: 'sk-or-test',
+    });
+    expect(models[0].id).toBe('openrouter/model');
+  });
+
+  test('deduplicates models with the same id', async () => {
+    const data = [
+      { id: 'dup-model', name: 'Dup 1' },
+      { id: 'dup-model', name: 'Dup 2' },
+      { id: 'unique-model', name: 'Unique' },
+    ];
+    (axios.get as jest.Mock).mockResolvedValue({ data });
+
+    const models = await fetchAvailableCustomModels({ apiUrl: 'http://localhost:11434', provider: 'custom' });
+    expect(models.filter(m => m.id === 'dup-model').length).toBe(1);
+    expect(models.length).toBe(2);
+  });
+
+  test('items missing id are filtered out', async () => {
+    const data = [
+      { display_name: 'No ID Model' }, // no id field
+      { id: 'valid-id', name: 'Valid' },
+    ];
+    (axios.get as jest.Mock).mockResolvedValue({ data });
+
+    const models = await fetchAvailableCustomModels({ apiUrl: 'http://localhost:11434', provider: 'custom' });
+    expect(models.every(m => m.id !== undefined)).toBe(true);
+    expect(models.some(m => m.id === 'valid-id')).toBe(true);
+  });
+});
+
+// ─── streamFromCustomLLM ─────────────────────────────────────────────────────
+
+describe('streamFromCustomLLM', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function makeFakeStream() {
+    const emitter = new EventEmitter();
+    return emitter;
+  }
+
+  test('calls onError and returns cancel fn when config is invalid', async () => {
+    const onError = jest.fn();
+    const onEnd = jest.fn();
+    const onChunk = jest.fn();
+
+    const result = await streamFromCustomLLM(
+      'hello',
+      [],
+      { apiUrl: '', provider: 'openai', model: 'gpt-4', apiKey: '' } as any,
+      'system prompt',
+      onChunk,
+      onEnd,
+      onError
+    );
+
+    expect(onError).toHaveBeenCalledWith(expect.any(Error));
+    expect(typeof result.cancel).toBe('function');
+  });
+
+  test('routes valid openai config to streamOpenAI path (axios.post called)', async () => {
+    const fakeStream = makeFakeStream();
+    (axios.post as jest.Mock).mockResolvedValue({ data: fakeStream });
+
+    const onEnd = jest.fn();
+    const onError = jest.fn();
+    const onChunk = jest.fn();
+
+    streamFromCustomLLM(
+      'hello',
+      [],
+      { apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4', provider: 'openai' },
+      'system',
+      onChunk,
+      onEnd,
+      onError
+    );
+
+    // Give the async path a tick to start
+    await new Promise(r => setTimeout(r, 0));
+    fakeStream.emit('end');
+
+    expect(axios.post).toHaveBeenCalled();
+    const callUrl: string = (axios.post as jest.Mock).mock.calls[0][0];
+    expect(callUrl).toContain('chat/completions');
+  });
+
+  test('routes valid anthropic config to streamAnthropic path (different endpoint)', async () => {
+    const fakeStream = makeFakeStream();
+    (axios.post as jest.Mock).mockResolvedValue({ data: fakeStream });
+
+    const onEnd = jest.fn();
+    const onError = jest.fn();
+    const onChunk = jest.fn();
+
+    streamFromCustomLLM(
+      'hello',
+      [],
+      { apiUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant-test', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic' },
+      'system',
+      onChunk,
+      onEnd,
+      onError
+    );
+
+    await new Promise(r => setTimeout(r, 0));
+    fakeStream.emit('end');
+
+    expect(axios.post).toHaveBeenCalled();
+    const callUrl: string = (axios.post as jest.Mock).mock.calls[0][0];
+    expect(callUrl).toContain('messages');
+  });
+
+  test('routes custom provider to streamOpenAI path', async () => {
+    const fakeStream = makeFakeStream();
+    (axios.post as jest.Mock).mockResolvedValue({ data: fakeStream });
+
+    const onChunk = jest.fn();
+    const onEnd = jest.fn();
+    const onError = jest.fn();
+
+    streamFromCustomLLM(
+      'hello',
+      [],
+      { apiUrl: 'http://localhost:11434/v1', provider: 'custom', model: '' } as any,
+      'system',
+      onChunk,
+      onEnd,
+      onError
+    );
+
+    await new Promise(r => setTimeout(r, 0));
+    fakeStream.emit('end');
+
+    expect(axios.post).toHaveBeenCalled();
+  });
+
+  test('returned object has a cancel function', async () => {
+    const fakeStream = makeFakeStream();
+    (axios.post as jest.Mock).mockResolvedValue({ data: fakeStream });
+
+    const result = await streamFromCustomLLM(
+      'hi',
+      [],
+      { apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4', provider: 'openai' },
+      'system',
+      jest.fn(),
+      jest.fn(),
+      jest.fn()
+    );
+
+    expect(typeof result.cancel).toBe('function');
+    expect(() => result.cancel()).not.toThrow();
   });
 });
