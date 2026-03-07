@@ -94,3 +94,89 @@ describe('code runner — definition shape', () => {
     expect(def.parameters.properties.language.enum).toEqual(['python', 'powershell']);
   });
 });
+// ── execution results ────────────────────────────────────────────────────────
+
+describe('runCodeHandler â€" execution success', () => {
+  test('returns stdout / stderr / exit_code 0 on successful python run', async () => {
+    setupExecSuccess('hello world\n', '');
+    const res = await runCodeHandler({ language: 'python', code: 'print("hello world")' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.language).toBe('python');
+    expect(res.result.stdout).toBe('hello world\n');
+    expect(res.result.stderr).toBe('');
+    expect(res.result.exit_code).toBe(0);
+  });
+
+  test('returns stdout on successful powershell run', async () => {
+    setupExecSuccess('42\r\n');
+    const res = await runCodeHandler({ language: 'powershell', code: 'Write-Output 42' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.language).toBe('powershell');
+    expect(res.result.stdout).toBe('42\r\n');
+    expect(res.result.exit_code).toBe(0);
+  });
+});
+
+describe('runCodeHandler â€" execution failure', () => {
+  function setupExecError(opts: { killed?: boolean; code?: number; stdout?: string; stderr?: string }) {
+    mockExec.mockImplementation((_cmd: string, _opts: any, callback?: Function) => {
+      const cb = typeof _opts === 'function' ? _opts : callback;
+      const err: any = new Error('Command failed');
+      err.killed = opts.killed ?? false;
+      err.code = opts.code ?? 1;
+      err.stdout = opts.stdout ?? '';
+      err.stderr = opts.stderr ?? 'SyntaxError';
+      if (cb) cb(err, { stdout: err.stdout, stderr: err.stderr });
+      return { on: jest.fn(), kill: jest.fn() };
+    });
+  }
+
+  test('returns failure with stderr when exec exits non-zero', async () => {
+    setupExecError({ code: 1, stderr: 'SyntaxError: invalid syntax' });
+    const res = await runCodeHandler({ language: 'python', code: 'print(bad syntax' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.result.exit_code).toBe(1);
+    expect(res.result.stderr).toContain('SyntaxError');
+  });
+
+  test('returns "timed out" error when process is killed', async () => {
+    setupExecError({ killed: true });
+    const res = await runCodeHandler({ language: 'python', code: 'import time\ntime.sleep(30)' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/timed out/i);
+  });
+
+  test('includes stdout from timed-out process in result', async () => {
+    setupExecError({ killed: true, stdout: 'partial output' });
+    const res = await runCodeHandler({ language: 'python', code: 'import time\ntime.sleep(30)' }, {} as any);
+    expect(res.result.stdout).toBe('partial output');
+  });
+});
+
+// ── handlers map ─────────────────────────────────────────────────────────────
+
+describe('codeRunnerToolHandlers', () => {
+  test('run_code key maps to a callable function', async () => {
+    const { codeRunnerToolHandlers } = await import('../tools/code-runner');
+    expect(typeof codeRunnerToolHandlers['run_code']).toBe('function');
+  });
+});
+
+// ── definition extras ────────────────────────────────────────────────────────
+
+describe('runCodeDef extras', () => {
+  test('requiresConfirmation is true', async () => {
+    const { runCodeDef } = await import('../tools/code-runner');
+    expect(runCodeDef.requiresConfirmation).toBe(true);
+  });
+
+  test('code parameter is required', async () => {
+    const { runCodeDef } = await import('../tools/code-runner');
+    expect(runCodeDef.parameters.required).toContain('code');
+  });
+
+  test('language parameter is required', async () => {
+    const { runCodeDef } = await import('../tools/code-runner');
+    expect(runCodeDef.parameters.required).toContain('language');
+  });
+});
