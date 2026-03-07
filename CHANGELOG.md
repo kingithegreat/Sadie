@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.1 — Code quality hardening and conversation coherence fix
+
+### Fixed
+- **Conversation coherence bug** (`App.tsx`): first message in every new conversation used stale `conversationId` React state instead of freshly created `activeConvId`, silently scattering context across disconnected IDs. All turns in a conversation now share the correct `conversation_id`.
+- **`tsc --noEmit` clean**: resolved 9 TypeScript compiler errors not surfaced by VS Code's language server:
+  - `ipc-handlers.ts`: 5 `ToolHandler` call sites missing required second `context` argument (`rag_index`, `rag_list`, `rag_clear`, `tts-speak`, `tts-stop`)
+  - `tool-helpers.ts`: `closer` variable declared but unused — now correctly used in depth tracking instead of hardcoded `}`/`]` chars
+  - `types.ts` (`ElectronAPI`): 8 members missing from the interface (`readTelemetryEvents`, `showInFolder`, `openFile`, `mcpListServers`, `mcpGetStatus`, `mcpAddServer`, `mcpRemoveServer`, `mcpToggleServer`)
+- **Inline styles eliminated** across `InputBox`, `MessageBubble`, `StatusIndicator`, `Header`, `ImageGenerator`, `TokenCounter`, `TelemetryDashboard`, `TitleBar`, `ToolsPanel`, `git.ts` — moved to CSS classes for linter compliance.
+- **`TokenCounter.tsx`**: replaced JSX `style` prop with `ref + useEffect` to set CSS custom properties, removing the inline-style lint warning.
+- **`ChatInterface.tsx`**: removed dead `result` capture that spammed `Promise { <pending> }` to the console on every sent message.
+
+### Added
+- **Regression test** (`persistence-send.test.tsx`): asserts `sendStreamMessage` always uses `activeConvId`, not the stale `'default'` fallback. Test count: 521 → 522.
+- **`tsconfig` hardening**: `noUnusedParameters`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess` enabled; `browserslist` added for CSS compat targeting.
+- **`-webkit-user-select` prefix** on `.token-counter` CSS for full cross-engine coverage.
+- **`aria-label="Edit conversation title"`** on the rename button in `ConversationSidebar`.
+- **Category union extensions** in `types.ts`: `'communication'` and `'vision'` added to the tool category union.
+
 ## v1.0.0 — Vision: image analysis & in-chat image thumbnails
 
 ### Added

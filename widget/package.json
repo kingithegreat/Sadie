@@ -1,6 +1,6 @@
 {
   "name": "sadie-widget",
-  "version": "0.9.6",
+  "version": "1.0.1",
   "description": "SADIE - Structured AI Desktop Intelligence Engine Widget",
   "main": "out/main/index.js",
   "type": "commonjs",
