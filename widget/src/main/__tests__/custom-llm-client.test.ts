@@ -6,7 +6,12 @@
 // Prevent axios from making real HTTP calls
 jest.mock('axios');
 
-import { getModelMetadata } from '../custom-llm-client';
+import {
+  getModelMetadata,
+  validateCustomLLMConfig,
+  autoConfigureCustomLLM,
+  fetchAvailableCustomModels,
+} from '../custom-llm-client';
 
 describe('getModelMetadata', () => {
   test('returns exact match for gpt-4', () => {
@@ -71,5 +76,108 @@ describe('getModelMetadata', () => {
     const b = getModelMetadata('unknown-b');
     expect(a).toEqual(b);
     expect(a).not.toBe(b); // separate objects
+  });
+});
+
+// ─── validateCustomLLMConfig ─────────────────────────────────────────────────
+
+describe('validateCustomLLMConfig', () => {
+  test('invalid when config is undefined', () => {
+    const r = validateCustomLLMConfig(undefined);
+    expect(r.valid).toBe(false);
+    expect(r.error).toBeTruthy();
+  });
+
+  test('invalid when apiUrl is missing', () => {
+    const r = validateCustomLLMConfig({ apiKey: 'k', model: 'gpt-4', provider: 'openai' } as any);
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/url/i);
+  });
+
+  test('invalid when apiKey is missing for openai provider', () => {
+    const r = validateCustomLLMConfig({ apiUrl: 'https://api.openai.com/v1', model: 'gpt-4', provider: 'openai' } as any);
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/key/i);
+  });
+
+  test('invalid when model is missing for non-custom provider', () => {
+    const r = validateCustomLLMConfig({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', provider: 'openai' } as any);
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/model/i);
+  });
+
+  test('valid when custom provider with no apiKey and no model', () => {
+    const r = validateCustomLLMConfig({ apiUrl: 'http://localhost:11434', provider: 'custom' } as any);
+    expect(r.valid).toBe(true);
+  });
+
+  test('valid for well-formed openai config', () => {
+    const r = validateCustomLLMConfig({ apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4', provider: 'openai' });
+    expect(r.valid).toBe(true);
+    expect(r.error).toBeUndefined();
+  });
+
+  test('valid for well-formed anthropic config', () => {
+    const r = validateCustomLLMConfig({ apiUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic' });
+    expect(r.valid).toBe(true);
+  });
+});
+
+// ─── autoConfigureCustomLLM ───────────────────────────────────────────────────
+
+describe('autoConfigureCustomLLM', () => {
+  test('auto-detects openai provider from gpt-4o model name', () => {
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4o' } as any);
+    expect(result.provider).toBe('openai');
+  });
+
+  test('auto-detects anthropic provider from claude model name', () => {
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.anthropic.com/v1', apiKey: 'k', model: 'claude-3-5-sonnet-20241022' } as any);
+    expect(result.provider).toBe('anthropic');
+  });
+
+  test('does not overwrite existing provider', () => {
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://openrouter.ai/api/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openrouter' });
+    expect(result.provider).toBe('openrouter');
+  });
+
+  test('adds metadata for known model when metadata not present', () => {
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openai' });
+    expect(result.metadata).toBeDefined();
+    expect(result.metadata!.contextWindow).toBe(128000);
+  });
+
+  test('preserves existing metadata if already defined', () => {
+    const existing = { contextWindow: 999, maxTokens: 1, supportsTools: false, supportsVision: false, supportsStreaming: false };
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openai', metadata: existing });
+    expect(result.metadata).toBe(existing);
+  });
+});
+
+// ─── fetchAvailableCustomModels – static branches (no http) ─────────────────
+
+describe('fetchAvailableCustomModels', () => {
+  test('throws when apiUrl is missing', async () => {
+    await expect(fetchAvailableCustomModels({})).rejects.toThrow(/url/i);
+  });
+
+  test('returns anthropic model list for anthropic provider (no http call)', async () => {
+    const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.anthropic.com/v1', provider: 'anthropic' });
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every(m => m.provider === 'anthropic')).toBe(true);
+    expect(models.some(m => m.id.includes('claude'))).toBe(true);
+  });
+
+  test('returns openai model list for openai provider (no http call)', async () => {
+    const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.openai.com/v1', provider: 'openai' });
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every(m => m.provider === 'openai')).toBe(true);
+    expect(models.some(m => m.id === 'gpt-4o')).toBe(true);
+  });
+
+  test('throws for openrouter provider without apiKey', async () => {
+    await expect(
+      fetchAvailableCustomModels({ apiUrl: 'https://openrouter.ai/api/v1', provider: 'openrouter' })
+    ).rejects.toThrow();
   });
 });
