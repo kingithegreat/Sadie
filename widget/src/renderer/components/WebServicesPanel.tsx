@@ -49,6 +49,8 @@ const WebServicesPanel: React.FC = () => {
   const [active, setActive] = useState<ServiceId>('chatgpt');
   // Track which tabs have been loaded at least once (lazy loading)
   const [loaded, setLoaded] = useState<Set<ServiceId>>(new Set(['chatgpt']));
+  // Path to the built webview preload script (exposed by preload/index.ts)
+  const webviewPreload: string = (window as any)._webviewPreload || '';
   // Navigation bar URL display per service
   const [displayUrls, setDisplayUrls] = useState<Record<ServiceId, string>>({
     chatgpt: SERVICES[0].url,
@@ -209,8 +211,8 @@ const WebServicesPanel: React.FC = () => {
                 partition={`persist:${svc.id}`}
                 useragent={CHROME_UA}
                 allowpopups={true}
-                webpreferences="contextIsolation=true,nodeIntegration=false"
-                style={{ width: '100%', height: '100%', display: 'flex' }}
+                preload={webviewPreload}
+                style={{ width: '100%', height: '100%' }}
               />
             )}
           </div>

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
+import * as path from 'path';
 import { debug as logDebug } from '../shared/logger';
 
 // Renderer diagnostics buffer
@@ -456,6 +457,9 @@ contextBridge.exposeInMainWorld('electron', electronAPI as unknown as ElectronAP
 contextBridge.exposeInMainWorld('sadieCapture', {
   log: (msg: string) => { try { pushRendererLog(msg); } catch (e) {} }
 });
+// Expose the built path to the webview preload script so WebServicesPanel can
+// set it as the <webview preload="..."> attribute — must run before page scripts.
+contextBridge.exposeInMainWorld('_webviewPreload', path.join(__dirname, 'webview.js'));
 
 // Export types for TypeScript consumers
 // Re-export the type (forwarded from shared/types)
