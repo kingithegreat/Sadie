@@ -430,6 +430,14 @@ const electronAPI: ElectronAPI = {
   mcpRemoveServer: async (name: string) => ipcRenderer.invoke('sadie:mcp-remove-server', name),
   mcpToggleServer: async (name: string, enabled: boolean) => ipcRenderer.invoke('sadie:mcp-toggle-server', name, enabled),
 
+  // Full-text search across all stored conversations
+  searchConversations: async (query: string, maxResults?: number) =>
+    ipcRenderer.invoke('sadie:search-conversations', query, maxResults),
+
+  // Export a single conversation as Markdown to Desktop
+  exportConversation: async (conversationId: string) =>
+    ipcRenderer.invoke('sadie:export-conversation', conversationId),
+
   // Auto-generate a conversation title from the first user+assistant exchange
   generateTitle: async (args: { conversationId: string; userMessage: string; assistantReply: string }) =>
     ipcRenderer.invoke('sadie:generate-title', args),

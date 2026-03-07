@@ -29,6 +29,7 @@ import {
 import {
   MemoryManager,
   StoredConversation,
+  ConversationSearchResult,
 } from './memory-manager';
 import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
@@ -761,6 +762,43 @@ try {
     if (server) server.enabled = enabled;
     saveMcpConfig(current);
     return { success: true };
+  });
+
+  // ── Conversation Search ─────────────────────────────────────────────────────
+
+  /**
+   * Full-text search across all stored conversations.
+   * Returns matching messages with title, role and a surrounding snippet.
+   */
+  ipcMain.handle('sadie:search-conversations', async (_event, query: string, maxResults?: number) => {
+    try {
+      const results: ConversationSearchResult[] = MemoryManager.searchConversations(query, maxResults ?? 50);
+      return { success: true, data: results };
+    } catch (err: any) {
+      console.error('[IPC] sadie:search-conversations error:', err.message);
+      return { success: false, error: err.message, data: [] };
+    }
+  });
+
+  /**
+   * Export a single conversation as a Markdown string.
+   * Returns the markdown so the renderer can preview it, and also writes it to
+   * the Desktop (same path pattern as sadie:export-chat).
+   */
+  ipcMain.handle('sadie:export-conversation', async (_event, conversationId: string) => {
+    try {
+      const markdown = MemoryManager.exportConversationAsMarkdown(conversationId);
+      if (!markdown) return { success: false, error: 'Conversation not found' };
+      const desktop = app.getPath('desktop');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeId = conversationId.replace(/[^a-z0-9_-]/gi, '').slice(0, 12);
+      const filePath = path.join(desktop, `sadie-export-${safeId}-${ts}.md`);
+      fs.writeFileSync(filePath, markdown, 'utf-8');
+      return { success: true, markdown, path: filePath };
+    } catch (err: any) {
+      console.error('[IPC] sadie:export-conversation error:', err.message);
+      return { success: false, error: err.message };
+    }
   });
 
   // Mark registration complete

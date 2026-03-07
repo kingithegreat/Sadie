@@ -69,6 +69,16 @@ export interface StoredConversation {
   updatedAt: string;
 }
 
+export interface ConversationSearchResult {
+  conversationId: string;
+  conversationTitle: string;
+  messageId: string;
+  role: string;
+  snippet: string;
+  matchIndex: number;
+  updatedAt: string;
+}
+
 export interface ConversationStore {
   conversations: StoredConversation[];
   activeConversationId: string | null;
@@ -258,6 +268,10 @@ export interface ElectronAPI {
   ragList?: () => Promise<{ success: boolean; result?: { total_documents: number; total_chunks: number; documents: Array<{ doc_id: string; filename: string; chunk_count: number }> }; error?: string }>;
   // RAG: remove a document from the index by doc_id
   ragClear?: (docId: string) => Promise<{ success: boolean; result?: { removed_chunks: number; message: string }; error?: string }>;
+  // Full-text search across all stored conversations
+  searchConversations?: (query: string, maxResults?: number) => Promise<{ success: boolean; data: ConversationSearchResult[]; error?: string }>;
+  // Export a single conversation to a Markdown file on the Desktop
+  exportConversation?: (conversationId: string) => Promise<{ success: boolean; markdown?: string; path?: string; error?: string }>;
   // Auto-generate a short title for a conversation from the first exchange
   generateTitle?: (args: { conversationId: string; userMessage: string; assistantReply: string }) => Promise<{ success: boolean; title?: string; error?: string }>;
   // Push event: fires when main process updates a conversation title

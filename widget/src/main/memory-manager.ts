@@ -311,6 +311,88 @@ export function updateMessageInConversation(
   return saveConversation(conversation);
 }
 
+// ============= Search & Export =============
+
+export interface ConversationSearchResult {
+  conversationId: string;
+  conversationTitle: string;
+  messageId: string;
+  role: string;
+  snippet: string;
+  matchIndex: number;
+  updatedAt: string;
+}
+
+/**
+ * Full-text search across all stored conversations.
+ * Returns one result per matching message with a snippet around the match.
+ */
+export function searchConversations(query: string, maxResults = 50): ConversationSearchResult[] {
+  if (!query || !query.trim()) return [];
+  const q = query.trim().toLowerCase();
+  const store = loadConversationStore();
+  const results: ConversationSearchResult[] = [];
+
+  for (const conv of store.conversations) {
+    for (const msg of conv.messages || []) {
+      const content = (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)) || '';
+      const idx = content.toLowerCase().indexOf(q);
+      if (idx === -1) continue;
+      // Build a ±80-char snippet around the match
+      const start = Math.max(0, idx - 80);
+      const end = Math.min(content.length, idx + q.length + 80);
+      const snippet =
+        (start > 0 ? '…' : '') +
+        content.slice(start, end) +
+        (end < content.length ? '…' : '');
+      results.push({
+        conversationId: conv.id,
+        conversationTitle: conv.title || 'Untitled',
+        messageId: msg.id || '',
+        role: msg.role || 'unknown',
+        snippet,
+        matchIndex: idx,
+        updatedAt: conv.updatedAt,
+      });
+      if (results.length >= maxResults) return results;
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Render a single conversation as a Markdown string.
+ */
+export function exportConversationAsMarkdown(conversationId: string): string | null {
+  const conv = getConversation(conversationId);
+  if (!conv) return null;
+
+  const created = new Date(conv.createdAt).toLocaleString();
+  const updated = new Date(conv.updatedAt).toLocaleString();
+  const lines: string[] = [
+    `# ${conv.title || 'Untitled Conversation'}`,
+    ``,
+    `**Created:** ${created}  `,
+    `**Updated:** ${updated}  `,
+    `**Messages:** ${conv.messages.length}`,
+    ``,
+    `---`,
+    ``,
+  ];
+
+  for (const msg of conv.messages) {
+    const roleLabel = msg.role === 'user' ? '**You**' : msg.role === 'assistant' ? '**SADIE**' : `**${msg.role}**`;
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2);
+    lines.push(`### ${roleLabel}`);
+    lines.push(``);
+    lines.push(content);
+    lines.push(``);
+  }
+
+  return lines.join('\n');
+}
+
 // ============= Tool Usage Stats =============
 
 export function loadToolStats(): ToolUsageStats {
@@ -346,6 +428,10 @@ export const MemoryManager = {
   // Tool stats
   loadToolStats,
   recordToolUsage,
+
+  // Search & Export
+  searchConversations,
+  exportConversationAsMarkdown,
 };
 
 export default MemoryManager;

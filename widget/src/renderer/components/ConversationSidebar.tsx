@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import ConversationSearch from './ConversationSearch';
 
 interface Conversation {
   id: string;
@@ -29,6 +30,8 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [exportStatus, setExportStatus] = useState<Record<string, string>>({});
 
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -74,6 +77,30 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       // Remove from local state
       setConversations(prev => prev.filter(c => c.id !== id));
     }
+  };
+
+  const handleExport = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExportStatus(s => ({ ...s, [id]: 'exporting' }));
+    try {
+      const r = await (window as any).electron.exportConversation?.(id);
+      if (r?.success) {
+        setExportStatus(s => ({ ...s, [id]: 'done' }));
+        setTimeout(() => setExportStatus(s => { const n = {...s}; delete n[id]; return n; }), 2500);
+      } else {
+        setExportStatus(s => ({ ...s, [id]: 'error' }));
+      }
+    } catch {
+      setExportStatus(s => ({ ...s, [id]: 'error' }));
+    }
+  };
+
+  const exportLabel = (id: string) => {
+    const s = exportStatus[id];
+    if (s === 'exporting') return '⏳';
+    if (s === 'done') return '✅';
+    if (s === 'error') return '❌';
+    return '⬇️';
   };
 
   const handleStartEdit = (id: string, currentTitle: string, e: React.MouseEvent) => {
@@ -125,6 +152,15 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   if (!isOpen) return null;
 
+  if (showSearch) {
+    return (
+      <ConversationSearch
+        onSelectConversation={(id) => { onSelectConversation(id); onClose(); }}
+        onClose={() => setShowSearch(false)}
+      />
+    );
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -134,6 +170,9 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       <div className="conversation-sidebar">
         <div className="sidebar-header">
           <h2>Conversations</h2>
+          <button className="search-btn" onClick={() => setShowSearch(true)} title="Search conversations" aria-label="Search conversations">
+            🔍
+          </button>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
         
@@ -187,6 +226,14 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                         title="Rename"
                       >
                         ✏️
+                      </button>
+                      <button
+                        className="export-btn"
+                        onClick={(e) => handleExport(conv.id, e)}
+                        title="Export to Markdown"
+                        aria-label={`Export ${conv.title}`}
+                      >
+                        {exportLabel(conv.id)}
                       </button>
                       <button 
                         className="delete-btn" 
