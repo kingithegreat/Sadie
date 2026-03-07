@@ -20,13 +20,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
     const text = content?.trim?.() ?? '';
     logDebug('[Renderer] sendMessage invoked', { text, documents: documents?.length || 0 });
     try { (window as any).sadieCapture?.log(`[Renderer] sendMessage invoked msg=${text.substring(0,120)}`); } catch (e) {}
-    const payload = { message: text, images, documents };
-    logDebug('[Renderer] invoking sadie:sendMessage IPC', payload);
-    try { (window as any).sadieCapture?.log(`[Renderer] invoking sadie:sendMessage IPC payloadPreview=${String(payload.message).substring(0,120)}`); } catch (e) {}
-    const result = onSendMessage(content, images, documents);
-    logDebug('[Renderer] IPC returned', { result });
-    try { (window as any).sadieCapture?.log(`[Renderer] send invoked returned`); } catch (e) {}
-    return result;
+    onSendMessage(content, images, documents);
   };
   return (
     <div className="chat-interface">
