@@ -49,11 +49,36 @@ app.whenReady().then(async () => {
   // Must be done before the webviews load (i.e. before the renderer mounts).
   const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   for (const name of ['chatgpt', 'claude', 'gemini']) {
-    session.fromPartition(`persist:${name}`).setUserAgent(CHROME_UA);
+    const sesh = session.fromPartition(`persist:${name}`);
+    sesh.setUserAgent(CHROME_UA);
+    // Allow all permission requests (camera, mic, notifications, clipboard, etc.)
+    // so login flows don't silently fail due to denied permissions.
+    sesh.setPermissionRequestHandler((_webContents, _permission, callback) => {
+      callback(true);
+    });
   }
 
   // Create the main window first
   mainWindow = createMainWindow();
+
+  // For every <webview> that gets attached to the main window:
+  // 1. Re-apply the Chrome UA at the webContents level (strongest override).
+  // 2. Open OAuth / popup URLs as a real BrowserWindow — Google and others
+  //    actively block embedded WebView auth; a floating window bypasses this.
+  mainWindow.webContents.on('did-attach-webview', (_event, wvContents) => {
+    wvContents.setUserAgent(CHROME_UA);
+    wvContents.setWindowOpenHandler(({ url }) => {
+      const popup = new BrowserWindow({
+        width: 520,
+        height: 760,
+        autoHideMenuBar: true,
+        webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+      });
+      popup.webContents.setUserAgent(CHROME_UA);
+      popup.loadURL(url);
+      return { action: 'deny' }; // prevent internal webview handling
+    });
+  });
 
   // Ensure n8n backend is running (auto-starts Docker container if needed)
   ensureN8nRunning((status) => {

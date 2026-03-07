@@ -37,6 +37,9 @@ const SERVICES = [
 
 type ServiceId = (typeof SERVICES)[number]['id'];
 
+// Must match the UA set on session partitions in main/index.ts
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
 // Helper: get the home URL for a service id
 function homeUrl(id: ServiceId): string {
   return SERVICES.find(s => s.id === id)!.url;
@@ -204,6 +207,7 @@ const WebServicesPanel: React.FC = () => {
                 ref={(el: HTMLElement | null) => { webviewRefs.current[svc.id] = el; }}
                 src={svc.url}
                 partition={`persist:${svc.id}`}
+                useragent={CHROME_UA}
                 allowpopups={true}
                 webpreferences="contextIsolation=true,nodeIntegration=false"
                 style={{ width: '100%', height: '100%', display: 'flex' }}
