@@ -8,6 +8,7 @@ import { getSettings } from './config-manager';
 import { isE2E } from './env';
 import { ensureN8nRunning } from './n8n-lifecycle';
 import { initScheduler } from './scheduler';
+import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -36,6 +37,7 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers BEFORE creating window
   registerIpcHandlers();
+  registerWebServicesHandlers();
 
   // Start background job scheduler
   try {
@@ -126,6 +128,8 @@ app.whenReady().then(async () => {
     }
   });
 });
+
+app.on('before-quit', () => closeAllServiceWindows());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

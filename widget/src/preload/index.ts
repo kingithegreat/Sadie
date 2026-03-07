@@ -460,6 +460,11 @@ contextBridge.exposeInMainWorld('sadieCapture', {
 // Expose the built path to the webview preload script so WebServicesPanel can
 // set it as the <webview preload="..."> attribute — must run before page scripts.
 contextBridge.exposeInMainWorld('_webviewPreload', path.join(__dirname, 'webview.js'));
+// Expose web service controls for the launcher panel
+contextBridge.exposeInMainWorld('_webServices', {
+  open:   (id: string) => ipcRenderer.invoke('sadie:open-web-service', id),
+  status: ()           => ipcRenderer.invoke('sadie:web-service-status'),
+});
 
 // Export types for TypeScript consumers
 // Re-export the type (forwarded from shared/types)
