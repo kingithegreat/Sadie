@@ -305,7 +305,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       if (!filePath || typeof filePath !== 'string') {
         return { success: false, error: 'filePath is required' };
       }
-      const result = await ragToolHandlers.rag_index({ path: filePath });
+      const result = await ragToolHandlers.rag_index({ path: filePath }, {} as any);
       return result;
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
@@ -315,7 +315,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // ── RAG: list all indexed documents ──
   ipcMain.handle('sadie:rag-list', async () => {
     try {
-      return await ragToolHandlers.rag_list({});
+      return await ragToolHandlers.rag_list({}, {} as any);
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
@@ -327,7 +327,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       if (!docId || typeof docId !== 'string') {
         return { success: false, error: 'doc_id is required' };
       }
-      return await ragToolHandlers.rag_clear({ doc_id: docId });
+      return await ragToolHandlers.rag_clear({ doc_id: docId }, {} as any);
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
@@ -718,11 +718,11 @@ try {
   // ── TTS (text-to-speech) ────────────────────────────────────────────────────
   // Uses Web Speech API in the renderer via executeJavaScript (no extra deps, works offline)
   ipcMain.handle('sadie:tts-speak', async (_event, text: string, rate?: number) => {
-    return speakHandler({ text, rate: rate ?? 1.0 });
+    return speakHandler({ text, rate: rate ?? 1.0 }, {} as any);
   });
 
   ipcMain.handle('sadie:tts-stop', async () => {
-    return stopSpeakingHandler({});
+    return stopSpeakingHandler({}, {} as any);
   });
 
   // ── MCP Server Management ───────────────────────────────────────────────────

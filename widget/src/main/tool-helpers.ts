@@ -30,8 +30,8 @@ export function extractBalancedBraceObjects(text: string): any[] {
         if (ch === '\\') { escape = true; j++; continue; }
         if (ch === '"') { inString = !inString; j++; continue; }
         if (!inString) {
-          if (ch === '{' || ch === '[') depth++;
-          else if (ch === '}' || ch === ']') depth--;
+          if (ch === opener) depth++;
+          else if (ch === closer) depth--;
         }
         j++;
       }

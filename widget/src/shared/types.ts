@@ -262,4 +262,15 @@ export interface ElectronAPI {
   generateTitle?: (args: { conversationId: string; userMessage: string; assistantReply: string }) => Promise<{ success: boolean; title?: string; error?: string }>;
   // Push event: fires when main process updates a conversation title
   onTitleUpdated?: (cb: (data: { conversationId: string; title: string }) => void) => () => void;
+  // Telemetry event log
+  readTelemetryEvents?: () => Promise<{ success: boolean; events?: any[]; error?: string }>;
+  // Shell file helpers
+  showInFolder?: (filePath: string) => void;
+  openFile?: (filePath: string) => void;
+  // MCP server management
+  mcpListServers?: () => Promise<any>;
+  mcpGetStatus?: () => Promise<any>;
+  mcpAddServer?: (config: any) => Promise<any>;
+  mcpRemoveServer?: (name: string) => Promise<any>;
+  mcpToggleServer?: (name: string, enabled: boolean) => Promise<any>;
 }
