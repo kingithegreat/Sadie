@@ -170,6 +170,78 @@ describe('toggleJob', () => {
 // ── initScheduler ──────────────────────────────────────────────────────────
 
 describe('initScheduler', () => {
+  test('loads empty job list when no persisted file exists', () => {
+    scheduler.initScheduler();
+    expect(scheduler.listJobs()).toEqual([]);
+  });
+
+  test('loads jobs from persisted JSON when file exists', () => {
+    const fsMock = require('fs');
+    const persistedJobs = [
+      {
+        id: 'job-123-abc',
+        name: 'Morning brief',
+        message: 'Good morning!',
+        intervalMinutes: 60,
+        enabled: false, // disabled so no timer starts
+        createdAt: Date.now(),
+      },
+    ];
+    fsMock.readFileSync.mockReturnValueOnce(JSON.stringify(persistedJobs));
+
+    scheduler.initScheduler();
+    const jobs = scheduler.listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].id).toBe('job-123-abc');
+    expect(jobs[0].name).toBe('Morning brief');
+  });
+
+  test('handles malformed JSON gracefully (falls back to empty list)', () => {
+    const fsMock = require('fs');
+    fsMock.readFileSync.mockReturnValueOnce('NOT_VALID_JSON{{');
+    scheduler.initScheduler();
+    expect(scheduler.listJobs()).toEqual([]);
+  });
+
+  test('handles non-array JSON (falls back to empty list)', () => {
+    const fsMock = require('fs');
+    fsMock.readFileSync.mockReturnValueOnce(JSON.stringify({ jobs: [] }));
+    scheduler.initScheduler();
+    // Non-array → falls back to empty
+    expect(scheduler.listJobs()).toEqual([]);
+  });
+
+  test('starts interval timer for enabled interval job after init', () => {
+    const fsMock = require('fs');
+    const persistedJobs = [
+      {
+        id: 'job-timer-test',
+        name: 'Interval Job',
+        message: 'tick',
+        intervalMinutes: 5,
+        enabled: true,
+        createdAt: Date.now(),
+      },
+    ];
+    fsMock.readFileSync.mockReturnValueOnce(JSON.stringify(persistedJobs));
+
+    jest.useFakeTimers();
+    scheduler.initScheduler();
+
+    const win = {
+      isDestroyed: jest.fn().mockReturnValue(false),
+      webContents: { send: jest.fn() },
+    };
+    const electronMock = require('electron');
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([win]);
+
+    // Advance 5+ minutes → job should fire
+    jest.advanceTimersByTime(5 * 60_000 + 1000);
+    expect(win.webContents.send).toHaveBeenCalledWith('sadie:reminder-fired', expect.objectContaining({ message: 'tick', label: 'Interval Job' }));
+  });
+});
+
+describe('initScheduler', () => {
   test('handles missing jobs file gracefully (starts with empty list)', () => {
     // readFileSync already mocked to throw ENOENT in beforeEach
     scheduler.initScheduler();
