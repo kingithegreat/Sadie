@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import type { ChatMessage } from '../types';
 
 interface TokenCounterProps {
@@ -72,11 +72,19 @@ const TokenCounter: React.FC<TokenCounterProps> = ({ messages, model }) => {
   const fmtNum = (n: number) =>
     n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.style.setProperty('--token-color', color);
+    el.style.setProperty('--token-bar-width', `${pctDisplay}%`);
+  }, [color, pctDisplay]);
+
   return (
     <div
+      ref={containerRef}
       className="token-counter"
       title={`~${remaining.toLocaleString()} tokens remaining of ${limit.toLocaleString()} (used ~${estTokens.toLocaleString()}, estimated via chars ÷ 4)`}
-      style={{ '--token-color': color, '--token-bar-width': `${pctDisplay}%` } as React.CSSProperties}
     >
       {/* Depletion bar: fills as context fills up */}
       <div className="token-bar-track">
