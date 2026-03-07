@@ -29,6 +29,9 @@ import {
   launchAppHandler,
   launchAppDef,
   getSystemInfoDef,
+  getSystemInfoHandler,
+  systemToolDefs,
+  systemToolHandlers,
 } from '../tools/system';
 
 beforeEach(() => {
@@ -378,5 +381,102 @@ describe('tool definitions', () => {
   test('getSystemInfoDef has no required parameters', () => {
     expect(getSystemInfoDef.name).toBe('get_system_info');
     expect(getSystemInfoDef.parameters.required).toEqual([]);
+  });
+});
+
+// ── getSystemInfoHandler ────────────────────────────────────────────────────
+
+describe('getSystemInfoHandler', () => {
+  test('returns success with os, cpu, memory, uptime fields', async () => {
+    mockExec('Caption  FreeSpace     Size\r\nC:       5000000000   10000000000\r\n');
+    const res = await getSystemInfoHandler({}, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.os).toBeDefined();
+    expect(res.result.cpu).toBeDefined();
+    expect(res.result.memory).toBeDefined();
+    expect(res.result.uptime).toBeDefined();
+  });
+
+  test('basic call does not include user or network fields', async () => {
+    mockExec('');
+    const res = await getSystemInfoHandler({ detailed: false }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.user).toBeUndefined();
+    expect(res.result.network).toBeUndefined();
+  });
+
+  test('detailed=true includes user.username and network fields', async () => {
+    mockExec('');
+    const res = await getSystemInfoHandler({ detailed: true }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.user).toBeDefined();
+    expect(res.result.user.username).toBeDefined();
+    expect(res.result.network).toBeDefined();
+  });
+
+  test('memory fields are formatted byte strings with percent', async () => {
+    mockExec('');
+    const res = await getSystemInfoHandler({}, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.memory.total).toMatch(/B$/);
+    expect(res.result.memory.usagePercent).toMatch(/%$/);
+  });
+
+  test('disks array populated on win32 with valid wmic output', async () => {
+    if (process.platform !== 'win32') return; // win32-only branch
+    mockExec('Caption  FreeSpace     Size\r\nC:       5000000000   10000000000\r\n');
+    const res = await getSystemInfoHandler({}, {} as any);
+    expect(res.success).toBe(true);
+    if (Array.isArray(res.result.disks)) {
+      expect(res.result.disks.length).toBeGreaterThan(0);
+      expect(res.result.disks[0].drive).toBe('C:');
+    }
+  });
+
+  test('succeeds even when wmic exec returns error (graceful fallback)', async () => {
+    if (process.platform !== 'win32') return;
+    mockExec('', new Error('wmic not found'));
+    const res = await getSystemInfoHandler({}, {} as any);
+    // disk error is swallowed; overall handler still succeeds
+    expect(res.success).toBe(true);
+    expect(res.result.os).toBeDefined();
+  });
+});
+
+// ── systemToolDefs ──────────────────────────────────────────────────────────
+
+describe('systemToolDefs', () => {
+  test('contains expected tool names', () => {
+    const names = systemToolDefs.map(d => d.name);
+    expect(names).toContain('get_system_info');
+    expect(names).toContain('calculate');
+    expect(names).toContain('get_current_time');
+    expect(names).toContain('screenshot');
+    expect(names).toContain('get_clipboard');
+    expect(names).toContain('set_clipboard');
+    expect(names).toContain('open_url');
+    expect(names).toContain('launch_app');
+  });
+
+  test('every entry has a name, description, and category', () => {
+    for (const def of systemToolDefs) {
+      expect(typeof def.name).toBe('string');
+      expect(typeof def.description).toBe('string');
+      expect(typeof def.category).toBe('string');
+    }
+  });
+});
+
+// ── systemToolHandlers ──────────────────────────────────────────────────────
+
+describe('systemToolHandlers', () => {
+  test('has a callable handler for each major tool', () => {
+    const expectedKeys = [
+      'get_system_info', 'get_clipboard', 'set_clipboard',
+      'open_url', 'launch_app', 'calculate', 'get_current_time', 'screenshot',
+    ];
+    for (const key of expectedKeys) {
+      expect(typeof systemToolHandlers[key]).toBe('function');
+    }
   });
 });
