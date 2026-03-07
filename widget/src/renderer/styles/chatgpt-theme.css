@@ -3018,3 +3018,184 @@ body {
   background: var(--bg-medium);
 }
 
+/* ============================================================
+   WEB SERVICES PANEL  (ChatGPT / Claude / Gemini webviews)
+   ============================================================ */
+
+.web-services-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* Tab bar */
+.web-services-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.web-service-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-bottom: 2px solid transparent;
+}
+
+.web-service-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.web-service-tab.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-bottom-color: var(--svc-color, var(--accent-primary));
+  font-weight: 600;
+}
+
+.web-service-tab .tab-icon {
+  font-size: 15px;
+}
+
+/* Navigation bar */
+.web-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--bg-medium);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.web-nav-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.web-nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.web-url-display {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  cursor: text;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  min-width: 0;
+  transition: border-color 0.12s;
+}
+
+.web-url-display:hover {
+  border-color: var(--accent-primary);
+}
+
+.url-lock {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.url-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-url-input {
+  flex: 1;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--accent-primary);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  min-width: 0;
+}
+
+.web-loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-primary);
+  border-top-color: transparent;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Hint bar */
+.web-hint-bar {
+  padding: 5px 14px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-primary));
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.web-hint-bar strong {
+  color: var(--text-primary);
+}
+
+/* Webview container */
+.web-views-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.web-view-wrapper {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.web-view-wrapper.visible {
+  display: flex;
+}
+
+.web-view-wrapper webview {
+  flex: 1;
+  border: none;
+}
+

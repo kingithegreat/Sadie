@@ -11,6 +11,7 @@ import ConversationSidebar from "./components/ConversationSidebar";
 // @ts-ignore - Component exists but TypeScript cache issue
 import { AutomationCenter } from "./components/AutomationCenter";
 import ImageGenerator from "./components/ImageGenerator";
+import WebServicesPanel from "./components/WebServicesPanel";
 import TokenCounter from "./components/TokenCounter";
 import RagPanel from "./components/RagPanel";
 import type {
@@ -28,7 +29,7 @@ import type {
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image';
+type AppMode = 'chat' | 'automation' | 'image' | 'web';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -856,8 +857,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         />
       ) : mode === 'automation' ? (
         <AutomationCenter />
-      ) : (
+      ) : mode === 'image' ? (
         <ImageGenerator />
+      ) : (
+        <WebServicesPanel />
       )}
 
       {/* Action Confirmation Modal */}

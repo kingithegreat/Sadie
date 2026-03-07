@@ -13,8 +13,8 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
-  mode?: 'chat' | 'automation' | 'image';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image') => void;
+  mode?: 'chat' | 'automation' | 'image' | 'web';
+  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'web') => void;
   currentModel?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
@@ -245,6 +245,13 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               title="Image Mode"
             >
               🎨 Image
+            </button>
+            <button
+              className={`mode-btn ${mode === 'web' ? 'active' : ''}`}
+              onClick={() => onModeChange('web')}
+              title="Web Services — ChatGPT, Claude, Gemini"
+            >
+              🌐 Web
             </button>
           </div>
         )}
