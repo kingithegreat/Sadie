@@ -204,6 +204,7 @@ const WebServicesPanel: React.FC = () => {
                 ref={(el: HTMLElement | null) => { webviewRefs.current[svc.id] = el; }}
                 src={svc.url}
                 partition={`persist:${svc.id}`}
+                allowpopups={true}
                 webpreferences="contextIsolation=true,nodeIntegration=false"
                 style={{ width: '100%', height: '100%', display: 'flex' }}
               />

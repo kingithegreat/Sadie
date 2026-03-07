@@ -1,5 +1,5 @@
 // Main process for SADIE - Full implementation
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, session } from 'electron';
 import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
@@ -44,6 +44,14 @@ app.whenReady().then(async () => {
     console.error('[MAIN] Scheduler init error:', e);
   }
   
+  // Spoof a standard Chrome UA on each web-service session partition so that
+  // ChatGPT, Claude, and Gemini don't detect Electron and block the page.
+  // Must be done before the webviews load (i.e. before the renderer mounts).
+  const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  for (const name of ['chatgpt', 'claude', 'gemini']) {
+    session.fromPartition(`persist:${name}`).setUserAgent(CHROME_UA);
+  }
+
   // Create the main window first
   mainWindow = createMainWindow();
 
