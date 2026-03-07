@@ -167,4 +167,87 @@ describe('generate_sports_report tool', () => {
     expect(Array.isArray(resp.result.files)).toBe(true);
     expect(resp.result.files.length).toBeGreaterThan(0);
   });
+
+  // ── name/score fallback chains (txt format) ───────────────────────────────
+
+  test('uses shortName when event name is absent — txt', async () => {
+    const evt = { shortName: 'LAL vs BOS', competitions: [{ competitors: [
+      { team: { abbreviation: 'LAL' }, score: '100' },
+      { team: { abbreviation: 'BOS' }, score: '98'  },
+    ] }] };
+    jest.spyOn(nba, 'nbaQueryHandler').mockResolvedValue({ success: true, result: { events: [evt] } } as any);
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/SnTxt', format: 'txt', includeSummary: false } as any, {} as any);
+    expect(resp.success).toBe(true);
+    const txt = fs.readFileSync(path.join(resp.result.path, 'report.txt'), 'utf-8');
+    expect(txt).toContain('LAL vs BOS');
+  });
+
+  test('derives name from competitions when name and shortName are absent — txt', async () => {
+    const evt = { competitions: [{ competitors: [
+      { team: { displayName: 'Bulls' }, score: '90' },
+      { team: { displayName: 'Heat'  }, score: '88' },
+    ] }] };
+    jest.spyOn(nba, 'nbaQueryHandler').mockResolvedValue({ success: true, result: { events: [evt] } } as any);
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/CompTxt', format: 'txt', includeSummary: false } as any, {} as any);
+    expect(resp.success).toBe(true);
+    const txt = fs.readFileSync(path.join(resp.result.path, 'report.txt'), 'utf-8');
+    expect(txt).toMatch(/Bulls.*Heat|Heat.*Bulls/i);
+  });
+
+  test('falls back to "Game" when event has no name, shortName, or competitions — txt', async () => {
+    jest.spyOn(nba, 'nbaQueryHandler').mockResolvedValue({ success: true, result: { events: [{}] } } as any);
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/GameTxt', format: 'txt', includeSummary: false } as any, {} as any);
+    expect(resp.success).toBe(true);
+    const txt = fs.readFileSync(path.join(resp.result.path, 'report.txt'), 'utf-8');
+    expect(txt).toContain('Game');
+  });
+
+  test('score is empty when event has no competitions — txt', async () => {
+    jest.spyOn(nba, 'nbaQueryHandler').mockResolvedValue({ success: true, result: { events: [{ name: 'No-Score Game' }] } } as any);
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/NoScoreTxt', format: 'txt', includeSummary: false } as any, {} as any);
+    expect(resp.success).toBe(true);
+    const txt = fs.readFileSync(path.join(resp.result.path, 'report.txt'), 'utf-8');
+    expect(txt).toContain('No-Score Game');
+  });
+
+  // ── name/score fallback chains (html format) ──────────────────────────────
+
+  test('uses shortName when event name is absent — html', async () => {
+    const evt = { shortName: 'GSW vs MEM', competitions: [{ competitors: [
+      { team: { displayName: 'Warriors', abbreviation: 'GSW' }, score: '105' },
+      { team: { displayName: 'Grizzlies', abbreviation: 'MEM' }, score: '102' },
+    ] }] };
+    jest.spyOn(nba, 'nbaQueryHandler').mockResolvedValue({ success: true, result: { events: [evt] } } as any);
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/SnHtml', format: 'html', includeSummary: false } as any, {} as any);
+    expect(resp.success).toBe(true);
+    const html = fs.readFileSync(path.join(resp.result.path, 'report.html'), 'utf-8');
+    expect(html).toContain('GSW vs MEM');
+  });
+
+  test('falls back to "Game" when event has no name, shortName, or competitions — html', async () => {
+    jest.spyOn(nba, 'nbaQueryHandler').mockResolvedValue({ success: true, result: { events: [{}] } } as any);
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/GameHtml', format: 'html', includeSummary: false } as any, {} as any);
+    expect(resp.success).toBe(true);
+    const html = fs.readFileSync(path.join(resp.result.path, 'report.html'), 'utf-8');
+    expect(html).toContain('>Game<');
+  });
+
+  test('score is empty when event has no competitions — html', async () => {
+    jest.spyOn(nba, 'nbaQueryHandler').mockResolvedValue({ success: true, result: { events: [{ name: 'No-Score HTML' }] } } as any);
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/NoScoreHtml', format: 'html', includeSummary: false } as any, {} as any);
+    expect(resp.success).toBe(true);
+    const html = fs.readFileSync(path.join(resp.result.path, 'report.html'), 'utf-8');
+    expect(html).toContain('No-Score HTML');
+    expect(html).toContain('<td></td>');
+  });
+
+  // ── top-level catch ───────────────────────────────────────────────────────
+
+  test('top-level catch returns structured error on unexpected exception', async () => {
+    jest.spyOn(nba, 'nbaQueryHandler').mockRejectedValue(new Error('critical failure'));
+    const resp = await sportsReportHandler({ league: 'nba', date: '2025-12-14', directory: 'Desktop/Catch', format: 'txt' } as any, {} as any);
+    expect(resp.success).toBe(false);
+    expect(resp.error).toMatch(/Sports report generation failed/);
+    expect(resp.error).toMatch(/critical failure/);
+  });
 });

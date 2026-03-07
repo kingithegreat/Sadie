@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as http from 'http';
+import * as https from 'https';
 import * as path from 'path';
 
 jest.mock('fs');
@@ -240,6 +241,97 @@ describe('vision_query', () => {
     expect(result.success).toBe(true);
     // The two chunks 'A ' and 'dog.' are concatenated without extra trimming between parts
     expect(result.result.response).toMatch(/A\s+dog\./);
+  });
+});
+
+// ── ollamaGenerate edge cases ────────────────────────────────────────────
+
+describe('ollamaGenerate — edge cases', () => {
+  it('uses https.request when ollamaUrl starts with https://', async () => {
+    const configManager = require('../config-manager');
+    configManager.getSettings.mockReturnValueOnce({
+      ollamaUrl: 'https://ollama.example.com:11434',
+      visionModel: 'llava',
+    });
+    mockFs(true, false, Buffer.from('fake-png'));
+
+    const mockReq: any = { on: jest.fn().mockReturnThis(), write: jest.fn(), end: jest.fn(), setTimeout: jest.fn(), destroy: jest.fn() };
+    const mockRes: any = {
+      on: jest.fn((event: string, cb: (...args: any[]) => void) => {
+        if (event === 'data') cb(Buffer.from(JSON.stringify({ response: 'Described via HTTPS.' })));
+        if (event === 'end') cb();
+        return mockRes;
+      }),
+    };
+    (https.request as jest.Mock).mockImplementation((_opts: any, cb: any) => {
+      if (cb) cb(mockRes);
+      return mockReq;
+    });
+
+    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    expect(result.success).toBe(true);
+    expect(result.result.response).toBe('Described via HTTPS.');
+    expect(https.request).toHaveBeenCalled();
+  });
+
+  it('returns timeout error when Ollama request times out', async () => {
+    mockFs(true, false, Buffer.from('fake-png'));
+    const mockReq: any = {
+      on: jest.fn().mockReturnThis(),
+      write: jest.fn(),
+      end: jest.fn(),
+      setTimeout: jest.fn((_ms: number, cb: () => void) => { cb(); }),
+      destroy: jest.fn(),
+    };
+    (http.request as jest.Mock).mockImplementation(() => mockReq);
+
+    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/timed out/i);
+  });
+
+  it('returns "(no response)" when all NDJSON lines lack a response field', async () => {
+    mockFs(true, false, Buffer.from('fake-png'));
+    const mockReq: any = { on: jest.fn().mockReturnThis(), write: jest.fn(), end: jest.fn(), setTimeout: jest.fn(), destroy: jest.fn() };
+    const mockRes: any = {
+      on: jest.fn((event: string, cb: (...args: any[]) => void) => {
+        if (event === 'data') cb(Buffer.from(JSON.stringify({ done: true })));
+        if (event === 'end') cb();
+        return mockRes;
+      }),
+    };
+    (http.request as jest.Mock).mockImplementation((_opts: any, cb: any) => { cb(mockRes); return mockReq; });
+
+    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    expect(result.success).toBe(true);
+    expect(result.result.response).toBe('(no response)');
+  });
+
+  it('allows access when HOME env var is unset (home guard is skipped)', async () => {
+    const origHome = process.env.HOME;
+    const origUserProfile = process.env.USERPROFILE;
+    delete process.env.HOME;
+    delete process.env.USERPROFILE;
+
+    mockFs(true, false, Buffer.from('fake-png'));
+    mockOllamaSuccess('Allowed.');
+
+    const result = await visionToolHandlers.vision_describe({ file_path: OUTSIDE_PATH });
+    expect(result.success).toBe(true);
+
+    if (origHome !== undefined) process.env.HOME = origHome;
+    if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+  });
+
+  it('falls back to env vars when config-manager getter throws', async () => {
+    const configManager = require('../config-manager');
+    configManager.getSettings.mockImplementationOnce(() => { throw new Error('config unavailable'); });
+
+    mockFs(true, false, Buffer.from('fake-png'));
+    mockOllamaSuccess('Fallback success.');
+
+    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    expect(result.success).toBe(true);
   });
 });
 
