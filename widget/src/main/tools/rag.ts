@@ -345,16 +345,22 @@ export const ragToolHandlers: Record<string, ToolHandler> = {
     }
 
     const queryVec = tfidfVec(computeTf(tokenize(query)));
-    const scored = candidates
+    // Filter out near-zero scores (incidental term overlap, statistical noise).
+    // Always return at least 1 result (best available) so the call never comes back empty.
+    const MIN_RELEVANCE_SCORE = 0.05;
+    const allScored = candidates
       .map(chunk => ({ chunk, score: cosineSim(queryVec, tfidfVec(chunk.tf)) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
+      .sort((a, b) => b.score - a.score);
+    const aboveThreshold = allScored.filter(x => x.score >= MIN_RELEVANCE_SCORE);
+    const scored = (aboveThreshold.length > 0 ? aboveThreshold : allScored.slice(0, 1)).slice(0, topK);
+    const lowConfidence = aboveThreshold.length === 0;
 
     return {
       success: true,
       result: {
         query,
         chunks_searched: candidates.length,
+        ...(lowConfidence ? { low_confidence: true, note: 'No chunks closely matched the query; showing best available result.' } : {}),
         results: scored.map(({ chunk, score }) => ({
           doc_id:      chunk.docId,
           filename:    chunk.filename,

@@ -154,11 +154,28 @@ const COMPRESS_BATCH = 20;
 /** Compact a batch of messages into a brief prose digest line. */
 function compressTurns(turns: ConversationMessage[]): string {
   return turns.map(t => {
-    const speaker = t.role === 'user' ? 'User' : 'Assistant';
-    // Trim very long messages to keep the digest tight
-    const snippet = t.content.length > 200 ? t.content.slice(0, 200) + '…' : t.content;
-    return `${speaker}: ${snippet}`;
-  }).join(' | ');
+    const speaker = t.role === 'user' ? 'User' : 'SADIE';
+    // Strip noisy artifacts (search blocks, code, images) before summarising
+    const content = t.content
+      .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
+      .replace(/__SADIE_IMAGE__:[^\s]+/g, '[image]')
+      .replace(/```[\s\S]*?```/g, '[code block]')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (content.length <= 120) return `${speaker}: ${content}`;
+    // For longer messages keep the first sentence (the intent/question) and the
+    // last sentence (the conclusion/answer) — far more informative than a raw
+    // head-truncation which discards the actual answer.
+    const sentences = content.match(/[^.!?\n]+[.!?\n]+/g) ?? [];
+    if (sentences.length >= 2) {
+      const first = sentences[0]!.trim().slice(0, 100);
+      const last  = sentences[sentences.length - 1]!.trim().slice(0, 80);
+      return first === last
+        ? `${speaker}: ${first}`
+        : `${speaker}: ${first} … ${last}`;
+    }
+    return `${speaker}: ${content.slice(0, 150)}…`;
+  }).join('\n');
 }
 
 function addToHistory(conversationId: string, role: 'user' | 'assistant', content: string) {
@@ -822,59 +839,15 @@ function takeSentences(text: string, maxChars = 400, maxSentences = 3): string {
   return out || cleaned.slice(0, maxChars);
 }
 
-function extractKeySnippets(text: string, maxItems = 2): string[] {
-  const sentences = (text || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/);
-  const interesting: string[] = [];
-  const signal = /(\bjan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec\b|\b\d{1,2}[\/\-]\d{1,2}\b|\b\d{1,2}\s?(am|pm)\b|\bvs\b|\bat\b)/i;
-  for (const s of sentences) {
-    if (!s) continue;
-    if (signal.test(s)) {
-      interesting.push(s.trim());
-      if (interesting.length >= maxItems) break;
-    }
-  }
-  return interesting;
-}
-
 function formatWebSearchResult(payload: any): string {
   const res = payload?.result ?? payload;
   if (!res) return '';
+  // Delegate to buildSearchContext for unified formatting — both paths now share
+  // the same source-extraction, budget, and numbered-source layout.
+  // buildSearchContext is a function declaration so hoisting makes it safe to call here.
+  const context = buildSearchContext(res, 4000);
   const parts: string[] = [];
-
-  const firstResult = Array.isArray(res.results) && res.results.length > 0 ? res.results[0] : undefined;
-
-  // Use sources[] array (multi-result) if present, fall back to legacy topResultContent
-  const sources: Array<{ url: string; title: string; content: string }> =
-    Array.isArray(res.sources) && res.sources.length > 0
-      ? res.sources
-      : (res.topResultContent ? [res.topResultContent] : []);
-
-  if (sources.length > 0) {
-    // Respect a total character budget across all sources so the prompt doesn't balloon
-    const TOTAL_BUDGET = 4000;
-    const perSource = Math.floor(TOTAL_BUDGET / sources.length);
-    sources.forEach((src, i) => {
-      const raw = (src.content || '').replace(/\s+/g, ' ').trim();
-      const condensed = takeSentences(raw, perSource, 4);
-      if (i === 0) {
-        if (src.title) parts.push(src.title);
-        if (condensed) parts.push(condensed);
-        const highlights = extractKeySnippets(raw, 2);
-        if (highlights.length > 0) parts.push(highlights.map(h => `- ${h}`).join('\n'));
-        if (src.url) parts.push(`Source: ${src.url}`);
-      } else {
-        // Additional sources separated clearly for the model
-        const section: string[] = [`\n--- Source ${i + 1}: ${src.title || src.url}`];
-        if (condensed) section.push(condensed);
-        if (src.url) section.push(`URL: ${src.url}`);
-        parts.push(section.join('\n'));
-      }
-    });
-  } else if (firstResult?.snippet) {
-    parts.push(firstResult.snippet);
-    if (firstResult.url) parts.push(`Top link: ${firstResult.title || firstResult.url} — ${firstResult.url}`);
-  }
-
+  if (context) parts.push(context);
   if (res.note) parts.push(res.note);
   return parts.filter(Boolean).join('\n');
 }
