@@ -1,5 +1,4 @@
 /** @jest-environment jsdom */
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import TokenCounter from '../components/TokenCounter';
 import type { ChatMessage } from '../types';

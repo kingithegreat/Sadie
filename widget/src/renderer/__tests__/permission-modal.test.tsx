@@ -1,6 +1,5 @@
 /** @jest-environment jsdom */
-import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import PermissionModal from '../components/PermissionModal';
 
 const PERMS = ['file_read', 'file_write'];

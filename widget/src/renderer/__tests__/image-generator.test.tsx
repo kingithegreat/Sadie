@@ -4,7 +4,7 @@
  * Tests for src/renderer/components/ImageGenerator.tsx
  */
 
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import ImageGenerator from '../components/ImageGenerator';
 
 function setupElectron(impl?: () => Promise<any>) {

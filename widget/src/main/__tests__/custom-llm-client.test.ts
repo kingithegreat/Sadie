@@ -116,13 +116,13 @@ describe('validateCustomLLMConfig', () => {
   });
 
   test('valid for well-formed openai config', () => {
-    const r = validateCustomLLMConfig({ apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4', provider: 'openai' });
+    const r = validateCustomLLMConfig({ apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4', provider: 'openai', name: 'test', enabled: true });
     expect(r.valid).toBe(true);
     expect(r.error).toBeUndefined();
   });
 
   test('valid for well-formed anthropic config', () => {
-    const r = validateCustomLLMConfig({ apiUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic' });
+    const r = validateCustomLLMConfig({ apiUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic', name: 'test', enabled: true });
     expect(r.valid).toBe(true);
   });
 });
@@ -141,19 +141,19 @@ describe('autoConfigureCustomLLM', () => {
   });
 
   test('does not overwrite existing provider', () => {
-    const result = autoConfigureCustomLLM({ apiUrl: 'https://openrouter.ai/api/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openrouter' });
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://openrouter.ai/api/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openrouter', name: 'test', enabled: true });
     expect(result.provider).toBe('openrouter');
   });
 
   test('adds metadata for known model when metadata not present', () => {
-    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openai' });
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openai', name: 'test', enabled: true });
     expect(result.metadata).toBeDefined();
     expect(result.metadata!.contextWindow).toBe(128000);
   });
 
   test('preserves existing metadata if already defined', () => {
     const existing = { contextWindow: 999, maxTokens: 1, supportsTools: false, supportsVision: false, supportsStreaming: false };
-    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openai', metadata: existing });
+    const result = autoConfigureCustomLLM({ apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4o', provider: 'openai', name: 'test', enabled: true, metadata: existing });
     expect(result.metadata).toBe(existing);
   });
 });
@@ -232,7 +232,7 @@ describe('fetchAvailableCustomModels – HTTP call branches', () => {
     axiosErr.isAxiosError = true;
     axiosErr.response = { status: 404, statusText: 'Not Found', data: { error: { message: 'endpoint missing' } } };
     (axios.get as jest.Mock).mockRejectedValue(axiosErr);
-    (axios.isAxiosError as jest.Mock).mockReturnValue(true);
+    (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(true);
 
     await expect(
       fetchAvailableCustomModels({ apiUrl: 'http://localhost:9999', provider: 'custom' })
@@ -242,7 +242,7 @@ describe('fetchAvailableCustomModels – HTTP call branches', () => {
   test('non-axios error is re-thrown as-is', async () => {
     const nativeErr = new TypeError('socket hang up');
     (axios.get as jest.Mock).mockRejectedValue(nativeErr);
-    (axios.isAxiosError as jest.Mock).mockReturnValue(false);
+    (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(false);
 
     await expect(
       fetchAvailableCustomModels({ apiUrl: 'http://localhost:9999', provider: 'custom' })
@@ -327,7 +327,7 @@ describe('streamFromCustomLLM', () => {
     streamFromCustomLLM(
       'hello',
       [],
-      { apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4', provider: 'openai' },
+      { apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4', provider: 'openai', name: 'test', enabled: true },
       'system',
       onChunk,
       onEnd,
@@ -354,7 +354,7 @@ describe('streamFromCustomLLM', () => {
     streamFromCustomLLM(
       'hello',
       [],
-      { apiUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant-test', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic' },
+      { apiUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant-test', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic', name: 'test', enabled: true },
       'system',
       onChunk,
       onEnd,
@@ -400,7 +400,7 @@ describe('streamFromCustomLLM', () => {
     const result = await streamFromCustomLLM(
       'hi',
       [],
-      { apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4', provider: 'openai' },
+      { apiUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-4', provider: 'openai', name: 'test', enabled: true },
       'system',
       jest.fn(),
       jest.fn(),

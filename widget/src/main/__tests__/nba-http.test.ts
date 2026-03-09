@@ -58,7 +58,7 @@ beforeEach(() => {
 describe('nbaQueryHandler — news', () => {
   it('returns articles from ESPN news endpoint', async () => {
     mockGet({ articles: [{ headline: 'LeBron scores 50', summary: '' }] });
-    const result = await nbaQueryHandler({ type: 'news', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'news', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.articles).toHaveLength(1);
   });
@@ -68,7 +68,7 @@ describe('nbaQueryHandler — news', () => {
       { headline: 'LeBron scores 50', summary: '' },
       { headline: 'Curry wins MVP', summary: '' },
     ] });
-    const result = await nbaQueryHandler({ type: 'news', query: 'curry', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'news', query: 'curry', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.articles).toHaveLength(1);
     expect(result.result.articles[0].headline).toMatch(/Curry/);
@@ -79,21 +79,21 @@ describe('nbaQueryHandler — news', () => {
       { headline: 'Game recap', summary: 'Heat wins in overtime' },
       { headline: 'Preview', summary: 'Unrelated news' },
     ] });
-    const result = await nbaQueryHandler({ type: 'news', query: 'heat wins', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'news', query: 'heat wins', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.articles).toHaveLength(1);
   });
 
   it('falls back to items property when articles absent', async () => {
     mockGet({ items: [{ headline: 'Trade news' }] });
-    const result = await nbaQueryHandler({ type: 'news', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'news', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.articles).toHaveLength(1);
   });
 
   it('returns empty articles when query matches nothing', async () => {
     mockGet({ articles: [{ headline: 'Knicks update', summary: '' }] });
-    const result = await nbaQueryHandler({ type: 'news', query: 'zzzunknownzzz', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'news', query: 'zzzunknownzzz', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.articles).toHaveLength(0);
   });
@@ -105,7 +105,7 @@ describe('nbaQueryHandler — games', () => {
   it('returns events for a specific date', async () => {
     const event = { id: 'g1', name: 'Lakers at Celtics', status: { type: { state: 'post' } } };
     mockGet({ events: [event] });
-    const result = await nbaQueryHandler({ type: 'games', date: '2025-01-15' });
+    const result = await nbaQueryHandler({ type: 'games', date: '2025-01-15' }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.events[0].id).toBe('g1');
     expect(result.result.allScheduled).toBe(false);
@@ -113,7 +113,7 @@ describe('nbaQueryHandler — games', () => {
 
   it('returns allScheduled=true when all events are pre-state', async () => {
     mockGet({ events: [{ id: 'g2', name: 'Warriors at Nets', status: { type: { state: 'pre' } } }] });
-    const result = await nbaQueryHandler({ type: 'games', date: '2025-06-01' });
+    const result = await nbaQueryHandler({ type: 'games', date: '2025-06-01' }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.allScheduled).toBe(true);
   });
@@ -123,7 +123,7 @@ describe('nbaQueryHandler — games', () => {
       { id: 'g1', name: 'Lakers at Celtics', status: { type: { state: 'post' } } },
       { id: 'g2', name: 'Bulls at Heat',     status: { type: { state: 'post' } } },
     ] });
-    const result = await nbaQueryHandler({ type: 'games', date: '2025-01-15', query: 'lakers' });
+    const result = await nbaQueryHandler({ type: 'games', date: '2025-01-15', query: 'lakers' }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.events).toHaveLength(1);
     expect(result.result.events[0].id).toBe('g1');
@@ -132,7 +132,7 @@ describe('nbaQueryHandler — games', () => {
   it('falls back to rolling window when no date requested and scoreboard returns empty', async () => {
     // All https.get calls return empty events (no games in any window date)
     mockGet({ events: [] });
-    const result = await nbaQueryHandler({ type: 'games' }); // no date
+    const result = await nbaQueryHandler({ type: 'games' }, {} as any); // no date
     expect(result.success).toBe(true);
     expect(result.result.events).toEqual([]);
   });
@@ -144,7 +144,7 @@ describe('nbaQueryHandler — games', () => {
       { data: { events: [preEvt]  } }, // initial scoreboard fetch
       { data: { events: [postEvt] } }, // previous-day fetch
     ]);
-    const result = await nbaQueryHandler({ type: 'games', date: '2025-03-01', wantsResults: true } as any);
+    const result = await nbaQueryHandler({ type: 'games', date: '2025-03-01', wantsResults: true } as any, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.events[0].id).toBe('g-post');
   });
@@ -155,7 +155,7 @@ describe('nbaQueryHandler — games', () => {
       { data: { events: [preEvt] } }, // initial fetch
       { data: { events: [] } },       // previous-day fetch returns nothing finished
     ]);
-    const result = await nbaQueryHandler({ type: 'games', date: '2025-03-01', wantsResults: true } as any);
+    const result = await nbaQueryHandler({ type: 'games', date: '2025-03-01', wantsResults: true } as any, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.events[0].id).toBe('g-pre');
   });
@@ -169,14 +169,14 @@ describe('nbaQueryHandler — teams', () => {
       { team: { id: '1', displayName: 'Los Angeles Lakers' } },
       { team: { id: '2', displayName: 'Boston Celtics' } },
     ] }] }] });
-    const result = await nbaQueryHandler({ type: 'teams' });
+    const result = await nbaQueryHandler({ type: 'teams' }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.teams).toHaveLength(2);
   });
 
   it('returns empty teams when ESPN sports data is absent', async () => {
     mockGet({});
-    const result = await nbaQueryHandler({ type: 'teams' });
+    const result = await nbaQueryHandler({ type: 'teams' }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.teams).toEqual([]);
   });
@@ -200,7 +200,7 @@ describe('nbaQueryHandler — standings', () => {
         ],
       }] },
     }] });
-    const result = await nbaQueryHandler({ type: 'standings' });
+    const result = await nbaQueryHandler({ type: 'standings' }, {} as any);
     expect(result.success).toBe(true);
     const east = result.result.standings[0];
     expect(east.conference).toBe('Eastern Conference');
@@ -225,7 +225,7 @@ describe('nbaQueryHandler — standings', () => {
         ],
       }] },
     }] });
-    const result = await nbaQueryHandler({ type: 'standings' });
+    const result = await nbaQueryHandler({ type: 'standings' }, {} as any);
     expect(result.success).toBe(true);
     const conf = result.result.standings[0];
     expect(conf.teams[0].wins).toBe(20);
@@ -236,7 +236,7 @@ describe('nbaQueryHandler — standings', () => {
 
   it('returns empty standings when children array is absent', async () => {
     mockGet({});
-    const result = await nbaQueryHandler({ type: 'standings' });
+    const result = await nbaQueryHandler({ type: 'standings' }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.standings).toEqual([]);
   });
@@ -255,7 +255,7 @@ describe('nbaQueryHandler — players', () => {
       { data: { sports: [{ leagues: [{ teams: [{ team: { id: '1', displayName: 'Team A' } }] }] }] } },
       { data: { athletes: [] } },
     ]);
-    const result = await nbaQueryHandler({ type: 'players', query: 'unknownplayer', perPage: 3 });
+    const result = await nbaQueryHandler({ type: 'players', query: 'unknownplayer', perPage: 3 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.players).toEqual([]);
   });
@@ -267,7 +267,7 @@ describe('nbaQueryHandler — players', () => {
       { data: { athletes: [] } },
       { data: { data: [{ id: 1, first_name: 'LeBron', last_name: 'James' }] } },
     ]);
-    const result = await nbaQueryHandler({ type: 'players', query: 'lebron', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'players', query: 'lebron', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.data).toBeDefined();
   });
@@ -278,7 +278,7 @@ describe('nbaQueryHandler — players', () => {
 describe('nbaQueryHandler — httpsGet encoding', () => {
   it('handles non-JSON text response gracefully (teams falls back to empty array)', async () => {
     mockGet('not-json-text');
-    const result = await nbaQueryHandler({ type: 'teams' });
+    const result = await nbaQueryHandler({ type: 'teams' }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.teams).toEqual([]);
   });
@@ -287,7 +287,7 @@ describe('nbaQueryHandler — httpsGet encoding', () => {
     const payload = JSON.stringify({ articles: [{ headline: 'Gzip article', summary: '' }] });
     (zlib.gunzipSync as jest.Mock).mockReturnValueOnce(Buffer.from(payload));
     mockGet('gzip-bytes', 'gzip');
-    const result = await nbaQueryHandler({ type: 'news', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'news', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.articles[0].headline).toBe('Gzip article');
     expect(zlib.gunzipSync).toHaveBeenCalled();
@@ -297,7 +297,7 @@ describe('nbaQueryHandler — httpsGet encoding', () => {
     const payload = JSON.stringify({ events: [{ id: 'gd1', name: 'Deflate game', status: { type: { state: 'post' } } }] });
     (zlib.inflateSync as jest.Mock).mockReturnValueOnce(Buffer.from(payload));
     mockGet('deflate-bytes', 'deflate');
-    const result = await nbaQueryHandler({ type: 'games', date: '2025-01-15' });
+    const result = await nbaQueryHandler({ type: 'games', date: '2025-01-15' }, {} as any);
     expect(result.success).toBe(true);
     expect(zlib.inflateSync).toHaveBeenCalled();
   });
@@ -306,7 +306,7 @@ describe('nbaQueryHandler — httpsGet encoding', () => {
     const payload = JSON.stringify({ articles: [{ headline: 'Brotli news', summary: '' }] });
     (zlib.brotliDecompressSync as jest.Mock).mockReturnValueOnce(Buffer.from(payload));
     mockGet('br-bytes', 'br');
-    const result = await nbaQueryHandler({ type: 'news', perPage: 5 });
+    const result = await nbaQueryHandler({ type: 'news', perPage: 5 }, {} as any);
     expect(result.success).toBe(true);
     expect(result.result.articles[0].headline).toBe('Brotli news');
     expect(zlib.brotliDecompressSync).toHaveBeenCalled();
@@ -322,7 +322,7 @@ describe('nbaQueryHandler — httpsGet encoding', () => {
       };
       return req;
     });
-    const result = await nbaQueryHandler({ type: 'teams' });
+    const result = await nbaQueryHandler({ type: 'teams' }, {} as any);
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/NBA query failed/);
   });

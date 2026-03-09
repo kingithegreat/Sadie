@@ -45,11 +45,6 @@ describe('ModelSelector — initial render', () => {
 });
 
 describe('ModelSelector — dropdown', () => {
-  function openDropdown() {
-    // The main selector button has aria-haspopup="menu"
-    fireEvent.click(screen.getByRole('button', { name: '' }));
-  }
-
   function getMainBtn() {
     return document.querySelector('.model-selector-button') as HTMLElement;
   }

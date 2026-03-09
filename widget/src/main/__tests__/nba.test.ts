@@ -100,19 +100,19 @@ test('passes formatted dates as YYYYMMDD in params', async () => {
 // ─── nbaQueryHandler – pure error paths (no http) ────────────────────────────
 
 test('returns error for invalid type', async () => {
-  const result = await nbaQueryHandler({ type: 'invalid_type' });
+  const result = await nbaQueryHandler({ type: 'invalid_type' }, {} as any);
   expect(result.success).toBe(false);
   expect(result.error).toMatch(/invalid type/i);
 });
 
 test('returns error for stats type (not implemented)', async () => {
-  const result = await nbaQueryHandler({ type: 'stats' });
+  const result = await nbaQueryHandler({ type: 'stats' }, {} as any);
   expect(result.success).toBe(false);
   expect(result.error).toBeTruthy();
 });
 
 test('returns error for roster without query', async () => {
-  const result = await nbaQueryHandler({ type: 'roster', query: '' });
+  const result = await nbaQueryHandler({ type: 'roster', query: '' }, {} as any);
   expect(result.success).toBe(false);
   expect(result.error).toBeTruthy();
 });

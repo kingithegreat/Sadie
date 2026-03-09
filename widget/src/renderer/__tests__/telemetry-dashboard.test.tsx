@@ -4,8 +4,7 @@
  * Tests for src/renderer/components/TelemetryDashboard.tsx
  */
 
-import { render, screen, act, waitFor } from '@testing-library/react';
-import { fireEvent } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import TelemetryDashboard from '../components/TelemetryDashboard';
 
 function setup(overrides?: { readTelemetryEvents?: () => Promise<any> }) {
