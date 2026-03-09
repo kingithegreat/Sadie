@@ -1,6 +1,6 @@
 {
   "name": "sadie-widget",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "SADIE - Structured AI Desktop Intelligence Engine Widget",
   "main": "out/main/index.js",
   "type": "commonjs",
@@ -128,5 +128,7 @@
       "createStartMenuShortcut": true
     }
   },
-  "browserslist": ["chrome >= 130"]
+  "browserslist": [
+    "chrome >= 130"
+  ]
 }

@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.0.4 — Embedded web services, test coverage 1293, context & routing fixes, quality improvements
+
+### Added
+- **Embedded web services panel**: access ChatGPT, Claude, and Gemini directly inside SADIE via subscription — each service opens in a sandboxed `BrowserWindow` with correct Chrome UA, `allowpopups`, and a pre-injected preload that clears `navigator.webdriver` before page scripts run, defeating Cloudflare bot-detection.
+- **Conversation full-text search**: search across all conversation history with incremental results as you type.
+- **Per-conversation Markdown export**: export any conversation to a clean `.md` file from the sidebar.
+- **Test suite 522 → 1293** (+771 tests across 15 batches): system-tools, custom-llm-client, scheduler, enrichment, document-tools, calendar-tools, voice-tools, ActionConfirmation, TelemetryConsentModal, stream-proxy-client, FirstRunModal, imageUtils, window-manager, TelemetryDashboard, ImageGenerator, ModelSelector, AutomationCenter, ToolsPanel, ConversationSidebar, RagPanel, PermissionModal, NBA utils, logger, contacts, system-prompt, sports-report, TokenCounter, memory-manager, code-runner, shared logger, mcp-client, env, scheduler, NBA HTTP paths, vision edge-cases, filesystem, process-manager.
+
+### Fixed
+- **Context hydration on startup** (`App.tsx`): startup boot loaded messages to the UI but never called `setActiveConversation`, so `ensureHydrated` never ran and the LLM had empty `conversationHistory` after every app restart. Fixed by calling `setActiveConversation` in the startup `useEffect`.
+- **Cloud model routing** (`message-router.ts`):
+  - MCP memory recall/memorize now runs in the cloud LLM path (previously only ran for Ollama).
+  - Code API path now builds `codeSystemPrompt` from the configured code model instead of the chat model.
+  - Title generation (`ipc-handlers.ts`) now respects `settings.chatModel` instead of being hardcoded to `llama3.2:3b`.
+  - Duplicate coding-query regex consolidated into a single `CODING_QUERY_PATTERN` constant.
+- **Cloudflare bot-detection bypass**: web service panels inject a preload to clear `navigator.webdriver`; correct `Chrome/` User-Agent set per session partition.
+- **Webview auth**: permission request handler added; `did-attach-webview` sets UA and enables popup windows; login pages no longer silently fail.
+
+### Improved
+- **Digest compression** (`compressTurns`): strips search result blocks, code blocks, and image placeholders, then extracts the first sentence (topic/intent) and last sentence (conclusion/answer) instead of blindly truncating at 200 chars. Rolling context window now carries meaningful summaries.
+- **Search context unification**: `formatWebSearchResult` now delegates to `buildSearchContext` (4000-char budget), removing ~60 lines of duplicate source-formatting code.
+- **RAG relevance filter** (`rag_query`): chunks scoring below `MIN_RELEVANCE_SCORE = 0.05` are filtered out. When all chunks fall below the threshold, the single best result is returned with a `low_confidence: true` flag rather than silently returning noise.
+
+---
+
+## v1.0.3 — NBA intent guard + YouTube music links
+
+### Fixed
+- **NBA intent guard**: tightened sport-query detection to eliminate false positives where non-sports messages were incorrectly routed to the NBA/sports handler.
+- **YouTube music links**: corrected link construction for YouTube music search results.
+
+---
+
+## v1.0.2 — Auto-generate conversation titles
+
+### Added
+- **Automatic conversation titles**: after the first exchange SADIE generates a short descriptive title for the conversation using the configured chat model. Titles appear immediately in the sidebar without requiring manual rename.
+
+---
+
 ## v1.0.1 — Code quality hardening and conversation coherence fix
 
 ### Fixed
