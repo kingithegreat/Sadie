@@ -111,6 +111,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             const convData = await window.electron.getConversation?.(store.activeConversationId);
             if (convData?.success && convData.data) {
               setConversationId(store.activeConversationId);
+              // Hydrate the LLM's in-memory context so the first message after
+              // a restart has full conversation history (not just the UI).
+              try { await window.electron.setActiveConversation?.(store.activeConversationId); } catch (e) {}
               // Load per-conversation system prompt (if any)
               setConversationSystemPrompt(convData.data.systemPrompt || '');
               // Convert stored messages to ChatMessage format

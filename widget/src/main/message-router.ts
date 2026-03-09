@@ -1186,6 +1186,10 @@ function isSimpleGreeting(message: string): boolean {
   return SIMPLE_GREETING_PATTERNS.test(message.trim());
 }
 
+// Shared regex for detecting coding-heavy queries used by both cloud and local routing.
+// Keep this in one place so both paths always stay in sync.
+const CODING_QUERY_PATTERN = /\b(write|create|generate|fix|debug|refactor|optimise|optimize|implement|explain this code|review.*code|code.*review|function|class|algorithm|regex|sql|query|script|bash|python|javascript|typescript|html|css|java|c\+\+|golang|rust|react|api)\b/i;
+
 // Wrapper function that routes to either Ollama or Custom LLM based on settings
 export async function streamFromLLM(
   message: string, 
@@ -1221,7 +1225,16 @@ export async function streamFromLLM(
       const controller = new AbortController();
       const history = getHistory(conversationId);
       const customConfig = (settings as any).customLLM as import('../shared/types').CustomLLMConfig;
-      
+
+      // Inject MCP memory recall into the system prompt (same as Ollama path).
+      // Fire-and-forget memorization of any self-disclosures in this message.
+      let cloudSystemPrompt = systemPromptWithGuidelines;
+      const recalled = await recallMemory(message).catch(() => null);
+      if (recalled) {
+        cloudSystemPrompt += `\n\n[Remembered facts about the user from prior sessions]\n${recalled}`;
+      }
+      memorizeIfUseful(message).catch(() => {});
+
       // Get tool definitions for providers that support function calling
       // anthropic is now included following the Anthropic tool calling implementation
       const providerSupportsTools = customConfig.provider === 'openai'
@@ -1270,7 +1283,7 @@ export async function streamFromLLM(
             '', // empty — context is in the history
             updatedHistory,
             customConfig,
-            systemPromptWithGuidelines,
+            cloudSystemPrompt,
             onChunk,
             onEnd,
             onError,
@@ -1296,7 +1309,7 @@ export async function streamFromLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
         customConfig,
-        systemPromptWithGuidelines,
+        cloudSystemPrompt,
         onChunk,
         wrappedOnEnd,
         onError,
@@ -1324,7 +1337,7 @@ export async function streamFromLLM(
   const codeApiUrl = ((settings as any).codeApiUrl || '').trim();
   const preferredCodeModelForApi = ((settings as any).codeModel || '').trim();
   const isCodingQueryForApi = codeApiKey && preferredCodeModelForApi
-    ? /\b(write|create|generate|fix|debug|refactor|optimise|optimize|implement|explain this code|review.*code|code.*review|function|class|algorithm|regex|sql|query|script|bash|python|javascript|typescript|html|css|java|c\+\+|golang|rust|react|api)\b/i.test(message)
+    ? CODING_QUERY_PATTERN.test(message)
     : false;
 
   if (isCodingQueryForApi && !images?.length) {
@@ -1347,6 +1360,8 @@ export async function streamFromLLM(
       console.log(`[SADIE] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
       const controller = new AbortController();
       const history = getHistory(conversationId);
+      // Build system prompt for the actual code model (may differ in size from chatModel)
+      const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, (settings as any).chatGuidelines);
 
       // Code API supports tools for all non-custom providers
       const codeProviderSupportsTools = codeApiProvider === 'openai'
@@ -1372,7 +1387,7 @@ export async function streamFromLLM(
             { role: 'assistant' as const, content: '', tool_calls: [{ id: tc.id || `call_${Date.now()}`, type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.arguments) } }] },
             { role: 'tool' as const, content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult), tool_call_id: tc.id || `call_${Date.now()}` }
           ];
-          await streamFromCustomLLM('', updatedHistory, codeApiConfig, systemPromptWithGuidelines, onChunk, onEnd, onError, controller.signal);
+          await streamFromCustomLLM('', updatedHistory, codeApiConfig, codeSystemPrompt, onChunk, onEnd, onError, controller.signal);
         } catch (err: any) {
           console.error('[SADIE] Code API tool execution failed:', err.message);
           onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
@@ -1386,7 +1401,7 @@ export async function streamFromLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
         codeApiConfig,
-        systemPromptWithGuidelines,
+        codeSystemPrompt,
         onChunk,
         codeWrappedOnEnd,
         onError,
@@ -1435,9 +1450,7 @@ export async function streamFromOllamaWithTools(
   const preferredVisionModel = settings.visionModel || OLLAMA_VISION_MODEL;
   // Use code model when a coding-heavy query is detected and a code model is configured
   const preferredCodeModel = (settings as any).codeModel?.trim() || '';
-  const isCodingQuery = preferredCodeModel
-    ? /\b(write|create|generate|fix|debug|refactor|optimise|optimize|implement|explain this code|review.*code|code.*review|function|class|algorithm|regex|sql|query|script|bash|python|javascript|typescript|html|css|java|c\+\+|golang|rust|react|api)\b/i.test(message)
-    : false;
+  const isCodingQuery = preferredCodeModel ? CODING_QUERY_PATTERN.test(message) : false;
 
   const controller = new AbortController();
   let ended = false;

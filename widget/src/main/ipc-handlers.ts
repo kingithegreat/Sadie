@@ -546,7 +546,13 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     try {
       const settings = getSettings();
       const ollamaBase = (process.env.OLLAMA_URL || (settings as any).ollamaUrl || DEFAULT_OLLAMA_URL).trim();
-      const model = settings.chatModel || 'llama3.2:3b';
+      // Use the configured chat model; if a cloud/custom LLM is active the title
+      // is still generated locally via Ollama (fast, cheap), so fall back to the
+      // Ollama default rather than forwarding a cloud model name.
+      const isCustomLLMActive = !!(settings as any).useCustomLLM && !!(settings as any).customLLM;
+      const model = isCustomLLMActive
+        ? (process.env.OLLAMA_MODEL || 'llama3.2:3b')
+        : (settings.chatModel || process.env.OLLAMA_MODEL || 'llama3.2:3b');
 
       // Trim inputs so the title prompt stays tiny
       const userSnippet = userMessage.slice(0, 200);
