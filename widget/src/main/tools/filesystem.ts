@@ -74,9 +74,14 @@ function expandPath(inputPath: string): string {
 }
 
 function isPathAllowed(targetPath: string): boolean {
+  if (!HOME_DIR) return false;
+
   const resolved = path.resolve(targetPath);
-  // Allow any path under user's home directory
-  return resolved.startsWith(HOME_DIR);
+  const homeResolved = path.resolve(HOME_DIR);
+  const rel = path.relative(homeResolved, resolved);
+
+  // Allow only HOME_DIR itself or descendants (robust against prefix tricks).
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 function validatePath(targetPath: string): { valid: boolean; resolved: string; error?: string } {

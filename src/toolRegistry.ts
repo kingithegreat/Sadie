@@ -125,15 +125,14 @@ export class ToolRegistry {
           durationMs: Date.now() - execStart
         });
       } catch (err) {
-        error = err instanceof Error ? err.message : String(err);
+        error = 'Tool execution failed';
         this.executionLog.push({
           tool: toolName,
           input,
-          output: { error: error },
+          output: { error: err instanceof Error ? err.message : String(err) },
           ts: Date.now(),
           durationMs: Date.now() - start
         });
-        throw err;
       }
     }
 
@@ -178,7 +177,6 @@ export class ToolRegistry {
     durationMs: number;
   }> {
     return this.executionLog.slice();
-  }
   }
 
   // Verifies a chain of execution log entries. Returns true if valid, false if tampered.

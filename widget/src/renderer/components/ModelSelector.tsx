@@ -31,6 +31,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   lockedModelId,
   lockReason
 }) => {
+  const dropdownId = 'model-selector-menu';
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -204,7 +205,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           }}
           title={locked ? (lockReason || 'Turn off Uncensored Mode to switch models') : `Using ${currentModelInfo?.name} — click to see all models`}
           aria-haspopup="menu"
-          aria-expanded={!locked && isOpen}
+          aria-controls={dropdownId}
+          aria-expanded={isOpen ? 'true' : 'false'}
         >
           <div className="model-selector-current">
             <span className="model-icon">{useCustomLLM ? '☁️' : '🦙'}</span>
@@ -233,7 +235,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       )}
 
       {isOpen && (
-        <div className="model-dropdown">
+        <div id={dropdownId} className="model-dropdown" role="menu">
           <div className="model-dropdown-header">
             <span>Available Models</span>
             <button 

@@ -120,16 +120,18 @@ const ConversationSearch: React.FC<ConversationSearchProps> = ({ onSelectConvers
           )}
           {Object.entries(grouped).map(([convId, hits]) => (
             <div key={convId} className="search-group">
-              <div
-                className="search-group-header"
-                onClick={() => { onSelectConversation(convId); onClose(); }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => { if (e.key === 'Enter') { onSelectConversation(convId); onClose(); } }}
-              >
-                <span className="search-group-title">{hits[0].conversationTitle || 'Untitled'}</span>
-                <span className="search-group-meta">{hits.length} match{hits.length !== 1 ? 'es' : ''}</span>
+              <div className="search-group-header">
                 <button
+                  type="button"
+                  className="search-group-open"
+                  onClick={() => { onSelectConversation(convId); onClose(); }}
+                  aria-label={`Open conversation ${hits[0].conversationTitle || 'Untitled'}`}
+                >
+                  <span className="search-group-title">{hits[0].conversationTitle || 'Untitled'}</span>
+                  <span className="search-group-meta">{hits.length} match{hits.length !== 1 ? 'es' : ''}</span>
+                </button>
+                <button
+                  type="button"
                   className="export-btn"
                   title="Export conversation to Markdown"
                   onClick={e => handleExport(e, convId)}

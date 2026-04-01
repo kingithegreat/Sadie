@@ -4,8 +4,20 @@ import { debug as logDebug } from '../shared/logger';
 
 // Renderer diagnostics buffer
 (global as any).__SADIE_RENDERER_LOG_BUFFER ??= [];
+const MAX_RENDERER_LOG_BUFFER = 500;
+
+function appendRendererBuffer(entry: string) {
+  try {
+    const buffer = ((global as any).__SADIE_RENDERER_LOG_BUFFER = (global as any).__SADIE_RENDERER_LOG_BUFFER || []);
+    buffer.push(entry);
+    if (buffer.length > MAX_RENDERER_LOG_BUFFER) {
+      buffer.splice(0, buffer.length - MAX_RENDERER_LOG_BUFFER);
+    }
+  } catch (e) {}
+}
+
 function pushRendererLog(line: string) {
-  try { (global as any).__SADIE_RENDERER_LOG_BUFFER.push(`[RENDERER] ${String(line)}`); } catch (e) {}
+  appendRendererBuffer(`[RENDERER] ${String(line)}`);
   try { ipcRenderer.send('sadie:append-renderer-log', String(line)); } catch (e) {}
 }
 
@@ -61,8 +73,7 @@ try {
   ipcRenderer.on('sadie:router-log', (_ev, line) => {
     try {
       console.log('[ROUTER-LOG]', line);
-      (global as any).__SADIE_RENDERER_LOG_BUFFER = (global as any).__SADIE_RENDERER_LOG_BUFFER || [];
-      (global as any).__SADIE_RENDERER_LOG_BUFFER.push(`[ROUTER] ${String(line)}`);
+      appendRendererBuffer(`[ROUTER] ${String(line)}`);
     } catch (e) {}
   });
 } catch (e) {}

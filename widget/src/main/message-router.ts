@@ -3613,6 +3613,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
     // Test helper: trigger a simulated non-stream fallback for a given streamId (E2E only)
     ipcMain.handle('sadie:__e2e_trigger_fallback', async (event: IpcMainInvokeEvent, payload: { streamId: string; finalText?: string }) => {
+      const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
+      if (!e2eEnabled) return { ok: false, error: 'E2E_ONLY' };
       console.log('[E2E-TRACE] __e2e_trigger_fallback invoked, SADIE_E2E=', process.env.SADIE_E2E, 'NODE_ENV=', process.env.NODE_ENV);
       try {
         const { streamId, finalText } = payload || {} as any;
@@ -3659,10 +3661,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     });
     // Test helper: retrieve router diagnostics buffer (E2E only)
     ipcMain.handle('sadie:__e2e_get_router_logs', async () => {
+      const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
+      if (!e2eEnabled) return [];
       return (global as any).__SADIE_ROUTER_LOG_BUFFER || [];
     });
     // Test helper: trigger a simulated upstream error for a given streamId (E2E only)
     ipcMain.handle('sadie:__e2e_trigger_upstream_error', async (event: IpcMainInvokeEvent, payload: { streamId: string; message?: string }) => {
+      const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
+      if (!e2eEnabled) return { ok: false, error: 'E2E_ONLY' };
       try {
         const { streamId, message } = payload || {} as any;
         if (!streamId) return { ok: false, error: 'MISSING_STREAM_ID' };
