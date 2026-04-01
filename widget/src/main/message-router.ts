@@ -47,6 +47,37 @@ function formatFileLink(filePath: string, displayName?: string): string {
   const name = displayName || require('path').basename(filePath);
   return `[📄 ${name}](file://${encodedPath})`;
 }
+
+function looksLikePlannerLeak(text: string): boolean {
+  if (!text) return false;
+  const leakSignals = [
+    /\btool_call\b/i,
+    /\bweb_search\b/i,
+    /\bapi_request\b/i,
+    /here'?s the command you can use/i,
+    /output\s+valid\s+json/i,
+    /using\s+the\s+tool/i,
+    /\bjq\b/i,
+    /^\s*(CODE|PYTHON)\s*$/im,
+  ];
+  return leakSignals.some((r) => r.test(text));
+}
+
+function sanitizeUserFacingAssistantText(text: string): string {
+  if (!text) return text;
+  if (!looksLikePlannerLeak(text)) return text;
+
+  let out = text;
+  out = out.replace(/```[\s\S]*?```/g, '');
+  out = out.replace(/^\s*(CODE|PYTHON)\s*$/gim, '');
+  out = out.replace(/^.*(api_request|web_search|tool_call|jq|Copy).*$\n?/gim, '');
+  out = out.replace(/\n{3,}/g, '\n\n').trim();
+
+  if (!out || out.length < 24) {
+    return 'I can answer directly without showing internal tool instructions. Please ask again and I will give a concise answer.';
+  }
+  return out;
+}
 const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
 
 // Track if we've already warned about custom LLM config (to avoid spamming)
@@ -1682,6 +1713,10 @@ export async function streamFromOllamaWithTools(
         }
       }
 
+      if (pendingToolCalls.length === 0) {
+        assistantContent = sanitizeUserFacingAssistantText(assistantContent);
+      }
+
       // Flush any remaining buffered content that wasn't sent during streaming.
       // If tool JSON was detected, send the replacement message instead.
       if (pendingToolCalls.length > 0 && flushedLength > 0) {
@@ -2934,7 +2969,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 const fallbackUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
                 if (process.env.NODE_ENV !== 'production') console.log('[Router] Attempting non-stream fallback to', fallbackUrl, 'for streamId', streamId);
                 const fallbackRes = await axios.post(fallbackUrl, request, { timeout: DEFAULT_TIMEOUT });
-                const finalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                 if (finalText) {
                   try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
                   try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
@@ -3438,7 +3474,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       stream: false
                     };
                     const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
-                    const finalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                    const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                    const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                     if (finalText) {
                       try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
                     }
@@ -3478,7 +3515,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 stream: false
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
-              const finalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+              const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+              const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
               if (finalText) {
                 try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
               }
@@ -3512,7 +3550,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
               // Parse and send final assistant content
               try {
-                const finalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
+                const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                 if (finalText) {
                   event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId });
                 }
