@@ -5,7 +5,7 @@
 
 # 1. Project Summary
 
-**SADIE** is a fully local, privacy-first AI personal assistant system that runs entirely on Windows without cloud dependencies. It combines:
+**SADIE** is an offline-first, privacy-first AI personal assistant system that runs entirely on Windows with optional cloud LLM support. It combines:
 
 - **n8n** as the orchestration backbone
 - **Ollama** for local LLM inference (Phi-4, Llama3, LLaVA, Whisper)

@@ -1961,7 +1961,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       }
 
       try {
-          const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${SADIE_WEBHOOK_PATH}/stream`;
+          // Use the correct /stream path for the file manager tool
+          const FILE_MANAGER_STREAM_PATH = '/webhook/sadie/tools/file-manager/stream';
+          const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${FILE_MANAGER_STREAM_PATH}`;
           const streamUrl = N8N_STREAM_URL;
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Router] Final streamUrl built =', streamUrl, ' (N8N_STREAM_URL override present=', Boolean(process.env.N8N_STREAM_URL), ')');

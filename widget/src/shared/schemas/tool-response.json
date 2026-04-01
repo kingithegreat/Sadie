@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SadieToolResponse",
+  "type": "object",
+  "required": ["success", "tool", "requestId", "durationMs", "result", "error"],
+  "properties": {
+    "success": { "type": "boolean" },
+    "tool": { "type": "string" },
+    "requestId": { "type": "string" },
+    "durationMs": { "type": "number" },
+    "result": {
+      "anyOf": [
+        { "type": "object" },
+        { "type": "array" },
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" }
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "retryable": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

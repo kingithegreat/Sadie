@@ -15,6 +15,7 @@ These are the main orchestration workflows:
 Individual tool execution workflows:
 
 - **file-manager.json**: File operations (read, write, list, delete, search)
+- **file-manager-hardened.json**: Hardened file manager with schema validation, path traversal guards, confirmation-required workflow paths, and standardized response envelope
 - **memory-manager.json**: Context storage and retrieval (facts, preferences, search)
 - **vision-tool.json**: Image analysis using LLaVA and Tesseract OCR
 - **system-info.json**: System information queries (disk usage, processes, computer info)

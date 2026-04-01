@@ -1,185 +1,57 @@
-# ============================================================================
-# SADIE File Operations Script
-# ============================================================================
-# Purpose: Safe file operations (read, write, list, move, delete, search)
-# Safety: Enforces whitelisted directories and blocked file types
-# Returns: JSON output for n8n workflow consumption
-# ============================================================================
-
 param(
-    [Parameter(Mandatory=$true)]
-    [ValidateSet('read', 'write', 'list', 'move', 'delete', 'search', 'info')]
-    [string]$Action,
-    
-    [Parameter(Mandatory=$false)]
-    [string]$Path,
-    
-    [Parameter(Mandatory=$false)]
-    [string]$Content,
-    
-    [Parameter(Mandatory=$false)]
-    [string]$Destination,
-    
-    [Parameter(Mandatory=$false)]
-    [string]$Pattern,
-    
-    [Parameter(Mandatory=$false)]
-    [bool]$Confirmed = $false
+    [Parameter(Mandatory=$true)][string]$Action,
+    [Parameter(Mandatory=$true)][string]$LiteralPath,
+    [string]$Content
 )
 
-# ============================================================================
-# SAFETY CONFIGURATION
-# ============================================================================
-
-$ALLOWED_DIRECTORIES = @(
-    "C:\Users\adenk\Documents",
-    "C:\Users\adenk\Desktop",
-    "C:\Users\adenk\Downloads"
-)
-
-$BLOCKED_DIRECTORIES = @(
-    "C:\Windows",
-    "C:\Program Files",
-    "C:\Program Files (x86)",
-    "C:\ProgramData",
-    "C:\Users\adenk\AppData"
-)
-
-$BLOCKED_EXTENSIONS = @(
-    ".exe", ".dll", ".sys", ".bat", ".cmd", ".ps1", 
-    ".vbs", ".com", ".scr", ".msi", ".reg"
-)
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-function Test-SafePath {
-    param([string]$TestPath)
-    
-    if ([string]::IsNullOrWhiteSpace($TestPath)) {
-        return @{ Valid = $false; Reason = "Path is empty or null" }
-    }
-    
-    try {
-        $resolvedPath = [System.IO.Path]::GetFullPath($TestPath)
-    } catch {
-        return @{ Valid = $false; Reason = "Invalid path format: $($_.Exception.Message)" }
-    }
-    
-    # Check if path is in allowed directories
-    $isAllowed = $false
-    foreach ($allowedDir in $ALLOWED_DIRECTORIES) {
-        if ($resolvedPath.StartsWith($allowedDir, [StringComparison]::OrdinalIgnoreCase)) {
-            $isAllowed = $true
-            break
-        }
-    }
-    
-    if (-not $isAllowed) {
-        return @{ Valid = $false; Reason = "Path '$resolvedPath' is not in allowed directories" }
-    }
-    
-    # Check if path is in blocked directories
-    foreach ($blockedDir in $BLOCKED_DIRECTORIES) {
-        if ($resolvedPath.StartsWith($blockedDir, [StringComparison]::OrdinalIgnoreCase)) {
-            return @{ Valid = $false; Reason = "Path '$resolvedPath' is in blocked system directory" }
-        }
-    }
-    
-    # Check file extension if it's a file
-    if (Test-Path $resolvedPath -PathType Leaf) {
-        $extension = [System.IO.Path]::GetExtension($resolvedPath)
-        if ($BLOCKED_EXTENSIONS -contains $extension) {
-            return @{ Valid = $false; Reason = "File extension '$extension' is blocked for safety" }
-        }
-    }
-    
-    return @{ Valid = $true; Reason = "Path is safe"; ResolvedPath = $resolvedPath }
+function Output-Json($obj) {
+    $obj | ConvertTo-Json -Compress
+    exit 0
 }
 
-function Write-JsonOutput {
-    param(
-        [bool]$Success,
-        [string]$Message,
-        [object]$Data = $null,
-        [string]$Error = $null
-    )
-    
-    $output = @{
-        success = $Success
-        message = $Message
-        action = $Action
-        timestamp = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ")
-    }
-    
-    if ($Data) { $output.data = $Data }
-    if ($Error) { $output.error = $Error }
-    
-    return ($output | ConvertTo-Json -Depth 10 -Compress)
+if (-not $Action) {
+    Output-Json @{ success = $false; error = 'Missing Action parameter' }
+}
+if (-not $LiteralPath) {
+    Output-Json @{ success = $false; error = 'Missing LiteralPath parameter' }
 }
 
-# ============================================================================
-# FILE OPERATION HANDLERS
-# ============================================================================
-
-function Invoke-ReadFile {
-    $pathCheck = Test-SafePath -TestPath $Path
-    if (-not $pathCheck.Valid) {
-        return Write-JsonOutput -Success $false -Message "Cannot read file" -Error $pathCheck.Reason
-    }
-    
-    if (-not (Test-Path $pathCheck.ResolvedPath)) {
-        return Write-JsonOutput -Success $false -Message "File not found" -Error "Path does not exist: $($pathCheck.ResolvedPath)"
-    }
-    
-    try {
-        $fileContent = Get-Content -Path $pathCheck.ResolvedPath -Raw -ErrorAction Stop
-        $fileInfo = Get-Item $pathCheck.ResolvedPath
-        
-        return Write-JsonOutput -Success $true -Message "File read successfully" -Data @{
-            content = $fileContent
-            size = $fileInfo.Length
-            name = $fileInfo.Name
-            last_modified = $fileInfo.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+switch ($Action.ToLower()) {
+    'read' {
+        if (-not (Test-Path -LiteralPath $LiteralPath -PathType Leaf)) {
+            Output-Json @{ success = $false; error = 'File not found' }
         }
-    } catch {
-        return Write-JsonOutput -Success $false -Message "Failed to read file" -Error $_.Exception.Message
+        try {
+            $content = Get-Content -LiteralPath $LiteralPath -Raw -ErrorAction Stop
+            $size = (Get-Item -LiteralPath $LiteralPath).Length
+            Output-Json @{ data = $content; _fileSize = $size }
+        } catch {
+            Output-Json @{ success = $false; error = $_.Exception.Message }
+        }
+    }
+    'write' {
+        try {
+            Set-Content -LiteralPath $LiteralPath -Value $Content -Force -ErrorAction Stop
+            Output-Json @{ success = $true }
+        } catch {
+            Output-Json @{ success = $false; error = $_.Exception.Message }
+        }
+    }
+    'delete' {
+        if (-not (Test-Path -LiteralPath $LiteralPath -PathType Leaf)) {
+            Output-Json @{ success = $false; error = 'File not found' }
+        }
+        try {
+            Remove-Item -LiteralPath $LiteralPath -Force -ErrorAction Stop
+            Output-Json @{ success = $true }
+        } catch {
+            Output-Json @{ success = $false; error = $_.Exception.Message }
+        }
+    }
+    Default {
+        Output-Json @{ success = $false; error = 'Unknown action' }
     }
 }
-
-function Invoke-WriteFile {
-    $pathCheck = Test-SafePath -TestPath $Path
-    if (-not $pathCheck.Valid) {
-        return Write-JsonOutput -Success $false -Message "Cannot write file" -Error $pathCheck.Reason
-    }
-    
-    if ([string]::IsNullOrWhiteSpace($Content)) {
-        return Write-JsonOutput -Success $false -Message "Cannot write empty content" -Error "Content parameter is required"
-    }
-    
-    try {
-        # Ensure directory exists
-        $directory = Split-Path -Path $pathCheck.ResolvedPath -Parent
-        if (-not (Test-Path $directory)) {
-            New-Item -Path $directory -ItemType Directory -Force | Out-Null
-        }
-        
-        # Write file
-        Set-Content -Path $pathCheck.ResolvedPath -Value $Content -ErrorAction Stop
-        $fileInfo = Get-Item $pathCheck.ResolvedPath
-        
-        return Write-JsonOutput -Success $true -Message "File written successfully" -Data @{
-            path = $pathCheck.ResolvedPath
-            size = $fileInfo.Length
-            created = $fileInfo.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-        }
-    } catch {
-        return Write-JsonOutput -Success $false -Message "Failed to write file" -Error $_.Exception.Message
-    }
-}
-
-function Invoke-ListDirectory {
     $pathCheck = Test-SafePath -TestPath $Path
     if (-not $pathCheck.Valid) {
         return Write-JsonOutput -Success $false -Message "Cannot list directory" -Error $pathCheck.Reason

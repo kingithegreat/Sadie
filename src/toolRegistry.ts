@@ -39,11 +39,26 @@ export interface ToolExecutionResult<TInput = any, TOutput = any> {
 }
 
 
+
+export class ConfirmationRequiredError extends Error {
+  constructor(toolName: string) {
+    super(`Tool '${toolName}' requires confirmation to execute.`);
+    this.name = 'ConfirmationRequiredError';
+  }
+}
+
 export class ToolRegistry {
   private tools = new Map<string, RegisteredTool<any, any>>();
   private allowlist: Set<string>;
   private ajv = new Ajv();
   private previousHash: string | undefined = undefined;
+  private executionLog: Array<{
+    tool: string;
+    input: unknown;
+    output: unknown;
+    ts: number;
+    durationMs: number;
+  }> = [];
 
   constructor(allowlist: string[] = []) {
     this.allowlist = new Set(allowlist);
@@ -61,7 +76,7 @@ export class ToolRegistry {
   async execute<TInput, TOutput>(
     toolName: string,
     input: TInput,
-    context?: ExecutionContext
+    context?: ExecutionContext & { confirmed?: boolean }
   ): Promise<ToolExecutionResult<TInput, TOutput>> {
     const reg = this.tools.get(toolName);
     const timestamp = new Date().toISOString();
@@ -73,6 +88,22 @@ export class ToolRegistry {
     let success = false;
     const safeContext = context ? Object.freeze({ ...context }) : undefined;
     const previousHash = this.previousHash;
+    const start = Date.now();
+
+    // Check for requiresConfirmation: true
+    if (reg && (reg.tool as any).requiresConfirmation === true) {
+      if (!context || (context as any).confirmed !== true) {
+        // Log the failed attempt
+        this.executionLog.push({
+          tool: toolName,
+          input,
+          output: { error: 'Confirmation required' },
+          ts: Date.now(),
+          durationMs: 0
+        });
+        throw new ConfirmationRequiredError(toolName);
+      }
+    }
 
     if (!reg) {
       error = 'Tool not found';
@@ -82,11 +113,27 @@ export class ToolRegistry {
       error = 'Input validation failed';
     } else {
       try {
+        const execStart = Date.now();
         output = await reg.tool.execute(input, safeContext);
         outputHash = sha256Hash(stableStringify(output));
         success = true;
-      } catch {
-        error = 'Tool execution failed';
+        this.executionLog.push({
+          tool: toolName,
+          input,
+          output,
+          ts: execStart,
+          durationMs: Date.now() - execStart
+        });
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+        this.executionLog.push({
+          tool: toolName,
+          input,
+          output: { error: error },
+          ts: Date.now(),
+          durationMs: Date.now() - start
+        });
+        throw err;
       }
     }
 
@@ -118,6 +165,20 @@ export class ToolRegistry {
 
     this.previousHash = entryHash;
     return result;
+  }
+
+  /**
+   * Returns a readonly copy of the execution log.
+   */
+  public getExecutionLog(): ReadonlyArray<{
+    tool: string;
+    input: unknown;
+    output: unknown;
+    ts: number;
+    durationMs: number;
+  }> {
+    return this.executionLog.slice();
+  }
   }
 
   // Verifies a chain of execution log entries. Returns true if valid, false if tampered.

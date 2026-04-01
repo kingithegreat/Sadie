@@ -147,9 +147,9 @@ sadie/
 
 ### **NEVER CHANGE THESE:**
 
-1. **All operations are LOCAL ONLY**
-   - No cloud APIs (except for future optional integrations)
-   - All data stays on user's machine
+1. **All tool operations are local by default**
+   - Remote LLM APIs (ChatGPT/Claude/etc.) are optional and user-configurable
+   - All tool data stays on user's machine unless remote LLM is enabled
    - Privacy is paramount
 
 2. **Safety Validation is MANDATORY**

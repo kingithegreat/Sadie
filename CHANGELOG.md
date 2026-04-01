@@ -21,6 +21,8 @@
 ### Improved
 - **Digest compression** (`compressTurns`): strips search result blocks, code blocks, and image placeholders, then extracts the first sentence (topic/intent) and last sentence (conclusion/answer) instead of blindly truncating at 200 chars. Rolling context window now carries meaningful summaries.
 - **Search context unification**: `formatWebSearchResult` now delegates to `buildSearchContext` (4000-char budget), removing ~60 lines of duplicate source-formatting code.
+- **File manager workflow hardening**: added `file-manager-hardened.json` with full n8n safety pipeline (Validate Input → Security Check → Guard Error → Execute PowerShell → IF exitCode → Format Output → Envelope → Schema Validate → Respond to Webhook), `-LiteralPath` usage, file size guard, and confirmation guard.
+- **Workflow validator**: added `validate-workflow.ps1` in repo root for static n8n JSON checks (unique v4 UUIDs, required nodes, connection integrity, schema type, error path reachability, FILE_SIZE_LIMIT guard, start-time capture).
 - **RAG relevance filter** (`rag_query`): chunks scoring below `MIN_RELEVANCE_SCORE = 0.05` are filtered out. When all chunks fall below the threshold, the single best result is returned with a `low_confidence: true` flag rather than silently returning noise.
 
 ---

@@ -7,7 +7,7 @@
 
 ## YOUR MISSION
 
-You are tasked with completing the SADIE (Structured AI Desktop Intelligence Engine) project by implementing all missing components identified in the compliance audit. SADIE is a fully local, privacy-first AI assistant using n8n workflows, Ollama LLMs, PowerShell tools, and an Electron desktop widget.
+You are tasked with completing the SADIE (Structured AI Desktop Intelligence Engine) project by implementing all missing components identified in the compliance audit. SADIE is an offline-first, privacy-focused AI assistant using n8n workflows, Ollama LLMs (with optional remote APIs like ChatGPT/Claude), PowerShell tools, and an Electron desktop widget.
 
 **Current Status**: 45% complete (backend functional, frontend missing)  
 **Target**: 100% complete, production-ready system  

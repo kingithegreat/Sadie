@@ -1,7 +1,7 @@
 SADIE Project – Technical Analysis & Status Report
 1. Project Overview
 
-SADIE (Structured AI Desktop Intelligence Engine) is a privacy-first, fully local AI desktop assistant designed to provide intelligent automation and tool-calling capabilities without relying on external cloud services.
+SADIE (Structured AI Desktop Intelligence Engine) is a privacy-first, offline-first AI desktop assistant designed to provide intelligent automation and tool-calling capabilities. Core functionality runs locally, with optional cloud LLM support for advanced model access when configured.
 
 It integrates multiple components so that a user can converse with an AI assistant and have it safely perform real actions on their machine (file management, web search, system queries, etc.), under strict safety and permission models.
 
@@ -25,7 +25,7 @@ Safety (path whitelisting, confirmation for destructive actions, permission gati
 
 Modularity (tool-based design),
 
-Privacy (no cloud persistence, telemetry opt-in only).
+Privacy (no cloud persistence by default; optional cloud LLM use is user-configurable, telemetry opt-in only).
 
 Main Functionality
 
@@ -68,7 +68,7 @@ Persistence
 
 Conversation history and configuration stored locally (e.g., JSON store under app.getPath('userData')).
 
-No cloud-based state.
+No cloud-based state unless a remote LLM is explicitly enabled.
 
 Key Tools (Current Set)
 
