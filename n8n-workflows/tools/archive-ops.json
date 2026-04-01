@@ -56,7 +56,7 @@
                   },
                   {
                       "parameters":  {
-                                         "command":  "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\ArchiveOps.ps1\" -Action \"{{ $json.action }}\"{{ $json.params.archive_path ? ` -ArchivePath \"${$json.params.archive_path}\"` : \u0027\u0027 }}{{ $json.params.destination ? ` -Destination \"${$json.params.destination}\"` : \u0027\u0027 }}{{ $json.params.files ? ` -Files @(${($json.params.files || []).map(f =\u003e `\"${f}\"`).join(\u0027,\u0027)})` : \u0027\u0027 }} -Confirmed ${{ $json.params.user_confirmed || false }}",
+                                         "command":  "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\ArchiveOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.params.archive_path ? ` -ArchivePath \"${String($json.params.archive_path).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : \u0027\u0027 }}{{ $json.params.destination ? ` -Destination \"${String($json.params.destination).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : \u0027\u0027 }}{{ $json.params.files ? ` -Files @(${($json.params.files || []).map(f =\u003e `\"${String(f).replace(/[\\'\\\"`$;&|<>]/g, '')}\"`).join(\u0027,\u0027)})` : \u0027\u0027 }} -Confirmed ${{ $json.params.user_confirmed || false }}",
                                          "cwd":  "C:\\Users\\adenk\\Desktop\\sadie"
                                      },
                       "id":  "execute-archiveops",

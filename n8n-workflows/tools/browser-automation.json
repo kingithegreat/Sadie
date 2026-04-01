@@ -60,7 +60,7 @@
     },
     {
       "parameters": {
-        "command": "=powershell.exe -NoProfile -NonInteractive -Command \"$action='{{ $json.action }}'; $url='{{ $json.url }}'; if ($action -eq 'open_url') { Start-Process $url; $r=@{success=$true;action='open_url';url=$url} } elseif ($action -eq 'close_browser') { Get-Process -Name 'msedge','chrome','firefox' -ErrorAction SilentlyContinue | Stop-Process -Force; $r=@{success=$true;action='close_browser'} } else { $r=@{success=$false;error=\\\"Action $action not supported via shell\\\"} }; $r | ConvertTo-Json -Compress\""
+        "command": "=powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\BrowserOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.url ? ` -Url \"${String($json.url).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}"
       },
       "id": "execute-browser",
       "name": "Execute Browser Action",

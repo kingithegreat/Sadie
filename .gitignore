@@ -96,3 +96,12 @@ $RECYCLE.BIN/
 
 # Generated tool registry log
 execution.log.jsonl
+
+# Local test/output scratch files
+e2e-*.txt
+full-test-out.txt
+test-out.txt
+persist*.txt
+persist*/
+hello.txt
+memory/rag-index.json
