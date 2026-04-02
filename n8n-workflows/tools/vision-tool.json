@@ -27,7 +27,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        450,
+        580,
         300
       ]
     },
@@ -79,7 +79,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
       "position": [
-        650,
+        780,
         300
       ]
     },
@@ -92,7 +92,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        850,
+        980,
         100
       ]
     },
@@ -130,7 +130,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        1050,
+        1180,
         100
       ]
     },
@@ -144,7 +144,7 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        850,
+        980,
         300
       ]
     },
@@ -157,9 +157,22 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1250,
+        1380,
         200
       ]
+    },
+    {
+      "id": "sadie-auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+      }
     }
   ],
   "connections": {
@@ -167,7 +180,7 @@
       "main": [
         [
           {
-            "node": "Parse Parameters",
+            "node": "Auth Guard",
             "type": "main",
             "index": 0
           }
@@ -237,6 +250,17 @@
         [
           {
             "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
             "type": "main",
             "index": 0
           }

@@ -28,7 +28,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        460,
+        590,
         300
       ]
     },
@@ -41,7 +41,7 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        680,
+        810,
         300
       ]
     },
@@ -54,7 +54,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        900,
+        1030,
         300
       ]
     },
@@ -67,7 +67,7 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        1120,
+        1250,
         300
       ]
     },
@@ -80,9 +80,22 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1340,
+        1470,
         300
       ]
+    },
+    {
+      "id": "sadie-auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+      }
     }
   ],
   "connections": {
@@ -90,7 +103,7 @@
       "main": [
         [
           {
-            "node": "Parse & Validate",
+            "node": "Auth Guard",
             "type": "main",
             "index": 0
           }
@@ -135,6 +148,17 @@
         [
           {
             "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate",
             "type": "main",
             "index": 0
           }

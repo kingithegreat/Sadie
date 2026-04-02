@@ -27,7 +27,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        450,
+        580,
         300
       ]
     },
@@ -65,7 +65,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        650,
+        780,
         300
       ]
     },
@@ -78,9 +78,22 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        850,
+        980,
         300
       ]
+    },
+    {
+      "id": "sadie-auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+      }
     }
   ],
   "connections": {
@@ -88,7 +101,7 @@
       "main": [
         [
           {
-            "node": "Prepare Planning Prompt",
+            "node": "Auth Guard",
             "type": "main",
             "index": 0
           }
@@ -111,6 +124,17 @@
         [
           {
             "node": "Format Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Prepare Planning Prompt",
             "type": "main",
             "index": 0
           }
