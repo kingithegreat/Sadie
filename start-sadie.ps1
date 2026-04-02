@@ -291,6 +291,11 @@ if ($issues.Count -eq 0) {
     # Set environment variables
     $env:SADIE_DIRECT_OLLAMA = "true"
     $env:OLLAMA_URL = "http://127.0.0.1:11434"
+    $env:SADIE_ROOT = $ScriptDir
+    
+    # Patch n8n workflow paths for portability
+    Write-Host "Patching workflow paths..." -ForegroundColor Yellow
+    node "$ScriptDir\scripts\patch-workflow-paths.js"
     
     # Start the app
     Push-Location $WidgetDir

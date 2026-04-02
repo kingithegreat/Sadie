@@ -294,7 +294,13 @@ const electronAPI: ElectronAPI = {
   },
 
   // Test-only: allow invoking arbitrary channels from the renderer (only in E2E)
+  // SECURITY: gated to E2E mode only — in production this throws to prevent
+  // the renderer from invoking arbitrary IPC channels.
   invoke: async (channel: string, ...args: any[]) => {
+    const e2e = process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true';
+    if (!e2e) {
+      throw new Error('invoke() is only available in E2E test mode');
+    }
     return await ipcRenderer.invoke(channel, ...args);
   },
 

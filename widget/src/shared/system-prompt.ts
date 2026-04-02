@@ -1,4 +1,5 @@
-// Central authoritative system prompt used by all model calls.
+// ── Single source of truth for SADIE's system prompt ──
+// If you edit this file, also update prompts/sadie_system.txt to stay in sync.
 const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
 const USERNAME = (() => { try { return require('os').userInfo().username; } catch (e) { return 'user'; } })();
 

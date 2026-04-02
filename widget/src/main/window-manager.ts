@@ -43,7 +43,7 @@ export function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,       // Disable sandbox to allow Web Speech API
-      webviewTag: true      // Enable <webview> for embedded web services panel
+      webviewTag: false     // Not used — web services use dedicated BrowserWindows
     }
   });
 

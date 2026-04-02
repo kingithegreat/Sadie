@@ -34,6 +34,7 @@ function autoExecuteToolsEnabled(): boolean {
     if (s && (s.allowAutoTools === false || s.autoToolExecution === false || s.allowAutomaticToolExecution === false || s.autoExecuteTools === false)) return false;
     return true;
   } catch (e) {
+    console.warn('[SADIE] Failed to read auto-tool-execute setting, defaulting to enabled', e);
     return true;
   }
 }
@@ -88,6 +89,18 @@ let customLLMWarningShown = false;
 function pushRouter(line: string) {
   try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[ROUTER] ${String(line)}`); } catch (e) {}
   try { (global as any).__SADIE_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) {}
+}
+
+/**
+ * Safe IPC send — wraps event.sender.send so a destroyed window
+ * logs a warning instead of silently swallowing the failure.
+ */
+function safeSend(sender: Electron.WebContents | undefined, channel: string, data?: any) {
+  try {
+    sender?.send(channel, data);
+  } catch (err) {
+    console.warn(`[SADIE] IPC send failed (window destroyed?) channel=${channel}`, err);
+  }
 }
 
 // NOTE: tool JSON detection is implemented in `tool-helpers` (imported above)
@@ -1709,7 +1722,7 @@ export async function streamFromOllamaWithTools(
               assistantContent = "I'm fetching that now...";
               pushRouter('Detected inline tool JSON; routing to tool executor');
             }
-          } catch (e) {}
+          } catch (_jsonErr) { /* not valid JSON — expected for non-tool prose */ }
         }
       }
 
@@ -2177,8 +2190,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const { songs } = intentResult.calls[0].arguments;
               const response = buildMusicLinksResponse(songs);
               addToHistory(convId, 'assistant', response);
-              try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) {}
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              safeSend(event.sender, 'sadie:stream-chunk', { chunk: response, streamId });
+              safeSend(event.sender, 'sadie:stream-end', { streamId });
               activeStreams.delete(streamId);
               return;
             }
@@ -2967,7 +2980,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
                           }
-            } catch (err) {}
+            } catch (err) {
+              console.warn('[SADIE] proxy stream chunk forward failed', err);
+            }
           }, () => {
             try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
                         if (E2E) {
@@ -3567,7 +3582,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 if (finalText) {
                   event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId });
                 }
-              } catch (e) {}
+              } catch (parseErr) {
+                console.warn('[SADIE] Failed to parse/send fallback Ollama response', parseErr);
+              }
               try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
               activeStreams.delete(streamId);
             } catch (fallbackErr: any) {
