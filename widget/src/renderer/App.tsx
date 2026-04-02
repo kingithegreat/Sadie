@@ -771,7 +771,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
   return (
-    <div className="app-container" data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined}>
+    <div className="app-container" data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'}>
       {/* Conversation Sidebar */}
       <ConversationSidebar
         isOpen={sidebarOpen}

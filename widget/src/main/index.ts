@@ -1,5 +1,5 @@
 // Main process for SADIE - Full implementation
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, ipcMain, session, globalShortcut } from 'electron';
 import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
@@ -10,21 +10,28 @@ import { ensureN8nRunning } from './n8n-lifecycle';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
+import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 
 let mainWindow: BrowserWindow | null = null;
 
 // Global error handlers — prevent silent crashes and unhandled promise rejections
 process.on('uncaughtException', (err) => {
   console.error('[MAIN] Uncaught exception:', err);
-  (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] uncaughtException: ${err.message}`);
+  try { pushMainLog(`[MAIN] uncaughtException: ${err.message}`); } catch (_) {}
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[MAIN] Unhandled promise rejection:', reason);
-  (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] unhandledRejection: ${reason}`);
+  try { pushMainLog(`[MAIN] unhandledRejection: ${reason}`); } catch (_) {}
 });
 
-// Diagnostic log buffer for main process
+// Diagnostic log buffer for main process (capped at 500 entries)
+const MAX_MAIN_LOG_BUFFER = 500;
 (global as any).__SADIE_MAIN_LOG_BUFFER ??= [];
+function pushMainLog(line: string) {
+  const buf = (global as any).__SADIE_MAIN_LOG_BUFFER;
+  buf.push(line);
+  if (buf.length > MAX_MAIN_LOG_BUFFER) buf.splice(0, buf.length - MAX_MAIN_LOG_BUFFER);
+}
 
 // Apply a safe, idempotent ipcMain.handle patch (keeps behavior local and
 // testable via `applyIpcHandlePatch`). See `src/main/utils/ipc-handle-patch.ts`.
@@ -39,13 +46,13 @@ app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: SADIE_DIRECT_OLLAMA=', process.env.SADIE_DIRECT_OLLAMA, 'isE2E=', isE2E);
-  (global as any).__SADIE_MAIN_LOG_BUFFER.push('[MAIN] App ready');
+  pushMainLog('[MAIN] App ready');
 
   // Initialize tools before window creation
   try {
     await initializeTools();
     console.log('[MAIN] Tools initialized');
-    (global as any).__SADIE_MAIN_LOG_BUFFER.push('[MAIN] Tools initialized');
+    pushMainLog('[MAIN] Tools initialized');
   } catch (e) {
     console.error('[MAIN] Tool initialization error:', e);
   }
@@ -134,15 +141,48 @@ app.whenReady().then(async () => {
       } catch (e) {}
     };
     console.log('[MAIN] Router log bridge installed');
-    (global as any).__SADIE_MAIN_LOG_BUFFER.push('[MAIN] Router log bridge installed');
+    pushMainLog('[MAIN] Router log bridge installed');
   } catch (e) {
     console.error('[MAIN] Failed to install router log bridge', e);
   }
   
   console.log('[MAIN] IPC handlers registered');
-  (global as any).__SADIE_MAIN_LOG_BUFFER.push('[MAIN] IPC handlers registered');
+  pushMainLog('[MAIN] IPC handlers registered');
+
+  // Register global hotkey to show/hide SADIE window
+  try {
+    const hotkey = settings.globalHotkey || settings.widgetHotkey || 'Ctrl+Shift+Space';
+    const registered = globalShortcut.register(hotkey, () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isVisible() && mainWindow.isFocused()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+    if (registered) {
+      console.log(`[MAIN] Global hotkey registered: ${hotkey}`);
+    } else {
+      console.warn(`[MAIN] Failed to register global hotkey: ${hotkey}`);
+    }
+  } catch (e) {
+    console.error('[MAIN] Global hotkey registration error:', e);
+  }
 
   ipcMain.on('ping', () => console.log('pong'));
+
+  // Auto-updater (skipped in E2E/test to avoid network calls)
+  if (!isE2E && process.env.NODE_ENV !== 'test') {
+    try {
+      initAutoUpdater(mainWindow);
+      ipcMain.on('sadie:download-update', () => downloadUpdate());
+      ipcMain.on('sadie:install-update', () => installUpdate());
+      console.log('[MAIN] Auto-updater initialized');
+    } catch (e) {
+      console.error('[MAIN] Auto-updater init error:', e);
+    }
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -151,7 +191,10 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('before-quit', () => closeAllServiceWindows());
+app.on('before-quit', () => {
+  globalShortcut.unregisterAll();
+  closeAllServiceWindows();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

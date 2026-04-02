@@ -2811,6 +2811,144 @@ body {
 
 /* End SADIE gold/black theme */
 
+/* ── Light Theme Overrides ─────────────────────────────────────────────────── */
+/* Applied via data-theme="light" on .app-container (or via system preference) */
+
+[data-theme="light"] {
+  --bg-darkest: oklch(98% 0 0);
+  --bg-darker: oklch(96% 0 0);
+  --bg-dark: oklch(93% 0 0);
+  --bg-medium: oklch(90% 0 0);
+  --bg-light: oklch(85% 0 0);
+
+  --accent-primary: oklch(50% 0.18 210);
+  --accent-hover: oklch(55% 0.18 210);
+  --accent-light: oklch(60% 0.14 210);
+  --accent-dark: oklch(40% 0.18 210);
+
+  --text-primary: oklch(15% 0 0);
+  --text-secondary: oklch(30% 0 0);
+  --text-muted: oklch(50% 0 0);
+  --text-dark: oklch(98% 0 0);
+
+  --bg-main: oklch(97% 0 0);
+  --bg-sidebar: oklch(95% 0 0);
+  --bg-chat: oklch(97% 0 0);
+  --bg-input: oklch(100% 0 0);
+  --bg-panel: oklch(94% 0.005 260);
+  --bg-user-msg: var(--accent-primary);
+  --bg-assistant-msg: oklch(95% 0 0);
+
+  --border-light: oklch(88% 0 0);
+  --border-medium: oklch(82% 0 0);
+
+  --success: oklch(55% 0.2 145);
+  --warning: oklch(70% 0.15 85);
+  --error: oklch(55% 0.2 25);
+
+  --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.04);
+  --shadow-md: 0 6px 18px oklch(0% 0 0 / 0.08), 0 2px 6px oklch(0% 0 0 / 0.05);
+  --shadow-lg: 0 14px 48px oklch(0% 0 0 / 0.12), 0 6px 18px oklch(0% 0 0 / 0.08);
+}
+
+/* Light-mode body gradient */
+[data-theme="light"] body {
+  background: radial-gradient(circle at 12% 20%, oklch(94% 0.02 220) 0, transparent 28%),
+              radial-gradient(circle at 82% 10%, oklch(95% 0.02 190) 0, transparent 24%),
+              var(--bg-main);
+}
+
+/* Code blocks in light mode */
+[data-theme="light"] .code-block-header {
+  background: #f0f0f0;
+}
+[data-theme="light"] .code-block-pre {
+  background: #fafafa;
+  color: #383a42;
+}
+[data-theme="light"] .code-copy-btn {
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #555;
+}
+[data-theme="light"] .code-copy-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #222;
+}
+
+/* Inline code in light mode */
+[data-theme="light"] .inline-code {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Tables in light mode */
+[data-theme="light"] .md-table thead tr {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .md-table th,
+[data-theme="light"] .md-table td {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .md-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+[data-theme="light"] .md-hr {
+  border-top-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Message links in light mode */
+[data-theme="light"] .message-link {
+  color: #2563EB;
+}
+[data-theme="light"] .message-link:hover {
+  color: #1D4ED8;
+}
+
+/* System prefer light — fallback when data-theme="system" */
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --bg-darkest: oklch(98% 0 0);
+    --bg-darker: oklch(96% 0 0);
+    --bg-dark: oklch(93% 0 0);
+    --bg-medium: oklch(90% 0 0);
+    --bg-light: oklch(85% 0 0);
+
+    --accent-primary: oklch(50% 0.18 210);
+    --accent-hover: oklch(55% 0.18 210);
+    --accent-light: oklch(60% 0.14 210);
+    --accent-dark: oklch(40% 0.18 210);
+
+    --text-primary: oklch(15% 0 0);
+    --text-secondary: oklch(30% 0 0);
+    --text-muted: oklch(50% 0 0);
+    --text-dark: oklch(98% 0 0);
+
+    --bg-main: oklch(97% 0 0);
+    --bg-sidebar: oklch(95% 0 0);
+    --bg-chat: oklch(97% 0 0);
+    --bg-input: oklch(100% 0 0);
+    --bg-panel: oklch(94% 0.005 260);
+    --bg-assistant-msg: oklch(95% 0 0);
+
+    --border-light: oklch(88% 0 0);
+    --border-medium: oklch(82% 0 0);
+
+    --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.04);
+    --shadow-md: 0 6px 18px oklch(0% 0 0 / 0.08), 0 2px 6px oklch(0% 0 0 / 0.05);
+    --shadow-lg: 0 14px 48px oklch(0% 0 0 / 0.12), 0 6px 18px oklch(0% 0 0 / 0.08);
+  }
+
+  [data-theme="system"] body {
+    background: radial-gradient(circle at 12% 20%, oklch(94% 0.02 220) 0, transparent 28%),
+                radial-gradient(circle at 82% 10%, oklch(95% 0.02 190) 0, transparent 24%),
+                var(--bg-main);
+  }
+
+  [data-theme="system"] .code-block-header { background: #f0f0f0; }
+  [data-theme="system"] .code-block-pre { background: #fafafa; color: #383a42; }
+  [data-theme="system"] .inline-code { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); }
+}
+
 /* ── Conversation Search ───────────────────────────────────────────────────── */
 
 .conversation-search-overlay {

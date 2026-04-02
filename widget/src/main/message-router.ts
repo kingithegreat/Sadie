@@ -86,9 +86,14 @@ const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
 let customLLMWarningShown = false;
 
 // Router diagnostics buffer for capture tool
+const MAX_LOG_BUFFER = 500;
 (global as any).__SADIE_ROUTER_LOG_BUFFER ??= [];
 function pushRouter(line: string) {
-  try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[ROUTER] ${String(line)}`); } catch (e) {}
+  try {
+    const buf = (global as any).__SADIE_ROUTER_LOG_BUFFER;
+    buf.push(`[ROUTER] ${String(line)}`);
+    if (buf.length > MAX_LOG_BUFFER) buf.splice(0, buf.length - MAX_LOG_BUFFER);
+  } catch (e) {}
   try { (global as any).__SADIE_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) {}
 }
 
@@ -197,6 +202,8 @@ export const MAX_HISTORY_MESSAGES = 50;
 const COMPRESS_BATCH = 20;
 // Maximum number of conversations to keep in memory (LRU eviction)
 const MAX_CONVERSATIONS = 50;
+// Maximum number of recursive tool-call rounds before aborting (prevents infinite loops)
+export const MAX_TOOL_ROUNDS = 10;
 
 // ── Context budget limits (small models like llama3.2:3b have ~4096 tokens) ──
 // These caps prevent silent context overflow that causes the model to drop
@@ -1644,7 +1651,13 @@ export async function streamFromOllamaWithTools(
   };
 
   // Recursive function to handle tool calls
-  async function processResponse(): Promise<void> {
+  async function processResponse(round: number = 0): Promise<void> {
+    if (round >= MAX_TOOL_ROUNDS) {
+      console.error(`[SADIE] Tool-call recursion limit reached (${MAX_TOOL_ROUNDS} rounds)`);
+      onChunk(`\n⚠️ I've reached the maximum number of tool-call rounds (${MAX_TOOL_ROUNDS}). Please try rephrasing your request.`);
+      safeEnd('tool-recursion-limit');
+      return;
+    }
     try {
       const requestBody: any = {
         model,
@@ -1823,7 +1836,7 @@ export async function streamFromOllamaWithTools(
               if (resp.decision === 'allow_once') {
                 const rerun = await executeToolBatch(calls, toolContext, { overrideAllowed: missing });
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
-                await processResponse();
+                await processResponse(round + 1);
                 return;
               }
 
@@ -1837,7 +1850,7 @@ export async function streamFromOllamaWithTools(
 
                 const rerun = await executeToolBatch(calls, toolContext);
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
-                await processResponse();
+                await processResponse(round + 1);
                 return;
               }
             } else {
@@ -1873,7 +1886,7 @@ export async function streamFromOllamaWithTools(
         }
 
         // Continue the conversation with tool results
-        await processResponse();
+        await processResponse(round + 1);
       } else {
         // No more tool calls, we're done
         safeEnd('conversation-complete');

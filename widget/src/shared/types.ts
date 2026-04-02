@@ -120,6 +120,7 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   widgetHotkey: string;
+  theme?: 'light' | 'dark' | 'system';
   uncensoredMode?: boolean;
   chatModel?: string;
   uncensoredModel?: string;
