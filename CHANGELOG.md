@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.7.7 — UI polish, documentation refresh, workflow cleanup
+
+### UI Polish
+- **Futuristic accent animations** (`chatgpt-theme.css`): 15+ CSS keyframe animations — `headerScan`, `titleShimmer`, `connectedGlow`, `msgSlideIn`, `avatarRingSpin`, `voiceNeonPulse`, `welcomeFloat`, `activeCardGlow`. Glass morphism on settings/modals. `@media (prefers-reduced-motion: reduce)` accessibility guard.
+- **User avatar upgrade** (`MessageBubble.tsx`, `chatgpt-theme.css`): replaced plain 👤 with ⚡ icon; gradient background, animated conic-gradient glow ring, bouncy entrance animation, hover scale effect.
+
+### Documentation
+- Comprehensive refresh of 9 documentation files: CHANGELOG, README, SUBMISSION_OVERVIEW, TESTING_MATRIX, DEMO_SCRIPT, DEVELOPER_BUILD_GUIDE, ENVIRONMENT_STATUS, FINAL_ARCHITECTURE_DIAGRAM, PROJECT_PLAN — all updated to reflect v0.7.5–v0.7.6+ changes.
+
+### Chores
+- Tracked 4 previously untracked n8n tool workflows: `archive-ops.json`, `browser-automation.json`, `file-manager.json`, `memory-manager.json`.
+- Fixed UTF-8 BOM in `file-manager-hardened.json` that caused 20 test failures.
+
+---
+
 ## v0.7.6 — Tool recursion cap, light theme, global hotkey, auto-update, log buffer caps
 
 ### Added
@@ -8,10 +23,6 @@
 - **Global hotkey** (`index.ts`): `Ctrl+Shift+Space` toggles SADIE's window via `globalShortcut.register()`. Unregistered on `before-quit`.
 - **Auto-updater** (`auto-updater.ts`): new module using `electron-updater`. Checks 5 s after startup; sends IPC events `sadie:update-available`, `sadie:update-progress`, `sadie:update-downloaded`. Skipped in E2E/test mode.
 - **Log buffer caps** (`index.ts`, `message-router.ts`): both main-process and router log buffers capped at 500 entries via `pushMainLog()` and `pushRouter()` helpers to prevent memory growth.
-
-### UI Polish (post-v0.7.6)
-- **Futuristic accent animations** (`chatgpt-theme.css`): 15+ CSS keyframe animations — `headerScan`, `titleShimmer`, `connectedGlow`, `msgSlideIn`, `msgSlideInRight`, `avatarRingSpin`, `userAvatarPulse`, `voiceNeonPulse`, `welcomeFloat1/2`, `welcomeIconSpin`, `activeCardGlow`. Glass morphism on settings/modals via `backdrop-filter`. `@media (prefers-reduced-motion: reduce)` accessibility guard.
-- **User avatar upgrade** (`MessageBubble.tsx`, `chatgpt-theme.css`): replaced plain 👤 with ⚡ icon; purple→blue→teal gradient background, animated conic-gradient glow ring, bouncy entrance animation, hover scale effect.
 
 ---
 
