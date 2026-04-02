@@ -72,14 +72,15 @@ const DEFAULT_SETTINGS: Settings = {
 
   // sensible safe defaults: most dangerous tools are disabled until user enables
   permissions: {
-    // File system
+    // File system — read-only safe by default
     read_file: true,
     list_directory: true,
     create_directory: true,
     get_file_info: true,
     copy_file: true,
+    search_files: true,
     parse_document_from_path: true,
-    // Dangerous: disabled by default
+    // File system — dangerous: disabled by default
     write_file: false,
     delete_file: false,
     move_file: false,
@@ -87,14 +88,43 @@ const DEFAULT_SETTINGS: Settings = {
     launch_app: false,
     screenshot: false,
     open_url: true,
-    // Allow read-only network or info operations
+    open_in_browser: true,
+    browser_search: true,
+    show_notification: true,
+    // Read-only network or info operations
     web_search: true,
     nba_query: true,
     get_news: true,
     list_news_feeds: true,
     get_weather: true,
     generate_sports_report: false,
-    image_generate: true
+    image_generate: true,
+    // Reminders & calendar — read-only safe
+    list_reminders: true,
+    set_reminder: true,
+    list_calendar_events: true,
+    add_calendar_event: false,   // modifies state — require confirmation
+    // Clipboard — read safe, write requires confirmation
+    clipboard_read: true,
+    clipboard_write: false,
+    // Planning & contacts — read-only safe
+    plan_task: true,
+    get_plans: true,
+    search_contacts: true,
+    add_contact: false,          // modifies state — require confirmation
+    // Git — read-only operations safe
+    git_status: true,
+    git_log: true,
+    git_diff: true,
+    // Process management — read safe, kill dangerous
+    list_processes: true,
+    kill_process: false,
+    // Code execution — dangerous
+    run_code: false,
+    // Email — all require confirmation
+    email_send: false,
+    email_draft: false,
+    email_list: true,
   },
 
   // Default NBA team for new users
