@@ -12,36 +12,55 @@ const fs = require('fs');
 const path = require('path');
 
 const SADIE_ROOT = process.env.SADIE_ROOT || path.resolve(__dirname, '..');
-const WORKFLOWS_DIR = path.join(SADIE_ROOT, 'n8n-workflows', 'tools');
+const WORKFLOW_DIRS = [
+  path.join(SADIE_ROOT, 'n8n-workflows', 'tools'),
+  path.join(SADIE_ROOT, 'n8n-workflows', 'core'),
+];
 
-// The original hardcoded path that appears in the committed JSON files.
-const HARDCODED_PATH = 'C:\\\\Users\\\\adenk\\\\Desktop\\\\sadie';
+// Hardcoded paths that appear in committed JSON files:
+//   1. Double-backslash (JSON-escaped Windows paths in "command" / "cwd" fields)
+//   2. Forward-slash (used inside jsCode strings in memory-manager, vision-tool, etc.)
+const HARDCODED_BACKSLASH = 'C:\\\\Users\\\\adenk\\\\Desktop\\\\sadie';
+const HARDCODED_FORWARD  = 'C:/Users/adenk/Desktop/sadie';
 
-// Normalise the current root to use the same double-backslash JSON escaping.
-const ESCAPED_ROOT = SADIE_ROOT.replace(/\\/g, '\\\\');
+// Normalise the current root to both representations.
+const ESCAPED_ROOT_BS = SADIE_ROOT.replace(/\\/g, '\\\\');   // double-backslash for JSON
+const ESCAPED_ROOT_FS = SADIE_ROOT.replace(/\\/g, '/');       // forward-slash
 
-if (ESCAPED_ROOT === HARDCODED_PATH) {
+const alreadyCorrectBS = (ESCAPED_ROOT_BS === HARDCODED_BACKSLASH);
+const alreadyCorrectFS = (ESCAPED_ROOT_FS === HARDCODED_FORWARD);
+
+if (alreadyCorrectBS && alreadyCorrectFS) {
   // Already correct — nothing to do.
   process.exit(0);
 }
 
 let patched = 0;
 
-if (!fs.existsSync(WORKFLOWS_DIR)) {
-  console.log('[patch-workflow-paths] workflows dir not found, skipping');
-  process.exit(0);
-}
+for (const dir of WORKFLOW_DIRS) {
+  if (!fs.existsSync(dir)) continue;
 
-for (const file of fs.readdirSync(WORKFLOWS_DIR)) {
-  if (!file.endsWith('.json')) continue;
-  const fp = path.join(WORKFLOWS_DIR, file);
-  const raw = fs.readFileSync(fp, 'utf-8');
-  if (!raw.includes(HARDCODED_PATH)) continue;
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue;
+    const fp = path.join(dir, file);
+    let raw = fs.readFileSync(fp, 'utf-8');
+    let changed = false;
 
-  const updated = raw.split(HARDCODED_PATH).join(ESCAPED_ROOT);
-  fs.writeFileSync(fp, updated, 'utf-8');
-  patched++;
-  console.log(`[patch-workflow-paths] patched ${file}`);
+    if (!alreadyCorrectBS && raw.includes(HARDCODED_BACKSLASH)) {
+      raw = raw.split(HARDCODED_BACKSLASH).join(ESCAPED_ROOT_BS);
+      changed = true;
+    }
+    if (!alreadyCorrectFS && raw.includes(HARDCODED_FORWARD)) {
+      raw = raw.split(HARDCODED_FORWARD).join(ESCAPED_ROOT_FS);
+      changed = true;
+    }
+
+    if (changed) {
+      fs.writeFileSync(fp, raw, 'utf-8');
+      patched++;
+      console.log(`[patch-workflow-paths] patched ${file}`);
+    }
+  }
 }
 
 if (patched > 0) {

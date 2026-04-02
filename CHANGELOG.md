@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.7.3 — Final polish: streamFromLLM tests, path portability, workflow cleanup
+
+### Added
+- **`streamFromLLM` unit tests** (`stream-from-llm.test.ts`): 12 tests covering all three routing paths (Custom LLM, Code API, Ollama default), image-attachment fallback, AbortController cancel, tool-definition passthrough, and edge cases. Test count: 1313 → 1325 across 86 suites.
+
+### Fixed
+- **Hardcoded forward-slash paths in workflows**: `patch-workflow-paths.js` now replaces both `C:\…` (JSON-escaped) and `C:/…` (forward-slash) path variants and scans `n8n-workflows/core/` in addition to `tools/`.
+- **`validateJson` node replaced** (`file-manager-hardened.json`): swapped `n8n-nodes-base.validateJson` (community node, may not be installed) with an inline Code node that performs the same required-field + type checks.
+- **Start-node workflows converted to webhooks**: `api-tool.json` and `archive-ops.json` now use Webhook Trigger → Auth Guard → … instead of the passive `n8n-nodes-base.start` node, making them callable from SADIE and consistent with all other tool workflows.
+- **BOM stripped** from `file-manager-hardened.json` (caused JSON parse failures in schema tests).
+
+---
+
+## v0.7.2 — n8n webhook auth enforcement (workflow side)
+
+### Added
+- **Auth Guard injection** (`scripts/inject-auth-guard.js`): programmatic, idempotent script that inserts an Auth Guard Code node between each webhook trigger and its first downstream node in all 15 webhook-based n8n workflow JSONs. Validates `X-SADIE-Auth` header against `SADIE_WEBHOOK_SECRET` env var; skips validation when env var is unset (local dev mode).
+- **Reference auth-guard snippet** (`n8n-workflows/_shared/auth-guard.js`): standalone reference for manual n8n Code node use.
+
+### Fixed
+- **Dead code removed**: gutted `api-client.ts` (renderer-side unauthenticated direct POST to n8n, never imported anywhere) — replaced with deprecation stub.
+
+---
+
+## v0.7.1 — Security hardening sweep
+
+### Fixed
+- **Silent catch blocks killed** (`message-router.ts`): added `safeSend()` helper for resilient IPC sends with console warnings instead of swallowed errors.
+- **Preload `invoke()` locked to E2E mode** (`preload/index.ts`): arbitrary IPC invoke from renderer now gated behind `isE2E()` check.
+- **React ErrorBoundary** (`ErrorBoundary.tsx`): catches render crashes; wraps `<App />` in `index.tsx`.
+- **System prompt unified** (`system-prompt.ts`): marked as single source of truth with sync comment; eliminated dual-source drift risk.
+- **Portable workflow paths** (`scripts/patch-workflow-paths.js`): replaces hardcoded `C:\Users\adenk\Desktop\sadie` in n8n JSON files with `SADIE_ROOT` at startup.
+- **`webviewTag` disabled** in Electron `webPreferences` (was enabled but unused).
+
+### Added
+- **Webhook auth — Electron side** (`webhook-auth.ts`): generates and persists a 256-bit shared secret per install; `sadieWebhookHeaders()` helper attaches `X-SADIE-Auth` header to all n8n POST calls in `message-router.ts` (3 sites) and `ipc-handlers.ts` (2 sites).
+- **`docker-compose.yml`**: passes `SADIE_WEBHOOK_SECRET` env var to n8n container.
+- **`start-sadie.ps1`**: reads persisted secret and exports as `$env:SADIE_WEBHOOK_SECRET`.
+- **Message-router unit tests** (`message-router-coverage.test.ts`): 20 tests covering `clearHistory`, `ensureHydrated`, `setUncensoredMode`/`getUncensoredMode`, `analyzeAndRouteMessage` (7 scenarios), and `isSmallModel` edge cases.
+
+---
+
 ## v1.0.4 — Embedded web services, test coverage 1293, context & routing fixes, quality improvements
 
 ### Added

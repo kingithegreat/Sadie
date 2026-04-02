@@ -141,14 +141,14 @@
     {
       "id": "feb497e2-831f-48b2-a3b1-7997c6846e73",
       "name": "Schema Validate",
-      "type": "n8n-nodes-base.validateJson",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         2010,
         200
       ],
       "parameters": {
-        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"requestId\": { \"type\": \"string\" },\n    \"tool\": { \"type\": \"string\" },\n    \"success\": { \"type\": \"boolean\" },\n    \"durationMs\": { \"type\": \"number\" },\n    \"_httpStatus\": { \"type\": \"number\" },\n    \"result\": {},\n    \"error\": {\n      \"oneOf\": [\n        { \"type\": \"null\" },\n        {\n          \"type\": \"object\",\n          \"properties\": {\n            \"code\": { \"type\": \"string\" },\n            \"message\": { \"type\": \"string\" },\n            \"retryable\": { \"type\": \"boolean\" }\n          },\n          \"required\": [\"code\", \"message\"]\n        }\n      ]\n    }\n  },\n  \"required\": [\"requestId\", \"tool\", \"success\", \"durationMs\", \"_httpStatus\"]\n}"
+        "jsCode": "// Inline JSON schema validation (replaces n8n-nodes-base.validateJson which may not be installed)\nconst data = $json;\nconst required = ['requestId', 'tool', 'success', 'durationMs', '_httpStatus'];\nconst missing = required.filter(k => data[k] === undefined);\nif (missing.length > 0) {\n  throw new Error(`Schema validation failed — missing fields: ${missing.join(', ')}`);\n}\nif (typeof data.success !== 'boolean') throw new Error('Schema validation failed — success must be boolean');\nif (typeof data.durationMs !== 'number') throw new Error('Schema validation failed — durationMs must be number');\nif (typeof data._httpStatus !== 'number') throw new Error('Schema validation failed — _httpStatus must be number');\nif (data.error !== null && data.error !== undefined) {\n  if (typeof data.error !== 'object') throw new Error('Schema validation failed — error must be object or null');\n  if (!data.error.code || !data.error.message) throw new Error('Schema validation failed — error must have code and message');\n}\nreturn { json: data };"
       }
     },
     {
