@@ -17,6 +17,7 @@ import { streamFromCustomLLM, validateCustomLLMConfig } from './custom-llm-clien
 import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
+import { sadieWebhookHeaders } from './webhook-auth';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -1142,7 +1143,7 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
         try { pushRouter(`POSTing to n8n webhook = ${targetUrl}`); } catch (e) {}
         const response = await axios.post(targetUrl, request, {
           timeout: DEFAULT_TIMEOUT,
-          headers: { 'Content-Type': 'application/json' }
+          headers: sadieWebhookHeaders()
         });
         try { pushRouter(`n8n webhook POST succeeded, status=${response?.status}`); } catch (e) {}
         return { success: true, data: response.data };
@@ -2995,7 +2996,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               try {
                 const fallbackUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
                 if (process.env.NODE_ENV !== 'production') console.log('[Router] Attempting non-stream fallback to', fallbackUrl, 'for streamId', streamId);
-                const fallbackRes = await axios.post(fallbackUrl, request, { timeout: DEFAULT_TIMEOUT });
+                const fallbackRes = await axios.post(fallbackUrl, request, { timeout: DEFAULT_TIMEOUT, headers: sadieWebhookHeaders() });
                 const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
                 const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                 if (finalText) {
@@ -3030,7 +3031,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             try {
               const safetyUrl = `${n8nUrl}/webhook/sadie/validate`;
               if (process.env.NODE_ENV !== 'production') logDebug('[Router] Running safety check', { safetyUrl });
-              const safetyRes = await axios.post(safetyUrl, { tool_call: reqAny.tool_call }, { timeout: DEFAULT_TIMEOUT });
+              const safetyRes = await axios.post(safetyUrl, { tool_call: reqAny.tool_call }, { timeout: DEFAULT_TIMEOUT, headers: sadieWebhookHeaders() });
               if (safetyRes?.data?.status === 'blocked') {
                 // Safety blocked - return an error to the renderer and stop
                 try { event.sender.send('sadie:stream-error', { error: true, message: 'Safety blocked', details: safetyRes.data, streamId }); } catch (e) {}

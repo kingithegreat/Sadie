@@ -293,6 +293,15 @@ if ($issues.Count -eq 0) {
     $env:OLLAMA_URL = "http://127.0.0.1:11434"
     $env:SADIE_ROOT = $ScriptDir
     
+    # Read or generate the shared webhook secret and export it so
+    # docker-compose passes it to the n8n container.
+    $secretFile = Join-Path $env:APPDATA "sadie-widget\config\webhook-secret"
+    if (Test-Path $secretFile) {
+        $env:SADIE_WEBHOOK_SECRET = (Get-Content $secretFile -Raw).Trim()
+    } else {
+        Write-Host "  [!] Webhook secret not yet generated (will be created on first run)" -ForegroundColor Yellow
+    }
+    
     # Patch n8n workflow paths for portability
     Write-Host "Patching workflow paths..." -ForegroundColor Yellow
     node "$ScriptDir\scripts\patch-workflow-paths.js"

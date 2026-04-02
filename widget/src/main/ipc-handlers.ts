@@ -34,6 +34,7 @@ import {
 import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
+import { sadieWebhookHeaders } from './webhook-auth';
 
 
 /**
@@ -141,9 +142,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         timestamp: new Date().toISOString()
       }, {
         timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: sadieWebhookHeaders()
       });
 
       // Send response back to renderer
@@ -181,7 +180,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const url = `${settings.n8nUrl}/webhook/sadie/image-generate`;
       console.log('[Main] Image generate request ->', { url, action });
 
-      const response = await axios.post(url, { action, payload }, { timeout: 600000, headers: { 'Content-Type': 'application/json' } });
+      const response = await axios.post(url, { action, payload }, { timeout: 600000, headers: sadieWebhookHeaders() });
 
       return response.data;
     } catch (err: any) {
