@@ -198,6 +198,13 @@ const COMPRESS_BATCH = 20;
 // Maximum number of conversations to keep in memory (LRU eviction)
 const MAX_CONVERSATIONS = 50;
 
+// ── Context budget limits (small models like llama3.2:3b have ~4096 tokens) ──
+// These caps prevent silent context overflow that causes the model to drop
+// earlier messages or degrade output quality.
+const SMALL_MODEL_HISTORY_MESSAGES = 12;   // ~12 turns ≈ 1200 tokens
+const SMALL_MODEL_DIGEST_CHARS     = 500;  // compressed older context cap
+const SMALL_MODEL_MEMORY_CHARS     = 300;  // MCP knowledge-graph recall cap
+
 /** Compact a batch of messages into a brief prose digest line. */
 function compressTurns(turns: ConversationMessage[]): string {
   return turns.map(t => {
@@ -1260,10 +1267,13 @@ export async function streamFromLLM(
 
       // Inject MCP memory recall into the system prompt (same as Ollama path).
       // Fire-and-forget memorization of any self-disclosures in this message.
+      // Cap recall for small models to avoid blowing the context window.
+      const cloudModelSmall = isSmallModel(customConfig.model || activeModel);
       let cloudSystemPrompt = systemPromptWithGuidelines;
       const recalled = await recallMemory(message).catch(() => null);
       if (recalled) {
-        cloudSystemPrompt += `\n\n[Remembered facts about the user from prior sessions]\n${recalled}`;
+        const cappedRecall = cloudModelSmall ? recalled.slice(0, SMALL_MODEL_MEMORY_CHARS) : recalled;
+        cloudSystemPrompt += `\n\n[Remembered facts about the user from prior sessions]\n${cappedRecall}`;
       }
       memorizeIfUseful(message).catch(() => {});
 
@@ -1553,10 +1563,17 @@ export async function streamFromOllamaWithTools(
     messages.push({ role: 'system', content: systemPromptWithGuidelines });
   }
 
+  // ── Context budget: scale history window and digest to model size ──
+  const smallModel = isSmallModel(model);
+  const maxHistoryForModel = smallModel ? SMALL_MODEL_HISTORY_MESSAGES : MAX_HISTORY_MESSAGES;
+
   // Add conversation history (last N messages for context)
   // If there is a rolling digest of older messages, inject it as a brief system
   // context addendum so nothing is fully lost when the window compresses.
-  const digest = conversationDigest.get(conversationId);
+  const rawDigest = conversationDigest.get(conversationId);
+  const digest = rawDigest && smallModel
+    ? rawDigest.slice(-SMALL_MODEL_DIGEST_CHARS)
+    : rawDigest;
   if (digest && !uncensoredModeEnabled) {
     messages.push({
       role: 'system',
@@ -1583,15 +1600,18 @@ export async function streamFromOllamaWithTools(
   if (!uncensoredModeEnabled && !isSynthesisCall) {
     const recalled = await recallMemory(message).catch(() => null);
     if (recalled) {
+      const cappedRecall = smallModel ? recalled.slice(0, SMALL_MODEL_MEMORY_CHARS) : recalled;
       messages.push({
         role: 'system',
-        content: `[Remembered facts about the user from prior sessions]\n${recalled}`
+        content: `[Remembered facts about the user from prior sessions]\n${cappedRecall}`
       });
     }
     // Fire-and-forget: persist any self-disclosures in this user message
     memorizeIfUseful(message).catch(() => {});
   }
-  for (const msg of history) {
+  // Only send the most recent N messages — older turns are already in the digest
+  const trimmedHistory = history.slice(-maxHistoryForModel);
+  for (const msg of trimmedHistory) {
     messages.push({ role: msg.role, content: msg.content });
   }
 
