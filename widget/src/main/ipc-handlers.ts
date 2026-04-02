@@ -16,7 +16,7 @@ import {
 import { fetchAvailableCustomModels } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
-import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated } from './message-router';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
 import { listJobs, addJob, removeJob, toggleJob } from './scheduler';
@@ -481,6 +481,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('sadie:delete-conversation', async (_event, conversationId: string) => {
     try {
       const success = MemoryManager.deleteConversation(conversationId);
+      clearHistory(conversationId);
       return { success };
     } catch (err: any) {
       console.error('Error deleting conversation:', err.message);

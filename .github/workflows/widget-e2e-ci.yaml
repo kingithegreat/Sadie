@@ -74,7 +74,8 @@ jobs:
         working-directory: widget
         run: npx playwright install --with-deps
       - name: Prepare Playwright artifact directories
-        run: node -e "const fs = require('fs'); const dirs = ['playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}']; dirs.forEach(d => { try { fs.mkdirSync('widget/' + d, { recursive: true }) } catch(e){} });"
+        run: |
+          node -e "const fs = require('fs'); const dirs = ['playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}']; dirs.forEach(d => { try { fs.mkdirSync('widget/' + d, { recursive: true }) } catch(e){} });"
       - name: Build widget
         run: npm run build --prefix widget
       - name: Run E2E tests (sharded)

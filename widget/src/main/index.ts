@@ -12,6 +12,16 @@ import { registerWebServicesHandlers, closeAllServiceWindows } from './web-servi
 
 let mainWindow: BrowserWindow | null = null;
 
+// Global error handlers — prevent silent crashes and unhandled promise rejections
+process.on('uncaughtException', (err) => {
+  console.error('[MAIN] Uncaught exception:', err);
+  (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] uncaughtException: ${err.message}`);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[MAIN] Unhandled promise rejection:', reason);
+  (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] unhandledRejection: ${reason}`);
+});
+
 // Diagnostic log buffer for main process
 (global as any).__SADIE_MAIN_LOG_BUFFER ??= [];
 

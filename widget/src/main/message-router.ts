@@ -181,6 +181,8 @@ const hydratedConversations = new Set<string>();
 const MAX_HISTORY_MESSAGES = 50;
 // How many to compress at once when the window overflows
 const COMPRESS_BATCH = 20;
+// Maximum number of conversations to keep in memory (LRU eviction)
+const MAX_CONVERSATIONS = 50;
 
 /** Compact a batch of messages into a brief prose digest line. */
 function compressTurns(turns: ConversationMessage[]): string {
@@ -226,6 +228,16 @@ function addToHistory(conversationId: string, role: 'user' | 'assistant', conten
       conversationId,
       existing ? `${existing} | ${compressed}` : compressed
     );
+  }
+
+  // Evict oldest conversations when the map grows too large (LRU by last write)
+  if (conversationHistory.size > MAX_CONVERSATIONS) {
+    const oldest = conversationHistory.keys().next().value;
+    if (oldest && oldest !== conversationId) {
+      conversationHistory.delete(oldest);
+      conversationDigest.delete(oldest);
+      hydratedConversations.delete(oldest);
+    }
   }
 }
 

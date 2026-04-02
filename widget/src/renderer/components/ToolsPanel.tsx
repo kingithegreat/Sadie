@@ -133,7 +133,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ onClose }) => {
               {/* Category header */}
               <button
                 onClick={() => toggleCat(cat)}
-                aria-expanded={expandedCats.has(cat) ? 'true' : 'false'}
+                aria-expanded={expandedCats.has(cat)}
                 aria-controls={`tools-cat-${cat}`}
                 aria-label={`${prettyCat(cat)} tools, ${grouped[cat].length} tool${grouped[cat].length === 1 ? '' : 's'}`}
                 className="tools-cat-btn"

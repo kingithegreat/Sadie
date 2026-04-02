@@ -206,7 +206,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           title={locked ? (lockReason || 'Turn off Uncensored Mode to switch models') : `Using ${currentModelInfo?.name} — click to see all models`}
           aria-haspopup="menu"
           aria-controls={dropdownId}
-          aria-expanded={isOpen ? 'true' : 'false'}
+          aria-expanded={isOpen}
         >
           <div className="model-selector-current">
             <span className="model-icon">{useCustomLLM ? '☁️' : '🦙'}</span>
@@ -240,6 +240,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             <span>Available Models</span>
             <button 
               className="add-custom-button"
+              role="menuitem"
               onClick={() => {
                 setIsOpen(false);
                 onConfigureCustom();
@@ -257,6 +258,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 {customModels.map(model => (
                   <button
                     key={model.id}
+                    role="menuitem"
                     className={`model-option ${useCustomLLM ? 'active' : ''}`}
                     onClick={() => handleSelectModel(model)}
                   >
@@ -279,6 +281,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             {ollamaModels.map(model => (
               <button
                 key={model.id}
+                role="menuitem"
                 className={`model-option ${!useCustomLLM && currentModel === model.id ? 'active' : ''}`}
                 onClick={() => handleSelectModel(model)}
               >
