@@ -46,8 +46,8 @@ describe('n8n workflow JSON schema', () => {
     workflows = collectJsonFiles(WORKFLOWS_ROOT);
   });
 
-  test('at least 16 workflow files are present', () => {
-    expect(workflows.length).toBeGreaterThanOrEqual(16);
+  test('at least 3 workflow files are present (core + image-generate)', () => {
+    expect(workflows.length).toBeGreaterThanOrEqual(3);
   });
 
   describe('required fields', () => {
@@ -102,18 +102,12 @@ describe('n8n workflow JSON schema', () => {
     expect(unique.size).toBe(names.length);
   });
 
-  describe('Phase 6 tool workflows are present', () => {
-    const PHASE_6_TOOLS = [
-      'Clipboard',
-      'Calendar',
-      'Email',
-      'Web Search',
-      'Browser',
-    ] as const;
-
-    test.each(PHASE_6_TOOLS)('workflow containing "%s" exists', (keyword) => {
+  // Phase 6 tools now run locally via TypeScript handlers, not through n8n
+  // workflows. Only the image-generate n8n tool workflow is still used.
+  describe('image-generate workflow is present', () => {
+    test('workflow containing "Image" exists', () => {
       const match = workflows.some(w =>
-        typeof w.data.name === 'string' && w.data.name.includes(keyword)
+        typeof w.data.name === 'string' && w.data.name.toLowerCase().includes('image')
       );
       expect(match).toBe(true);
     });

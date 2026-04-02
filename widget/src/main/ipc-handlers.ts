@@ -690,8 +690,8 @@ try {
     $recognizer.Dispose()
 }
 `;
-      // Write to a temp file so no inline escaping is needed
-      const tmpFile = path.join(os.tmpdir(), 'sadie-voice.ps1');
+      // Write to a unique temp file so concurrent calls don't race
+      const tmpFile = path.join(os.tmpdir(), `sadie-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
       try {
         fs.writeFileSync(tmpFile, psScript, 'utf8');
       } catch (writeErr: any) {

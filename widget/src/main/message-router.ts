@@ -192,7 +192,7 @@ const hydratedConversations = new Set<string>();
 
 // Keep last 50 messages in the active window; compress any beyond that into a
 // rolling digest so context is never lost, only compacted.
-const MAX_HISTORY_MESSAGES = 50;
+export const MAX_HISTORY_MESSAGES = 50;
 // How many to compress at once when the window overflows
 const COMPRESS_BATCH = 20;
 // Maximum number of conversations to keep in memory (LRU eviction)
@@ -201,9 +201,9 @@ const MAX_CONVERSATIONS = 50;
 // ── Context budget limits (small models like llama3.2:3b have ~4096 tokens) ──
 // These caps prevent silent context overflow that causes the model to drop
 // earlier messages or degrade output quality.
-const SMALL_MODEL_HISTORY_MESSAGES = 12;   // ~12 turns ≈ 1200 tokens
-const SMALL_MODEL_DIGEST_CHARS     = 500;  // compressed older context cap
-const SMALL_MODEL_MEMORY_CHARS     = 300;  // MCP knowledge-graph recall cap
+export const SMALL_MODEL_HISTORY_MESSAGES = 12;   // ~12 turns ≈ 1200 tokens
+export const SMALL_MODEL_DIGEST_CHARS     = 500;  // compressed older context cap
+export const SMALL_MODEL_MEMORY_CHARS     = 300;  // MCP knowledge-graph recall cap
 
 /** Compact a batch of messages into a brief prose digest line. */
 function compressTurns(turns: ConversationMessage[]): string {

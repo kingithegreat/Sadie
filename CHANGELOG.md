@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.7.4 — Security hardening, context budget, dead workflow cleanup
+
+### Security Fixes
+- **IPC path traversal** (`ipc-handlers.ts`): `sadie:open-file` and `sadie:show-in-folder` now restrict paths to the user's home directory using `path.resolve()` checks — previously could open/reveal arbitrary files.
+- **PID injection** (`process-manager.ts`): `kill_process` now validates PID as a positive integer before passing to `Stop-Process`, preventing PowerShell command injection.
+- **Toast XML injection** (`notification.ts`): notification title and body are now XML-entity-encoded (`<`, `>`, `&`, `"`) and PS-sanitised before insertion into toast XML template.
+- **Git commit message injection** (`git.ts`): commit messages now use a character whitelist instead of just escaping double-quotes, preventing shell metacharacter injection.
+- **Custom LLM SSRF** (`ipc-handlers.ts`): `sadie:list-custom-llm-models` now validates URL protocol (HTTP/HTTPS only) before making requests.
+- **Dependency vulnerabilities**: `npm audit fix` applied — 0 production vulnerabilities remaining (dev-only `tar` vuln in electron-builder noted).
+
+### Added
+- **Context budget for small models** (`message-router.ts`): `llama3.2:3b` and other ≤3B models now get scaled-down context injection — 12 history turns (vs 50), 500-char digest cap, 300-char memory recall cap — preventing silent context overflow on 4096-token models.
+- **Permission defaults** (`config-manager.ts`): added default permission entries for 23 tools routed by `preProcessIntent()` that previously had no defaults, causing silent denials.
+- **Context budget unit tests** (`context-budget.test.ts`): tests verifying small models get capped history, digest, and memory recall.
+
+### Fixed
+- **Stream URL** (`message-router.ts`): corrected chat stream endpoint from `/webhook/sadie/tools/file-manager/stream` to `/webhook/sadie/chat/stream`.
+- **CODING_QUERY_PATTERN** (`message-router.ts`): removed bare words like "function", "class", "api" that false-positived on normal conversation.
+- **Speech recognition tmp file** (`ipc-handlers.ts`): temp PS1 file now uses unique filename with random suffix to prevent race conditions.
+
+### Removed
+- **Dead n8n tool workflows**: removed 13 vestigial workflow JSONs from `n8n-workflows/tools/` that were never called from SADIE (all tools execute locally via TypeScript handlers). Kept only the 3 workflows that are actually used: `core/chat-orchestrator.json`, `core/safety-validator.json`, and `tools/image-generate.json`.
+- **`tool-allowlist.json`**: annotated as documentation-only (never loaded at runtime).
+
+---
+
 ## v0.7.3 — Final polish: streamFromLLM tests, path portability, workflow cleanup
 
 ### Added
