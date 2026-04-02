@@ -210,7 +210,12 @@ export const killProcessHandler: ToolHandler = async (args): Promise<ToolResult>
     let cmd: string;
     const forceFlag = force ? ' -Force' : '';
     if (pid !== undefined) {
-      cmd = `powershell -NoProfile -NonInteractive -Command "Stop-Process -Id ${pid}${forceFlag} -ErrorAction Stop"`;
+      // Validate PID is a positive integer to prevent command injection
+      const safePid = parseInt(String(pid), 10);
+      if (!Number.isFinite(safePid) || safePid < 0) {
+        return { success: false, error: 'Invalid PID: must be a positive integer' };
+      }
+      cmd = `powershell -NoProfile -NonInteractive -Command "Stop-Process -Id ${safePid}${forceFlag} -ErrorAction Stop"`;
     } else {
       const safeName = name.replace(/[^a-zA-Z0-9_\-. ]/g, '');
       cmd = `powershell -NoProfile -NonInteractive -Command "Stop-Process -Name '${safeName}'${forceFlag} -ErrorAction Stop"`;

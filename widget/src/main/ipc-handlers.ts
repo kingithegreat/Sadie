@@ -221,6 +221,16 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       if (!payload?.apiUrl) {
         return { success: false, error: 'API URL is required' };
       }
+
+      // Validate URL protocol to prevent non-HTTP SSRF (file://, ftp://, etc.)
+      try {
+        const parsed = new URL(payload.apiUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+        }
+      } catch {
+        return { success: false, error: 'Invalid URL format' };
+      }
       
       const models = await fetchAvailableCustomModels(payload || {});
       console.log('[IPC] Successfully fetched', models.length, 'models');
@@ -601,8 +611,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       if (!filePath) {
         return { success: false, error: 'No file path provided' };
       }
-      // Normalize path and check it exists
-      const normalizedPath = path.normalize(filePath);
+      // Resolve and restrict to user home directory to prevent path traversal
+      const normalizedPath = path.resolve(filePath);
+      const homeDir = require('os').homedir();
+      if (!normalizedPath.toLowerCase().startsWith(homeDir.toLowerCase())) {
+        return { success: false, error: 'Access denied: path must be within home directory' };
+      }
       if (!fs.existsSync(normalizedPath)) {
         return { success: false, error: 'File not found' };
       }
@@ -622,8 +636,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       if (!filePath) {
         return { success: false, error: 'No file path provided' };
       }
-      // Normalize path and check it exists
-      const normalizedPath = path.normalize(filePath);
+      // Resolve and restrict to user home directory to prevent path traversal
+      const normalizedPath = path.resolve(filePath);
+      const homeDir = require('os').homedir();
+      if (!normalizedPath.toLowerCase().startsWith(homeDir.toLowerCase())) {
+        return { success: false, error: 'Access denied: path must be within home directory' };
+      }
       if (!fs.existsSync(normalizedPath)) {
         return { success: false, error: 'File not found' };
       }

@@ -63,14 +63,17 @@ export const showNotificationHandler: ToolHandler = async (args): Promise<ToolRe
     }
 
     // Fallback: PowerShell msg to current session
-    const escapedTitle = title.replace(/"/g, '\\"');
-    const escapedBody = body.replace(/"/g, '\\"');
+    // XML-encode and PS-sanitize to prevent XML injection and command injection
+    const xmlEncode = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const psEncode = (s: string) => s.replace(/'/g, '\u2019').replace(/`/g, '').replace(/\$/g, '').replace(/[\x00-\x1F]/g, '');
+    const safeTitle = psEncode(xmlEncode(title)).slice(0, 200);
+    const safeBody = psEncode(xmlEncode(body)).slice(0, 500);
     await execAsync(
       `powershell -NoProfile -NonInteractive -Command "` +
         `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null; ` +
         `$t = [Windows.UI.Notifications.ToastNotificationManager]; ` +
         `$xml = New-Object Windows.Data.Xml.Dom.XmlDocument; ` +
-        `$xml.LoadXml('<toast><visual><binding template=\\"ToastText02\\"><text id=\\"1\\">${escapedTitle}</text><text id=\\"2\\">${escapedBody}</text></binding></visual></toast>'); ` +
+        `$xml.LoadXml('<toast><visual><binding template=\\"ToastText02\\"><text id=\\"1\\">${safeTitle}</text><text id=\\"2\\">${safeBody}</text></binding></visual></toast>'); ` +
         `$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); ` +
         `$t::CreateToastNotifier('SADIE').Show($toast)"`
     );

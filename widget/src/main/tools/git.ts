@@ -277,7 +277,8 @@ export const gitCommitHandler: ToolHandler = async (args): Promise<ToolResult> =
     const message = String(args.message || '').trim();
     if (!message) return { success: false, error: 'commit message is required' };
 
-    const safeMessage = message.replace(/"/g, '\\"');
+    // Whitelist: strip any character that could break shell quoting or inject commands
+    const safeMessage = message.replace(/[^a-zA-Z0-9 _.,:;!?()\-=+@#&\/\[\]{}]/g, '').slice(0, 200);
     if (args.stage_all !== false) {
       await git('add -A', v.resolved);
     }
