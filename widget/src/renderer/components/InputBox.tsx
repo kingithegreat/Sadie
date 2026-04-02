@@ -48,9 +48,8 @@ declare global {
   }
 }
 
-// Offline speech recognition - disabled for now due to Electron compatibility issues
-// The @xenova/transformers library has bundling issues in Electron
-// TODO: Implement native Whisper.cpp integration for true offline support
+// Offline speech recognition uses Windows SAPI via PowerShell (fully offline,
+// no external dependencies). Web Speech API is the fallback for non-Windows.
 
 export type InputBoxProps = {
   onSendMessage: (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;

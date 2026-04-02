@@ -105,10 +105,10 @@ test('returns error for invalid type', async () => {
   expect(result.error).toMatch(/invalid type/i);
 });
 
-test('returns error for stats type (not implemented)', async () => {
+test('returns error for stats type without query', async () => {
   const result = await nbaQueryHandler({ type: 'stats' }, {} as any);
   expect(result.success).toBe(false);
-  expect(result.error).toBeTruthy();
+  expect(result.error).toMatch(/query.*required/i);
 });
 
 test('returns error for roster without query', async () => {

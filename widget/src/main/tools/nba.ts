@@ -260,9 +260,50 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       return { success: true, result: { query, resultCount: 0, players: [] } };
     }
 
-    // Stats not implemented in ESPN tool (could be added later)
     if (type === 'stats') {
-      return { success: false, error: 'Stats queries not implemented. Use players/games/roster/news.' };
+      // Find the player first, then fetch their stats from ESPN athlete page
+      if (!query) return { success: false, error: 'query (player name) is required for stats' };
+      const found = await findPlayerByName(query, 5);
+      if (!found || found.length === 0) {
+        return { success: false, error: `Player "${query}" not found` };
+      }
+      const playerResults: any[] = [];
+      for (const { player: p, team: t } of found.slice(0, 3)) {
+        const playerId = p.id;
+        try {
+          // ESPN athlete statistics endpoint
+          const statsUrl = `https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${playerId}/stats`;
+          const statsData = await httpsGet(statsUrl);
+          // Extract season averages from the response
+          const categories = statsData?.categories || statsData?.splitCategories || [];
+          const seasonStats: Record<string, any> = {};
+          for (const cat of categories) {
+            const splits = cat?.splits || [];
+            for (const split of splits) {
+              if (split?.type === 'total' || split?.abbreviation === 'Total' || !split?.type) {
+                const statNames = cat?.names || cat?.labels || [];
+                const statValues = split?.stats || [];
+                for (let i = 0; i < statNames.length && i < statValues.length; i++) {
+                  seasonStats[statNames[i]] = statValues[i];
+                }
+              }
+            }
+          }
+          playerResults.push({
+            player: p.displayName || p.fullName,
+            team: t?.displayName || t?.name || 'Unknown',
+            position: p.position?.abbreviation || p.position?.name || '',
+            stats: Object.keys(seasonStats).length > 0 ? seasonStats : 'Stats not available for this player',
+          });
+        } catch {
+          playerResults.push({
+            player: p.displayName || p.fullName,
+            team: t?.displayName || t?.name || 'Unknown',
+            stats: 'Failed to fetch stats from ESPN',
+          });
+        }
+      }
+      return { success: true, result: { query, players: playerResults } };
     }
 
     if (type === 'standings') {

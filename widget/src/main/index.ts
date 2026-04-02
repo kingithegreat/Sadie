@@ -8,6 +8,7 @@ import { getSettings } from './config-manager';
 import { isE2E } from './env';
 import { ensureN8nRunning } from './n8n-lifecycle';
 import { initScheduler } from './scheduler';
+import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 
 let mainWindow: BrowserWindow | null = null;
@@ -58,6 +59,13 @@ app.whenReady().then(async () => {
     initScheduler();
   } catch (e) {
     console.error('[MAIN] Scheduler init error:', e);
+  }
+
+  // Restore persisted reminders from previous session
+  try {
+    restoreReminders();
+  } catch (e) {
+    console.error('[MAIN] Reminder restore error:', e);
   }
   
   // Spoof a standard Chrome UA on each web-service session partition so that

@@ -2,12 +2,53 @@
  * SADIE Reminder Tool
  *
  * In-process time-based reminders. When a reminder fires it shows a desktop
- * notification via Electron. Reminders survive widget reload but not full
- * process restart (purely in-memory; no persistence layer required).
+ * notification via Electron. Reminders are persisted to <userData>/reminders.json
+ * so they survive full process restarts.
  */
 
-import { Notification, BrowserWindow } from 'electron';
+import { Notification, BrowserWindow, app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+
+// ---- Persistence helpers ----
+
+function remindersFilePath(): string {
+  try {
+    return path.join(app.getPath('userData'), 'reminders.json');
+  } catch {
+    // In test environments app.getPath may not exist
+    return path.join(process.env.TEMP || '/tmp', 'sadie-reminders.json');
+  }
+}
+
+interface PersistedReminder {
+  id: string;
+  message: string;
+  fireAt: number;
+  label: string;
+}
+
+function loadRemindersFromDisk(): PersistedReminder[] {
+  try {
+    const raw = fs.readFileSync(remindersFilePath(), 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRemindersToDisk(): void {
+  try {
+    const data = Array.from(reminders.values()).map(r => ({
+      id: r.id, message: r.message, fireAt: r.fireAt, label: r.label,
+    }));
+    fs.writeFileSync(remindersFilePath(), JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[Reminders] Failed to save:', e);
+  }
+}
 
 // ---- State ----
 
@@ -30,6 +71,7 @@ function fireReminder(id: string) {
   const r = reminders.get(id);
   if (!r) return;
   reminders.delete(id);
+  saveRemindersToDisk();
   try {
     const n = new Notification({ title: `⏰ Reminder: ${r.label}`, body: r.message });
     n.show();
@@ -141,6 +183,7 @@ export const setReminderHandler: ToolHandler = async (args): Promise<ToolResult>
     const timerId = setTimeout(() => fireReminder(id), delayMs);
 
     reminders.set(id, { id, message, fireAt, label, timerId });
+    saveRemindersToDisk();
 
     const fireAtIso = new Date(fireAt).toISOString();
     return {
@@ -178,10 +221,38 @@ export const cancelReminderHandler: ToolHandler = async (args): Promise<ToolResu
 
   clearTimeout(r.timerId);
   reminders.delete(id);
+  saveRemindersToDisk();
   return { success: true, result: { id, cancelled: true } };
 };
 
 // ============= EXPORTS =============
+
+/**
+ * Restore reminders from disk on app startup.
+ * Expired reminders fire immediately; future reminders get new timers.
+ */
+export function restoreReminders(): void {
+  const saved = loadRemindersFromDisk();
+  let restored = 0;
+  let expired = 0;
+  for (const r of saved) {
+    const delay = r.fireAt - Date.now();
+    if (delay <= 0) {
+      // Already past due — fire immediately
+      expired++;
+      const id = r.id;
+      const timerId = setTimeout(() => fireReminder(id), 0);
+      reminders.set(id, { ...r, timerId });
+    } else {
+      restored++;
+      const timerId = setTimeout(() => fireReminder(r.id), delay);
+      reminders.set(r.id, { ...r, timerId });
+    }
+  }
+  if (saved.length > 0) {
+    console.log(`[Reminders] Restored ${restored} future + ${expired} expired from disk`);
+  }
+}
 
 export const reminderToolDefs: ToolDefinition[] = [
   setReminderDef,
