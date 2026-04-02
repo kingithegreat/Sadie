@@ -1,5 +1,5 @@
 # SADIE Environment Status Report
-**Date**: January 23, 2026  
+**Date**: April 3, 2026  
 **System**: Windows 10 Home (64-bit)  
 **Location**: `c:\Users\adenk\Desktop\sadie`
 
@@ -9,42 +9,42 @@
 
 | Tool | Version | Status | Notes |
 |------|---------|--------|-------|
-| **Node.js** | v24.6.0 | ✅ Installed | LTS version, ready for Electron |
+| **Node.js** | v24.13.0 | ✅ Installed | LTS version, ready for Electron |
 | **npm** | 11.5.1 | ✅ Installed | Latest stable |
 | **Docker** | 28.4.0 | ✅ Installed | For n8n containerization |
 | **Docker Compose** | v2.39.2 | ✅ Installed | For multi-container setup |
 | **Ollama** | 0.12.11 | ✅ Installed | Local LLM runtime |
 | **PowerShell** | 5.1 | ✅ Installed | For automation scripts |
 | **Git** | 2.51.0 | ✅ Installed | Version control |
+| **TypeScript** | 5.9.3 | ✅ Installed | Strict mode enabled |
+| **Electron** | 28 | ✅ Installed | Desktop shell |
+| **electron-vite** | latest | ✅ Installed | Build system |
 
 ---
 
 ## 📦 Ollama Models Available
 
-| Model | ID | Size | Last Modified | Purpose |
-|-------|-------|------|---------------|---------|
-| **llama3.2:3b** | a80c4f17acd5 | 2.0 GB | 11 days ago | Primary reasoning/tool-calling |
-| **llama3.2:latest** | a80c4f17acd5 | 2.0 GB | 4 weeks ago | Same as 3b version |
-| **llava:latest** | 8dd30f6b0cb1 | 4.7 GB | 4 weeks ago | Vision analysis (screenshots/OCR) |
-| **mistral:latest** | 6577803aa9a0 | 4.4 GB | 2 months ago | Alternative reasoning model |
-| **nomic-embed-text:latest** | 0a109f422b47 | 274 MB | 4 weeks ago | Text embeddings for memory |
+| Model | Size | Purpose |
+|-------|------|---------|
+| **llama3.2:3b** | 2.0 GB | Primary chat reasoning/tool-calling |
+| **qwen2.5-coder:3b** | 2.0 GB | Code generation (default code model) |
+| **qwen2.5:7b** | 4.7 GB | Alternative larger reasoning model |
+| **dolphin-llama3:8b** | 4.7 GB | Uncensored mode |
+| **llava:latest** | 4.7 GB | Vision analysis (image describe/query) |
+| **mistral:latest** | 4.4 GB | Alternative reasoning model |
+| **nomic-embed-text:latest** | 274 MB | Text embeddings for memory |
 
-**Total Ollama Storage**: ~13.5 GB
+**Total Ollama Storage**: ~23 GB
+**GPU**: NVIDIA RTX 2050 (4 GB VRAM)
 
 ---
 
 ## ⚠️ To Be Installed
 
-### During Setup (Phase 1)
-- **TypeScript** (local to widget project)
-- **Electron** (local to widget project)
-- **React** (local to widget project)
-
-### Optional Enhancements (Later Phases)
-- **AutoHotkey** - Global hotkey management
-- **Tesseract OCR** - Enhanced OCR for vision tool
-- **Everything Search CLI** - Fast local file search
-- **Piper TTS** - Text-to-speech (optional)
+### Optional Enhancements
+- **AutoHotkey** — Alternative global hotkey management (built-in `globalShortcut` already active)
+- **Everything Search CLI** — Fast local file search (falls back to PowerShell `Get-ChildItem`)
+- **Piper TTS** — Text-to-speech (falls back to Windows SAPI)
 
 ---
 
@@ -130,17 +130,13 @@ All initial setup phases have been completed:
 
 ---
 
-## 📋 Models to Pull (If Needed)
+## 📝 Models to Pull (If Needed)
 
-Based on PROJECT_PLAN.md requirements:
+All required models are installed. To add optional models:
 
-- ✅ **Phi-4 or Llama3**: Have llama3.2:3b (sufficient for tool-calling)
-- ✅ **LLaVA**: Have llava:latest (vision analysis)
-- ⚠️ **Whisper**: NOT downloaded yet (only needed for voice input)
-
-### To pull Whisper (when ready for voice features):
 ```powershell
-ollama pull whisper
+# Larger reasoning model
+ollama pull qwen2.5:14b
 ```
 
 ---

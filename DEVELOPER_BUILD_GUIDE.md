@@ -5,14 +5,15 @@ This guide helps new developers set up SADIE for local development, testing, and
 ## Prerequisites
 
 ### System Requirements
-- **Node.js**: 18.0 or higher (LTS recommended)
+- **Node.js**: 18.0 or higher (tested with v24.13.0)
 - **Git**: Latest version
 - **Ollama**: For local AI model hosting
-- **Operating System**: Windows 10+, macOS 10.15+, or Linux
+- **Operating System**: Windows 10+
 
 ### Hardware Requirements
-- **RAM**: 4GB minimum, 8GB recommended
-- **Storage**: 2GB free space
+- **RAM**: 16 GB recommended (8 GB minimum)
+- **GPU**: 4 GB+ VRAM recommended (RTX 2050 or better; CPU-only works, slower)
+- **Storage**: 15 GB free space (models + dependencies)
 - **Network**: Internet connection for dependencies
 
 ## Getting Started
@@ -49,14 +50,23 @@ ollama serve
 
 #### Download Required Models
 ```bash
-# Pull the default model used by SADIE
-ollama pull llama2:7b
+# Primary chat model
+ollama pull llama3.2:3b
+
+# Code model
+ollama pull qwen2.5-coder:3b
+
+# Vision model
+ollama pull llava:latest
+
+# Uncensored mode (optional)
+ollama pull dolphin-llama3:8b
 
 # Verify models are available
 ollama list
 ```
 
-**Note:** SADIE defaults to `llama2:7b` but can work with any Ollama-compatible model.
+**Note:** SADIE defaults to `llama3.2:3b` for chat and `qwen2.5-coder:3b` for code. The model can be changed in Settings.
 
 ## Development Workflow
 
@@ -109,15 +119,20 @@ npm run build
 
 ### Unit Tests
 ```bash
-# Run all unit tests
-npm test
+# Run all unit tests (87 suites / 1339 tests)
+npx jest --config jest.config.ts
 
 # Run with coverage
-npm run test:coverage
+npx jest --config jest.config.ts --coverage
+
+# Run specific test file
+npx jest --config jest.config.ts vision-tools --no-coverage
 
 # Watch mode
-npm run test:watch
+npx jest --config jest.config.ts --watch
 ```
+
+**Important:** Always use `--config jest.config.ts` to avoid the multi-config error.
 
 ### E2E Tests
 ```bash

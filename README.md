@@ -24,16 +24,25 @@ It combines:
 
 | Tool | What it does |
 |------|-------------|
-| 🔍 Web Search | DuckDuckGo search via PowerShell |
-| 📁 File Manager | Safe read / write / list / move with path validation |
+| 🔍 Web Search | Multi-engine cascade (Tavily → Serper → DDG → Google → Brave) with content fetching & SSRF protection |
+| 📁 File Manager | Safe read / write / list / move / delete with path validation |
 | 🖥️ System Info | Disk, memory, process, and network inspection |
-| 👁️ Vision / OCR | Screenshot understanding via Tesseract + LLaVA |
-| 🧠 Planning Agent | Multi-step task planning via llama3.2:3b |
+| 👁️ Vision / OCR | Describe images and extract text via `vision_describe` & `vision_query` (LLaVA) |
+| 📎 RAG | Drag-and-drop document indexing with TF-IDF semantic search (`rag_index`, `rag_query`) |
+| 🧠 Planning Agent | Multi-step task planning with persistent plans |
 | 💾 Memory Manager | Persistent context and fact storage across sessions |
-| 🌐 Browser Automation | Automated browser interactions |
-| 🔌 API Tool | External HTTP API calls |
-| 🌩️ Remote LLM APIs | Optional ChatGPT / Claude model inference (cloud) |
-| 📦 Archive Ops | Archive creation and extraction |
+| 🌐 Browser Automation | Automated browser interactions + content extraction |
+| 🔌 API Tool | External HTTPS requests to an approved host allowlist |
+| ☁️ Code Cloud API | Route coding queries to OpenAI / Anthropic / OpenRouter |
+| 🌩️ Embedded Web Services | ChatGPT, Claude, and Gemini accessible in-app via sandboxed panels |
+| 🎨 Themes | Light / dark / system theme support with futuristic UI accents |
+| 📄 Word Documents | Generate `.docx` files with headings, paragraphs, and formatting |
+| 🖼️ Image Generation | Pollinations.ai → Stable Horde fallback cascade with progress indicator |
+| 🏀 Sports / NBA | Live scores, standings, player stats via ESPN integration |
+| 📦 Archive Ops | ZIP archive creation and extraction |
+| ⌨️ Global Hotkey | `Ctrl+Shift+Space` to toggle SADIE from anywhere |
+| 🔄 Auto-Update | Electron-updater with IPC progress events |
+| 🔊 Voice Input | Offline speech recognition via Windows SAPI |
 
 All tools are exposed as local HTTP webhook endpoints. SADIE calls whichever tool it needs, gets structured JSON back, and keeps everything on your machine.
 
@@ -42,36 +51,29 @@ All tools are exposed as local HTTP webhook endpoints. SADIE calls whichever too
 ## Architecture
 
 `
-┌─────────────────────────────────┐
-│        Electron Shell           │
-│   React UI  ←→  IPC Bridge      │
-└────────────────┬────────────────┘
-                 │ HTTP
-┌────────────────▼────────────────┐
-│         n8n Tool Engine         │
-│  (localhost:5678 via Docker)    │
-│                                 │
-│  /sadie/tools/web-search        │
-│  /sadie/tools/file-manager      │
-│  /sadie/tools/system-info       │
-│  /sadie/tools/vision            │
-│  /sadie/tools/planning-agent    │
-│  /sadie/tools/memory-manager    │
-│  ... and more                   │
-└────────────────┬────────────────┘
+┌──────────────────────────────────────┐
+│         Electron 28 Shell            │
+│  React UI ←→ IPC Bridge ←→ Main     │
+│  (Themes, Animations, Glass UI)      │
+├──────────────────────────────────────┤
+│  Message Router  │  Tool Handlers    │
+│  (intent detect, │  (TS, local exec) │
+│   recursion cap) │                   │
+├──────────────────┼───────────────────┤
+│  Vision Tools    │  RAG Engine       │
+│  (LLaVA)         │  (TF-IDF)         │
+├──────────────────┼───────────────────┤
+│  Code Cloud API  │  Embedded Web     │
+│  (OpenAI/Claude) │  (ChatGPT/Gemini) │
+└────────────────┬─┴───────────────────┘
                  │ HTTP
 ┌────────────────▼────────────────┐
 │        Ollama (local)           │
-│  llama3.2:3b  |  llava:latest   │
+│  llama3.2:3b │ dolphin-llama3   │
+│  qwen2.5-coder │ llava │ mistral│
 │  localhost:11434                │
 └─────────────────────────────────┘
 `
-
-Each n8n workflow follows the same pattern:
-1. Receive webhook POST
-2. Parse + validate inputs
-3. Execute (PowerShell, Ollama call, HTTP request, etc.)
-4. Return structured JSON response
 
 ---
 
@@ -82,14 +84,13 @@ Before running SADIE, install the following:
 | Dependency | Purpose | Install |
 |-----------|---------|---------|
 | Node.js 18+ | Electron app runtime | [nodejs.org](https://nodejs.org) |
-| Docker Desktop | Runs n8n locally | [docker.com](https://docker.com) |
 | Ollama | Local LLM inference | [ollama.ai](https://ollama.ai) |
-| Tesseract OCR | Vision/OCR tool | [github.com/UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki) |
+| Docker Desktop | Runs n8n (optional) | [docker.com](https://docker.com) |
 
 **Minimum hardware:**
-- Windows 11
-- 16GB RAM
-- GPU with 8GB+ VRAM recommended (CPU-only works, slower)
+- Windows 10/11
+- 16 GB RAM
+- GPU with 4 GB+ VRAM recommended (RTX 2050 or better; CPU-only works, slower)
 
 ---
 
@@ -114,7 +115,9 @@ n8n will be available at http://localhost:5678. Import each workflow from the /t
 
 `ash
 ollama pull llama3.2:3b
+ollama pull qwen2.5-coder:3b
 ollama pull llava:latest
+ollama pull dolphin-llama3:8b    # optional — uncensored mode
 `
 
 ### 4. Install and run the desktop app
@@ -131,24 +134,24 @@ npm run dev
 
 `
 Sadie/
-├── tools/                    # n8n workflow JSON files
-│   ├── web-search.json
-│   ├── file-manager.json
-│   ├── system-info.json
-│   ├── vision-tool.json
-│   ├── planning-agent.json
-│   ├── memory-manager.json
-│   ├── browser-automation.json
-│   ├── api-tool.json
-│   └── archive-ops.json
 ├── widget/                   # Electron + React desktop app
 │   ├── src/
+│   │   ├── main/             # Main process (message-router, tools, IPC)
+│   │   │   └── __tests__/    # 60+ main-process test suites
+│   │   ├── renderer/         # React UI (components, styles, e2e)
+│   │   │   └── __tests__/    # 20+ renderer test suites
+│   │   ├── preload/          # Context bridge (sandbox-safe IPC)
+│   │   └── shared/           # Types & utils shared across processes
 │   ├── package.json
-│   ├── vite.config.ts
-│   └── tsconfig.json
-├── scripts/                  # PowerShell helper scripts
-│   ├── FileOps.ps1
-│   └── SystemInfo.ps1
+│   └── jest.config.ts
+├── n8n-workflows/            # n8n workflow definitions
+│   ├── core/                 # Orchestrator, safety validator
+│   └── tools/                # image-generate (only active workflow)
+├── config/                   # JSON configs (safety rules, allowlists)
+├── scripts/                  # Setup, build, and utility scripts
+├── prompts/                  # System prompts, intent detection
+├── schemas/                  # JSON schemas for tool validation
+├── docs/                     # Developer & API documentation
 ├── docker-compose.yml
 └── README.md
 `
@@ -160,11 +163,11 @@ Sadie/
 `ash
 cd widget
 
-# Unit tests
-npm run test
+# Unit tests (87 suites, 1339 tests)
+npx jest --config jest.config.ts
 
-# End-to-end tests
-npm run test:e2e
+# End-to-end tests (Playwright)
+npm run e2e
 `
 
 Test coverage reports are generated in /coverage.
@@ -187,10 +190,19 @@ SADIE is developed as a capstone project at **Toi Ohomai Institute of Technology
 - [x] n8n tool engine with all core tool endpoints
 - [x] Ollama local LLM integration (llama3.2:3b + LLaVA)
 - [x] PowerShell-backed system tools
-- [ ] Full Jest unit test coverage
-- [ ] Playwright E2E test suite
-- [ ] Security hardening + path allowlist
-- [ ] Windows installer packaging
+- [x] Vision tools (describe & query images)
+- [x] RAG document indexing and semantic search
+- [x] Embedded web services (ChatGPT, Claude, Gemini)
+- [x] Code cloud API routing (OpenAI / Anthropic / OpenRouter)
+- [x] Light / dark / system theme support
+- [x] Global hotkey (Ctrl+Shift+Space)
+- [x] Auto-update via electron-updater
+- [x] Futuristic UI accents (animations, glass morphism, neon glows)
+- [x] Full Jest unit test coverage (87 suites / 1339 tests)
+- [x] Playwright E2E test suite (12+ scenarios)
+- [x] Security hardening (SSRF, IPC path traversal, webhook auth, PID injection)
+- [x] Windows NSIS installer packaging
+- [ ] i18n / localization
 - [ ] Technical documentation site
 
 ---

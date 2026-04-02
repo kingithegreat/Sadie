@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.7.6 — Tool recursion cap, light theme, global hotkey, auto-update, log buffer caps
+
+### Added
+- **Tool recursion cap** (`message-router.ts`): `MAX_TOOL_ROUNDS = 10` constant prevents infinite tool-call loops. `processResponse()` now accepts a `round` parameter; at round ≥ 10 the LLM receives a user-facing warning and halts.
+- **Light / dark / system theme** (`chatgpt-theme.css`, `App.tsx`, `types.ts`): full `[data-theme="light"]` CSS overrides + `@media (prefers-color-scheme: light)` for system mode. Theme selector added to settings (`'light' | 'dark' | 'system'`).
+- **Global hotkey** (`index.ts`): `Ctrl+Shift+Space` toggles SADIE's window via `globalShortcut.register()`. Unregistered on `before-quit`.
+- **Auto-updater** (`auto-updater.ts`): new module using `electron-updater`. Checks 5 s after startup; sends IPC events `sadie:update-available`, `sadie:update-progress`, `sadie:update-downloaded`. Skipped in E2E/test mode.
+- **Log buffer caps** (`index.ts`, `message-router.ts`): both main-process and router log buffers capped at 500 entries via `pushMainLog()` and `pushRouter()` helpers to prevent memory growth.
+
+### UI Polish (post-v0.7.6)
+- **Futuristic accent animations** (`chatgpt-theme.css`): 15+ CSS keyframe animations — `headerScan`, `titleShimmer`, `connectedGlow`, `msgSlideIn`, `msgSlideInRight`, `avatarRingSpin`, `userAvatarPulse`, `voiceNeonPulse`, `welcomeFloat1/2`, `welcomeIconSpin`, `activeCardGlow`. Glass morphism on settings/modals via `backdrop-filter`. `@media (prefers-reduced-motion: reduce)` accessibility guard.
+- **User avatar upgrade** (`MessageBubble.tsx`, `chatgpt-theme.css`): replaced plain 👤 with ⚡ icon; purple→blue→teal gradient background, animated conic-gradient glow ring, bouncy entrance animation, hover scale effect.
+
+---
+
+## v0.7.5 — Fix all partial/incomplete features
+
+### Fixed
+- **Reminder persistence** (`scheduler.ts`): reminders now survive app restart — saved to and loaded from `userData/memory/json-store/reminders.json`.
+- **Browser content extraction** (`web.ts`): `fetch_url` / content extraction no longer silently fails; added retry logic and improved HTML-to-text pipeline.
+- **Image generation direct fallback** (`web.ts`): when Pollinations.ai is down, immediately tries Stable Horde instead of returning an error.
+- **ESPN stats integration** (`sports.ts`): live NBA stats now pull from ESPN endpoints with proper response parsing.
+- **Whisper TODO cleanup**: removed stale TODO comments related to Whisper integration that were already implemented.
+
+---
+
 ## v0.7.4 — Security hardening, context budget, dead workflow cleanup
 
 ### Security Fixes

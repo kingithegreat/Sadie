@@ -7,8 +7,9 @@ This script provides a step-by-step demonstration of SADIE's core features and c
 ## Prerequisites
 
 - SADIE application installed and running
+- Ollama running with `llama3.2:3b` and `llava:latest` models pulled
 - Internet connection for web-based tools
-- Sample documents (optional) for document processing demo
+- Sample documents and images (optional) for document / vision demos
 
 ## Demo Script
 
@@ -40,9 +41,11 @@ This script provides a step-by-step demonstration of SADIE's core features and c
 4. Explain the structured tool-based approach
 
 **Key Features to Highlight:**
-- Minimalist design focused on functionality
+- Futuristic UI with neon glows, animated avatars, and glass morphism
+- Light / dark / system theme toggle in settings
 - Settings accessible but not intrusive
 - Privacy controls prominently displayed
+- Conversation sidebar with timestamps and message count badges
 
 ---
 
@@ -105,25 +108,118 @@ This script provides a step-by-step demonstration of SADIE's core features and c
 
 ---
 
-### 6. Document Processing (if available)
+### 6. Vision & Image Analysis
 
-**Narrator:** "SADIE can process various document formats locally."
+**Narrator:** "SADIE can understand images using local AI models."
 
 **Demo Actions:**
-1. Upload a sample PDF or document
-2. Show local processing capabilities
-3. Demonstrate text extraction
-4. Highlight privacy (no data sent to external servers)
+1. Attach a screenshot or photo to the chat
+2. Ask: "What's in this image?"
+3. Show how SADIE uses `vision_describe` to analyze the image via LLaVA
+4. Follow up with a specific question: "What text is visible in the image?"
+5. Show inline image thumbnails in the chat bubble
 
 **Expected Outcome:**
-- Local document processing
-- Multiple format support
-- Text extraction and analysis
-- Privacy-preserving operation
+- Detailed image description (colours, objects, text, layout)
+- Specific answers to image queries
+- Image thumbnails rendered inline in user messages
+- All processing happens locally via Ollama LLaVA
 
 ---
 
-### 7. Error Handling & Safety
+### 7. RAG Document Search
+
+**Narrator:** "SADIE can index your documents and search them semantically."
+
+**Demo Actions:**
+1. Click the 📎 RAG index button in the input toolbar
+2. Select a PDF or code file to index
+3. Show the "⏳ indexing…" spinner and "✅ Indexed" confirmation
+4. Ask: "What does the document say about [topic]?"
+5. Alternatively, drag-and-drop a file onto the chat input area
+
+**Expected Outcome:**
+- File indexed with TF-IDF cosine similarity
+- Semantic search returns relevant excerpts ranked by relevance
+- Works offline with no model download required
+- Low-confidence results flagged appropriately
+
+---
+
+### 8. Image Generation
+
+**Narrator:** "SADIE can generate images from text descriptions."
+
+**Demo Query:** "Generate an image of a futuristic city at sunset"
+
+**Actions:**
+1. Enter the image generation request
+2. Show the "⏳ Generating image, please wait…" progress indicator
+3. Image appears inline in the chat
+4. Explain the fallback cascade: Pollinations.ai → Stable Horde
+
+**Expected Outcome:**
+- Progress indicator shown during generation
+- Image rendered inline in assistant message
+- Free API with optional Stable Horde key for faster generation
+
+---
+
+### 9. Theme & UI Customization
+
+**Narrator:** "SADIE supports multiple themes and futuristic visual effects."
+
+**Demo Actions:**
+1. Open settings panel
+2. Switch between Light / Dark / System themes
+3. Point out animated elements: header scan line, avatar glow rings, message slide-in
+4. Show glass morphism effects on settings panel
+5. Demonstrate the ⚡ user avatar with its gradient and spinning ring
+
+**Expected Outcome:**
+- Smooth theme transitions
+- Consistent styling across all components
+- Reduced-motion accessibility mode for users who prefer it
+
+---
+
+### 10. Embedded Web Services
+
+**Narrator:** "SADIE gives you access to ChatGPT, Claude, and Gemini directly in-app."
+
+**Demo Actions:**
+1. Open the web services panel
+2. Show the three available services
+3. Click to open one in a sandboxed browser panel
+4. Demonstrate that it works with your existing subscription
+
+**Expected Outcome:**
+- Sandboxed BrowserWindow with correct Chrome UA
+- Cloudflare bot-detection bypassed
+- Login and interaction works normally
+- Services isolated from SADIE's main functionality
+
+---
+
+### 11. Code Cloud API
+
+**Narrator:** "For complex coding tasks, SADIE can route to cloud LLMs."
+
+**Demo Actions:**
+1. Open settings → Code Model — Cloud API section
+2. Show provider options: OpenAI / Anthropic / OpenRouter / Custom
+3. Enter an API key (optional demo)
+4. Ask a coding question: "Write a Python function to sort a list"
+5. Show how it routes to the cloud model if configured
+
+**Expected Outcome:**
+- Coding queries automatically routed to cloud model when configured
+- Falls back to local Ollama when no cloud key is set
+- Code blocks rendered with syntax highlighting and copy button
+
+---
+
+### 12. Error Handling & Safety
 
 **Narrator:** "SADIE includes comprehensive error handling and security measures."
 
@@ -141,7 +237,7 @@ This script provides a step-by-step demonstration of SADIE's core features and c
 
 ---
 
-### 8. Settings & Privacy Controls
+### 13. Settings & Privacy Controls
 
 **Narrator:** "User privacy and control are core to SADIE's design."
 
@@ -159,35 +255,36 @@ This script provides a step-by-step demonstration of SADIE's core features and c
 
 ---
 
-### 9. Performance & Responsiveness
+### 14. Global Hotkey & Auto-Update
 
-**Narrator:** "SADIE is optimized for performance and responsiveness."
+**Narrator:** "SADIE integrates seamlessly into your workflow."
 
 **Demo Actions:**
-1. Show fast response times for queries
-2. Demonstrate smooth UI interactions
-3. Highlight efficient resource usage
-4. Note offline capabilities
+1. Minimize SADIE
+2. Press `Ctrl+Shift+Space` to instantly toggle SADIE back
+3. Show the auto-update notification (if an update is available)
+4. Explain that updates are downloaded in the background
 
 **Expected Outcome:**
-- Sub-second response times
-- Smooth animations and transitions
-- Efficient memory and CPU usage
-- Reliable operation
+- Instant toggle from any application
+- Seamless update experience
+- No manual download required
 
 ---
 
-### 10. Closing & Key Takeaways
+### 15. Closing & Key Takeaways
 
 **Narrator:** "SADIE represents a new approach to AI assistants - secure, private, and capable."
 
 **Key Points to Emphasize:**
-- **Security First**: Built-in protections against common vulnerabilities
-- **Privacy Focused**: User controls over data and telemetry
-- **Performance Optimized**: Fast, efficient operation
-- **Extensible Architecture**: Tool-based system for future enhancements
-- **Cross-Platform**: Works on Windows, macOS, and Linux
-- **Offline Capable**: Core functionality works without internet
+- **Security First**: SSRF protection, IPC hardening, webhook auth, tool recursion cap
+- **Privacy Focused**: User controls over data and telemetry, offline-first
+- **AI-Powered**: Vision, RAG, image generation, planning, 20+ tool handlers
+- **Extensible Architecture**: Tool-based system, cloud API routing, embedded web services
+- **Modern UI**: Light/dark/system themes, futuristic animations, glass morphism
+- **Developer Quality**: 87 test suites / 1339 unit tests, TypeScript strict mode
+- **Global Hotkey**: Ctrl+Shift+Space for instant access
+- **Auto-Update**: Seamless electron-updater integration
 
 ---
 
@@ -195,9 +292,11 @@ This script provides a step-by-step demonstration of SADIE's core features and c
 
 ### Pre-Demo Setup
 - [ ] Verify SADIE builds and runs correctly
+- [ ] Ollama running with `llama3.2:3b` and `llava:latest`
 - [ ] Test all demo queries in advance
 - [ ] Ensure internet connection is stable
-- [ ] Prepare sample documents if needed
+- [ ] Prepare sample images for vision demo
+- [ ] Prepare sample documents for RAG demo
 - [ ] Clear any cached data for fresh demonstration
 
 ### Demo Environment
@@ -223,7 +322,10 @@ This script provides a step-by-step demonstration of SADIE's core features and c
 ### Performance Expectations
 - Web search: 2-5 seconds response time
 - Weather queries: <1 second response time
-- UI interactions: Instantaneous
+- Vision analysis: 5-15 seconds (depends on image size)
+- Image generation: 10-120 seconds (depends on Stable Horde queue)
+- RAG indexing: 1-5 seconds per document
+- UI interactions: Instantaneous with smooth animations
 - Memory usage: <200MB typical operation
 
 ### Security Demonstrations

@@ -7,13 +7,15 @@
 
 **SADIE** is an offline-first, privacy-first AI personal assistant system that runs entirely on Windows with optional cloud LLM support. It combines:
 
-- **n8n** as the orchestration backbone
-- **Ollama** for local LLM inference (Phi-4, Llama3, LLaVA, Whisper)
-- **Electron-based desktop widget** for user interaction
-- **Modular workflow architecture** for extensibility
+- **n8n** as the orchestration backbone (optional, most tools run locally)
+- **Ollama** for local LLM inference (llama3.2:3b, qwen2.5-coder:3b, LLaVA, dolphin-llama3:8b)
+- **Electron 28 desktop widget** with React + TypeScript for user interaction
+- **electron-vite** build system with hot module replacement
+- **Modular tool architecture** with 20+ TypeScript tool handlers
 - **Structured JSON tool-calling** for safe, predictable agent behavior
-- **Multi-layer safety validation** to prevent harmful actions
+- **Multi-layer safety validation** (SSRF, IPC hardening, webhook auth, permission system)
 - **Local memory subsystem** for context persistence
+- **Optional cloud LLM routing** (OpenAI / Anthropic / OpenRouter)
 
 ### Core Principles
 1. **Privacy**: All data stays local
@@ -306,9 +308,12 @@ sadie/
 ## 3.3 Ollama Integration
 
 ### Models Required
-1. **Phi-4** or **Llama3**: Primary reasoning/tool-calling model
-2. **LLaVA**: Vision analysis
-3. **Whisper**: Voice transcription
+1. **llama3.2:3b**: Primary chat reasoning/tool-calling (2.0 GB)
+2. **qwen2.5-coder:3b**: Code generation (2.0 GB)
+3. **LLaVA**: Vision analysis (4.7 GB)
+4. **dolphin-llama3:8b**: Uncensored mode (4.7 GB, optional)
+5. **mistral**: Alternative reasoning (4.4 GB, optional)
+6. **nomic-embed-text**: Text embeddings (274 MB, optional)
 
 ### Endpoint Usage
 - **POST `http://localhost:11434/api/generate`**: Main generation endpoint
