@@ -517,14 +517,14 @@ export function MessageBubble({
           </div>
 
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? "👤" : "✨"}
+            {isUser ? "⚡" : "✨"}
           </div>
         </>
       ) : (
         <>
           {/* ASSISTANT: avatar first, content second */}
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? "👤" : "✨"}
+            {isUser ? "⚡" : "✨"}
           </div>
 
           <div className="message-content">

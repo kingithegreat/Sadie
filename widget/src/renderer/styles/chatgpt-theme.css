@@ -377,8 +377,11 @@ body {
 }
 
 .message-avatar.user {
-  background: var(--accent-primary);
+  background: linear-gradient(135deg, oklch(60% 0.2 280), oklch(70% 0.18 250), oklch(65% 0.22 210));
   color: var(--text-dark);
+  border: 1.5px solid oklch(72% 0.14 260 / 0.6);
+  box-shadow: 0 0 10px oklch(65% 0.2 260 / 0.35), inset 0 1px 0 oklch(90% 0.05 260 / 0.25);
+  position: relative;
 }
 
 .message-avatar.assistant {
@@ -3434,14 +3437,51 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* ── User avatar: soft pulse on appear ────────────────────────────────────── */
+/* ── User avatar: animated glow ring + entrance ──────────────────────────── */
 .message-avatar.user {
-  animation: userAvatarPulse 0.5s ease-out;
+  animation: userAvatarEntrance 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-@keyframes userAvatarPulse {
-  0% { box-shadow: 0 0 0 0 oklch(70% 0.16 210 / 0.5); }
-  70% { box-shadow: 0 0 0 8px oklch(70% 0.16 210 / 0); }
-  100% { box-shadow: var(--shadow-sm); }
+.message-avatar.user::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    oklch(70% 0.2 280),
+    oklch(70% 0.18 250),
+    oklch(70% 0.2 210),
+    oklch(70% 0.18 250),
+    oklch(70% 0.2 280)
+  );
+  z-index: -1;
+  opacity: 0.7;
+  animation: userRingSpin 4s linear infinite;
+}
+.message-avatar.user:hover::before {
+  opacity: 1;
+}
+.message-avatar.user:hover {
+  box-shadow: 0 0 18px oklch(65% 0.22 260 / 0.5), inset 0 1px 0 oklch(90% 0.05 260 / 0.3);
+  transform: scale(1.08);
+}
+@keyframes userAvatarEntrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-15deg);
+    box-shadow: 0 0 0 0 oklch(65% 0.2 260 / 0.6);
+  }
+  60% {
+    box-shadow: 0 0 0 10px oklch(65% 0.2 260 / 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    box-shadow: 0 0 10px oklch(65% 0.2 260 / 0.35), inset 0 1px 0 oklch(90% 0.05 260 / 0.25);
+  }
+}
+@keyframes userRingSpin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Streaming indicator: upgraded with glow ──────────────────────────────── */
