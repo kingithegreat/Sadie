@@ -1,0 +1,179 @@
+{
+  "name": "SADIE File Manager Tool (Phase 6.1)",
+  "nodes": [
+    {
+      "id": "start-node",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sadie/tools/file-manager",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "1f3c660b-00a0-4c8a-bdb0-780c96e84fb9"
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.item.json.tool_call.parameters;\nconst action = params.action;\n\n// Map n8n action names to FileOps.ps1 actions\nconst actionMap = {\n  'read_file': 'read',\n  'write_file': 'write',\n  'list_directory': 'list',\n  'delete_file': 'delete',\n  'search_files': 'search',\n  'move_file': 'move',\n  'get_file_info': 'info'\n};\n\nconst mappedAction = actionMap[action] || action;\n\nreturn {\n  json: {\n    action: mappedAction,\n    params: params,\n    original_request: $input.item.json\n  }\n};"
+      },
+      "id": "parse-params",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"file_manager\" -Action \"{{ $json.action }}\" -Parameters @{{ $json.params | ConvertTo-Json -Compress }} -UserConfirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+      },
+      "id": "safety-validation",
+      "name": "Safety Validation",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\n\nlet validationResult;\ntry {\n  validationResult = JSON.parse(stdout);\n} catch (e) {\n  validationResult = {\n    success: false,\n    error: 'Failed to parse safety validation output',\n    raw_output: stdout\n  };\n}\n\nif (!validationResult.success) {\n  return {\n    json: {\n      status: 'validation_failed',\n      error: validationResult.error || 'Safety validation failed',\n      validation: validationResult\n    }\n  };\n}\n\n// Continue to file operation\nreturn {\n  json: {\n    ...$input.item.json,\n    validation: validationResult\n  }\n};"
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.params.file_path ? ` -Path \"${String($json.params.file_path).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.directory_path ? ` -Path \"${String($json.params.directory_path).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.content ? ` -Content \"${String($json.params.content).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.destination ? ` -Destination \"${String($json.params.destination).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.pattern ? ` -Pattern \"${String($json.params.pattern).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.query ? ` -Pattern \"${String($json.params.query).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+      },
+      "id": "execute-fileops",
+      "name": "Execute FileOps",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\n\nlet scriptResult;\ntry {\n  scriptResult = JSON.parse(stdout);\n} catch (e) {\n  scriptResult = {\n    success: false,\n    error: 'Failed to parse FileOps output',\n    raw_output: stdout\n  };\n}\n\nreturn {\n  json: {\n    status: scriptResult.success ? 'success' : 'failure',\n    timestamp: scriptResult.timestamp || new Date().toISOString(),\n    operation: 'FileOps',\n    action: scriptResult.action || $input.item.json.action,\n    data: scriptResult.data || null,\n    error: scriptResult.error || null,\n    validation: $input.item.json.validation\n  }\n};"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        300
+      ]
+    },
+    {
+      "id": "sadie-auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Auth Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Safety Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Validation": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Execute FileOps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute FileOps": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "2",
+  "active": true
+}
