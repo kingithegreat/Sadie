@@ -1218,7 +1218,9 @@ function isSimpleGreeting(message: string): boolean {
 
 // Shared regex for detecting coding-heavy queries used by both cloud and local routing.
 // Keep this in one place so both paths always stay in sync.
-const CODING_QUERY_PATTERN = /\b(write|create|generate|fix|debug|refactor|optimise|optimize|implement|explain this code|review.*code|code.*review|function|class|algorithm|regex|sql|query|script|bash|python|javascript|typescript|html|css|java|c\+\+|golang|rust|react|api)\b/i;
+// NOTE: Bare words like "function", "class", "api", "query" were removed because they
+// false-positive on normal conversation. Only language names and explicit coding verbs remain.
+const CODING_QUERY_PATTERN = /\b(write\s+(code|a\s+script|a\s+function|a\s+program)|create\s+(a\s+script|a\s+function|a\s+class|a\s+program)|generate\s+code|fix\s+(this\s+)?code|debug|refactor|optimise|optimize|implement|explain\s+this\s+code|review.*code|code.*review|algorithm|regex|(?:write|run)\s+(?:a\s+)?(?:sql|query)|script|bash|python|javascript|typescript|html|css|java(?!script)|c\+\+|golang|rust|react|\bcode\b)\b/i;
 
 // Wrapper function that routes to either Ollama or Custom LLM based on settings
 export async function streamFromLLM(
@@ -2022,9 +2024,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       }
 
       try {
-          // Use the correct /stream path for the file manager tool
-          const FILE_MANAGER_STREAM_PATH = '/webhook/sadie/tools/file-manager/stream';
-          const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${FILE_MANAGER_STREAM_PATH}`;
+          // Use the correct /stream path for the main orchestrator
+          const CHAT_STREAM_PATH = '/webhook/sadie/chat/stream';
+          const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${CHAT_STREAM_PATH}`;
           const streamUrl = N8N_STREAM_URL;
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Router] Final streamUrl built =', streamUrl, ' (N8N_STREAM_URL override present=', Boolean(process.env.N8N_STREAM_URL), ')');

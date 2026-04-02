@@ -1,4 +1,5 @@
 {
+  "_note": "DOCUMENTATION ONLY — not loaded at runtime. Actual permissions are enforced by assertPermission() in config-manager.ts using per-tool boolean flags (e.g. read_file: true). This file exists as a reference for tool metadata, risk levels, and descriptions.",
   "allowed_tools": [
     "file_manager",
     "memory_manager",
