@@ -48,33 +48,10 @@ app.whenReady().then(async () => {
   console.log('[MAIN] Env check: SADIE_DIRECT_OLLAMA=', process.env.SADIE_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
 
-  // Initialize tools before window creation
-  try {
-    await initializeTools();
-    console.log('[MAIN] Tools initialized');
-    pushMainLog('[MAIN] Tools initialized');
-  } catch (e) {
-    console.error('[MAIN] Tool initialization error:', e);
-  }
-
   // Register IPC handlers BEFORE creating window
   registerIpcHandlers();
   registerWebServicesHandlers();
 
-  // Start background job scheduler
-  try {
-    initScheduler();
-  } catch (e) {
-    console.error('[MAIN] Scheduler init error:', e);
-  }
-
-  // Restore persisted reminders from previous session
-  try {
-    restoreReminders();
-  } catch (e) {
-    console.error('[MAIN] Reminder restore error:', e);
-  }
-  
   // Spoof a standard Chrome UA on each web-service session partition so that
   // ChatGPT, Claude, and Gemini don't detect Electron and block the page.
   // Must be done before the webviews load (i.e. before the renderer mounts).
@@ -89,7 +66,7 @@ app.whenReady().then(async () => {
     });
   }
 
-  // Create the main window first
+  // Create the main window FIRST for fast first-paint, then init tools in background
   mainWindow = createMainWindow();
 
   // For every <webview> that gets attached to the main window:
@@ -148,6 +125,20 @@ app.whenReady().then(async () => {
   
   console.log('[MAIN] IPC handlers registered');
   pushMainLog('[MAIN] IPC handlers registered');
+
+  // Deferred background initialization — runs after window is shown
+  // so the user sees the UI immediately while tools/scheduler/reminders load.
+  setImmediate(async () => {
+    try {
+      await initializeTools();
+      console.log('[MAIN] Tools initialized (deferred)');
+      pushMainLog('[MAIN] Tools initialized');
+    } catch (e) {
+      console.error('[MAIN] Tool initialization error:', e);
+    }
+    try { initScheduler(); } catch (e) { console.error('[MAIN] Scheduler init error:', e); }
+    try { restoreReminders(); } catch (e) { console.error('[MAIN] Reminder restore error:', e); }
+  });
 
   // Register global hotkey to show/hide SADIE window
   try {

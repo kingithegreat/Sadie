@@ -1,19 +1,20 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
 import { debug as logDebug } from '../shared/logger';
 import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
-import ToolsPanel from "./components/ToolsPanel";
 import ActionConfirmation from "./components/ActionConfirmation";
-import SettingsPanel from "./components/SettingsPanel";
-import FirstRunModal from './components/FirstRunModal';
 import PermissionModal from './components/PermissionModal';
-import ConversationSidebar from "./components/ConversationSidebar";
-// @ts-ignore - Component exists but TypeScript cache issue
-import { AutomationCenter } from "./components/AutomationCenter";
-import ImageGenerator from "./components/ImageGenerator";
-import WebServicesPanel from "./components/WebServicesPanel";
-import TokenCounter from "./components/TokenCounter";
-import RagPanel from "./components/RagPanel";
+
+// Lazy-load panels that aren't visible on first render
+const ToolsPanel = lazy(() => import("./components/ToolsPanel"));
+const SettingsPanel = lazy(() => import("./components/SettingsPanel"));
+const FirstRunModal = lazy(() => import('./components/FirstRunModal'));
+const ConversationSidebar = lazy(() => import("./components/ConversationSidebar"));
+const AutomationCenter = lazy(() => import("./components/AutomationCenter").then(m => ({ default: m.AutomationCenter })));
+const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
+const WebServicesPanel = lazy(() => import("./components/WebServicesPanel"));
+const TokenCounter = lazy(() => import("./components/TokenCounter"));
+const RagPanel = lazy(() => import("./components/RagPanel"));
 import type {
   ChatMessage,
   StreamingState
@@ -97,12 +98,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     let mounted = true;
     (async () => {
       try {
-        // Load settings
-        const loaded = await window.electron.getSettings();
+        // Load settings and conversations in parallel for faster boot
+        const [loaded, convResult] = await Promise.all([
+          window.electron.getSettings(),
+          window.electron.loadConversations?.(),
+        ]);
         if (mounted && loaded) setSettings(prev => ({ ...prev, ...loaded }));
-        
-        // Load conversations from memory
-        const convResult = await window.electron.loadConversations?.();
         if (mounted && convResult?.success && convResult.data) {
           const store = convResult.data;
           
@@ -773,14 +774,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   return (
     <div className="app-container" data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'}>
       {/* Conversation Sidebar */}
-      <ConversationSidebar
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        currentConversationId={conversationId}
-        onSelectConversation={handleSelectConversation}
-        onNewConversation={handleNewConversation}
-        onDeleteConversation={handleDeleteConversation}
-      />
+      <Suspense fallback={null}>
+        <ConversationSidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          currentConversationId={conversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewConversation={handleNewConversation}
+          onDeleteConversation={handleDeleteConversation}
+        />
+      </Suspense>
 
       {/* Status Indicator / Header */}
       <StatusIndicator 
@@ -844,7 +847,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {/* Token counter — shown in chat mode */}
       {mode === 'chat' && (
         <div className="token-counter-bar">
-          <TokenCounter messages={messages} model={settings.chatModel || 'llama3.2:3b'} />
+          <Suspense fallback={null}>
+            <TokenCounter messages={messages} model={settings.chatModel || 'llama3.2:3b'} />
+          </Suspense>
         </div>
       )}
 
@@ -859,11 +864,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           onUpdateSystemPrompt={updateConversationSystemPrompt}
         />
       ) : mode === 'automation' ? (
-        <AutomationCenter />
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <AutomationCenter />
+        </Suspense>
       ) : mode === 'image' ? (
-        <ImageGenerator />
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <ImageGenerator />
+        </Suspense>
       ) : (
-        <WebServicesPanel />
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <WebServicesPanel />
+        </Suspense>
       )}
 
       {/* Action Confirmation Modal */}
@@ -878,29 +889,35 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
       {/* Settings Panel */}
       {settingsOpen && (
-        <SettingsPanel
-          settings={settings}
-          onSave={saveSettings}
-          onClose={() => setSettingsOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <SettingsPanel
+            settings={settings}
+            onSave={saveSettings}
+            onClose={() => setSettingsOpen(false)}
+          />
+        </Suspense>
       )}
 
       {/* Tools Panel */}
-      {toolsOpen && <ToolsPanel onClose={() => setToolsOpen(false)} />}
+      {toolsOpen && <Suspense fallback={null}><ToolsPanel onClose={() => setToolsOpen(false)} /></Suspense>}
 
       {/* RAG Index Panel */}
-      <RagPanel isOpen={ragPanelOpen} onClose={() => setRagPanelOpen(false)} />
+      <Suspense fallback={null}>
+        <RagPanel isOpen={ragPanelOpen} onClose={() => setRagPanelOpen(false)} />
+      </Suspense>
 
       {/* Permission Modal (appears when main requests permission escalation) */}
       <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />
 
       {firstRunOpen && (
-        <FirstRunModal
-          open={firstRunOpen}
+        <Suspense fallback={null}>
+          <FirstRunModal
+            open={firstRunOpen}
           settings={settings as any}
           onSave={(s) => saveSettings(s as any)}
           onClose={() => setFirstRunOpen(false)}
         />
+        </Suspense>
       )}
     </div>
   );

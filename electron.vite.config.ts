@@ -32,6 +32,18 @@ export default defineConfig({
       alias: {
         '@shared': resolve(__dirname, 'shared')
       }
+    },
+    build: {
+      // Target the Chromium version bundled with Electron 28 — skip polyfills
+      target: 'chrome120',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-hljs': ['highlight.js'],
+          }
+        }
+      }
     }
   }
 })
