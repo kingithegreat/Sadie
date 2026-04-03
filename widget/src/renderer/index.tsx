@@ -2,6 +2,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { I18nProvider } from "./i18n";
 import "./styles/chatgpt-theme.css";
 import "highlight.js/styles/atom-one-dark.css";
 
@@ -13,6 +14,8 @@ if (!root) {
 
 createRoot(root).render(
   <ErrorBoundary>
-    <App />
+    <I18nProvider>
+      <App />
+    </I18nProvider>
   </ErrorBoundary>
 );

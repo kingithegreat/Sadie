@@ -1,0 +1,95 @@
+{
+  "app": {
+    "title": "SADIE",
+    "subtitle": "Structured AI Desktop Intelligence Engine"
+  },
+  "chat": {
+    "placeholder": "Message SADIE...",
+    "send": "Send",
+    "stopGenerating": "Stop generating",
+    "retry": "Retry",
+    "thinking": "Thinking...",
+    "errorGeneric": "Something went wrong. Please try again.",
+    "welcomeTitle": "Welcome to SADIE",
+    "welcomeSubtitle": "Your AI Desktop Assistant"
+  },
+  "settings": {
+    "title": "Settings",
+    "close": "Close settings",
+    "alwaysOnTop": "Always on top",
+    "n8nUrl": "n8n URL",
+    "chatModel": "Chat Model",
+    "uncensoredModel": "Uncensored Model",
+    "visionModel": "Vision Model",
+    "codeModel": "Code Model",
+    "codeApi": "Code API (Cloud)",
+    "chatGuidelines": "Chat Guidelines",
+    "cloudApi": "Cloud API",
+    "permissions": "Permissions",
+    "telemetry": "Telemetry",
+    "scheduledJobs": "Scheduled Jobs",
+    "mcpServers": "MCP Servers",
+    "theme": "Theme",
+    "themeDark": "Dark",
+    "themeLight": "Light",
+    "themeSystem": "System",
+    "save": "Save",
+    "cancel": "Cancel",
+    "apiKey": "API Key",
+    "fetchModels": "Fetch Models",
+    "language": "Language"
+  },
+  "sidebar": {
+    "title": "Conversations",
+    "newChat": "New Chat",
+    "search": "Search conversations",
+    "export": "Export",
+    "delete": "Delete",
+    "rename": "Rename",
+    "untitled": "Untitled",
+    "noConversations": "No conversations yet",
+    "confirmDelete": "Delete this conversation?"
+  },
+  "modes": {
+    "chat": "Chat",
+    "automation": "Automation",
+    "image": "Image",
+    "web": "Web"
+  },
+  "status": {
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "ollamaOnline": "Ollama Online",
+    "ollamaOffline": "Ollama Offline",
+    "n8nOnline": "n8n Online",
+    "n8nOffline": "n8n Offline"
+  },
+  "permissions": {
+    "title": "Permission Required",
+    "allowOnce": "Allow once",
+    "alwaysAllow": "Always allow",
+    "deny": "Deny",
+    "readFile": "Read file",
+    "writeFile": "Write file",
+    "deleteFile": "Delete file",
+    "launchApp": "Launch app",
+    "screenshot": "Screenshot"
+  },
+  "firstRun": {
+    "welcome": "Welcome to SADIE",
+    "setupDescription": "Let's configure your preferences.",
+    "telemetryLabel": "Telemetry",
+    "defaultTeam": "Default NBA Team",
+    "finish": "Finish"
+  },
+  "confirmation": {
+    "title": "Confirm Action",
+    "approve": "Approve",
+    "reject": "Reject"
+  },
+  "tokens": {
+    "used": "tokens used",
+    "remaining": "remaining",
+    "budget": "budget"
+  }
+}
