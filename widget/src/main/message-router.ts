@@ -493,10 +493,10 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
       for (const team of nbaTeamsForFile) {
         if (new RegExp(`\\b${team}\\b`, 'i').test(m)) { teamQuery = team; break; }
       }
-      const dateRange = /last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '';
-      const wantsSeason = /\b(season|remaining|upcoming|all)\b/i.test(m);
+      const wantsSeason = /\b(seasons?|remaining|upcoming)\b/i.test(m) || /\ball\b/i.test(m);
+      const dateRange = wantsSeason ? 'season' : (/last week|this week|last_7_days|last 7 days/i.test(m) ? 'last_7_days' : '');
       return { calls: [
-        { name: '__compound_nba_file', arguments: { teamQuery, dateRange, perPage: wantsSeason ? 50 : 10, query: userMessage } }
+        { name: '__compound_nba_file', arguments: { teamQuery, dateRange, perPage: wantsSeason ? 200 : 10, query: userMessage } }
       ] };
     }
 
@@ -2458,7 +2458,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // COMPOUND INTENT: NBA → write_file chain (with web enrichment)
             else if (intentResult.calls[0]?.name === '__compound_nba_file') {
               const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound NBA+file intent (enriched):', { teamQuery, dateRange, perPage });
+              const isSeason = dateRange === 'season';
+              console.log('[SADIE] Compound NBA+file intent (enriched):', { teamQuery, dateRange, perPage, isSeason });
 
               const nbaResults = await executeToolBatch(
                 [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
@@ -2469,17 +2470,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // Use enrichment for detailed results with web context
               const events = nbaResults?.[0]?.result?.events || [];
               const enriched = await enrichNbaGames(events, teamQuery || '', {
-                maxWebResults: 3,
-                fetchContent: true
+                maxWebResults: isSeason ? 0 : 3,
+                fetchContent: !isSeason,
+                ...(isSeason ? { format: 'table' } : {})
               });
 
               // Build file content from enriched summary
-              const nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
+              const nbaContent = `NBA ${isSeason ? 'Season Results' : 'Games Report'}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
               // Write to file
               const HOME = process.env.HOME || process.env.USERPROFILE || '';
               const teamSuffix = teamQuery ? `_${teamQuery}` : '';
-              const nbaFileName = `nba_games${teamSuffix}.txt`;
+              const nbaFileName = isSeason ? `nba_season_results${teamSuffix}.txt` : `nba_games${teamSuffix}.txt`;
               const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
               let nbaWriteOk = false;
               try {
@@ -3370,7 +3372,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 // COMPOUND INTENT: NBA → write_file chain (enriched, n8n path)
                 else if (intentResult.calls[0]?.name === '__compound_nba_file') {
                   const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound NBA+file intent (n8n path, enriched):', { teamQuery, dateRange, perPage });
+                  const isSeason = dateRange === 'season';
+                  console.log('[SADIE] Compound NBA+file intent (n8n path, enriched):', { teamQuery, dateRange, perPage, isSeason });
 
                   const nbaResults = await executeToolBatch(
                     [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
@@ -3381,15 +3384,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   // Use enrichment for detailed results
                   const events = nbaResults?.[0]?.result?.events || [];
                   const enriched = await enrichNbaGames(events, teamQuery || '', {
-                    maxWebResults: 3,
-                    fetchContent: true
+                    maxWebResults: isSeason ? 0 : 3,
+                    fetchContent: !isSeason,
+                    ...(isSeason ? { format: 'table' } : {})
                   });
 
-                  const nbaContent = `NBA Games Report\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
+                  const nbaContent = `NBA ${isSeason ? 'Season Results' : 'Games Report'}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
                   const HOME = process.env.HOME || process.env.USERPROFILE || '';
                   const teamSuffix = teamQuery ? `_${teamQuery}` : '';
-                  const nbaFileName = `nba_games${teamSuffix}.txt`;
+                  const nbaFileName = isSeason ? `nba_season_results${teamSuffix}.txt` : `nba_games${teamSuffix}.txt`;
                   const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
                   let nbaWriteOk = false;
                   try {

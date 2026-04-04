@@ -72,4 +72,34 @@ describe('preProcessIntent', () => {
     expect(res!.calls[0].name).toBe('nba_query');
     expect(res!.calls[0].arguments.format).toBeUndefined();
   });
+
+  // ── NBA season file intent ──────────────────────────────────────────────
+
+  test('routes "all this seasons nba results" to compound NBA file with season dateRange', async () => {
+    const res = await preProcessIntent('give me file with all this seasons nba results');
+    expect(res).not.toBeNull();
+    expect(res!.calls[0].name).toBe('__compound_nba_file');
+    expect(res!.calls[0].arguments.dateRange).toBe('season');
+  });
+
+  test('routes "allthis seasons nba results" (typo) to compound NBA file with season dateRange', async () => {
+    const res = await preProcessIntent('give me file with allthis seasons nba results');
+    expect(res).not.toBeNull();
+    expect(res!.calls[0].name).toBe('__compound_nba_file');
+    expect(res!.calls[0].arguments.dateRange).toBe('season');
+  });
+
+  test('routes "nba season results" to compound NBA file with season dateRange', async () => {
+    const res = await preProcessIntent('give me a file with the nba season results');
+    expect(res).not.toBeNull();
+    expect(res!.calls[0].name).toBe('__compound_nba_file');
+    expect(res!.calls[0].arguments.dateRange).toBe('season');
+  });
+
+  test('routes "file with nba games" (no season keyword) to compound NBA file without season', async () => {
+    const res = await preProcessIntent('give me a file with nba games');
+    expect(res).not.toBeNull();
+    expect(res!.calls[0].name).toBe('__compound_nba_file');
+    expect(res!.calls[0].arguments.dateRange).toBe('');
+  });
 });

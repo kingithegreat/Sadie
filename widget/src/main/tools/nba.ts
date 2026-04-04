@@ -100,6 +100,44 @@ async function findTeamByQuery(query: string) {
 export const FALLBACK_PAST_DAYS = 3;
 export const FALLBACK_FUTURE_DAYS = 30;
 
+/**
+ * Returns the NBA season start date string (YYYYMMDD) for the current
+ * season.  ESPN season metadata shows the 2025-26 season starts in
+ * early-to-mid October; we use Oct 01 to be safe.
+ */
+function seasonStartDate(now: Date = new Date()): string {
+  const year = now.getMonth() >= 9 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${year}1001`;
+}
+
+/**
+ * Fetch all NBA games for the current season using ESPN's date-range
+ * scoreboard parameter (e.g. dates=20251001-20260410).
+ * Returns only completed (state=post) games by default.
+ */
+export async function fetchSeasonEvents(
+  fetcher: (path: string, params?: Record<string, string | number>) => Promise<any> = fetchEspnJson,
+  nowDate: Date = new Date(),
+  includeScheduled = false
+): Promise<any[]> {
+  const start = seasonStartDate(nowDate);
+  const y = nowDate.getFullYear();
+  const mo = String(nowDate.getMonth() + 1).padStart(2, '0');
+  const day = String(nowDate.getDate()).padStart(2, '0');
+  const end = `${y}${mo}${day}`;
+
+  try {
+    const board = await fetcher('/scoreboard', { dates: `${start}-${end}`, limit: 1000 });
+    let events = board?.events || [];
+    if (!includeScheduled) {
+      events = events.filter((e: any) => e.status?.type?.state === 'post');
+    }
+    return events;
+  } catch {
+    return [];
+  }
+}
+
 async function findPlayerByName(query: string, perPage = 20) {
   // Try to find player by scanning rosters for a matching displayName
   const teamsResp = await fetchEspnJson('/teams');
@@ -170,6 +208,24 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
     }
 
     if (type === 'games') {
+      // Season-wide fetch
+      if (date === 'season') {
+        let events = await fetchSeasonEvents();
+        if (query) {
+          const q = query.toLowerCase();
+          events = events.filter((e: any) =>
+            (e.name || '').toLowerCase().includes(q) ||
+            (e.shortName || '').toLowerCase().includes(q) ||
+            (e.competitions || []).some((c: any) =>
+              (c.competitors || []).some((co: any) =>
+                (co.team?.displayName || '').toLowerCase().includes(q)
+              )
+            )
+          );
+        }
+        return { success: true, result: { query, resultCount: events.length, events, allScheduled: false } };
+      }
+
       // Use ESPN scoreboard; date format: YYYYMMDD (or YYYY-MM-DD)
       const d = (date || '').replace(/-/g, '');
       const wantsResults = !!args.wantsResults;

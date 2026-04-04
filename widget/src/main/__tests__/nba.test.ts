@@ -4,6 +4,7 @@
  */
 import {
   fetchEventsInWindow,
+  fetchSeasonEvents,
   nbaQueryDef,
   nbaQueryHandler,
   FALLBACK_PAST_DAYS,
@@ -95,6 +96,66 @@ test('passes formatted dates as YYYYMMDD in params', async () => {
   const dateCalls = fetcher.mock.calls.map((c: any[]) => c[1]?.dates);
   // The date for the fixedDate itself should appear (offset 0)
   expect(dateCalls.some((d: string) => d && /^\d{8}$/.test(d))).toBe(true);
+});
+
+// ─── fetchSeasonEvents ────────────────────────────────────────────────────────
+
+test('fetchSeasonEvents calls fetcher with date-range param', async () => {
+  const fetcher = jest.fn().mockResolvedValue({ events: [] });
+  const fixedDate = new Date(2026, 1, 15, 12, 0, 0); // Feb 15 local
+  await fetchSeasonEvents(fetcher, fixedDate);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher).toHaveBeenCalledWith('/scoreboard', expect.objectContaining({
+    dates: '20251001-20260215',
+    limit: 1000,
+  }));
+});
+
+test('fetchSeasonEvents filters to completed games by default', async () => {
+  const fetcher = jest.fn().mockResolvedValue({
+    events: [
+      { id: 'g1', status: { type: { state: 'post' } } },
+      { id: 'g2', status: { type: { state: 'pre' } } },
+    ],
+  });
+  const result = await fetchSeasonEvents(fetcher, new Date(2026, 0, 10, 12));
+  expect(result).toHaveLength(1);
+  expect(result[0].id).toBe('g1');
+});
+
+test('fetchSeasonEvents includes scheduled games when flag is set', async () => {
+  const fetcher = jest.fn().mockResolvedValue({
+    events: [
+      { id: 'g1', status: { type: { state: 'post' } } },
+      { id: 'g2', status: { type: { state: 'pre' } } },
+    ],
+  });
+  const result = await fetchSeasonEvents(fetcher, new Date(2026, 0, 10, 12), true);
+  expect(result).toHaveLength(2);
+});
+
+test('fetchSeasonEvents returns empty array on network error', async () => {
+  const fetcher = jest.fn().mockRejectedValue(new Error('timeout'));
+  const result = await fetchSeasonEvents(fetcher, new Date(2026, 0, 10, 12));
+  expect(result).toEqual([]);
+});
+
+test('fetchSeasonEvents uses previous year for Oct-Dec dates', async () => {
+  const fetcher = jest.fn().mockResolvedValue({ events: [] });
+  const fixedDate = new Date(2025, 10, 20, 12, 0, 0); // Nov 20 local
+  await fetchSeasonEvents(fetcher, fixedDate);
+  expect(fetcher).toHaveBeenCalledWith('/scoreboard', expect.objectContaining({
+    dates: '20251001-20251120',
+  }));
+});
+
+test('fetchSeasonEvents uses previous year for Jan-Sep dates', async () => {
+  const fetcher = jest.fn().mockResolvedValue({ events: [] });
+  const fixedDate = new Date(2026, 3, 10, 12, 0, 0); // Apr 10 local
+  await fetchSeasonEvents(fetcher, fixedDate);
+  expect(fetcher).toHaveBeenCalledWith('/scoreboard', expect.objectContaining({
+    dates: '20251001-20260410',
+  }));
 });
 
 // ─── nbaQueryHandler – pure error paths (no http) ────────────────────────────
