@@ -439,10 +439,12 @@ export function MessageBubble({
   message,
   onCancel,
   onRetry,
+  onBookmark,
 }: {
   message: ChatMessage;
   onCancel: (assistantId: string) => void;
   onRetry: (assistantId: string) => void;
+  onBookmark?: (messageId: string) => void;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -453,12 +455,21 @@ export function MessageBubble({
   const [speaking, setSpeaking] = useState(false);
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
 
+  const timestamp = message.createdAt
+    ? new Date(message.createdAt).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      })
+    : '';
+
   const buildContextItems = useCallback((): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
     if (message.content) {
       items.push({ label: 'Copy', icon: '📋', action: () => {
         window.electron?.writeClipboard?.(message.content!);
       }});
+    }
+    if (onBookmark && message.id) {
+      items.push({ label: message.bookmarked ? 'Remove bookmark' : 'Bookmark', icon: message.bookmarked ? '★' : '☆', action: () => onBookmark(message.id!) });
     }
     if (isAssistant && message.content) {
       items.push({ label: speaking ? 'Stop speaking' : 'Speak', icon: '🔊', action: () => {
@@ -471,7 +482,7 @@ export function MessageBubble({
       items.push({ label: 'Regenerate', icon: '↻', action: () => onRetry(message.id!) });
     }
     return items;
-  }, [message, isAssistant, state, speaking, onRetry]);
+  }, [message, isAssistant, state, speaking, onRetry, onBookmark]);
 
   const handleCopyMessage = useCallback(() => {
     if (!message.content) return;
@@ -497,13 +508,23 @@ export function MessageBubble({
   }, [message.content, speaking]);
   return (
     <div
-      className={`message-wrapper ${isUser ? "user" : "assistant"}`}
+      className={`message-wrapper ${isUser ? "user" : "assistant"}${message.bookmarked ? ' bookmarked' : ''}`}
       data-role={isAssistant ? "assistant-message" : "user-message"}
       data-state={state || ""}
       data-message-id={message.id ?? ""}
       onContextMenu={(e) => showContextMenu(e, buildContextItems())}
     >
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeContextMenu} />}
+      {onBookmark && message.id && (
+        <button
+          className={`bookmark-btn${message.bookmarked ? ' active' : ''}`}
+          onClick={() => onBookmark(message.id!)}
+          aria-label={message.bookmarked ? 'Remove bookmark' : 'Bookmark message'}
+          title={message.bookmarked ? 'Remove bookmark' : 'Bookmark'}
+        >
+          {message.bookmarked ? '★' : '☆'}
+        </button>
+      )}
       {isUser ? (
         <>
           {/* USER: content first (+ image thumbnails), avatar second */}
@@ -539,6 +560,7 @@ export function MessageBubble({
                 )}
               </div>
             )}
+            {timestamp && <span className="message-timestamp">{timestamp}</span>}
           </div>
 
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
@@ -568,6 +590,8 @@ export function MessageBubble({
                 )}
               </div>
             )}
+
+            {timestamp && <span className="message-timestamp">{timestamp}</span>}
 
             {isAssistant && (
               <div className="message-footer">

@@ -13,6 +13,7 @@ export type ChatMessage = {
   content: string;
   createdAt: number;
   updatedAt?: number;
+  bookmarked?: boolean;
 
   // user only — image attachment previews (url = objectURL or dataURL, renderer-only)
   images?: Array<{ url: string; filename?: string }>;

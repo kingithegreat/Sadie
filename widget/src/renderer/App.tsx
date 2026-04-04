@@ -771,6 +771,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     try { window.electron.cancelStream?.(id); } catch(e) { /* ignore */ }
   };
 
+  // Toggle bookmark on a message
+  const handleBookmark = useCallback((messageId: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === messageId ? { ...m, bookmarked: !m.bookmarked } : m
+    ));
+  }, []);
+
   /**
    * Handle confirmation rejection
    */
@@ -888,6 +895,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           onSendMessage={handleSendMessage}
           onUserCancel={handleUserCancel}
           onRetry={retryMessage}
+          onBookmark={handleBookmark}
           systemPrompt={conversationSystemPrompt}
           onUpdateSystemPrompt={updateConversationSystemPrompt}
         />

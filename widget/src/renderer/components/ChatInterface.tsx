@@ -10,12 +10,13 @@ interface ChatInterfaceProps {
   onSendMessage: (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;
   onUserCancel?: (messageId: string) => void;
   onRetry?: (messageId: string) => void;
+  onBookmark?: (messageId: string) => void;
   /** Optional per-conversation system prompt shown/edited in the chat header */
   systemPrompt?: string;
   onUpdateSystemPrompt?: (prompt: string) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, systemPrompt, onUpdateSystemPrompt }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onBookmark, systemPrompt, onUpdateSystemPrompt }) => {
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';
     logDebug('[Renderer] sendMessage invoked', { text, documents: documents?.length || 0 });
@@ -45,7 +46,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
 
       {/* Scrollable message list */}
       <div className="messages-container">
-        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} />
+        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} onBookmark={onBookmark} />
       </div>
 
       {/* Fixed input box at bottom */}
