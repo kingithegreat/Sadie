@@ -4,6 +4,7 @@ import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
 import PermissionModal from './components/PermissionModal';
+import { ToastContainer, useToasts } from './components/ToastContainer';
 
 // Lazy-load panels that aren't visible on first render
 const ToolsPanel = lazy(() => import("./components/ToolsPanel"));
@@ -16,6 +17,7 @@ const WebServicesPanel = lazy(() => import("./components/WebServicesPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
+const ShortcutsPanel = lazy(() => import("./components/ShortcutsPanel"));
 import type {
   ChatMessage,
   StreamingState
@@ -76,6 +78,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const { toasts, addToast, dismissToast } = useToasts();
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === '/') {
+        e.preventDefault();
+        setShortcutsOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // Track which conversations have had a title generated to avoid duplicates
   const titleGeneratedRef = useRef<Set<string>>(new Set());
   const [settings, setSettings] = useState<SharedSettings>({
@@ -209,6 +226,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         createdAt: Date.now(),
         error: null,
       }]);
+      addToast(`⏰ ${data.message}`, 'warning', 8000);
     });
 
     // Subscribe to title updates pushed from main (keeps sidebar title in sync)
@@ -779,6 +797,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
   return (
     <div className="app-container" data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'}>
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
       {/* Conversation Sidebar */}
       <Suspense fallback={null}>
         <ConversationSidebar
@@ -922,6 +943,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
       {/* Permission Modal (appears when main requests permission escalation) */}
       <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />
+
+      {/* Keyboard Shortcuts Panel */}
+      {shortcutsOpen && (
+        <Suspense fallback={null}>
+          <ShortcutsPanel open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+        </Suspense>
+      )}
 
       {firstRunOpen && (
         <Suspense fallback={null}>

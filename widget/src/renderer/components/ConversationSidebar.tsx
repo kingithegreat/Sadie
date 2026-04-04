@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ConversationSearch from './ConversationSearch';
 
 interface Conversation {
@@ -32,6 +32,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [editTitle, setEditTitle] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [exportStatus, setExportStatus] = useState<Record<string, string>>({});
+  const [filterText, setFilterText] = useState('');
 
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -152,6 +153,10 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   if (!isOpen) return null;
 
+  const filteredConversations = filterText.trim()
+    ? conversations.filter(c => (c.title || '').toLowerCase().includes(filterText.toLowerCase()))
+    : conversations;
+
   if (showSearch) {
     return (
       <ConversationSearch
@@ -180,14 +185,28 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
           <span className="icon">+</span>
           New Chat
         </button>
+
+        <div className="sidebar-filter">
+          <input
+            type="text"
+            className="sidebar-filter-input"
+            placeholder="Filter by title…"
+            value={filterText}
+            onChange={e => setFilterText(e.target.value)}
+            aria-label="Filter conversations"
+          />
+          {filterText && (
+            <button className="sidebar-filter-clear" onClick={() => setFilterText('')} aria-label="Clear filter">×</button>
+          )}
+        </div>
         
         <div className="conversations-list">
           {loading ? (
             <div className="loading">Loading...</div>
-          ) : conversations.length === 0 ? (
-            <div className="empty">No conversations yet</div>
+          ) : filteredConversations.length === 0 ? (
+            <div className="empty">{filterText ? 'No matches' : 'No conversations yet'}</div>
           ) : (
-            conversations.map(conv => (
+            filteredConversations.map(conv => (
               <div
                 key={conv.id}
                 className={`conversation-item ${conv.id === currentConversationId ? 'active' : ''}`}

@@ -1538,6 +1538,62 @@ body {
 .md-table-align-center { text-align: center; }
 .md-table-align-right { text-align: right; }
 .md-generated-img { max-width: 100%; border-radius: 8px; margin-top: 8px; display: block; }
+
+/* ── Keyboard Shortcuts Panel ── */
+.shortcuts-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center;
+  animation: fade-in 0.15s ease;
+}
+.shortcuts-panel {
+  background: var(--bg-darker, #1a1a2e); border: 1px solid var(--border-medium, #333);
+  border-radius: 12px; width: 420px; max-width: 90vw; padding: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.shortcuts-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.shortcuts-header h2 { font-size: 1.1rem; font-weight: 600; margin: 0; }
+.shortcuts-list { display: flex; flex-direction: column; gap: 8px; }
+.shortcut-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; background: var(--bg-dark, #222); border-radius: 8px;
+}
+.shortcut-keys { display: flex; align-items: center; gap: 4px; }
+.shortcut-keys kbd {
+  display: inline-block; padding: 3px 8px; font-size: 12px; font-family: inherit;
+  background: var(--bg-medium, #2a2a3e); border: 1px solid var(--border-medium, #444);
+  border-radius: 4px; color: var(--text-primary, #e5e5e5); min-width: 20px; text-align: center;
+}
+.shortcut-plus { color: var(--text-secondary, #888); font-size: 11px; margin: 0 2px; }
+.shortcut-action { color: var(--text-secondary, #aaa); font-size: 0.88rem; }
+.shortcuts-footer {
+  margin-top: 16px; text-align: center; font-size: 0.8rem; color: var(--text-secondary, #666);
+}
+.shortcuts-footer kbd { padding: 2px 6px; background: var(--bg-medium, #2a2a3e); border: 1px solid var(--border-medium, #444); border-radius: 3px; font-size: 11px; }
+
+/* ── Toast Notifications ── */
+.toast-container {
+  position: fixed; top: 16px; right: 16px; z-index: 10000;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  max-width: 380px;
+}
+.toast-item {
+  pointer-events: auto; display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-radius: 10px;
+  background: var(--bg-darker, #1a1a2e); border: 1px solid var(--border-medium, #333);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  cursor: pointer; font-size: 0.88rem; color: var(--text-primary, #e5e5e5);
+}
+.toast-enter { animation: toast-slide-in 0.3s ease forwards; }
+.toast-exit { animation: toast-slide-out 0.3s ease forwards; }
+@keyframes toast-slide-in { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toast-slide-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(60px); } }
+.toast-info { border-left: 3px solid #3b82f6; }
+.toast-success { border-left: 3px solid #22c55e; }
+.toast-warning { border-left: 3px solid #f59e0b; }
+.toast-error { border-left: 3px solid #ef4444; }
+.toast-icon { font-size: 1.1rem; flex-shrink: 0; }
+.toast-message { flex: 1; line-height: 1.4; }
+.toast-close { background: none; border: none; color: var(--text-secondary, #888); font-size: 16px; cursor: pointer; padding: 0 4px; }
 .user-image-previews-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .user-image-previews-row.no-margin { margin-bottom: 0; }
 .message-image-thumb { max-width: 220px; max-height: 160px; border-radius: 8px; object-fit: cover; border: 1px solid rgba(255,255,255,0.15); }
@@ -1695,6 +1751,22 @@ body {
 .new-chat-btn .icon {
   font-size: 18px;
   font-weight: bold;
+}
+
+/* Sidebar quick filter */
+.sidebar-filter {
+  position: relative; padding: 0 var(--spacing-sm); margin-bottom: 4px;
+}
+.sidebar-filter-input {
+  width: 100%; padding: 7px 28px 7px 10px; font-size: 0.85rem;
+  background: var(--bg-dark, #222); border: 1px solid var(--border-medium, #444);
+  border-radius: 6px; color: var(--text-primary, #e5e5e5); outline: none;
+}
+.sidebar-filter-input:focus { border-color: var(--accent-primary, #3b82f6); }
+.sidebar-filter-input::placeholder { color: var(--text-secondary, #888); }
+.sidebar-filter-clear {
+  position: absolute; right: calc(var(--spacing-sm) + 6px); top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-secondary, #888); font-size: 16px; cursor: pointer; padding: 0 4px;
 }
 
 .conversations-list {
