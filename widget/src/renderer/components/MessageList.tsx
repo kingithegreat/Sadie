@@ -7,11 +7,13 @@ export function MessageList({
   onCancel,
   onRetry,
   onBookmark,
+  onReact,
 }: {
   messages: ChatMessage[];
   onCancel: (assistantId: string) => void;
   onRetry: (assistantId: string) => void;
   onBookmark?: (messageId: string) => void;
+  onReact?: (messageId: string, emoji: string) => void;
 }) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -108,6 +110,7 @@ export function MessageList({
               onCancel={onCancel}
               onRetry={onRetry}
               onBookmark={onBookmark}
+              onReact={onReact}
             />
           </React.Fragment>
         );

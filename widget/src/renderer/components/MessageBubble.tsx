@@ -440,11 +440,13 @@ export function MessageBubble({
   onCancel,
   onRetry,
   onBookmark,
+  onReact,
 }: {
   message: ChatMessage;
   onCancel: (assistantId: string) => void;
   onRetry: (assistantId: string) => void;
   onBookmark?: (messageId: string) => void;
+  onReact?: (messageId: string, emoji: string) => void;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -453,6 +455,7 @@ export function MessageBubble({
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
 
   const timestamp = message.createdAt
@@ -640,6 +643,15 @@ export function MessageBubble({
                         ⏱ {(message.durationMs / 1000).toFixed(1)}s
                       </span>
                     )}
+                    {hasContent && (() => {
+                      const wordCount = message.content!.trim().split(/\s+/).length;
+                      const readMin = Math.max(1, Math.round(wordCount / 200));
+                      return (
+                        <span className="status-text reading-time" title={`${wordCount} words`}>
+                          📖 {readMin} min read
+                        </span>
+                      );
+                    })()}
                     <button
                       className="message-action-btn"
                       onClick={() => onRetry(message.id!)}
@@ -667,6 +679,48 @@ export function MessageBubble({
             )}
           </div>
         </>
+      )}
+
+      {/* Reactions bar */}
+      {onReact && message.id && hasContent && (
+        <div className="reactions-bar">
+          {message.reactions && Object.entries(message.reactions).map(([emoji, count]) => (
+            count > 0 && (
+              <button
+                key={emoji}
+                className="reaction-pill active"
+                onClick={() => onReact(message.id!, emoji)}
+                aria-label={`Remove ${emoji} reaction`}
+              >
+                {emoji} {count}
+              </button>
+            )
+          ))}
+          <div className="reaction-picker-wrapper">
+            <button
+              className="reaction-add-btn"
+              onClick={() => setShowReactionPicker(prev => !prev)}
+              aria-label="Add reaction"
+            >
+              +
+            </button>
+            {showReactionPicker && (
+              <div className="reaction-picker" role="listbox" aria-label="Choose a reaction">
+                {['👍', '👎', '❤️', '😂', '🎉', '🤔'].map(emoji => (
+                  <button
+                    key={emoji}
+                    className="reaction-option"
+                    role="option"
+                    onClick={() => { onReact(message.id!, emoji); setShowReactionPicker(false); }}
+                    aria-label={emoji}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

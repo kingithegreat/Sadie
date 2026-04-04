@@ -778,6 +778,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     ));
   }, []);
 
+  // Toggle reaction on a message
+  const handleReact = useCallback((messageId: string, emoji: string) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== messageId) return m;
+      const reactions = { ...(m.reactions || {}) };
+      reactions[emoji] = reactions[emoji] ? 0 : 1;
+      return { ...m, reactions };
+    }));
+  }, []);
+
   /**
    * Handle confirmation rejection
    */
@@ -896,6 +906,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           onUserCancel={handleUserCancel}
           onRetry={retryMessage}
           onBookmark={handleBookmark}
+          onReact={handleReact}
           systemPrompt={conversationSystemPrompt}
           onUpdateSystemPrompt={updateConversationSystemPrompt}
         />

@@ -67,6 +67,7 @@ export interface StoredConversation {
   systemPrompt?: string;
   pinned?: boolean;
   archived?: boolean;
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }

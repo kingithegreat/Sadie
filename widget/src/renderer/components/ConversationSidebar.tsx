@@ -10,6 +10,7 @@ interface Conversation {
   messageCount: number;
   pinned?: boolean;
   archived?: boolean;
+  tags?: string[];
 }
 
 interface ConversationSidebarProps {
@@ -172,6 +173,29 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     setEditingId(null);
   };
 
+  const TAG_OPTIONS = [
+    { name: 'Work', color: '#3b82f6' },
+    { name: 'Personal', color: '#10b981' },
+    { name: 'Research', color: '#f59e0b' },
+    { name: 'Important', color: '#ef4444' },
+    { name: 'Fun', color: '#8b5cf6' },
+  ];
+
+  const handleToggleTag = async (id: string, tag: string) => {
+    const conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+    const currentTags = conv.tags || [];
+    const newTags = currentTags.includes(tag)
+      ? currentTags.filter(t => t !== tag)
+      : [...currentTags, tag];
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, tags: newTags } : c));
+    try {
+      await (window as any).electron.saveConversation?.({ ...conv, tags: newTags });
+    } catch (err) {
+      console.error('Failed to toggle tag:', err);
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -278,6 +302,12 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                   { label: 'Export JSON', icon: '📋', action: () => handleExport(conv.id, e as any, 'json') },
                   { label: conv.archived ? 'Restore' : 'Archive', icon: '📦', action: () => handleArchive(conv.id, e as any) },
                   { divider: true, label: '', action: () => {} },
+                  ...TAG_OPTIONS.map(t => ({
+                    label: `${(conv.tags || []).includes(t.name) ? '✓ ' : ''}${t.name}`,
+                    icon: '🏷️',
+                    action: () => handleToggleTag(conv.id, t.name),
+                  })),
+                  { divider: true, label: '', action: () => {} },
                   { label: 'Delete', icon: '🗑️', action: () => handleDelete(conv.id, e as any) },
                 ])}
               >
@@ -303,6 +333,15 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                         <span className="conv-msg-count">{conv.messageCount || 0}</span>
                         <span className="conv-time">{formatDate(conv.updatedAt)}</span>
                       </div>
+                      {conv.tags && conv.tags.length > 0 && (
+                        <div className="conv-tags">
+                          {conv.tags.map(tag => (
+                            <span key={tag} className={`conv-tag conv-tag-${tag.toLowerCase()}`}>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="conv-actions">
                       <button

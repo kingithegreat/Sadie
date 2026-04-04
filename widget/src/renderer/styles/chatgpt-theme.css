@@ -718,6 +718,101 @@ body {
   right: auto;
 }
 
+/* ─── Reactions Bar ─── */
+.reactions-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 0 8px;
+  flex-wrap: wrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.message-wrapper:hover .reactions-bar,
+.reactions-bar:has(.reaction-pill.active) {
+  opacity: 1;
+}
+
+.reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.reaction-pill:hover {
+  background: var(--bg-light);
+}
+
+.reaction-pill.active {
+  border-color: var(--accent-primary);
+  background: rgba(var(--accent-primary-rgb, 99, 102, 241), 0.12);
+}
+
+.reaction-add-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.reaction-add-btn:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+.reaction-picker-wrapper {
+  position: relative;
+}
+
+.reaction-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+}
+
+.reaction-option {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.reaction-option:hover {
+  background: var(--bg-light);
+}
+
 /* ─── Bookmarks Filter Bar ─── */
 .bookmarks-filter-bar {
   display: flex;
@@ -790,6 +885,12 @@ body {
 }
 
 .status-text.response-time {
+  color: var(--text-secondary);
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.status-text.reading-time {
   color: var(--text-secondary);
   font-size: 11px;
   opacity: 0.7;
@@ -1987,6 +2088,32 @@ body {
   line-height: 1.5;
   white-space: nowrap;
 }
+
+.conv-tags {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.conv-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 8px;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: #6b7280;
+}
+
+.conv-tag-work { background: #3b82f6; }
+.conv-tag-personal { background: #10b981; }
+.conv-tag-research { background: #f59e0b; }
+.conv-tag-important { background: #ef4444; }
+.conv-tag-fun { background: #8b5cf6; }
 
 .conversation-item.active .conv-msg-count {
   background: oklch(75% 0.08 65 / 0.2);
