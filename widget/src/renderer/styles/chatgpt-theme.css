@@ -4198,3 +4198,75 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Input character counter ──────────────────────────────────────────────── */
+.char-counter {
+  text-align: right;
+  font-size: 0.7rem;
+  color: var(--text-secondary, #888);
+  padding: 2px 4px 0;
+}
+.char-counter.warning { color: #f59e0b; }
+.char-counter.danger  { color: #ef4444; font-weight: 600; }
+
+/* ── Sidebar sort select ─────────────────────────────────────────────────── */
+.sidebar-sort-select {
+  width: 100%;
+  padding: 6px 8px;
+  margin: 4px 0;
+  font-size: 0.8rem;
+  background: var(--bg-dark, #222);
+  border: 1px solid var(--border-medium, #444);
+  border-radius: 6px;
+  color: var(--text-primary, #e5e5e5);
+  outline: none;
+  cursor: pointer;
+}
+.sidebar-sort-select:focus { border-color: var(--accent-primary, #3b82f6); }
+
+/* ── Message density toggle buttons ──────────────────────────────────────── */
+.density-options {
+  display: flex;
+  gap: 6px;
+}
+.density-btn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border-medium, #444);
+  border-radius: 6px;
+  background: var(--bg-dark, #1a1a1a);
+  color: var(--text-secondary, #999);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.density-btn:hover {
+  border-color: var(--accent-primary, #3b82f6);
+  color: var(--text-primary, #e5e5e5);
+}
+.density-btn.active {
+  background: var(--accent-primary, #3b82f6);
+  color: #fff;
+  border-color: var(--accent-primary, #3b82f6);
+}
+
+/* ── Message density: compact ─────────────────────────────────────────────── */
+[data-density="compact"] .message-wrapper {
+  margin-block: 8px;
+  gap: 10px;
+}
+[data-density="compact"] .message-bubble {
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* ── Message density: spacious ────────────────────────────────────────────── */
+[data-density="spacious"] .message-wrapper {
+  margin-block: 32px;
+  gap: 20px;
+}
+[data-density="spacious"] .message-bubble {
+  padding: 22px 24px;
+  line-height: 1.8;
+}

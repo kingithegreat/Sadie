@@ -158,6 +158,8 @@ export interface Settings {
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
+  // Display density
+  messageDensity?: 'compact' | 'comfortable' | 'spacious';
 }
 
 export interface ConnectionStatus {

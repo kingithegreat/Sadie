@@ -30,6 +30,7 @@ interface Settings {
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
+  messageDensity?: 'compact' | 'comfortable' | 'spacious';
 }
 
 interface SettingsPanelProps {
@@ -101,7 +102,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       chatGuidelines: source.chatGuidelines || '',
       notificationsEnabled: (source as any).notificationsEnabled !== false,
       notificationSound: !!(source as any).notificationSound,
-      notificationDuration: (source as any).notificationDuration ?? 8000
+      notificationDuration: (source as any).notificationDuration ?? 8000,
+      messageDensity: (source as any).messageDensity || 'comfortable'
     };
   };
 
@@ -646,6 +648,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <option value={15000}>Extra long (15s)</option>
           </select>
           <small className="setting-hint">Controls how long toast notifications stay visible.</small>
+        </div>
+
+        {/* Message Density */}
+        <div className="setting-group">
+          <label className="setting-label">📐 Message Density</label>
+          <div className="density-options">
+            {(['compact', 'comfortable', 'spacious'] as const).map((d) => (
+              <button
+                key={d}
+                className={`density-btn${(localSettings as any).messageDensity === d ? ' active' : ''}`}
+                onClick={() => setLocalSettings({ ...localSettings, messageDensity: d } as any)}
+              >
+                {d.charAt(0).toUpperCase() + d.slice(1)}
+              </button>
+            ))}
+          </div>
+          <small className="setting-hint">Controls spacing between messages in the chat.</small>
         </div>
 
         {/* Custom LLM API Section - Simplified */}

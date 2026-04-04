@@ -38,6 +38,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [exportStatus, setExportStatus] = useState<Record<string, string>>({});
   const [filterText, setFilterText] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [sortBy, setSortBy] = useState<'recent' | 'created' | 'name'>('recent');
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -226,6 +227,14 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     if (filterText.trim()) {
       list = list.filter(c => (c.title || '').toLowerCase().includes(filterText.toLowerCase()));
     }
+    // Apply sort (pinned always first)
+    list.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      if (sortBy === 'name') return (a.title || '').localeCompare(b.title || '');
+      if (sortBy === 'created') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
     return list;
   })();
 
@@ -280,6 +289,18 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         >
           📦 {showArchived ? 'Archived' : 'Active'}
         </button>
+
+        <select
+          className="sidebar-sort-select"
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value as 'recent' | 'created' | 'name')}
+          aria-label="Sort conversations"
+          title="Sort conversations"
+        >
+          <option value="recent">Recently active</option>
+          <option value="created">Date created</option>
+          <option value="name">Name A–Z</option>
+        </select>
         
         <div className="conversations-list">
           {loading ? (

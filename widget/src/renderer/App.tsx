@@ -830,7 +830,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
   return (
-    <div className={`app-container${focusMode ? ' focus-mode' : ''}`} data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'}>
+    <div className={`app-container${focusMode ? ' focus-mode' : ''}`} data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'} data-density={settings.messageDensity || 'comfortable'}>
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
