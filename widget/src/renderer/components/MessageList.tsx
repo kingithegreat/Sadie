@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import type { ChatMessage } from "../types";
 import { MessageBubble } from "./MessageBubble";
 
@@ -56,6 +56,22 @@ export function MessageList({
   const bookmarkCount = messages.filter(m => m.bookmarked).length;
   const displayMessages = showBookmarksOnly ? messages.filter(m => m.bookmarked) : messages;
 
+  // Compute date separator labels
+  const dateLabelForMsg = (msg: ChatMessage): string => {
+    if (!msg.createdAt) return '';
+    const d = new Date(msg.createdAt);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round((today.getTime() - msgDay.getTime()) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  // Track which date labels have been shown
+  let lastDateLabel = '';
+
   return (
     <div
       className="message-list"
@@ -76,15 +92,26 @@ export function MessageList({
           </button>
         </div>
       )}
-      {displayMessages.map((m) => (
-        <MessageBubble
-          key={m.id}
-          message={m}
-          onCancel={onCancel}
-          onRetry={onRetry}
-          onBookmark={onBookmark}
-        />
-      ))}
+      {displayMessages.map((m) => {
+        const label = dateLabelForMsg(m);
+        const showSeparator = label && label !== lastDateLabel;
+        if (showSeparator) lastDateLabel = label;
+        return (
+          <React.Fragment key={m.id}>
+            {showSeparator && (
+              <div className="date-separator" role="separator">
+                <span className="date-separator-label">{label}</span>
+              </div>
+            )}
+            <MessageBubble
+              message={m}
+              onCancel={onCancel}
+              onRetry={onRetry}
+              onBookmark={onBookmark}
+            />
+          </React.Fragment>
+        );
+      })}
       <div ref={endRef} />
       {showScrollBtn && (
         <button

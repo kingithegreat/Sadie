@@ -393,6 +393,29 @@ export function exportConversationAsMarkdown(conversationId: string): string | n
   return lines.join('\n');
 }
 
+/**
+ * Export a single conversation as a structured JSON string.
+ */
+export function exportConversationAsJSON(conversationId: string): string | null {
+  const conv = getConversation(conversationId);
+  if (!conv) return null;
+
+  const payload = {
+    id: conv.id,
+    title: conv.title || 'Untitled Conversation',
+    createdAt: conv.createdAt,
+    updatedAt: conv.updatedAt,
+    messageCount: conv.messages.length,
+    messages: conv.messages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      ...(msg.createdAt ? { createdAt: msg.createdAt } : {}),
+    })),
+  };
+
+  return JSON.stringify(payload, null, 2);
+}
+
 // ============= Tool Usage Stats =============
 
 export function loadToolStats(): ToolUsageStats {

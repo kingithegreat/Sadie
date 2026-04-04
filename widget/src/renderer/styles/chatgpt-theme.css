@@ -746,6 +746,31 @@ body {
   color: #f59e0b;
 }
 
+/* ─── Date Separators ─── */
+.date-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 10px 8px;
+}
+
+.date-separator::before,
+.date-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.date-separator-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .message-wrapper.user .message-footer {
   justify-content: flex-end;
 }
@@ -1996,6 +2021,32 @@ body {
 
 .conv-actions .pin-btn.pinned {
   opacity: 1;
+}
+
+/* Archive toggle button */
+.archive-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 4px var(--spacing-sm);
+  margin: 0 var(--spacing-md) var(--spacing-xs);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.archive-toggle-btn:hover {
+  background: var(--bg-light);
+}
+
+.archive-toggle-btn.active {
+  background: var(--bg-light);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
 }
 
 .conv-actions button {

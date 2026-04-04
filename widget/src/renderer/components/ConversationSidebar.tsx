@@ -9,6 +9,7 @@ interface Conversation {
   updatedAt: string;
   messageCount: number;
   pinned?: boolean;
+  archived?: boolean;
 }
 
 interface ConversationSidebarProps {
@@ -35,6 +36,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [showSearch, setShowSearch] = useState(false);
   const [exportStatus, setExportStatus] = useState<Record<string, string>>({});
   const [filterText, setFilterText] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -86,11 +88,11 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     }
   };
 
-  const handleExport = async (id: string, e: React.MouseEvent) => {
+  const handleExport = async (id: string, e: React.MouseEvent, format: 'markdown' | 'json' = 'markdown') => {
     e.stopPropagation();
     setExportStatus(s => ({ ...s, [id]: 'exporting' }));
     try {
-      const r = await (window as any).electron.exportConversation?.(id);
+      const r = await (window as any).electron.exportConversation?.(id, format);
       if (r?.success) {
         setExportStatus(s => ({ ...s, [id]: 'done' }));
         setTimeout(() => setExportStatus(s => { const n = {...s}; delete n[id]; return n; }), 2500);
@@ -130,6 +132,19 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       await (window as any).electron.saveConversation?.({ ...conv, pinned: newPinned });
     } catch (err) {
       console.error('Failed to toggle pin:', err);
+    }
+  };
+
+  const handleArchive = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+    const newArchived = !conv.archived;
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, archived: newArchived } : c));
+    try {
+      await (window as any).electron.saveConversation?.({ ...conv, archived: newArchived });
+    } catch (err) {
+      console.error('Failed to toggle archive:', err);
     }
   };
 
@@ -182,9 +197,13 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   if (!isOpen) return null;
 
-  const filteredConversations = filterText.trim()
-    ? conversations.filter(c => (c.title || '').toLowerCase().includes(filterText.toLowerCase()))
-    : conversations;
+  const filteredConversations = (() => {
+    let list = conversations.filter(c => showArchived ? !!c.archived : !c.archived);
+    if (filterText.trim()) {
+      list = list.filter(c => (c.title || '').toLowerCase().includes(filterText.toLowerCase()));
+    }
+    return list;
+  })();
 
   if (showSearch) {
     return (
@@ -228,6 +247,15 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
             <button className="sidebar-filter-clear" onClick={() => setFilterText('')} aria-label="Clear filter">×</button>
           )}
         </div>
+
+        <button
+          className={`archive-toggle-btn${showArchived ? ' active' : ''}`}
+          onClick={() => setShowArchived(prev => !prev)}
+          title={showArchived ? 'Show active' : 'Show archived'}
+          aria-label={showArchived ? 'Show active conversations' : 'Show archived conversations'}
+        >
+          📦 {showArchived ? 'Archived' : 'Active'}
+        </button>
         
         <div className="conversations-list">
           {loading ? (
@@ -246,7 +274,9 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                 onContextMenu={(e) => showContextMenu(e, [
                   { label: conv.pinned ? 'Unpin' : 'Pin', icon: conv.pinned ? '📌' : '📍', action: () => handleTogglePin(conv.id, e as any) },
                   { label: 'Rename', icon: '✏️', action: () => handleStartEdit(conv.id, conv.title, e as any) },
-                  { label: 'Export', icon: '⬇️', action: () => handleExport(conv.id, e as any) },
+                  { label: 'Export Markdown', icon: '⬇️', action: () => handleExport(conv.id, e as any, 'markdown') },
+                  { label: 'Export JSON', icon: '📋', action: () => handleExport(conv.id, e as any, 'json') },
+                  { label: conv.archived ? 'Restore' : 'Archive', icon: '📦', action: () => handleArchive(conv.id, e as any) },
                   { divider: true, label: '', action: () => {} },
                   { label: 'Delete', icon: '🗑️', action: () => handleDelete(conv.id, e as any) },
                 ])}
@@ -297,6 +327,14 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                         aria-label={`Export ${conv.title}`}
                       >
                         {exportLabel(conv.id)}
+                      </button>
+                      <button
+                        className="archive-btn"
+                        onClick={(e) => handleArchive(conv.id, e)}
+                        title={conv.archived ? 'Restore' : 'Archive'}
+                        aria-label={conv.archived ? `Restore ${conv.title}` : `Archive ${conv.title}`}
+                      >
+                        📦
                       </button>
                       <button 
                         className="delete-btn" 

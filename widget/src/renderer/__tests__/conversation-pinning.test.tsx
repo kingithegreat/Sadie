@@ -129,10 +129,12 @@ describe('ConversationSidebar — pinning', () => {
     const item = document.querySelector('.conversation-item') as HTMLElement;
     fireEvent.contextMenu(item);
 
-    // Context menu should appear with Pin, Rename, Export, Delete options
+    // Context menu should appear with Pin, Rename, Export, Archive, Delete options
     expect(screen.getByText('Pin')).toBeInTheDocument();
     expect(screen.getByText('Rename')).toBeInTheDocument();
-    expect(screen.getByText('Export')).toBeInTheDocument();
+    expect(screen.getByText('Export Markdown')).toBeInTheDocument();
+    expect(screen.getByText('Export JSON')).toBeInTheDocument();
+    expect(screen.getByText('Archive')).toBeInTheDocument();
     expect(screen.getByText('Delete')).toBeInTheDocument();
   });
 

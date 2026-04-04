@@ -456,9 +456,9 @@ const electronAPI: ElectronAPI = {
   searchConversations: async (query: string, maxResults?: number) =>
     ipcRenderer.invoke('sadie:search-conversations', query, maxResults),
 
-  // Export a single conversation as Markdown to Desktop
-  exportConversation: async (conversationId: string) =>
-    ipcRenderer.invoke('sadie:export-conversation', conversationId),
+  // Export a single conversation as Markdown or JSON to Desktop
+  exportConversation: async (conversationId: string, format?: string) =>
+    ipcRenderer.invoke('sadie:export-conversation', conversationId, format),
 
   // Auto-generate a conversation title from the first user+assistant exchange
   generateTitle: async (args: { conversationId: string; userMessage: string; assistantReply: string }) =>

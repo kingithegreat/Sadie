@@ -925,20 +925,23 @@ try {
   });
 
   /**
-   * Export a single conversation as a Markdown string.
-   * Returns the markdown so the renderer can preview it, and also writes it to
-   * the Desktop (same path pattern as sadie:export-chat).
+   * Export a single conversation as Markdown or JSON.
+   * Accepts an optional format: 'markdown' (default) | 'json'.
    */
-  ipcMain.handle('sadie:export-conversation', async (_event, conversationId: string) => {
+  ipcMain.handle('sadie:export-conversation', async (_event, conversationId: string, format?: string) => {
     try {
-      const markdown = MemoryManager.exportConversationAsMarkdown(conversationId);
-      if (!markdown) return { success: false, error: 'Conversation not found' };
+      const isJson = format === 'json';
+      const content = isJson
+        ? MemoryManager.exportConversationAsJSON(conversationId)
+        : MemoryManager.exportConversationAsMarkdown(conversationId);
+      if (!content) return { success: false, error: 'Conversation not found' };
       const desktop = app.getPath('desktop');
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeId = conversationId.replace(/[^a-z0-9_-]/gi, '').slice(0, 12);
-      const filePath = path.join(desktop, `sadie-export-${safeId}-${ts}.md`);
-      fs.writeFileSync(filePath, markdown, 'utf-8');
-      return { success: true, markdown, path: filePath };
+      const ext = isJson ? 'json' : 'md';
+      const filePath = path.join(desktop, `sadie-export-${safeId}-${ts}.${ext}`);
+      fs.writeFileSync(filePath, content, 'utf-8');
+      return { success: true, content, path: filePath };
     } catch (err: any) {
       console.error('[IPC] sadie:export-conversation error:', err.message);
       return { success: false, error: err.message };
