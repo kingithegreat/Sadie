@@ -66,6 +66,10 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
+  const [voiceAutoSend, setVoiceAutoSend] = useState(false);
+  const [listenTimer, setListenTimer] = useState(0);
+  const listenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voiceAutoSendPending = useRef(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [ragStatus, setRagStatus] = useState<null | 'indexing' | { ok: boolean; message: string }>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -88,6 +92,26 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     setSpeechSupported(!!(SpeechRecognition || hasSapi));
   }, []);
 
+  // Recording timer — shows elapsed seconds while listening
+  useEffect(() => {
+    if (isListening) {
+      setListenTimer(0);
+      listenTimerRef.current = setInterval(() => setListenTimer(t => t + 1), 1000);
+    } else {
+      if (listenTimerRef.current) { clearInterval(listenTimerRef.current); listenTimerRef.current = null; }
+      setListenTimer(0);
+    }
+    return () => { if (listenTimerRef.current) clearInterval(listenTimerRef.current); };
+  }, [isListening]);
+
+  // Auto-dismiss voice error messages after 4 seconds
+  useEffect(() => {
+    if (errorMessage && errorMessage !== '🎤 Listening… speak now') {
+      const t = setTimeout(() => setErrorMessage(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [errorMessage]);
+
   // Initialize speech recognition (online mode - requires internet)
   const startListening = useCallback(async () => {
     console.log('[Voice] Starting speech recognition...');
@@ -108,6 +132,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
         if (result.success && result.text) {
           setInputValue(prev => prev + (prev ? ' ' : '') + result.text);
           setErrorMessage(null);
+          if (voiceAutoSend) voiceAutoSendPending.current = true;
         } else if (result.success && !result.text) {
           setErrorMessage('No speech detected — try speaking louder or check your microphone.');
         } else {
@@ -273,6 +298,28 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     setInputValue('');
     setErrorMessage(null);
   }, [inputValue, attachedImages, attachedDocuments, onSendMessage]);
+
+  // Voice auto-send: trigger handleSend once the input value updates after voice recognition
+  useEffect(() => {
+    if (voiceAutoSendPending.current && inputValue.trim()) {
+      voiceAutoSendPending.current = false;
+      // Small delay to let state settle
+      const t = setTimeout(() => handleSend(), 100);
+      return () => clearTimeout(t);
+    }
+  }, [inputValue, handleSend]);
+
+  // Keyboard shortcut: Ctrl+Shift+V toggles voice input
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+        e.preventDefault();
+        if (speechSupported) toggleVoiceInput();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [speechSupported, toggleVoiceInput]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -506,13 +553,23 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
             disabled={ragStatus === 'indexing'}
           >{ragStatus === 'indexing' ? '⏳' : '📎'}</button>
           {speechSupported && (
-            <button 
-              className={`voice-button ${isListening ? 'listening voice-btn-active' : 'voice-btn-idle'}`} 
-              title={isListening ? 'Stop listening' : 'Voice input'} 
-              onClick={toggleVoiceInput}
-            >
-              🎤
-            </button>
+            <>
+              <button 
+                className={`voice-button ${isListening ? 'listening voice-btn-active voice-pulse' : 'voice-btn-idle'}`} 
+                title={isListening ? `Stop listening (${listenTimer}s) — Ctrl+Shift+V` : 'Voice input — Ctrl+Shift+V'} 
+                onClick={toggleVoiceInput}
+              >
+                {isListening ? `🎤 ${listenTimer}s` : '🎤'}
+              </button>
+              <button
+                className={`attach-button ${voiceAutoSend ? 'voice-auto-active' : ''}`}
+                title={voiceAutoSend ? 'Auto-send after voice: ON' : 'Auto-send after voice: OFF'}
+                onClick={() => setVoiceAutoSend(v => !v)}
+                style={{ fontSize: '11px', padding: '2px 4px', minWidth: 0 }}
+              >
+                {voiceAutoSend ? '⚡' : '⏸'}
+              </button>
+            </>
           )}
           <button className="send-button" onClick={handleSend} disabled={!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0}>Send</button>
         </div>

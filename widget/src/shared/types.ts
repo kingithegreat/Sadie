@@ -279,6 +279,8 @@ export interface ElectronAPI {
   onTitleUpdated?: (cb: (data: { conversationId: string; title: string }) => void) => () => void;
   // Telemetry event log
   readTelemetryEvents?: () => Promise<{ success: boolean; events?: any[]; error?: string }>;
+  // Analytics summary (aggregated conversation + event stats)
+  getAnalyticsSummary?: () => Promise<{ success: boolean; summary?: any; error?: string }>;
   // Shell file helpers
   showInFolder?: (filePath: string) => void;
   openFile?: (filePath: string) => void;

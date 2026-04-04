@@ -647,6 +647,12 @@ body {
   color: var(--accent-primary);
 }
 
+.status-text.response-time {
+  color: var(--text-secondary);
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 /* Action buttons in message */
 .message-action-btn {
   padding: 4px 10px;
@@ -1522,6 +1528,9 @@ body {
 .hidden-file-input { display: none; }
 .voice-btn-active { background: #ff3b30; animation: pulse 1.5s infinite; }
 .voice-btn-idle { background: transparent; }
+.voice-pulse { box-shadow: 0 0 0 0 rgba(255,59,48,0.5); animation: voice-ring 1.2s ease-out infinite; }
+@keyframes voice-ring { 0% { box-shadow: 0 0 0 0 rgba(255,59,48,0.5); } 70% { box-shadow: 0 0 0 8px rgba(255,59,48,0); } 100% { box-shadow: 0 0 0 0 rgba(255,59,48,0); } }
+.voice-auto-active { color: #22d3ee; background: rgba(34,211,238,0.12) !important; border-radius: 4px; }
 .rag-status-ok { color: #34c759; margin-top: 6px; font-size: 0.82rem; }
 .rag-status-err { color: #ff3b30; margin-top: 6px; font-size: 0.82rem; }
 .input-error-msg { color: #ff3b30; margin-top: 8px; }

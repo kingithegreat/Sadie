@@ -21,6 +21,7 @@ export type ChatMessage = {
   streamId?: string;
   streamingState?: StreamingState;
   error?: string | null;
+  durationMs?: number;
 };
 
 export type StreamChunkPayload = {

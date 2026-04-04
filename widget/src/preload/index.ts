@@ -321,6 +321,10 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.READ_TELEMETRY_EVENTS);
   },
 
+  getAnalyticsSummary: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
+    return await ipcRenderer.invoke('sadie:get-analytics-summary');
+  },
+
   hasPermission: async (toolName: string): Promise<{ success: boolean; allowed?: boolean; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.HAS_PERMISSION, toolName);
   },

@@ -1095,6 +1095,10 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
     if (decision.type === 'tools') {
       // Execute tools atomically and return deterministic assistant summary.
       const toolContext: ToolContext = { executionId: `pre-${Date.now()}` } as any;
+      // Log telemetry for each tool call
+      for (const call of (decision.calls || [])) {
+        try { logTelemetryEvent('tool_call', { tool: call.name, source: 'processIncomingRequest' }); } catch (_e) {}
+      }
       try {
         const results = await executeToolBatch(decision.calls, toolContext as any);
 

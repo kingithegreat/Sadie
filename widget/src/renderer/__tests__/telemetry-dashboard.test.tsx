@@ -1,17 +1,19 @@
 /** @jest-environment jsdom */
 /**
  * telemetry-dashboard.test.tsx
- * Tests for src/renderer/components/TelemetryDashboard.tsx
+ * Tests for src/renderer/components/TelemetryDashboard.tsx (Analytics Dashboard)
  */
 
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import TelemetryDashboard from '../components/TelemetryDashboard';
 
-function setup(overrides?: { readTelemetryEvents?: () => Promise<any> }) {
+function setup(overrides?: { readTelemetryEvents?: () => Promise<any>; getAnalyticsSummary?: () => Promise<any> }) {
   const readTelemetryEvents = overrides?.readTelemetryEvents
     ?? jest.fn().mockResolvedValue({ success: true, events: [] });
-  (window as any).electron = { readTelemetryEvents };
-  return { readTelemetryEvents };
+  const getAnalyticsSummary = overrides?.getAnalyticsSummary
+    ?? jest.fn().mockResolvedValue({ success: true, summary: { conversationCount: 0, totalMessages: 0, avgMessagesPerConversation: 0, oldestConversation: null } });
+  (window as any).electron = { readTelemetryEvents, getAnalyticsSummary };
+  return { readTelemetryEvents, getAnalyticsSummary };
 }
 
 afterEach(() => {
@@ -30,7 +32,7 @@ describe('TelemetryDashboard — open/closed', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
-    expect(screen.getByText('Telemetry Dashboard')).toBeInTheDocument();
+    expect(screen.getByText(/Analytics Dashboard/)).toBeInTheDocument();
   });
 
   test('renders Close button', async () => {
@@ -54,16 +56,16 @@ describe('TelemetryDashboard — open/closed', () => {
 
 describe('TelemetryDashboard — loading state', () => {
   test('shows Loading… while data is fetching', () => {
-    // Never resolves
     (window as any).electron = {
       readTelemetryEvents: jest.fn().mockReturnValue(new Promise(() => {})),
+      getAnalyticsSummary: jest.fn().mockReturnValue(new Promise(() => {})),
     };
     render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 });
 
-describe('TelemetryDashboard — data display', () => {
+describe('TelemetryDashboard — overview tab', () => {
   test('shows total events count', async () => {
     const events = [
       { event: 'stream_ok', timestamp: new Date().toISOString(), details: {} },
@@ -73,7 +75,6 @@ describe('TelemetryDashboard — data display', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
-    // Use getAllByText since the same number can appear in multiple tiles
     const matches = screen.getAllByText('2');
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
@@ -87,7 +88,7 @@ describe('TelemetryDashboard — data display', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
-    // stream_failure count + total count = "2" appears twice; unique types = 1
+    // stream_failure and total both show 2
     const tiles = screen.getAllByText('2');
     expect(tiles.length).toBeGreaterThanOrEqual(1);
   });
@@ -98,7 +99,24 @@ describe('TelemetryDashboard — data display', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
-    expect(screen.getByText('0')).toBeInTheDocument();
+    // 0 appears for both stream_failure and tool_call counts
+    const zeros = screen.getAllByText('0');
+    expect(zeros.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('shows tool call count', async () => {
+    const events = [
+      { event: 'tool_call', timestamp: new Date().toISOString(), details: { tool: 'weather' } },
+      { event: 'tool_call', timestamp: new Date().toISOString(), details: { tool: 'calc' } },
+      { event: 'stream_failure', timestamp: new Date().toISOString(), details: {} },
+    ];
+    setup({ readTelemetryEvents: jest.fn().mockResolvedValue({ success: true, events }) });
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    // "2" should appear for tool_call count
+    const matches = screen.getAllByText('2');
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   test('shows unique event types count', async () => {
@@ -111,19 +129,40 @@ describe('TelemetryDashboard — data display', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
-    // 2 unique event types
-    expect(screen.getByText('2')).toBeInTheDocument();
+    // 2 unique event types — may appear alongside other "2" values
+    const matches = screen.getAllByText('2');
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('shows "No telemetry events recorded." when events list is empty', async () => {
-    setup({ readTelemetryEvents: jest.fn().mockResolvedValue({ success: true, events: [] }) });
+  test('renders activity chart', async () => {
+    const events = [
+      { event: 'test', timestamp: new Date().toISOString(), details: {} },
+    ];
+    setup({ readTelemetryEvents: jest.fn().mockResolvedValue({ success: true, events }) });
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
-    expect(screen.getByText('No telemetry events recorded.')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-chart')).toBeInTheDocument();
   });
 
-  test('renders event rows', async () => {
+  test('shows tool breakdown when tool_call events exist', async () => {
+    const events = [
+      { event: 'tool_call', timestamp: new Date().toISOString(), details: { tool: 'weather' } },
+      { event: 'tool_call', timestamp: new Date().toISOString(), details: { tool: 'weather' } },
+      { event: 'tool_call', timestamp: new Date().toISOString(), details: { tool: 'calc' } },
+    ];
+    setup({ readTelemetryEvents: jest.fn().mockResolvedValue({ success: true, events }) });
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    expect(screen.getByText('Top tools')).toBeInTheDocument();
+    expect(screen.getByText('weather')).toBeInTheDocument();
+    expect(screen.getByText('calc')).toBeInTheDocument();
+  });
+});
+
+describe('TelemetryDashboard — events tab', () => {
+  test('shows events list when Events tab is clicked', async () => {
     const events = [
       { event: 'tool_call', timestamp: new Date().toISOString(), details: { tool: 'calc' } },
     ];
@@ -131,7 +170,58 @@ describe('TelemetryDashboard — data display', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
+    fireEvent.click(screen.getByText('Events'));
     expect(screen.getByText('tool_call')).toBeInTheDocument();
+  });
+
+  test('shows "No telemetry events recorded." when events list is empty', async () => {
+    setup({ readTelemetryEvents: jest.fn().mockResolvedValue({ success: true, events: [] }) });
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Events'));
+    expect(screen.getByText('No telemetry events recorded.')).toBeInTheDocument();
+  });
+});
+
+describe('TelemetryDashboard — conversations tab', () => {
+  test('shows conversation stats when Conversations tab is clicked', async () => {
+    setup({
+      getAnalyticsSummary: jest.fn().mockResolvedValue({
+        success: true,
+        summary: { conversationCount: 5, totalMessages: 42, avgMessagesPerConversation: 8, oldestConversation: '2025-01-15T00:00:00Z' },
+      }),
+    });
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Conversations'));
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+  });
+
+  test('shows fallback when no summary is available', async () => {
+    setup({
+      getAnalyticsSummary: jest.fn().mockResolvedValue({ success: false }),
+    });
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Conversations'));
+    expect(screen.getByText('No conversation data available.')).toBeInTheDocument();
+  });
+});
+
+describe('TelemetryDashboard — tabs', () => {
+  test('renders all three tab buttons', async () => {
+    setup();
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    expect(screen.getByText('Overview')).toBeInTheDocument();
+    expect(screen.getByText('Events')).toBeInTheDocument();
+    expect(screen.getByText('Conversations')).toBeInTheDocument();
   });
 });
 
@@ -141,6 +231,7 @@ describe('TelemetryDashboard — API edge cases', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
+    fireEvent.click(screen.getByText('Events'));
     expect(screen.getByText('No telemetry events recorded.')).toBeInTheDocument();
   });
 
@@ -149,6 +240,7 @@ describe('TelemetryDashboard — API edge cases', () => {
     await act(async () => {
       render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
     });
+    fireEvent.click(screen.getByText('Events'));
     expect(screen.getByText('No telemetry events recorded.')).toBeInTheDocument();
   });
 

@@ -586,6 +586,11 @@ export function MessageBubble({
                 {state === "finished" && (
                   <>
                     <span className="status-text">Done</span>
+                    {typeof message.durationMs === 'number' && message.durationMs > 0 && (
+                      <span className="status-text response-time" title="Response time">
+                        ⏱ {(message.durationMs / 1000).toFixed(1)}s
+                      </span>
+                    )}
                     <button
                       className="message-action-btn"
                       onClick={() => onRetry(message.id!)}

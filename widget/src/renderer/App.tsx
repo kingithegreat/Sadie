@@ -15,6 +15,7 @@ const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
 const WebServicesPanel = lazy(() => import("./components/WebServicesPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
+const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
 import type {
   ChatMessage,
   StreamingState
@@ -74,6 +75,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   // Track which conversations have had a title generated to avoid duplicates
   const titleGeneratedRef = useRef<Set<string>>(new Set());
   const [settings, setSettings] = useState<SharedSettings>({
@@ -462,11 +464,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
             const cancelled = !!payload.cancelled;
             const nextState: StreamingState = cancelled ? "cancelled" : "finished";
+            const durationMs = Date.now() - m.createdAt;
 
             const updatedMsg = {
               ...m,
               streamingState: nextState,
               updatedAt: Date.now(),
+              ...(nextState === "finished" ? { durationMs } : {}),
             };
             
             // Persist the final message content
@@ -713,6 +717,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       content: "",
       error: null,
       streamingState: "streaming",
+      createdAt: Date.now(),
+      durationMs: undefined,
     }));
 
     subscribeToStream(assistantId, assistantId);
@@ -792,6 +798,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onSettingsClick={() => setSettingsOpen(true)}
         onToolsClick={() => setToolsOpen(true)}
         onRagClick={() => setRagPanelOpen(true)}
+        onAnalyticsClick={() => setAnalyticsOpen(true)}
         onMenuClick={() => setSidebarOpen(true)}
         onExportChat={async () => {
           const lines: string[] = [`# SADIE Chat Export\n_Exported: ${new Date().toLocaleString()}_\n`];
@@ -905,6 +912,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       <Suspense fallback={null}>
         <RagPanel isOpen={ragPanelOpen} onClose={() => setRagPanelOpen(false)} />
       </Suspense>
+
+      {/* Analytics Dashboard */}
+      {analyticsOpen && (
+        <Suspense fallback={null}>
+          <TelemetryDashboard open={analyticsOpen} onClose={() => setAnalyticsOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Permission Modal (appears when main requests permission escalation) */}
       <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />

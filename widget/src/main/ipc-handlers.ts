@@ -35,6 +35,7 @@ import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { sadieWebhookHeaders } from './webhook-auth';
+import { logTelemetryEvent } from './utils/logger';
 
 
 /**
@@ -339,8 +340,14 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.handle('sadie:save-settings', async (_event, settings) => {
     try {
-      const merged = { ...getSettings(), ...settings };
+      const prev = getSettings();
+      const merged = { ...prev, ...settings };
       saveSettings(merged);
+
+      // Track model changes
+      if (merged.chatModel && merged.chatModel !== prev.chatModel) {
+        try { logTelemetryEvent('model_switch', { from: prev.chatModel, to: merged.chatModel }); } catch (_e) {}
+      }
 
       // Refresh search API keys in memory
       setTavilyApiKey(merged.tavilyApiKey || null);
@@ -495,6 +502,37 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { success: true, events };
     } catch (err: any) {
       console.error('Failed to read telemetry events:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Analytics summary — aggregated conversation stats for the dashboard
+  ipcMain.handle('sadie:get-analytics-summary', async () => {
+    try {
+      const store = MemoryManager.loadConversationStore();
+      const conversations = store?.conversations || {};
+      const ids = Object.keys(conversations);
+      let totalMessages = 0;
+      let oldest: string | null = null;
+      for (const id of ids) {
+        const conv = conversations[id];
+        totalMessages += (conv?.messages?.length || 0);
+        const created = conv?.createdAt;
+        if (created && (!oldest || created < oldest)) oldest = created;
+      }
+      const conversationCount = ids.length;
+      const avg = conversationCount > 0 ? Math.round(totalMessages / conversationCount) : 0;
+      return {
+        success: true,
+        summary: {
+          conversationCount,
+          totalMessages,
+          avgMessagesPerConversation: avg,
+          oldestConversation: oldest,
+        },
+      };
+    } catch (err: any) {
+      console.error('Failed to build analytics summary:', err);
       return { success: false, error: String(err) };
     }
   });
@@ -755,12 +793,12 @@ $recognizer.SetInputToDefaultAudioDevice()
 $dictation = New-Object System.Speech.Recognition.DictationGrammar
 $recognizer.LoadGrammar($dictation)
 
-$recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(5)
-$recognizer.BabbleTimeout         = [TimeSpan]::FromSeconds(3)
-$recognizer.EndSilenceTimeout     = [TimeSpan]::FromSeconds(1)
+$recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(6)
+$recognizer.BabbleTimeout         = [TimeSpan]::FromSeconds(4)
+$recognizer.EndSilenceTimeout     = [TimeSpan]::FromSeconds(1.5)
 
 try {
-    $result = $recognizer.Recognize([TimeSpan]::FromSeconds(10))
+    $result = $recognizer.Recognize([TimeSpan]::FromSeconds(15))
     if ($result -and $result.Text) {
         Write-Output $result.Text
     } else {
@@ -782,7 +820,7 @@ try {
       }
 
       exec(`powershell -ExecutionPolicy Bypass -NonInteractive -File "${tmpFile}"`,
-        { timeout: 15000 },
+        { timeout: 20000 },
         (error: any, stdout: string, stderr: string) => {
           try { fs.unlinkSync(tmpFile); } catch (_) {}
           if (error) {
