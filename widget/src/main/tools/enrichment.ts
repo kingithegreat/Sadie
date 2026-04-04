@@ -17,6 +17,8 @@ export interface EnrichmentOptions {
   customQuery?: string;
   /** Context for tool execution */
   context?: ToolContext;
+  /** Output format preference (e.g. 'table') */
+  format?: string;
 }
 
 export interface EnrichedResult {
@@ -40,7 +42,7 @@ export async function enrichNbaGames(
   query: string = '',
   options: EnrichmentOptions = {}
 ): Promise<EnrichedResult> {
-  const { maxWebResults = 3, fetchContent = true, context } = options;
+  const { maxWebResults = 3, fetchContent = true, context, format } = options;
   
   // Format structured data nicely
   const formattedGames: string[] = [];
@@ -93,14 +95,61 @@ export async function enrichNbaGames(
   const dateLabel = events[0]?.date
     ? new Date(events[0].date).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric' })
     : '';
-  let summary = allScheduled
-    ? `🏀 **NBA Tonight${dateLabel ? ` — ${dateLabel}` : ''} (ET)**\n_No games have finished yet — here's tonight's schedule:_\n\n`
-    : `🏀 **NBA Games**\n\n`;
-  
-  if (formattedGames.length > 0) {
-    summary += formattedGames.join('\n\n');
+
+  let summary: string;
+
+  if (format === 'table') {
+    // Markdown table format
+    summary = allScheduled
+      ? `🏀 **NBA Tonight${dateLabel ? ` — ${dateLabel}` : ''} (ET)**\n_No games have finished yet — here's tonight's schedule:_\n\n`
+      : `🏀 **NBA Games${dateLabel ? ` — ${dateLabel}` : ''}**\n\n`;
+
+    if (events.length > 0) {
+      summary += `| Away | Home | Score | Time / Status | Venue |\n`;
+      summary += `|------|------|-------|---------------|-------|\n`;
+      for (const ev of events.slice(0, 15)) {
+        const comp = ev.competitions?.[0];
+        const competitors = comp?.competitors || [];
+        if (competitors.length < 2) continue;
+        const sorted = [...competitors].sort((a: any, b: any) =>
+          (a.homeAway === 'home' ? 1 : -1) - (b.homeAway === 'home' ? 1 : -1)
+        );
+        const away = sorted[0];
+        const home = sorted[1];
+        const awayName = away?.team?.displayName || 'Away';
+        const homeName = home?.team?.displayName || 'Home';
+        const awayRec = away?.records?.[0]?.summary || '';
+        const homeRec = home?.records?.[0]?.summary || '';
+        const isScheduled = ev.status?.type?.state === 'pre';
+        const isFinal = ev.status?.type?.state === 'post';
+        const isLive = ev.status?.type?.state === 'in';
+        const awayScore = away?.score ?? '—';
+        const homeScore = home?.score ?? '—';
+        const score = isScheduled ? '—' : `${awayScore}–${homeScore}`;
+        const statusShort = ev.status?.type?.shortDetail || ev.status?.type?.description || 'Scheduled';
+        const gameTime = ev.date
+          ? new Date(ev.date).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+          : '';
+        const timeStr = isScheduled ? gameTime : `${statusShort}${isLive ? ' 🔴' : ''}${isFinal ? ' ✅' : ''}`;
+        const venue = comp?.venue?.fullName || '—';
+        const awayDisplay = awayRec ? `${awayName} (${awayRec})` : awayName;
+        const homeDisplay = homeRec ? `${homeName} (${homeRec})` : homeName;
+        summary += `| ${awayDisplay} | ${homeDisplay} | ${score} | ${timeStr} | ${venue} |\n`;
+      }
+    } else {
+      summary += 'No games found for this query.\n';
+    }
   } else {
-    summary += 'No games found for this query.\n';
+    // Default emoji/text format
+    summary = allScheduled
+      ? `🏀 **NBA Tonight${dateLabel ? ` — ${dateLabel}` : ''} (ET)**\n_No games have finished yet — here's tonight's schedule:_\n\n`
+      : `🏀 **NBA Games**\n\n`;
+    
+    if (formattedGames.length > 0) {
+      summary += formattedGames.join('\n\n');
+    } else {
+      summary += 'No games found for this query.\n';
+    }
   }
   
   // Add web context highlights

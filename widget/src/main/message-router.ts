@@ -501,16 +501,21 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     }
 
     // COMPOUND: generic topic + file  (e.g. "give me a file with links about X")
-    // Extract the topic from the message
-    const topicMatch = userMessage.match(/(?:file|document|note|text)\s+(?:with|containing|about|on|of)\s+(.+?)$/i) ||
+    // Extract explicit filename ("called X" / "named X") and topic separately
+    const calledMatch = userMessage.match(/\b(?:called|named)\s+([a-zA-Z0-9_][a-zA-Z0-9_ -]*?)(?:\s+(?:and|with|then|containing|about|on|that|which|,)|$)/i);
+    const explicitFilename = calledMatch ? calledMatch[1].trim() : '';
+
+    // Extract the topic from the message — try several patterns
+    const topicMatch = userMessage.match(/\b(?:fill|filled?)\s+(?:it\s+)?(?:with|about)\s+(.+?)$/i) ||
+                       userMessage.match(/(?:file|document|note|text)\s+(?:with|containing|about|on|of)\s+(.+?)$/i) ||
                        userMessage.match(/(?:with|containing|about)\s+(?:links?\s+(?:to|about|on)\s+)?(.+?)$/i);
-    if (topicMatch) {
-      const topic = topicMatch[1].replace(/\s+/g, ' ').trim();
-      if (topic.length > 3) {
-        return { calls: [
-          { name: '__compound_search_file', arguments: { topic, query: userMessage } }
-        ] };
-      }
+    // If we have a filename but no topic match, infer topic from the filename or the rest of the message
+    const extractedTopic = topicMatch ? topicMatch[1].replace(/\s+/g, ' ').trim() : '';
+    const topic = extractedTopic.length > 3 ? extractedTopic : (explicitFilename || '');
+    if (topic.length > 3 || explicitFilename) {
+      return { calls: [
+        { name: '__compound_search_file', arguments: { topic: topic || explicitFilename, query: userMessage, ...(explicitFilename ? { filename: explicitFilename } : {}) } }
+      ] };
     }
   }
 
@@ -558,6 +563,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
     }
     // Detect when user wants finished game results (not just the schedule)
     const wantsResults = /\b(result[s]?|who won|who win|final[s]?|finished|were[' ]?the scores?|what were.*scores?|scores?.*today|scores?.*last night|scores?.*tonight|any games?.*finish|games?.*finish|tonight'?s? results?|today'?s? results?|did.*play|played.*today|last night|recap)\b/i.test(m);
+    const wantsTable = /\b(in a |as a |in |as |format(ted)? as )?(table|tabular)\b/i.test(m);
     let dateRange = '';
     if (/last week|last_7_days|last 7 days/i.test(m)) {
       dateRange = 'last_7_days';
@@ -571,7 +577,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
       // Use America/New_York date — prevents NZ system date querying wrong US slate
       dateRange = getEtDate(0);
     }
-    return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery, wantsResults } }] };
+    return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: teamQuery, wantsResults, ...(wantsTable ? { format: 'table' } : {}) } }] };
   }
 
   // SURF / SWELL intents (standalone) — use web search for real surf data
@@ -2494,8 +2500,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
             // COMPOUND INTENT: web_search → write_file chain
             else if (intentResult.calls[0]?.name === '__compound_search_file') {
-              const { topic } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound search+file intent (enriched):', topic);
+              const { topic, filename } = intentResult.calls[0].arguments;
+              console.log('[SADIE] Compound search+file intent (enriched):', topic, filename ? `filename=${filename}` : '');
 
               // Use enrichment for comprehensive results
               const enriched = await enrichGenericQuery(topic, null, {
@@ -2503,12 +2509,37 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 fetchContent: true
               });
 
-              // Build file content
-              const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '')}`;
+              // Build search context and synthesize comprehensive content through the LLM
+              const rawContext = enriched.webContext?.topContent
+                ? enriched.webContext.topContent.slice(0, 4000)
+                : enriched.summary;
+              const synthesisQuestion = `Write a comprehensive, well-organized document about "${topic}". ` +
+                `Include all key facts, statistics, and important details. ` +
+                `Format with clear headings and bullet points. Do NOT include URLs or source citations in the document body.`;
+              const synthesisPrompt = makeSynthesisPrompt(rawContext, synthesisQuestion);
+              let synthesizedContent = '';
+              try {
+                await new Promise<void>((resolve, reject) => {
+                  synthesisStream(
+                    synthesisPrompt, convId,
+                    (chunk) => { synthesizedContent += chunk; },
+                    () => resolve(),
+                    (err) => reject(err),
+                    undefined, requestConfirmation,
+                    (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                  );
+                });
+              } catch (e: any) {
+                console.error('[SADIE] Compound search: synthesis failed, using raw enrichment:', e.message);
+              }
+              const fileBody = synthesizedContent.trim() || enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '');
+              const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
 
-              // Write to file
+              // Write to file — use explicit filename if provided
               const HOME = process.env.HOME || process.env.USERPROFILE || '';
-              const safeFileName = topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
+              const safeFileName = filename
+                ? filename.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt'
+                : topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
               const searchFilePath = require('path').join(HOME, 'Desktop', safeFileName);
               let searchWriteOk = false;
               try {
@@ -2758,10 +2789,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               // Handle NBA games — use enrichNbaGames so news/highlights are included
               else if (result.result.events && result.result.events.length > 0) {
+                const nbaFormat = intentResult?.calls?.[0]?.arguments?.format;
                 try {
                   const enriched = await enrichNbaGames(result.result.events, result.result.query || '', {
                     maxWebResults: 3,
                     fetchContent: true,
+                    format: nbaFormat,
                     context: {
                       executionId: `nba-enrich-${Date.now()}`,
                       requestConfirmation,
@@ -3376,8 +3409,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 }
                 // COMPOUND INTENT: web_search → write_file chain (enriched, n8n path)
                 else if (intentResult.calls[0]?.name === '__compound_search_file') {
-                  const { topic } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound search+file intent (n8n path, enriched):', topic);
+                  const { topic, filename } = intentResult.calls[0].arguments;
+                  console.log('[SADIE] Compound search+file intent (n8n path, enriched):', topic, filename ? `filename=${filename}` : '');
 
                   // Use enrichment for comprehensive results
                   const enriched = await enrichGenericQuery(topic, null, {
@@ -3385,10 +3418,36 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     fetchContent: true
                   });
 
-                  const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '')}`;
+                  // Build search context and synthesize comprehensive content through the LLM
+                  const rawContext = enriched.webContext?.topContent
+                    ? enriched.webContext.topContent.slice(0, 4000)
+                    : enriched.summary;
+                  const synthesisQuestion = `Write a comprehensive, well-organized document about "${topic}". ` +
+                    `Include all key facts, statistics, and important details. ` +
+                    `Format with clear headings and bullet points. Do NOT include URLs or source citations in the document body.`;
+                  const synthesisPrompt = makeSynthesisPrompt(rawContext, synthesisQuestion);
+                  let synthesizedContent = '';
+                  try {
+                    await new Promise<void>((resolve, reject) => {
+                      synthesisStream(
+                        synthesisPrompt, convId,
+                        (chunk) => { synthesizedContent += chunk; },
+                        () => resolve(),
+                        (err) => reject(err),
+                        undefined, requestConfirmation,
+                        (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                      );
+                    });
+                  } catch (e: any) {
+                    console.error('[SADIE] Compound search (n8n): synthesis failed, using raw enrichment:', e.message);
+                  }
+                  const fileBody = synthesizedContent.trim() || enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '');
+                  const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
 
                   const HOME = process.env.HOME || process.env.USERPROFILE || '';
-                  const safeFileName = topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
+                  const safeFileName = filename
+                    ? filename.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt'
+                    : topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
                   const searchFilePath = require('path').join(HOME, 'Desktop', safeFileName);
                   let searchWriteOk = false;
                   try {

@@ -284,3 +284,68 @@ describe('enrichNbaGames — topContent highlights', () => {
   });
 });
 
+// ── enrichNbaGames — table format ──────────────────────────────────────────
+
+describe('enrichNbaGames — table format', () => {
+  test('produces markdown table when format is "table"', async () => {
+    const events = [{
+      id: 'g1',
+      competitions: [{
+        competitors: [
+          { homeAway: 'away', team: { displayName: 'Miami Heat' }, score: '88', records: [{ summary: '20-10' }] },
+          { homeAway: 'home', team: { displayName: 'Boston Celtics' }, score: '92', records: [{ summary: '22-8' }] },
+        ],
+        venue: { fullName: 'TD Garden' },
+        leaders: [],
+      }],
+      status: { type: { state: 'in', description: 'In Progress', shortDetail: 'Q3 8:12' } },
+      date: new Date().toISOString(),
+    }];
+    const result = await enrichNbaGames(events, '', { format: 'table' });
+    expect(result.summary).toContain('| Away |');
+    expect(result.summary).toContain('| Home |');
+    expect(result.summary).toContain('Miami Heat');
+    expect(result.summary).toContain('Boston Celtics');
+    expect(result.summary).toContain('88–92');
+    expect(result.summary).toContain('TD Garden');
+  });
+
+  test('table format shows "—" for scores on scheduled games', async () => {
+    const events = [{
+      id: 'g1',
+      competitions: [{
+        competitors: [
+          { homeAway: 'away', team: { displayName: 'Lakers' }, records: [] },
+          { homeAway: 'home', team: { displayName: 'Warriors' }, records: [] },
+        ],
+        venue: { fullName: 'Chase Center' },
+        leaders: [],
+      }],
+      status: { type: { state: 'pre', description: 'Scheduled' } },
+      date: new Date().toISOString(),
+    }];
+    const result = await enrichNbaGames(events, '', { format: 'table' });
+    expect(result.summary).toContain('| Away |');
+    // Score column should show dash for scheduled
+    expect(result.summary).toMatch(/\| — \|/);
+  });
+
+  test('default format (no format option) does not produce table', async () => {
+    const events = [{
+      id: 'g1',
+      competitions: [{
+        competitors: [
+          { homeAway: 'away', team: { displayName: 'Lakers' }, records: [] },
+          { homeAway: 'home', team: { displayName: 'Warriors' }, records: [] },
+        ],
+        venue: {},
+        leaders: [],
+      }],
+      status: { type: { state: 'pre' } },
+      date: new Date().toISOString(),
+    }];
+    const result = await enrichNbaGames(events, '');
+    expect(result.summary).not.toContain('| Away |');
+  });
+});
+
