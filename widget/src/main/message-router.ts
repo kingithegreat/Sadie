@@ -18,6 +18,8 @@ import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 import { sadieWebhookHeaders } from './webhook-auth';
+import { ragSearch } from './tools/rag';
+import { matchSkills } from './skills-loader';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -1198,6 +1200,76 @@ export function getSystemPromptForModel(modelName: string, guidelines?: string):
   const base = isSmallModel(modelName) ? SADIE_SYSTEM_PROMPT_COMPACT : SADIE_SYSTEM_PROMPT;
   return guidelines?.trim() ? `${base}\n\n## User Guidelines\n${guidelines.trim()}` : base;
 }
+
+/**
+ * Detect likely tool categories from a user message for small-model tool filtering.
+ * Returns undefined (= send all tools) when no strong signal is found.
+ */
+export function detectToolCategories(message: string): string[] | undefined {
+  const m = message.toLowerCase();
+  const cats = new Set<string>();
+
+  if (/\b(weather|temperature|forecast|rain|snow|wind|humidity)\b/.test(m)) cats.add('web');
+  if (/\b(file|folder|directory|create|write|read|delete|move|copy|rename|save|open|desktop|documents|downloads)\b/.test(m)) cats.add('filesystem');
+  if (/\b(search|google|look\s*up|web|browse|url|http|news|headline)\b/.test(m)) cats.add('web');
+  if (/\b(email|mail|inbox|send|draft|compose)\b/.test(m)) cats.add('communication');
+  if (/\b(reminder|remind|calendar|schedule|meeting|event|appointment)\b/.test(m)) cats.add('utility');
+  if (/\b(process|task\s*manager|kill|cpu|ram|memory\s*usage)\b/.test(m)) cats.add('system');
+  if (/\b(clipboard|copy|paste)\b/.test(m)) cats.add('utility');
+  if (/\b(document|pdf|docx?|summarize|parse|rag|index)\b/.test(m)) cats.add('document');
+  if (/\b(image|picture|photo|draw|generate|paint|vision|screenshot|describe)\b/.test(m)) cats.add('vision');
+  if (/\b(voice|speak|say|whisper|transcribe|speech)\b/.test(m)) cats.add('voice');
+  if (/\b(git|commit|diff|branch|status|log)\b/.test(m)) cats.add('utility');
+  if (/\b(code|script|python|javascript|run|execute)\b/.test(m)) cats.add('utility');
+  if (/\b(nba|basketball|football|soccer|baseball|sports?|score|game|match)\b/.test(m)) cats.add('web');
+  if (/\b(contact|phone\s*number|address\s*book)\b/.test(m)) cats.add('utility');
+  if (/\b(plan|steps|how\s+do|how\s+should)\b/.test(m)) cats.add('utility');
+  if (/\b(notification|notify|alert)\b/.test(m)) cats.add('system');
+
+  // If nothing matched or too many categories, send all tools
+  if (cats.size === 0 || cats.size > 3) return undefined;
+  return Array.from(cats);
+}
+
+/**
+ * Handle slash commands — instant local actions that bypass the LLM.
+ * Returns a response string if the command was recognized, null otherwise.
+ */
+export function handleSlashCommand(input: string, conversationId: string, modelName: string): string | null {
+  const cmd = input.trim().toLowerCase();
+
+  if (cmd === '/compact') {
+    const history = getHistory(conversationId);
+    if (history.length === 0) return '📦 Nothing to compact — conversation is empty.';
+    const compressed = compressTurns(history);
+    const existing = conversationDigest.get(conversationId);
+    const newDigest = existing ? `${existing} | ${compressed}` : compressed;
+    conversationDigest.set(conversationId, newDigest.slice(-SMALL_MODEL_DIGEST_CHARS));
+    conversationHistory.set(conversationId, []);
+    return `📦 Compacted ${history.length} messages into a rolling digest (${conversationDigest.get(conversationId)!.length} chars). Context freed.`;
+  }
+
+  if (cmd === '/status') {
+    const history = getHistory(conversationId);
+    const digest = conversationDigest.get(conversationId);
+    const small = isSmallModel(modelName);
+    const lines = [
+      `**Model:** ${modelName} ${small ? '(small — compact mode)' : ''}`,
+      `**Conversation turns:** ${history.length}`,
+      `**History limit:** ${small ? SMALL_MODEL_HISTORY_MESSAGES : MAX_HISTORY_MESSAGES}`,
+      `**Rolling digest:** ${digest ? `${digest.length} chars` : 'none'}`,
+    ];
+    return lines.join('\n');
+  }
+
+  if (cmd === '/reset') {
+    conversationHistory.set(conversationId, []);
+    conversationDigest.set(conversationId, '');
+    return '🔄 Conversation reset. History and digest cleared.';
+  }
+
+  return null; // Not a recognized slash command
+}
 // Uncensored model
 const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-llama3:8b';
 
@@ -1568,6 +1640,12 @@ export async function streamFromOllamaWithTools(
     const chatGuidelines = settings.chatGuidelines?.trim();
     const systemPromptWithGuidelines = getSystemPromptForModel(model, chatGuidelines);
     messages.push({ role: 'system', content: systemPromptWithGuidelines });
+
+    // Inject matched skill context based on the user's message
+    const skillContext = matchSkills(message);
+    if (skillContext) {
+      messages.push({ role: 'system', content: skillContext });
+    }
   }
 
   // ── Context budget: scale history window and digest to model size ──
@@ -1616,6 +1694,22 @@ export async function streamFromOllamaWithTools(
     // Fire-and-forget: persist any self-disclosures in this user message
     memorizeIfUseful(message).catch(() => {});
   }
+
+  // Auto-inject RAG context for small models — bypasses the tool-call requirement
+  // so 3B models don't need to figure out they should call rag_query.
+  if (!isSynthesisCall && !uncensoredModeEnabled) {
+    try {
+      const ragHit = ragSearch(message);
+      if (ragHit) {
+        const ragSnippet = smallModel ? ragHit.text.slice(0, 600) : ragHit.text;
+        messages.push({
+          role: 'system',
+          content: `[Relevant document context from "${ragHit.filename}" (score: ${ragHit.score.toFixed(2)})]\n${ragSnippet}`
+        });
+      }
+    } catch (_ragErr) { /* RAG search failed — non-critical, skip silently */ }
+  }
+
   // Only send the most recent N messages — older turns are already in the digest
   const trimmedHistory = history.slice(-maxHistoryForModel);
   for (const msg of trimmedHistory) {
@@ -1638,8 +1732,10 @@ export async function streamFromOllamaWithTools(
   // Only include document tools when documents are actually attached to THIS message.
   // Never offer tools for synthesis calls — the model already has the data it needs
   // and offering tools causes it to redundantly call web_search, blowing the context.
+  // For small models, filter tools to relevant categories to reduce confusion.
+  const intentCategories = smallModel ? detectToolCategories(message) : undefined;
   const tools = (modelSupportsTools && !skipToolsForGreeting && !isSynthesisCall) 
-    ? getOllamaTools({ excludeDocumentTools: !hasDocuments })
+    ? getOllamaTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
     : undefined;
   
   console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, hasDocuments=${hasDocuments}, isGreeting=${skipToolsForGreeting}, message="${message.substring(0, 30)}..."`);
@@ -1662,18 +1758,60 @@ export async function streamFromOllamaWithTools(
       const requestBody: any = {
         model,
         messages,
-        stream: true
+        stream: true,
+        // Keep model warm in VRAM between requests (avoids cold-start reload)
+        keep_alive: '30m',
+        // Cap context window for small models to avoid OOM on low-VRAM GPUs
+        ...(smallModel ? { options: { num_ctx: 4096 } } : {})
       };
       
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
       }
       
-      const response = await axios.post(`${OLLAMA_URL}/api/chat`, requestBody, {
-        responseType: 'stream',
-        timeout: 0,
-        signal: controller.signal
-      });
+      // Model failover: try primary model first; on connection/model errors, retry with fallback
+      let response: any;
+      try {
+        response = await axios.post(`${OLLAMA_URL}/api/chat`, requestBody, {
+          responseType: 'stream',
+          timeout: 0,
+          signal: controller.signal
+        });
+      } catch (primaryErr: any) {
+        const code = primaryErr?.code || '';
+        const status = primaryErr?.response?.status;
+        const errMsg = (primaryErr?.response?.data?.error || primaryErr?.message || '').toLowerCase();
+        const isModelError = status === 404 || errMsg.includes('not found') || errMsg.includes('model');
+        const isConnError = code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT';
+        
+        if ((isModelError || isConnError) && !requestBody._failedOver) {
+          // Build a fallback chain: current model's size class → default chat model → dolphin (always available as general-purpose fallback)
+          const fallbacks = [OLLAMA_CHAT_MODEL, 'llama3.2:3b'].filter(m => m !== requestBody.model);
+          const fallbackModel = fallbacks[0];
+          if (fallbackModel) {
+            console.warn(`[SADIE] Primary model "${requestBody.model}" failed (${code || status}), failing over to "${fallbackModel}"`);
+            onChunk(`⚠️ Model "${requestBody.model}" unavailable — switching to ${fallbackModel}\n\n`);
+            requestBody.model = fallbackModel;
+            requestBody._failedOver = true;
+            // Adjust system prompt for the fallback model's size
+            const fbSmall = isSmallModel(fallbackModel);
+            if (fbSmall !== smallModel) {
+              const newPrompt = getSystemPromptForModel(fallbackModel, settings.chatGuidelines?.trim());
+              const sysIdx = messages.findIndex(m => m.role === 'system');
+              if (sysIdx >= 0) messages[sysIdx].content = newPrompt;
+            }
+            response = await axios.post(`${OLLAMA_URL}/api/chat`, requestBody, {
+              responseType: 'stream',
+              timeout: 0,
+              signal: controller.signal
+            });
+          } else {
+            throw primaryErr;
+          }
+        } else {
+          throw primaryErr;
+        }
+      }
 
       console.log('[SADIE] Ollama chat stream connected...');
       const stream = response.data as NodeJS.ReadableStream;
@@ -2103,6 +2241,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           }
           // notify renderer that stream is starting
                     event.sender.send('sadie:stream-start', { streamId });
+
+        // ── SLASH COMMANDS — instant local actions, no LLM round-trip ──
+        const trimmedMsg = request.message.trim();
+        if (trimmedMsg.startsWith('/')) {
+          const activeModel = (getSettings() as any).chatModel || OLLAMA_CHAT_MODEL;
+          const slashHandled = handleSlashCommand(trimmedMsg, convId, activeModel);
+          if (slashHandled) {
+            safeSend(event.sender, 'sadie:stream-chunk', { chunk: slashHandled, streamId });
+            safeSend(event.sender, 'sadie:stream-end', { streamId });
+            activeStreams.delete(streamId);
+            return;
+          }
+        }
 
         // E2E MOCK MODE: Replace all real streaming with deterministic chunks
         // Allow opt-out of the deterministic mock via `SADIE_E2E_BYPASS_MOCK=1` when we want

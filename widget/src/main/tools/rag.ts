@@ -409,3 +409,26 @@ export const ragToolHandlers: Record<string, ToolHandler> = {
     };
   },
 };
+
+// ── Auto-injection helper ──────────────────────────────────────────────────
+
+const RAG_AUTO_THRESHOLD = 0.15;
+
+/**
+ * Search the RAG index for a user query and return the best matching chunk
+ * if its relevance exceeds the threshold. Returns null when the index is
+ * empty or nothing is relevant — callers should treat null as "no RAG
+ * context to inject".
+ */
+export function ragSearch(query: string, threshold = RAG_AUTO_THRESHOLD): { text: string; filename: string; score: number } | null {
+  if (ragStore.chunks.length === 0) return null;
+  const queryVec = tfidfVec(computeTf(tokenize(query)));
+  let best: { text: string; filename: string; score: number } | null = null;
+  for (const chunk of ragStore.chunks) {
+    const score = cosineSim(queryVec, tfidfVec(chunk.tf));
+    if (score >= threshold && (!best || score > best.score)) {
+      best = { text: chunk.text, filename: chunk.filename, score };
+    }
+  }
+  return best;
+}

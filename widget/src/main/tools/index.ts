@@ -81,12 +81,18 @@ const DOCUMENT_TOOL_NAMES = ['parse_document', 'get_document_content', 'list_doc
 /**
  * Get tool definitions in Ollama format
  * @param options.excludeDocumentTools - If true, excludes document parsing tools (use when no docs attached)
+ * @param options.categories - If provided, only include tools in these categories (for small models)
  */
-export function getOllamaTools(options?: { excludeDocumentTools?: boolean }): OllamaTool[] {
+export function getOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
   let tools = getAllToolDefinitions();
   
   if (options?.excludeDocumentTools) {
     tools = tools.filter(t => !DOCUMENT_TOOL_NAMES.includes(t.name));
+  }
+
+  if (options?.categories && options.categories.length > 0) {
+    const cats = new Set(options.categories);
+    tools = tools.filter(t => t.category && cats.has(t.category));
   }
   
   return tools.map(toOllamaTool);
