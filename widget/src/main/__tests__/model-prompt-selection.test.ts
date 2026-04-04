@@ -22,6 +22,12 @@ describe('isSmallModel', () => {
     'tinyllama',
     'tinyllama:1.1b',
     'tinydolphin',
+    // Cloud API small models
+    'claude-3-haiku-20240307',
+    'claude-3-5-haiku-20241022',
+    'gpt-3.5-turbo',
+    'gpt-4o-mini',
+    'o1-mini',
   ];
 
   // Models that are NOT small
@@ -37,6 +43,12 @@ describe('isSmallModel', () => {
     'phi3:14b',
     'llama3.2',           // no explicit size tag → treat as normal
     '',
+    // Cloud API large models
+    'claude-opus-4-20250514',
+    'claude-sonnet-4-20250514',
+    'claude-3-5-sonnet-20241022',
+    'gpt-4o',
+    'gpt-4-turbo',
   ];
 
   test.each(smallModels)('"%s" → true', (model) => {

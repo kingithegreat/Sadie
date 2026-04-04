@@ -54,11 +54,12 @@ export async function enrichNbaGames(
     }
   }
   
-  // Build search query for enrichment
+  // Build search query for enrichment — always include today's date to avoid stale results
+  const todayStr = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
   const searchQuery = options.customQuery || 
-    (query ? `NBA ${query} box score highlights ${new Date().toLocaleDateString()}` :
-     teamNames.length > 0 ? `NBA ${teamNames.slice(0, 2).join(' ')} game recap highlights` :
-     `NBA games today scores highlights`);
+    (query ? `NBA ${query} box score highlights ${todayStr}` :
+     teamNames.length > 0 ? `NBA ${teamNames.slice(0, 2).join(' ')} game recap highlights ${todayStr}` :
+     `NBA games today scores highlights ${todayStr}`);
   
   // Fetch web context
   let webContext: EnrichedResult['webContext'];

@@ -169,7 +169,7 @@ describe('streamFromLLM', () => {
       expect(mockStreamFromCustomLLM).not.toHaveBeenCalled();
       // Should have sent a warning chunk
       expect(cbs.onChunk).toHaveBeenCalledWith(
-        expect.stringContaining('Image attachments are not yet supported'),
+        expect.stringContaining('Image attachments use Ollama vision model'),
       );
       expect(typeof handle.cancel).toBe('function');
     });

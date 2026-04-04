@@ -83,4 +83,10 @@ describe('makeSynthesisPrompt', () => {
     // Question section should be in the last 200 chars of the prompt
     expect(prompt.length - idx).toBeLessThan(200);
   });
+
+  test('includes anti-hallucination directive for sports data', () => {
+    expect(prompt.toLowerCase()).toContain('do not fabricate');
+    expect(prompt.toLowerCase()).toContain('do not guess');
+    expect(prompt.toLowerCase()).toContain('pre-game');
+  });
 });

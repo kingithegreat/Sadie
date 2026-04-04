@@ -991,6 +991,9 @@ export function makeSynthesisPrompt(searchContext: string, question: string): st
     `Report the key facts and cite sources inline (e.g. "According to [title], ..."). ` +
     `If the results contain limited information, state what was found — do NOT suggest the user ` +
     `check YouTube, news websites, Wikipedia, or any other source.\n\n` +
+    `CRITICAL: Do NOT fabricate, guess, or invent any facts not present in the search results. ` +
+    `For sports data: if games show as "Scheduled" or "Pre-game", say they haven't been played yet — ` +
+    `do NOT guess final scores, stat lines, or outcomes. Only report what is explicitly in the results.\n\n` +
     `Question: ${question}`;
 }
 
@@ -1196,6 +1199,8 @@ export function isSmallModel(modelName: string): boolean {
   if (/[:\-_]([1-3]b)\b/.test(n)) return true;
   // Known small model families (phi3 alone is NOT small — it ships in 3.8b and 14b; only mini variants qualify)
   if (/\b(phi[- ]?[0-9]?[- ]?mini|gemma:2b|qwen[:\-_]?[0-9]*[:\-_]?[01]\.?[05]b|smollm|tinyllama|tinydolphin)\b/.test(n)) return true;
+  // Cloud API small models (Haiku family, GPT-3.5, mini variants)
+  if (/\b(haiku|gpt-3\.5|gpt-4o-mini|o1-mini)\b/.test(n)) return true;
   return false;
 }
 
@@ -1338,9 +1343,11 @@ export async function streamFromLLM(
     if (validation.valid) {
       console.log(`[SADIE] Using custom LLM: ${(settings as any).customLLM.name} (${(settings as any).customLLM.provider})`);
       
-      // Fall back to Ollama for image attachments (custom APIs don't support vision yet)
+      // Cloud vision: both OpenAI and Anthropic support vision, but our streaming
+      // implementation currently only sends text messages. Fall back to Ollama vision model.
+      // TODO: Send base64 images in cloud API messages for full cloud vision support.
       if (images && images.length > 0) {
-        onChunk('\n\n⚠️ Image attachments are not yet supported with cloud APIs. Using Ollama vision model instead.\n\n');
+        onChunk('\n\n⚠️ Image attachments use Ollama vision model (cloud vision coming soon).\n\n');
         return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
       }
       
@@ -1678,7 +1685,9 @@ export async function streamFromOllamaWithTools(
       role: 'system',
       content: 'You are answering from pre-fetched search results. ' +
         'Do NOT say you cannot fetch, access, or retrieve information. ' +
-        'Do NOT offer to look something up. Answer directly from the results provided.'
+        'Do NOT offer to look something up. Answer directly from the results provided. ' +
+        'Do NOT fabricate or guess facts not present in the results. ' +
+        'For sports: if games are scheduled/pre-game, say they have not been played yet — never invent scores.'
     });
   }
 

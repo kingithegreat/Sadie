@@ -81,6 +81,35 @@ describe('getModelMetadata', () => {
     expect(a).toEqual(b);
     expect(a).not.toBe(b); // separate objects
   });
+
+  test('claude-opus-4 returns 200k context and 16k maxTokens', () => {
+    const meta = getModelMetadata('claude-opus-4-20250514');
+    expect(meta.contextWindow).toBe(200000);
+    expect(meta.maxTokens).toBe(16384);
+    expect(meta.supportsTools).toBe(true);
+    expect(meta.supportsVision).toBe(true);
+  });
+
+  test('claude-sonnet-4 returns 200k context and 16k maxTokens', () => {
+    const meta = getModelMetadata('claude-sonnet-4-20250514');
+    expect(meta.contextWindow).toBe(200000);
+    expect(meta.maxTokens).toBe(16384);
+    expect(meta.supportsTools).toBe(true);
+  });
+
+  test('claude-3-5-haiku returns correct metadata', () => {
+    const meta = getModelMetadata('claude-3-5-haiku-20241022');
+    expect(meta.contextWindow).toBe(200000);
+    expect(meta.maxTokens).toBe(8192);
+    expect(meta.supportsTools).toBe(true);
+  });
+
+  test('gpt-4o-mini returns correct metadata', () => {
+    const meta = getModelMetadata('gpt-4o-mini');
+    expect(meta.contextWindow).toBe(128000);
+    expect(meta.supportsTools).toBe(true);
+    expect(meta.supportsVision).toBe(true);
+  });
 });
 
 // ─── validateCustomLLMConfig ─────────────────────────────────────────────────
