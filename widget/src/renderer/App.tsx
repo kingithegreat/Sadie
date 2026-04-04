@@ -79,6 +79,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const { toasts, addToast, dismissToast } = useToasts();
 
   // Global keyboard shortcuts
@@ -87,6 +88,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       if (e.ctrlKey && e.key === '/') {
         e.preventDefault();
         setShortcutsOpen(prev => !prev);
+      }
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setFocusMode(prev => !prev);
       }
     };
     window.addEventListener('keydown', handler);
@@ -226,7 +231,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         createdAt: Date.now(),
         error: null,
       }]);
-      addToast(`⏰ ${data.message}`, 'warning', 8000);
+      if (settings.notificationsEnabled !== false) {
+        const duration = settings.notificationDuration ?? 8000;
+        addToast(`⏰ ${data.message}`, 'warning', duration);
+      }
     });
 
     // Subscribe to title updates pushed from main (keeps sidebar title in sync)
@@ -788,6 +796,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }));
   }, []);
 
+  // Edit a user message
+  const handleEdit = useCallback((messageId: string, newContent: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === messageId ? { ...m, content: newContent, edited: true, updatedAt: Date.now() } : m
+    ));
+    // Persist the edit
+    updatePersistedMessage(messageId, { content: newContent });
+  }, [updatePersistedMessage]);
+
   /**
    * Handle confirmation rejection
    */
@@ -813,7 +830,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
   return (
-    <div className="app-container" data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'}>
+    <div className={`app-container${focusMode ? ' focus-mode' : ''}`} data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'}>
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
@@ -890,13 +907,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       />
 
       {/* Token counter — shown in chat mode */}
-      {mode === 'chat' && (
+      {mode === 'chat' && !focusMode && (
         <div className="token-counter-bar">
           <Suspense fallback={null}>
             <TokenCounter messages={messages} model={settings.chatModel || 'llama3.2:3b'} />
           </Suspense>
         </div>
       )}
+
+      {/* Focus mode toggle */}
+      <button
+        className={`focus-mode-toggle${focusMode ? ' active' : ''}`}
+        onClick={() => setFocusMode(prev => !prev)}
+        aria-label={focusMode ? 'Exit focus mode' : 'Enter focus mode'}
+        title={focusMode ? 'Exit focus mode (F11)' : 'Focus mode (F11)'}
+      >
+        {focusMode ? '⊞' : '⊡'}
+      </button>
 
       {/* Main Content Area */}
       {mode === 'chat' ? (
@@ -907,6 +934,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           onRetry={retryMessage}
           onBookmark={handleBookmark}
           onReact={handleReact}
+          onEdit={handleEdit}
           systemPrompt={conversationSystemPrompt}
           onUpdateSystemPrompt={updateConversationSystemPrompt}
         />

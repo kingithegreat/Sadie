@@ -8,12 +8,14 @@ export function MessageList({
   onRetry,
   onBookmark,
   onReact,
+  onEdit,
 }: {
   messages: ChatMessage[];
   onCancel: (assistantId: string) => void;
   onRetry: (assistantId: string) => void;
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
+  onEdit?: (messageId: string, newContent: string) => void;
 }) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -111,6 +113,7 @@ export function MessageList({
               onRetry={onRetry}
               onBookmark={onBookmark}
               onReact={onReact}
+              onEdit={onEdit}
             />
           </React.Fragment>
         );

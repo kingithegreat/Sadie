@@ -154,6 +154,10 @@ export interface Settings {
   codeApiUrl?: string;
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;
+  // Notification preferences
+  notificationsEnabled?: boolean;
+  notificationSound?: boolean;
+  notificationDuration?: number;
 }
 
 export interface ConnectionStatus {

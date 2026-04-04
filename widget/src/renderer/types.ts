@@ -15,6 +15,7 @@ export type ChatMessage = {
   updatedAt?: number;
   bookmarked?: boolean;
   reactions?: Record<string, number>;
+  edited?: boolean;
 
   // user only — image attachment previews (url = objectURL or dataURL, renderer-only)
   images?: Array<{ url: string; filename?: string }>;

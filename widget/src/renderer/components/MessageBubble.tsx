@@ -441,12 +441,14 @@ export function MessageBubble({
   onRetry,
   onBookmark,
   onReact,
+  onEdit,
 }: {
   message: ChatMessage;
   onCancel: (assistantId: string) => void;
   onRetry: (assistantId: string) => void;
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
+  onEdit?: (messageId: string, newContent: string) => void;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -456,6 +458,9 @@ export function MessageBubble({
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState('');
+  const editRef = useRef<HTMLTextAreaElement>(null);
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
 
   const timestamp = message.createdAt
@@ -469,6 +474,13 @@ export function MessageBubble({
     if (message.content) {
       items.push({ label: 'Copy', icon: '📋', action: () => {
         window.electron?.writeClipboard?.(message.content!);
+      }});
+    }
+    if (isUser && onEdit && message.id) {
+      items.push({ label: 'Edit', icon: '✏️', action: () => {
+        setEditDraft(message.content || '');
+        setEditing(true);
+        setTimeout(() => editRef.current?.focus(), 50);
       }});
     }
     if (onBookmark && message.id) {
@@ -550,7 +562,39 @@ export function MessageBubble({
             )}
             {shouldShowBubble && (
               <div className="message-bubble">
-                {hasContent ? (
+                {editing ? (
+                  <div className="message-edit-form">
+                    <textarea
+                      ref={editRef}
+                      className="message-edit-textarea"
+                      aria-label="Edit message"
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') { setEditing(false); }
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          const trimmed = editDraft.trim();
+                          if (trimmed && trimmed !== message.content && onEdit) {
+                            onEdit(message.id!, trimmed);
+                          }
+                          setEditing(false);
+                        }
+                      }}
+                      rows={Math.min(6, editDraft.split('\n').length + 1)}
+                    />
+                    <div className="message-edit-actions">
+                      <button className="message-action-btn" onClick={() => setEditing(false)}>Cancel</button>
+                      <button className="message-action-btn edit-save-btn" onClick={() => {
+                        const trimmed = editDraft.trim();
+                        if (trimmed && trimmed !== message.content && onEdit) {
+                          onEdit(message.id!, trimmed);
+                        }
+                        setEditing(false);
+                      }}>Save</button>
+                    </div>
+                  </div>
+                ) : hasContent ? (
                   renderContent(message.content!, true)
                 ) : (
                   isAssistant && state === "streaming" && (
@@ -563,7 +607,11 @@ export function MessageBubble({
                 )}
               </div>
             )}
-            {timestamp && <span className="message-timestamp">{timestamp}</span>}
+            {timestamp && (
+              <span className="message-timestamp">
+                {timestamp}{message.edited ? ' [edited]' : ''}
+              </span>
+            )}
           </div>
 
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>

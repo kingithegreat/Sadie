@@ -27,6 +27,9 @@ interface Settings {
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
   codeApiUrl?: string;
   chatGuidelines?: string;
+  notificationsEnabled?: boolean;
+  notificationSound?: boolean;
+  notificationDuration?: number;
 }
 
 interface SettingsPanelProps {
@@ -95,7 +98,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       codeApiKey: source.codeApiKey || '',
       codeApiProvider: source.codeApiProvider || 'openai',
       codeApiUrl: source.codeApiUrl || '',
-      chatGuidelines: source.chatGuidelines || ''
+      chatGuidelines: source.chatGuidelines || '',
+      notificationsEnabled: (source as any).notificationsEnabled !== false,
+      notificationSound: !!(source as any).notificationSound,
+      notificationDuration: (source as any).notificationDuration ?? 8000
     };
   };
 
@@ -302,6 +308,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       stableHordeApiKey: (localSettings as any).stableHordeApiKey?.trim() || undefined,
       chatGuidelines: localSettings.chatGuidelines?.trim() || undefined
     } as SharedSettings;
+    // Also persist any extra keys that the local-only interface tracks
+    (nextSettings as any).notificationsEnabled = (localSettings as any).notificationsEnabled;
+    (nextSettings as any).notificationSound = (localSettings as any).notificationSound;
+    (nextSettings as any).notificationDuration = (localSettings as any).notificationDuration;
     onSave(nextSettings);
     onClose();
   };
@@ -596,6 +606,46 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             rows={4}
           />
           <small className="setting-hint">Custom instructions appended to the system prompt for all conversations.</small>
+        </div>
+
+        {/* Notification Preferences */}
+        <div className="setting-group">
+          <label className="setting-label">🔔 Notifications</label>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={(localSettings as any).notificationsEnabled !== false}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, notificationsEnabled: e.target.checked } as any)
+              }
+            />
+            <span>Show toast notifications</span>
+          </label>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={!!(localSettings as any).notificationSound}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, notificationSound: e.target.checked } as any)
+              }
+            />
+            <span>Play notification sound</span>
+          </label>
+          <label className="setting-label">Toast duration</label>
+          <select
+            className="setting-input"
+            aria-label="Toast notification duration"
+            value={(localSettings as any).notificationDuration ?? 8000}
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, notificationDuration: Number(e.target.value) } as any)
+            }
+          >
+            <option value={3000}>Short (3s)</option>
+            <option value={5000}>Medium (5s)</option>
+            <option value={8000}>Long (8s)</option>
+            <option value={15000}>Extra long (15s)</option>
+          </select>
+          <small className="setting-hint">Controls how long toast notifications stay visible.</small>
         </div>
 
         {/* Custom LLM API Section - Simplified */}
