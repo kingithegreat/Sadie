@@ -65,6 +65,7 @@ export interface StoredConversation {
   messages: Message[];
   /** Optional per-conversation system prompt / guidelines */
   systemPrompt?: string;
+  pinned?: boolean;
   createdAt: string;
   updatedAt: string;
 }

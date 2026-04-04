@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ConversationSearch from './ConversationSearch';
+import { ContextMenu, useContextMenu } from './ContextMenu';
 
 interface Conversation {
   id: string;
@@ -7,6 +8,7 @@ interface Conversation {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  pinned?: boolean;
 }
 
 interface ConversationSidebarProps {
@@ -33,7 +35,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [showSearch, setShowSearch] = useState(false);
   const [exportStatus, setExportStatus] = useState<Record<string, string>>({});
   const [filterText, setFilterText] = useState('');
-
+  const { menu, showContextMenu, closeContextMenu } = useContextMenu();
   // Load conversations
   const loadConversations = useCallback(async () => {
     try {
@@ -41,8 +43,12 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       const result = await (window as any).electron.loadConversations?.();
       if (result?.success && result.data?.conversations) {
         const convList = Object.values(result.data.conversations) as Conversation[];
-        // Sort by updatedAt descending
-        convList.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        // Sort: pinned first, then by updatedAt descending
+        convList.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
         setConversations(convList);
       }
     } catch (err) {
@@ -102,6 +108,29 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     if (s === 'done') return '✅';
     if (s === 'error') return '❌';
     return '⬇️';
+  };
+
+  const handleTogglePin = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+    const newPinned = !conv.pinned;
+    // Optimistic update
+    setConversations(prev => {
+      const updated = prev.map(c => c.id === id ? { ...c, pinned: newPinned } : c);
+      updated.sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+      return updated;
+    });
+    // Persist
+    try {
+      await (window as any).electron.saveConversation?.({ ...conv, pinned: newPinned });
+    } catch (err) {
+      console.error('Failed to toggle pin:', err);
+    }
   };
 
   const handleStartEdit = (id: string, currentTitle: string, e: React.MouseEvent) => {
@@ -209,11 +238,18 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
             filteredConversations.map(conv => (
               <div
                 key={conv.id}
-                className={`conversation-item ${conv.id === currentConversationId ? 'active' : ''}`}
+                className={`conversation-item${conv.id === currentConversationId ? ' active' : ''}${conv.pinned ? ' pinned' : ''}`}
                 onClick={() => {
                   onSelectConversation(conv.id);
                   onClose();
                 }}
+                onContextMenu={(e) => showContextMenu(e, [
+                  { label: conv.pinned ? 'Unpin' : 'Pin', icon: conv.pinned ? '📌' : '📍', action: () => handleTogglePin(conv.id, e as any) },
+                  { label: 'Rename', icon: '✏️', action: () => handleStartEdit(conv.id, conv.title, e as any) },
+                  { label: 'Export', icon: '⬇️', action: () => handleExport(conv.id, e as any) },
+                  { divider: true, label: '', action: () => {} },
+                  { label: 'Delete', icon: '🗑️', action: () => handleDelete(conv.id, e as any) },
+                ])}
               >
                 {editingId === conv.id ? (
                   <input
@@ -239,6 +275,14 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                       </div>
                     </div>
                     <div className="conv-actions">
+                      <button
+                        className={`pin-btn${conv.pinned ? ' pinned' : ''}`}
+                        onClick={(e) => handleTogglePin(conv.id, e)}
+                        title={conv.pinned ? 'Unpin' : 'Pin'}
+                        aria-label={conv.pinned ? 'Unpin conversation' : 'Pin conversation'}
+                      >
+                        {conv.pinned ? '📌' : '📍'}
+                      </button>
                       <button 
                         className="edit-btn" 
                         onClick={(e) => handleStartEdit(conv.id, conv.title, e)}
@@ -269,6 +313,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
           )}
         </div>
       </div>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeContextMenu} />}
     </>
   );
 };

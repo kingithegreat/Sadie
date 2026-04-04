@@ -415,6 +415,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="setting-group">
+          <label className="setting-label">🎨 Theme</label>
+          <div className="theme-selector">
+            {(['dark', 'light', 'system'] as const).map(t => (
+              <button
+                key={t}
+                className={`theme-btn ${(localSettings as any).theme === t || (!((localSettings as any).theme) && t === 'dark') ? 'active' : ''}`}
+                onClick={() => setLocalSettings({ ...localSettings, theme: t } as any)}
+                aria-label={`${t} theme`}
+              >
+                {t === 'dark' ? '🌙' : t === 'light' ? '☀️' : '💻'} {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="setting-group">
           <label className="setting-label">n8n URL</label>
           <input
             type="text"

@@ -1,4 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import { ContextMenu, useContextMenu } from "./ContextMenu";
+import type { ContextMenuItem } from "./ContextMenu";
 import type { ChatMessage } from "../types";
 
 // highlight.js — core + common languages (tree-shaken)
@@ -449,6 +451,27 @@ export function MessageBubble({
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const { menu, showContextMenu, closeContextMenu } = useContextMenu();
+
+  const buildContextItems = useCallback((): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [];
+    if (message.content) {
+      items.push({ label: 'Copy', icon: '📋', action: () => {
+        window.electron?.writeClipboard?.(message.content!);
+      }});
+    }
+    if (isAssistant && message.content) {
+      items.push({ label: speaking ? 'Stop speaking' : 'Speak', icon: '🔊', action: () => {
+        if (speaking) { window.electron?.ttsStop?.(); setSpeaking(false); }
+        else { setSpeaking(true); window.electron?.ttsSpeak?.(message.content!).then(() => setSpeaking(false)); }
+      }});
+    }
+    if (isAssistant && state === 'finished' && message.id) {
+      items.push({ divider: true, label: '', action: () => {} });
+      items.push({ label: 'Regenerate', icon: '↻', action: () => onRetry(message.id!) });
+    }
+    return items;
+  }, [message, isAssistant, state, speaking, onRetry]);
 
   const handleCopyMessage = useCallback(() => {
     if (!message.content) return;
@@ -478,7 +501,9 @@ export function MessageBubble({
       data-role={isAssistant ? "assistant-message" : "user-message"}
       data-state={state || ""}
       data-message-id={message.id ?? ""}
+      onContextMenu={(e) => showContextMenu(e, buildContextItems())}
     >
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeContextMenu} />}
       {isUser ? (
         <>
           {/* USER: content first (+ image thumbnails), avatar second */}
