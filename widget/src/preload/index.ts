@@ -145,7 +145,7 @@ const electronAPI: ElectronAPI = {
 
     const errorListener = (_ev: IpcRendererEvent, data: any) => {
       if (!data || data.streamId !== streamId) return;
-      if (typeof onStreamError === 'function') onStreamError(data as { streamId?: string; error?: string });
+      if (typeof onStreamError === 'function') onStreamError(data as { streamId?: string; error?: string; message?: string; recoveryHint?: any });
     };
 
     ipcRenderer.on(ALLOWED_CHANNELS.STREAM_CHUNK, chunkListener);
@@ -323,6 +323,14 @@ const electronAPI: ElectronAPI = {
 
   getAnalyticsSummary: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
     return await ipcRenderer.invoke('sadie:get-analytics-summary');
+  },
+
+  detectGpuVram: async () => {
+    return await ipcRenderer.invoke('sadie:detect-gpu-vram');
+  },
+
+  pullModel: async (modelName: string) => {
+    return await ipcRenderer.invoke('sadie:pull-model', modelName);
   },
 
   hasPermission: async (toolName: string): Promise<{ success: boolean; allowed?: boolean; error?: string }> => {

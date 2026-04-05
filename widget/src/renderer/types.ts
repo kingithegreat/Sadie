@@ -24,6 +24,13 @@ export type ChatMessage = {
   streamId?: string;
   streamingState?: StreamingState;
   error?: string | null;
+  recoveryHint?: {
+    service: 'ollama' | 'n8n' | 'model' | 'unknown';
+    userMessage: string;
+    action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings';
+    actionLabel?: string;
+    model?: string;
+  } | null;
   durationMs?: number;
 };
 
@@ -40,6 +47,8 @@ export type StreamEndPayload = {
 export type StreamErrorPayload = {
   streamId: string;
   error?: string;
+  message?: string;
+  recoveryHint?: ChatMessage['recoveryHint'];
 };
 
 export type Settings = {

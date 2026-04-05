@@ -435,6 +435,41 @@ function linkifyText(text: string): React.ReactNode[] {
   return parts.length > 0 ? parts : [text];
 }
 
+/** Inline button that triggers `ollama pull <model>` via IPC. */
+function PullModelButton({ model }: { model: string }) {
+  const [pulling, setPulling] = useState(false);
+  const [result, setResult] = useState<'idle' | 'done' | 'failed'>('idle');
+
+  const handlePull = async () => {
+    setPulling(true);
+    setResult('idle');
+    try {
+      const res = await window.electron?.pullModel?.(model);
+      setResult(res?.success ? 'done' : 'failed');
+    } catch {
+      setResult('failed');
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  if (result === 'done') {
+    return <span style={{ color: 'var(--accent-color, #00d4ff)', fontSize: '12px', fontWeight: 600 }}>✓ {model} pulled — click Retry</span>;
+  }
+
+  return (
+    <button
+      className="message-action-btn"
+      onClick={handlePull}
+      disabled={pulling}
+      style={{ padding: '4px 12px' }}
+    >
+      {pulling ? `Pulling ${model}...` : `📦 Pull ${model}`}
+      {result === 'failed' && <span style={{ color: 'var(--warning-color, #f59e0b)', marginLeft: '4px' }}>failed</span>}
+    </button>
+  );
+}
+
 export function MessageBubble({
   message,
   onCancel,
@@ -673,13 +708,59 @@ export function MessageBubble({
 
                 {state === "error" && (
                   <>
-                    <span className="status-text error">Error</span>
-                    <button
-                      className="message-action-btn"
-                      onClick={() => onRetry(message.id!)}
-                    >
-                      ↻ Retry
-                    </button>
+                    {message.recoveryHint ? (
+                      <div className="error-recovery-banner" style={{
+                        background: 'var(--bg-secondary, #16213e)',
+                        borderLeft: '3px solid var(--warning-color, #f59e0b)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        marginTop: '6px',
+                        fontSize: '13px',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '16px' }}>
+                            {message.recoveryHint.service === 'ollama' ? '🔌' :
+                             message.recoveryHint.service === 'model' ? '📦' :
+                             message.recoveryHint.service === 'n8n' ? '⚙️' : '⚠️'}
+                          </span>
+                          <span style={{ color: 'var(--warning-color, #f59e0b)', fontWeight: 600 }}>
+                            {message.recoveryHint.service === 'ollama' ? 'Ollama Offline' :
+                             message.recoveryHint.service === 'model' ? 'Model Missing' :
+                             message.recoveryHint.service === 'n8n' ? 'n8n Unavailable' : 'Error'}
+                          </span>
+                        </div>
+                        <p style={{ margin: '0 0 8px 0', opacity: 0.9, lineHeight: 1.4 }}>
+                          {message.recoveryHint.userMessage}
+                        </p>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {message.recoveryHint.action === 'pull-model' && message.recoveryHint.model && (
+                            <PullModelButton model={message.recoveryHint.model} />
+                          )}
+                          <button
+                            className="message-action-btn"
+                            onClick={() => onRetry(message.id!)}
+                            style={{ padding: '4px 12px' }}
+                          >
+                            ↻ {message.recoveryHint.actionLabel || 'Retry'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="status-text error">Error</span>
+                        {message.error && (
+                          <span className="status-text" style={{ opacity: 0.8, fontSize: '11px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {message.error}
+                          </span>
+                        )}
+                        <button
+                          className="message-action-btn"
+                          onClick={() => onRetry(message.id!)}
+                        >
+                          ↻ Retry
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
 

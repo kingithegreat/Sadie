@@ -160,6 +160,10 @@ export interface Settings {
   notificationDuration?: number;
   // Display density
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
+  // Mixture of Agents (MoA) settings
+  moaEnabled?: boolean;
+  moaProposers?: string[];
+  moaAggregator?: string;
 }
 
 export interface ConnectionStatus {
@@ -299,4 +303,27 @@ export interface ElectronAPI {
   mcpAddServer?: (config: any) => Promise<any>;
   mcpRemoveServer?: (name: string) => Promise<any>;
   mcpToggleServer?: (name: string, enabled: boolean) => Promise<any>;
+
+  // GPU VRAM detection and hardware-aware model recommendations
+  detectGpuVram?: () => Promise<{
+    success: boolean;
+    vramGB?: number | null;
+    gpuName?: string | null;
+    method?: string;
+    recommendation?: {
+      mode: 'moa' | 'single';
+      preset?: string | null;
+      model?: string | null;
+      reason: string;
+    } | null;
+    error?: string;
+  }>;
+
+  // Pull an Ollama model by name
+  pullModel?: (modelName: string) => Promise<{
+    success: boolean;
+    model?: string;
+    status?: string;
+    error?: string;
+  }>;
 }

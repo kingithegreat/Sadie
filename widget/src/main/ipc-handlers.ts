@@ -18,6 +18,7 @@ import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey } from './tools/
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
+import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
 import { listJobs, addJob, removeJob, toggleJob } from './scheduler';
 import {
@@ -467,6 +468,43 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // Expose current app mode (demo or normal)
   ipcMain.handle('sadie:get-mode', async () => {
     return { demo: !!isDemoMode };
+  });
+
+  // GPU VRAM detection and hardware-aware model recommendations
+  ipcMain.handle('sadie:detect-gpu-vram', async () => {
+    try {
+      const gpu = await detectGpuVram();
+      const config = gpu.vramGB ? recommendConfig(gpu.vramGB) : null;
+      return {
+        success: true,
+        vramGB: gpu.vramGB,
+        gpuName: gpu.gpuName,
+        method: gpu.method,
+        recommendation: config ? {
+          mode: config.mode,
+          preset: config.preset ?? null,
+          model: config.model ?? null,
+          reason: config.reason,
+        } : null,
+      };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // Pull an Ollama model with progress reporting
+  ipcMain.handle('sadie:pull-model', async (_event, modelName: string) => {
+    if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
+      return { success: false, error: 'Invalid model name' };
+    }
+    const settings = getSettings();
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    try {
+      const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName }, { timeout: 600_000 });
+      return { success: true, model: modelName, status: res?.data?.status || 'done' };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
   });
 
   // Read telemetry consent log (JSONL) for UI display

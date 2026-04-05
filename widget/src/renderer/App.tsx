@@ -519,7 +519,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           console.log('[E2E-TRACE] renderer received sadie:stream-end', payload);
         } catch (e) {}
       },
-      onStreamError: (payload: { streamId?: string; error?: string }) => {
+      onStreamError: (payload: { streamId?: string; error?: string; message?: string; recoveryHint?: any }) => {
         // Clear any test-only watchdog timer if set
         try {
           const t = streamWatchersRef.current.get(streamId);
@@ -538,13 +538,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           }
         } catch (e) {}
 
+        // Use the human-readable message from classifyError when available
+        const errorText = payload.message || (typeof payload.error === 'string' ? payload.error : undefined) || 'Stream error';
+
         setMessages(prev => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
             const updatedMsg = {
               ...m,
               streamingState: "error" as StreamingState,
-              error: payload.error ?? "Stream error",
+              error: errorText,
+              recoveryHint: payload.recoveryHint || null,
               updatedAt: Date.now(),
             };
             

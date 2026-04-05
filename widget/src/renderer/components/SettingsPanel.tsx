@@ -103,7 +103,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       notificationsEnabled: (source as any).notificationsEnabled !== false,
       notificationSound: !!(source as any).notificationSound,
       notificationDuration: (source as any).notificationDuration ?? 8000,
-      messageDensity: (source as any).messageDensity || 'comfortable'
+      messageDensity: (source as any).messageDensity || 'comfortable',
+      moaEnabled: source.moaEnabled ?? false,
+      moaProposers: source.moaProposers ?? [],
+      moaAggregator: source.moaAggregator ?? ''
     };
   };
 
@@ -183,6 +186,70 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
   const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
+
+  // GPU VRAM detection state for MoA recommendations
+  const [gpuInfo, setGpuInfo] = useState<{
+    vramGB: number | null;
+    gpuName: string | null;
+    recommendation: { mode: 'moa' | 'single'; preset?: string | null; model?: string | null; reason: string } | null;
+    detecting: boolean;
+    manualVram: number | null;
+  }>({ vramGB: null, gpuName: null, recommendation: null, detecting: false, manualVram: null });
+
+  const handleDetectGpu = async () => {
+    setGpuInfo(prev => ({ ...prev, detecting: true }));
+    try {
+      const result = await window.electron.detectGpuVram?.();
+      if (result?.success && result.vramGB) {
+        setGpuInfo({
+          vramGB: result.vramGB,
+          gpuName: result.gpuName || null,
+          recommendation: result.recommendation || null,
+          detecting: false,
+          manualVram: null,
+        });
+      } else {
+        setGpuInfo(prev => ({ ...prev, detecting: false }));
+      }
+    } catch {
+      setGpuInfo(prev => ({ ...prev, detecting: false }));
+    }
+  };
+
+  const handleManualVram = (gb: number) => {
+    // Client-side recommendation matching the server-side recommendConfig() logic
+    type Rec = { mode: 'moa' | 'single'; preset?: string | null; model?: string | null; reason: string };
+    let rec: Rec | null = null;
+    if (gb >= 10) {
+      rec = { mode: 'moa', preset: 'codeHeavy', reason: `Code-focused MoA fits your ${gb} GB VRAM` };
+    } else if (gb >= 8) {
+      rec = { mode: 'moa', preset: 'balanced', reason: `Balanced MoA fits your ${gb} GB VRAM` };
+    } else if (gb >= 4) {
+      rec = { mode: 'single', model: 'qwen2.5:7b', reason: `Best single model for ${gb} GB. MoA needs 8+ GB — use RAG for a bigger quality boost.` };
+    } else if (gb >= 2) {
+      rec = { mode: 'single', model: 'llama3.2:3b', reason: `Best fit for ${gb} GB. Index files with RAG for smarter answers.` };
+    }
+    setGpuInfo(prev => ({ ...prev, manualVram: gb, vramGB: gb, recommendation: rec }));
+  };
+
+  const applyRecommendation = () => {
+    if (!gpuInfo.recommendation) return;
+    const rec = gpuInfo.recommendation;
+    if (rec.mode === 'moa' && rec.preset) {
+      const presetMap: Record<string, { proposers: string[]; aggregator: string }> = {
+        balanced: { proposers: ['qwen2.5:7b', 'mistral:latest', 'llama3.2:3b'], aggregator: 'qwen2.5:7b' },
+        codeHeavy: { proposers: ['qwen2.5-coder:7b', 'deepseek-coder-v2:latest', 'qwen2.5:7b'], aggregator: 'qwen2.5-coder:7b' },
+        lightweight: { proposers: ['qwen2.5-coder:3b', 'llama3.2:3b'], aggregator: 'qwen2.5:7b' },
+      };
+      const preset = presetMap[rec.preset];
+      if (preset) {
+        setLocalSettings({ ...localSettings, moaEnabled: true, moaProposers: preset.proposers, moaAggregator: preset.aggregator });
+      }
+    } else if (rec.mode === 'single') {
+      // Disable MoA and set the recommended single model
+      setLocalSettings({ ...localSettings, moaEnabled: false, ollamaModel: rec.model || 'qwen2.5:7b' });
+    }
+  };
 
   // Scheduler state
   const [scheduledJobs, setScheduledJobs] = useState<ScheduledJob[]>([]);
@@ -798,6 +865,176 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               />
               <span>Use this API for all chats</span>
             </label>
+          )}
+        </div>
+
+
+
+
+        {/* ── Mixture of Agents (MoA) ─────────────────────────── */}
+        <div className="setting-group">
+          <label className="setting-label">{'🧠'} Mixture of Agents (MoA)</label>
+          <small className="setting-hint sp-hint-mb">
+            Route complex queries to multiple specialist models and aggregate the best answer.
+            Simple queries always use the fast single-model path.
+          </small>
+          {/* GPU VRAM detection / manual input — always visible */}
+          <div style={{ background: 'var(--input-bg, #1a1a2e)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <button type="button" className="model-card" style={{ padding: '6px 14px', flex: '0 0 auto' }}
+                onClick={handleDetectGpu} disabled={gpuInfo.detecting}>
+                {gpuInfo.detecting ? 'Detecting...' : `${'🔍'} Detect my GPU`}
+              </button>
+              <span style={{ fontSize: '12px', opacity: 0.7 }}>or enter VRAM manually:</span>
+              <input type="range" min={2} max={48} step={1}
+                value={gpuInfo.manualVram ?? gpuInfo.vramGB ?? 4}
+                onChange={(e) => handleManualVram(parseInt(e.target.value, 10))}
+                style={{ flex: 1 }} />
+              <span style={{ fontWeight: 600, minWidth: '50px', textAlign: 'right' }}>
+                {gpuInfo.manualVram ?? gpuInfo.vramGB ?? '?'} GB
+              </span>
+            </div>
+            {gpuInfo.gpuName && (
+              <small className="setting-hint" style={{ display: 'block', marginBottom: '4px' }}>
+                {'🎮'} Detected: <strong>{gpuInfo.gpuName}</strong> ({gpuInfo.vramGB} GB VRAM)
+              </small>
+            )}
+            {gpuInfo.recommendation?.mode === 'single' && (
+              <div style={{ background: 'var(--bg-secondary, #16213e)', borderRadius: '6px', padding: '10px', marginTop: '6px' }}>
+                <small style={{ color: 'var(--accent-color, #00d4ff)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  {'🚀'} Best setup for your GPU
+                </small>
+                <small className="setting-hint" style={{ display: 'block', marginBottom: '6px' }}>
+                  {gpuInfo.recommendation.reason}
+                  {' '}Drag files into the chat to index them with RAG for smarter answers.
+                </small>
+                <button type="button" className="model-card active" style={{ padding: '4px 12px', fontSize: '12px' }}
+                  onClick={applyRecommendation}>
+                  Apply &mdash; use {gpuInfo.recommendation.model} + RAG
+                </button>
+              </div>
+            )}
+            {gpuInfo.recommendation?.mode === 'moa' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                <small className="setting-hint" style={{ color: 'var(--accent-color, #00d4ff)' }}>
+                  {'✨'} Recommended: <strong>{gpuInfo.recommendation.reason}</strong>
+                </small>
+                <button type="button" className="model-card active" style={{ padding: '4px 12px', fontSize: '12px' }}
+                  onClick={applyRecommendation}>
+                  Apply
+                </button>
+              </div>
+            )}
+            {gpuInfo.vramGB !== null && !gpuInfo.recommendation && (
+              <small className="setting-hint" style={{ color: 'var(--warning-color, #f59e0b)' }}>
+                {'⚠️'} {gpuInfo.vramGB} GB may not be enough for local models.
+              </small>
+            )}
+          </div>
+
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={localSettings.moaEnabled || false}
+              onChange={(e) =>
+                setLocalSettings({
+                  ...localSettings,
+                  moaEnabled: e.target.checked
+                })
+              }
+            />
+            <span>Enable Mixture of Agents</span>
+            {gpuInfo.recommendation?.mode === 'single' && (
+              <small style={{ marginLeft: '8px', color: 'var(--warning-color, #f59e0b)', fontSize: '11px' }}>
+                (not recommended for {gpuInfo.vramGB ?? '<8'} GB VRAM)
+              </small>
+            )}
+          </label>
+
+          {localSettings.moaEnabled && (
+            <>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <button type="button" className={`model-card ${gpuInfo.recommendation?.preset === 'balanced' ? 'active' : ''}`} style={{ flex: '1 1 auto', minWidth: '120px', padding: '8px 12px' }}
+                  title="Good mix of reasoning, coding, and general knowledge (needs 8+ GB VRAM)"
+                  onClick={() => setLocalSettings({ ...localSettings, moaProposers: ['qwen2.5:7b', 'mistral:latest', 'llama3.2:3b'], moaAggregator: 'qwen2.5:7b' })}>
+                  <div className="model-card-label">{'⚖️'} Balanced</div>
+                  <p className="model-card-desc">8+ GB GPUs</p>
+                </button>
+                <button type="button" className={`model-card ${gpuInfo.recommendation?.preset === 'codeHeavy' ? 'active' : ''}`} style={{ flex: '1 1 auto', minWidth: '120px', padding: '8px 12px' }}
+                  title="Optimised for programming and debugging tasks (needs 10+ GB VRAM)"
+                  onClick={() => setLocalSettings({ ...localSettings, moaProposers: ['qwen2.5-coder:7b', 'deepseek-coder-v2:latest', 'qwen2.5:7b'], moaAggregator: 'qwen2.5-coder:7b' })}>
+                  <div className="model-card-label">{'💻'} Code-focused</div>
+                  <p className="model-card-desc">10+ GB GPUs</p>
+                </button>
+                <button type="button" className={`model-card ${gpuInfo.recommendation?.preset === 'lightweight' ? 'active' : ''}`} style={{ flex: '1 1 auto', minWidth: '120px', padding: '8px 12px' }}
+                  title="Minimum MoA setup — two small proposers with capable aggregator (needs 8+ GB VRAM)"
+                  onClick={() => setLocalSettings({ ...localSettings, moaProposers: ['qwen2.5-coder:3b', 'llama3.2:3b'], moaAggregator: 'qwen2.5:7b' })}>
+                  <div className="model-card-label">{'🪶'} Lightweight</div>
+                  <p className="model-card-desc">8+ GB GPUs</p>
+                </button>
+              </div>
+
+              <label className="setting-sub-label sp-sub-label">Proposer Models (select 2+)</label>
+              <small className="setting-hint sp-hint-mb">
+                These models generate independent answers in parallel. Pick diverse models for best results.
+                Use the presets above or make your own selection.
+              </small>
+              <div className="model-grid">
+                {ollamaModels
+                  .filter(m => m.id !== 'llava:latest')
+                  .map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      className={`model-card ${(localSettings.moaProposers || []).includes(model.id) ? 'active' : ''}`}
+                      onClick={() => {
+                        const current = localSettings.moaProposers || [];
+                        setLocalSettings({
+                          ...localSettings,
+                          moaProposers: current.includes(model.id)
+                            ? current.filter((m: string) => m !== model.id)
+                            : [...current, model.id]
+                        });
+                      }}
+                    >
+                      <div className="model-card-label">{model.name}</div>
+                      <p className="model-card-desc">{model.description}</p>
+                    </button>
+                  ))}
+              </div>
+
+              <label className="setting-sub-label sp-sub-label">Aggregator Model</label>
+              <small className="setting-hint sp-hint-mb">
+                This model synthesises the proposer outputs into a single high-quality answer.
+                Should be your most capable model.
+              </small>
+              <div className="model-grid">
+                {ollamaModels
+                  .filter(m => m.id !== 'llava:latest')
+                  .map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      className={`model-card ${localSettings.moaAggregator === model.id ? 'active' : ''}`}
+                      onClick={() =>
+                        setLocalSettings({
+                          ...localSettings,
+                          moaAggregator: model.id
+                        })
+                      }
+                    >
+                      <div className="model-card-label">{model.name}</div>
+                      <p className="model-card-desc">{model.description}</p>
+                    </button>
+                  ))}
+              </div>
+
+              {(localSettings.moaProposers || []).length < 2 && (
+                <small className="setting-hint" style={{ color: 'var(--warning-color, #f59e0b)' }}>
+                  {'⚠️'} Select at least 2 proposer models for MoA to activate.
+                </small>
+              )}
+            </>
           )}
         </div>
 

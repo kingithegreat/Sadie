@@ -20,6 +20,7 @@ import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enric
 import { sadieWebhookHeaders } from './webhook-auth';
 import { ragSearch } from './tools/rag';
 import { matchSkills } from './skills-loader';
+import { shouldUseMoA, runMoAPipeline } from './moa';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -388,6 +389,87 @@ function mapErrorToSadieResponse(error: any): SadieResponse {
     message: 'Unknown error occurred.',
     details: error.message,
     response: 'UNKNOWN_ERROR'
+  };
+}
+
+// ── Error recovery hints ────────────────────────────────────────────────────
+
+export interface RecoveryHint {
+  service: 'ollama' | 'n8n' | 'model' | 'unknown';
+  userMessage: string;
+  action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings';
+  actionLabel?: string;
+  model?: string;
+}
+
+/**
+ * Classify a stream error and produce an actionable hint for the renderer.
+ * Attach the result as `recoveryHint` on the `sadie:stream-error` payload.
+ */
+export function classifyError(message: string, details?: string): RecoveryHint {
+  const combined = `${message} ${details ?? ''}`.toLowerCase();
+
+  // Both services down (most specific — check first)
+  if (combined.includes('both') && combined.includes('unavailable')) {
+    return {
+      service: 'ollama',
+      userMessage: 'Both n8n and Ollama are unreachable. Make sure Ollama is running (ollama serve).',
+      action: 'start-ollama',
+      actionLabel: 'Retry',
+    };
+  }
+
+  // Model not found (404 or "not found" text) — check before generic Ollama
+  if (combined.includes('not found') || (combined.includes('model') && combined.includes('404'))) {
+    const modelMatch = combined.match(/model\s*"?([a-z0-9._:\/-]+)"?/i);
+    const model = modelMatch?.[1];
+    return {
+      service: 'model',
+      userMessage: model
+        ? `Model "${model}" is not installed. Pull it with: ollama pull ${model}`
+        : 'The requested model is not installed.',
+      action: model ? 'pull-model' : 'check-settings',
+      actionLabel: model ? `Pull ${model}` : 'Settings',
+      model: model || undefined,
+    };
+  }
+
+  // Ollama connection refused / reset
+  if (combined.includes('econnrefused') || combined.includes('econnreset') ||
+      (combined.includes('ollama') && (combined.includes('unavailable') || combined.includes('error')))) {
+    return {
+      service: 'ollama',
+      userMessage: 'Ollama is not running. Start it with: ollama serve',
+      action: 'start-ollama',
+      actionLabel: 'Retry',
+    };
+  }
+
+  // n8n unavailable
+  if (combined.includes('n8n') || combined.includes('upstream')) {
+    return {
+      service: 'n8n',
+      userMessage: 'n8n workflows are unavailable — SADIE will use local Ollama instead.',
+      action: 'retry',
+      actionLabel: 'Retry with Ollama',
+    };
+  }
+
+  // Timeout
+  if (combined.includes('timeout') || combined.includes('etimedout') || combined.includes('timed out')) {
+    return {
+      service: 'unknown',
+      userMessage: 'The request timed out. The model may be loading — try again in a moment.',
+      action: 'retry',
+      actionLabel: 'Retry',
+    };
+  }
+
+  return {
+    service: 'unknown',
+    userMessage: message || 'Something went wrong.',
+    action: 'retry',
+    actionLabel: 'Retry',
   };
 }
 
@@ -1553,6 +1635,47 @@ export async function streamFromLLM(
     }
   }
 
+  // ── Mixture of Agents path ───────────────────────────────────────────────
+  // When MoA is enabled and the query is complex enough, fan out to multiple
+  // proposer models and aggregate the results.
+  if (
+    settings.moaEnabled &&
+    Array.isArray(settings.moaProposers) && settings.moaProposers.length >= 2 &&
+    settings.moaAggregator &&
+    !images?.length &&           // bypass MoA for vision queries
+    shouldUseMoA(message)
+  ) {
+    console.log(`[SADIE] MoA activated — ${settings.moaProposers.length} proposers → ${settings.moaAggregator}`);
+    const history = getHistory(conversationId);
+    const moaSystemPrompt = getSystemPromptForModel(settings.moaAggregator, (settings as any).chatGuidelines);
+
+    // Memory recall for proposers
+    const recalled = await recallMemory(message).catch(() => null);
+    let moaPrompt = moaSystemPrompt;
+    if (recalled) {
+      moaPrompt += `\n\n[Remembered facts about the user from prior sessions]\n${recalled}`;
+    }
+    memorizeIfUseful(message).catch(() => {});
+
+    return runMoAPipeline(
+      {
+        proposers: settings.moaProposers,
+        aggregator: settings.moaAggregator,
+        systemPrompt: moaPrompt,
+        history: history.map(m => ({ role: m.role, content: m.content })),
+        userMessage: message
+      },
+      {
+        onChunk,
+        onEnd,
+        onError,
+        onProposerStatus: (model, status) => {
+          console.log(`[MoA] Proposer ${model}: ${status}`);
+        }
+      }
+    );
+  }
+
   // Default: use Ollama
   return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
 }
@@ -2243,7 +2366,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const probe = await axios.get(streamUrl, { timeout: 3000, validateStatus: () => true });
               if (probe && probe.status >= 400) {
                 try { console.log('[E2E-TRACE] stream POST target probe returned error', { streamId, status: probe.status }); } catch (e) {}
-                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId, diagnostic: { url: streamUrl, httpStatus: probe.status, n8nResponded: true } }); } catch (e) {}
+                { const hint = classifyError('Upstream error (n8n unavailable)', `probe:${probe.status}`);
+                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId, diagnostic: { url: streamUrl, httpStatus: probe.status, n8nResponded: true }, recoveryHint: hint }); } catch (e) {} }
                 try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_error', httpStatus: probe.status, url: streamUrl }); } catch (e) {}
                 try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
                 try { activeStreams.delete(streamId); } catch (e) {}
@@ -2251,7 +2375,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
             } catch (e: any) {
               try { console.log('[E2E-TRACE] stream POST target probe failed', { streamId, error: e?.message || e }); } catch (e) {}
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId, diagnostic: { url: streamUrl, errorText: e?.message || String(e), n8nResponded: false } }); } catch (e) {}
+              { const hint = classifyError('Upstream error (n8n unavailable)', e?.message || String(e));
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId, diagnostic: { url: streamUrl, errorText: e?.message || String(e), n8nResponded: false }, recoveryHint: hint }); } catch (e) {} }
               try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_failed', error: e?.message || String(e), url: streamUrl }); } catch (e) {}
               try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
               try { activeStreams.delete(streamId); } catch (e) {}
@@ -3184,7 +3309,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               activeStreams.delete(streamId);
             },
             (err) => {
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId }); } catch (e) {}
+              const hint = classifyError('Ollama error', err?.message || String(err));
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) {}
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-error (ollama)', { streamId, error: err?.message || err });
                           }
@@ -3244,7 +3370,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback failed for streamId', streamId, 'error=', (fallbackErr as any)?.message || fallbackErr);
               }
 
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: (err as any)?.message || String(err), streamId }); } catch (e) {}
+              { const hint = classifyError('Streaming error', (err as any)?.message || String(err));
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: (err as any)?.message || String(err), streamId, recoveryHint: hint }); } catch (e) {} }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-error (proxy)', { streamId, error: err });
                           }
@@ -3775,7 +3902,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     return;
                   } catch (fallbackErr: any) {
                     console.log('[SADIE] direct stream fallback: failed', fallbackErr?.message || fallbackErr);
-                    try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId }); } catch (e) {}
+                    { const hint = classifyError('Ollama streaming error', err?.message || String(err));
+                    try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) {} }
                     activeStreams.delete(streamId);
                   }
                 })();
@@ -3816,7 +3944,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               return;
             } catch (fallbackErr: any) {
               // If fallback also fails, emit stream-error and clean up
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId, diagnostic: { url: streamUrl, errorText: err?.message || String(err) } }); } catch (e) {}
+              { const hint = classifyError('Streaming initialization error', err?.message || String(err));
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId, diagnostic: { url: streamUrl, errorText: err?.message || String(err) }, recoveryHint: hint }); } catch (e) {} }
               try { logTelemetryEvent('stream_failure', { streamId, reason: 'stream_init_failed', error: err?.message || String(err), url: streamUrl }); } catch (e) {}
               try { pushRouter(`direct stream fallback failed for streamId=${streamId} error=${fallbackErr?.message || fallbackErr}`); } catch (e) {}
               activeStreams.delete(streamId);
@@ -3852,7 +3981,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               activeStreams.delete(streamId);
             } catch (fallbackErr: any) {
               // If fallback also fails, emit stream-error and clean up
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming fallback failed', details: fallbackErr?.message || fallbackErr, streamId }); } catch (e) {}
+              { const hint = classifyError('Streaming fallback failed', fallbackErr?.message || String(fallbackErr));
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming fallback failed', details: fallbackErr?.message || fallbackErr, streamId, recoveryHint: hint }); } catch (e) {} }
               activeStreams.delete(streamId);
             }
         console.log('[SADIE] n8n failed:', error?.message || error);
@@ -3878,13 +4008,15 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               activeStreams.delete(streamId);
             },
             (err: any) => {
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId }); } catch (e) {}
+              const hint = classifyError('Ollama error', err?.message || String(err));
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) {}
               activeStreams.delete(streamId);
             }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           } catch (ollamaError: any) {
-            event.sender.send('sadie:stream-error', { error: true, message: 'Both n8n and Ollama unavailable', details: ollamaError?.message || ollamaError, streamId });
+            const hint = classifyError('Both n8n and Ollama unavailable', ollamaError?.message || String(ollamaError));
+            event.sender.send('sadie:stream-error', { error: true, message: 'Both n8n and Ollama unavailable', details: ollamaError?.message || ollamaError, streamId, recoveryHint: hint });
           }
         } else {
           // If we are not allowed to fallback to Ollama, propagate the error to frontend.
@@ -3894,7 +4026,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           try {
             console.log('[E2E-TRACE] sending deterministic stream-error Upstream error', { streamId, details: error?.message || error });
           } catch (e) {}
-          try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId }); } catch (e) {}
+          try { const hint = classifyError('Upstream error (n8n unavailable)', error?.message || String(error));
+          event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId, recoveryHint: hint }); } catch (e) {}
           try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
           try { activeStreams.delete(streamId); } catch (e) {}
           if (E2E) {
