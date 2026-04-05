@@ -14,10 +14,10 @@ SADIE now supports bringing your own LLM API from providers like OpenAI, Anthrop
 - Any other OpenAI-compatible API
 
 ### Anthropic
+- **Claude Opus 4**
+- **Claude Sonnet 4**
+- **Claude 3.5 Haiku**
 - **Claude 3.5 Sonnet**
-- **Claude 3 Opus**
-- **Claude 3 Haiku**
-- **Claude 3 Sonnet**
 
 ### OpenRouter
 - Access to 100+ models through a single API

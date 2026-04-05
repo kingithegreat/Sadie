@@ -1,345 +1,291 @@
-# SADIE Demo Script
+# SADIE — Demo Script
 
-## Demo Overview
+A structured walkthrough demonstrating SADIE's core capabilities. Each section is self-contained and can be run independently.
 
-This script provides a step-by-step demonstration of SADIE's core features and capabilities. The demo showcases the application's AI tool system, security features, and user experience.
+---
 
 ## Prerequisites
 
-- SADIE application installed and running
-- Ollama running with `llama3.2:3b` and `llava:latest` models pulled
-- Internet connection for web-based tools
-- Sample documents and images (optional) for document / vision demos
+Before starting the demo:
 
-## Demo Script
-
-### 1. Application Launch & First Run Experience
-
-**Narrator:** "Let's start by launching SADIE for the first time."
-
-**Actions:**
-1. Launch the SADIE application
-2. Observe the first-run modal appears
-3. Review the welcome message and feature overview
-4. Click "Get Started" to enter the main interface
-
-**Expected Outcome:**
-- Clean, professional interface loads
-- First-run modal provides clear onboarding
-- Telemetry settings are presented for user choice
+1. **Ollama** is running with `llama3.2:3b` pulled.
+2. **SADIE** is launched via `npm run dev` (development) or the installed application.
+3. (Optional) Docker Desktop running for n8n workflow demos.
+4. (Optional) Cloud API keys configured for cloud LLM demos.
 
 ---
 
-### 2. Interface Overview
+## Demo Sections
 
-**Narrator:** "SADIE provides a clean, intuitive interface for AI interactions."
+### 1. First Launch and Onboarding
 
-**Actions:**
-1. Point out the main chat interface
-2. Show the settings panel (gear icon)
-3. Demonstrate the telemetry toggle
-4. Explain the structured tool-based approach
+**Goal:** Show the first-run experience.
 
-**Key Features to Highlight:**
-- Futuristic UI with neon glows, animated avatars, and glass morphism
-- Light / dark / system theme toggle in settings
-- Settings accessible but not intrusive
-- Privacy controls prominently displayed
-- Conversation sidebar with timestamps and message count badges
+1. Launch SADIE with a clean profile (delete `%APPDATA%/sadie` if needed).
+2. The **First Run Modal** appears with setup guidance.
+3. Accept the terms to proceed.
+4. The modal does not appear on subsequent launches.
+
+**Talking Points:**
+- Onboarding is shown once and persisted.
+- Settings are stored in the user's Electron `userData` directory.
 
 ---
 
-### 3. Web Search Capability
+### 2. Basic Chat — Local AI
 
-**Narrator:** "One of SADIE's core features is intelligent web search with automatic content fetching."
+**Goal:** Demonstrate offline AI conversation.
 
-**Demo Query:** "What are the current standings in the NBA Eastern Conference?"
+1. Type: `Hello, who are you?`
+2. Observe streaming response from Ollama (`llama3.2:3b`).
+3. Type: `Explain the concept of recursion in programming`
+4. Observe formatted Markdown with code blocks.
+5. Hover a response to see the **Copy**, **Bookmark**, and **React** buttons.
 
-**Actions:**
-1. Type the query in the chat interface
-2. Show how SADIE automatically searches and fetches content
-3. Demonstrate the structured response format
-4. Point out the source attribution and content preview
-
-**Expected Outcome:**
-- Fast search results from multiple engines
-- Automatic content fetching from top results
-- Clean, readable response format
-- Source links provided for verification
+**Talking Points:**
+- All inference happens locally via Ollama — no data leaves the machine.
+- Responses stream token-by-token for a responsive experience.
+- Markdown rendering supports code blocks, headings, lists, and inline formatting.
 
 ---
 
-### 4. Weather Information Tool
+### 3. Tool System — File Operations
 
-**Narrator:** "SADIE can provide real-time weather information without requiring API keys."
+**Goal:** Show SADIE's tool routing and permission model.
 
-**Demo Query:** "What's the weather like in New York City?"
+1. Type: `Create a file called test-demo.txt with the content "Hello from SADIE"`
+2. The **Permission Modal** appears requesting file-write access.
+3. Click **Allow Once** (or **Always Allow**).
+4. SADIE creates the file and confirms.
+5. Type: `Read the file test-demo.txt`
+6. SADIE reads and displays the file contents.
 
-**Actions:**
-1. Enter the weather query
-2. Show the formatted weather response
-3. Highlight the comprehensive data provided
-4. Note that no external API keys are required
-
-**Expected Outcome:**
-- Current temperature, conditions, and forecast
-- Wind speed, humidity, and visibility data
-- Location validation and error handling
-
----
-
-### 5. URL Content Fetching
-
-**Narrator:** "For specific web pages, SADIE can extract and summarize content safely."
-
-**Demo Query:** "Can you summarize the main points from https://en.wikipedia.org/wiki/Artificial_intelligence?"
-
-**Actions:**
-1. Provide a URL for content extraction
-2. Demonstrate safe URL validation
-3. Show content extraction and summarization
-4. Highlight security measures preventing unsafe URLs
-
-**Expected Outcome:**
-- Safe URL validation prevents malicious links
-- Clean text extraction from HTML
-- Intelligent content summarization
-- Error handling for inaccessible content
+**Talking Points:**
+- SADIE detects the user's intent and routes to the correct tool handler.
+- File operations require explicit user permission (never auto-granted).
+- Permission choices are remembered per-tool when "Always Allow" is selected.
 
 ---
 
-### 6. Vision & Image Analysis
+### 4. Tool System — Web Search
 
-**Narrator:** "SADIE can understand images using local AI models."
+**Goal:** Show real-time information retrieval.
 
-**Demo Actions:**
-1. Attach a screenshot or photo to the chat
-2. Ask: "What's in this image?"
-3. Show how SADIE uses `vision_describe` to analyze the image via LLaVA
-4. Follow up with a specific question: "What text is visible in the image?"
-5. Show inline image thumbnails in the chat bubble
+1. Type: `Search the web for latest Electron.js release notes`
+2. Observe search results presented with source URLs.
 
-**Expected Outcome:**
-- Detailed image description (colours, objects, text, layout)
-- Specific answers to image queries
-- Image thumbnails rendered inline in user messages
-- All processing happens locally via Ollama LLaVA
+**Talking Points:**
+- Web search uses a fallback chain of providers.
+- Results are synthesised by the LLM into a natural language response.
+- SSRF protection prevents requests to internal network addresses.
 
 ---
 
-### 7. RAG Document Search
+### 5. Tool System — Code Generation and Execution
 
-**Narrator:** "SADIE can index your documents and search them semantically."
+**Goal:** Demonstrate code writing and sandboxed execution.
 
-**Demo Actions:**
-1. Click the 📎 RAG index button in the input toolbar
-2. Select a PDF or code file to index
-3. Show the "⏳ indexing…" spinner and "✅ Indexed" confirmation
-4. Ask: "What does the document say about [topic]?"
-5. Alternatively, drag-and-drop a file onto the chat input area
+1. Type: `Write a Python function that calculates the Fibonacci sequence`
+2. Observe the code block with syntax highlighting.
+3. Type: `Run this Python code: print(sum(range(1, 101)))`
+4. Permission modal appears for code execution.
+5. Approve — output `5050` is displayed.
 
-**Expected Outcome:**
-- File indexed with TF-IDF cosine similarity
-- Semantic search returns relevant excerpts ranked by relevance
-- Works offline with no model download required
-- Low-confidence results flagged appropriately
+**Talking Points:**
+- Code model (`qwen2.5-coder:3b`) is used for code generation.
+- Code execution runs in a sandboxed environment with timeout enforcement.
+- Users must approve execution of any code.
 
 ---
 
-### 8. Image Generation
+### 6. Computer Vision
 
-**Narrator:** "SADIE can generate images from text descriptions."
+**Goal:** Show image understanding capabilities.
 
-**Demo Query:** "Generate an image of a futuristic city at sunset"
+1. Drag an image into the chat (or paste from clipboard).
+2. Type: `Describe this image in detail`
+3. Observe the vision model (llava) analysing the image.
+4. Type: `What colours are dominant in this image?`
 
-**Actions:**
-1. Enter the image generation request
-2. Show the "⏳ Generating image, please wait…" progress indicator
-3. Image appears inline in the chat
-4. Explain the fallback cascade: Pollinations.ai → Stable Horde
-
-**Expected Outcome:**
-- Progress indicator shown during generation
-- Image rendered inline in assistant message
-- Free API with optional Stable Horde key for faster generation
+**Talking Points:**
+- Vision uses the `llava` model running locally via Ollama.
+- Image data never leaves the user's machine.
+- Supports drag-drop, clipboard paste, and file picker.
 
 ---
 
-### 9. Theme & UI Customization
+### 7. Sports Intelligence — NBA
 
-**Narrator:** "SADIE supports multiple themes and futuristic visual effects."
+**Goal:** Demonstrate live sports data retrieval.
 
-**Demo Actions:**
-1. Open settings panel
-2. Switch between Light / Dark / System themes
-3. Point out animated elements: header scan line, avatar glow rings, message slide-in
-4. Show glass morphism effects on settings panel
-5. Demonstrate the ⚡ user avatar with its gradient and spinning ring
+1. Type: `What were last night's NBA scores?`
+2. Observe formatted game results with scores and status.
+3. Type: `Show me all this season's NBA results in a table`
+4. Observe full-season data formatted as a Markdown table.
+5. Type: `When is the next Lakers game?`
 
-**Expected Outcome:**
-- Smooth theme transitions
-- Consistent styling across all components
-- Reduced-motion accessibility mode for users who prefer it
-
----
-
-### 10. Embedded Web Services
-
-**Narrator:** "SADIE gives you access to ChatGPT, Claude, and Gemini directly in-app."
-
-**Demo Actions:**
-1. Open the web services panel
-2. Show the three available services
-3. Click to open one in a sandboxed browser panel
-4. Demonstrate that it works with your existing subscription
-
-**Expected Outcome:**
-- Sandboxed BrowserWindow with correct Chrome UA
-- Cloudflare bot-detection bypassed
-- Login and interaction works normally
-- Services isolated from SADIE's main functionality
+**Talking Points:**
+- ESPN API integration provides live scores, standings, and schedules.
+- Full-season fetch uses date-range queries for complete data.
+- Table formatting is detected via intent analysis ("in a table").
+- Timezone-aware display shows times in the user's local zone (NZST).
 
 ---
 
-### 11. Code Cloud API
+### 8. Memory and Persistence
 
-**Narrator:** "For complex coding tasks, SADIE can route to cloud LLMs."
+**Goal:** Show SADIE's memory capabilities.
 
-**Demo Actions:**
-1. Open settings → Code Model — Cloud API section
-2. Show provider options: OpenAI / Anthropic / OpenRouter / Custom
-3. Enter an API key (optional demo)
-4. Ask a coding question: "Write a Python function to sort a list"
-5. Show how it routes to the cloud model if configured
+1. Type: `Remember that my favourite programming language is TypeScript`
+2. SADIE stores this in long-term memory.
+3. Start a **new conversation** (click + in the sidebar).
+4. Type: `What is my favourite programming language?`
+5. SADIE recalls "TypeScript" from memory.
 
-**Expected Outcome:**
-- Coding queries automatically routed to cloud model when configured
-- Falls back to local Ollama when no cloud key is set
-- Code blocks rendered with syntax highlighting and copy button
-
----
-
-### 12. Error Handling & Safety
-
-**Narrator:** "SADIE includes comprehensive error handling and security measures."
-
-**Demo Actions:**
-1. Try an invalid URL to show safety validation
-2. Demonstrate graceful error handling
-3. Show appropriate error messages
-4. Highlight security boundaries
-
-**Expected Outcome:**
-- Clear, helpful error messages
-- Safe handling of invalid inputs
-- No crashes or security vulnerabilities
-- User-friendly error recovery
+**Talking Points:**
+- Short-term memory holds the current conversation context.
+- Long-term memory persists facts across conversations.
+- Memory is stored locally in JSON files — no cloud storage.
 
 ---
 
-### 13. Settings & Privacy Controls
+### 9. Reminders
 
-**Narrator:** "User privacy and control are core to SADIE's design."
+**Goal:** Show the reminder system.
 
-**Demo Actions:**
-1. Open settings panel
-2. Show telemetry controls
-3. Demonstrate preference persistence
-4. Explain data handling practices
+1. Type: `Remind me in 2 minutes to check the build`
+2. SADIE confirms the reminder is set.
+3. Wait 2 minutes — a toast notification appears.
 
-**Expected Outcome:**
-- Clear privacy controls
-- User choice in data collection
-- Settings persistence across sessions
-- Transparent data practices
+**Talking Points:**
+- Reminders persist across app restarts.
+- Toast notifications use the Windows notification system.
+- Reminder data is stored in the local persistence layer.
 
 ---
 
-### 14. Global Hotkey & Auto-Update
+### 10. Conversation Management
 
-**Narrator:** "SADIE integrates seamlessly into your workflow."
+**Goal:** Show sidebar and conversation features.
 
-**Demo Actions:**
-1. Minimize SADIE
-2. Press `Ctrl+Shift+Space` to instantly toggle SADIE back
-3. Show the auto-update notification (if an update is available)
-4. Explain that updates are downloaded in the background
+1. Create 3-4 conversations with different topics.
+2. **Pin** a conversation (right-click → Pin).
+3. **Archive** a conversation (right-click → Archive).
+4. Use the **sidebar filter** to search conversations.
+5. **Sort** conversations by date, name, or pinned status.
+6. **Export** a conversation as JSON.
 
-**Expected Outcome:**
-- Instant toggle from any application
-- Seamless update experience
-- No manual download required
-
----
-
-### 15. Closing & Key Takeaways
-
-**Narrator:** "SADIE represents a new approach to AI assistants - secure, private, and capable."
-
-**Key Points to Emphasize:**
-- **Security First**: SSRF protection, IPC hardening, webhook auth, tool recursion cap
-- **Privacy Focused**: User controls over data and telemetry, offline-first
-- **AI-Powered**: Vision, RAG, image generation, planning, 20+ tool handlers
-- **Extensible Architecture**: Tool-based system, cloud API routing, embedded web services
-- **Modern UI**: Light/dark/system themes, futuristic animations, glass morphism
-- **Developer Quality**: 87 test suites / 1339 unit tests, TypeScript strict mode
-- **Global Hotkey**: Ctrl+Shift+Space for instant access
-- **Auto-Update**: Seamless electron-updater integration
+**Talking Points:**
+- Conversations are automatically saved and titled.
+- Pinned conversations appear at the top of the sidebar.
+- Archived conversations are hidden but recoverable.
+- JSON export includes all messages, metadata, and timestamps.
 
 ---
 
-## Demo Preparation Checklist
+### 11. Message Features
 
-### Pre-Demo Setup
-- [ ] Verify SADIE builds and runs correctly
-- [ ] Ollama running with `llama3.2:3b` and `llava:latest`
-- [ ] Test all demo queries in advance
-- [ ] Ensure internet connection is stable
-- [ ] Prepare sample images for vision demo
-- [ ] Prepare sample documents for RAG demo
-- [ ] Clear any cached data for fresh demonstration
+**Goal:** Show per-message capabilities.
 
-### Demo Environment
-- [ ] Clean SADIE installation (no cached data)
-- [ ] Stable internet connection
-- [ ] External display or screen sharing setup
-- [ ] Backup demo queries ready
+1. Send a message and observe the **reading time** estimate.
+2. Click the **timestamp** to see the exact send time.
+3. **Bookmark** a message (star icon).
+4. Add a **reaction** to a message (emoji picker).
+5. **Edit** a previously sent message (pencil icon).
+6. Toggle **message density** (compact/comfortable) in Settings.
 
-### Contingency Plans
-- [ ] Alternative queries if web content changes
-- [ ] Offline demo capabilities if internet fails
-- [ ] Error recovery procedures
-- [ ] Backup demonstration methods
+**Talking Points:**
+- Reading time is calculated based on word count.
+- Bookmarks provide quick navigation to important messages.
+- Reactions use a standard emoji picker.
+- Message editing re-sends to the LLM for a fresh response.
 
-## Technical Notes for Demo
+---
 
-### Build Verification
-- Ensure production build is clean (no forbidden strings)
-- Verify all preflight checks pass
-- Confirm telemetry settings work correctly
-- Test first-run experience
+### 12. Themes and Appearance
 
-### Performance Expectations
-- Web search: 2-5 seconds response time
-- Weather queries: <1 second response time
-- Vision analysis: 5-15 seconds (depends on image size)
-- Image generation: 10-120 seconds (depends on Stable Horde queue)
-- RAG indexing: 1-5 seconds per document
-- UI interactions: Instantaneous with smooth animations
-- Memory usage: <200MB typical operation
+**Goal:** Show SADIE's theming system.
 
-### Security Demonstrations
-- Show URL validation prevents localhost access
-- Demonstrate safe error handling
-- Highlight context isolation benefits
-- Explain compile-time security measures
+1. Open Settings → Appearance.
+2. Switch between **Dark**, **Light**, and **System** themes.
+3. Observe the futuristic accent colours (cyan/magenta gradients).
+4. Toggle **Focus Mode** (hides sidebar and non-essential UI).
 
-## Demo Success Metrics
+**Talking Points:**
+- Three theme modes with smooth transitions.
+- Focus Mode provides a distraction-free chat experience.
+- All theme preferences persist across sessions.
 
-- [ ] All features demonstrate correctly
-- [ ] No errors or crashes during demo
-- [ ] Clear explanation of security features
-- [ ] Positive user experience impressions
-- [ ] Questions about architecture and implementation answered
+---
 
-This demo script ensures a comprehensive showcase of SADIE's capabilities while highlighting its security, performance, and user experience strengths.
+### 13. Analytics Dashboard
+
+**Goal:** Show usage analytics.
+
+1. Open the **Analytics Dashboard** (from the sidebar or settings).
+2. View response time metrics, message counts, and tool usage.
+3. Observe the telemetry consent model (opt-in only).
+
+**Talking Points:**
+- Analytics are collected locally — no data sent externally.
+- Telemetry requires explicit opt-in via the consent modal.
+- Dashboard provides insight into usage patterns and performance.
+
+---
+
+### 14. Cloud LLM Integration (Optional)
+
+**Goal:** Show cloud model support.
+
+1. Open Settings → LLM Provider.
+2. Enter an OpenAI API key.
+3. Select **GPT-4o** from the model dropdown.
+4. Send a message and compare response quality.
+5. Switch to **Claude Opus 4** (with Anthropic API key).
+
+**Talking Points:**
+- SADIE supports 6 cloud providers: OpenAI, Anthropic, Google, xAI, DeepSeek.
+- API keys are stored encrypted locally.
+- Each provider uses its native token limit from `MODEL_METADATA`.
+- Cloud models are optional — Ollama works fully offline.
+
+---
+
+### 15. Keyboard Shortcuts
+
+**Goal:** Show keyboard-driven workflow.
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+N` | New conversation |
+| `Ctrl+/` | Open shortcuts panel |
+| `Ctrl+Shift+F` | Toggle focus mode |
+| `Escape` | Cancel current stream |
+
+1. Press `Ctrl+/` to view all available shortcuts.
+2. Use `Ctrl+N` to create a new conversation.
+3. Toggle focus mode with `Ctrl+Shift+F`.
+
+---
+
+## Quick Demo (5 Minutes)
+
+For a condensed demonstration, run sections **2**, **3**, **7**, and **12** in sequence. This covers:
+
+- Local AI chat with streaming
+- Tool routing with permission model
+- Sports data retrieval
+- Theme switching
+
+---
+
+## Test Suite Verification
+
+After the demo, verify the test suite:
+
+```bash
+cd widget
+npx jest --config jest.config.ts --no-coverage
+```
+
+Expected output: **112 suites, 1,604 tests, 0 failures**.

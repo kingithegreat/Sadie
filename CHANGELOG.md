@@ -1,5 +1,91 @@
 # Changelog
 
+## v0.9.0 — Smart error recovery + hardware-aware MoA
+
+### Added — Smart Error Recovery UX
+- **Error classification engine** (`message-router.ts`): new `classifyError()` function categorises stream errors into `ollama` (connection), `model` (not found), `n8n` (upstream), `timeout`, and `unknown` — each with actionable `RecoveryHint`.
+- **Rich recovery banners** (`MessageBubble.tsx`): error messages now show service-specific icons (🔌 Ollama, 📦 Model, ⚙️ n8n), user-friendly guidance, and contextual action buttons instead of generic "Error" text.
+- **In-chat model pull** (`PullModelButton`): when a model is missing, users can pull it directly from the chat with a single click — wired through `sadie:pull-model` IPC handler.
+- **Recovery hints on all stream-error emissions**: ~10 error sites in message-router.ts now attach `recoveryHint` to the `sadie:stream-error` payload.
+- 11 new unit tests for `classifyError()`. Test count: 1,593 → 1,604 (111 → 112 suites).
+
+### Added — Hardware-Aware Model Recommendations
+- **GPU VRAM detection** (`ipc-handlers.ts`): new `sadie:detect-gpu-vram` IPC handler detects GPU via `nvidia-smi` and reports available VRAM.
+- **Recommendation engine** (`moa.ts`): `recommendConfig(vramGB)` returns optimal setup — MoA presets for ≥ 8 GB, single-model + RAG guidance for < 8 GB, with `MOA_MIN_VRAM_GB = 8` threshold.
+- **Settings panel integration** (`SettingsPanel.tsx`): GPU detection button above MoA checkbox, VRAM display, recommendation text with one-click Apply.
+- 60 new unit tests for recommendation logic and GPU detection. Test count: 1,533 → 1,593.
+
+---
+
+## v0.8.0 — Documentation overhaul
+
+### Documentation
+- **Complete documentation rewrite**: all 15+ project documentation files rewritten from scratch with professional formatting, accurate statistics, and comprehensive detail.
+- All documentation now reflects current state: 110 test suites / 1,533 tests, 20+ tool handlers, Electron 28 / TypeScript 5.9.3 / electron-vite build system.
+- Removed all outdated references to Webpack, incorrect test counts, and stale feature lists.
+- New files: standardised tables, diagrams, and cross-references across all documents.
+
+---
+
+## v0.7.10 — Full-season NBA fetch fix
+
+### Fixed
+- **Full-season NBA data** (`nba.ts`, `message-router.ts`): "give me all this season's NBA results" previously returned only ~9 games. Three-layered fix:
+  - `wantsSeason` regex detects full-season intent.
+  - `computeDateRange()` returns `'season'` value for season-wide queries.
+  - New `fetchSeasonEvents()` uses ESPN date-range API (`?dates=YYYYMMDD-YYYYMMDD`) to fetch the complete season.
+- 10 new unit tests for season detection, date range, and fetch logic. Test count: 1,523 → 1,533.
+
+---
+
+## v0.7.9 — File creation fix + table format fix
+
+### Fixed
+- **File creation filename extraction**: LLM-generated filenames are now correctly extracted from tool call arguments, fixing cases where the file was created with a mangled name.
+- **NBA table formatting**: queries containing "in a table" now correctly produce Markdown table output instead of plain text. Intent detection updated to recognise table formatting requests.
+- 10 new unit tests. Test count: 1,513 → 1,523.
+
+---
+
+## v0.7.8 — Model readiness audit + UX feature batches
+
+### Added — Model Readiness
+- **New models in MODEL_METADATA** (`constants.ts`): Claude Opus 4, Claude Sonnet 4, Claude 3.5 Haiku, GPT-4o Mini — each with correct `maxTokens` and provider mapping.
+- **Native token limits**: cloud API calls now use `MODEL_METADATA.maxTokens` instead of hardcoded 2000, enabling full context windows for capable models.
+- **Anti-hallucination directive**: synthesis prompt now includes explicit instruction to avoid fabricating information.
+
+### Added — UX Features (8 batches)
+- **Analytics dashboard**: usage metrics, response times, tool usage charts with local-only data.
+- **Voice polish**: improved Whisper integration, speech recognition race condition fix.
+- **Response time indicators**: per-message latency display.
+- **Keyboard shortcuts system**: `Ctrl+N` (new conversation), `Ctrl+/` (shortcuts panel), `Ctrl+Shift+F` (focus mode), `Escape` (cancel stream).
+- **Toast notification system**: non-blocking notifications with stacking and auto-dismiss.
+- **Sidebar filter**: text search and category filtering across conversations.
+- **Theme switcher**: dark/light/system toggle with smooth transitions.
+- **Conversation pinning**: pin important conversations to the top of the sidebar.
+- **Context menus**: right-click menus on conversations and messages.
+- **Message timestamps**: relative and absolute time display.
+- **Auto-scroll with bookmarks**: smart scroll behaviour and bookmark navigation.
+- **Date separators**: visual day boundaries in message list.
+- **Conversation archiving**: archive/restore with hidden archive section.
+- **JSON export**: export conversations as structured JSON.
+- **Message reactions**: emoji picker for per-message reactions.
+- **Conversation tags**: tag-based organisation and filtering.
+- **Reading time estimates**: word-count-based reading time per message.
+- **Message editing**: edit previously sent messages with re-generation.
+- **Focus mode**: distraction-free chat (hides sidebar and non-essential UI).
+- **Notification preferences**: sound and visual notification toggles.
+- **Input character counter**: character count with limit warning.
+- **Conversation sort options**: sort by date, name, or pinned status.
+- **Message density toggle**: compact and comfortable display modes.
+- **i18n foundation**: locale loading framework for future multi-language support.
+- **Performance tuning**: log buffer caps, dead code removal.
+
+### Tests
+- 160+ new tests across 8 feature batches. Test count: 1,339 → 1,513 (87 → 110 suites).
+
+---
+
 ## v0.7.7 — UI polish, documentation refresh, workflow cleanup
 
 ### UI Polish

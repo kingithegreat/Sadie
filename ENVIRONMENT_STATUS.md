@@ -1,160 +1,158 @@
-# SADIE Environment Status Report
-**Date**: April 3, 2026  
-**System**: Windows 10 Home (64-bit)  
-**Location**: `c:\Users\adenk\Desktop\sadie`
+# SADIE — Environment Status
+
+Current development environment configuration and readiness status.
 
 ---
 
-## ✅ Core Dependencies (Ready)
+## System Information
 
-| Tool | Version | Status | Notes |
-|------|---------|--------|-------|
-| **Node.js** | v24.13.0 | ✅ Installed | LTS version, ready for Electron |
-| **npm** | 11.5.1 | ✅ Installed | Latest stable |
-| **Docker** | 28.4.0 | ✅ Installed | For n8n containerization |
-| **Docker Compose** | v2.39.2 | ✅ Installed | For multi-container setup |
-| **Ollama** | 0.12.11 | ✅ Installed | Local LLM runtime |
-| **PowerShell** | 5.1 | ✅ Installed | For automation scripts |
-| **Git** | 2.51.0 | ✅ Installed | Version control |
-| **TypeScript** | 5.9.3 | ✅ Installed | Strict mode enabled |
-| **Electron** | 28 | ✅ Installed | Desktop shell |
-| **electron-vite** | latest | ✅ Installed | Build system |
+| Component | Version / Value |
+|---|---|
+| **Node.js** | v24.13.0 |
+| **npm** | 10.x (ships with Node.js) |
+| **TypeScript** | 5.9.3 |
+| **Electron** | 28 |
+| **electron-vite** | Latest |
+| **OS** | Windows 10/11 |
+| **Architecture** | x64 |
 
 ---
 
-## 📦 Ollama Models Available
+## AI Models
 
-| Model | Size | Purpose |
-|-------|------|---------|
-| **llama3.2:3b** | 2.0 GB | Primary chat reasoning/tool-calling |
-| **qwen2.5-coder:3b** | 2.0 GB | Code generation (default code model) |
-| **qwen2.5:7b** | 4.7 GB | Alternative larger reasoning model |
-| **dolphin-llama3:8b** | 4.7 GB | Uncensored mode |
-| **llava:latest** | 4.7 GB | Vision analysis (image describe/query) |
-| **mistral:latest** | 4.4 GB | Alternative reasoning model |
-| **nomic-embed-text:latest** | 274 MB | Text embeddings for memory |
+### Ollama (Local)
 
-**Total Ollama Storage**: ~23 GB
-**GPU**: NVIDIA RTX 2050 (4 GB VRAM)
+| Model | Size | Status | Purpose |
+|---|---|---|---|
+| `llama3.2:3b` | ~2 GB | Required | Primary chat |
+| `qwen2.5-coder:3b` | ~2 GB | Required | Code generation |
+| `llava:latest` | ~4 GB | Required | Computer vision |
+| `dolphin-llama3:8b` | ~5 GB | Optional | Uncensored mode |
 
----
+**Ollama endpoint**: `http://localhost:11434`
 
-## ⚠️ To Be Installed
+Verify models:
 
-### Optional Enhancements
-- **AutoHotkey** — Alternative global hotkey management (built-in `globalShortcut` already active)
-- **Everything Search CLI** — Fast local file search (falls back to PowerShell `Get-ChildItem`)
-- **Piper TTS** — Text-to-speech (falls back to Windows SAPI)
+```bash
+ollama list
+```
 
----
+### Cloud LLM Providers (Optional)
 
-## 💾 System Resources
+| Provider | Models | API Key Location |
+|---|---|---|
+| **OpenAI** | GPT-4o, GPT-4o Mini | Settings → LLM Provider |
+| **Anthropic** | Claude Opus 4, Claude Sonnet 4, Claude 3.5 Haiku | Settings → LLM Provider |
+| **Google** | Gemini 2.5 Pro, Gemini 2.5 Flash | Settings → LLM Provider |
+| **xAI** | Grok-3 | Settings → LLM Provider |
+| **DeepSeek** | DeepSeek V3 | Settings → LLM Provider |
 
-| Resource | Status |
-|----------|--------|
-| **Disk Space** | 250.71 GB free (452.49 GB total) |
-| **OS** | Windows 10 Home Build 2009 |
-| **Architecture** | 64-bit |
+Cloud providers are optional. SADIE runs fully offline with Ollama alone.
 
 ---
 
-## 🎯 Readiness Assessment
+## Services
 
-### Phase 1: Environment Setup
-- [x] Ollama installed and running
-- [x] Docker + Docker Compose ready
-- [x] Node.js/npm available
-- [x] PowerShell ready for scripting
-- [x] Git initialized
-- [x] Sufficient disk space (13GB+ needed for models/data)
+| Service | Default Address | Required |
+|---|---|---|
+| **Ollama** | `http://localhost:11434` | Yes |
+| **n8n** | `http://localhost:5678` | No (optional workflows) |
+| **Docker Desktop** | — | No (required for n8n only) |
 
-### Phase 2: Project Structure
-- [x] Create folder structure
-- [x] Initialize Git repository
-- [x] Create .gitignore
+### Health Checks
 
-### Phase 3: Configuration Files
-- [x] docker-compose.yml (n8n setup)
-- [x] Default configuration files
-- [x] Safety rules JSON
-- [x] Tool allowlist
+```bash
+# Ollama
+curl http://localhost:11434/api/tags
 
-### Phase 4: Prompts
-- [x] System prompts for Ollama
-- [x] Tool-specific prompts
-- [x] Safety validation prompts
-
-### Phase 5: n8n Workflows
-- [x] Core workflows (orchestrator, router, safety)
-- [x] Tool workflows (file, email, vision, etc.)
-- [x] Import to n8n instance
-
-### Phase 6: PowerShell Scripts
-- [x] FileOps.ps1
-- [x] SystemInfo.ps1
-- [x] SafetyValidation.ps1
-
-### Phase 7: Electron Widget
-- [x] Project initialization
-- [x] TypeScript configuration
-- [x] Main process implementation
-- [x] Renderer process (React UI)
-- [x] IPC communication
-
-### Phase 8: Memory Subsystem
-- [x] JSON store implementation
-- [x] Optional ChromaDB setup
-
-### Phase 9: Integration Testing
-- [x] Widget ↔ n8n communication
-- [x] n8n ↔ Ollama integration
-- [x] End-to-end workflow tests
-
-### Phase 10: Documentation & Polish
-- [x] User documentation
-- [x] Setup scripts
-- [x] Error handling
-- [x] Logging system
-
----
-
-## 🚀 Completed Actions
-
-All initial setup phases have been completed:
-
-1. ✅ **Project folder structure** - Created
-2. ✅ **Git repository** - Initialized and active
-3. ✅ **docker-compose.yml** - Configured
-4. ✅ **Configuration files** - All JSON configs in place
-5. ✅ **System prompts** - Written and integrated
-
----
-
-## 📝 Models to Pull (If Needed)
-
-All required models are installed. To add optional models:
-
-```powershell
-# Larger reasoning model
-ollama pull qwen2.5:14b
+# n8n (if Docker is running)
+curl http://localhost:5678/healthz
 ```
 
 ---
 
-## 🔒 Security Notes
+## Test Suite Status
 
-- PowerShell execution policy: Check with `Get-ExecutionPolicy`
-- Docker Desktop running in user mode (non-admin)
-- n8n will run in Docker container (isolated)
-- All file operations will be restricted by safety-rules.json
-- Ollama runs locally on port 11434 (default)
+| Metric | Value |
+|---|---|
+| **Unit Test Suites** | 110 |
+| **Individual Tests** | 1,533 |
+| **Failures** | 0 |
+| **Framework** | Jest + ts-jest |
+| **E2E Framework** | Playwright |
+
+### Run Tests
+
+```bash
+cd widget
+npx jest --config jest.config.ts --no-coverage
+```
 
 ---
 
-## ✅ IMPLEMENTATION COMPLETE
+## Build Status
 
-**Environment Status**: 🟢 GREEN  
-**All Prerequisites Met**: YES  
-**All Phases Complete**: YES
+| Command | Purpose | Status |
+|---|---|---|
+| `npm run dev` | Development with HMR | Working |
+| `npm run build` | Production build | Working |
+| `npm run dist` | NSIS installer | Working |
+| `npx tsc --noEmit` | Type check | Clean |
 
-**Status**: Project fully implemented and operational
+---
+
+## Key Directories
+
+| Directory | Purpose |
+|---|---|
+| `widget/` | Main Electron application |
+| `widget/src/main/` | Main process source |
+| `widget/src/renderer/` | React UI source |
+| `widget/src/preload/` | Context bridge |
+| `widget/src/shared/` | Shared types and constants |
+| `config/` | Runtime configuration JSON files |
+| `prompts/` | System prompts and templates |
+| `schemas/` | JSON validation schemas |
+| `scripts/` | Build and utility scripts |
+| `docs/` | Technical documentation |
+| `memory/` | Local memory and RAG index |
+| `n8n-workflows/` | n8n workflow definitions |
+
+---
+
+## Disk Space Requirements
+
+| Component | Size |
+|---|---|
+| `node_modules` | ~400 MB |
+| Ollama models (3 required) | ~8 GB |
+| Ollama models (all 4) | ~13 GB |
+| Build output | ~100 MB |
+| Installer | ~80 MB |
+| **Total (minimum)** | ~9 GB |
+| **Total (recommended)** | ~15 GB |
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NODE_ENV` | `development` | Runtime mode |
+| `SADIE_E2E` | unset | Set to `"true"` for test mode |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
+
+---
+
+## Preflight Checklist
+
+Before starting development:
+
+- [ ] Node.js 18+ installed (`node --version`)
+- [ ] npm 9+ installed (`npm --version`)
+- [ ] Ollama installed and running (`ollama list`)
+- [ ] Required models pulled (`llama3.2:3b`, `qwen2.5-coder:3b`, `llava:latest`)
+- [ ] Dependencies installed (`cd widget && npm install`)
+- [ ] Tests pass (`npx jest --config jest.config.ts --no-coverage`)
+- [ ] TypeScript compiles (`npx tsc --noEmit`)
+- [ ] (Optional) Docker Desktop running for n8n workflows

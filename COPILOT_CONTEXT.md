@@ -1,711 +1,268 @@
-# COPILOT_CONTEXT.md
+# SADIE — Copilot Context
 
-**SADIE - Structured AI Desktop Intelligence Engine**  
-**Master Context File for GitHub Copilot**
-
----
-
-## 🎯 Purpose
-
-This file provides **persistent context** for GitHub Copilot when working on SADIE.
-
-**Always reference this file** when generating code:
-```
-@workspace /COPILOT_CONTEXT.md
-```
+Master context document for GitHub Copilot and AI coding assistants working on this codebase.
 
 ---
 
-## 📐 Architecture Summary
+## Project Identity
 
-**SADIE** is a **privacy-first, local AI desktop assistant** that runs entirely on the user's machine.
-
-### Core Components:
-
-1. **Electron Widget** (`widget/`)
-   - Desktop UI (React + TypeScript)
-   - Communicates with n8n orchestrator via IPC → axios POST
-   - 450x650px frameless window, always-on-top
-   - Displays chat interface + action confirmations
-
-2. **n8n Orchestrator** (`n8n-workflows/`)
-   - `main-orchestrator.json` - Routes messages to Ollama, parses tool calls
-   - `safety-validator.json` - Validates dangerous actions before execution
-   - 9 tool workflows - Execute system operations (FileOps, SystemInfo, etc.)
-
-3. **PowerShell Tools** (`scripts/tools/`)
-   - `FileOps.ps1` - Read/write/delete files
-   - `SystemInfo.ps1` - Get system information
-   - `SafetyValidation.ps1` - Validate tool call safety
-   - `ArchiveOps.ps1` - Compress/extract archives
-   - (Future: EmailOps.ps1, VoiceOps.ps1, SearchOps.ps1)
-
-4. **Ollama** (External Service)
-   - Local LLM inference (llama3.1, deepseek-coder-v2)
-   - Runs on `http://localhost:11434`
-   - Tool-calling enabled models
-
-5. **AutoHotkey** (Future - `scripts/autohotkey/`)
-   - Global hotkey: `Ctrl+Shift+Space` to activate widget
+- **Name**: SADIE (Smart AI Desktop Interactive Engine)
+- **Type**: Desktop AI assistant
+- **Version**: 0.9.0
+- **Language**: TypeScript 5.9.3 (strict mode)
+- **Runtime**: Electron 28 + Node.js
+- **Build System**: electron-vite (NOT Webpack)
+- **Package Manager**: npm
+- **Repository**: `kingithegreat/Sadie` on GitHub
+- **Branch**: `main`
 
 ---
 
-## 📁 Folder Structure
+## Project Structure
 
 ```
-sadie/
-├── COPILOT_CONTEXT.md          ← YOU ARE HERE
-├── PROJECT_PLAN.md             ← Master implementation plan
-├── COMPLIANCE_REPORT.md        ← Progress tracking
-├── CHATGPT_EXECUTION_PROMPT.md ← Phase-by-phase execution plan
-│
-├── widget/                     ← Electron Desktop App
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── webpack.config.js
+Sadie/
+├── widget/                         # Main Electron application
 │   ├── src/
-│   │   ├── main/               ← Main process (Node.js)
-│   │   │   ├── index.ts
-│   │   │   ├── window-manager.ts
-│   │   │   └── ipc-handlers.ts
-│   │   ├── preload/            ← Preload script (contextBridge)
+│   │   ├── main/                   # Main process (Node.js)
+│   │   │   ├── tools/              # Tool handler modules
+│   │   │   │   ├── index.ts        # Tool registry and executor
+│   │   │   │   ├── nba.ts          # NBA/sports data
+│   │   │   │   ├── filesystem.ts   # File operations
+│   │   │   │   ├── vision.ts       # Computer vision
+│   │   │   │   ├── web-search.ts   # Web search
+│   │   │   │   ├── code-runner.ts  # Code execution
+│   │   │   │   ├── reminder.ts     # Reminders
+│   │   │   │   ├── rag.ts          # RAG indexing
+│   │   │   │   └── ...             # 20+ tool modules
+│   │   │   ├── __tests__/          # 70+ main-process test suites
+│   │   │   ├── message-router.ts   # Intent detection, tool routing, LLM orchestration
+│   │   │   ├── tool-helpers.ts     # Tool extraction and validation
+│   │   │   ├── ipc-handlers.ts     # IPC channel registration
+│   │   │   ├── config-manager.ts   # Settings persistence
+│   │   │   ├── memory-manager.ts   # Memory and RAG
+│   │   │   ├── custom-llm-client.ts # Cloud LLM provider
+│   │   │   ├── logger.ts           # Logging with buffer caps
+│   │   │   └── index.ts            # Electron app entry point
+│   │   ├── renderer/               # React UI (Vite + HMR)
+│   │   │   ├── components/         # React components
+│   │   │   ├── styles/             # CSS (dark/light/system themes)
+│   │   │   ├── e2e/               # Playwright E2E specs
+│   │   │   └── __tests__/          # 25+ renderer test suites
+│   │   ├── preload/                # Context bridge (sandbox-safe IPC)
 │   │   │   └── index.ts
-│   │   ├── renderer/           ← Renderer process (React UI)
-│   │   │   ├── App.tsx
-│   │   │   ├── index.tsx
-│   │   │   ├── index.html
-│   │   │   ├── components/
-│   │   │   │   ├── ChatInterface.tsx
-│   │   │   │   ├── MessageList.tsx
-│   │   │   │   ├── InputBox.tsx
-│   │   │   │   ├── ActionConfirmation.tsx
-│   │   │   │   ├── StatusIndicator.tsx
-│   │   │   │   └── SettingsPanel.tsx
-│   │   │   ├── utils/
-│   │   │   │   └── api-client.ts
-│   │   │   └── styles/
-│   │   │       └── global.css
-│   │   └── shared/             ← Shared TypeScript types
+│   │   └── shared/                 # Types, constants, utilities
+│   │       ├── constants.ts        # Exported constants (MODEL_METADATA, etc.)
 │   │       └── types.ts
-│   ├── config/
-│   │   └── user-settings.json  ← Persistent user settings
-│   └── dist/                   ← Webpack build output
-│
-├── n8n-workflows/              ← n8n JSON Workflow Files
-│   ├── orchestrator/
-│   │   ├── main-orchestrator.json
-│   │   └── safety-validator.json
-│   └── tools/
-│       ├── file-operations.json
-│       ├── system-info.json
-│       ├── archive-operations.json
-│       ├── browser-automation.json
-│       ├── calendar-tool.json
-│       ├── clipboard-tool.json
-│       └── (email-manager.json - FUTURE)
-│       └── (voice-tool.json - FUTURE)
-│       └── (search-tool.json - FUTURE)
-│
-├── scripts/                    ← PowerShell Automation Scripts
-│   ├── tools/
-│   │   ├── FileOps.ps1
-│   │   ├── SystemInfo.ps1
-│   │   ├── SafetyValidation.ps1
-│   │   └── ArchiveOps.ps1
-│   ├── setup/                  ← (FUTURE) Installation scripts
-│   └── deployment/             ← (FUTURE) Build/deploy scripts
-│
-├── prompts/                    ← LLM System Prompts
-│   └── system/
-│       ├── main-system-prompt.txt
-│       ├── tool-executor-prompt.txt
-│       └── safety-validator-prompt.txt
-│
-├── schemas/                    ← JSON Schemas for Tool Calls
-│   ├── file-operation-schema.json
-│   ├── system-info-schema.json
-│   ├── archive-operation-schema.json
-│   ├── browser-automation-schema.json
-│   ├── calendar-operation-schema.json
-│   └── clipboard-operation-schema.json
-│
-├── docs/                       ← Documentation
-│   ├── architecture.md
-│   ├── setup-guide.md
-│   ├── api-reference.md
-│   └── PHASE_6_CHECKLIST.md
-│
-└── tests/                      ← (FUTURE) Test suite
-    ├── unit/
-    ├── integration/
-    └── e2e/
+│   ├── electron.vite.config.ts     # Build configuration
+│   ├── electron-builder.yml        # Installer packaging
+│   ├── jest.config.ts              # Jest configuration
+│   ├── playwright.config.ts        # E2E configuration
+│   ├── tailwind.config.js          # Tailwind CSS
+│   └── package.json
+├── config/                         # Runtime configuration
+│   ├── api-allowlist.json          # Permitted API domains
+│   ├── tool-allowlist.json         # Permitted tools
+│   ├── safety-rules.json           # Safety filter rules
+│   ├── ollama-models.json          # Model definitions
+│   ├── mcp-servers.json            # MCP server config
+│   └── default-config.json         # Default settings
+├── prompts/                        # System prompts
+│   ├── sadie_system.txt            # Main system prompt
+│   ├── intent_detection.txt        # Intent classification
+│   ├── safety_rules.txt            # Safety directives
+│   └── tool_call_template.json     # Tool call format
+├── schemas/                        # JSON schemas
+│   ├── tool-call-schema.json       # Tool invocation schema
+│   ├── file-operation-schema.json  # File op schema
+│   ├── memory-operation-schema.json # Memory op schema
+│   └── vision-request-schema.json  # Vision request schema
+├── n8n-workflows/                  # n8n workflow definitions
+├── scripts/                        # Build and utility scripts
+├── docs/                           # Technical documentation
+└── memory/                         # Local memory store
 ```
 
 ---
 
-## 🔒 SADIE Rules & Constraints
-
-### **NEVER CHANGE THESE:**
-
-1. **All tool operations are local by default**
-   - Remote LLM APIs (ChatGPT/Claude/etc.) are optional and user-configurable
-   - All tool data stays on user's machine unless remote LLM is enabled
-   - Privacy is paramount
-
-2. **Safety Validation is MANDATORY**
-   - Every dangerous action MUST go through `safety-validator.json`
-   - User MUST confirm destructive operations
-   - Widget MUST display action summary + warnings
-
-3. **n8n Webhook Endpoint**
-   - Main entry point: `POST http://localhost:5678/webhook/sadie/chat`
-   - Request body:
-     ```json
-     {
-       "user_id": "desktop-user",
-       "message": "user's message here",
-       "conversation_id": "uuid-v4-string"
-     }
-     ```
-
-4. **IPC Security**
-   - **contextIsolation: true**
-   - **nodeIntegration: false**
-   - **sandbox: true**
-   - Use `contextBridge` in preload script
-   - Whitelist ONLY these IPC channels:
-     - `sadie:message`
-     - `sadie:reply`
-     - `sadie:get-settings`
-     - `sadie:save-settings`
-
-5. **Widget Window Specifications**
-   - Size: 450x650 pixels
-   - Frameless: true
-   - Always on top: true (user-configurable)
-   - Transparent background: false
-   - Resizable: false
-
-6. **Tool Call Format** (from Ollama)
-   ```json
-   {
-     "tool_calls": [
-       {
-         "name": "tool_name",
-         "arguments": {
-           "param1": "value1",
-           "param2": "value2"
-         }
-       }
-     ]
-   }
-   ```
-
-7. **Response Status Types** (from n8n to widget)
-   - `normal` - Regular chat response
-   - `needs_confirmation` - Dangerous action requires user approval
-   - `blocked` - Action denied by safety validator
-   - `error` - System error occurred
-
----
-
-## 🎨 Coding Conventions
+## Key Conventions
 
 ### TypeScript
 
-- **Strict mode enabled** (`"strict": true`)
-- Use **interfaces** for type definitions (not `type` aliases unless needed)
-- Prefer **async/await** over `.then()` chains
-- Use **functional components** in React (no class components)
-- Use **named exports** (avoid default exports except for React components)
+- Strict mode enabled (`strict: true` in tsconfig).
+- All new code must pass `npx tsc --noEmit`.
+- Use `import type` for type-only imports.
+- Prefer `const` over `let`; avoid `var`.
 
-### Naming
+### Testing
 
-- **Files**: kebab-case (`window-manager.ts`, `api-client.ts`)
-- **Components**: PascalCase (`ChatInterface.tsx`, `MessageList.tsx`)
-- **Functions**: camelCase (`sendToSadie`, `handleSendMessage`)
-- **Constants**: UPPER_SNAKE_CASE (`ALLOWED_CHANNELS`, `DEFAULT_SETTINGS`)
-- **Interfaces**: PascalCase with descriptive names (`Message`, `ToolCall`, `Settings`)
+- **Command**: `cd widget && npx jest --config jest.config.ts --no-coverage`
+- **Current count**: 112 suites / 1,604 tests
+- Test files live alongside source code in `__tests__/` directories.
+- Use `jest.mock()` for all external dependencies.
+- Use `/** @jest-environment jsdom */` for renderer tests.
+- Use `/** @jest-environment node */` for main-process tests.
 
-### File Headers
+### IPC Communication
 
-Add JSDoc comments to exported functions:
-```typescript
-/**
- * Send a message to the SADIE orchestrator via n8n webhook
- * 
- * @param message - The user's message to send
- * @param conversationId - The conversation ID for message threading
- * @returns The response from the SADIE orchestrator
- */
-export async function sendToSadie(message: string, conversationId: string): Promise<SadieResponse> {
-  // ...
-}
-```
+- All IPC channels are registered in `ipc-handlers.ts`.
+- Preload script validates channel names against an allowlist.
+- Use `ipcMain.handle` / `ipcRenderer.invoke` (request-response pattern).
+- Use `webContents.send` / `ipcRenderer.on` for streaming (main → renderer).
 
-### Error Handling
+### Tool System
 
-- Use `try/catch` blocks for async operations
-- Return error objects instead of throwing (where appropriate)
-- Log errors to console in development
-- Display user-friendly error messages in UI
+- Tools are registered in `src/main/tools/index.ts` via `registerTool()`.
+- Each tool has: `name`, `description`, `handler`, `requiredPermissions`.
+- Intent detection (regex + keyword) in `message-router.ts` routes to tools.
+- Tool results are synthesised by the LLM into natural language.
 
-### React Patterns
+### Safety
 
-- Use `useState` for local component state
-- Use `useEffect` for side effects (IPC listeners, timers)
-- Use `useRef` for DOM references and mutable values
-- Props should be typed with interfaces
-- Avoid inline styles (use CSS classes)
+- All user input passes through the 7-layer safety pipeline.
+- New tools must declare `requiredPermissions`.
+- External network calls must check `config/api-allowlist.json`.
+- File operations must validate paths against traversal attacks.
 
 ---
 
-## 📋 JSON Schemas
+## Models
 
-### Tool Call Schema (Generic)
+### Local (Ollama)
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "name": {
-      "type": "string",
-      "description": "The name of the tool to call"
-    },
-    "arguments": {
-      "type": "object",
-      "description": "Tool-specific parameters"
-    }
-  },
-  "required": ["name", "arguments"]
-}
-```
+| Model | Purpose |
+|---|---|
+| `llama3.2:3b` | Primary chat model |
+| `qwen2.5-coder:3b` | Code generation |
+| `llava:latest` | Computer vision |
+| `dolphin-llama3:8b` | Uncensored mode (optional) |
 
-### File Operation Schema
+### Cloud (Optional)
 
-```json
-{
-  "operation": "read_file" | "write_file" | "delete_file" | "list_directory",
-  "path": "string (absolute path)",
-  "content": "string (for write_file)",
-  "recursive": "boolean (for list_directory)"
-}
-```
+| Provider | Models |
+|---|---|
+| **OpenAI** | GPT-4o, GPT-4o Mini |
+| **Anthropic** | Claude Opus 4, Claude Sonnet 4, Claude 3.5 Haiku |
+| **Google** | Gemini 2.5 Pro, Gemini 2.5 Flash |
+| **xAI** | Grok-3 |
+| **DeepSeek** | DeepSeek V3 |
 
-### System Info Schema
-
-```json
-{
-  "query_type": "hardware" | "software" | "network" | "processes" | "all"
-}
-```
-
-### Archive Operation Schema
-
-```json
-{
-  "operation": "compress" | "extract",
-  "source_path": "string",
-  "destination_path": "string",
-  "format": "zip" | "7z"
-}
-```
-
-### Browser Automation Schema
-
-```json
-{
-  "operation": "open_url" | "close_browser",
-  "url": "string (for open_url)"
-}
-```
-
-### Calendar Operation Schema
-
-```json
-{
-  "operation": "add_event" | "list_events",
-  "title": "string",
-  "start_time": "ISO 8601 string",
-  "end_time": "ISO 8601 string",
-  "description": "string"
-}
-```
-
-### Clipboard Operation Schema
-
-```json
-{
-  "operation": "copy" | "paste",
-  "content": "string (for copy)"
-}
-```
+Cloud model token limits are defined in `MODEL_METADATA` (exported from `shared/constants.ts`).
 
 ---
 
-## 🔌 IPC Design
+## Key Files for Common Tasks
 
-### Architecture
-
-```
-Renderer Process (React UI)
-    ↓ (window.electron.sendMessage)
-Preload Script (contextBridge)
-    ↓ (ipcRenderer.send)
-Main Process (ipc-handlers.ts)
-    ↓ (axios.post)
-n8n Orchestrator
-    ↓ (responds)
-Main Process
-    ↓ (mainWindow.webContents.send)
-Preload Script
-    ↓ (callback)
-Renderer Process (updates UI)
-```
-
-### Preload API
-
-```typescript
-interface ElectronAPI {
-  sendMessage: (message: string) => void;
-  onMessage: (callback: (response: any) => void) => () => void;
-  getSettings: () => Promise<Settings>;
-  saveSettings: (settings: Settings) => Promise<void>;
-}
-
-declare global {
-  interface Window {
-    electron: ElectronAPI;
-  }
-}
-```
-
-### IPC Channels
-
-| Channel | Direction | Purpose |
-|---------|-----------|---------|
-| `sadie:message` | Renderer → Main | Send user message to n8n |
-| `sadie:reply` | Main → Renderer | Forward n8n response to UI |
-| `sadie:get-settings` | Renderer ↔ Main | Load user settings |
-| `sadie:save-settings` | Renderer → Main | Save user settings |
+| Task | Files |
+|---|---|
+| Add a new tool | `src/main/tools/index.ts`, `src/main/tools/<name>.ts` |
+| Change tool routing | `src/main/message-router.ts` |
+| Add IPC channel | `src/main/ipc-handlers.ts`, `src/preload/index.ts` |
+| Change system prompt | `prompts/sadie_system.txt` |
+| Add cloud model | `src/shared/constants.ts` (MODEL_METADATA) |
+| Add UI component | `src/renderer/components/` |
+| Add CSS theme | `src/renderer/styles/` |
+| Add test | `src/<process>/__tests__/<name>.test.ts` |
+| Configuration | `config/*.json` |
 
 ---
 
-## 🔗 Workflow Naming Guarantees
+## Environment Variables
 
-### n8n Workflow Names (MUST MATCH EXACTLY)
-
-| Workflow File | Workflow Name in n8n | Webhook Path |
-|---------------|----------------------|--------------|
-| `main-orchestrator.json` | `SADIE Main Orchestrator` | `/webhook/sadie/chat` |
-| `safety-validator.json` | `SADIE Safety Validator` | `/webhook/sadie/safety` |
-| `file-operations.json` | `SADIE Tool: File Operations` | `/webhook/sadie/tool/file-ops` |
-| `system-info.json` | `SADIE Tool: System Info` | `/webhook/sadie/tool/system-info` |
-| `archive-operations.json` | `SADIE Tool: Archive Operations` | `/webhook/sadie/tool/archive-ops` |
-| `browser-automation.json` | `SADIE Tool: Browser Automation` | `/webhook/sadie/tool/browser` |
-| `calendar-tool.json` | `SADIE Tool: Calendar` | `/webhook/sadie/tool/calendar` |
-| `clipboard-tool.json` | `SADIE Tool: Clipboard` | `/webhook/sadie/tool/clipboard` |
-
-### PowerShell Script Names (MUST MATCH EXACTLY)
-
-| Script File | Exported Functions |
-|-------------|-------------------|
-| `FileOps.ps1` | `Invoke-FileOperation` |
-| `SystemInfo.ps1` | `Get-SystemInformation` |
-| `SafetyValidation.ps1` | `Test-SafetyValidation` |
-| `ArchiveOps.ps1` | `Invoke-ArchiveOperation` |
+| Variable | Purpose |
+|---|---|
+| `SADIE_E2E` | When `"true"`, enables test-only code paths |
+| `NODE_ENV` | `development` / `production` / `test` |
+| `OLLAMA_HOST` | Custom Ollama endpoint (default: `http://localhost:11434`) |
 
 ---
 
-## 🛡️ Safety Rules
+## Build Commands
 
-### Dangerous Operations (REQUIRE CONFIRMATION)
-
-1. **File System**
-   - Delete files/folders
-   - Write to system directories (`C:\Windows`, `C:\Program Files`)
-   - Modify files with sensitive extensions (`.exe`, `.dll`, `.sys`, `.bat`, `.ps1`)
-
-2. **System Operations**
-   - Terminate processes
-   - Modify registry (FUTURE)
-   - Change system settings (FUTURE)
-
-3. **Network Operations**
-   - Send emails (FUTURE)
-   - Upload files to external servers (FUTURE)
-
-### Blocked Operations (NEVER ALLOWED)
-
-1. **Cryptographic Operations**
-   - Encrypt/decrypt user files without explicit request
-   - Generate cryptographic keys
-
-2. **Credential Access**
-   - Read password databases
-   - Access browser stored passwords
-   - Read Windows Credential Manager (FUTURE)
-
-3. **Remote Execution**
-   - Execute code on remote machines
-   - Open reverse shells
-
-### Safety Validator Behavior
-
-```
-User Request → Ollama (generates tool call) → Safety Validator
-                                                    ↓
-                                        YES: dangerous? ──→ return "needs_confirmation"
-                                                    ↓
-                                        NO: not dangerous ──→ return "approved"
-```
-
----
-
-## 💬 Widget Communication Rules
-
-### Message Flow
-
-1. **User types message** → `InputBox.tsx`
-2. **App.tsx calls** `window.electron.sendMessage(message)`
-3. **Preload** forwards to main via `ipcRenderer.send('sadie:message', message)`
-4. **Main process** (ipc-handlers.ts) sends `axios.post` to n8n
-5. **n8n responds** with JSON
-6. **Main process** sends `mainWindow.webContents.send('sadie:reply', response)`
-7. **Preload** forwards to renderer callback
-8. **App.tsx** updates state and UI
-
-### Response Handling
-
-```typescript
-// In App.tsx
-const handleSadieReply = (response: any) => {
-  if (response.status === 'blocked') {
-    // Show error message
-    addMessage({ role: 'assistant', content: response.message, timestamp: Date.now() });
-  } else if (response.status === 'needs_confirmation') {
-    // Show confirmation modal
-    setPendingAction(response.action);
-    setShowConfirmation(true);
-  } else {
-    // Normal message
-    addMessage({ role: 'assistant', content: response.message, timestamp: Date.now() });
-  }
-};
-```
-
-### Settings Persistence
-
-- Settings stored in `widget/config/user-settings.json`
-- Loaded on app startup via `window.electron.getSettings()`
-- Saved when user clicks "Save" in SettingsPanel
-- Settings interface:
-  ```typescript
-  interface Settings {
-    alwaysOnTop: boolean;
-    n8nUrl: string;
-    hotkey: string;
-  }
-  ```
-
----
-
-## 📊 Execution Plan Phases — v0.9.1 Status
-
-### Phase 1: Electron Widget ✅ (COMPLETE)
-- ✅ package.json, tsconfig.json, electron-builder.yml, webpack configs
-- ✅ Main process (index.ts, window-manager.ts, ipc-handlers.ts, hotkey-manager)
-- ✅ Preload script (contextBridge isolation)
-- ✅ Renderer components (ChatInterface, InputBox, MessageList, SettingsPanel, ActionConfirmation, FirstRunModal, TelemetryConsentModal)
-- ✅ 138 TypeScript/TSX source files total
-
-### Phase 2: n8n Workflows ✅ (COMPLETE)
-- ✅ main-orchestrator.json + safety-validator.json
-- ✅ 14/14 tool workflows: api-tool, archive-ops, browser-automation, calendar, clipboard, email-manager, file-manager, image-generate, image-generation-workflow, memory-manager, planning-agent, system-info, vision-tool, web-search
-
-### Phase 3: Testing Infrastructure ✅ (COMPLETE)
-- ✅ Jest + TypeScript — 418 unit tests, all passing
-- ✅ Playwright E2E — 12 tests, all passing
-- ✅ Streaming tests stabilized via `SADIE_E2E=1` mock mode
-- ✅ Test isolation: dedicated userData per E2E test run
-
-### Phase 4: Setup Scripts ✅ (COMPLETE)
-- ✅ scripts/setup/Setup-SADIE.ps1 — full automated setup
-- ✅ scripts/setup/create-sadie-webapp.ps1
-
-### Phase 5: Deployment Scripts ✅ (COMPLETE)
-- ✅ start.ps1, start.bat, scripts/start-n8n.ps1
-
-### Phase 6: Documentation ✅ (COMPLETE)
-- ✅ docs/api-reference.md — 818-line full IPC/tool/permission reference
-- ✅ docs/architecture.md, docs/setup-guide.md, docs/permissions.md
-- ✅ docs/n8n-integration.md, docs/powershell-scripts.md, docs/custom-llm-api.md
-
-### Phase 7: AutoHotkey Integration ✅ (COMPLETE)
-- ✅ scripts/SADIE-Hotkey.ahk — global hotkey activation
-
-### Phase 8: Final Integration Testing ✅ (COMPLETE)
-- ✅ All 12 E2E tests passing (first-run, streaming, config, errors, security gates)
-- ✅ 418/418 unit tests passing
-
----
-
-## 🧰 Development Commands
-
-### Widget Development
-
-```powershell
-# Install dependencies
+```bash
 cd widget
-npm install
-
-# Development mode (auto-reload)
-npm run dev
-
-# Build for production
-npm run build
-
-# Create installer
-npm run dist
-
-# Start without build
-npm start
-```
-
-### n8n Development
-
-```powershell
-# Start n8n
-npx n8n start
-
-# Import workflows
-# Manual: n8n UI → Import → Select JSON file
-
-# Export workflows
-# Manual: n8n UI → Workflow → Download
-```
-
-### PowerShell Tools Testing
-
-```powershell
-# Test file operations
-. .\scripts\tools\FileOps.ps1
-Invoke-FileOperation -Operation "read_file" -Path "C:\test.txt"
-
-# Test system info
-. .\scripts\tools\SystemInfo.ps1
-Get-SystemInformation -QueryType "hardware"
-
-# Test safety validation
-. .\scripts\tools\SafetyValidation.ps1
-Test-SafetyValidation -ToolName "file_operations" -Arguments @{operation="delete_file"; path="C:\test.txt"}
+npm run dev          # Development with HMR
+npm run build        # Production build (electron-vite)
+npm run dist         # Create NSIS installer
+npm run e2e          # Run Playwright E2E tests
+npx jest --config jest.config.ts --no-coverage   # Unit tests
+npx tsc --noEmit     # Type check
 ```
 
 ---
 
-## 📌 Common Issues & Solutions
+## Hardware-Aware Model Recommendations
 
-### Issue: TypeScript errors before npm install
-**Solution:** Expected behavior. Run `npm install` first.
+SADIE includes GPU VRAM detection and a recommendation engine that guides users to the best setup for their hardware.
 
-### Issue: Electron window doesn't appear
-**Solution:** Check `dist/` folder exists. Run `npm run build` first.
+### Key Files
 
-### Issue: IPC communication not working
-**Solution:** Verify preload script path in window-manager.ts is correct.
+| File | Role |
+|---|---|
+| `widget/src/main/moa.ts` | MoA engine, `recommendConfig()`, `recommendMoAPreset()`, presets, `SINGLE_MODEL_RECOMMENDATIONS` |
+| `widget/src/main/ipc-handlers.ts` | `sadie:detect-gpu-vram` IPC handler — calls `detectGpuVram()` + `recommendConfig()` |
+| `widget/src/shared/types.ts` | `ElectronAPI.detectGpuVram` return type (includes `mode`, `preset`, `model`, `reason`) |
+| `widget/src/renderer/components/SettingsPanel.tsx` | GPU detection UI, VRAM slider, recommendation display, Apply button |
+| `widget/src/main/tools/rag.ts` | RAG (TF-IDF indexing + cosine similarity search) — recommended for all VRAM levels |
 
-### Issue: n8n webhook returns 404
-**Solution:** 
-1. Verify n8n is running on `http://localhost:5678`
-2. Check workflow is activated (toggle in n8n UI)
-3. Verify webhook path matches exactly: `/webhook/sadie/chat`
+### Recommendation Logic (`recommendConfig(vramGB)`)
 
-### Issue: Settings not persisting
-**Solution:** Check `widget/config/` directory exists and is writable.
+| VRAM | Mode | Recommendation |
+|---|---|---|
+| ≥ 10 GB | `moa` | Code-focused preset (3 × 7B proposers + 7B aggregator) |
+| ≥ 8 GB | `moa` | Balanced preset (3 mixed proposers + 7B aggregator) |
+| 4–7 GB | `single` | `qwen2.5:7b` single model + RAG |
+| 2–3 GB | `single` | `llama3.2:3b` single model + RAG |
+| < 2 GB | — | `null` (insufficient VRAM) |
 
-### Issue: Ollama not responding
-**Solution:**
-1. Verify Ollama is running: `curl http://localhost:11434/api/version`
-2. Check model is pulled: `ollama list`
-3. Test model: `ollama run llama3.1`
+### Design Rationale
 
----
-
-## 🔍 Key Files to Keep Open
-
-**Pin these tabs in VS Code for persistent Copilot context:**
-
-1. `COPILOT_CONTEXT.md` (this file)
-2. `SADIE_SPEC_LOCK.txt` (unchangeable specs)
-3. `widget/tsconfig.json` (TypeScript config)
-4. `widget/webpack.config.js` (Build config)
-5. `widget/src/main/index.ts` (Electron entry)
-6. `widget/src/main/window-manager.ts` (Window creation)
-7. `widget/src/main/ipc-handlers.ts` (IPC logic)
-8. `widget/src/preload/index.ts` (Security bridge)
-9. `widget/src/renderer/App.tsx` (React root)
-10. `widget/src/shared/types.ts` (Shared types)
+MoA needs at least 8 GB VRAM to outperform a single model. Below 8 GB, running multiple small models (e.g. two 3B proposers + 3B aggregator) produces worse output than a single 7B model and takes 2-3× longer. The `MOA_MIN_VRAM_GB = 8` constant enforces this threshold. For low-VRAM users, RAG (drag-and-drop file indexing) gives the biggest quality boost without VRAM cost.
 
 ---
 
-## ✅ When to Use This File
+## Common Patterns
 
-**ALWAYS reference this file when:**
-- Creating new widget components
-- Modifying IPC handlers
-- Adding new tool workflows
-- Updating PowerShell scripts
-- Writing tests
-- Documenting features
-- Debugging communication issues
+### Adding a New Tool
 
-**Prompt pattern:**
-```
-@workspace /COPILOT_CONTEXT.md
+```typescript
+// src/main/tools/my-tool.ts
+export async function handleMyTool(args: MyToolArgs): Promise<string> {
+  // Implementation
+  return 'Result';
+}
 
-Create a new React component: StatusBadge.tsx
-- Should display n8n connection status
-- Use StatusIndicator pattern from App.tsx
-- Follow TypeScript strict mode
+// src/main/tools/index.ts
+registerTool({
+  name: 'my_tool',
+  description: 'What this tool does',
+  handler: handleMyTool,
+  requiredPermissions: ['read'],  // or ['write'], ['execute'], etc.
+});
 ```
 
----
+### Adding Intent Detection
 
-## 🚀 Next Steps
+```typescript
+// src/main/message-router.ts
+// In the intent detection section:
+if (/my keyword|my pattern/i.test(userMessage)) {
+  return { tool: 'my_tool', args: { /* extracted args */ } };
+}
+```
 
-**Immediate (Phase 1 completion):**
-1. Create `widget/src/renderer/index.html`
-2. Create `widget/src/renderer/index.tsx`
-3. Create `widget/src/shared/types.ts`
-4. Create `widget/src/renderer/styles/global.css`
-5. Create `widget/src/global.d.ts`
-6. Run `npm install` and test build
+### Adding a Renderer Test
 
-**Short-term (Phase 2-3):**
-1. Complete missing tool workflows (email, voice, search)
-2. Set up Jest testing infrastructure
-3. Write unit tests for components
+```typescript
+// src/renderer/__tests__/my-component.test.tsx
+/** @jest-environment jsdom */
+import { render, screen } from '@testing-library/react';
+import { MyComponent } from '../components/MyComponent';
 
-**Long-term (Phase 4-8):**
-1. Create setup automation scripts
-2. Build deployment pipeline
-3. Add AutoHotkey global hotkey
-4. Complete documentation
-5. Full integration testing
-
----
-
-## 📝 Notes
-
-- **Privacy is paramount** - All data stays local
-- **User confirmation required** for dangerous operations
-- **Type safety enforced** - Use TypeScript strict mode
-- **Security first** - Electron security best practices
-- **Modular design** - Each component has single responsibility
-- **No hallucination** - Follow specs exactly as written
-
----
-
-**Last Updated:** November 17, 2025  
-**SADIE Version:** 1.0.0  
-**Project Status:** Phase 1 (Electron Widget) - 90% Complete
+describe('MyComponent', () => {
+  it('renders correctly', () => {
+    render(<MyComponent />);
+    expect(screen.getByText('Expected')).toBeInTheDocument();
+  });
+});
+```

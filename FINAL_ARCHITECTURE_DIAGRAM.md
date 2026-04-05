@@ -1,134 +1,307 @@
-# SADIE Final Submission - Architecture Diagram
+# SADIE — System Architecture Diagrams
 
-## System Architecture Overview
+Detailed visual representations of the SADIE system architecture, data flow, and security model.
 
-SADIE (Structured AI Desktop Intelligence Engine) is an Electron-based desktop application that provides AI-powered assistance through a structured tool-based architecture.
+---
 
-### Core Architecture Components
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    SADIE Desktop Application                     │
-│                    (Electron Framework)                          │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │   Main Process  │  │  Preload Script │  │ Renderer Process │ │
-│  │   (Node.js)     │  │   (Security)    │  │   (React UI)     │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-│           │                       │                   │         │
-│           └───────────────────────┼───────────────────┘         │
-│                                   │                             │
-│                    ┌──────────────┴──────────────┐              │
-│                    │     IPC Communication       │              │
-│                    │   (Context Isolation)       │              │
-│                    └─────────────────────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    AI Tool System                                │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │   Message       │  │   Tool Router   │  │   Tool Handlers  │ │
-│  │   Router        │  │                 │  │                 │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-│  │                                                                │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │  │   Web Search    │  │   URL Fetch     │  │   Weather API   │ │
-│  │  │   (DuckDuckGo)  │  │   (Safe HTTP)   │  │   (wttr.in)     │ │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
-│  │                                                                │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │  │ Document Tools  │  │   Speech Tools  │  │   Image Tools   │ │
-│  │  │   (PDF/Text)    │  │   (Offline STT) │  │   (Processing)  │ │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
-│  │                                                                │
-│  └─────────────────────── AI Model Integration ──────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    External AI Services                          │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │   OpenAI API    │  │   Local Models  │  │   Web Search     │ │
-│  │   (GPT-4)       │  │   (Transformers)│  │   (DuckDuckGo)   │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Security & Safety Architecture
+## High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Security Layers                               │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │   Input         │  │   Process       │  │   Output        │ │
-│  │   Validation    │  │   Isolation     │  │   Sanitization  │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
-│  │         │                       │                   │       │ │
-│  │  ┌──────▼──────┐       ┌────────▼────────┐   ┌──────▼──────┐ │ │
-│  │  │URL Safety    │       │Context Bridge   │   │Content      │ │ │
-│  │  │Checks        │       │(IPC Security)   │   │Filtering     │ │ │
-│  │  └─────────────┘       └─────────────────┘   └─────────────┘ │ │
-│  │                                                                │ │
-│  └─────────────────────── Compile-time Gating ───────────────────┘ │
+│                         Electron Shell                          │
+│  ┌──────────────┐   ┌──────────────┐   ┌────────────────────┐  │
+│  │   Renderer    │   │   Preload    │   │   Main Process     │  │
+│  │  (React 18)   │◄─►│  (Bridge)    │◄─►│   (Node.js)        │  │
+│  │              │   │              │   │                    │  │
+│  │  Chat UI     │   │  IPC Allow-  │   │  Tool Router       │  │
+│  │  Settings    │   │  list Gate   │   │  LLM Orchestrator  │  │
+│  │  Analytics   │   │  Schema      │   │  Safety Pipeline   │  │
+│  │  Themes      │   │  Validation  │   │  Memory/Persist    │  │
+│  └──────────────┘   └──────────────┘   └────────┬───────────┘  │
+│                                                  │              │
+│                                    ┌─────────────┼──────────┐   │
+│                                    │             │          │   │
+│                              ┌─────▼───┐  ┌─────▼───┐  ┌──▼─┐ │
+│                              │  Ollama  │  │  Cloud   │  │n8n │ │
+│                              │  Local   │  │  LLMs    │  │    │ │
+│                              │  Models  │  │  (API)   │  │    │ │
+│                              └─────────┘  └─────────┘  └────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Data Flow Architecture
+---
+
+## Process Architecture
+
+SADIE follows Electron's multi-process model with strict isolation:
 
 ```
-User Input → React UI → IPC → Main Process → Tool Router → AI Tools → External APIs
-      ↑                                                                       ↓
-      └───────────────────────────────────────────────────────────────────────┘
-                              Response Processing & Display
+┌──────────────────────────────────┐
+│        Renderer Process          │
+│  (Chromium sandbox, no Node.js)  │
+│                                  │
+│  React 18 + Vite HMR            │
+│  Components, hooks, state        │
+│  CSS themes (dark/light/system)  │
+│  No direct access to filesystem  │
+│  No direct access to network     │
+└───────────┬──────────────────────┘
+            │ IPC (contextBridge)
+            │ Allowlisted channels only
+┌───────────▼──────────────────────┐
+│         Preload Script           │
+│  (contextIsolation: true)        │
+│                                  │
+│  Exposes typed API to renderer   │
+│  Validates channel names         │
+│  Validates message schemas       │
+│  Blocks unapproved IPC calls     │
+└───────────┬──────────────────────┘
+            │ ipcMain handlers
+┌───────────▼──────────────────────┐
+│         Main Process             │
+│  (Full Node.js access)           │
+│                                  │
+│  Tool execution engine           │
+│  LLM provider orchestration      │
+│  Permission & safety checks      │
+│  File system operations          │
+│  Network requests (HTTP client)  │
+│  Memory and persistence layer    │
+│  Auto-update manager             │
+│  System tray & global hotkey     │
+└──────────────────────────────────┘
 ```
 
-### Key Architectural Decisions
+---
 
-1. **Electron 28 Framework**: Desktop app with React + TypeScript UI
-2. **Process Isolation**: Main/Renderer separation with secure IPC, context isolation enabled
-3. **Tool-Based Architecture**: 20+ modular tool handlers executed locally via TypeScript
-4. **Security-First Design**: SSRF protection, webhook auth, IPC hardening, tool recursion cap
-5. **Offline-First**: Local Ollama models with optional cloud LLM routing
-6. **Type-Safe**: TypeScript strict mode with `noUnusedParameters`, `exactOptionalPropertyTypes`
-7. **Theming**: Light / dark / system theme via CSS variables and `data-theme` attribute
-8. **Auto-Update**: electron-updater with background download and IPC progress events
+## Tool Execution Flow
 
-### Build & Deployment Architecture
+Every tool invocation follows this pipeline:
 
 ```
-Source Code → TypeScript → electron-vite → Electron Builder → NSIS Installer
-     │             │            │                │
-     └───── Lint ──┴─── Test ───┴─── Preflight ──┴─── Release
+User Message
+    │
+    ▼
+┌────────────────┐
+│ Intent Detection│  ← Regex + keyword matching
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Tool Selection  │  ← toolRegistry.ts mapping
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Permission Check│  ← requiredPermissions vs user grants
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Input Validation│  ← JSON schema validation
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Safety Pipeline │  ← 7-layer filter chain
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Tool Execution  │  ← Handler invoked with validated args
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Output Sanitise │  ← Response cleaned before display
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ LLM Synthesis  │  ← Natural language response generation
+└────────────────┘
 ```
 
-Test suite: 87 Jest suites / 1339 unit tests + 12+ Playwright E2E scenarios.
+---
 
-### Performance Optimizations
+## Security Layer Model
 
-- **Lazy Loading**: Tools loaded on-demand
-- **Caching**: Web requests and AI responses cached; Pollinations availability cache
-- **Log Buffer Caps**: Main-process and router logs capped at 500 entries
-- **Context Budget**: Small models (≤3B) get scaled-down context injection
-- **Digest Compression**: Rolling context extracts first/last sentence instead of blind truncation
-- **Compile-time Constants**: Environment-specific code gated at build time
+Seven layers of defence, applied in order:
 
-### UI Architecture
+```
+Layer 1  ┌──────────────────────────────┐
+         │   Profanity / Toxicity       │  Block harmful language
+         └──────────────┬───────────────┘
+Layer 2  ┌──────────────▼───────────────┐
+         │   Harm Detection             │  Block self-harm, violence
+         └──────────────┬───────────────┘
+Layer 3  ┌──────────────▼───────────────┐
+         │   PII Redaction              │  Strip personal identifiers
+         └──────────────┬───────────────┘
+Layer 4  ┌──────────────▼───────────────┐
+         │   Prompt Injection Guard     │  Detect jailbreak attempts
+         └──────────────┬───────────────┘
+Layer 5  ┌──────────────▼───────────────┐
+         │   Tool-Abuse Prevention      │  Recursion cap, rate limits
+         └──────────────┬───────────────┘
+Layer 6  ┌──────────────▼───────────────┐
+         │   Output Sanitisation        │  XSS, HTML stripping
+         └──────────────┬───────────────┘
+Layer 7  ┌──────────────▼───────────────┐
+         │   Audit Logging              │  All actions logged
+         └──────────────────────────────┘
+```
 
-- **Theme System**: CSS custom properties (`--bg-*`, `--accent-*`, `--text-*`) with `[data-theme]` selectors
-- **Futuristic Accents**: 15+ CSS keyframe animations, glass morphism, neon glows
-- **Accessibility**: `@media (prefers-reduced-motion: reduce)` disables all animations
-- **Custom Markdown Renderer**: Fenced code blocks with copy button, inline formatting
-- **Streaming UI**: Real-time token-by-token response display with cancel/retry
+---
 
-### Monitoring & Diagnostics
+## Data Flow — Chat Message
 
-- **Conditional Logging**: Environment-based diagnostic output
-- **Error Boundaries**: Graceful error handling in UI
-- **Build Verification**: Preflight checks prevent deployment of unsafe builds
-- **Test Coverage**: Comprehensive E2E and unit testing
+```
+User types message
+        │
+        ▼
+Renderer: ChatInput component
+        │ (React state)
+        ▼
+Renderer: sendMessage()
+        │ (IPC invoke)
+        ▼
+Preload: contextBridge.exposeInMainWorld
+        │ (channel allowlist check)
+        ▼
+Main: ipcMain.handle('chat:send')
+        │
+        ├──► Safety pipeline (7 layers)
+        │
+        ├──► Intent detection
+        │        │
+        │        ├── Tool detected → Tool execution pipeline
+        │        │                        │
+        │        │                        ▼
+        │        │                   Tool result
+        │        │                        │
+        │        └── No tool → Direct LLM prompt
+        │
+        ▼
+LLM Provider (Ollama local / Cloud API)
+        │ (streaming tokens)
+        ▼
+Main: Stream chunks to renderer
+        │ (IPC send)
+        ▼
+Renderer: ChatMessage component
+        │ (Markdown rendering)
+        ▼
+User sees response
+```
 
-This architecture ensures SADIE is secure, performant, and maintainable while providing powerful AI assistance capabilities.
+---
+
+## Memory and Persistence
+
+```
+┌─────────────────────────────────┐
+│      Memory Architecture        │
+│                                 │
+│  ┌───────────────────────────┐  │
+│  │   Short-Term Memory       │  │
+│  │   (Conversation context)  │  │
+│  │   - Message sliding window│  │
+│  │   - Context budget tokens │  │
+│  └───────────┬───────────────┘  │
+│              │                  │
+│  ┌───────────▼───────────────┐  │
+│  │   Long-Term Memory        │  │
+│  │   (JSON store)            │  │
+│  │   - Key-value facts       │  │
+│  │   - Named memories        │  │
+│  │   - Semantic search       │  │
+│  └───────────┬───────────────┘  │
+│              │                  │
+│  ┌───────────▼───────────────┐  │
+│  │   Persistent Storage      │  │
+│  │   (Disk: userData)        │  │
+│  │   - Conversations         │  │
+│  │   - Reminders             │  │
+│  │   - Settings / preferences│  │
+│  │   - Analytics data        │  │
+│  └───────────────────────────┘  │
+└─────────────────────────────────┘
+```
+
+---
+
+## Cloud LLM Integration
+
+```
+┌──────────────┐     ┌───────────────────┐
+│  LLM Router  │────►│  Ollama (local)   │  Default, offline
+│              │     └───────────────────┘
+│  Selects     │     ┌───────────────────┐
+│  provider    │────►│  OpenAI           │  GPT-4o, GPT-4o Mini
+│  based on    │     └───────────────────┘
+│  user config │     ┌───────────────────┐
+│              │────►│  Anthropic        │  Claude Opus 4, Sonnet 4, Haiku 3.5
+│              │     └───────────────────┘
+│              │     ┌───────────────────┐
+│              │────►│  Google           │  Gemini 2.5 Pro / Flash
+│              │     └───────────────────┘
+│              │     ┌───────────────────┐
+│              │────►│  xAI              │  Grok-3
+│              │     └───────────────────┘
+│              │     ┌───────────────────┐
+│              │────►│  DeepSeek         │  DeepSeek V3
+└──────────────┘     └───────────────────┘
+```
+
+Each provider uses its native max-token limit from `MODEL_METADATA` (no hardcoded fallbacks). API keys are stored encrypted in the user's Electron `userData` directory and never sent to any server other than the configured provider.
+
+---
+
+## Testing Architecture
+
+```
+┌──────────────────────────────────────────┐
+│              Test Suite                   │
+│                                          │
+│  ┌────────────────────────────────────┐  │
+│  │  Unit Tests (Jest)                 │  │
+│  │  112 suites │ 1,604 tests          │  │
+│  │                                    │  │
+│  │  Main process:                     │  │
+│  │    Tool handlers, safety pipeline, │  │
+│  │    LLM orchestration, persistence, │  │
+│  │    intent detection, permissions   │  │
+│  │                                    │  │
+│  │  Renderer:                         │  │
+│  │    React components, hooks, state, │  │
+│  │    theme switching, keyboard       │  │
+│  │    shortcuts, analytics dashboard  │  │
+│  └────────────────────────────────────┘  │
+│                                          │
+│  ┌────────────────────────────────────┐  │
+│  │  E2E Tests (Playwright)            │  │
+│  │  Multi-flow scenarios              │  │
+│  │                                    │  │
+│  │  Full application lifecycle,       │  │
+│  │  chat interactions, tool routing,  │  │
+│  │  persistence across restarts       │  │
+│  └────────────────────────────────────┘  │
+└──────────────────────────────────────────┘
+```
+
+---
+
+## Key Design Decisions
+
+| Decision | Rationale |
+|---|---|
+| **Electron over web app** | Offline-first privacy, direct filesystem access, system tray integration |
+| **Ollama for local AI** | No cloud dependency, user data stays on device, free inference |
+| **electron-vite over Webpack** | Faster builds, native ESM support, HMR for renderer |
+| **TypeScript strict mode** | Catch errors at compile time, enforce API contracts |
+| **IPC allowlist** | Principle of least privilege for renderer ↔ main communication |
+| **7-layer safety model** | Defence in depth; no single point of failure for content safety |
+| **JSON-based persistence** | Human-readable, no database dependency, git-friendly |
+| **Context budget system** | Prevent small models (3B–8B params) from exceeding token limits |

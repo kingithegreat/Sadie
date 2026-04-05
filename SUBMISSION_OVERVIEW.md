@@ -1,146 +1,119 @@
-# SADIE Final Submission Overview
+# SADIE — Submission Overview
+
+**Smart AI Desktop Interactive Engine**
+Version 1.0.4 | Academic Capstone Project
+
+---
 
 ## Project Summary
 
-SADIE (Structured AI Desktop Intelligence Engine) is a secure, cross-platform desktop AI assistant built with Electron that provides structured tool-based AI interactions. The application offers web search, document processing, weather information, and extensible AI tool capabilities while maintaining strict security boundaries and offline-first operation.
+SADIE is a privacy-first, offline-capable desktop AI assistant built with Electron 28, TypeScript, and React. It runs large language models locally via Ollama while offering optional cloud LLM integration (OpenAI GPT-4o, Claude Opus 4, Gemini, Grok, DeepSeek). The application provides a comprehensive tool system with 20+ handlers for file operations, web search, code generation, computer vision, sports data, reminders, and more — all governed by a multi-layered security and permission framework.
 
-## Core Features
+---
 
-### 🔍 Web Intelligence Tools
-- **Web Search**: Multi-engine search with automatic content fetching (DuckDuckGo, Google, Brave)
-- **URL Fetching**: Safe content extraction with SSRF protection
-- **Weather Information**: Real-time weather data via wttr.in (no API keys required)
+## Technical Architecture
 
-### 📄 Document Processing
-- **PDF/Text Analysis**: Local document processing with mammoth and pdf-parse
-- **Content Extraction**: Intelligent text extraction from various document formats
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Desktop Shell** | Electron 28 | Secure sandboxed window, auto-update, system tray |
+| **Renderer** | React 18 + Vite | Chat UI, settings, analytics dashboard |
+| **Build System** | electron-vite | Unified build for main, preload, and renderer |
+| **Language** | TypeScript 5.9.3 | Type safety across all processes |
+| **Local AI** | Ollama (llama3.2, qwen2.5-coder, llava) | Offline inference |
+| **Cloud AI** | OpenAI, Anthropic, Google, xAI, DeepSeek | Optional remote models |
+| **Automation** | n8n (Docker) | Workflow orchestration |
+| **Testing** | Jest + Playwright | Unit and E2E coverage |
+| **Packaging** | electron-builder | NSIS installer, auto-update |
 
-### 🎤 Speech & Audio
-- **Offline Speech Recognition**: Local STT using whisper-node
-- **Audio Processing**: Real-time audio capture and processing
-
-### 🖼️ Image Processing
-- **Image Analysis**: Local image processing capabilities
-- **Format Support**: Multiple image format handling
-
-### 🔒 Security Features
-- **URL Safety Validation**: Comprehensive SSRF protection with DNS resolution checks
-- **Process Isolation**: Electron main/renderer separation with secure IPC
-- **Input Sanitization**: All inputs validated and sanitized
-- **Compile-time Gating**: Development code automatically removed in production builds
-
-## Technical Implementation
-
-### Architecture
-- **Framework**: Electron 28 with React UI
-- **Language**: TypeScript 5.9.3 with strict type checking
-- **Build System**: electron-vite for main/preload/renderer bundling
-- **Testing**: Jest (87 suites / 1339 tests) + Playwright E2E (12+ scenarios)
-- **AI Runtime**: Ollama (local) with optional cloud LLM routing
-- **Packaging**: Electron Builder for Windows NSIS installer
-
-### Security Measures
-- **Context Isolation**: Enabled in all renderer processes
-- **IPCFlood Protection**: Rate limiting on IPC communications
-- **Environment Gating**: NODE_ENV-based conditional compilation
-- **Forbidden String Detection**: Automated scanning prevents test code in production
-
-### Performance Optimizations
-- **Lazy Loading**: Tools loaded on-demand to reduce startup time
-- **Caching System**: Intelligent caching of web requests and AI responses
-- **Tree Shaking**: Webpack eliminates unused code in production builds
-- **Minification**: All bundles minified for optimal size
-
-## Development & Build Process
-
-### Build Pipeline
-1. **TypeScript Compilation**: Strict type checking and compilation
-2. **Webpack Bundling**: Separate bundles for main, preload, and renderer processes
-3. **Preflight Checks**: Automated security and quality verification
-4. **Artifact Scanning**: Detection of forbidden strings in production builds
-5. **Packaging**: Electron Builder creates platform-specific installers
-
-### Quality Assurance
-- **Unit Tests**: 87 Jest suites / 1339 tests covering main process, renderer, tools, and shared utilities
-- **E2E Tests**: 12+ Playwright scenarios (first-run, streaming, permissions, vision, web services, RAG)
-- **Type Checking**: TypeScript strict mode with `noUnusedParameters`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`
-- **Security Scanning**: Automated forbidden-string detection in production builds
-
-### Release Process
-- **Automated Gating**: Environment variables prevent accidental releases
-- **Build Verification**: Multiple checkpoints ensure production readiness
-- **Artifact Validation**: All build outputs scanned for security issues
-- **Cross-Platform**: Windows, macOS, and Linux support
+---
 
 ## Key Achievements
 
-### ✅ Security & Safety
-- Implemented comprehensive SSRF protection
-- Added compile-time code elimination for test/development features
-- Established secure IPC communication patterns
-- Created automated security scanning in build pipeline
+### Test Coverage
 
-### ✅ Performance & Reliability
-- Achieved clean production builds with zero forbidden strings
-- Implemented efficient caching and lazy loading
-- Created robust error handling and recovery
-- Established comprehensive testing coverage
+| Metric | Value |
+|---|---|
+| **Unit Test Suites** | 110 |
+| **Individual Tests** | 1,533 |
+| **E2E Scenarios** | Playwright-based, multi-flow |
+| **Zero Failures** | All tests pass on every commit |
 
-### ✅ User Experience
-- Built intuitive React-based interface with light/dark/system theme support
-- Implemented real-time streaming responses with custom Markdown renderer
-- Added futuristic UI accents (animations, glass morphism, neon glows)
-- Added telemetry controls for user privacy
-- Created first-run modal for user onboarding
-- Global hotkey (Ctrl+Shift+Space) for quick access
-- Auto-update via electron-updater
-- Conversation full-text search and Markdown export
+### Feature Scope
 
-### ✅ Technical Excellence
-- Full TypeScript implementation with strict typing (zero `tsc --noEmit` errors)
-- Modular tool-based architecture with 20+ tool handlers
-- 87 test suites / 1339 unit tests + 12+ E2E scenarios
-- Security hardening: SSRF, IPC path traversal, webhook auth, PID injection, toast XML injection
-- Offline-first design with optional cloud features
-- Model-aware context budgets for small (≤3B) models
+| Category | Capabilities |
+|---|---|
+| **Core AI** | Multi-model chat, streaming responses, context budget management, intent detection, tool routing |
+| **Tool System** | 20+ handlers — file I/O, web/image search, code execution, vision, reminders, sports data, browser content extraction, image generation |
+| **User Experience** | Dark/light/system themes, focus mode, analytics dashboard, conversation pinning, bookmarks, archiving, JSON export, reactions, tags, message editing, reading time estimates, keyboard shortcuts, toast notifications |
+| **Security** | 7-layer safety model, CSP headers, sandbox isolation, input sanitisation, webhook HMAC auth, tool recursion cap, SSRF protection, PID validation |
+| **Accessibility** | Whisper-based speech recognition, text-to-speech, keyboard navigation, screen-reader support |
+| **Sports Intelligence** | Live NBA scores, full-season results, table formatting, timezone-aware display (NZST), ESPN API integration |
 
-## Build Status
+### Security and Compliance
 
-### ✅ Verified Working Components
-- **TypeScript Compilation**: All code compiles without errors
-- **Webpack Build**: Production bundles generate successfully
-- **Preflight Checks**: All security and quality checks pass
-- **Test Suite**: All unit and E2E tests pass
-- **Artifact Scanning**: No forbidden strings detected in production builds
+- Content Security Policy on all renderer pages.
+- Electron sandbox enabled with `contextIsolation: true`.
+- IPC allowlist restricts channel access to approved operations.
+- Input sanitisation protects against XSS, path traversal, and command injection.
+- Webhook HMAC authentication prevents unauthorized workflow triggers.
+- Tool recursion capped to prevent infinite loops.
+- SSRF protection blocks requests to internal network addresses.
+- 7-layer safety filter chain: profanity → harm → PII → prompt-injection → tool-abuse → output → audit.
 
-### ⚠️ Known Issues
-- **Packaging**: Electron Builder encounters file locking issues on Windows when Electron is running
-  - Workaround: Close all running Electron processes before building installer
+---
 
-## Deployment Readiness
+## Project Context
 
-SADIE is ready for deployment with the following verified capabilities:
+| Field | Detail |
+|---|---|
+| **Student** | Aden Kingi |
+| **Supervisor** | Francisco Roldao |
+| **Institution** | Toi Ohomai Institute of Technology |
+| **Programme** | Bachelor of Computing Systems, Level 7 |
+| **Repository** | [github.com/kingithegreat/Sadie](https://github.com/kingithegreat/Sadie) |
+| **License** | MIT |
 
-1. **Core Functionality**: All AI tools and features work correctly
-2. **Security**: Production builds are clean and secure
-3. **Performance**: Optimized for efficient operation
-4. **Testing**: Comprehensive test coverage ensures reliability
-5. **User Experience**: Polished interface with proper onboarding
+---
 
-The application successfully demonstrates a secure, performant AI desktop assistant that maintains user privacy while providing powerful AI capabilities.
+## Build and Run
 
-## Next Steps
+```bash
+# Clone and install
+git clone https://github.com/kingithegreat/Sadie.git
+cd Sadie/widget
+npm install
 
-1. **i18n / Localization**: Multi-language support
-2. **Technical Documentation Site**: Hosted docs
-3. **Performance Benchmarking**: Measure and optimize resource usage
-4. **User Acceptance Testing**: Gather feedback from target users
+# Development (hot-reload)
+npm run dev
 
-## Files Included in Submission
+# Production build
+npm run build
 
-- `FINAL_ARCHITECTURE_DIAGRAM.md`: Detailed system architecture documentation
-- `DEMO_SCRIPT.md`: Step-by-step demonstration guide
-- `EVIDENCE_INDEX.md`: Comprehensive evidence of implementation and testing
-- Source code repository with complete implementation
-- Build artifacts and test results
-- Security audit reports and preflight check results
+# Run all tests
+npx jest --config jest.config.ts --no-coverage
+
+# Create installer
+npm run dist
+```
+
+### Prerequisites
+
+- Node.js 18+ (tested with v24.13.0)
+- Ollama with at least `llama3.2:3b` pulled
+- Docker Desktop for n8n workflows (optional)
+- Windows 10 or later
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [README.md](README.md) | Project overview, quick start, and feature summary |
+| [DEVELOPER_BUILD_GUIDE.md](DEVELOPER_BUILD_GUIDE.md) | Developer setup, build commands, and testing |
+| [SECURITY_AND_COMPLIANCE.md](SECURITY_AND_COMPLIANCE.md) | Security architecture and compliance details |
+| [TESTING_MATRIX.md](TESTING_MATRIX.md) | Complete test suite inventory |
+| [FINAL_ARCHITECTURE_DIAGRAM.md](FINAL_ARCHITECTURE_DIAGRAM.md) | System architecture diagrams |
+| [DEMO_SCRIPT.md](DEMO_SCRIPT.md) | Feature demonstration walkthrough |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [docs/](docs/) | Detailed technical documentation |
