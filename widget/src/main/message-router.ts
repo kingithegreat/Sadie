@@ -523,6 +523,10 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   if (!userMessage || typeof userMessage !== 'string') return null;
   const m = userMessage.toLowerCase();
 
+  // Opinion / analysis / prediction questions should go to the LLM for conversation,
+  // not to data-fetching tools.  Defined early so all routing blocks can use it.
+  const isOpinionQuestion = /\b(do you think|what do you think|can .{1,40} (still|win|make|get)|will .{1,40} (win|make|get)|chances?|predict(ion)?s?|opinion|could .{1,40} (win|make)|how far .{1,40} go|contend(er|ers)?|what are .{1,40} odds|should .{1,40} trade|going to win|gonna win|reckon|expect|likely|realistically)\b/i.test(m);
+
   // HELP / CAPABILITY CARD — must be first so "help" doesn't hit other patterns
   if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can sadie do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(userMessage.trim())) {
     return { calls: [{ name: '__help', arguments: {} }] };
@@ -540,7 +544,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   const wantsFile = /\b(create|make|write|save|put|give\s+me)\b/i.test(m) &&
                     /\b(file|document|note|text)\b/i.test(m);
 
-  if (wantsFile) {
+  if (wantsFile && !isOpinionQuestion) {
     // COMPOUND: surf/swell + file → use web search, not weather API
     const isSurfFileQuery = /\b(surf|swell|waves?|tide|ocean|marine|break|beach\s*break)\b/i.test(m);
     if (isSurfFileQuery) {
@@ -624,10 +628,6 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   // Also suppress NBA routing when clear music/content signals are present.
   const hasMusicOrContentIntent = /\b(song(s)?|music|rap|hip.?hop|artist|album|track|playlist|lyrics|links?)\b/i.test(m);
 
-  // Guard: opinion / analysis / prediction questions should go to the LLM, not the NBA
-  // data endpoint.  "do you think the warriors can still win?" ≠ schedule lookup.
-  const isOpinionQuestion = /\b(do you think|what do you think|can .{1,40} (still|win|make|get)|will .{1,40} (win|make|get)|chances?|predict(ion)?s?|opinion|could .{1,40} (win|make)|how far .{1,40} go|contend(er|ers)?|what are .{1,40} odds|should .{1,40} trade|going to win|gonna win|reckon|expect|likely|realistically)\b/i.test(m);
-
   const nbaTeamIsIntent = hasNbaTeam && !hasMusicOrContentIntent && !isOpinionQuestion &&
     (m.length < 300 || /\b(play(ed|ing)?|game|score|won|beat|vs\.?|versus|match|result|roster|stat)\b/i.test(m));
 
@@ -668,7 +668,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   }
 
   // SURF / SWELL intents (standalone) — use web search for real surf data
-  if (/\b(surf|swell|waves?|tide|ocean\s*conditions|beach\s*break)\b/i.test(m) && !/\b(weather|temperature|rain|forecast)\b/i.test(m)) {
+  if (/\b(surf|swell|waves?|tide|ocean\s*conditions|beach\s*break)\b/i.test(m) && !/\b(weather|temperature|rain|forecast)\b/i.test(m) && !isOpinionQuestion) {
     const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
                      m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';
@@ -678,7 +678,7 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   }
 
   // WEATHER intents (standalone, no surf keywords)
-  if (/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) {
+  if ((/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) && !isOpinionQuestion) {
     const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
                      m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';

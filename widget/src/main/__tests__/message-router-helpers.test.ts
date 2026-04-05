@@ -162,6 +162,86 @@ describe('NBA opinion guard — analysis questions skip NBA tool', () => {
   });
 });
 
+// ── Weather opinion guard ────────────────────────────────────────────────────
+
+describe('Weather opinion guard — subjective questions skip weather tool', () => {
+  let preProcessIntent: (msg: string) => Promise<any>;
+
+  beforeAll(() => {
+    ({ preProcessIntent } = require('../message-router'));
+  });
+
+  test('"do you think it will rain tomorrow?" does NOT route to get_weather', async () => {
+    const r = await preProcessIntent('do you think it will rain tomorrow?');
+    expect(r).toBeNull();
+  });
+
+  test('"what are the chances of sunny weather this weekend?" does NOT route to get_weather', async () => {
+    const r = await preProcessIntent('what are the chances of sunny weather this weekend?');
+    expect(r).toBeNull();
+  });
+
+  test('"weather in Auckland" STILL routes to get_weather', async () => {
+    const r = await preProcessIntent('weather in Auckland');
+    expect(r).not.toBeNull();
+    expect(r.calls[0].name).toBe('get_weather');
+  });
+
+  test('"forecast for London tomorrow" STILL routes to get_weather', async () => {
+    const r = await preProcessIntent('forecast for London tomorrow');
+    expect(r).not.toBeNull();
+    expect(r.calls[0].name).toBe('get_weather');
+  });
+});
+
+// ── Surf opinion guard ──────────────────────────────────────────────────────
+
+describe('Surf opinion guard — subjective questions skip surf tool', () => {
+  let preProcessIntent: (msg: string) => Promise<any>;
+
+  beforeAll(() => {
+    ({ preProcessIntent } = require('../message-router'));
+  });
+
+  test('"do you think the swell will be good?" does NOT route to __surf_conditions', async () => {
+    const r = await preProcessIntent('do you think the swell will be good?');
+    expect(r).toBeNull();
+  });
+
+  test('"what are the chances the waves will be decent?" does NOT route to __surf_conditions', async () => {
+    const r = await preProcessIntent('what are the chances the waves will be decent?');
+    expect(r).toBeNull();
+  });
+
+  test('"surf report for Raglan" STILL routes to __surf_conditions', async () => {
+    const r = await preProcessIntent('surf report for Raglan');
+    expect(r).not.toBeNull();
+    expect(r.calls[0].name).toBe('__surf_conditions');
+  });
+});
+
+// ── Compound file + opinion guard ───────────────────────────────────────────
+
+describe('Compound file intent — opinion questions fall through to LLM', () => {
+  let preProcessIntent: (msg: string) => Promise<any>;
+
+  beforeAll(() => {
+    ({ preProcessIntent } = require('../message-router'));
+  });
+
+  test('"do you think the warriors will win? save your opinion to a file" does NOT route to compound NBA file', async () => {
+    const r = await preProcessIntent('do you think the warriors will win the season? save your opinion to a file');
+    // Should fall through — opinion overrides compound file+nba
+    expect(r === null || r.calls[0].name !== '__compound_nba_file').toBe(true);
+  });
+
+  test('"create a file with this weeks NBA games" STILL routes to compound NBA file', async () => {
+    const r = await preProcessIntent('create a file with this weeks NBA games');
+    expect(r).not.toBeNull();
+    expect(r.calls[0].name).toBe('__compound_nba_file');
+  });
+});
+
 // ── Music links intent ───────────────────────────────────────────────────────
 
 describe('__music_links intent detection', () => {
