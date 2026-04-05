@@ -2787,7 +2787,6 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (!searchContext) {
                 // Web search ran but returned empty content — tell the user
                 const noResultMsg = `I searched the web for that but couldn't retrieve useful content. Try rephrasing, or check a news source directly.`;
-                addToHistory(convId, 'user', enhancedMessage);
                 addToHistory(convId, 'assistant', noResultMsg);
                 try { event.sender.send('sadie:stream-chunk', { chunk: noResultMsg, streamId }); } catch (e) {}
                 try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
@@ -3336,13 +3335,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             apiKey: process.env.PROXY_API_KEYS || process.env.PROXY_API_KEY
           };
 
+          let proxyAssistantResponse = '';
           const handler = streamFromSadieProxy(request, (chunk) => {
             try {
               // Only forward chunks while the stream is still active
               if (!activeStreams.has(streamId)) return;
+              const text = chunk.toString?.() || String(chunk);
+              proxyAssistantResponse += text;
               // forward raw chunk to renderer
               try { pushRouter(`PROXY emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
-              event.sender.send('sadie:stream-chunk', { chunk: chunk.toString?.() || String(chunk), streamId });
+              event.sender.send('sadie:stream-chunk', { chunk: text, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
                           }
@@ -3350,6 +3352,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               console.warn('[SADIE] proxy stream chunk forward failed', err);
             }
           }, () => {
+            if (proxyAssistantResponse.trim()) {
+              addToHistory(convId, 'assistant', proxyAssistantResponse);
+            }
             try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
                         if (E2E) {
                           console.log('[E2E-TRACE] stream-end (proxy)', { streamId });
@@ -3365,6 +3370,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
                 const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                 if (finalText) {
+                  addToHistory(convId, 'assistant', finalText);
                   try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
                   try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
                   if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback succeeded for streamId', streamId);
@@ -3778,7 +3784,6 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     const searchContext = buildSearchContext(sr);
                     if (searchContext) {
                       const augMsg = makeSynthesisPrompt(searchContext, enhancedMessage);
-                      addToHistory(convId, 'user', enhancedMessage);
                       let synthResponse = '';
                       const synthHandler = await synthesisStream(
                         augMsg, convId,
@@ -3848,7 +3853,6 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               if (responseText.trim()) {
                 // Stream the formatted response
-                addToHistory(convId, 'user', enhancedMessage);
                 addToHistory(convId, 'assistant', responseText);
                 
                 // Send as a single chunk to avoid silent failures
@@ -3861,12 +3865,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             
             // Otherwise, use LLM with tool calling as usual
             const hasCurrentDocuments = !!(request.documents && request.documents.length > 0);
+            let llmAssistantResponse = '';
             const handler = await streamFromLLM(
               enhancedMessage,
               request.images,
               convId,
               (chunk) => {
                   if (!activeStreams.has(streamId)) return;
+                  llmAssistantResponse += chunk;
                   try { pushRouter(`LLM emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
                   try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
                   if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
@@ -3880,6 +3886,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 try { event.sender.send('sadie:tool-result', { result, streamId }); } catch (e) {}
               },
               () => {
+                if (llmAssistantResponse.trim()) {
+                  addToHistory(convId, 'assistant', llmAssistantResponse);
+                }
                 try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
                 activeStreams.delete(streamId);
               },
