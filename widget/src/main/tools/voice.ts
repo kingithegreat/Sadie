@@ -79,7 +79,7 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
     }
 
     const rate = Math.max(0.5, Math.min(2.0, args.rate || 1.0));
-    const pitch = Math.max(0.5, Math.min(2.0, args.pitch || 1.0));
+    const pitch = Math.max(0.5, Math.min(2.0, args.pitch || 1.1));  // Slightly higher default for warmer tone
     const volume = Math.max(0.0, Math.min(1.0, args.volume || 1.0));
 
     const mainWindow = getMainWindow();
@@ -104,26 +104,55 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
           utterance.pitch = ${pitch};
           utterance.volume = ${volume};
           
-          // Try to use a good English voice
-          const voices = window.speechSynthesis.getVoices();
-          const preferredVoice = voices.find(v => 
-            v.name.includes('Microsoft Zira') || 
-            v.name.includes('Microsoft David') ||
-            v.name.includes('Google') ||
-            (v.lang.startsWith('en') && v.localService)
-          ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-          
-          if (preferredVoice) {
-            utterance.voice = preferredVoice;
+          // Chromium loads voices asynchronously — getVoices() often returns []
+          // on the first call. Wait for voiceschanged if needed.
+          function pickVoice(voices) {
+            const femalePrefs = [
+              'Microsoft Jenny',    // Win 11 neural — warm, natural female
+              'Microsoft Aria',     // Win 11 neural — clear female
+              'Microsoft Zira',     // Win 10+ classic female
+              'Google UK English Female',
+              'Google US English',
+              'Samantha',           // macOS default female
+              'Karen',              // macOS Australian female
+              'Moira',              // macOS Irish female
+            ];
+            for (const pref of femalePrefs) {
+              const match = voices.find(v => v.name.includes(pref));
+              if (match) return match;
+            }
+            // Fallback: any local English voice, then any English, then first available
+            return voices.find(v => v.lang.startsWith('en') && v.localService)
+              || voices.find(v => v.lang.startsWith('en'))
+              || voices[0] || null;
           }
-          
-          utterance.onend = () => resolve({ success: true, spoken: true });
-          utterance.onerror = (e) => resolve({ success: false, error: e.error || 'Speech failed' });
-          
-          window.speechSynthesis.speak(utterance);
-          
-          // Timeout after 60 seconds
-          setTimeout(() => resolve({ success: true, spoken: true }), 60000);
+
+          function speakWith(voices) {
+            const chosen = pickVoice(voices);
+            if (chosen) utterance.voice = chosen;
+            utterance.onend = () => resolve({ success: true, spoken: true, voice: chosen?.name || 'default' });
+            utterance.onerror = (e) => resolve({ success: false, error: e.error || 'Speech failed' });
+            window.speechSynthesis.speak(utterance);
+            setTimeout(() => resolve({ success: true, spoken: true }), 60000);
+          }
+
+          let voices = window.speechSynthesis.getVoices();
+          if (voices.length > 0) {
+            speakWith(voices);
+          } else {
+            // Voices not loaded yet — wait for the event (fires once in Chromium)
+            const onReady = () => {
+              window.speechSynthesis.removeEventListener('voiceschanged', onReady);
+              speakWith(window.speechSynthesis.getVoices());
+            };
+            window.speechSynthesis.addEventListener('voiceschanged', onReady);
+            // Safety timeout: if voiceschanged never fires, speak with system default
+            setTimeout(() => {
+              window.speechSynthesis.removeEventListener('voiceschanged', onReady);
+              const retry = window.speechSynthesis.getVoices();
+              speakWith(retry.length > 0 ? retry : []);
+            }, 2000);
+          }
         });
       })()
     `);
