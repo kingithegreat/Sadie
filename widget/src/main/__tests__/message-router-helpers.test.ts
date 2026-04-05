@@ -102,6 +102,66 @@ describe('NBA intent guard — no false positives on pasted context', () => {
   });
 });
 
+// ── NBA opinion / analysis guard ─────────────────────────────────────────────
+
+describe('NBA opinion guard — analysis questions skip NBA tool', () => {
+  let preProcessIntent: (msg: string) => Promise<any>;
+
+  beforeAll(() => {
+    ({ preProcessIntent } = require('../message-router'));
+  });
+
+  test('"do you think the warriors can still win the season?" does NOT route to nba_query', async () => {
+    const r = await preProcessIntent('do you think the warriors can still win the season?');
+    // Should fall through to general LLM chat (null = no tool match)
+    expect(r).toBeNull();
+  });
+
+  test('"can the lakers make the playoffs?" does NOT route to nba_query', async () => {
+    const r = await preProcessIntent('can the lakers make the playoffs?');
+    expect(r).toBeNull();
+  });
+
+  test('"what are the celtics chances of winning the championship?" does NOT route to nba_query', async () => {
+    const r = await preProcessIntent('what are the celtics chances of winning the championship?');
+    expect(r).toBeNull();
+  });
+
+  test('"will the bucks win it all this year?" does NOT route to nba_query', async () => {
+    const r = await preProcessIntent('will the bucks win it all this year?');
+    expect(r).toBeNull();
+  });
+
+  test('"who do you think will win the NBA championship?" does NOT route to nba_query', async () => {
+    const r = await preProcessIntent('who do you think will win the NBA championship?');
+    expect(r).toBeNull();
+  });
+
+  test('"realistically can the warriors contend?" does NOT route to nba_query', async () => {
+    const r = await preProcessIntent('realistically can the warriors contend?');
+    expect(r).toBeNull();
+  });
+
+  // Ensure factual queries STILL route correctly
+  test('"when do the warriors play next?" STILL routes to nba_query', async () => {
+    const r = await preProcessIntent('when do the warriors play next?');
+    expect(r).not.toBeNull();
+    expect(r.calls[0].name).toBe('nba_query');
+  });
+
+  test('"what were the lakers scores today?" STILL routes to nba_query', async () => {
+    const r = await preProcessIntent('what were the lakers scores today?');
+    expect(r).not.toBeNull();
+    expect(r.calls[0].name).toBe('nba_query');
+  });
+
+  test('"nba standings" STILL routes to nba_query', async () => {
+    const r = await preProcessIntent('nba standings');
+    expect(r).not.toBeNull();
+    expect(r.calls[0].name).toBe('nba_query');
+  });
+});
+
 // ── Music links intent ───────────────────────────────────────────────────────
 
 describe('__music_links intent detection', () => {

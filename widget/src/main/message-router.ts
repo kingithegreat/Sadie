@@ -623,7 +623,12 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   // but the actual user intent (at the end) may be completely different.
   // Also suppress NBA routing when clear music/content signals are present.
   const hasMusicOrContentIntent = /\b(song(s)?|music|rap|hip.?hop|artist|album|track|playlist|lyrics|links?)\b/i.test(m);
-  const nbaTeamIsIntent = hasNbaTeam && !hasMusicOrContentIntent &&
+
+  // Guard: opinion / analysis / prediction questions should go to the LLM, not the NBA
+  // data endpoint.  "do you think the warriors can still win?" ≠ schedule lookup.
+  const isOpinionQuestion = /\b(do you think|what do you think|can .{1,40} (still|win|make|get)|will .{1,40} (win|make|get)|chances?|predict(ion)?s?|opinion|could .{1,40} (win|make)|how far .{1,40} go|contend(er|ers)?|what are .{1,40} odds|should .{1,40} trade|going to win|gonna win|reckon|expect|likely|realistically)\b/i.test(m);
+
+  const nbaTeamIsIntent = hasNbaTeam && !hasMusicOrContentIntent && !isOpinionQuestion &&
     (m.length < 300 || /\b(play(ed|ing)?|game|score|won|beat|vs\.?|versus|match|result|roster|stat)\b/i.test(m));
 
   // Helper: return YYYYMMDD string for America/New_York timezone + optional day offset
@@ -634,11 +639,11 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
   };
   
   // STANDINGS: check before the general NBA block to avoid falling through to 'games'
-  if (/\b(nba|basketball)\b/i.test(m) && /\bstanding(s)?\b/i.test(m) && !hasMusicOrContentIntent) {
+  if (/\b(nba|basketball)\b/i.test(m) && /\bstanding(s)?\b/i.test(m) && !hasMusicOrContentIntent && !isOpinionQuestion) {
     return { calls: [{ name: 'nba_query', arguments: { type: 'standings' } }] };
   }
 
-  if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) && !hasMusicOrContentIntent) {
+  if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion) {
     let teamQuery = '';
     for (const team of nbaTeams) {
       if (m.includes(team)) { teamQuery = team; break; }
