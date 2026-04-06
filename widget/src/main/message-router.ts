@@ -1980,7 +1980,7 @@ export async function streamFromOllamaWithTools(
           if (flushedLength < assistantContent.length && pendingToolCalls.length === 0) {
             const unflushed = assistantContent.slice(flushedLength);
             // Quick check: if accumulated content is starting to look like tool JSON, hold off
-            if (looksLikeToolJson(assistantContent)) return;
+            if (looksLikeToolJson(assistantContent) || looksLikeToolJson(unflushed)) return;
             onChunk(unflushed);
             flushedLength = assistantContent.length;
           }
