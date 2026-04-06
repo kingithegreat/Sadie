@@ -2,6 +2,20 @@
 
 ## v0.9.0 — Smart error recovery + hardware-aware MoA
 
+### Fixed — Conversation Context & Streaming Reliability
+- **Conversation history on all streaming paths** (`message-router.ts`): assistant responses are now saved to `conversationHistory` on the n8n/`streamFromLLM` path, the proxy path, and the proxy→n8n fallback path — follow-up messages now have full context instead of each question acting like a new conversation.
+- **Removed duplicate user-history entries**: three redundant `addToHistory(convId, 'user', …)` calls removed — user message is now recorded exactly once before routing.
+- **Tool-call leak guard** (`message-router.ts`): `scheduleFlush()` now checks the unflushed chunk (not just the full buffer) for `tool_call` patterns, preventing raw `tool_call web_search "…"` text from leaking into the chat mid-stream.
+
+### Fixed — Opinion Guard on Tool Routes
+- **All tool routes** (`message-router.ts`): opinion, analysis, and conversational follow-up questions (e.g. "what do you think about today's game?") are now detected before tool routing and sent to the LLM instead of being dispatched to external APIs.
+- **NBA-specific guard** (`message-router.ts`): questions like "will the Lakers win tonight?" no longer hit the schedule API — they go to the LLM for a reasoned response.
+- 18 new unit tests for opinion-guard logic across all tool categories. Test count: 1,604 → 1,622 (112 suites).
+
+### Fixed — TTS Voice Selection
+- **Async voice loading** (`voice.ts`): `speechSynthesis.getVoices()` returns `[]` on first call in Chromium; TTS now waits for the `voiceschanged` event before selecting a voice, with a 2-second safety timeout that falls back to the system default.
+- **Female voice priority list**: Jenny → Aria → Zira → Google UK Female → Google US → Samantha → Karen → Moira, with English-language fallback chain.
+
 ### Added — Smart Error Recovery UX
 - **Error classification engine** (`message-router.ts`): new `classifyError()` function categorises stream errors into `ollama` (connection), `model` (not found), `n8n` (upstream), `timeout`, and `unknown` — each with actionable `RecoveryHint`.
 - **Rich recovery banners** (`MessageBubble.tsx`): error messages now show service-specific icons (🔌 Ollama, 📦 Model, ⚙️ n8n), user-friendly guidance, and contextual action buttons instead of generic "Error" text.

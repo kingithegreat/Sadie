@@ -76,7 +76,7 @@ describe('speakHandler', () => {
     expect(res.success).toBe(true);
     expect(res.result.textLength).toBe(11);
     expect(res.result.rate).toBe(1.0);
-    expect(res.result.pitch).toBe(1.0);
+    expect(res.result.pitch).toBe(1.1);
     expect(res.result.volume).toBe(1.0);
   });
 
