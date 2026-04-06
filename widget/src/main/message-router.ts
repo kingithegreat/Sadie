@@ -519,7 +519,7 @@ export function buildMusicLinksResponse(songs: string[]): string {
 
 // Exported deterministic intent router so it can be used by the message handler
 // and imported directly by unit tests.
-export async function preProcessIntent(userMessage: string): Promise<{ calls: any[] } | null> {
+export async function preProcessIntent(userMessage: string, conversationId?: string): Promise<{ calls: any[] } | null> {
   if (!userMessage || typeof userMessage !== 'string') return null;
   const m = userMessage.toLowerCase();
 
@@ -956,6 +956,37 @@ export async function preProcessIntent(userMessage: string): Promise<{ calls: an
       !/\b(this|document|doc|file|pdf|cv|resume|report|letter)\b/i.test(m)) {
     const q = userMessage.trim();
     return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
+  }
+
+  // ── CONTEXT-AWARE FOLLOW-UP ──
+  // Short vague follow-up (e.g. "how many have died?") with no tool keywords.
+  // If recent conversation history shows a web-search topic, re-route this to
+  // web_search with the original topic so the user doesn't lose context.
+  if (conversationId && userMessage.trim().length < 120) {
+    const history = getHistory(conversationId);
+    if (history.length >= 2) {
+      // Walk backwards to find the most recent user query that triggered a web search
+      // (contains source/URL markers typical of synthesised web results)
+      const WEB_RESULT_MARKER = /\bsource[:\s]*\[|\bhttps?:\/\/|\b\(source:\s|For more .{0,40}(visit|refer|check)\b/i;
+      let lastTopic: string | null = null;
+      for (let i = history.length - 1; i >= 1; i--) {
+        if (history[i].role === 'assistant' && WEB_RESULT_MARKER.test(history[i].content)) {
+          // The user message just before this assistant response is the topic
+          for (let j = i - 1; j >= 0; j--) {
+            if (history[j].role === 'user') {
+              lastTopic = history[j].content;
+              break;
+            }
+          }
+          break;
+        }
+      }
+      if (lastTopic) {
+        // Combine the original topic with the follow-up for a contextual search
+        const contextQuery = `${userMessage.trim()} — context: ${lastTopic.trim()}`;
+        return { calls: [{ name: 'web_search', arguments: { query: contextQuery, maxResults: 5, fetchTopResult: true } }] };
+      }
+    }
   }
 
   return null;
@@ -2504,7 +2535,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // Run intent detection BEFORE streaming so deterministic tool execution
         // takes priority over unreliable LLM tool-calling.
         {
-          const intentResult = await preProcessIntent(enhancedMessage);
+          const intentResult = await preProcessIntent(enhancedMessage, convId);
           console.log('[SADIE] preProcessIntent called with:', enhancedMessage.substring(0, 60));
           console.log('[SADIE] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
 
@@ -3427,7 +3458,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
           try {
             // SMART ROUTING: Use intent detection first to handle known patterns reliably
-            const intentResult = await preProcessIntent(enhancedMessage);
+            const intentResult = await preProcessIntent(enhancedMessage, convId);
             console.log('[SADIE] Intent result:', intentResult);
             let shouldUseDirectTools = false;
             let toolResults: any[] | null = null;
@@ -3897,11 +3928,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 (async () => {
                   console.log('[SADIE] direct stream onError: attempting non-stream fallback...');
                   try {
+                    const fbHistory = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
                     const fallbackBody = {
                       model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
                       messages: uncensoredModeEnabled
-                        ? [ { role: 'user', content: reqAny.message } ]
-                        : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
+                        ? [ ...fbHistory, { role: 'user', content: reqAny.message } ]
+                        : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory, { role: 'user', content: reqAny.message } ],
                       stream: false
                     };
                     const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
@@ -3939,11 +3971,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (reqAny.conversationPrompt && typeof reqAny.conversationPrompt === 'string') {
                 systemPrompt = reqAny.conversationPrompt;
               }
+              const fbHistory2 = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
               const fallbackBody = {
                 model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
                 messages: uncensoredModeEnabled
-                  ? [ { role: 'user', content: reqAny.message } ]
-                  : [ { role: 'system', content: systemPrompt }, { role: 'user', content: reqAny.message } ],
+                  ? [ ...fbHistory2, { role: 'user', content: reqAny.message } ]
+                  : [ { role: 'system', content: systemPrompt }, ...fbHistory2, { role: 'user', content: reqAny.message } ],
                 stream: false
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
@@ -3973,11 +4006,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // because this can mask upstream failures during tests.
             // Fallback: fetch a non-streaming response from Ollama and return final text
             try {
+              const fbHistory3 = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
               const fallbackBody = {
                 model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
                 messages: uncensoredModeEnabled
-                  ? [ { role: 'user', content: reqAny.message } ]
-                  : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, { role: 'user', content: reqAny.message } ],
+                  ? [ ...fbHistory3, { role: 'user', content: reqAny.message } ]
+                  : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory3, { role: 'user', content: reqAny.message } ],
                 stream: false
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
