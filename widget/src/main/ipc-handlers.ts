@@ -1,5 +1,9 @@
 import { ipcMain, BrowserWindow, app, shell } from 'electron';
 import { getMainWindow } from './window-manager';
+
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -52,7 +56,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // Only log idempotent registration warnings in development
       if (isDevelopment) {
         console.log('[IPC] registerIpcHandlers already executed — skipping');
-        try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) {}
+        try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) { safeCatch(e); }
       }
       return;
     }
@@ -130,11 +134,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.on('sadie:message', async (_event, { message, conversationId }) => {
     try {
       console.log('[Main] Received sendMessage', { conversationId, preview: String(message).substring(0,120) });
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] Received sendMessage conv=${conversationId} preview=${String(message).substring(0,120)}`); } catch (e) {}
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] Received sendMessage conv=${conversationId} preview=${String(message).substring(0,120)}`); } catch (e) { safeCatch(e); }
           // Load settings to get n8n URL
           const settings = getSettings();
       console.log('[Main] Calling messageRouter.sendStreamRequest (via axios post)');
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] Calling messageRouter.sendStreamRequest (via axios post)'); } catch (e) {}
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] Calling messageRouter.sendStreamRequest (via axios post)'); } catch (e) { safeCatch(e); }
 
       // Send message to n8n orchestrator
       const response = await axios.post(`${settings.n8nUrl}/webhook/sadie/chat`, {
@@ -156,7 +160,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         });
       }
       console.log('[Main] sendStreamRequest returned', { status: response.status });
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] sendStreamRequest returned status=${response.status}`); } catch (e) {}
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] sendStreamRequest returned status=${response.status}`); } catch (e) { safeCatch(e); }
 
     } catch (err: any) {
       console.error('Error communicating with n8n orchestrator:', err.message);
@@ -461,7 +465,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   // E2E ping helper - used by tests to ensure main is responsive
   ipcMain.handle('sadie:__e2e_ping', async () => {
-    try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; (global as any).__SADIE_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) {}
+    try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; (global as any).__SADIE_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) { safeCatch(e); }
     return { ok: true };
   });
 
@@ -677,13 +681,13 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('sadie:add-message', async (_event, { conversationId, message }: { conversationId: string; message: Message }) => {
     try {
       console.log(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id} len=${String(message.content || '').length}`);
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER = (global as any).__SADIE_MAIN_LOG_BUFFER || []; (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id}`); } catch (e) {}
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER = (global as any).__SADIE_MAIN_LOG_BUFFER || []; (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id}`); } catch (e) { safeCatch(e); }
       const success = MemoryManager.addMessageToConversation(conversationId, message);
       console.log(`[IPC] addMessage -> success=${success}`);
       return { success };
     } catch (err: any) {
       console.error('Error adding message:', err.message);
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] addMessage error=${String(err)}`); } catch (e) {}
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] addMessage error=${String(err)}`); } catch (e) { safeCatch(e); }
       return { success: false, error: err.message };
     }
   });

@@ -4,7 +4,13 @@
  */
 
 const mockExecImpl = jest.fn();
-jest.mock('child_process', () => ({ exec: mockExecImpl }));
+const mockExecFileImpl = jest.fn();
+jest.mock('child_process', () => ({ exec: mockExecImpl, execFile: mockExecFileImpl }));
+
+const mockOpenExternal = jest.fn().mockResolvedValue(undefined);
+jest.mock('electron', () => ({
+  shell: { openExternal: mockOpenExternal },
+}));
 
 // Helper: simulate promisify-wrapped exec success/failure
 function mockExec(stdout: string, err?: Error) {
@@ -13,6 +19,13 @@ function mockExec(stdout: string, err?: Error) {
     if (callback) callback(err ?? null, { stdout, stderr: '' });
     return { on: jest.fn() };
   });
+  // Also mock execFile for handlers that now use it
+  mockExecFileImpl.mockImplementation((_cmd: string, _args: string[], _opts: any, cb?: Function) => {
+    const callback = typeof _opts === 'function' ? _opts : cb;
+    if (callback) callback(err ?? null, { stdout, stderr: '' });
+    return { stdin: { write: jest.fn(), end: jest.fn() }, on: jest.fn() };
+  });
+  mockOpenExternal.mockResolvedValue(undefined);
 }
 
 import {
@@ -288,7 +301,7 @@ describe('openUrlHandler', () => {
   });
 
   test('returns failure on exec error', async () => {
-    mockExec('', new Error('Command not found'));
+    mockOpenExternal.mockRejectedValueOnce(new Error('Command not found'));
     const res = await openUrlHandler({ url: 'https://example.com' }, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/failed to open/i);
@@ -478,5 +491,86 @@ describe('systemToolHandlers', () => {
     for (const key of expectedKeys) {
       expect(typeof systemToolHandlers[key]).toBe('function');
     }
+  });
+});
+
+// ── Security: safeEval injection resistance ─────────────────────────────────
+
+describe('safeEval security', () => {
+  test('rejects Function constructor attempt', async () => {
+    const res = await calculateHandler({ expression: 'constructor' }, {} as any);
+    expect(res.success).toBe(false);
+  });
+
+  test('rejects require() injection', async () => {
+    const res = await calculateHandler({ expression: 'require("fs")' }, {} as any);
+    expect(res.success).toBe(false);
+  });
+
+  test('rejects process.exit injection', async () => {
+    const res = await calculateHandler({ expression: 'process.exit(1)' }, {} as any);
+    expect(res.success).toBe(false);
+  });
+
+  test('rejects global access attempt', async () => {
+    const res = await calculateHandler({ expression: 'global.constructor' }, {} as any);
+    expect(res.success).toBe(false);
+  });
+
+  test('rejects semicolon-separated statements', async () => {
+    const res = await calculateHandler({ expression: '1; process.exit(0)' }, {} as any);
+    expect(res.success).toBe(false);
+  });
+
+  test('rejects template literal injection', async () => {
+    const res = await calculateHandler({ expression: '`${process}`' }, {} as any);
+    expect(res.success).toBe(false);
+  });
+
+  test('rejects array bracket notation injection', async () => {
+    const res = await calculateHandler({ expression: '[]["constructor"]' }, {} as any);
+    expect(res.success).toBe(false);
+  });
+
+  test('handles nested functions correctly', async () => {
+    const res = await calculateHandler({ expression: 'sqrt(abs(-9))' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.result).toBe(3);
+  });
+
+  test('handles complex compound expression', async () => {
+    const res = await calculateHandler({ expression: '2 * (3 + 4) - 1' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.result).toBe(13);
+  });
+
+  test('handles unary negation', async () => {
+    const res = await calculateHandler({ expression: '-5 + 3' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.result).toBe(-2);
+  });
+
+  test('handles E constant', async () => {
+    const res = await calculateHandler({ expression: 'E' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.result).toBeCloseTo(Math.E);
+  });
+
+  test('handles ln function', async () => {
+    const res = await calculateHandler({ expression: 'ln(E)' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.result).toBeCloseTo(1);
+  });
+
+  test('handles log function (base-10)', async () => {
+    const res = await calculateHandler({ expression: 'log(100)' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.result).toBeCloseTo(2);
+  });
+
+  test('handles tan function', async () => {
+    const res = await calculateHandler({ expression: 'tan(0)' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.result).toBeCloseTo(0);
   });
 });

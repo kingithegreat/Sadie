@@ -1,4 +1,4 @@
-﻿import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
+import { ipcMain, BrowserWindow, IpcMainEvent } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { permissionRequester } from './permission-requester';
 import { looksLikeToolJson, extractToolCallsFromText, extractProseToolCalls } from './tool-helpers';
@@ -8,7 +8,7 @@ import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { SADIE_SYSTEM_PROMPT, SADIE_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
-import { initializeTools, getOllamaTools, getAllToolDefinitions, executeToolBatch, ToolCall, ToolContext } from './tools';
+import { initializeTools, getOllamaTools, getSmallModelTools, getAllToolDefinitions, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
@@ -83,6 +83,33 @@ function sanitizeUserFacingAssistantText(text: string): string {
   }
   return out;
 }
+
+/**
+ * Detect degenerate / garbage model output that should be retried.
+ * Returns a reason string if the output is garbage, null otherwise.
+ */
+export function isGarbageOutput(text: string): string | null {
+  if (!text || text.trim().length === 0) return 'empty';
+
+  // Very short response that's just punctuation or whitespace
+  const stripped = text.replace(/[\s.,!?;:]+/g, '');
+  if (stripped.length < 4 && text.length < 20) return 'too-short';
+
+  // Repetition loop: same phrase repeated 3+ times back-to-back
+  // Capture any 8+ char phrase that repeats with optional whitespace between
+  if (/(.{8,}?)\s*\1\s*\1/s.test(text)) return 'repetition-loop';
+
+  // Token-soup: >50% non-ASCII in a non-empty response (excluding common unicode like emoji)
+  const asciiCount = (text.match(/[\x20-\x7E]/g) || []).length;
+  const emojiCount = (text.match(/[\u{1F000}-\u{1FFFF}]/gu) || []).length;
+  const meaningfulChars = asciiCount + emojiCount;
+  if (text.length > 30 && meaningfulChars / text.length < 0.5) return 'token-soup';
+
+  // Prompt echo-back: model repeats system prompt markers verbatim
+  if (/\[Prior conversation context|Remembered facts about the user|SEARCH RESULTS\]/i.test(text)) return 'prompt-echo';
+
+  return null;
+}
 const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
 
 // Track if we've already warned about custom LLM config (to avoid spamming)
@@ -90,14 +117,17 @@ let customLLMWarningShown = false;
 
 // Router diagnostics buffer for capture tool
 const MAX_LOG_BUFFER = 500;
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 (global as any).__SADIE_ROUTER_LOG_BUFFER ??= [];
 function pushRouter(line: string) {
   try {
     const buf = (global as any).__SADIE_ROUTER_LOG_BUFFER;
     buf.push(`[ROUTER] ${String(line)}`);
     if (buf.length > MAX_LOG_BUFFER) buf.splice(0, buf.length - MAX_LOG_BUFFER);
-  } catch (e) {}
-  try { (global as any).__SADIE_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) {}
+  } catch (e) { safeCatch(e); }
+  try { (global as any).__SADIE_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) { safeCatch(e); }
 }
 
 /**
@@ -198,6 +228,43 @@ const conversationDigest: Map<string, string> = new Map();
 // Tracks which conversationIds have already been seeded from disk this session
 const hydratedConversations = new Set<string>();
 
+// ── Last-intent tracking (for context-aware follow-ups) ──
+// Stores the most recent preProcessIntent result per conversation so vague
+// follow-ups ("how did they do?", "tell me more") can re-invoke the same tool
+// without brittle regex scanning of assistant response text.
+const LAST_INTENT_TTL_MS = 5 * 60 * 1000;   // 5 minutes
+const LAST_INTENT_MAX_TURNS = 4;             // expire after 4 user messages
+
+interface LastIntentRecord {
+  intent: { calls: any[] };
+  userMessage: string;   // the user query that produced this intent
+  timestamp: number;
+  turnsSince: number;    // incremented each user message; 0 when intent was set
+}
+const lastIntentMap: Map<string, LastIntentRecord> = new Map();
+
+export function setLastIntent(conversationId: string, intent: { calls: any[] }, userMessage: string) {
+  lastIntentMap.set(conversationId, { intent, userMessage, timestamp: Date.now(), turnsSince: 0 });
+}
+export function getLastIntent(conversationId: string): LastIntentRecord | undefined {
+  const rec = lastIntentMap.get(conversationId);
+  if (!rec) return undefined;
+  // Expire by time or turn count
+  if (Date.now() - rec.timestamp > LAST_INTENT_TTL_MS || rec.turnsSince > LAST_INTENT_MAX_TURNS) {
+    lastIntentMap.delete(conversationId);
+    return undefined;
+  }
+  return rec;
+}
+export function clearLastIntent(conversationId: string) {
+  lastIntentMap.delete(conversationId);
+}
+/** Call on every incoming user message so turn counter stays accurate. */
+export function bumpLastIntentAge(conversationId: string) {
+  const rec = lastIntentMap.get(conversationId);
+  if (rec) rec.turnsSince++;
+}
+
 // Keep last 50 messages in the active window; compress any beyond that into a
 // rolling digest so context is never lost, only compacted.
 export const MAX_HISTORY_MESSAGES = 50;
@@ -242,14 +309,30 @@ function compressTurns(turns: ConversationMessage[]): string {
   }).join('\n');
 }
 
+// Maximum chars to keep per assistant message in history for small-model conversations.
+// Full tool results (NBA tables, weather blocks) can be 800-1500 chars each — saving them
+// untrimmed means 3-4 past answers consume the entire 4096-token context window.
+const SMALL_MODEL_HISTORY_MSG_CAP = 400;
+
 // Exported for test access
 export function addToHistory(conversationId: string, role: 'user' | 'assistant', content: string) {
   if (!conversationHistory.has(conversationId)) {
     conversationHistory.set(conversationId, []);
   }
 
+  // For small-model conversations, cap individual assistant messages so old tool
+  // results don't crowd out the current question in the context window.
+  let trimmedContent = content;
+  if (role === 'assistant' && content.length > SMALL_MODEL_HISTORY_MSG_CAP) {
+    const settings = getSettings() as any;
+    const modelName = (settings as any).chatModel || OLLAMA_CHAT_MODEL;
+    if (isSmallModel(modelName)) {
+      trimmedContent = content.slice(0, SMALL_MODEL_HISTORY_MSG_CAP) + '…';
+    }
+  }
+
   const history = conversationHistory.get(conversationId)!;
-  history.push({ role, content, timestamp: Date.now() });
+  history.push({ role, content: trimmedContent, timestamp: Date.now() });
 
   // When the window overflows, compress the oldest batch into the digest
   if (history.length > MAX_HISTORY_MESSAGES) {
@@ -282,6 +365,7 @@ export function clearHistory(conversationId: string) {
   conversationHistory.delete(conversationId);
   conversationDigest.delete(conversationId);
   hydratedConversations.delete(conversationId);
+  lastIntentMap.delete(conversationId);
 }
 
 /**
@@ -518,11 +602,46 @@ export function buildMusicLinksResponse(songs: string[]): string {
 
 // ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * Returns an instant canned response for trivial queries that don't need an LLM.
+ * Eliminates hallucination risk and round-trip latency for ultra-common questions.
+ * Returns null if no canned response matches.
+ */
+export function getCannedResponse(message: string): string | null {
+  const m = message.trim().toLowerCase().replace(/[?!.]+$/, '').trim();
+
+  // Time / date
+  if (/^(what('?s| is) the (current )?time|what time is it|current time|time right now|tell me the time)$/.test(m)) {
+    const now = new Date();
+    return `It's ${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
+  }
+  if (/^(what('?s| is) (the |today'?s? )?(date|day)|what day is (it|today)|today'?s? date|current date)$/.test(m)) {
+    const now = new Date();
+    return `Today is ${now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
+  }
+
+  // Identity
+  if (/^(who are you|what are you|what('?s| is) your name|your name|are you (a |an )?(ai|bot|assistant|chatbot|robot))$/.test(m)) {
+    return "I'm SADIE — your Smart Adaptive Desktop Intelligence Engine. I can search the web, check the weather, manage files, query NBA scores, and more.";
+  }
+  if (/^(are you (real|human|alive|sentient|conscious))$/.test(m)) {
+    return "I'm an AI assistant running on your desktop. Not human, but happy to help!";
+  }
+
+  return null;
+}
+
 // Exported deterministic intent router so it can be used by the message handler
 // and imported directly by unit tests.
 export async function preProcessIntent(userMessage: string, conversationId?: string): Promise<{ calls: any[] } | null> {
   if (!userMessage || typeof userMessage !== 'string') return null;
   const m = userMessage.toLowerCase();
+
+  // ── CANNED RESPONSES — skip LLM entirely for trivial queries ──
+  const canned = getCannedResponse(userMessage);
+  if (canned) {
+    return { calls: [{ name: '__canned', arguments: { response: canned } }] };
+  }
 
   // Opinion / analysis / prediction questions should go to the LLM for conversation,
   // not to data-fetching tools.  Defined early so all routing blocks can use it.
@@ -649,6 +768,38 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     for (const team of nbaTeams) {
       if (m.includes(team)) { teamQuery = team; break; }
     }
+
+    // ── Star player → team mapping (handles typos like "iscurry" → curry → warriors) ──
+    if (!teamQuery) {
+      const playerTeamMap: Record<string, string> = {
+        'curry': 'warriors', 'steph': 'warriors', 'draymond': 'warriors',
+        'lebron': 'lakers',
+        'jokic': 'nuggets',
+        'giannis': 'bucks', 'antetokounmpo': 'bucks',
+        'luka': 'mavericks', 'doncic': 'mavericks',
+        'durant': 'suns', 'booker': 'suns',
+        'embiid': '76ers',
+        'sga': 'thunder', 'gilgeous': 'thunder',
+        'morant': 'grizzlies',
+        'wemby': 'spurs', 'wembanyama': 'spurs',
+        'brunson': 'knicks',
+        'tatum': 'celtics',
+        'edwards': 'timberwolves',
+        'haliburton': 'pacers',
+      };
+      for (const [player, team] of Object.entries(playerTeamMap)) {
+        if (m.includes(player)) { teamQuery = team; break; }
+      }
+    }
+
+    // ── Conversation context: inherit team from last NBA intent ──
+    if (!teamQuery && conversationId) {
+      const prev = getLastIntent(conversationId);
+      if (prev && prev.intent.calls[0]?.name === 'nba_query') {
+        teamQuery = prev.intent.calls[0].arguments?.query || '';
+      }
+    }
+
     // Detect when user wants finished game results (not just the schedule)
     const wantsResults = /\b(result[s]?|who won|who win|final[s]?|finished|were[' ]?the scores?|what were.*scores?|scores?.*today|scores?.*last night|scores?.*tonight|any games?.*finish|games?.*finish|tonight'?s? results?|today'?s? results?|did.*play|played.*today|last night|recap)\b/i.test(m);
     const wantsTable = /\b(in a |as a |in |as |format(ted)? as )?(table|tabular)\b/i.test(m);
@@ -959,33 +1110,53 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
   }
 
-  // ── CONTEXT-AWARE FOLLOW-UP ──
-  // Short vague follow-up (e.g. "how many have died?") with no tool keywords.
-  // If recent conversation history shows a web-search topic, re-route this to
-  // web_search with the original topic so the user doesn't lose context.
+  // ── CONTEXT-AWARE FOLLOW-UP (generic, intent-based) ──
+  // Short vague follow-up with no tool keywords.  Instead of scanning assistant
+  // text for domain-specific markers, we simply re-invoke the last recorded
+  // intent for this conversation.  Works for web search, NBA, weather, etc.
+  //
+  // Guards against stale re-invocation:
+  //   • TTL (5 min) and turn-count (4 messages) enforced inside getLastIntent()
+  //   • Topic-shift detector: if the follow-up introduces a clear new subject
+  //     (e.g. a proper noun, a full question with "what/who/where"), skip.
   if (conversationId && userMessage.trim().length < 120) {
-    const history = getHistory(conversationId);
-    if (history.length >= 2) {
-      // Walk backwards to find the most recent user query that triggered a web search
-      // (contains source/URL markers typical of synthesised web results)
-      const WEB_RESULT_MARKER = /\bsource[:\s]*\[|\bhttps?:\/\/|\b\(source:\s|For more .{0,40}(visit|refer|check)\b/i;
-      let lastTopic: string | null = null;
-      for (let i = history.length - 1; i >= 1; i--) {
-        if (history[i].role === 'assistant' && WEB_RESULT_MARKER.test(history[i].content)) {
-          // The user message just before this assistant response is the topic
-          for (let j = i - 1; j >= 0; j--) {
-            if (history[j].role === 'user') {
-              lastTopic = history[j].content;
-              break;
-            }
-          }
-          break;
+    const prev = getLastIntent(conversationId);
+    if (prev) {
+      // Topic-shift guard: if the user is asking a clearly new standalone question
+      // (e.g. "what is the population of NZ"), let it fall through.
+      // Bridging phrases like "how many", "what about", "how did" are follow-ups.
+      const isNewTopic = /^(what is|what are|who is|who are|where is|where are|tell me about|explain|can you explain)\b.{10,}/i.test(userMessage.trim());
+      if (isNewTopic) {
+        // Looks like a brand-new question — don't re-invoke stale intent
+      } else {
+        const toolName = prev.intent.calls[0]?.name;
+        const args     = { ...prev.intent.calls[0]?.arguments };
+
+        if (toolName === 'web_search') {
+          // For web search, combine the follow-up with the original topic
+          const contextQuery = `${userMessage.trim()} — context: ${prev.userMessage.trim()}`;
+          return { calls: [{ name: 'web_search', arguments: { query: contextQuery, maxResults: 5, fetchTopResult: true } }] };
         }
-      }
-      if (lastTopic) {
-        // Combine the original topic with the follow-up for a contextual search
-        const contextQuery = `${userMessage.trim()} — context: ${lastTopic.trim()}`;
-        return { calls: [{ name: 'web_search', arguments: { query: contextQuery, maxResults: 5, fetchTopResult: true } }] };
+
+        // For nba_query: re-parse date modifiers from the NEW message so
+        // "what about tomorrow?" doesn't repeat today's date.
+        if (toolName === 'nba_query') {
+          const fm = userMessage.toLowerCase();
+          const etDate = (offset = 0) => {
+            const d = new Date();
+            d.setDate(d.getDate() + offset);
+            return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).replace(/-/g, '');
+          };
+          if (/\btomorrow\b/i.test(fm))          args.date = etDate(1);
+          else if (/\byesterday\b/i.test(fm))     args.date = etDate(-1);
+          else if (/\blast night\b/i.test(fm))     args.date = etDate(-1);
+          else if (/\btonight|today\b/i.test(fm))  args.date = etDate(0);
+          // Otherwise keep the original date from the prior intent
+          return { calls: [{ name: 'nba_query', arguments: args }] };
+        }
+
+        // For any other tool (get_weather, etc.) re-invoke with same args
+        return { calls: [{ name: toolName, arguments: args }] };
       }
     }
   }
@@ -1006,6 +1177,10 @@ export async function analyzeAndRouteMessage(message: string): Promise<RoutingDe
   try {
     const pre = await preProcessIntent(message);
     if (pre && Array.isArray(pre.calls) && pre.calls.length > 0) {
+      // Canned responses are instant — always route, ignore tool-execute setting
+      if (pre.calls[0]?.name === '__canned') {
+        return { type: 'tools', calls: pre.calls as ToolCall[] };
+      }
       // Respect user setting to disable automatic tool execution
       if (!autoExecuteToolsEnabled()) {
         console.log('[ROUTER] Automatic tool execution disabled by settings; routing to LLM');
@@ -1123,6 +1298,53 @@ export function makeSynthesisPrompt(searchContext: string, question: string): st
 }
 
 /**
+ * Compact synthesis prompt for small models (~4096 token context).
+ * Trims the search context harder and uses a single short instruction block
+ * instead of 4 paragraphs the 3B model can't keep in attention.
+ */
+export function makeSynthesisPromptCompact(searchContext: string, question: string): string {
+  const trimmed = searchContext.slice(0, 1500);
+  return `[SEARCH RESULTS]\n${trimmed}\n[/SEARCH RESULTS]\n\n` +
+    `Answer the question from the results above. Do NOT say you cannot access data. ` +
+    `Do NOT invent facts. For scheduled games, say they haven't been played.\n\n` +
+    `Question: ${question}`;
+}
+
+/**
+ * Build a synthesis prompt sized for the current model.
+ * Small models get a trimmed context + compact instructions.
+ * Large models get the full verbose version.
+ */
+export function buildSynthesisPrompt(searchContext: string, question: string): string {
+  const settings = getSettings() as any;
+  const cloudCfg = settings?.customLLM;
+  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  // When using cloud LLM the model is the cloud one — check that.
+  // When using local Ollama, check the chat model.
+  const modelName = isCloudActive
+    ? (cloudCfg?.model || '')
+    : ((settings as any).chatModel || OLLAMA_CHAT_MODEL);
+  return isSmallModel(modelName)
+    ? makeSynthesisPromptCompact(searchContext, question)
+    : makeSynthesisPrompt(searchContext, question);
+}
+
+/**
+ * Build search context with a budget appropriate for the active model.
+ * Small models get 1500 chars; large models get the default 3000.
+ */
+function buildSearchContextForModel(sr: any): string {
+  const settings = getSettings() as any;
+  const cloudCfg = settings?.customLLM;
+  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  const modelName = isCloudActive
+    ? (cloudCfg?.model || '')
+    : ((settings as any).chatModel || OLLAMA_CHAT_MODEL);
+  const budget = isSmallModel(modelName) ? 1500 : 3000;
+  return buildSearchContext(sr, budget);
+}
+
+/**
  * Route a synthesis call to the best available model.
  * Uses the cloud LLM when one is configured; falls back to local Ollama otherwise.
  */
@@ -1214,7 +1436,7 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
   try {
     const decision = decisionOverride ?? await analyzeAndRouteMessage(request.message as string);
     // diagnostic log for tests
-    try { console.log('[ROUTER DIAG] decision=', JSON.stringify(decision)); } catch (e) {}
+    try { console.log('[ROUTER DIAG] decision=', JSON.stringify(decision)); } catch (e) { safeCatch(e); }
 
     if (decision.type === 'error') {
       return { success: false, error: true, message: `Routing error: ${decision.reason}` };
@@ -1288,15 +1510,15 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
     if (decision.type === 'llm') {
       const targetUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
       try {
-        try { pushRouter(`POSTing to n8n webhook = ${targetUrl}`); } catch (e) {}
+        try { pushRouter(`POSTing to n8n webhook = ${targetUrl}`); } catch (e) { safeCatch(e); }
         const response = await axios.post(targetUrl, request, {
           timeout: DEFAULT_TIMEOUT,
           headers: sadieWebhookHeaders()
         });
-        try { pushRouter(`n8n webhook POST succeeded, status=${response?.status}`); } catch (e) {}
+        try { pushRouter(`n8n webhook POST succeeded, status=${response?.status}`); } catch (e) { safeCatch(e); }
         return { success: true, data: response.data };
       } catch (err: any) {
-        try { pushRouter(`n8n webhook POST failed: ${String(err?.message || err)}`); } catch (e) {}
+        try { pushRouter(`n8n webhook POST failed: ${String(err?.message || err)}`); } catch (e) { safeCatch(e); }
         throw err;
       }
     }
@@ -1339,7 +1561,7 @@ export function getSystemPromptForModel(modelName: string, guidelines?: string):
  * Detect likely tool categories from a user message for small-model tool filtering.
  * Returns undefined (= send all tools) when no strong signal is found.
  */
-export function detectToolCategories(message: string): string[] | undefined {
+export function detectToolCategories(message: string): string[] {
   const m = message.toLowerCase();
   const cats = new Set<string>();
 
@@ -1360,8 +1582,9 @@ export function detectToolCategories(message: string): string[] | undefined {
   if (/\b(plan|steps|how\s+do|how\s+should)\b/.test(m)) cats.add('utility');
   if (/\b(notification|notify|alert)\b/.test(m)) cats.add('system');
 
-  // If nothing matched or too many categories, send all tools
-  if (cats.size === 0 || cats.size > 3) return undefined;
+  // When nothing matched or too many categories, return empty so the caller
+  // falls back to the core tool set instead of sending all 80+ tools.
+  if (cats.size === 0 || cats.size > 3) return [];
   return Array.from(cats);
 }
 
@@ -1806,87 +2029,106 @@ export async function streamFromOllamaWithTools(
   const storedConv = inlinePrompt ? null : MemoryManager.getConversation(conversationId);
   const convPrompt = inlinePrompt || storedConv?.systemPrompt?.toString().trim();
 
-  const messages: ChatMessage[] = [];
-  // In uncensored mode skip ALL system prompts so the model runs completely unfiltered
-  if (!uncensoredModeEnabled) {
-    if (convPrompt) {
-      messages.push({ role: 'system', content: convPrompt });
-    }
-    // Always include the global SADIE prompt after the conversation prompt
-    // Append user's chat guidelines if set
-    const chatGuidelines = settings.chatGuidelines?.trim();
-    const systemPromptWithGuidelines = getSystemPromptForModel(model, chatGuidelines);
-    messages.push({ role: 'system', content: systemPromptWithGuidelines });
-
-    // Inject matched skill context based on the user's message
-    const skillContext = matchSkills(message);
-    if (skillContext) {
-      messages.push({ role: 'system', content: skillContext });
-    }
-  }
-
   // ── Context budget: scale history window and digest to model size ──
   const smallModel = isSmallModel(model);
   const maxHistoryForModel = smallModel ? SMALL_MODEL_HISTORY_MESSAGES : MAX_HISTORY_MESSAGES;
 
-  // Add conversation history (last N messages for context)
-  // If there is a rolling digest of older messages, inject it as a brief system
-  // context addendum so nothing is fully lost when the window compresses.
+  const messages: ChatMessage[] = [];
+
+  // Gather optional context fragments (used by both paths)
+  const chatGuidelines = settings.chatGuidelines?.trim();
+  const systemPromptWithGuidelines = getSystemPromptForModel(model, chatGuidelines);
+  const skillContext = (!uncensoredModeEnabled) ? matchSkills(message) : null;
   const rawDigest = conversationDigest.get(conversationId);
   const digest = rawDigest && smallModel
     ? rawDigest.slice(-SMALL_MODEL_DIGEST_CHARS)
     : rawDigest;
-  if (digest && !uncensoredModeEnabled) {
-    messages.push({
-      role: 'system',
-      content: `[Prior conversation context — older turns compressed for brevity]\n${digest}`
-    });
-  }
 
-  // For synthesis calls inject a system override that cancels the default
-  // "offer alternatives when you can't help" instruction — the model already
-  // has search results and must answer from them without hedging.
-  if (isSynthesisCall && !uncensoredModeEnabled) {
-    messages.push({
-      role: 'system',
-      content: 'You are answering from pre-fetched search results. ' +
-        'Do NOT say you cannot fetch, access, or retrieve information. ' +
-        'Do NOT offer to look something up. Answer directly from the results provided. ' +
-        'Do NOT fabricate or guess facts not present in the results. ' +
-        'For sports: if games are scheduled/pre-game, say they have not been played yet — never invent scores.'
-    });
-  }
-
-  // Recall persisted facts from MCP memory knowledge graph.
-  // Skip for synthesis calls — the message is not a real user query so memory
-  // recall is irrelevant and the 3000-char search-results string would be a
-  // useless (and expensive) knowledge-graph query.
+  let recalled: string | null = null;
   if (!uncensoredModeEnabled && !isSynthesisCall) {
-    const recalled = await recallMemory(message).catch(() => null);
-    if (recalled) {
-      const cappedRecall = smallModel ? recalled.slice(0, SMALL_MODEL_MEMORY_CHARS) : recalled;
-      messages.push({
-        role: 'system',
-        content: `[Remembered facts about the user from prior sessions]\n${cappedRecall}`
-      });
-    }
-    // Fire-and-forget: persist any self-disclosures in this user message
+    recalled = await recallMemory(message).catch(() => null);
     memorizeIfUseful(message).catch(() => {});
   }
 
-  // Auto-inject RAG context for small models — bypasses the tool-call requirement
-  // so 3B models don't need to figure out they should call rag_query.
+  let ragSnippet: string | null = null;
   if (!isSynthesisCall && !uncensoredModeEnabled) {
     try {
       const ragHit = ragSearch(message);
       if (ragHit) {
-        const ragSnippet = smallModel ? ragHit.text.slice(0, 600) : ragHit.text;
-        messages.push({
-          role: 'system',
-          content: `[Relevant document context from "${ragHit.filename}" (score: ${ragHit.score.toFixed(2)})]\n${ragSnippet}`
-        });
+        ragSnippet = smallModel ? ragHit.text.slice(0, 600) : ragHit.text;
+        if (!smallModel) {
+          ragSnippet = `[Relevant document context from "${ragHit.filename}" (score: ${ragHit.score.toFixed(2)})]\n${ragSnippet}`;
+        }
       }
     } catch (_ragErr) { /* RAG search failed — non-critical, skip silently */ }
+  }
+
+  // ── Small models: merge all system context into ONE message ──────────────
+  // Multiple system messages confuse 3B models — they lose track of which
+  // instructions matter, waste tokens on role/formatting overhead, and split
+  // attention.  One focused message keeps the model on-task.
+  if (smallModel && !uncensoredModeEnabled) {
+    const parts: string[] = [];
+    // Primary identity / behaviour rules — always present
+    parts.push(systemPromptWithGuidelines);
+    // Conversation-specific persona override (e.g. "you are a pirate")
+    if (convPrompt) parts.push(convPrompt);
+    // Skill context (variable-length domain knowledge)
+    if (skillContext) parts.push(skillContext);
+    // Synthesis override — answer from results, don't hedge
+    if (isSynthesisCall) {
+      parts.push(
+        'You are answering from pre-fetched search results. ' +
+        'Answer directly from the results provided. ' +
+        'Do NOT say you cannot fetch information. Do NOT fabricate facts.'
+      );
+    }
+    // Rolling digest of older turns
+    if (digest) parts.push(`[Prior context]\n${digest}`);
+    // Persisted memory recall
+    if (recalled) {
+      parts.push(`[Remembered]\n${recalled.slice(0, SMALL_MODEL_MEMORY_CHARS)}`);
+    }
+    // RAG document hit
+    if (ragSnippet) parts.push(`[Document]\n${ragSnippet}`);
+
+    messages.push({ role: 'system', content: parts.join('\n\n') });
+
+  // ── Large models: keep separate system messages (they handle it well) ───
+  } else if (!uncensoredModeEnabled) {
+    if (convPrompt) {
+      messages.push({ role: 'system', content: convPrompt });
+    }
+    messages.push({ role: 'system', content: systemPromptWithGuidelines });
+
+    if (skillContext) {
+      messages.push({ role: 'system', content: skillContext });
+    }
+    if (digest) {
+      messages.push({
+        role: 'system',
+        content: `[Prior conversation context — older turns compressed for brevity]\n${digest}`
+      });
+    }
+    if (isSynthesisCall) {
+      messages.push({
+        role: 'system',
+        content: 'You are answering from pre-fetched search results. ' +
+          'Do NOT say you cannot fetch, access, or retrieve information. ' +
+          'Do NOT offer to look something up. Answer directly from the results provided. ' +
+          'Do NOT fabricate or guess facts not present in the results. ' +
+          'For sports: if games are scheduled/pre-game, say they have not been played yet — never invent scores.'
+      });
+    }
+    if (recalled) {
+      messages.push({
+        role: 'system',
+        content: `[Remembered facts about the user from prior sessions]\n${recalled}`
+      });
+    }
+    if (ragSnippet) {
+      messages.push({ role: 'system', content: ragSnippet });
+    }
   }
 
   // Only send the most recent N messages — older turns are already in the digest
@@ -1911,10 +2153,12 @@ export async function streamFromOllamaWithTools(
   // Only include document tools when documents are actually attached to THIS message.
   // Never offer tools for synthesis calls — the model already has the data it needs
   // and offering tools causes it to redundantly call web_search, blowing the context.
-  // For small models, filter tools to relevant categories to reduce confusion.
+  // For small models, use the compact core-tool set instead of all 80+ tools.
   const intentCategories = smallModel ? detectToolCategories(message) : undefined;
   const tools = (modelSupportsTools && !skipToolsForGreeting && !isSynthesisCall) 
-    ? getOllamaTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
+    ? (smallModel
+      ? getSmallModelTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
+      : getOllamaTools({ excludeDocumentTools: !hasDocuments }))
     : undefined;
   
   console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, hasDocuments=${hasDocuments}, isGreeting=${skipToolsForGreeting}, message="${message.substring(0, 30)}..."`);
@@ -1940,8 +2184,11 @@ export async function streamFromOllamaWithTools(
         stream: true,
         // Keep model warm in VRAM between requests (avoids cold-start reload)
         keep_alive: '30m',
-        // Cap context window for small models to avoid OOM on low-VRAM GPUs
-        ...(smallModel ? { options: { num_ctx: 4096 } } : {})
+        // Tune generation parameters for small models: lower temperature for
+        // consistency and higher repetition penalty to prevent looping.
+        ...(smallModel
+          ? { options: { num_ctx: 4096, temperature: 0.3, repeat_penalty: 1.3 } }
+          : {})
       };
       
       if (tools && tools.length > 0) {
@@ -2095,6 +2342,33 @@ export async function streamFromOllamaWithTools(
         assistantContent = sanitizeUserFacingAssistantText(assistantContent);
       }
 
+      // ── Output quality gate: detect garbage and auto-retry (small models only) ──
+      if (pendingToolCalls.length === 0 && smallModel && round === 0) {
+        const garbageReason = isGarbageOutput(assistantContent);
+        if (garbageReason) {
+          console.warn(`[SADIE] Garbage output detected (${garbageReason}), retrying with simplified prompt`);
+          pushRouter(`Garbage output (${garbageReason}); retrying round ${round + 1}`);
+          // If we already flushed partial garbage to the UI, send a replacement
+          // signal so the renderer can clear it before the retry output arrives.
+          if (flushedLength > 0) {
+            onChunk('\n___REPLACE___');
+            flushedLength = 0;
+          }
+          // Strip extra system messages to simplify context — keep only the
+          // main system prompt and the user message
+          const retryMessages: ChatMessage[] = [
+            messages.find(m => m.role === 'system')!,
+            { role: 'user' as const, content: message }
+          ].filter(Boolean);
+          messages.length = 0;
+          messages.push(...retryMessages);
+          // Drop tools for the retry to reduce confusion
+          if (requestBody.tools) delete requestBody.tools;
+          await processResponse(round + 1);
+          return;
+        }
+      }
+
       // Flush any remaining buffered content that wasn't sent during streaming.
       // If tool JSON was detected, send the replacement message instead.
       if (pendingToolCalls.length > 0 && flushedLength > 0) {
@@ -2137,7 +2411,7 @@ export async function streamFromOllamaWithTools(
         if (batchResults.length === 1 && batchResults[0].success === false && (batchResults[0] as any).status === 'needs_confirmation') {
           const missing = (batchResults[0] as any).missingPermissions || [];
           const reason = (batchResults[0] as any).reason || `This action requires: ${missing.join(', ')}`;
-          try { pushRouter(`Permission escalation requested: ${missing.join(',')}`); } catch (e) {}
+          try { pushRouter(`Permission escalation requested: ${missing.join(',')}`); } catch (e) { safeCatch(e); }
 
             if (typeof requestPermission === 'function') {
               const resp = await requestPermission(missing, reason);
@@ -2334,7 +2608,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     ipcMain.on('sadie:stream-message', async (event: IpcMainEvent, request: SadieRequestWithImages & { streamId?: string }) => {
       console.log('[DIAG] Received sadie:stream-message', { request, env: { SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, isE2E, NODE_ENV: process.env.NODE_ENV } });
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received sadie:stream-message', { request });
-      try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) {}
+      try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 
       if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
@@ -2346,7 +2620,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       const reqAny: any = request;
 
       if (process.env.NODE_ENV === 'test') {
-        try { console.log('[E2E-TRACE] stream-message handler entered', { streamId, n8nUrl }); } catch (e) {}
+        try { console.log('[E2E-TRACE] stream-message handler entered', { streamId, n8nUrl }); } catch (e) { safeCatch(e); }
       }
 
       // Validate images (if provided) to guard the backend from oversized payloads
@@ -2370,7 +2644,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       const useDirectOllama = isE2E;
       if (process.env.NODE_ENV !== 'production') {
         console.log('[DIAG] useDirectOllama calculation:', { isE2E, SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, useDirectOllama });
-        try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.SADIE_DIRECT_OLLAMA}`); } catch (e) {}
+        try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.SADIE_DIRECT_OLLAMA}`); } catch (e) { safeCatch(e); }
       }
 
       try {
@@ -2380,14 +2654,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           const streamUrl = N8N_STREAM_URL;
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Router] Final streamUrl built =', streamUrl, ' (N8N_STREAM_URL override present=', Boolean(process.env.N8N_STREAM_URL), ')');
-            try { pushRouter(`Final streamUrl built = ${streamUrl}`); } catch (e) {}
+            try { pushRouter(`Final streamUrl built = ${streamUrl}`); } catch (e) { safeCatch(e); }
             if (streamUrl === 'http://localhost:5678/webhook/sadie/chat/stream') {
               console.log('[Router] Verified streamUrl equals expected default');
-              try { pushRouter('Verified streamUrl equals expected default'); } catch (e) {}
+              try { pushRouter('Verified streamUrl equals expected default'); } catch (e) { safeCatch(e); }
             }
           }
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Stream POST target =', streamUrl);
-          try { pushRouter(`Stream POST target = ${streamUrl}`); } catch (e) {}
+          try { pushRouter(`Stream POST target = ${streamUrl}`); } catch (e) { safeCatch(e); }
 
           // In test runs, proactively validate the streaming endpoint to detect
           // immediate upstream failures (500/4xx). If the stream endpoint is
@@ -2402,21 +2676,21 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             try {
               const probe = await axios.get(streamUrl, { timeout: 3000, validateStatus: () => true });
               if (probe && probe.status >= 400) {
-                try { console.log('[E2E-TRACE] stream POST target probe returned error', { streamId, status: probe.status }); } catch (e) {}
+                try { console.log('[E2E-TRACE] stream POST target probe returned error', { streamId, status: probe.status }); } catch (e) { safeCatch(e); }
                 { const hint = classifyError('Upstream error (n8n unavailable)', `probe:${probe.status}`);
-                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId, diagnostic: { url: streamUrl, httpStatus: probe.status, n8nResponded: true }, recoveryHint: hint }); } catch (e) {} }
-                try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_error', httpStatus: probe.status, url: streamUrl }); } catch (e) {}
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-                try { activeStreams.delete(streamId); } catch (e) {}
+                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId, diagnostic: { url: streamUrl, httpStatus: probe.status, n8nResponded: true }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+                try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_error', httpStatus: probe.status, url: streamUrl }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                try { activeStreams.delete(streamId); } catch (e) { safeCatch(e); }
                 return;
               }
             } catch (e: any) {
-              try { console.log('[E2E-TRACE] stream POST target probe failed', { streamId, error: e?.message || e }); } catch (e) {}
+              try { console.log('[E2E-TRACE] stream POST target probe failed', { streamId, error: e?.message || e }); } catch (e) { safeCatch(e); }
               { const hint = classifyError('Upstream error (n8n unavailable)', e?.message || String(e));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId, diagnostic: { url: streamUrl, errorText: e?.message || String(e), n8nResponded: false }, recoveryHint: hint }); } catch (e) {} }
-              try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_failed', error: e?.message || String(e), url: streamUrl }); } catch (e) {}
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-              try { activeStreams.delete(streamId); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId, diagnostic: { url: streamUrl, errorText: e?.message || String(e), n8nResponded: false }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+              try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_failed', error: e?.message || String(e), url: streamUrl }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { activeStreams.delete(streamId); } catch (e) { safeCatch(e); }
               return;
             }
           }
@@ -2441,7 +2715,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // to exercise the real streaming/fallback paths in tests.
         if (E2E && process.env.SADIE_E2E_BYPASS_MOCK !== '1') {
           if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Starting deterministic streaming mock for streamId:', streamId);
-          try { pushRouter(`E2E-MOCK starting streamId=${streamId}`); } catch (e) {}
+          try { pushRouter(`E2E-MOCK starting streamId=${streamId}`); } catch (e) { safeCatch(e); }
           
           // Add user message to conversation history
           addToHistory(convId, 'user', request.message);
@@ -2458,17 +2732,17 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // Check if stream was cancelled
             if (!activeStreams.has(streamId)) {
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled during emission, streamId:', streamId);
-              try { pushRouter(`E2E-MOCK stream cancelled streamId=${streamId}`); } catch (e) {}
-              try { event.sender.send('sadie:stream-end', { streamId, cancelled: true }); } catch (e) {}
+              try { pushRouter(`E2E-MOCK stream cancelled streamId=${streamId}`); } catch (e) { safeCatch(e); }
+              try { event.sender.send('sadie:stream-end', { streamId, cancelled: true }); } catch (e) { safeCatch(e); }
               return;
             }
             
             if (chunkIndex < chunks.length) {
               const chunk = chunks[chunkIndex];
               assistantResponse += chunk;
-              try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Emitted chunk:', chunk, 'for streamId:', streamId);
-              try { pushRouter(`E2E-MOCK emitted chunk ${chunk} for streamId=${streamId}`); } catch (e) {}
+              try { pushRouter(`E2E-MOCK emitted chunk ${chunk} for streamId=${streamId}`); } catch (e) { safeCatch(e); }
               chunkIndex++;
               
               // Schedule next chunk after configured interval
@@ -2478,9 +2752,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (assistantResponse.trim()) {
                 addToHistory(convId, 'assistant', assistantResponse);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream completed for streamId:', streamId);
-              try { pushRouter(`E2E-MOCK stream completed streamId=${streamId}`); } catch (e) {}
+              try { pushRouter(`E2E-MOCK stream completed streamId=${streamId}`); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             }
           };
@@ -2489,7 +2763,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           activeStreams.set(streamId, { 
             destroy: () => {
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled via destroy, streamId:', streamId);
-              try { pushRouter(`E2E-MOCK stream cancelled via destroy streamId=${streamId}`); } catch (e) {}
+              try { pushRouter(`E2E-MOCK stream cancelled via destroy streamId=${streamId}`); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             }
           });
@@ -2517,6 +2791,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         
         // Add user message to conversation history
         addToHistory(convId, 'user', enhancedMessage);
+        bumpLastIntentAge(convId);
         
         // Track assistant response for history
         let assistantResponse = '';
@@ -2537,6 +2812,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // takes priority over unreliable LLM tool-calling.
         {
           const intentResult = await preProcessIntent(enhancedMessage, convId);
+          if (intentResult && convId) setLastIntent(convId, intentResult, enhancedMessage);
           console.log('[SADIE] preProcessIntent called with:', enhancedMessage.substring(0, 60));
           console.log('[SADIE] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
 
@@ -2680,7 +2956,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const synthesisQuestion = `Write a comprehensive, well-organized document about "${topic}". ` +
                 `Include all key facts, statistics, and important details. ` +
                 `Format with clear headings and bullet points. Do NOT include URLs or source citations in the document body.`;
-              const synthesisPrompt = makeSynthesisPrompt(rawContext, synthesisQuestion);
+              const synthesisPrompt = buildSynthesisPrompt(rawContext, synthesisQuestion);
               let synthesizedContent = '';
               try {
                 await new Promise<void>((resolve, reject) => {
@@ -2736,17 +3012,17 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // Route through LLM synthesis (same as web search path)
               const sr = surfSearchResult?.[0]?.result;
               if (sr) {
-                const searchContext = buildSearchContext(sr, 3500);
-                const augmentedMessage = makeSynthesisPrompt(
+                const searchContext = buildSearchContextForModel(sr);
+                const augmentedMessage = buildSynthesisPrompt(
                   searchContext,
                   `Give a clear surf report for ${location} today. Include wave height, swell period/direction, wind, and any relevant conditions. Be concise.`
                 );
 
                 const handler = await synthesisStream(
                   augmentedMessage, convId,
-                  (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
-                  () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
-                  (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'Surf LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
+                  (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); } },
+                  () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
+                  (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'Surf LLM error', details: err?.message || err, streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
                   undefined, requestConfirmation,
                   (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 );
@@ -2797,7 +3073,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // For image generation, send a progress indicator immediately so the UI
               // doesn't appear frozen while waiting for Stable Horde (~60-120 s)
               if (intentResult.calls[0]?.name === 'image_generate') {
-                try { event.sender.send('sadie:stream-chunk', { chunk: '⏳ Generating image, please wait…', streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-chunk', { chunk: '⏳ Generating image, please wait…', streamId }); } catch (e) { safeCatch(e); }
               }
               toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
                 executionId: `intent-${Date.now()}`,
@@ -2815,32 +3091,32 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             );
             if (webSearchResult) {
               const sr = webSearchResult.result;
-              const searchContext = buildSearchContext(sr);
+              const searchContext = buildSearchContextForModel(sr);
               if (!searchContext) {
                 // Web search ran but returned empty content — tell the user
                 const noResultMsg = `I searched the web for that but couldn't retrieve useful content. Try rephrasing, or check a news source directly.`;
                 addToHistory(convId, 'assistant', noResultMsg);
-                try { event.sender.send('sadie:stream-chunk', { chunk: noResultMsg, streamId }); } catch (e) {}
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-chunk', { chunk: noResultMsg, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
                 return;
               }
-              const augmentedMessage = makeSynthesisPrompt(searchContext, enhancedMessage);
+              const augmentedMessage = buildSynthesisPrompt(searchContext, enhancedMessage);
 
               const handler = await synthesisStream(
                 augmentedMessage, convId,
                 (chunk) => {
                   if (!activeStreams.has(streamId)) return;
                   assistantResponse += chunk;
-                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                 },
                 () => {
                   if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                 },
                 (err) => {
-                  try { event.sender.send('sadie:stream-error', { error: true, message: 'LLM synthesis error', details: err?.message || err, streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-error', { error: true, message: 'LLM synthesis error', details: err?.message || err, streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                 },
                 undefined, requestConfirmation,
@@ -2850,6 +3126,17 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               return;
             }
             // ── END WEB SEARCH SYNTHESIS ──
+
+            // ── CANNED RESPONSES — instant reply, no LLM needed ──
+            if (intentResult.calls[0]?.name === '__canned') {
+              const response = intentResult.calls[0].arguments.response;
+              try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
+              addToHistory(convId, 'assistant', response);
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              activeStreams.delete(streamId);
+              return;
+            }
+            // ── END CANNED RESPONSES ──
 
             // ── HELP / CAPABILITY CARD ──
             if (intentResult.calls[0]?.name === '__help') {
@@ -2895,9 +3182,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 '- Use `🎤` in the input box for voice input',
                 '- Shift+Enter for a new line in the input box',
               ].join('\n');
-              try { event.sender.send('sadie:stream-chunk', { chunk: helpCard, streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-chunk', { chunk: helpCard, streamId }); } catch (e) { safeCatch(e); }
               addToHistory(convId, 'assistant', helpCard);
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               return;
             }
@@ -2913,18 +3200,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 const b64 = imageResult.result.image_base64 as string;
                 const caption = `🎨 Generated: *${intentResult.calls[0]?.arguments?.prompt || request.message}*\n`;
                 const imgChunk = `__SADIE_IMAGE__:${b64}`;
-                try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) {}
-                try { event.sender.send('sadie:stream-chunk', { chunk: imgChunk, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('sadie:stream-chunk', { chunk: imgChunk, streamId }); } catch (e) { safeCatch(e); }
                 addToHistory(convId, 'assistant', caption + imgChunk);
               } else {
                 // Tool failed — give a clear error instead of falling through to LLM
                 const failedResult = (toolResults || []).find((r: any) => r?.error || r?.reason || r?.success === false);
                 const errDetail = failedResult?.error || failedResult?.reason || 'Image generation failed — check your internet connection (Pollinations.ai is used as a free backend)';
                 const errMsg = `❌ Image generation failed.\n\nError: \`${errDetail}\``;
-                try { event.sender.send('sadie:stream-chunk', { chunk: errMsg, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-chunk', { chunk: errMsg, streamId }); } catch (e) { safeCatch(e); }
                 addToHistory(convId, 'assistant', errMsg);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               return;
             }
@@ -3051,13 +3338,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   );
                   const sr = fallbackResults?.[0]?.result;
                   if (sr) {
-                    const searchContext = buildSearchContext(sr);
-                    const augmentedMessage = makeSynthesisPrompt(searchContext, originalQuery);
+                    const searchContext = buildSearchContextForModel(sr);
+                    const augmentedMessage = buildSynthesisPrompt(searchContext, originalQuery);
                     const handler = await synthesisStream(
                       augmentedMessage, convId,
-                      (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {} },
-                      () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {} activeStreams.delete(streamId); },
-                      (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'News LLM error', details: err?.message || err, streamId }); } catch (e) {} activeStreams.delete(streamId); },
+                      (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); } },
+                      () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
+                      (err) => { try { event.sender.send('sadie:stream-error', { error: true, message: 'News LLM error', details: err?.message || err, streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
                       undefined, requestConfirmation,
                       (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                     );
@@ -3306,8 +3593,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
             if (responseText.trim()) {
               addToHistory(convId, 'assistant', responseText);
-              try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) {}
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               return;
             }
@@ -3318,7 +3605,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         
         if (useDirectOllama) {
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct Ollama path');
-          try { pushRouter('Taking direct Ollama path'); } catch (e) {}
+          try { pushRouter('Taking direct Ollama path'); } catch (e) { safeCatch(e); }
           // Direct Ollama streaming - no n8n required
           const handler = await streamFromOllama(
             enhancedMessage,
@@ -3327,7 +3614,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             (chunk) => {
               if (!activeStreams.has(streamId)) return;
               assistantResponse += chunk;
-              try { pushRouter(`OLLAMA emitted chunk streamId=${streamId} len=${String(chunk?.length ?? 0)}`); } catch (e) {}
+              try { pushRouter(`OLLAMA emitted chunk streamId=${streamId} len=${String(chunk?.length ?? 0)}`); } catch (e) { safeCatch(e); }
               event.sender.send('sadie:stream-chunk', { chunk, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (ollama)', { streamId, chunkLen: chunk?.length ?? 0, snippet: String(chunk).substring(0, 120) });
@@ -3338,7 +3625,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (assistantResponse.trim()) {
                 addToHistory(convId, 'assistant', assistantResponse);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-end (ollama)', { streamId });
                           }
@@ -3346,7 +3633,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             },
             (err) => {
               const hint = classifyError('Ollama error', err?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-error (ollama)', { streamId, error: err?.message || err });
                           }
@@ -3375,7 +3662,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const text = chunk.toString?.() || String(chunk);
               proxyAssistantResponse += text;
               // forward raw chunk to renderer
-              try { pushRouter(`PROXY emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
+              try { pushRouter(`PROXY emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) { safeCatch(e); }
               event.sender.send('sadie:stream-chunk', { chunk: text, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
@@ -3387,7 +3674,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             if (proxyAssistantResponse.trim()) {
               addToHistory(convId, 'assistant', proxyAssistantResponse);
             }
-            try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+            try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                         if (E2E) {
                           console.log('[E2E-TRACE] stream-end (proxy)', { streamId });
                         }
@@ -3403,8 +3690,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                 if (finalText) {
                   addToHistory(convId, 'assistant', finalText);
-                  try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback succeeded for streamId', streamId);
                   activeStreams.delete(streamId);
                   return;
@@ -3414,7 +3701,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
 
               { const hint = classifyError('Streaming error', (err as any)?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: (err as any)?.message || String(err), streamId, recoveryHint: hint }); } catch (e) {} }
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: (err as any)?.message || String(err), streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-error (proxy)', { streamId, error: err });
                           }
@@ -3438,7 +3725,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const safetyRes = await axios.post(safetyUrl, { tool_call: reqAny.tool_call }, { timeout: DEFAULT_TIMEOUT, headers: sadieWebhookHeaders() });
               if (safetyRes?.data?.status === 'blocked') {
                 // Safety blocked - return an error to the renderer and stop
-                try { event.sender.send('sadie:stream-error', { error: true, message: 'Safety blocked', details: safetyRes.data, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-error', { error: true, message: 'Safety blocked', details: safetyRes.data, streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
                 return;
               }
@@ -3446,7 +3733,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 // Ask user for confirmation via renderer
                 const confirmed = await requestConfirmation(safetyRes.data.message || 'Confirm action');
                 if (!confirmed) {
-                  try { event.sender.send('sadie:stream-error', { error: true, message: 'User declined confirmation', details: safetyRes.data, streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-error', { error: true, message: 'User declined confirmation', details: safetyRes.data, streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                   return;
                 }
@@ -3460,6 +3747,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           try {
             // SMART ROUTING: Use intent detection first to handle known patterns reliably
             const intentResult = await preProcessIntent(enhancedMessage, convId);
+            if (intentResult && convId) setLastIntent(convId, intentResult, enhancedMessage);
             console.log('[SADIE] Intent result:', intentResult);
             let shouldUseDirectTools = false;
             let toolResults: any[] | null = null;
@@ -3473,13 +3761,24 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               // Execute tools directly without involving the LLM
               try {
+                // ── CANNED RESPONSES (n8n path) ──
+                if (intentResult.calls[0]?.name === '__canned') {
+                  const response = intentResult.calls[0].arguments.response;
+                  addToHistory(convId, 'assistant', response);
+                  try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                  activeStreams.delete(streamId);
+                  return;
+                }
+                // ── END CANNED RESPONSES ──
+
                 // ── MUSIC LINKS (n8n path): no external tool needed ──
                 if (intentResult.calls[0]?.name === '__music_links') {
                   const { songs } = intentResult.calls[0].arguments;
                   const response = buildMusicLinksResponse(songs);
                   addToHistory(convId, 'assistant', response);
-                  try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) {}
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                  try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                   return;
                 }
@@ -3599,7 +3898,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const synthesisQuestion = `Write a comprehensive, well-organized document about "${topic}". ` +
                     `Include all key facts, statistics, and important details. ` +
                     `Format with clear headings and bullet points. Do NOT include URLs or source citations in the document body.`;
-                  const synthesisPrompt = makeSynthesisPrompt(rawContext, synthesisQuestion);
+                  const synthesisPrompt = buildSynthesisPrompt(rawContext, synthesisQuestion);
                   let synthesizedContent = '';
                   try {
                     await new Promise<void>((resolve, reject) => {
@@ -3813,24 +4112,24 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   // Handle web search results — route through LLM for synthesis
                   else if (result.result.sources || result.result.topResultContent || (result.result.results && Array.isArray(result.result.results))) {
                     const sr = result.result;
-                    const searchContext = buildSearchContext(sr);
+                    const searchContext = buildSearchContextForModel(sr);
                     if (searchContext) {
-                      const augMsg = makeSynthesisPrompt(searchContext, enhancedMessage);
+                      const augMsg = buildSynthesisPrompt(searchContext, enhancedMessage);
                       let synthResponse = '';
                       const synthHandler = await synthesisStream(
                         augMsg, convId,
                         (chunk) => {
                           if (!activeStreams.has(streamId)) return;
                           synthResponse += chunk;
-                          try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                          try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                         },
                         () => {
                           if (synthResponse.trim()) addToHistory(convId, 'assistant', synthResponse);
-                          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                           activeStreams.delete(streamId);
                         },
                         (err) => {
-                          try { event.sender.send('sadie:stream-error', { error: true, message: 'Search synthesis error', details: err?.message || err, streamId }); } catch (e) {}
+                          try { event.sender.send('sadie:stream-error', { error: true, message: 'Search synthesis error', details: err?.message || err, streamId }); } catch (e) { safeCatch(e); }
                           activeStreams.delete(streamId);
                         },
                         undefined, requestConfirmation,
@@ -3888,8 +4187,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 addToHistory(convId, 'assistant', responseText);
                 
                 // Send as a single chunk to avoid silent failures
-                try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) {}
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
                 return;
               }
@@ -3905,23 +4204,23 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               (chunk) => {
                   if (!activeStreams.has(streamId)) return;
                   llmAssistantResponse += chunk;
-                  try { pushRouter(`LLM emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) {}
-                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) {}
+                  try { pushRouter(`LLM emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                   if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
                 },
               (toolName, args) => {
                 // notify renderer of tool call that will be executed
-                try { event.sender.send('sadie:tool-call', { toolName, args, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:tool-call', { toolName, args, streamId }); } catch (e) { safeCatch(e); }
               },
               (result) => {
                 // send tool execution result back to renderer (optional)
-                try { event.sender.send('sadie:tool-result', { result, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:tool-result', { result, streamId }); } catch (e) { safeCatch(e); }
               },
               () => {
                 if (llmAssistantResponse.trim()) {
                   addToHistory(convId, 'assistant', llmAssistantResponse);
                 }
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
               },
               (err) => {
@@ -3930,27 +4229,30 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   console.log('[SADIE] direct stream onError: attempting non-stream fallback...');
                   try {
                     const fbHistory = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
-                    const fallbackBody = {
-                      model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
+                    const fbModel = uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL;
+                    const fbSmall = isSmallModel(fbModel);
+                    const fallbackBody: any = {
+                      model: fbModel,
                       messages: uncensoredModeEnabled
                         ? [ ...fbHistory, { role: 'user', content: reqAny.message } ]
                         : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory, { role: 'user', content: reqAny.message } ],
-                      stream: false
+                      stream: false,
+                      ...(fbSmall ? { options: { num_ctx: 4096, temperature: 0.3, repeat_penalty: 1.3 } } : {})
                     };
                     const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
                     const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
                     const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                     if (finalText) {
-                      try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
+                      try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
                     }
-                    try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+                    try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                     activeStreams.delete(streamId);
                     console.log('[SADIE] direct stream fallback: succeeded');
                     return;
                   } catch (fallbackErr: any) {
                     console.log('[SADIE] direct stream fallback: failed', fallbackErr?.message || fallbackErr);
                     { const hint = classifyError('Ollama streaming error', err?.message || String(err));
-                    try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) {} }
+                    try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
                     activeStreams.delete(streamId);
                   }
                 })();
@@ -3963,7 +4265,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             activeStreams.set(streamId, { destroy: handler.cancel });
           } catch (err: any) {
             logError('[Router] direct stream error', err?.message || err);
-            try { pushRouter(`direct stream error: ${err?.message || String(err)}`); } catch (e) {}
+            try { pushRouter(`direct stream error: ${err?.message || String(err)}`); } catch (e) { safeCatch(e); }
 
             // Attempt a non-streaming fallback to Ollama to retrieve a final message
             try {
@@ -3973,29 +4275,32 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 systemPrompt = reqAny.conversationPrompt;
               }
               const fbHistory2 = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
-              const fallbackBody = {
-                model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
+              const fbModel2 = uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL;
+              const fbSmall2 = isSmallModel(fbModel2);
+              const fallbackBody: any = {
+                model: fbModel2,
                 messages: uncensoredModeEnabled
                   ? [ ...fbHistory2, { role: 'user', content: reqAny.message } ]
                   : [ { role: 'system', content: systemPrompt }, ...fbHistory2, { role: 'user', content: reqAny.message } ],
-                stream: false
+                stream: false,
+                ...(fbSmall2 ? { options: { num_ctx: 4096, temperature: 0.3, repeat_penalty: 1.3 } } : {})
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
               const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
               const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
               if (finalText) {
-                try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) {}
+                try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
-              try { pushRouter(`direct stream fallback succeeded for streamId=${streamId}`); } catch (e) {}
+              try { pushRouter(`direct stream fallback succeeded for streamId=${streamId}`); } catch (e) { safeCatch(e); }
               return;
             } catch (fallbackErr: any) {
               // If fallback also fails, emit stream-error and clean up
               { const hint = classifyError('Streaming initialization error', err?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId, diagnostic: { url: streamUrl, errorText: err?.message || String(err) }, recoveryHint: hint }); } catch (e) {} }
-              try { logTelemetryEvent('stream_failure', { streamId, reason: 'stream_init_failed', error: err?.message || String(err), url: streamUrl }); } catch (e) {}
-              try { pushRouter(`direct stream fallback failed for streamId=${streamId} error=${fallbackErr?.message || fallbackErr}`); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId, diagnostic: { url: streamUrl, errorText: err?.message || String(err) }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+              try { logTelemetryEvent('stream_failure', { streamId, reason: 'stream_init_failed', error: err?.message || String(err), url: streamUrl }); } catch (e) { safeCatch(e); }
+              try { pushRouter(`direct stream fallback failed for streamId=${streamId} error=${fallbackErr?.message || fallbackErr}`); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             }
           }
@@ -4008,12 +4313,15 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // Fallback: fetch a non-streaming response from Ollama and return final text
             try {
               const fbHistory3 = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
-              const fallbackBody = {
-                model: uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL,
+              const fbModel3 = uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL;
+              const fbSmall3 = isSmallModel(fbModel3);
+              const fallbackBody: any = {
+                model: fbModel3,
                 messages: uncensoredModeEnabled
                   ? [ ...fbHistory3, { role: 'user', content: reqAny.message } ]
                   : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory3, { role: 'user', content: reqAny.message } ],
-                stream: false
+                stream: false,
+                ...(fbSmall3 ? { options: { num_ctx: 4096, temperature: 0.3, repeat_penalty: 1.3 } } : {})
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
               // Parse and send final assistant content
@@ -4026,16 +4334,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               } catch (parseErr) {
                 console.warn('[SADIE] Failed to parse/send fallback Ollama response', parseErr);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             } catch (fallbackErr: any) {
               // If fallback also fails, emit stream-error and clean up
               { const hint = classifyError('Streaming fallback failed', fallbackErr?.message || String(fallbackErr));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming fallback failed', details: fallbackErr?.message || fallbackErr, streamId, recoveryHint: hint }); } catch (e) {} }
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming fallback failed', details: fallbackErr?.message || fallbackErr, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
               activeStreams.delete(streamId);
             }
         console.log('[SADIE] n8n failed:', error?.message || error);
-        try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) {}
+        try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) { safeCatch(e); }
           if (useDirectOllama) {
           console.log('[SADIE] Falling back to direct Ollama...');
           try {
@@ -4053,12 +4361,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (fallbackResponse.trim()) {
                 addToHistory(convId, 'assistant', fallbackResponse);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
+              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             },
             (err: any) => {
               const hint = classifyError('Ollama error', err?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) {}
+              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             }
           );
@@ -4074,11 +4382,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           // remaining stuck in 'streaming' state when upstream fails).
           try {
             console.log('[E2E-TRACE] sending deterministic stream-error Upstream error', { streamId, details: error?.message || error });
-          } catch (e) {}
+          } catch (e) { safeCatch(e); }
           try { const hint = classifyError('Upstream error (n8n unavailable)', error?.message || String(error));
-          event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId, recoveryHint: hint }); } catch (e) {}
-          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) {}
-          try { activeStreams.delete(streamId); } catch (e) {}
+          event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
+          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+          try { activeStreams.delete(streamId); } catch (e) { safeCatch(e); }
           if (E2E) {
             console.log('[E2E-TRACE] n8n error, fallback disabled (deterministic emit sent)', { streamId, error: error?.message || error, fallbackEnabled: useDirectOllama });
           }
@@ -4092,8 +4400,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       if (!streamId) {
           // cancel all
           for (const [id, entry] of activeStreams.entries()) {
-            try { entry.destroy?.(); } catch (e) {}
-            try { (entry.stream as any)?.destroy?.(); } catch (e) {}
+            try { entry.destroy?.(); } catch (e) { safeCatch(e); }
+            try { (entry.stream as any)?.destroy?.(); } catch (e) { safeCatch(e); }
             activeStreams.delete(id);
           }
           return;
@@ -4109,7 +4417,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // Don't await ΓÇö fire and forget
             axios.post(`${n8nUrl}/__sadie_e2e_cancel`, { streamId }).catch(() => {});
           }
-        } catch (e) {}
+        } catch (e) { safeCatch(e); }
         // Remove from the active map immediately so any in-flight data handlers
         // will stop forwarding further chunks.
         activeStreams.delete(streamId);
@@ -4119,8 +4427,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // notify renderer the stream ended due to cancel
         _event?.sender?.send('sadie:stream-end', { streamId, cancelled: true });
         // then attempt to abort/destroy the underlying stream/request
-        try { entry.destroy?.(); } catch (e) {}
-        try { (entry.stream as any)?.destroy?.(); } catch (e) {}
+        try { entry.destroy?.(); } catch (e) { safeCatch(e); }
+        try { (entry.stream as any)?.destroy?.(); } catch (e) { safeCatch(e); }
       }
     });
 
@@ -4160,7 +4468,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             return { ok: true, result: rerun };
           }
           if (resp.decision === 'always_allow') {
-            try { const s = getSettings(); s.permissions = s.permissions || {}; for (const p of missing) s.permissions[p] = true; saveSettings(s); } catch (e) {}
+            try { const s = getSettings(); s.permissions = s.permissions || {}; for (const p of missing) s.permissions[p] = true; saveSettings(s); } catch (e) { safeCatch(e); }
             const rerun = await executeToolBatch(calls, { executionId: `e2e-${Date.now()}` } as any);
             return { ok: true, result: rerun };
           }

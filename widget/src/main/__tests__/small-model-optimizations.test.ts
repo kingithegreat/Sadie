@@ -25,6 +25,7 @@ jest.mock('../memory-manager', () => ({
 jest.mock('../tools', () => ({
   initializeTools: jest.fn(),
   getOllamaTools: jest.fn(() => []),
+  getSmallModelTools: jest.fn(() => []),
   getAllToolDefinitions: jest.fn(() => []),
   executeToolBatch: jest.fn(async () => []),
   hasTool: jest.fn(() => false),
@@ -143,14 +144,14 @@ describe('detectToolCategories', () => {
     expect(cats).toContain('filesystem');
   });
 
-  it('returns undefined for vague queries', () => {
-    expect(detectToolCategories('hello there')).toBeUndefined();
+  it('returns empty array for vague queries (core-tool fallback)', () => {
+    expect(detectToolCategories('hello there')).toEqual([]);
   });
 
-  it('returns undefined when too many categories match', () => {
+  it('returns empty array when too many categories match (core-tool fallback)', () => {
     // This message hits many categories at once
     const cats = detectToolCategories('search weather file email code process notification');
-    expect(cats).toBeUndefined();
+    expect(cats).toEqual([]);
   });
 
   it('returns utility for reminder queries', () => {

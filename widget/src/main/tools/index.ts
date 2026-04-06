@@ -4,6 +4,9 @@
  * Central registry for all tools and execution engine.
  */
 
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 import { 
   ToolDefinition, 
   ToolHandler, 
@@ -12,6 +15,7 @@ import {
   RegisteredTool,
   OllamaTool,
   toOllamaTool,
+  toCompactOllamaTool,
   ToolCall
 } from './types';
 import { fileSystemTools } from './filesystem';
@@ -96,6 +100,66 @@ export function getOllamaTools(options?: { excludeDocumentTools?: boolean; categ
   }
   
   return tools.map(toOllamaTool);
+}
+
+/**
+ * Core tools that small models should always have access to.
+ * These cover the most common user intents while keeping the count manageable
+ * for a 3B model with a 4096-token context window.
+ */
+const SMALL_MODEL_CORE_TOOLS = new Set([
+  'web_search',
+  'get_weather',
+  'nba_query',
+  'read_file',
+  'write_file',
+  'list_directory',
+  'run_code',
+  'show_notification',
+  'get_news',
+  'remember',
+  'recall',
+  'get_current_time',
+]);
+
+export const SMALL_MODEL_MAX_TOOLS = 12;
+
+/**
+ * Get a compact tool set for small models.
+ * Starts with SMALL_MODEL_CORE_TOOLS, then adds category-specific tools
+ * up to SMALL_MODEL_MAX_TOOLS.  This prevents a 3B model from drowning
+ * in 80+ tool definitions that consume most of its context window.
+ */
+export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+  let allTools = getAllToolDefinitions();
+
+  if (options?.excludeDocumentTools) {
+    allTools = allTools.filter(t => !DOCUMENT_TOOL_NAMES.includes(t.name));
+  }
+
+  // Core tools first (order-preserving)
+  const selected: ToolDefinition[] = [];
+  const selectedNames = new Set<string>();
+  for (const t of allTools) {
+    if (SMALL_MODEL_CORE_TOOLS.has(t.name)) {
+      selected.push(t);
+      selectedNames.add(t.name);
+    }
+  }
+
+  // Add category-specific tools not already in the core set
+  if (options?.categories && options.categories.length > 0) {
+    const cats = new Set(options.categories);
+    for (const t of allTools) {
+      if (selected.length >= SMALL_MODEL_MAX_TOOLS) break;
+      if (!selectedNames.has(t.name) && t.category && cats.has(t.category)) {
+        selected.push(t);
+        selectedNames.add(t.name);
+      }
+    }
+  }
+
+  return selected.slice(0, SMALL_MODEL_MAX_TOOLS).map(toCompactOllamaTool);
 }
 
 /**
@@ -208,9 +272,9 @@ export async function executeToolBatch(
   context: ToolContext,
   options?: { overrideAllowed?: string[] }
 ): Promise<ToolResult[]> {
-  try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; } catch (e) {}
+  try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; } catch (e) { safeCatch(e); }
   console.log('[BATCH] executeToolBatch called', { toolCount: calls.length, toolNames: calls.map(c => c.name) });
-  try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) {}
+  try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) { safeCatch(e); }
   // Pre-check permissions for all unique tools
   const denied: string[] = [];
   const seen = new Set<string>();
@@ -223,7 +287,7 @@ export async function executeToolBatch(
       if (overrides.has(name)) continue;
       const allowed = assertPermission(name);
       console.log(`[SADIE Tools] Permission check for ${name}: allowed=${allowed}`);
-      try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) {}
+      try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) { safeCatch(e); }
       if (!allowed) denied.push(name);
 
       // Also check any permissions declared by the tool (e.g., write_file)
@@ -234,7 +298,7 @@ export async function executeToolBatch(
             if (overrides.has(perm)) continue;
             const pAllowed = assertPermission(perm);
             console.log(`[SADIE Tools] Permission check for declared permission ${perm}: allowed=${pAllowed}`);
-            try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${perm}=${pAllowed}`); } catch (e) {}
+            try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${perm}=${pAllowed}`); } catch (e) { safeCatch(e); }
             if (!pAllowed) denied.push(perm);
           }
         }
@@ -250,7 +314,7 @@ export async function executeToolBatch(
     // caller (message router) can prompt the user for confirmation and
     // optionally enable or allow once.
     console.log('[BATCH] executeToolBatch missing permissions', { denied });
-    try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) {}
+    try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) { safeCatch(e); }
     return [{ success: false, status: 'needs_confirmation', missingPermissions: denied, reason: `Requires permissions: ${denied.join(', ')}` } as any];
   }
 

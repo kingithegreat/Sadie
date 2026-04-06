@@ -2,12 +2,20 @@ import { existsSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import os from 'os';
 
-// Mock electron app.getPath to return a temp dir
+// Mock electron app.getPath and safeStorage to return a temp dir
 jest.mock('electron', () => ({
   app: {
     getPath: jest.fn(() => {
       const dir = process.env.TEST_USERDATA || '';
       return dir;
+    })
+  },
+  safeStorage: {
+    isEncryptionAvailable: jest.fn(() => true),
+    encryptString: jest.fn((val: string) => Buffer.from('ENC:' + val)),
+    decryptString: jest.fn((buf: Buffer) => {
+      const str = buf.toString();
+      return str.startsWith('ENC:') ? str.slice(4) : str;
     })
   }
 }));
@@ -111,5 +119,25 @@ describe('config-manager integration tests', () => {
     const content = fs.readFileSync(r.path, 'utf-8');
     const parsed = JSON.parse(content);
     expect(parsed.enabled).toBe(true);
+  });
+
+  test('API keys are encrypted at rest and decrypted on read', () => {
+    const fs = require('fs');
+    const settings = getSettings();
+    settings.tavilyApiKey = 'tvly-SECRETKEY123';
+    settings.openaiApiKey = 'sk-openai-test';
+    saveSettings(settings);
+
+    // Read raw file — encrypted values should NOT contain the plaintext
+    const settingsPath = require('../../main/config-manager').getSettingsPath();
+    const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    // Our mock encrypts as base64 of "ENC:..." — the raw value should not equal the plaintext
+    expect(raw.tavilyApiKey).not.toBe('tvly-SECRETKEY123');
+    expect(raw.openaiApiKey).not.toBe('sk-openai-test');
+
+    // Decrypted values should match the original plaintext
+    const loaded = getSettings();
+    expect(loaded.tavilyApiKey).toBe('tvly-SECRETKEY123');
+    expect(loaded.openaiApiKey).toBe('sk-openai-test');
   });
 });

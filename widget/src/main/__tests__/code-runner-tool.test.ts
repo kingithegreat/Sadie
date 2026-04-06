@@ -8,7 +8,8 @@ import { runCodeHandler } from '../tools/code-runner';
 
 // Mock child_process so no real execution occurs
 jest.mock('child_process', () => ({
-  exec: jest.fn()
+  exec: jest.fn(),
+  execFile: jest.fn()
 }));
 
 // Mock fs.promises
@@ -19,10 +20,18 @@ jest.mock('fs', () => ({
   }
 }));
 
-// Provide a successful exec result via util.promisify shim
+// Now code-runner uses execFile; provide the shim for both
+const mockExecFile = jest.requireMock('child_process').execFile as jest.Mock;
 const mockExec = jest.requireMock('child_process').exec as jest.Mock;
 
 function setupExecSuccess(stdout: string, stderr = '') {
+  // execFile: (_cmd, _args, _opts, cb)
+  mockExecFile.mockImplementation((_cmd: string, _args: any, _opts: any, callback?: Function) => {
+    const cb = typeof _args === 'function' ? _args : typeof _opts === 'function' ? _opts : callback;
+    if (cb) cb(null, { stdout, stderr });
+    return { on: jest.fn(), kill: jest.fn() };
+  });
+  // Keep exec mock for legacy callers
   mockExec.mockImplementation((_cmd: string, _opts: any, callback?: Function) => {
     const cb = typeof _opts === 'function' ? _opts : callback;
     if (cb) cb(null, { stdout, stderr });
@@ -119,8 +128,8 @@ describe('runCodeHandler â€" execution success', () => {
 
 describe('runCodeHandler â€" execution failure', () => {
   function setupExecError(opts: { killed?: boolean; code?: number; stdout?: string; stderr?: string }) {
-    mockExec.mockImplementation((_cmd: string, _opts: any, callback?: Function) => {
-      const cb = typeof _opts === 'function' ? _opts : callback;
+    mockExecFile.mockImplementation((_cmd: string, _args: any, _opts: any, callback?: Function) => {
+      const cb = typeof _args === 'function' ? _args : typeof _opts === 'function' ? _opts : callback;
       const err: any = new Error('Command failed');
       err.killed = opts.killed ?? false;
       err.code = opts.code ?? 1;

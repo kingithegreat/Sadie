@@ -23,7 +23,7 @@ jest.mock('electron', () => ({
 }));
 jest.mock('axios');
 
-import { makeSynthesisPrompt } from '../message-router';
+import { makeSynthesisPrompt, makeSynthesisPromptCompact } from '../message-router';
 
 const MOCK_CONTEXT = 'Title: Iran War Update\nURL: https://example.com/iran\nContent: US forces attacked Iranian positions on Day 4.';
 const MOCK_QUESTION = 'current war in iran';
@@ -88,5 +88,41 @@ describe('makeSynthesisPrompt', () => {
     expect(prompt.toLowerCase()).toContain('do not fabricate');
     expect(prompt.toLowerCase()).toContain('do not guess');
     expect(prompt.toLowerCase()).toContain('pre-game');
+  });
+});
+
+// ── makeSynthesisPromptCompact (small-model variant) ──────────────────────
+
+describe('makeSynthesisPromptCompact', () => {
+  const LONG_CONTEXT = 'x'.repeat(3000);
+
+  test('truncates context to 1500 chars', () => {
+    const prompt = makeSynthesisPromptCompact(LONG_CONTEXT, MOCK_QUESTION);
+    // The full 3000-char context should NOT appear
+    expect(prompt).not.toContain(LONG_CONTEXT);
+    // But the first 1500 chars should
+    expect(prompt).toContain('x'.repeat(1500));
+  });
+
+  test('wraps context in [SEARCH RESULTS] block', () => {
+    const prompt = makeSynthesisPromptCompact(MOCK_CONTEXT, MOCK_QUESTION);
+    expect(prompt).toContain('[SEARCH RESULTS]');
+    expect(prompt).toContain('[/SEARCH RESULTS]');
+  });
+
+  test('includes the question', () => {
+    const prompt = makeSynthesisPromptCompact(MOCK_CONTEXT, MOCK_QUESTION);
+    expect(prompt).toContain(MOCK_QUESTION);
+  });
+
+  test('is shorter than the full synthesis prompt', () => {
+    const full = makeSynthesisPrompt(MOCK_CONTEXT, MOCK_QUESTION);
+    const compact = makeSynthesisPromptCompact(MOCK_CONTEXT, MOCK_QUESTION);
+    expect(compact.length).toBeLessThan(full.length);
+  });
+
+  test('includes anti-hallucination instruction', () => {
+    const prompt = makeSynthesisPromptCompact(MOCK_CONTEXT, MOCK_QUESTION);
+    expect(prompt.toLowerCase()).toContain('do not invent facts');
   });
 });

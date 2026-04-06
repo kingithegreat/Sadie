@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { Readable } from 'stream';
 
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 export interface StreamProxyOptions {
   proxyUrl?: string; // full proxy endpoint e.g. http://localhost:5050/stream
   apiKey?: string; // x-sadie-key
@@ -37,7 +40,7 @@ export function streamFromSadieProxy(body: any, onChunk: (chunk: string) => void
       }
     });
     stream.on('end', () => {
-      try { onEnd?.(); } catch (e) {}
+      try { onEnd?.(); } catch (e) { safeCatch(e); }
     });
     stream.on('error', (err: any) => {
       onError?.(err);
@@ -50,7 +53,7 @@ export function streamFromSadieProxy(body: any, onChunk: (chunk: string) => void
   return {
     cancel: () => {
       canceled = true;
-      try { controller.abort(); } catch (e) {}
+      try { controller.abort(); } catch (e) { safeCatch(e); }
     }
   };
 }

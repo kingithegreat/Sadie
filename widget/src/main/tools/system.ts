@@ -5,11 +5,12 @@
  */
 
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ============= TOOL DEFINITIONS =============
 
@@ -287,9 +288,14 @@ export const setClipboardHandler: ToolHandler = async (args): Promise<ToolResult
     }
     
     if (os.platform() === 'win32') {
-      // Escape special characters for PowerShell
-      const escaped = text.replace(/'/g, "''");
-      await execAsync(`powershell -command "Set-Clipboard -Value '${escaped}'"`);
+      // Use stdin piping to avoid shell injection — text never touches the command string
+      await new Promise<void>((resolve, reject) => {
+        const child = execFile('powershell', ['-NoProfile', '-Command', '$input | Set-Clipboard'], (err) => {
+          if (err) reject(err); else resolve();
+        });
+        child.stdin?.write(text);
+        child.stdin?.end();
+      });
       return {
         success: true,
         result: { message: 'Text copied to clipboard', length: text.length }
@@ -314,17 +320,9 @@ export const openUrlHandler: ToolHandler = async (args): Promise<ToolResult> => 
       return { success: false, error: 'URL must start with http:// or https://' };
     }
     
-    // Open URL based on platform
-    let command: string;
-    if (os.platform() === 'win32') {
-      command = `start "" "${url}"`;
-    } else if (os.platform() === 'darwin') {
-      command = `open "${url}"`;
-    } else {
-      command = `xdg-open "${url}"`;
-    }
-    
-    await execAsync(command);
+    // Use Electron's safe shell API — no exec, no injection
+    const { shell } = require('electron');
+    await shell.openExternal(url);
     return {
       success: true,
       result: { message: `Opened ${url} in default browser` }
@@ -382,8 +380,8 @@ export const launchAppHandler: ToolHandler = async (args): Promise<ToolResult> =
     const executable = APP_MAP[appName] || appName;
     
     if (os.platform() === 'win32') {
-      // Use start command to launch without blocking
-      await execAsync(`start "" "${executable}"`);
+      // Use execFile with argument array — no shell interpolation
+      await execFileAsync('cmd', ['/c', 'start', '', executable]);
       return {
         success: true,
         result: { message: `Launched ${appName}`, executable }
@@ -397,35 +395,109 @@ export const launchAppHandler: ToolHandler = async (args): Promise<ToolResult> =
 };
 
 // Safe math evaluation
+/**
+ * Safe recursive-descent math expression parser.
+ * Supports: +, -, *, /, ^ (power), parentheses,
+ *           sqrt, sin, cos, tan, log (base-10), ln, abs, round, floor, ceil,
+ *           PI, E constants.
+ * NO eval/Function — immune to code injection.
+ */
 function safeEval(expression: string): number {
-  // Replace common math functions and constants
-  let expr = expression
-    .replace(/\^/g, '**')
-    .replace(/sqrt\(/gi, 'Math.sqrt(')
-    .replace(/sin\(/gi, 'Math.sin(')
-    .replace(/cos\(/gi, 'Math.cos(')
-    .replace(/tan\(/gi, 'Math.tan(')
-    .replace(/log\(/gi, 'Math.log10(')
-    .replace(/ln\(/gi, 'Math.log(')
-    .replace(/abs\(/gi, 'Math.abs(')
-    .replace(/round\(/gi, 'Math.round(')
-    .replace(/floor\(/gi, 'Math.floor(')
-    .replace(/ceil\(/gi, 'Math.ceil(')
-    .replace(/PI/gi, 'Math.PI')
-    .replace(/\bE\b/gi, 'Math.E');
-  
-  // Only allow safe characters
-  if (!/^[0-9+\-*/().\s,Math.sqrtsincoantlogbsrundflceiPI E]+$/.test(expr)) {
-    throw new Error('Invalid characters in expression');
+  // Normalise whitespace, lowercase function names
+  const input = expression.replace(/\s+/g, '');
+  let pos = 0;
+
+  function peek(): string { return input[pos] || ''; }
+  function consume(ch?: string): string {
+    if (ch && input[pos] !== ch) throw new Error(`Expected '${ch}' at position ${pos}`);
+    return input[pos++];
   }
-  
-  // Evaluate
-  const result = Function(`"use strict"; return (${expr})`)();
-  
+  function matchWord(word: string): boolean {
+    const slice = input.slice(pos, pos + word.length).toLowerCase();
+    if (slice === word.toLowerCase()) { pos += word.length; return true; }
+    return false;
+  }
+
+  // Grammar:  expr  = term (('+' | '-') term)*
+  //           term  = unary (('*' | '/') unary)*
+  //           unary = ('-')? power
+  //           power = atom ('^' power)?   (right-assoc)
+  //           atom  = number | func '(' expr ')' | '(' expr ')' | constant
+
+  const FUNCS: Record<string, (n: number) => number> = {
+    sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan,
+    log: Math.log10, ln: Math.log, abs: Math.abs,
+    round: Math.round, floor: Math.floor, ceil: Math.ceil,
+  };
+  const CONSTS: Record<string, number> = { pi: Math.PI, e: Math.E };
+
+  function parseExpr(): number {
+    let left = parseTerm();
+    while (peek() === '+' || peek() === '-') {
+      const op = consume();
+      const right = parseTerm();
+      left = op === '+' ? left + right : left - right;
+    }
+    return left;
+  }
+
+  function parseTerm(): number {
+    let left = parseUnary();
+    while (peek() === '*' || peek() === '/') {
+      const op = consume();
+      const right = parseUnary();
+      left = op === '*' ? left * right : left / right;
+    }
+    return left;
+  }
+
+  function parseUnary(): number {
+    if (peek() === '-') { consume(); return -parsePower(); }
+    if (peek() === '+') { consume(); }
+    return parsePower();
+  }
+
+  function parsePower(): number {
+    const base = parseAtom();
+    if (peek() === '^') { consume(); return Math.pow(base, parsePower()); } // right-assoc
+    return base;
+  }
+
+  function parseAtom(): number {
+    // Try named functions (sqrt, sin, cos, …)
+    for (const fname of Object.keys(FUNCS)) {
+      if (matchWord(fname)) {
+        consume('(');
+        const arg = parseExpr();
+        consume(')');
+        return FUNCS[fname](arg);
+      }
+    }
+    // Try constants (pi, e)
+    for (const cname of Object.keys(CONSTS)) {
+      if (matchWord(cname)) return CONSTS[cname];
+    }
+    // Parenthesised sub-expression
+    if (peek() === '(') {
+      consume('(');
+      const val = parseExpr();
+      consume(')');
+      return val;
+    }
+    // Number literal (including decimals)
+    const start = pos;
+    while (/[0-9.]/.test(peek())) pos++;
+    if (pos === start) throw new Error(`Unexpected character '${peek()}' at position ${pos}`);
+    const num = Number(input.slice(start, pos));
+    if (isNaN(num)) throw new Error(`Invalid number at position ${start}`);
+    return num;
+  }
+
+  const result = parseExpr();
+  if (pos < input.length) throw new Error(`Unexpected character '${peek()}' at position ${pos}`);
   if (typeof result !== 'number' || !isFinite(result)) {
     throw new Error('Result is not a valid number');
   }
-  
   return result;
 }
 

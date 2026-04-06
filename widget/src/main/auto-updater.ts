@@ -3,6 +3,9 @@
 import { autoUpdater } from 'electron-updater';
 import { BrowserWindow } from 'electron';
 
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 export function initAutoUpdater(mainWindow: BrowserWindow): void {
   // Disable auto-download — let the user decide
   autoUpdater.autoDownload = false;
@@ -37,7 +40,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
           percent: Math.round(progress.percent),
         });
       }
-    } catch (e) {}
+    } catch (e) { safeCatch(e); }
   });
 
   autoUpdater.on('update-downloaded', () => {
@@ -46,7 +49,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sadie:update-downloaded');
       }
-    } catch (e) {}
+    } catch (e) { safeCatch(e); }
   });
 
   // Check for updates after a short delay to avoid slowing startup

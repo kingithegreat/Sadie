@@ -78,6 +78,15 @@ TOOL EXAMPLES (use this format):
 User: "What's the weather in London?"
 → call get_weather {"location":"London"}
 
+User: "Search for latest AI news"
+→ call web_search {"query":"latest AI news 2026"}
+
+User: "Who won the NBA game last night?"
+→ call nba_query {"type":"games","date":"yesterday"}
+
+User: "Write hello world to test.txt on my desktop"
+→ call write_file {"path":"Desktop/test.txt","content":"hello world"}
+
 User: "Find files on my desktop"
 → call list_directory {"path":"Desktop"}`;
 

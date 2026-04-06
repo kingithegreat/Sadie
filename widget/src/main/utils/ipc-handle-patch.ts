@@ -1,5 +1,8 @@
 import { ipcMain } from 'electron';
 
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 export function applyIpcHandlePatch() {
   // Avoid reapplying the patch
   if ((global as any).__SADIE_IPC_HANDLE_PATCHED) return;
@@ -10,7 +13,7 @@ export function applyIpcHandlePatch() {
   (ipcMain as any).handle = (channel: string, listener: any) => {
     if (registered.has(channel)) {
       console.warn(`[IPC] Ignoring duplicate handler registration for '${channel}'`);
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] Ignoring duplicate handler registration for '${channel}'`); } catch (e) {}
+      try { (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] Ignoring duplicate handler registration for '${channel}'`); } catch (e) { safeCatch(e); }
       return;
     }
     registered.add(channel);

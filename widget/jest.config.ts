@@ -14,6 +14,14 @@ const config: Config.InitialOptions = {
     'ts-jest': {
       tsconfig: '<rootDir>/tsconfig.json'
     }
+  },
+  coverageThreshold: {
+    global: {
+      branches: 30,
+      functions: 40,
+      lines: 45,
+      statements: 45
+    }
   }
 };
 

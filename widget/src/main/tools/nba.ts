@@ -12,7 +12,7 @@ import { URL } from 'url';
 export const nbaQueryDef: ToolDefinition = {
   name: 'nba_query',
   description: 'Query NBA data (games, teams, players, news, rosters). Uses ESPN public API by default (no keys required) and falls back to balldontlie if configured.',
-  category: 'utility',
+  category: 'web',
   parameters: {
     type: 'object',
     properties: {

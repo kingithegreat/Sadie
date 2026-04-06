@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electro
 import * as path from 'path';
 import { debug as logDebug } from '../shared/logger';
 
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 // Renderer diagnostics buffer
 (global as any).__SADIE_RENDERER_LOG_BUFFER ??= [];
 const MAX_RENDERER_LOG_BUFFER = 500;
@@ -13,12 +16,12 @@ function appendRendererBuffer(entry: string) {
     if (buffer.length > MAX_RENDERER_LOG_BUFFER) {
       buffer.splice(0, buffer.length - MAX_RENDERER_LOG_BUFFER);
     }
-  } catch (e) {}
+  } catch (e) { safeCatch(e); }
 }
 
 function pushRendererLog(line: string) {
   appendRendererBuffer(`[RENDERER] ${String(line)}`);
-  try { ipcRenderer.send('sadie:append-renderer-log', String(line)); } catch (e) {}
+  try { ipcRenderer.send('sadie:append-renderer-log', String(line)); } catch (e) { safeCatch(e); }
 }
 
 // Use canonical shared types for the preload API
@@ -74,9 +77,9 @@ try {
     try {
       console.log('[ROUTER-LOG]', line);
       appendRendererBuffer(`[ROUTER] ${String(line)}`);
-    } catch (e) {}
+    } catch (e) { safeCatch(e); }
   });
-} catch (e) {}
+} catch (e) { safeCatch(e); }
 
 // Create the API object
 const electronAPI: ElectronAPI = {
@@ -85,14 +88,14 @@ const electronAPI: ElectronAPI = {
    */
   sendMessage: async (request: SadieRequest): Promise<SadieResponse> => {
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.SEND, { messagePreview: String(request?.message).substring(0, 120) });
-    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.SEND} preview=${String(request?.message).substring(0,120)}`); } catch (e) {}
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.SEND} preview=${String(request?.message).substring(0,120)}`); } catch (e) { safeCatch(e); }
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.SEND, request);
   },
 
   // Start a streaming request. Non-blocking; return a Promise<void> to match shared types
   sendStreamMessage: async (request: SadieRequestWithImages): Promise<void> => {
     logDebug('[Preload] IPC send', ALLOWED_CHANNELS.STREAM_SEND, { streamId: (request as any)?.streamId, messagePreview: String(request?.message).substring(0,120) });
-    try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId}`); } catch (e) {}
+    try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId}`); } catch (e) { safeCatch(e); }
     ipcRenderer.send(ALLOWED_CHANNELS.STREAM_SEND, request);
     // Fire-and-forget; return a resolved promise so callers can await
     return Promise.resolve();
@@ -183,7 +186,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
     // E2E diagnostic: expose the last permission request to the renderer global for tests
     const debugListener = (_ev: IpcRendererEvent, data: any) => {
-      try { (global as any).__lastPermissionRequest = data; } catch (e) {}
+      try { (global as any).__lastPermissionRequest = data; } catch (e) { safeCatch(e); }
     };
     ipcRenderer.on(ALLOWED_CHANNELS.PERMISSION_REQUEST, debugListener);
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
@@ -202,7 +205,7 @@ const electronAPI: ElectronAPI = {
   // Cancel a running stream by id. If no id is provided, cancels all.
   cancelStream: (streamId?: string) => {
     logDebug('[Preload] IPC send', 'sadie:stream-cancel', { streamId });
-    try { pushRendererLog(`IPC send sadie:stream-cancel streamId=${streamId}`); } catch (e) {}
+    try { pushRendererLog(`IPC send sadie:stream-cancel streamId=${streamId}`); } catch (e) { safeCatch(e); }
     ipcRenderer.send('sadie:stream-cancel', { streamId });
   },
 
@@ -238,7 +241,7 @@ const electronAPI: ElectronAPI = {
    */
   getSettings: async (): Promise<Settings> => {
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.GET_SETTINGS);
-    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.GET_SETTINGS}`); } catch (e) {}
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.GET_SETTINGS}`); } catch (e) { safeCatch(e); }
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SETTINGS) as Settings;
   },
 
@@ -248,7 +251,7 @@ const electronAPI: ElectronAPI = {
   saveSettings: async (settings: Partial<Settings>): Promise<Settings> => {
     // saveSettings returns the updated settings (wrapped in { success:true, data })
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.SAVE_SETTINGS, { keys: Object.keys(settings || {}) });
-    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.SAVE_SETTINGS} keys=${Object.keys(settings || {}).join(',')}`); } catch (e) {}
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.SAVE_SETTINGS} keys=${Object.keys(settings || {}).join(',')}`); } catch (e) { safeCatch(e); }
     const result: any = await ipcRenderer.invoke(ALLOWED_CHANNELS.SAVE_SETTINGS, settings);
     if (result && result.success && result.data) {
       return result.data as Settings;
@@ -281,7 +284,7 @@ const electronAPI: ElectronAPI = {
 
   executeImageGenerate: async ({ action, payload }: { action: string; payload?: any }) => {
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE);
-    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE}`); } catch (e) {}
+    try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE}`); } catch (e) { safeCatch(e); }
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE, { action, payload });
   },
 
@@ -339,7 +342,7 @@ const electronAPI: ElectronAPI = {
 
   checkConnection: async (): Promise<ConnectionStatus> => {
     logDebug('[Preload] IPC invoke', 'sadie:check-connection');
-    try { pushRendererLog('IPC invoke sadie:check-connection'); } catch (e) {}
+    try { pushRendererLog('IPC invoke sadie:check-connection'); } catch (e) { safeCatch(e); }
     return await ipcRenderer.invoke('sadie:check-connection');
   },
 
@@ -484,7 +487,7 @@ const electronAPI: ElectronAPI = {
 contextBridge.exposeInMainWorld('electron', electronAPI as unknown as ElectronAPI);
 // Expose a simple capture API for renderer to forward logs into the main global buffer
 contextBridge.exposeInMainWorld('sadieCapture', {
-  log: (msg: string) => { try { pushRendererLog(msg); } catch (e) {} }
+  log: (msg: string) => { try { pushRendererLog(msg); } catch (e) { safeCatch(e); } }
 });
 // Expose the built path to the webview preload script so WebServicesPanel can
 // set it as the <webview preload="..."> attribute — must run before page scripts.

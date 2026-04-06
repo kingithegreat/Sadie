@@ -1,5 +1,9 @@
 // Main process for SADIE - Full implementation
 import { app, BrowserWindow, ipcMain, session, globalShortcut } from 'electron';
+
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+
 import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
@@ -94,7 +98,7 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sadie:n8n-status', { status });
       }
-    } catch (e) {}
+    } catch (e) { safeCatch(e); }
   }).catch((e) => console.error('[MAIN] n8n lifecycle error:', e));
 
   // Register message router with proper parameters
@@ -115,7 +119,7 @@ app.whenReady().then(async () => {
         if (mainWindow && mainWindow.webContents) {
           mainWindow.webContents.send('sadie:router-log', String(line));
         }
-      } catch (e) {}
+      } catch (e) { safeCatch(e); }
     };
     console.log('[MAIN] Router log bridge installed');
     pushMainLog('[MAIN] Router log bridge installed');

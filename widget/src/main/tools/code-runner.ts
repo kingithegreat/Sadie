@@ -6,14 +6,14 @@
  * Requires user confirmation before every run.
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ---- Safety blocklist (PowerShell + Python terms) ----
 const BLOCKED_PATTERNS: RegExp[] = [
@@ -104,13 +104,16 @@ export const runCodeHandler: ToolHandler = async (args): Promise<ToolResult> => 
 
     try {
       let cmd: string;
+      let cmdArgs: string[];
       if (language === 'python') {
-        cmd = `python "${tmpFile}"`;
+        cmd = 'python';
+        cmdArgs = [tmpFile];
       } else {
-        cmd = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmpFile}"`;
+        cmd = 'powershell';
+        cmdArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile];
       }
 
-      const { stdout, stderr } = await execAsync(cmd, { timeout: 10_000, windowsHide: true });
+      const { stdout, stderr } = await execFileAsync(cmd, cmdArgs, { timeout: 10_000, windowsHide: true });
 
       return {
         success: true,

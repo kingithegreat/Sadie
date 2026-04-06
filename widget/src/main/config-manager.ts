@@ -1,7 +1,41 @@
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
+
+// Keys that contain secrets and should be encrypted at rest
+const SECRET_KEYS: (keyof Settings)[] = [
+  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'codeApiKey'
+];
+
+/**
+ * Encrypt a plaintext string via the OS keychain (DPAPI on Windows, Keychain on macOS).
+ * Returns a base64-encoded ciphertext, or the original string if safeStorage is unavailable.
+ */
+function encryptSecret(value: string): string {
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.encryptString(value).toString('base64');
+    }
+  } catch { /* safeStorage may not be ready yet during app startup */ }
+  return value;
+}
+
+/**
+ * Decrypt a base64-encoded ciphertext via the OS keychain.
+ * Falls back to returning the raw value for un-encrypted legacy settings.
+ */
+function decryptSecret(value: string): string {
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      const buf = Buffer.from(value, 'base64');
+      return safeStorage.decryptString(buf);
+    }
+  } catch {
+    // Value was stored as plaintext (legacy) — return as-is
+  }
+  return value;
+}
 
 interface WindowPosition {
   x: number;
@@ -195,6 +229,13 @@ export function getSettings(): Settings {
         screenshot: false
       };
     }
+    // Decrypt any encrypted secret fields
+    for (const key of SECRET_KEYS) {
+      const val = (merged as any)[key];
+      if (typeof val === 'string' && val.length > 0) {
+        (merged as any)[key] = decryptSecret(val);
+      }
+    }
     return merged;
   } catch (error) {
     console.error('Failed to load settings:', error);
@@ -216,6 +257,13 @@ export function saveSettings(settings: Settings): void {
     // Default consent version to 1.0 when consent is given
     if (toSave.telemetryEnabled && !toSave.telemetryConsentVersion) {
       toSave.telemetryConsentVersion = '1.0';
+    }
+    // Encrypt secret fields before writing to disk
+    for (const key of SECRET_KEYS) {
+      const val = (toSave as any)[key];
+      if (typeof val === 'string' && val.length > 0) {
+        (toSave as any)[key] = encryptSecret(val);
+      }
     }
     writeFileSync(settingsPath, JSON.stringify(toSave, null, 2), 'utf-8');
     if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings saved successfully to:', settingsPath);
