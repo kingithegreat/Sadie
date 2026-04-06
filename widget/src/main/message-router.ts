@@ -242,7 +242,8 @@ function compressTurns(turns: ConversationMessage[]): string {
   }).join('\n');
 }
 
-function addToHistory(conversationId: string, role: 'user' | 'assistant', content: string) {
+// Exported for test access
+export function addToHistory(conversationId: string, role: 'user' | 'assistant', content: string) {
   if (!conversationHistory.has(conversationId)) {
     conversationHistory.set(conversationId, []);
   }

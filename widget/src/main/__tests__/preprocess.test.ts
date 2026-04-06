@@ -1,4 +1,4 @@
-import { preProcessIntent } from '../message-router';
+import { preProcessIntent, addToHistory, clearHistory } from '../message-router';
 
 describe('preProcessIntent', () => {
   test('identifies NBA queries as nba_query', async () => {
@@ -101,5 +101,75 @@ describe('preProcessIntent', () => {
     expect(res).not.toBeNull();
     expect(res!.calls[0].name).toBe('__compound_nba_file');
     expect(res!.calls[0].arguments.dateRange).toBe('');
+  });
+
+  // ── Context-aware follow-up routing ─────────────────────────────────────
+
+  describe('context-aware follow-up', () => {
+    const CONV_ID = 'test-followup-ctx';
+
+    beforeEach(() => {
+      clearHistory(CONV_ID);
+    });
+
+    test('routes vague follow-up to web_search when prior response has source markers', async () => {
+      // Seed: user asked about Iran war, assistant replied with source citations
+      addToHistory(CONV_ID, 'user', 'tell me about the war in iran');
+      addToHistory(CONV_ID, 'assistant',
+        'The Iran war began in late February 2026... (source: [1])');
+      // Now the follow-up is vague — no tool keywords at all
+      addToHistory(CONV_ID, 'user', 'how many have died?');
+
+      const res = await preProcessIntent('how many have died?', CONV_ID);
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('web_search');
+      expect(res!.calls[0].arguments.query).toContain('how many have died?');
+      expect(res!.calls[0].arguments.query).toContain('war in iran');
+    });
+
+    test('routes "give me more detail" to web_search when prior response has URLs', async () => {
+      addToHistory(CONV_ID, 'user', 'what is happening in ukraine');
+      addToHistory(CONV_ID, 'assistant',
+        'Fighting continues in eastern Ukraine. For more updates visit https://example.com/news');
+      addToHistory(CONV_ID, 'user', 'give me more detail');
+
+      const res = await preProcessIntent('give me more detail', CONV_ID);
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('web_search');
+      expect(res!.calls[0].arguments.query).toContain('ukraine');
+    });
+
+    test('does NOT trigger follow-up when no conversation history exists', async () => {
+      const res = await preProcessIntent('how many have died?', CONV_ID);
+      expect(res).toBeNull();
+    });
+
+    test('does NOT trigger follow-up when prior response has no source markers', async () => {
+      addToHistory(CONV_ID, 'user', 'hello');
+      addToHistory(CONV_ID, 'assistant', 'Hi there! How can I help?');
+      addToHistory(CONV_ID, 'user', 'how many have died?');
+
+      const res = await preProcessIntent('how many have died?', CONV_ID);
+      expect(res).toBeNull();
+    });
+
+    test('does NOT trigger follow-up when no conversationId is provided', async () => {
+      const res = await preProcessIntent('how many have died?');
+      expect(res).toBeNull();
+    });
+
+    test('explicit intent still takes priority over follow-up routing', async () => {
+      addToHistory(CONV_ID, 'user', 'tell me about the war in iran');
+      addToHistory(CONV_ID, 'assistant', 'The war... (source: [1])');
+      addToHistory(CONV_ID, 'user', 'search for latest iran casualties');
+
+      // "search for" is an explicit web_search intent — should match that pattern
+      // directly, not the follow-up heuristic
+      const res = await preProcessIntent('search for latest iran casualties', CONV_ID);
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('web_search');
+      // The query should be the raw message, not the "— context:" version
+      expect(res!.calls[0].arguments.query).not.toContain('— context:');
+    });
   });
 });
