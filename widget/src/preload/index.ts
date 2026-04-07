@@ -234,6 +234,16 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('sadie:hardware-profile-applied', listener);
   },
 
+  onOllamaStatus: (cb: (data: { online: boolean; url: string }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('sadie:ollama-status', listener);
+    return () => ipcRenderer.removeListener('sadie:ollama-status', listener);
+  },
+
+  exportConversation: async (conversationId: string, format?: 'markdown' | 'json') => {
+    return ipcRenderer.invoke('sadie:export-conversation', conversationId, format ?? 'markdown');
+  },
+
   removeShowWindowListener: () => {
     ipcRenderer.removeAllListeners(ALLOWED_CHANNELS.SHOW_WINDOW);
   },

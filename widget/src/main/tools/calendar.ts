@@ -145,15 +145,28 @@ Write-Output $appt.EntryID
 
 // ----- Google Calendar via ICS feed -----
 
+// ----- ICS cache (avoids hammering Google on every query) -----
+const ICS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const icsCache: Map<string, { raw: string; fetchedAt: number }> = new Map();
+
 /**
  * Fetch and parse a private Google Calendar ICS URL.
  * No OAuth or Google Cloud project needed — just the secret iCal address
  * from Google Calendar settings.
+ * Results are cached for 5 minutes so rapid follow-up questions don't
+ * spam Google's servers.
  */
 async function listIcsEvents(icsUrl: string, daysAhead: number): Promise<CalEvent[]> {
-  const response = await axios.get(icsUrl, { timeout: 10000, responseType: 'text' });
-  const ics: string = response.data;
-  return parseIcs(ics, daysAhead);
+  const cached = icsCache.get(icsUrl);
+  let raw: string;
+  if (cached && Date.now() - cached.fetchedAt < ICS_CACHE_TTL_MS) {
+    raw = cached.raw;
+  } else {
+    const response = await axios.get(icsUrl, { timeout: 10000, responseType: 'text' });
+    raw = response.data as string;
+    icsCache.set(icsUrl, { raw, fetchedAt: Date.now() });
+  }
+  return parseIcs(raw, daysAhead);
 }
 
 function parseIcs(ics: string, daysAhead: number): CalEvent[] {

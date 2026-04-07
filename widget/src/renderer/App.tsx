@@ -250,12 +250,25 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       window.dispatchEvent(new CustomEvent('sadie:title-updated', { detail: data }));
     });
 
+    // Ollama health — show a warning banner if Ollama isn't reachable on startup
+    const ollamaUnsub = window.electron.onOllamaStatus?.((data) => {
+      if (!data.online) {
+        addToast(
+          `Ollama not running — start Ollama to use local models. (${data.url})`,
+          'warning',
+          0  // persistent until dismissed
+        );
+      }
+      setStatus(prev => ({ ...prev, ollama: data.online ? 'online' : 'offline' }));
+    });
+
     return () => {
       unsubscribe?.();
       permUnsub?.();
       reminderUnsub?.();
       hwUnsub?.();
       titleUnsub?.();
+      ollamaUnsub?.();
     };
   }, []);
 

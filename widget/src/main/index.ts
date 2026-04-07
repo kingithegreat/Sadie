@@ -16,6 +16,7 @@ import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
+import axios from 'axios';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -143,6 +144,21 @@ app.whenReady().then(async () => {
     }
     try { initScheduler(); } catch (e) { console.error('[MAIN] Scheduler init error:', e); }
     try { restoreReminders(); } catch (e) { console.error('[MAIN] Reminder restore error:', e); }
+
+    // Ollama health check — ping /api/tags and notify renderer so it can show
+    // a banner if Ollama isn't running yet.
+    try {
+      const ollamaUrl = getSettings().ollamaUrl || 'http://127.0.0.1:11434';
+      let ollamaOnline = false;
+      try {
+        await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
+        ollamaOnline = true;
+      } catch { /* not running */ }
+      console.log(`[MAIN] Ollama health: ${ollamaOnline ? 'online' : 'offline'} (${ollamaUrl})`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sadie:ollama-status', { online: ollamaOnline, url: ollamaUrl });
+      }
+    } catch (e) { console.error('[MAIN] Ollama health check error:', e); }
 
     // First-time hardware profile detection — runs only when no profile has been
     // set yet (i.e. fresh install or upgrade from an older version).

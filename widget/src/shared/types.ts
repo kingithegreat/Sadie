@@ -331,4 +331,14 @@ export interface ElectronAPI {
     status?: string;
     error?: string;
   }>;
+
+  // Push event: fires when main process determines Ollama reachability on startup
+  onOllamaStatus?: (cb: (data: { online: boolean; url: string }) => void) => () => void;
+
+  // Export a single conversation to disk as Markdown or JSON
+  exportConversation?: (conversationId: string, format?: 'markdown' | 'json') => Promise<{
+    success: boolean;
+    path?: string;
+    error?: string;
+  }>;
 }

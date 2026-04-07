@@ -9,6 +9,7 @@ import { Notification } from 'electron';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { getSettings } from '../config-manager';
 
 const execAsync = promisify(exec);
 
@@ -46,15 +47,22 @@ export const showNotificationDef: ToolDefinition = {
 
 export const showNotificationHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
+    const settings = getSettings();
+    if (settings.notificationsEnabled === false) {
+      return { success: false, error: 'Notifications are disabled in settings' };
+    }
+
     const title = String(args.title || '').slice(0, 64).trim();
     const body = String(args.body || '').slice(0, 256).trim();
 
     if (!title) return { success: false, error: 'title is required' };
     if (!body) return { success: false, error: 'body is required' };
 
+    const silent = settings.notificationSound === false || args.urgency !== 'critical';
+
     // Prefer Electron Notification API (works in main process when app is focused)
     if (Notification.isSupported()) {
-      const n = new Notification({ title, body, silent: args.urgency !== 'critical' });
+      const n = new Notification({ title, body, silent });
       n.show();
       return {
         success: true,
