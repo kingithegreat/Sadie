@@ -27,6 +27,7 @@ interface Settings {
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
   codeApiUrl?: string;
   chatGuidelines?: string;
+  calendarIcsUrl?: string;
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
@@ -107,6 +108,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       codeApiProvider: source.codeApiProvider || 'openai',
       codeApiUrl: source.codeApiUrl || '',
       chatGuidelines: source.chatGuidelines || '',
+      calendarIcsUrl: (source as any).calendarIcsUrl || '',
       notificationsEnabled: (source as any).notificationsEnabled !== false,
       notificationSound: !!(source as any).notificationSound,
       notificationDuration: (source as any).notificationDuration ?? 8000,
@@ -384,7 +386,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       anthropicApiKey: localSettings.anthropicApiKey?.trim() || undefined,
       openaiApiKey: localSettings.openaiApiKey?.trim() || undefined,
       stableHordeApiKey: (localSettings as any).stableHordeApiKey?.trim() || undefined,
-      chatGuidelines: localSettings.chatGuidelines?.trim() || undefined
+      chatGuidelines: localSettings.chatGuidelines?.trim() || undefined,
+      calendarIcsUrl: (localSettings as any).calendarIcsUrl?.trim() || undefined,
     } as SharedSettings;
     // Also persist any extra keys that the local-only interface tracks
     (nextSettings as any).notificationsEnabled = (localSettings as any).notificationsEnabled;
@@ -718,6 +721,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             rows={4}
           />
           <small className="setting-hint">Custom instructions appended to the system prompt for all conversations.</small>
+        </div>
+
+        {/* Google Calendar ICS */}
+        <div className="setting-group">
+          <label className="setting-label">📅 Google Calendar</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={(localSettings as any).calendarIcsUrl || ''}
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, calendarIcsUrl: e.target.value } as any)
+            }
+            placeholder="Paste your secret iCal URL from Google Calendar settings…"
+          />
+          <small className="setting-hint">
+            Google Calendar → Settings → your calendar → "Secret address in iCal format". No sign-in required.
+          </small>
         </div>
 
         {/* Notification Preferences */}

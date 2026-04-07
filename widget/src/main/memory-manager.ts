@@ -455,6 +455,7 @@ export const MemoryManager = {
   // Search & Export
   searchConversations,
   exportConversationAsMarkdown,
+  exportConversationAsJSON,
 };
 
 export default MemoryManager;

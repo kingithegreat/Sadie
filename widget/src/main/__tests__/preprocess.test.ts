@@ -239,35 +239,35 @@ describe('preProcessIntent', () => {
     });
   });
 
-  // ── NBA player name → team routing ──────────────────────────────────────
+  // ── NBA player availability routing ─────────────────────────────────────
+  // Player availability questions ("is X playing?") route to web_search
+  // because nba_query only returns game schedules, not injury/lineup data.
 
-  describe('NBA player-to-team mapping', () => {
-    test('routes "is curry playing" to nba_query with warriors', async () => {
+  describe('NBA player availability routing', () => {
+    test('routes "is curry playing" to web_search', async () => {
       const res = await preProcessIntent('is curry playing');
       expect(res).not.toBeNull();
-      expect(res!.calls[0].name).toBe('nba_query');
-      expect(res!.calls[0].arguments.query).toBe('warriors');
+      expect(res!.calls[0].name).toBe('web_search');
     });
 
-    test('routes "iscurry playing" (typo) to nba_query with warriors', async () => {
+    test('routes "is lebron playing tonight" to web_search', async () => {
+      const res = await preProcessIntent('is lebron playing tonight');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('web_search');
+    });
+
+    test('routes "is giannis playing tonight" to web_search', async () => {
+      const res = await preProcessIntent('is giannis playing tonight');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('web_search');
+    });
+
+    test('routes "iscurry playing" (typo, no word boundary) to nba_query', async () => {
+      // "iscurry" is one word — misses the player-availability pattern,
+      // falls through to NBA fuzzy match as a game schedule query
       const res = await preProcessIntent('iscurry playing');
       expect(res).not.toBeNull();
       expect(res!.calls[0].name).toBe('nba_query');
-      expect(res!.calls[0].arguments.query).toBe('warriors');
-    });
-
-    test('routes "is lebron playing tonight" to nba_query with lakers', async () => {
-      const res = await preProcessIntent('is lebron playing tonight');
-      expect(res).not.toBeNull();
-      expect(res!.calls[0].name).toBe('nba_query');
-      expect(res!.calls[0].arguments.query).toBe('lakers');
-    });
-
-    test('routes "is giannis playing tonight" to nba_query with bucks', async () => {
-      const res = await preProcessIntent('is giannis playing tonight');
-      expect(res).not.toBeNull();
-      expect(res!.calls[0].name).toBe('nba_query');
-      expect(res!.calls[0].arguments.query).toBe('bucks');
     });
   });
 

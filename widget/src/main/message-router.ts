@@ -763,6 +763,13 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'nba_query', arguments: { type: 'standings' } }] };
   }
 
+  // Player availability / injury questions: "is curry playing?", "will LeBron play tonight?"
+  // These contain "playing" but are player questions → route to web_search, not nba_query
+  if (/\b(is|will|can|has)\s+\w+(\s+\w+)?\s+(play(ing)?|suit(ing)?\s+up|available|return|healthy|injured|out|miss)\b/i.test(m) && !hasMusicOrContentIntent) {
+    const searchQuery = userMessage.trim();
+    return { calls: [{ name: 'web_search', arguments: { query: `NBA ${searchQuery}`, maxResults: 5, fetchTopResult: true } }] };
+  }
+
   if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion) {
     let teamQuery = '';
     // Exact match first
@@ -1170,6 +1177,12 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
           else if (/\btonight|today\b/i.test(fm))  args.date = etDate(0);
           // Otherwise keep the original date from the prior intent
           return { calls: [{ name: 'nba_query', arguments: args }] };
+        }
+
+        // image_generate requires explicit draw/create keywords — never re-invoke silently
+        if (toolName === 'image_generate') {
+          clearLastIntent(conversationId!);
+          return null;
         }
 
         // For any other tool (get_weather, etc.) re-invoke with same args

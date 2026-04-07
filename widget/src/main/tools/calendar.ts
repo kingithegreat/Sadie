@@ -143,6 +143,81 @@ Write-Output $appt.EntryID
   return stdout.trim() || makeId();
 }
 
+// ----- Google Calendar via ICS feed -----
+
+/**
+ * Fetch and parse a private Google Calendar ICS URL.
+ * No OAuth or Google Cloud project needed — just the secret iCal address
+ * from Google Calendar settings.
+ */
+async function listIcsEvents(icsUrl: string, daysAhead: number): Promise<CalEvent[]> {
+  const response = await axios.get(icsUrl, { timeout: 10000, responseType: 'text' });
+  const ics: string = response.data;
+  return parseIcs(ics, daysAhead);
+}
+
+function parseIcs(ics: string, daysAhead: number): CalEvent[] {
+  const now = Date.now();
+  const cutoff = now + daysAhead * 86400000;
+  const events: CalEvent[] = [];
+
+  // Unfold continued lines (RFC 5545: lines ending in CRLF + whitespace are continuations)
+  const unfolded = ics.replace(/\r?\n[ \t]/g, '');
+  const lines = unfolded.split(/\r?\n/);
+
+  let inEvent = false;
+  let current: Record<string, string> = {};
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') { inEvent = true; current = {}; continue; }
+    if (line === 'END:VEVENT') {
+      inEvent = false;
+      const startMs = parseIcsDate(current['DTSTART'] || current['DTSTART;VALUE=DATE'] || '');
+      const endMs   = parseIcsDate(current['DTEND']   || current['DTEND;VALUE=DATE']   || '');
+      if (startMs && startMs >= now && startMs <= cutoff) {
+        events.push({
+          id:       current['UID'] || makeId(),
+          title:    decodeIcsText(current['SUMMARY'] || '(No title)'),
+          start:    new Date(startMs).toISOString(),
+          end:      endMs ? new Date(endMs).toISOString() : new Date(startMs + 3600000).toISOString(),
+          location: current['LOCATION'] ? decodeIcsText(current['LOCATION']) : undefined,
+          notes:    current['DESCRIPTION'] ? decodeIcsText(current['DESCRIPTION']).slice(0, 200) : undefined,
+          source:   'outlook' as const, // reusing type; treated as external
+        });
+      }
+      continue;
+    }
+    if (!inEvent) continue;
+    const colon = line.indexOf(':');
+    if (colon < 0) continue;
+    // Key may include parameters like DTSTART;TZID=America/New_York — normalise to base key
+    const rawKey = line.slice(0, colon);
+    const key = rawKey.includes(';') ? rawKey.split(';')[0] + (rawKey.includes('VALUE=DATE') ? ';VALUE=DATE' : '') : rawKey;
+    current[key] = line.slice(colon + 1);
+  }
+
+  return events.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+}
+
+function parseIcsDate(val: string): number | null {
+  if (!val) return null;
+  // All-day: YYYYMMDD
+  if (/^\d{8}$/.test(val)) {
+    return Date.parse(`${val.slice(0,4)}-${val.slice(4,6)}-${val.slice(6,8)}`);
+  }
+  // DateTime: YYYYMMDDTHHMMSSZ or YYYYMMDDTHHMMSS
+  if (/^\d{8}T\d{6}Z?$/.test(val)) {
+    const s = val.replace('Z', '');
+    const iso = `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(9,11)}:${s.slice(11,13)}:${s.slice(13,15)}${val.endsWith('Z') ? 'Z' : ''}`;
+    return Date.parse(iso);
+  }
+  return Date.parse(val) || null;
+}
+
+function decodeIcsText(val: string): string {
+  return val.replace(/\\n/g, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+}
+
 // ----- Google Calendar via n8n -----
 
 /**
@@ -270,18 +345,34 @@ export const listCalendarEventsHandler: ToolHandler = async (args): Promise<Tool
   let events: CalEvent[] = [];
   let source = 'local';
 
-  // 1. Try Google Calendar via n8n webhook first
-  try {
-    const googleEvents = await listGoogleCalendarEvents(daysAhead, limit);
-    if (googleEvents.length > 0) {
-      events = googleEvents;
-      source = 'google';
+  // 1. Try private ICS URL (Google Calendar secret iCal feed — no OAuth needed)
+  const { calendarIcsUrl } = getSettings();
+  if (calendarIcsUrl) {
+    try {
+      const icsEvents = await listIcsEvents(calendarIcsUrl, daysAhead);
+      if (icsEvents.length > 0) {
+        events = icsEvents;
+        source = 'google';
+      }
+    } catch (err) {
+      console.log('[Calendar] ICS fetch failed:', (err as any)?.message?.slice(0, 80));
     }
-  } catch (err) {
-    console.log('[Calendar] Google Calendar (n8n) unavailable:', (err as any)?.message?.slice(0, 80));
   }
 
-  // 2. Try Outlook if Google returned nothing
+  // 2. Try Google Calendar via n8n webhook if ICS not configured or returned nothing
+  if (events.length === 0) {
+    try {
+      const googleEvents = await listGoogleCalendarEvents(daysAhead, limit);
+      if (googleEvents.length > 0) {
+        events = googleEvents;
+        source = 'google';
+      }
+    } catch (err) {
+      console.log('[Calendar] Google Calendar (n8n) unavailable:', (err as any)?.message?.slice(0, 80));
+    }
+  }
+
+  // 3. Try Outlook if Google returned nothing
   if (events.length === 0) {
     try {
       const outlookEvents = await listOutlookEvents(daysAhead);
@@ -315,6 +406,19 @@ export const listCalendarEventsHandler: ToolHandler = async (args): Promise<Tool
 
   events.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   const limited = events.slice(0, limit);
+
+  if (limited.length === 0) {
+    return {
+      success: true,
+      result: {
+        events: [],
+        count: 0,
+        days_ahead: daysAhead,
+        source,
+        setup_hint: 'No calendar connected. To see real events: import n8n-workflows/tools/google-calendar.json into n8n and connect a Google Calendar credential. Or add events directly by asking SADIE to "add a calendar event".',
+      },
+    };
+  }
 
   return {
     success: true,

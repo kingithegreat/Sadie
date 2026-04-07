@@ -5,7 +5,7 @@ import { logTelemetryConsent } from './utils/logger';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
-  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'codeApiKey'
+  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'codeApiKey', 'calendarIcsUrl'
 ];
 
 /**
@@ -84,6 +84,8 @@ export interface Settings {
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;
+  // Google Calendar private ICS URL (Settings → Secret address in iCal format)
+  calendarIcsUrl?: string;
   // Mixture-of-Agents settings
   moaEnabled?: boolean;
   moaProposers?: string[];
