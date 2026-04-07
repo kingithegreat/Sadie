@@ -8,8 +8,9 @@ import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
 import { initializeTools } from './tools';
-import { getSettings } from './config-manager';
+import { getSettings, saveSettings, applyHardwareProfile } from './config-manager';
 import { isE2E } from './env';
+import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
@@ -142,6 +143,31 @@ app.whenReady().then(async () => {
     }
     try { initScheduler(); } catch (e) { console.error('[MAIN] Scheduler init error:', e); }
     try { restoreReminders(); } catch (e) { console.error('[MAIN] Reminder restore error:', e); }
+
+    // First-time hardware profile detection — runs only when no profile has been
+    // set yet (i.e. fresh install or upgrade from an older version).
+    // Silently applies model defaults that match the card's VRAM so 4 GB users
+    // never accidentally pull dolphin-llama3:8b or llava at startup.
+    try {
+      const currentSettings = getSettings();
+      if (!currentSettings.hardwareProfile) {
+        const gpu = await detectGpuVram();
+        if (gpu.vramGB !== null) {
+          const profile = gpu.vramGB >= 16 ? '16gb+' : gpu.vramGB >= 8 ? '8gb' : '4gb';
+          const patched = applyHardwareProfile({ ...currentSettings, hardwareProfile: profile });
+          saveSettings(patched);
+          console.log(`[MAIN] Hardware profile auto-set: ${profile} (${gpu.vramGB} GB VRAM, ${gpu.gpuName ?? 'unknown GPU'})`);
+          // Let the renderer know so it can show a one-time toast
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sadie:hardware-profile-applied', {
+              profile,
+              vramGB: gpu.vramGB,
+              gpuName: gpu.gpuName,
+            });
+          }
+        }
+      }
+    } catch (e) { console.error('[MAIN] Hardware profile detection error:', e); }
   });
 
   // Register global hotkey to show/hide SADIE window

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
+import sadieLogoUrl from '../assets/SadieLogoNerd.png';
 
 interface StatusIndicatorProps {
   connectionStatus: ConnectionStatus;
@@ -85,7 +86,8 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               ☰
             </button>
           )}
-          <h1>✨ SADIE</h1>
+          <img src={sadieLogoUrl} alt="SADIE" className="header-logo" />
+          <h1>SADIE</h1>
         </div>
 
         <div className="header-connection">

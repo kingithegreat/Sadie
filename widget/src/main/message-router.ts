@@ -765,8 +765,22 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
 
   if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion) {
     let teamQuery = '';
+    // Exact match first
     for (const team of nbaTeams) {
       if (m.includes(team)) { teamQuery = team; break; }
+    }
+    // Fuzzy match: catch typos like "warroirs" → "warriors"
+    // Split message into words; for any word ≥ 5 chars check if it shares a
+    // 4-char prefix with a team name (handles transpositions near the end).
+    if (!teamQuery) {
+      const words = m.toLowerCase().split(/\W+/).filter(w => w.length >= 5);
+      outer: for (const word of words) {
+        for (const team of nbaTeams) {
+          if (team.length < 5) continue;
+          // Prefix match: first 4 chars match → likely same word with typo
+          if (word.slice(0, 4) === team.slice(0, 4)) { teamQuery = team; break outer; }
+        }
+      }
     }
 
     // ── Star player → team mapping (handles typos like "iscurry" → curry → warriors) ──
@@ -1125,9 +1139,12 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
       // Topic-shift guard: if the user is asking a clearly new standalone question
       // (e.g. "what is the population of NZ"), let it fall through.
       // Bridging phrases like "how many", "what about", "how did" are follow-ups.
-      const isNewTopic = /^(what is|what are|who is|who are|where is|where are|tell me about|explain|can you explain)\b.{10,}/i.test(userMessage.trim());
+      const trimmed = userMessage.trim();
+      const isGreeting = /^(hi|hey|hello|sup|yo|howdy|hiya|good\s+(morning|afternoon|evening|night)|what'?s up|how are you|how's it going)[!?.]*$/i.test(trimmed);
+      const isNewTopic = isGreeting || /^(what is|what are|who is|who are|where is|where are|tell me about|explain|can you explain)\b.{10,}/i.test(trimmed);
       if (isNewTopic) {
-        // Looks like a brand-new question — don't re-invoke stale intent
+        // Greeting or new question — clear stale intent so LLM handles it fresh
+        if (conversationId) clearLastIntent(conversationId);
       } else {
         const toolName = prev.intent.calls[0]?.name;
         const args     = { ...prev.intent.calls[0]?.arguments };
@@ -1532,9 +1549,9 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 // Central system prompt moved to `src/shared/system-prompt.ts`.
 
 // Vision model for image analysis
-const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'llava';
+const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'moondream';
 // Default model for chat (should support tools)
-const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
+const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'phi4-mini';
 
 /**
  * Returns true for models with <=3B parameters based on their name.
@@ -1542,10 +1559,16 @@ const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
  */
 export function isSmallModel(modelName: string): boolean {
   const n = modelName.toLowerCase();
-  // Explicit small-size tags
-  if (/[:\-_]([1-3]b)\b/.test(n)) return true;
-  // Known small model families (phi3 alone is NOT small — it ships in 3.8b and 14b; only mini variants qualify)
-  if (/\b(phi[- ]?[0-9]?[- ]?mini|gemma:2b|qwen[:\-_]?[0-9]*[:\-_]?[01]\.?[05]b|smollm|tinyllama|tinydolphin)\b/.test(n)) return true;
+  // Explicit small-size tags — covers integer sizes (:1b, :2b, :3b) AND decimal sizes (:1.5b, :2.7b, :0.5b)
+  if (/[:\-_]([0-3](\.[0-9]+)?b)\b/.test(n)) return true;
+  // Known small model families:
+  //   phi-mini / phi3.5-mini — phi3 alone is NOT small (ships at 3.8b and 14b; only mini qualifies)
+  //   gemma:2b / gemma2:2b
+  //   qwen sub-3b sizes
+  //   moondream — 1.8b vision model, 4GB-friendly alternative to llava
+  //   dolphin-phi — 2.7b uncensored, 4GB-friendly alternative to dolphin-llama3:8b
+  //   smollm, tinyllama, tinydolphin
+  if (/\b(phi[- ]?[0-9]?(\.[0-9]+)?[- ]?mini|gemma:2b|gemma2:2b|qwen[:\-_]?[0-9]*[:\-_]?[01]\.?[05]b|smollm|tinyllama|tinydolphin|moondream|dolphin-phi)\b/.test(n)) return true;
   // Cloud API small models (Haiku family, GPT-3.5, mini variants)
   if (/\b(haiku|gpt-3\.5|gpt-4o-mini|o1-mini)\b/.test(n)) return true;
   return false;
@@ -1627,8 +1650,9 @@ export function handleSlashCommand(input: string, conversationId: string, modelN
 
   return null; // Not a recognized slash command
 }
-// Uncensored model
-const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-llama3:8b';
+// Uncensored model — dolphin-phi:2.7b replaces dolphin-llama3:8b as the default;
+// it fits in 4 GB VRAM (~1.6 GB) while dolphin-llama3:8b needs 5-6 GB.
+const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-phi:2.7b';
 
 // Current mode (can be toggled via IPC)
 let uncensoredModeEnabled = false;

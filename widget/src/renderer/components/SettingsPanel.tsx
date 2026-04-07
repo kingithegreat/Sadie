@@ -24,13 +24,17 @@ interface Settings {
   stableHordeApiKey?: string;
   codeModel?: string;
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
   codeApiUrl?: string;
   chatGuidelines?: string;
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
+  moaEnabled?: boolean;
+  moaProposers?: string[];
+  moaAggregator?: string;
+  hardwareProfile?: '4gb' | '8gb' | '16gb+';
 }
 
 interface SettingsPanelProps {
@@ -45,9 +49,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose
 }) => {
   const defaultModels = {
-    chatModel: 'qwen2.5:7b',
-    uncensoredModel: 'dolphin-llama3:8b',
-    visionModel: 'llava:latest',
+    chatModel: 'phi4-mini',
+    uncensoredModel: 'dolphin-phi:2.7b',
+    visionModel: 'moondream',
     codeModel: 'qwen2.5-coder:3b'
   };
 
@@ -66,6 +70,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       case 'openai': return 'https://api.openai.com/v1';
       case 'anthropic': return 'https://api.anthropic.com/v1';
       case 'openrouter': return 'https://openrouter.ai/api/v1';
+      case 'groq': return 'https://api.groq.com/openai/v1';
+      case 'deepseek': return 'https://api.deepseek.com/v1';
+      case 'google-ai-studio': return 'https://generativelanguage.googleapis.com/v1beta/openai';
       default: return '';
     }
   };
@@ -110,48 +117,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     };
   };
 
-  // Models ordered by tool-calling capability (best first)
+  // Models ordered by quality (best first for 5GB VRAM setup)
   const ollamaModels = [
     {
-      id: 'qwen2.5:7b',
-      name: 'Qwen 2.5 (7B)',
-      description: '⭐ Best for tools & actions - excellent function calling (4.4GB)'
+      id: 'phi4-mini',
+      name: 'Phi 4 Mini (3.8B)',
+      description: '⭐ Best reasoning in the small model range — fits 4-5GB VRAM (2.5GB)'
+    },
+    {
+      id: 'qwen2.5:3b',
+      name: 'Qwen 2.5 (3B)',
+      description: 'Best tool-calling at this size, reliable function calling (2GB)'
     },
     {
       id: 'qwen2.5-coder:3b',
       name: 'Qwen 2.5 Coder (3B)',
-      description: '💻 Best for your GPU — fits in 4GB VRAM comfortably (2GB) ⭐'
+      description: '💻 Best small coding model — strong at debugging & logic (2GB)'
     },
     {
       id: 'qwen2.5-coder:7b',
       name: 'Qwen 2.5 Coder (7B)',
-      description: '💻 Best for coding — specialised code model (4.4GB)'
+      description: '💻 Best coding model — needs 6GB+ VRAM (4.4GB)'
     },
     {
       id: 'deepseek-coder-v2:latest',
       name: 'DeepSeek Coder V2',
-      description: '💻 Excellent code completion & debugging (8.9GB)'
+      description: '💻 Excellent code completion & debugging — needs 10GB+ (8.9GB)'
     },
     {
       id: 'llama3.2:3b',
       name: 'Llama 3.2 (3B)',
-      description: 'Fast & lightweight, decent tool support (2GB)'
+      description: 'Reliable fallback — good general chat (2GB)'
     },
     {
-      id: 'mistral:latest',
-      name: 'Mistral',
-      description: 'Great conversation quality, weaker at tools (4.4GB)'
+      id: 'moondream',
+      name: 'Moondream 2 (Vision)',
+      description: '👁️ Lightweight vision model — fits 4-5GB VRAM comfortably (1.7GB)'
     },
     {
-      id: 'dolphin-llama3:8b',
-      name: 'Dolphin Llama 3 (8B)',
-      description: 'Uncensored chat, no tool calling (4.7GB)'
+      id: 'dolphin-phi:2.7b',
+      name: 'Dolphin Phi (2.7B)',
+      description: 'Uncensored chat — safe for 4-5GB VRAM (1.6GB)'
     },
-    {
-      id: 'llava:latest',
-      name: 'LLaVA Vision',
-      description: 'For image/screenshot analysis (4.7GB)'
-    }
   ];
 
   const [localSettings, setLocalSettings] = useState<Settings>(buildLocalSettings(settings));
@@ -224,8 +231,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       rec = { mode: 'moa', preset: 'codeHeavy', reason: `Code-focused MoA fits your ${gb} GB VRAM` };
     } else if (gb >= 8) {
       rec = { mode: 'moa', preset: 'balanced', reason: `Balanced MoA fits your ${gb} GB VRAM` };
+    } else if (gb >= 6) {
+      rec = { mode: 'single', model: 'phi4-mini', reason: `Best reasoning model for ${gb} GB — phi4-mini at 2.5GB leaves plenty of headroom. MoA needs 8+ GB.` };
     } else if (gb >= 4) {
-      rec = { mode: 'single', model: 'qwen2.5:7b', reason: `Best single model for ${gb} GB. MoA needs 8+ GB — use RAG for a bigger quality boost.` };
+      rec = { mode: 'single', model: 'phi4-mini', reason: `phi4-mini is the best small model for ${gb} GB VRAM — 2.5GB with 2GB headroom for context.` };
     } else if (gb >= 2) {
       rec = { mode: 'single', model: 'llama3.2:3b', reason: `Best fit for ${gb} GB. Index files with RAG for smarter answers.` };
     }
@@ -237,9 +246,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const rec = gpuInfo.recommendation;
     if (rec.mode === 'moa' && rec.preset) {
       const presetMap: Record<string, { proposers: string[]; aggregator: string }> = {
-        balanced: { proposers: ['qwen2.5:7b', 'mistral:latest', 'llama3.2:3b'], aggregator: 'qwen2.5:7b' },
-        codeHeavy: { proposers: ['qwen2.5-coder:7b', 'deepseek-coder-v2:latest', 'qwen2.5:7b'], aggregator: 'qwen2.5-coder:7b' },
-        lightweight: { proposers: ['qwen2.5-coder:3b', 'llama3.2:3b'], aggregator: 'qwen2.5:7b' },
+        balanced: { proposers: ['phi4-mini', 'qwen2.5:3b', 'llama3.2:3b'], aggregator: 'phi4-mini' },
+        codeHeavy: { proposers: ['qwen2.5-coder:3b', 'phi4-mini'], aggregator: 'phi4-mini' },
+        lightweight: { proposers: ['qwen2.5:3b', 'llama3.2:3b'], aggregator: 'phi4-mini' },
       };
       const preset = presetMap[rec.preset];
       if (preset) {
@@ -247,7 +256,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       }
     } else if (rec.mode === 'single') {
       // Disable MoA and set the recommended single model
-      setLocalSettings({ ...localSettings, moaEnabled: false, ollamaModel: rec.model || 'qwen2.5:7b' });
+      setLocalSettings({ ...localSettings, moaEnabled: false, chatModel: rec.model || 'phi4-mini' });
     }
   };
 
@@ -638,7 +647,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             >
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
-              <option value="openrouter">OpenRouter</option>
+              <option value="openrouter">OpenRouter (all models, one key)</option>
+              <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
+              <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
+              <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>
               <option value="custom">Custom URL</option>
             </select>
             <input
@@ -660,6 +672,37 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           )}
           <small className="setting-hint">Paste an API key to route all coding queries to a cloud model. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-opus-4-20250514</code>). Leave blank to use local Ollama.</small>
         </div>
+        {/* Hardware Profile — applies safe model defaults for the card's VRAM */}
+        <div className="setting-group">
+          <label className="setting-label">🖥️ Hardware Profile</label>
+          <div className="density-options">
+            {(['4gb', '8gb', '16gb+'] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`hw-profile-btn${localSettings.hardwareProfile === p ? ' active' : ''}`}
+                onClick={() => {
+                  const profileDefaults: Record<string, Partial<Settings>> = {
+                    '4gb':   { chatModel: 'phi4-mini',   visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
+                    '8gb':   { chatModel: 'phi4-mini',   visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
+                    '16gb+': { chatModel: 'qwen2.5:7b',  visionModel: 'llava',     uncensoredModel: 'dolphin-llama3:8b' },
+                  };
+                  setLocalSettings({ ...localSettings, ...(profileDefaults[p] || {}), hardwareProfile: p });
+                }}
+              >
+                {p === '4gb' ? '4 GB' : p === '8gb' ? '8 GB' : '16 GB+'}
+              </button>
+            ))}
+          </div>
+          <small className="setting-hint">
+            Applies safe model defaults for your GPU.&nbsp;
+            <strong>4 GB:</strong> qwen2.5:3b + moondream (vision) + dolphin-phi:2.7b (uncensored).&nbsp;
+            <strong>8 GB:</strong> qwen2.5:7b + llava.&nbsp;
+            <strong>16 GB+:</strong> full-size models + MoA recommended.
+            Auto-detected on first launch — only change if it was wrong.
+          </small>
+        </div>
+
         <div className="setting-group">
           <label className="setting-label">📝 Chat Guidelines</label>
           <textarea
@@ -768,7 +811,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             >
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openrouter">OpenRouter</option>
+              <option value="openrouter">OpenRouter (all models, one key)</option>
+              <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
+              <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
+              <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>
               <option value="custom">Custom URL</option>
             </select>
           </div>
@@ -802,7 +848,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   customLLM: { ...localSettings.customLLM!, apiKey: e.target.value }
                 })
               }
-              placeholder={selectedProvider === 'openai' ? 'sk-...' : selectedProvider === 'anthropic' ? 'sk-ant-...' : 'API Key'}
+              placeholder={
+                selectedProvider === 'openai' ? 'sk-...' :
+                selectedProvider === 'anthropic' ? 'sk-ant-...' :
+                selectedProvider === 'groq' ? 'gsk_...' :
+                selectedProvider === 'deepseek' ? 'sk-...' :
+                selectedProvider === 'google-ai-studio' ? 'AIza...' :
+                'API Key'
+              }
             />
             <button
               type="button"
@@ -836,6 +889,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     }
                   >
                     <span className="chip-name">{model.name || model.id}</span>
+                    {model.costHint && (
+                      <span className="chip-cost">{model.costHint}</span>
+                    )}
                   </button>
                 ))}
               </div>

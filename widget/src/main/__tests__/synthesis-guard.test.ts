@@ -155,7 +155,7 @@ describe('streamFromOllamaWithTools — cloud model guard', () => {
     // Must NOT send the cloud model name to Ollama
     expect(requestBody.model).not.toBe('claude-sonnet-4-20250514');
     // Should use the Ollama default instead
-    expect(requestBody.model).toBe(process.env.OLLAMA_MODEL || 'llama3.2:3b');
+    expect(requestBody.model).toBe(process.env.OLLAMA_MODEL || 'phi4-mini');
   });
 
   test('uses chatModel from settings when useCustomLLM is inactive', async () => {

@@ -141,3 +141,68 @@ describe('config-manager integration tests', () => {
     expect(loaded.openaiApiKey).toBe('sk-openai-test');
   });
 });
+
+// ── applyHardwareProfile ──────────────────────────────────────────────────────
+
+describe('applyHardwareProfile', () => {
+  const { applyHardwareProfile, HARDWARE_PROFILE_DEFAULTS } = require('../../main/config-manager');
+
+  const base = {
+    n8nUrl: 'http://localhost:5678',
+    ollamaUrl: 'http://127.0.0.1:11434',
+    chatModel: 'llama3.2:3b',
+    visionModel: 'llava',
+    uncensoredModel: 'dolphin-llama3:8b',
+    theme: 'system',
+    alwaysOnTop: true,
+    globalHotkey: 'Ctrl+Shift+Space',
+    confirmDangerousActions: true,
+    saveConversationHistory: true,
+    hideOnBlur: false,
+  };
+
+  test('returns settings unchanged when hardwareProfile is undefined', () => {
+    const result = applyHardwareProfile({ ...base });
+    expect(result.chatModel).toBe('llama3.2:3b');
+    expect(result.visionModel).toBe('llava');
+  });
+
+  test('applies 4gb profile — safe models for 4 GB VRAM cards', () => {
+    const result = applyHardwareProfile({ ...base, hardwareProfile: '4gb' });
+    expect(result.chatModel).toBe('phi4-mini');
+    expect(result.visionModel).toBe('moondream');
+    expect(result.uncensoredModel).toBe('dolphin-phi:2.7b');
+  });
+
+  test('applies 8gb profile', () => {
+    const result = applyHardwareProfile({ ...base, hardwareProfile: '8gb' });
+    expect(result.chatModel).toBe('phi4-mini');
+    expect(result.visionModel).toBe('moondream');
+    expect(result.uncensoredModel).toBe('dolphin-phi:2.7b');
+  });
+
+  test('applies 16gb+ profile — full-size models', () => {
+    const result = applyHardwareProfile({ ...base, hardwareProfile: '16gb+' });
+    expect(result.chatModel).toBe('qwen2.5:7b');
+    expect(result.visionModel).toBe('llava');
+    expect(result.uncensoredModel).toBe('dolphin-llama3:8b');
+  });
+
+  test('preserves all non-model settings when applying a profile', () => {
+    const result = applyHardwareProfile({ ...base, hardwareProfile: '4gb', globalHotkey: 'Ctrl+Alt+S' });
+    expect(result.globalHotkey).toBe('Ctrl+Alt+S');
+    expect(result.n8nUrl).toBe('http://localhost:5678');
+  });
+
+  test('HARDWARE_PROFILE_DEFAULTS covers all three profiles', () => {
+    expect(HARDWARE_PROFILE_DEFAULTS).toHaveProperty('4gb');
+    expect(HARDWARE_PROFILE_DEFAULTS).toHaveProperty('8gb');
+    expect(HARDWARE_PROFILE_DEFAULTS).toHaveProperty('16gb+');
+    for (const profile of ['4gb', '8gb', '16gb+']) {
+      const defaults = HARDWARE_PROFILE_DEFAULTS[profile];
+      expect(typeof defaults.chatModel).toBe('string');
+      expect(typeof defaults.visionModel).toBe('string');
+      expect(typeof defaults.uncensoredModel).toBe('string');
+    }
+  });
+});

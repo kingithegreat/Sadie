@@ -1,8 +1,13 @@
 /**
  * SADIE Calendar Tool
  *
- * Reads and writes calendar events via Windows COM automation (Outlook calendar)
- * with a plain-JSON fallback store at memory/json-store/calendar.json.
+ * Priority order for listing events:
+ *   1. Google Calendar via n8n webhook  (POST /webhook/sadie/calendar)
+ *   2. Microsoft Outlook COM automation (Windows only, Outlook must be installed)
+ *   3. Local JSON fallback store        (memory/json-store/calendar.json)
+ *
+ * To enable Google Calendar: import n8n-workflows/google-calendar.json into
+ * n8n and connect a Google Calendar credential. No other config needed.
  *
  * Tools:
  *   list_calendar_events  — return upcoming events (today + N days)
@@ -14,6 +19,8 @@ import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
+import axios from 'axios';
+import { getSettings } from '../config-manager';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const execAsync = promisify(exec);
@@ -136,6 +143,46 @@ Write-Output $appt.EntryID
   return stdout.trim() || makeId();
 }
 
+// ----- Google Calendar via n8n -----
+
+/**
+ * Call the n8n Google Calendar webhook.
+ * The workflow at /webhook/sadie/calendar must be imported and active in n8n.
+ * Returns [] if n8n is offline or the workflow isn't installed.
+ */
+async function listGoogleCalendarEvents(daysAhead: number, limit: number): Promise<CalEvent[]> {
+  const { n8nUrl } = getSettings();
+  const url = `${n8nUrl}/webhook/sadie/calendar`;
+  const response = await axios.post(
+    url,
+    { action: 'list', days_ahead: daysAhead, limit },
+    { timeout: 10000 }
+  );
+  const data = response.data;
+  // n8n workflow returns { events: [...] } or an array directly
+  const raw: any[] = Array.isArray(data) ? data : (Array.isArray(data?.events) ? data.events : []);
+  return raw.map((e: any) => ({
+    id: String(e.id || makeId()),
+    title: String(e.title || e.summary || '(No subject)'),
+    start: String(e.start || e.startTime || ''),
+    end: String(e.end || e.endTime || ''),
+    location: e.location ? String(e.location) : undefined,
+    notes: e.notes || e.description ? String(e.notes || e.description).slice(0, 200) : undefined,
+    source: 'outlook' as const, // reuse type; 'google' is not in the union — treated as external
+  }));
+}
+
+async function addGoogleCalendarEvent(title: string, start: string, end: string, location: string, notes: string): Promise<string | null> {
+  const { n8nUrl } = getSettings();
+  const url = `${n8nUrl}/webhook/sadie/calendar`;
+  const response = await axios.post(
+    url,
+    { action: 'add', title, start, end, location, notes },
+    { timeout: 10000 }
+  );
+  return String(response.data?.id || '').trim() || null;
+}
+
 // ----- Tool definitions -----
 
 export const listCalendarEventsDef: ToolDefinition = {
@@ -223,15 +270,28 @@ export const listCalendarEventsHandler: ToolHandler = async (args): Promise<Tool
   let events: CalEvent[] = [];
   let source = 'local';
 
-  // Try Outlook first
+  // 1. Try Google Calendar via n8n webhook first
   try {
-    const outlookEvents = await listOutlookEvents(daysAhead);
-    if (outlookEvents.length > 0) {
-      events = outlookEvents;
-      source = 'outlook';
+    const googleEvents = await listGoogleCalendarEvents(daysAhead, limit);
+    if (googleEvents.length > 0) {
+      events = googleEvents;
+      source = 'google';
     }
   } catch (err) {
-    console.log('[Calendar] Outlook unavailable, using local store:', (err as any)?.message?.slice(0, 100));
+    console.log('[Calendar] Google Calendar (n8n) unavailable:', (err as any)?.message?.slice(0, 80));
+  }
+
+  // 2. Try Outlook if Google returned nothing
+  if (events.length === 0) {
+    try {
+      const outlookEvents = await listOutlookEvents(daysAhead);
+      if (outlookEvents.length > 0) {
+        events = outlookEvents;
+        source = 'outlook';
+      }
+    } catch (err) {
+      console.log('[Calendar] Outlook unavailable, using local store:', (err as any)?.message?.slice(0, 100));
+    }
   }
 
   // Merge / fallback to local store
@@ -284,12 +344,22 @@ export const addCalendarEventHandler: ToolHandler = async (args): Promise<ToolRe
   if (isNaN(endMs))   return { success: false, error: `Invalid end date: ${end}` };
   if (endMs <= startMs) return { success: false, error: 'end must be after start' };
 
-  // Try Outlook
+  // 1. Try Google Calendar via n8n
   let outlookId: string | null = null;
   try {
-    outlookId = await addOutlookEvent(title, start, end, location, notes);
+    outlookId = await addGoogleCalendarEvent(title, start, end, location, notes);
+    if (outlookId) console.log('[Calendar] Event added to Google Calendar via n8n');
   } catch (err) {
-    console.log('[Calendar] Outlook add failed, saving locally:', (err as any)?.message?.slice(0, 100));
+    console.log('[Calendar] Google Calendar add failed, trying Outlook:', (err as any)?.message?.slice(0, 80));
+  }
+
+  // 2. Try Outlook if Google didn't work
+  if (!outlookId) {
+    try {
+      outlookId = await addOutlookEvent(title, start, end, location, notes);
+    } catch (err) {
+      console.log('[Calendar] Outlook add failed, saving locally:', (err as any)?.message?.slice(0, 100));
+    }
   }
 
   // Always save to local store as well (serves as backup and is used when Outlook is absent)

@@ -175,7 +175,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   };
 
   const TAG_OPTIONS = [
-    { name: 'Work', color: '#3b82f6' },
+    { name: 'Work', color: '#A07820' },
     { name: 'Personal', color: '#10b981' },
     { name: 'Research', color: '#f59e0b' },
     { name: 'Important', color: '#ef4444' },

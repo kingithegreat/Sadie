@@ -107,13 +107,15 @@ export interface CustomModelInfo {
   description?: string;
   provider?: string;
   contextWindow?: number;
+  /** Human-readable cost hint shown in the model picker, e.g. "~$0.27/1M" or "Free tier" */
+  costHint?: string;
 }
 
 export interface CustomLLMConfig {
   name: string;
   apiUrl: string;
   apiKey?: string;
-  provider: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  provider: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
   model?: string;
   enabled: boolean;
   metadata?: ModelMetadata;
@@ -150,7 +152,7 @@ export interface Settings {
   // Code model routing
   codeModel?: string;
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
   codeApiUrl?: string;
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;
@@ -160,6 +162,8 @@ export interface Settings {
   notificationDuration?: number;
   // Display density
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
+  // Hardware profile for model recommendations
+  hardwareProfile?: '4gb' | '8gb' | '16gb+';
   // Mixture of Agents (MoA) settings
   moaEnabled?: boolean;
   moaProposers?: string[];
@@ -275,6 +279,7 @@ export interface ElectronAPI {
   exportChat?: (markdown: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   listTools?: () => Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }>;
   onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;
+  onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
 
   // RAG: index a local file path from main process
   ragIndex?: (filePath: string) => Promise<{ success: boolean; result?: { doc_id: string; filename: string; chunks_indexed: number; message: string }; error?: string }>;

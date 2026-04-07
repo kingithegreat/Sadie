@@ -29,21 +29,21 @@ const MIN_PROPOSALS = 1;
 export const MOA_PRESETS = {
   balanced: {
     label: 'Balanced (recommended)',
-    description: 'Good mix of reasoning, coding, and general knowledge — needs 8+ GB VRAM',
-    proposers: ['qwen2.5:7b', 'mistral:latest', 'llama3.2:3b'],
-    aggregator: 'qwen2.5:7b'
+    description: 'Good mix of reasoning, coding, and general knowledge — fits 5–8 GB VRAM',
+    proposers: ['phi4-mini', 'qwen2.5:3b', 'llama3.2:3b'],
+    aggregator: 'phi4-mini'
   },
   codeHeavy: {
     label: 'Code-focused',
-    description: 'Optimised for programming and debugging — needs 10+ GB VRAM',
-    proposers: ['qwen2.5-coder:7b', 'deepseek-coder-v2:latest', 'qwen2.5:7b'],
-    aggregator: 'qwen2.5-coder:7b'
+    description: 'Optimised for programming and debugging — fits 5–8 GB VRAM',
+    proposers: ['qwen2.5-coder:3b', 'phi4-mini'],
+    aggregator: 'phi4-mini'
   },
   lightweight: {
     label: 'Lightweight',
-    description: 'Smaller models for 8 GB GPUs — still benefits from multi-model synthesis',
-    proposers: ['qwen2.5-coder:3b', 'llama3.2:3b'],
-    aggregator: 'qwen2.5:7b'
+    description: 'Minimal VRAM — works on 4 GB cards',
+    proposers: ['qwen2.5:3b', 'llama3.2:3b'],
+    aggregator: 'phi4-mini'
   }
 } as const;
 
@@ -53,22 +53,24 @@ export const SINGLE_MODEL_RECOMMENDATIONS: Array<{
   model: string;
   label: string;
 }> = [
-  { minVram: 4, model: 'qwen2.5:7b', label: 'qwen2.5:7b — best quality that fits 4 GB' },
-  { minVram: 2, model: 'llama3.2:3b', label: 'llama3.2:3b — fast and lightweight for 2-3 GB' },
+  { minVram: 6, model: 'phi4-mini', label: 'phi4-mini — best reasoning in the 3-4B range, fits 5-6 GB+' },
+  { minVram: 4, model: 'phi4-mini', label: 'phi4-mini — best small model, safely fits 4-5 GB VRAM' },
+  { minVram: 2, model: 'qwen2.5:3b', label: 'qwen2.5:3b — best tool-calling for 2-3 GB VRAM' },
 ];
 
 // ── Hardware detection & recommendation ─────────────────────────────────────
 
 /** Model VRAM requirements in GB (approximate, quantised weights). */
 const MODEL_VRAM: Record<string, number> = {
-  'qwen2.5:7b': 4.4,
-  'qwen2.5-coder:7b': 4.4,
+  'phi4-mini': 2.5,
+  'qwen2.5:3b': 2,
   'qwen2.5-coder:3b': 2,
-  'deepseek-coder-v2:latest': 8.9,
-  'mistral:latest': 4.4,
+  'qwen2.5-coder:7b': 4.4,
+  'dolphin-phi:2.7b': 1.6,
+  'moondream': 1.7,
   'llama3.2:3b': 2,
-  'dolphin-llama3:8b': 4.7,
-  'llava:latest': 4.7,
+  'nomic-embed-text': 0.3,
+  'deepseek-coder-v2:latest': 8.9,
 };
 
 /**

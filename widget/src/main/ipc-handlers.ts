@@ -723,8 +723,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // Ollama default rather than forwarding a cloud model name.
       const isCustomLLMActive = !!(settings as any).useCustomLLM && !!(settings as any).customLLM;
       const model = isCustomLLMActive
-        ? (process.env.OLLAMA_MODEL || 'llama3.2:3b')
-        : (settings.chatModel || process.env.OLLAMA_MODEL || 'llama3.2:3b');
+        ? (process.env.OLLAMA_MODEL || 'phi4-mini')
+        : (settings.chatModel || process.env.OLLAMA_MODEL || 'phi4-mini');
 
       // Trim inputs so the title prompt stays tiny
       const userSnippet = userMessage.slice(0, 200);

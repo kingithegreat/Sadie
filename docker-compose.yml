@@ -18,7 +18,7 @@ services:
       - GENERIC_TIMEZONE=Pacific/Auckland
       - N8N_LOG_LEVEL=info
       - N8N_LOG_OUTPUT=console
-      - N8N_WORKFLOW_HISTORY_ENABLED=false
+      - N8N_WORKFLOW_HISTORY_ENABLED=true
       # Shared secret used by SADIE to authenticate webhook requests.
       # start-sadie.ps1 sets this from the auto-generated webhook-secret file.
       - SADIE_WEBHOOK_SECRET=${SADIE_WEBHOOK_SECRET:-}

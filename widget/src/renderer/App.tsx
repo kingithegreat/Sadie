@@ -237,6 +237,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }
     });
 
+    // One-time toast when the main process auto-detects VRAM and applies a hardware profile
+    const hwUnsub = window.electron.onHardwareProfileApplied?.((data) => {
+      const label = data.profile === '4gb' ? '4 GB' : data.profile === '8gb' ? '8 GB' : '16 GB+';
+      const gpu = data.gpuName ? ` (${data.gpuName})` : '';
+      addToast(`GPU detected${gpu}: ${data.vramGB} GB VRAM — ${label} model profile applied automatically.`, 'info', 10000);
+    });
+
     // Subscribe to title updates pushed from main (keeps sidebar title in sync)
     const titleUnsub = window.electron.onTitleUpdated?.((data) => {
       // Dispatch a custom DOM event so ConversationSidebar can patch its local list
@@ -247,6 +254,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       unsubscribe?.();
       permUnsub?.();
       reminderUnsub?.();
+      hwUnsub?.();
       titleUnsub?.();
     };
   }, []);

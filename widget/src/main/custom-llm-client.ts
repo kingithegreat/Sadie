@@ -50,23 +50,56 @@ const MODEL_METADATA: Record<string, Partial<ModelMetadata>> = {
 };
 
 const ANTHROPIC_MODELS: CustomModelInfo[] = [
-  { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', description: 'Most capable, reasoning & complex tasks', provider: 'anthropic' },
-  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Fast, intelligent, great for tools', provider: 'anthropic' },
-  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'High intelligence, fast', provider: 'anthropic' },
-  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast & affordable', provider: 'anthropic' },
-  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Complex tasks, creative', provider: 'anthropic' },
-  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fastest, cost-efficient', provider: 'anthropic' },
+  { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', description: 'Most capable, reasoning & complex tasks', provider: 'anthropic', costHint: '~$15/1M in' },
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Fast, intelligent, great for tools', provider: 'anthropic', costHint: '~$3/1M in' },
+  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'High intelligence, fast', provider: 'anthropic', costHint: '~$3/1M in' },
+  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast & affordable', provider: 'anthropic', costHint: '~$0.80/1M in' },
+  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Complex tasks, creative', provider: 'anthropic', costHint: '~$15/1M in' },
+  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fastest, cost-efficient', provider: 'anthropic', costHint: '~$0.25/1M in' },
 ];
 
 const OPENAI_MODELS: CustomModelInfo[] = [
-  { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', provider: 'openai' },
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable', provider: 'openai' },
-  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: '128K context, vision', provider: 'openai' },
-  { id: 'gpt-4', name: 'GPT-4', description: 'High intelligence', provider: 'openai' },
-  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast, cost-effective', provider: 'openai' },
-  { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning', provider: 'openai' },
-  { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning', provider: 'openai' },
+  { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', provider: 'openai', costHint: '~$5/1M in' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable', provider: 'openai', costHint: '~$0.15/1M in' },
+  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: '128K context, vision', provider: 'openai', costHint: '~$10/1M in' },
+  { id: 'gpt-4', name: 'GPT-4', description: 'High intelligence', provider: 'openai', costHint: '~$30/1M in' },
+  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast, cost-effective', provider: 'openai', costHint: '~$0.50/1M in' },
+  { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning', provider: 'openai', costHint: '~$15/1M in' },
+  { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning', provider: 'openai', costHint: '~$3/1M in' },
 ];
+
+// Groq — free tier, extremely fast inference for open-source models
+const GROQ_MODELS: CustomModelInfo[] = [
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'Best quality on Groq', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', description: 'Fastest inference', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'gemma2-9b-it', name: 'Gemma 2 9B', description: 'Google model, strong reasoning', provider: 'groq', contextWindow: 8192, costHint: 'Free tier' },
+  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', description: '32K context, strong reasoning', provider: 'groq', contextWindow: 32768, costHint: 'Free tier' },
+  { id: 'llama-3.1-70b-versatile', name: 'Llama 3.1 70B', description: 'High quality', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
+];
+
+// DeepSeek — GPT-4 class quality at ~20x lower cost than GPT-4o
+const DEEPSEEK_MODELS: CustomModelInfo[] = [
+  { id: 'deepseek-chat', name: 'DeepSeek V3', description: 'GPT-4 class quality', provider: 'deepseek', contextWindow: 64000, costHint: '~$0.27/1M in' },
+  { id: 'deepseek-reasoner', name: 'DeepSeek R1', description: 'Reasoning model, rivals o1', provider: 'deepseek', contextWindow: 64000, costHint: '~$0.55/1M in' },
+];
+
+// Google AI Studio — Gemini models with generous free tier
+const GOOGLE_AI_MODELS: CustomModelInfo[] = [
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Fast & smart', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
+  { id: 'gemini-2.0-flash-thinking-exp', name: 'Gemini 2.0 Flash Thinking', description: 'Reasoning mode', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
+  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: '1M context window', provider: 'google-ai-studio', contextWindow: 1048576, costHint: '~$1.25/1M in' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
+];
+
+// Canonical API base URLs for each named provider
+export const PROVIDER_API_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
+};
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '');
@@ -85,10 +118,12 @@ function normalizeModelsPayload(payload: any): any[] {
 /**
  * Auto-detect provider from model name
  */
-function detectProvider(modelName: string): 'openai' | 'anthropic' | 'openrouter' | 'custom' {
+function detectProvider(modelName: string): 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom' {
   const lower = modelName.toLowerCase();
-  if (lower.includes('gpt') || lower.includes('o1')) return 'openai';
+  if (lower.includes('gpt') || lower.startsWith('o1')) return 'openai';
   if (lower.includes('claude')) return 'anthropic';
+  if (lower.includes('deepseek')) return 'deepseek';
+  if (lower.includes('gemini')) return 'google-ai-studio';
   return 'custom';
 }
 
@@ -186,7 +221,10 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
           ...(apiConfig.provider === 'openrouter' ? {
             'HTTP-Referer': 'https://sadie-app.local',
             'X-Title': 'SADIE Desktop Assistant'
-          } : {})
+          } : {}),
+          // Google AI Studio requires the API key both as Bearer and as a query param
+          // when using its OpenAI-compatible endpoint; Bearer alone is sufficient.
+          // No extra headers needed for groq/deepseek — standard Bearer auth.
         },
         responseType: 'stream',
         timeout: 0,
@@ -429,17 +467,22 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
  */
 export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig {
   const validated = { ...config };
-  
-  // Auto-detect provider if not set correctly
+
+  // Auto-detect provider if not set
   if (config.model && !config.provider) {
     validated.provider = detectProvider(config.model);
   }
-  
+
+  // Auto-fill canonical API URL for named providers that don't have one yet
+  if (!validated.apiUrl && validated.provider && PROVIDER_API_URLS[validated.provider]) {
+    validated.apiUrl = PROVIDER_API_URLS[validated.provider];
+  }
+
   // Add metadata if not present
   if (!validated.metadata && validated.model) {
     validated.metadata = getModelMetadata(validated.model);
   }
-  
+
   return validated;
 }
 
@@ -451,13 +494,11 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   const provider = config.provider || 'openai';
 
   // Return curated model lists for known providers
-  if (provider === 'anthropic') {
-    return ANTHROPIC_MODELS;
-  }
-
-  if (provider === 'openai') {
-    return OPENAI_MODELS;
-  }
+  if (provider === 'anthropic') return ANTHROPIC_MODELS;
+  if (provider === 'openai') return OPENAI_MODELS;
+  if (provider === 'groq') return GROQ_MODELS;
+  if (provider === 'deepseek') return DEEPSEEK_MODELS;
+  if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
 
   const base = trimTrailingSlash(config.apiUrl);
   const endpoint = /\/models$/i.test(base) ? base : `${base}/models`;

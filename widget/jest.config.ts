@@ -6,6 +6,10 @@ const config: Config.InitialOptions = {
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.+(ts|tsx|js)'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleNameMapper: {
+    // Stub static asset imports (PNG, JPG, SVG, etc.) so Jest doesn't choke on binary files
+    '\\.(png|jpg|jpeg|gif|svg|webp|ico)$': '<rootDir>/src/__mocks__/fileMock.ts',
+  },
   setupFilesAfterEnv: ['<rootDir>/src/renderer/setupTests.ts'],
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest'

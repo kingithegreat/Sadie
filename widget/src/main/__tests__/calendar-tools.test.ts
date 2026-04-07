@@ -6,6 +6,16 @@
  * path. fs is partially mocked to control the JSON store on disk.
  */
 
+// Mock config-manager to avoid pulling in Electron
+jest.mock('../config-manager', () => ({
+  getSettings: () => ({ n8nUrl: 'http://localhost:5678' }),
+}));
+
+// Mock axios to prevent real HTTP calls to n8n
+jest.mock('axios', () => ({
+  post: jest.fn().mockRejectedValue(new Error('n8n unavailable in tests')),
+}));
+
 // Mock child_process – Outlook always unavailable in CI
 const mockExecImpl = jest.fn();
 jest.mock('child_process', () => ({ exec: mockExecImpl }));

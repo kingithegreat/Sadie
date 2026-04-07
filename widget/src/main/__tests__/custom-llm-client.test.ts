@@ -213,6 +213,33 @@ describe('fetchAvailableCustomModels', () => {
       fetchAvailableCustomModels({ apiUrl: 'https://openrouter.ai/api/v1', provider: 'openrouter' })
     ).rejects.toThrow();
   });
+
+  test('returns groq model list (no http call)', async () => {
+    const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.groq.com/openai/v1', provider: 'groq' as any });
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every(m => m.provider === 'groq')).toBe(true);
+    expect(models.some(m => m.id.includes('llama'))).toBe(true);
+  });
+
+  test('returns deepseek model list (no http call)', async () => {
+    const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.deepseek.com/v1', provider: 'deepseek' as any });
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every(m => m.provider === 'deepseek')).toBe(true);
+    expect(models.some(m => m.id === 'deepseek-chat')).toBe(true);
+    expect(models.some(m => m.id === 'deepseek-reasoner')).toBe(true);
+  });
+
+  test('returns google-ai-studio model list (no http call)', async () => {
+    const models = await fetchAvailableCustomModels({ apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', provider: 'google-ai-studio' as any });
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every(m => m.provider === 'google-ai-studio')).toBe(true);
+    expect(models.some(m => m.id.includes('gemini'))).toBe(true);
+  });
+
+  test('groq models have contextWindow defined', async () => {
+    const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.groq.com/openai/v1', provider: 'groq' as any });
+    expect(models.every(m => typeof m.contextWindow === 'number' && m.contextWindow > 0)).toBe(true);
+  });
 });
 
 // ─── fetchAvailableCustomModels – HTTP branches ───────────────────────────────

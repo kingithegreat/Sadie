@@ -78,19 +78,34 @@ export interface Settings {
   openaiApiKey?: string;
   // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
   codeApiUrl?: string;
+  // Hardware profile — drives model defaults and VRAM recommendations
+  hardwareProfile?: '4gb' | '8gb' | '16gb+';
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;
+  // Mixture-of-Agents settings
+  moaEnabled?: boolean;
+  moaProposers?: string[];
+  moaAggregator?: string;
+  // Notification settings
+  notificationsEnabled?: boolean;
+  notificationSound?: boolean;
+  notificationDuration?: number;
+  // UI settings
+  messageDensity?: string;
+  stableHordeApiKey?: string;
+  useCustomLLM?: boolean;
+  customLLM?: import('../shared/types').CustomLLMConfig;
 }
 
 const DEFAULT_SETTINGS: Settings = {
   n8nUrl: 'http://localhost:5678',
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
-  chatModel: 'llama3.2:3b',
-  uncensoredModel: 'dolphin-llama3:8b',
-  visionModel: 'llava',
+  chatModel: 'phi4-mini',               // best reasoning in the 3-4B range
+  uncensoredModel: 'dolphin-phi:2.7b',  // 1.6 GB — safe on 4-5 GB VRAM
+  visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
   codeModel: '',
   theme: 'system',
   alwaysOnTop: true,
@@ -291,6 +306,39 @@ export function resetSettings(): Settings {
 
 export function getDefaultSettings(): Settings {
   return { ...DEFAULT_SETTINGS };
+}
+
+/**
+ * Model defaults for each hardware profile.
+ * Applied automatically on first run (VRAM auto-detected) and when the user
+ * explicitly changes the profile in Settings.
+ */
+export const HARDWARE_PROFILE_DEFAULTS: Record<string, Partial<Settings>> = {
+  '4gb': {
+    chatModel: 'phi4-mini',              // 2.5 GB — best reasoning that safely fits 4-5 GB
+    visionModel: 'moondream',           // 1.7 GB — lightweight vision
+    uncensoredModel: 'dolphin-phi:2.7b', // 1.6 GB — safe uncensored
+  },
+  '8gb': {
+    chatModel: 'phi4-mini',              // still best small model; upgrade to 7b if desired
+    visionModel: 'moondream',
+    uncensoredModel: 'dolphin-phi:2.7b',
+  },
+  '16gb+': {
+    chatModel: 'qwen2.5:7b',
+    visionModel: 'llava',
+    uncensoredModel: 'dolphin-llama3:8b', // 16 GB+ cards can afford the full 8B model
+  },
+};
+
+/**
+ * Merge hardware-profile model defaults into the given settings object.
+ * Only overwrites model fields — all other user preferences are preserved.
+ */
+export function applyHardwareProfile(settings: Settings): Settings {
+  const profile = settings.hardwareProfile;
+  if (!profile || !HARDWARE_PROFILE_DEFAULTS[profile]) return settings;
+  return { ...settings, ...HARDWARE_PROFILE_DEFAULTS[profile] };
 }
 
 export function resetPermissions(): Settings {

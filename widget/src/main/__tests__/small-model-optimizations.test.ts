@@ -91,15 +91,24 @@ import { SADIE_SYSTEM_PROMPT_COMPACT } from '../../shared/system-prompt';
 // ── isSmallModel ────────────────────────────────────────────────────────────
 
 describe('isSmallModel', () => {
-  it('detects :1b-:3b tags', () => {
+  it('detects integer size tags :1b–:3b', () => {
     expect(isSmallModel('llama3.2:3b')).toBe(true);
     expect(isSmallModel('qwen2.5-coder:3b')).toBe(true);
     expect(isSmallModel('phi3:1b')).toBe(true);
+    expect(isSmallModel('model:2b')).toBe(true);
+  });
+
+  it('detects decimal size tags like :2.7b and :1.5b', () => {
+    expect(isSmallModel('dolphin-phi:2.7b')).toBe(true);
+    expect(isSmallModel('qwen2.5:1.5b')).toBe(true);
+    expect(isSmallModel('qwen2.5:0.5b')).toBe(true);
+    expect(isSmallModel('phi3.5:3.8b')).toBe(true);
   });
 
   it('rejects larger models', () => {
     expect(isSmallModel('llama3.2:8b')).toBe(false);
     expect(isSmallModel('dolphin-llama3:8b')).toBe(false);
+    expect(isSmallModel('qwen2.5:7b')).toBe(false);
     expect(isSmallModel('claude-sonnet-4-20250514')).toBe(false);
   });
 
@@ -107,6 +116,21 @@ describe('isSmallModel', () => {
     expect(isSmallModel('tinyllama')).toBe(true);
     expect(isSmallModel('smollm')).toBe(true);
     expect(isSmallModel('phi-mini')).toBe(true);
+  });
+
+  it('detects 4GB-friendly model families added for hardware profile support', () => {
+    // moondream — 1.8B vision model, 4GB-friendly replacement for llava
+    expect(isSmallModel('moondream')).toBe(true);
+    // dolphin-phi — 2.7B uncensored model, 4GB-friendly replacement for dolphin-llama3:8b
+    expect(isSmallModel('dolphin-phi')).toBe(true);
+    expect(isSmallModel('dolphin-phi:2.7b')).toBe(true);
+    // gemma2:2b
+    expect(isSmallModel('gemma2:2b')).toBe(true);
+  });
+
+  it('does not mis-classify phi3.5 without mini suffix as small', () => {
+    // phi3.5 at 14b should NOT be small — only the mini variant qualifies
+    expect(isSmallModel('phi3.5:14b')).toBe(false);
   });
 });
 

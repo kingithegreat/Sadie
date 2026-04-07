@@ -228,6 +228,12 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('sadie:reminder-fired', listener);
   },
 
+  onHardwareProfileApplied: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('sadie:hardware-profile-applied', listener);
+    return () => ipcRenderer.removeListener('sadie:hardware-profile-applied', listener);
+  },
+
   removeShowWindowListener: () => {
     ipcRenderer.removeAllListeners(ALLOWED_CHANNELS.SHOW_WINDOW);
   },
