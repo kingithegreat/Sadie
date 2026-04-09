@@ -51,8 +51,8 @@ describe('getModelMetadata', () => {
 
   test('returns defaults for completely unknown model', () => {
     const meta = getModelMetadata('my-custom-local-model');
-    expect(meta.contextWindow).toBe(4096);
-    expect(meta.maxTokens).toBe(2000);
+    expect(meta.contextWindow).toBe(8192);
+    expect(meta.maxTokens).toBe(4096);
     expect(meta.supportsTools).toBe(false);
     expect(meta.supportsVision).toBe(false);
     expect(meta.supportsStreaming).toBe(true);
@@ -60,7 +60,7 @@ describe('getModelMetadata', () => {
 
   test('returns defaults for empty string', () => {
     const meta = getModelMetadata('');
-    expect(meta.contextWindow).toBe(4096);
+    expect(meta.contextWindow).toBe(8192);
     expect(meta.supportsTools).toBe(false);
   });
 

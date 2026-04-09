@@ -169,25 +169,33 @@ function detectProvider(modelName: string): 'openai' | 'anthropic' | 'openrouter
  */
 export function getModelMetadata(modelName: string): ModelMetadata {
   const defaults: ModelMetadata = {
-    contextWindow: 4096,
-    maxTokens: 2000,
+    contextWindow: 8192,
+    maxTokens: 4096,
     supportsTools: false,
     supportsVision: false,
     supportsStreaming: true
   };
-  
+
   // Check exact match
   if (MODEL_METADATA[modelName]) {
     return { ...defaults, ...MODEL_METADATA[modelName] };
   }
-  
+
   // Check partial match
   for (const [key, metadata] of Object.entries(MODEL_METADATA)) {
     if (modelName.includes(key)) {
       return { ...defaults, ...metadata };
     }
   }
-  
+
+  // Heuristic: most cloud models on free-tier providers have large contexts
+  const lower = modelName.toLowerCase();
+  if (lower.includes('llama') || lower.includes('qwen') || lower.includes('mixtral') ||
+      lower.includes('gemma') || lower.includes('deepseek') || lower.includes('mistral') ||
+      lower.includes('phi')) {
+    return { ...defaults, contextWindow: 128000, maxTokens: 4096, supportsStreaming: true };
+  }
+
   return defaults;
 }
 

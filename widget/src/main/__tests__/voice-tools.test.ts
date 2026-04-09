@@ -2,11 +2,11 @@
  * voice-tools.test.ts
  * Tests for src/main/tools/voice.ts
  *
- * BrowserWindow is mocked via __mocks__/electron.js and extended per-test to
- * simulate the renderer's Web Speech API response.
+ * Edge TTS (msedge-tts) is mocked so tests run without network.
+ * Falls back to Web Speech API path when Edge TTS throws.
  */
 
-// Extend the electron mock with BrowserWindow for these tests
+// Mock electron
 jest.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -15,6 +15,34 @@ jest.mock('electron', () => ({
   },
   BrowserWindow: {
     getAllWindows: jest.fn(),
+  },
+}));
+
+// Mock fs and os for temp file handling
+jest.mock('fs', () => ({
+  existsSync: jest.fn().mockReturnValue(true),
+  mkdirSync: jest.fn(),
+  unlinkSync: jest.fn(),
+}));
+
+// Mock msedge-tts
+const mockToFile = jest.fn().mockResolvedValue(undefined);
+const mockSetMetadata = jest.fn().mockResolvedValue(undefined);
+const mockGetVoices = jest.fn().mockResolvedValue([
+  { ShortName: 'en-US-AvaNeural', FriendlyName: 'Microsoft Ava (Natural)', Locale: 'en-US', Gender: 'Female' },
+  { ShortName: 'en-US-JennyNeural', FriendlyName: 'Microsoft Jenny (Natural)', Locale: 'en-US', Gender: 'Female' },
+  { ShortName: 'en-US-GuyNeural', FriendlyName: 'Microsoft Guy (Natural)', Locale: 'en-US', Gender: 'Male' },
+  { ShortName: 'en-GB-SoniaNeural', FriendlyName: 'Microsoft Sonia (Natural)', Locale: 'en-GB', Gender: 'Female' },
+]);
+
+jest.mock('msedge-tts', () => ({
+  MsEdgeTTS: jest.fn().mockImplementation(() => ({
+    setMetadata: mockSetMetadata,
+    toFile: mockToFile,
+    getVoices: mockGetVoices,
+  })),
+  OUTPUT_FORMAT: {
+    AUDIO_24KHZ_96KBITRATE_MONO_MP3: 'audio-24khz-96kbitrate-mono-mp3',
   },
 }));
 
@@ -32,7 +60,6 @@ import {
 
 const mockGetAllWindows = BrowserWindow.getAllWindows as jest.MockedFunction<typeof BrowserWindow.getAllWindows>;
 
-// Helper: build a fake BrowserWindow with executeJavaScript returning a value
 function fakeWindow(jsResult: any) {
   return {
     isDestroyed: () => false,
@@ -70,52 +97,42 @@ describe('speakHandler', () => {
     expect(res.error).toMatch(/no window/i);
   });
 
-  test('succeeds and returns speaking metadata', async () => {
+  test('succeeds with Edge TTS and returns voice metadata', async () => {
     mockGetAllWindows.mockReturnValue([fakeWindow({ success: true })]);
     const res = await speakHandler({ text: 'Hello world' }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.textLength).toBe(11);
-    expect(res.result.rate).toBe(1.0);
-    expect(res.result.pitch).toBe(1.1);
-    expect(res.result.volume).toBe(1.0);
+    expect(res.result.voice).toMatch(/Neural/);
   });
 
-  test('clamps rate to [0.5, 2.0]', async () => {
+  test('calls toFile with correct text', async () => {
     mockGetAllWindows.mockReturnValue([fakeWindow({ success: true })]);
-    const res = await speakHandler({ text: 'Test', rate: 5 }, {} as any);
-    expect(res.result.rate).toBe(2.0);
-    const res2 = await speakHandler({ text: 'Test', rate: 0.1 }, {} as any);
-    expect(res2.result.rate).toBe(0.5);
+    await speakHandler({ text: 'Test speech' }, {} as any);
+    expect(mockToFile).toHaveBeenCalledWith(
+      expect.stringContaining('sadie-'),
+      'Test speech',
+      expect.any(Object)
+    );
   });
 
-  test('clamps pitch to [0.5, 2.0]', async () => {
-    mockGetAllWindows.mockReturnValue([fakeWindow({ success: true })]);
-    const res = await speakHandler({ text: 'Test', pitch: 10 }, {} as any);
-    expect(res.result.pitch).toBe(2.0);
+  test('falls back to Web Speech API when Edge TTS fails', async () => {
+    mockToFile.mockRejectedValueOnce(new Error('network error'));
+    const win = fakeWindow({ success: true, voice: 'Microsoft Zira' });
+    mockGetAllWindows.mockReturnValue([win]);
+    const res = await speakHandler({ text: 'Fallback test' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.message).toMatch(/fallback/i);
+    // Confirm it called executeJavaScript for Web Speech API
+    expect(win.webContents.executeJavaScript).toHaveBeenCalled();
   });
 
-  test('clamps volume to [0.0, 1.0]', async () => {
-    mockGetAllWindows.mockReturnValue([fakeWindow({ success: true })]);
-    const res = await speakHandler({ text: 'Test', volume: 3.0 }, {} as any);
-    expect(res.result.volume).toBe(1.0);
-    const res2 = await speakHandler({ text: 'Test', volume: -1 }, {} as any);
-    expect(res2.result.volume).toBe(0.0);
-  });
-
-  test('propagates error from renderer speech API', async () => {
-    mockGetAllWindows.mockReturnValue([fakeWindow({ success: false, error: 'Speech synthesis not supported' })]);
-    const res = await speakHandler({ text: 'Hi' }, {} as any);
-    expect(res.success).toBe(false);
-    expect(res.error).toContain('Speech synthesis not supported');
-  });
-
-  test('returns failure when executeJavaScript throws', async () => {
+  test('returns failure when both Edge TTS and Web Speech fail', async () => {
+    mockToFile.mockRejectedValueOnce(new Error('network error'));
     const win = fakeWindow(null);
     win.webContents.executeJavaScript.mockRejectedValue(new Error('renderer crashed'));
     mockGetAllWindows.mockReturnValue([win]);
-    const res = await speakHandler({ text: 'Crash test' }, {} as any);
+    const res = await speakHandler({ text: 'Total failure' }, {} as any);
     expect(res.success).toBe(false);
-    expect(res.error).toMatch(/failed to speak/i);
   });
 });
 
@@ -149,45 +166,20 @@ describe('stopSpeakingHandler', () => {
 // ── getVoicesHandler ───────────────────────────────────────────────────────
 
 describe('getVoicesHandler', () => {
-  test('returns failure when no window is available', async () => {
-    mockGetAllWindows.mockReturnValue([]);
-    const res = await getVoicesHandler({}, {} as any);
-    expect(res.success).toBe(false);
-    expect(res.error).toMatch(/no window/i);
-  });
-
-  test('returns voice list from renderer', async () => {
-    const voices = [
-      { name: 'Microsoft Zira', lang: 'en-US', local: true },
-      { name: 'Google US English', lang: 'en-US', local: false },
-    ];
-    mockGetAllWindows.mockReturnValue([fakeWindow(voices)]);
+  test('returns female English voices from Edge TTS', async () => {
     const res = await getVoicesHandler({}, {} as any);
     expect(res.success).toBe(true);
-    expect(res.result.count).toBe(2);
-    expect(res.result.voices[0].name).toBe('Microsoft Zira');
+    expect(res.result.count).toBe(3); // 3 female English voices in mock
+    expect(res.result.voices[0].name).toBe('en-US-AvaNeural');
   });
 
-  test('returns empty voices list when renderer has no voices', async () => {
-    mockGetAllWindows.mockReturnValue([fakeWindow([])]);
+  test('includes currentVoice in result', async () => {
     const res = await getVoicesHandler({}, {} as any);
-    expect(res.success).toBe(true);
-    expect(res.result.count).toBe(0);
+    expect(res.result.currentVoice).toBeDefined();
   });
 
-  test('caps voices list at 20 entries', async () => {
-    const manyVoices = Array.from({ length: 50 }, (_, i) => ({
-      name: `Voice ${i}`, lang: 'en-US', local: true,
-    }));
-    mockGetAllWindows.mockReturnValue([fakeWindow(manyVoices)]);
-    const res = await getVoicesHandler({}, {} as any);
-    expect(res.result.voices.length).toBeLessThanOrEqual(20);
-  });
-
-  test('returns failure when executeJavaScript throws', async () => {
-    const win = fakeWindow(null);
-    win.webContents.executeJavaScript.mockRejectedValue(new Error('JS error'));
-    mockGetAllWindows.mockReturnValue([win]);
+  test('returns failure when getVoices throws', async () => {
+    mockGetVoices.mockRejectedValueOnce(new Error('network error'));
     const res = await getVoicesHandler({}, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/failed to get voices/i);
