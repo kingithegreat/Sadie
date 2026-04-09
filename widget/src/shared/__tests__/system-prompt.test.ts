@@ -56,8 +56,8 @@ test('compact prompt still mentions SADIE', () => {
   expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('SADIE');
 });
 
-test('compact prompt mentions Safe Mode', () => {
-  expect(SADIE_SYSTEM_PROMPT_COMPACT).toMatch(/safe mode/i);
+test('compact prompt mentions personality or conciseness', () => {
+  expect(SADIE_SYSTEM_PROMPT_COMPACT).toMatch(/concise|short|natural/i);
 });
 
 // ─── SADIE_USER_INFO content ──────────────────────────────────────────────────

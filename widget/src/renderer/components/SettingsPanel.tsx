@@ -74,6 +74,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       case 'groq': return 'https://api.groq.com/openai/v1';
       case 'deepseek': return 'https://api.deepseek.com/v1';
       case 'google-ai-studio': return 'https://generativelanguage.googleapis.com/v1beta/openai';
+      case 'huggingface': return 'https://api-inference.huggingface.co/v1';
+      case 'cerebras': return 'https://api.cerebras.ai/v1';
+      case 'sambanova': return 'https://api.sambanova.ai/v1';
+      case 'together': return 'https://api.together.xyz/v1';
       default: return '';
     }
   };
@@ -654,6 +658,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
               <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
               <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>
+              <option value="huggingface">Hugging Face (free tier — open-source models)</option>
+              <option value="cerebras">Cerebras (free tier — fastest inference)</option>
+              <option value="sambanova">SambaNova (free tier — Llama, DeepSeek)</option>
+              <option value="together">Together AI ($5 free credits, 200+ models)</option>
               <option value="custom">Custom URL</option>
             </select>
             <input
@@ -835,6 +843,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
               <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
               <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>
+              <option value="huggingface">Hugging Face (free tier — open-source models)</option>
+              <option value="cerebras">Cerebras (free tier — fastest inference)</option>
+              <option value="sambanova">SambaNova (free tier — Llama, DeepSeek)</option>
+              <option value="together">Together AI ($5 free credits, 200+ models)</option>
               <option value="custom">Custom URL</option>
             </select>
           </div>

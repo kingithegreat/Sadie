@@ -38,7 +38,7 @@ interface CalEvent {
   end: string;   // ISO 8601
   location?: string;
   notes?: string;
-  source: 'outlook' | 'local';
+  source: 'outlook' | 'local' | 'google';
 }
 
 function loadLocal(): CalEvent[] {
@@ -195,7 +195,7 @@ function parseIcs(ics: string, daysAhead: number): CalEvent[] {
           end:      endMs ? new Date(endMs).toISOString() : new Date(startMs + 3600000).toISOString(),
           location: current['LOCATION'] ? decodeIcsText(current['LOCATION']) : undefined,
           notes:    current['DESCRIPTION'] ? decodeIcsText(current['DESCRIPTION']).slice(0, 200) : undefined,
-          source:   'outlook' as const, // reusing type; treated as external
+          source:   'google' as const,
         });
       }
       continue;
@@ -256,7 +256,7 @@ async function listGoogleCalendarEvents(daysAhead: number, limit: number): Promi
     end: String(e.end || e.endTime || ''),
     location: e.location ? String(e.location) : undefined,
     notes: e.notes || e.description ? String(e.notes || e.description).slice(0, 200) : undefined,
-    source: 'outlook' as const, // reuse type; 'google' is not in the union — treated as external
+    source: 'google' as const,
   }));
 }
 

@@ -139,8 +139,8 @@ describe('isSmallModel', () => {
 describe('getSystemPromptForModel', () => {
   it('uses compact prompt for small models', () => {
     const prompt = getSystemPromptForModel('llama3.2:3b');
-    expect(prompt).toContain('Think step by step');
-    expect(prompt).toContain('TOOL EXAMPLES');
+    expect(prompt).toContain('SADIE');
+    expect(prompt).toContain('concise');
   });
 
   it('uses verbose prompt for large models', () => {
@@ -216,14 +216,14 @@ describe('handleSlashCommand', () => {
 // ── Compact prompt content ──────────────────────────────────────────────────
 
 describe('compact prompt enhancements', () => {
-  it('includes CoT instruction', () => {
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('Think step by step');
+  it('includes personality and conciseness rules', () => {
+    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('concise');
+    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('SHORT');
   });
 
-  it('includes few-shot tool examples', () => {
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('TOOL EXAMPLES');
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('get_weather');
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('list_directory');
+  it('includes tool invocation rules', () => {
+    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('INVOKE tools');
+    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('live data');
   });
 });
 

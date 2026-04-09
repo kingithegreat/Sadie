@@ -160,6 +160,8 @@ export interface Settings {
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
+  // Morning briefing (weather + calendar + reminders on first message of the day)
+  morningBriefing?: boolean;
   // Display density
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
   // Hardware profile for model recommendations
@@ -200,7 +202,12 @@ export interface ElectronAPI {
   removeShowWindowListener: () => void;
   removeHideWindowListener: () => void;
   minimizeWindow?: () => void;
+  maximizeWindow?: () => void;
   closeWindow?: () => void;
+  toggleWidgetMode?: () => Promise<boolean>;
+  getWidgetMode?: () => Promise<boolean>;
+  setAlwaysOnTop?: (value: boolean) => void;
+  onWidgetModeChanged?: (callback: (isWidget: boolean) => void) => () => void;
   // SSE/stream helpers
   cancelStream?: (streamId?: string) => void;
   sendStreamMessage?: (request: SadieRequestWithImages & { streamId?: string }) => Promise<void>;

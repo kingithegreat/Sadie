@@ -921,13 +921,21 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     }
 
     const topContent = sources[0] ?? null;
+    // Trim source content for small models — long walls of text cause hallucination.
+    // Keep first 800 chars per source (enough for key facts, short enough to reason over).
+    const trimmedSources = sources.map(s => ({
+      url: s.url,
+      title: s.title,
+      content: s.content.length > 800 ? s.content.substring(0, 800) + '...' : s.content,
+    }));
     const resultPayload: any = {
       query,
       resultCount: results.length,
-      results,
-      sources,
+      results: results.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
+      sources: trimmedSources,
       // Keep topResultContent for backward-compat with any code that reads it
-      topResultContent: topContent,
+      topResultContent: topContent ? { ...topContent, content: topContent.content.length > 800 ? topContent.content.substring(0, 800) + '...' : topContent.content } : null,
+      instruction: 'Summarize the KEY facts from these sources in 2-4 sentences. Do not repeat raw text. If the sources do not answer the question, say so.',
       note: sources.length > 0
         ? `Fetched content from ${sources.length} source(s): ${sources.map(s => `"${s.title}"`).join(', ')}`
         : 'Could not fetch detailed content. You may need to use fetch_url on specific results.',

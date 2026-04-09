@@ -60,6 +60,18 @@ const mockValidateCustomLLMConfig = jest.fn();
 jest.mock('../custom-llm-client', () => ({
   streamFromCustomLLM: (...args: any[]) => mockStreamFromCustomLLM(...args),
   validateCustomLLMConfig: (...args: any[]) => mockValidateCustomLLMConfig(...args),
+  PROVIDER_API_URLS: {
+    openai: 'https://api.openai.com/v1',
+    anthropic: 'https://api.anthropic.com/v1',
+    openrouter: 'https://openrouter.ai/api/v1',
+    groq: 'https://api.groq.com/openai/v1',
+    deepseek: 'https://api.deepseek.com/v1',
+    'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
+    huggingface: 'https://api-inference.huggingface.co/v1',
+    cerebras: 'https://api.cerebras.ai/v1',
+    sambanova: 'https://api.sambanova.ai/v1',
+    together: 'https://api.together.xyz/v1',
+  },
 }));
 
 // ── Mock tools ───────────────────────────────────────────────────────────────
@@ -292,5 +304,45 @@ describe('streamFromLLM', () => {
       // Calling cancel should not throw
       expect(() => handle.cancel()).not.toThrow();
     });
+  });
+});
+
+// ── createThinkTagStripper (pure function, import directly) ───────────────
+// This import bypasses the jest.mock for custom-llm-client above.
+const { createThinkTagStripper } = jest.requireActual('../custom-llm-client') as any;
+
+describe('createThinkTagStripper', () => {
+  test('passes through text with no think tags', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('Hello world')).toBe('Hello world');
+  });
+
+  test('strips a complete <think>…</think> block', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('<think>reasoning here</think>The answer is 42.')).toBe('The answer is 42.');
+  });
+
+  test('strips think tags split across multiple chunks', () => {
+    const strip = createThinkTagStripper();
+    let result = '';
+    result += strip('<thi');
+    result += strip('nk>internal reasoning');
+    result += strip('</think>Hello!');
+    expect(result).toBe('Hello!');
+  });
+
+  test('preserves non-think angle brackets', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('Use <b>bold</b> text')).toBe('Use <b>bold</b> text');
+  });
+
+  test('handles multiple think blocks', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('<think>a</think>Hello <think>b</think>World')).toBe('Hello World');
+  });
+
+  test('handles empty think block', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('<think></think>Answer')).toBe('Answer');
   });
 });

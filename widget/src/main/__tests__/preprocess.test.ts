@@ -183,6 +183,43 @@ describe('preProcessIntent', () => {
       expect(res!.calls[0].arguments.location).toBe('London');
     });
 
+    // ── Context bleed prevention ─────────────────────────────────────────
+
+    test('does NOT inject Curry context into "give me the history of philosophy"', async () => {
+      setLastIntent(CONV_ID,
+        { calls: [{ name: 'web_search', arguments: { query: 'is curry playing?', maxResults: 5, fetchTopResult: true } }] },
+        'is curry playing?');
+
+      const res = await preProcessIntent('give me the history of philosophy', CONV_ID);
+      // Should either be null (LLM handles) or a fresh web_search without Curry context
+      if (res) {
+        expect(res.calls[0].arguments.query).not.toContain('curry');
+      }
+    });
+
+    test('does NOT route "is this true" to NBA after NBA query', async () => {
+      setLastIntent(CONV_ID,
+        { calls: [{ name: 'nba_query', arguments: { type: 'games', date: '20260407', perPage: 10, query: 'warriors' } }] },
+        'who do the warriors play next');
+
+      const res = await preProcessIntent('is this true', CONV_ID);
+      expect(res).toBeNull(); // No NBA keywords or referential language
+    });
+
+    test('does NOT inject NBA context into "steph curry was not a philosopher"', async () => {
+      setLastIntent(CONV_ID,
+        { calls: [{ name: 'nba_query', arguments: { type: 'games', date: '20260407', perPage: 10, query: 'warriors' } }] },
+        'who do the warriors play next');
+
+      const res = await preProcessIntent('steph curry was not a philosopher', CONV_ID);
+      // "curry" is an NBA keyword but domain mismatch should catch this
+      // (message is about philosophy, not basketball)
+      // Either null or not nba_query
+      if (res) {
+        expect(res.calls[0].name).not.toBe('nba_query');
+      }
+    });
+
     // ── Staleness guards ──────────────────────────────────────────────────
 
     test('expires lastIntent after too many user turns', async () => {

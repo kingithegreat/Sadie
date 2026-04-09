@@ -91,6 +91,39 @@ const GOOGLE_AI_MODELS: CustomModelInfo[] = [
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
 ];
 
+// Hugging Face Inference API — free tier, huge open-source model catalog
+const HUGGINGFACE_MODELS: CustomModelInfo[] = [
+  { id: 'meta-llama/Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', description: 'Best open-source quality', provider: 'huggingface', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B', description: 'Strong multilingual reasoning', provider: 'huggingface', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'mistralai/Mistral-Small-24B-Instruct-2501', name: 'Mistral Small 24B', description: 'Fast, efficient', provider: 'huggingface', contextWindow: 32768, costHint: 'Free tier' },
+  { id: 'microsoft/Phi-4', name: 'Phi-4 14B', description: 'Compact, strong reasoning', provider: 'huggingface', contextWindow: 16384, costHint: 'Free tier' },
+  { id: 'google/gemma-2-27b-it', name: 'Gemma 2 27B', description: 'Google model, strong quality', provider: 'huggingface', contextWindow: 8192, costHint: 'Free tier' },
+];
+
+// Cerebras — free tier, fastest inference (up to ~2000 tok/s)
+const CEREBRAS_MODELS: CustomModelInfo[] = [
+  { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', description: 'Best quality, ~2000 tok/s', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'llama-3.1-8b', name: 'Llama 3.1 8B', description: 'Ultra-fast inference', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill 70B', description: 'Reasoning model', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
+];
+
+// SambaNova — free tier, fast Llama and DeepSeek models
+const SAMBANOVA_MODELS: CustomModelInfo[] = [
+  { id: 'Meta-Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', description: 'Best quality on SambaNova', provider: 'sambanova', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'DeepSeek-R1-Distill-Llama-70B', name: 'DeepSeek R1 Distill 70B', description: 'Reasoning model', provider: 'sambanova', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'Meta-Llama-3.1-8B-Instruct', name: 'Llama 3.1 8B', description: 'Fast inference', provider: 'sambanova', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B', description: 'Strong multilingual', provider: 'sambanova', contextWindow: 128000, costHint: 'Free tier' },
+];
+
+// Together AI — $5 free credits on signup, 200+ models
+const TOGETHER_MODELS: CustomModelInfo[] = [
+  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', name: 'Llama 3.3 70B Turbo', description: 'Best quality', provider: 'together', contextWindow: 128000, costHint: '~$0.88/1M in' },
+  { id: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', name: 'Llama 3.1 8B Turbo', description: 'Fast & cheap', provider: 'together', contextWindow: 128000, costHint: '~$0.18/1M in' },
+  { id: 'Qwen/Qwen2.5-72B-Instruct-Turbo', name: 'Qwen 2.5 72B Turbo', description: 'Strong multilingual', provider: 'together', contextWindow: 128000, costHint: '~$1.20/1M in' },
+  { id: 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B', name: 'DeepSeek R1 Distill 70B', description: 'Reasoning model', provider: 'together', contextWindow: 128000, costHint: '~$0.88/1M in' },
+  { id: 'mistralai/Mixtral-8x22B-Instruct-v0.1', name: 'Mixtral 8x22B', description: '65K context, MoE', provider: 'together', contextWindow: 65536, costHint: '~$1.20/1M in' },
+];
+
 // Canonical API base URLs for each named provider
 export const PROVIDER_API_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
@@ -99,6 +132,10 @@ export const PROVIDER_API_URLS: Record<string, string> = {
   groq: 'https://api.groq.com/openai/v1',
   deepseek: 'https://api.deepseek.com/v1',
   'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
+  huggingface: 'https://api-inference.huggingface.co/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
+  sambanova: 'https://api.sambanova.ai/v1',
+  together: 'https://api.together.xyz/v1',
 };
 
 function trimTrailingSlash(url: string): string {
@@ -197,6 +234,45 @@ async function retryWithBackoff<T>(
 /**
  * Stream from OpenAI-compatible API with function calling support
  */
+/**
+ * Creates a stateful filter that strips <think>…</think> reasoning blocks
+ * from streamed text (used by DeepSeek R1 and similar reasoning models).
+ * Call the returned function on each chunk; it returns only user-visible text.
+ */
+export function createThinkTagStripper(): (text: string) => string {
+  let insideThinkTag = false;
+  let pendingTag = '';
+
+  return function stripThinkTags(text: string): string {
+    let output = '';
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (pendingTag.length > 0) {
+        pendingTag += ch;
+        if (!insideThinkTag) {
+          if ('<think>'.startsWith(pendingTag)) {
+            if (pendingTag === '<think>') { insideThinkTag = true; pendingTag = ''; }
+          } else {
+            output += pendingTag;
+            pendingTag = '';
+          }
+        } else {
+          if ('</think>'.startsWith(pendingTag)) {
+            if (pendingTag === '</think>') { insideThinkTag = false; pendingTag = ''; }
+          } else {
+            pendingTag = '';
+          }
+        }
+      } else if (ch === '<') {
+        pendingTag = '<';
+      } else if (!insideThinkTag) {
+        output += ch;
+      }
+    }
+    return output;
+  };
+}
+
 async function streamOpenAI(options: StreamOptions): Promise<void> {
   const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000, tools, onChunk, onToolCall, onEnd, onError, signal } = options;
   
@@ -235,9 +311,12 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
     const stream = response.data as NodeJS.ReadableStream;
     let currentToolCall: { id: string; name: string; arguments: string } | null = null;
     let ended = false;
-    
+
+    // Strip <think>…</think> reasoning blocks (DeepSeek R1, etc.)
+    const stripThinkTags = createThinkTagStripper();
+
     const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
-    
+
     stream.on('data', (chunk: Buffer) => {
       try {
         const lines = chunk.toString('utf8').split('\n').filter(line => line.trim());
@@ -258,14 +337,15 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
               safeEnd();
               return;
             }
-            
+
             try {
               const parsed = JSON.parse(data);
               const delta = parsed.choices?.[0]?.delta;
-              
-              // Handle text content
+
+              // Handle text content — strip <think> reasoning blocks
               if (delta?.content) {
-                onChunk(delta.content);
+                const cleaned = stripThinkTags(delta.content);
+                if (cleaned) onChunk(cleaned);
               }
               
               // Handle tool calls (streaming)
@@ -499,6 +579,10 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'groq') return GROQ_MODELS;
   if (provider === 'deepseek') return DEEPSEEK_MODELS;
   if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
+  if (provider === 'huggingface') return HUGGINGFACE_MODELS;
+  if (provider === 'cerebras') return CEREBRAS_MODELS;
+  if (provider === 'sambanova') return SAMBANOVA_MODELS;
+  if (provider === 'together') return TOGETHER_MODELS;
 
   const base = trimTrailingSlash(config.apiUrl);
   const endpoint = /\/models$/i.test(base) ? base : `${base}/models`;

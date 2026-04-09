@@ -24,6 +24,16 @@ jest.spyOn(console, 'log').mockImplementation(() => {});
 jest.mock('../config-manager', () => ({
   assertPermission: jest.fn(() => true),
   getConfig: jest.fn(() => ({})),
+  getSettings: jest.fn(() => ({ ollamaUrl: 'http://127.0.0.1:11434' })),
+}));
+
+// Mock axios so embedding calls don't hit a real Ollama server
+jest.mock('axios', () => ({
+  __esModule: true,
+  default: {
+    post: jest.fn().mockRejectedValue(new Error('Ollama not available in test')),
+    get: jest.fn().mockRejectedValue(new Error('Ollama not available in test')),
+  },
 }));
 
 // â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

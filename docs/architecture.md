@@ -47,10 +47,10 @@ This document describes the high-level architecture of SADIE: how the major comp
 │      │  Ollama (local)   │   │  n8n (optional)  │|                  │
 │      │  localhost:11434  │   │  localhost:5678   │|                  │
 │      │                   │   │                   │|                  │
-│      │  llama3.2:3b      │<──│  Workflow triggers│|                  │
-│      │  qwen2.5-coder:3b │   │  HTTP webhooks   │|                  │
-│      │  llava:latest     │   │                   │|                  │
-│      │  dolphin-llama3:8b│   └───────────────────┘|                  │
+│      │  phi4-mini        │<──│  Workflow triggers│|                  │
+│      │  moondream        │   │  HTTP webhooks   │|                  │
+│      │  nomic-embed-text │   │                   │|                  │
+│      │  dolphin-phi:2.7b │   └───────────────────┘|                  │
 │      └───────────────────┘                        |                  │
 │                                                   |                  │
 │      Local disk: config/ , memory/ , logs/  <─────┘                  │
@@ -91,7 +91,9 @@ The Node.js Electron main process. Key responsibilities:
 
 | Module | Purpose |
 |---|---|
-| `message-router.ts` | Parses user messages, detects tool intent, streams Ollama completions, executes tool batches, and returns synthesised results. Contains context budget logic for small models. |
+| `message-router.ts` | Parses user messages, detects tool intent, streams Ollama completions, executes tool batches, and returns synthesised results. Contains context budget logic for small models, agentic loop orchestration, and morning briefing trigger. |
+| `agentic-loop.ts` | Multi-step request detection and agentic tool-chaining engine. Detects compound requests via heuristics, injects agentic system prompt, and streams step-progress indicators during autonomous tool execution (up to 6 rounds). |
+| `morning-briefing.ts` | Proactive daily briefing generator. On first interaction each day, runs weather + calendar + reminders tools in parallel and streams a formatted summary. State persisted in `briefing-state.json`. |
 | `ipc-handlers.ts` | Receives calls from the preload bridge and routes them to the correct subsystem. |
 | `config-manager.ts` | Reads and writes `config/default-config.json` and per-session settings with schema validation. |
 | `window-manager.ts` | Manages always-on-top behaviour, global hotkey registration (`Ctrl+Shift+Space`), tray icon, and window lifecycle. |
@@ -101,7 +103,7 @@ The Node.js Electron main process. Key responsibilities:
 
 ### Tool Handlers (`widget/src/main/tools/`)
 
-All 20+ tools are implemented as TypeScript modules that export tool definitions and handler functions. See the [Tool System](#tool-system) section below for details.
+All 60+ tools are implemented as TypeScript modules that export tool definitions and handler functions. See the [Tool System](#tool-system) section below for details.
 
 ---
 
@@ -155,30 +157,36 @@ All tool modules are imported and merged in `widget/src/main/tools/index.ts`.
 User types message
       |
       v
-message-router.ts
-  |-- Sends conversation history + tool definitions to Ollama (streaming)
-  |-- Ollama returns text or a tool_call JSON block
-  |
-  |-- [text response] --> stream tokens back to renderer
-  |
-  |-- [tool_call]
-        |
-        v
-     Permission precheck (executeToolBatch)
-        |
-        |-- All permissions granted --> safety check --> execute handler
-        |                                                    |
-        |                                       return result to Ollama
-        |                                       (up to MAX_TOOL_ROUNDS=10)
-        |
-        |-- Missing permissions --> send permission request to renderer
-                |
-                v
-           Permission modal shown to user
-                |
-                |-- Allow once  --> execute with overrideAllowed
-                |-- Always allow --> persist permission, then execute
-                |-- Cancel      --> tool_call rejected, inform model
+Morning briefing check (once per day)
+      |
+      v
+message-router.ts → preProcessIntent() [deterministic regex routing]
+      |
+      |-- [intent matched] --> execute tool(s) directly, format result
+      |
+      |-- [no match, multi-step detected] --> AGENTIC MODE
+      |       |
+      |       v
+      |   Inject agentic system prompt + full tool set
+      |   LLM plans and chains tools autonomously
+      |   Stream step-progress ("🔄 Step 1: Searching…" / "✅ done")
+      |   Up to MAX_AGENTIC_ROUNDS=6, inner MAX_TOOL_ROUNDS=10
+      |
+      |-- [no match, single-step] --> LLM streaming with tools
+              |
+              v
+         Ollama returns text or a tool_call JSON block
+              |
+              |-- [text response] --> stream tokens back to renderer
+              |
+              |-- [tool_call]
+                    |
+                    v
+                 Permission precheck (executeToolBatch)
+                    |
+                    |-- All granted --> safety check --> execute --> return to Ollama
+                    |
+                    |-- Missing --> Permission modal (allow once / always / cancel)
 ```
 
 ### Context Budget for Small Models

@@ -7,21 +7,22 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-3178c6)
 ![React](https://img.shields.io/badge/React-18-61dafb)
 ![AI](https://img.shields.io/badge/AI-Ollama%20(local)-green)
-![Tests](https://img.shields.io/badge/tests-112%20suites%20%7C%201604%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-115%20suites%20%7C%201716%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-Private-lightgrey)
 
 ---
 
 ## What is SADIE?
 
-SADIE is a **privacy-first desktop AI assistant** that can search the web, read and write files, inspect your system, understand images, generate images, automate browser tasks, index documents for semantic search, track NBA scores, and plan multi-step workflows — all without sending your data to a third party.
+SADIE is a **privacy-first desktop AI assistant** that can search the web, read and write files, inspect your system, understand images, generate images, automate browser tasks, index documents for semantic search, track NBA scores, chain multi-step tool workflows autonomously, and greet you each morning with a personalized briefing — all without sending your data to a third party.
 
 It combines:
 
 - **Electron 28 + React 18** for a modern, themeable desktop UI with futuristic glass-morphism accents
 - **Ollama** for fully offline LLM inference — no API keys or internet connection required
-- **20+ TypeScript tool handlers** executed locally with structured JSON tool-calling
-- **Optional cloud LLM routing** to OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint
+- **60+ TypeScript tool handlers** executed locally with structured JSON tool-calling
+- **Agentic tool loop** — the LLM autonomously chains tools for multi-step requests ("search for X, save it, then email me")
+- **Optional cloud LLM routing** to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or any OpenAI-compatible endpoint
 - **n8n** as an optional workflow orchestration engine for scheduled tasks and external integrations
 
 ---
@@ -35,13 +36,15 @@ It combines:
 | **Web Search** | Multi-engine cascade (Tavily, Serper, DuckDuckGo, Google, Brave) with automatic content fetching and SSRF protection |
 | **File Manager** | Safe read, write, list, move, delete, and search with path validation and directory whitelisting |
 | **System Info** | Disk usage, memory, running processes, and network adapter inspection |
-| **Vision / OCR** | Describe images and extract text via `vision_describe` and `vision_query` using Ollama LLaVA |
-| **RAG Engine** | Drag-and-drop document indexing (PDF, Word, code, CSV, Markdown) with TF-IDF cosine-similarity semantic search |
+| **Vision / OCR** | Describe images and extract text via `vision_describe` and `vision_query` using Ollama moondream |
+| **RAG Engine** | Drag-and-drop document indexing (PDF, Word, code, CSV, Markdown) with hybrid TF-IDF + semantic embedding search via nomic-embed-text |
+| **Agentic Tool Loops** | Multi-step requests are automatically detected and the LLM chains tools autonomously with streaming progress indicators |
+| **Morning Briefing** | Proactive daily summary of weather, calendar events, and reminders on first interaction |
 | **Planning Agent** | Multi-step task planning with persistent plans |
 | **Memory Manager** | Persistent context and fact storage across sessions |
 | **Browser Automation** | Automated browser interactions and content extraction |
 | **API Tool** | External HTTPS requests restricted to an approved host allowlist |
-| **Code Cloud API** | Route coding queries to OpenAI, Anthropic, OpenRouter, or a custom endpoint |
+| **Code Cloud API** | Route coding queries to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or a custom endpoint |
 | **Image Generation** | Text-to-image via Pollinations.ai with automatic Stable Horde fallback and progress indicator |
 | **Sports / NBA** | Live scores, full-season results, standings, and player stats via ESPN integration |
 | **Word Documents** | Generate `.docx` files with headings, paragraphs, and formatting |
@@ -89,26 +92,26 @@ All tools execute locally as TypeScript handlers. SADIE calls whichever tool the
 │   React 18 UI  <-->  IPC Bridge  <-->  Main Proc  │
 │   (Themes, Glass UI, Animations)                  │
 ├──────────────────────────────────────────────────┤
-│   Message Router     |   20+ Tool Handlers        │
+│   Message Router     |   60+ Tool Handlers        │
 │   (intent detection, |   (TypeScript, local exec)  │
-│    tool recursion    |                            │
-│    cap, context      |   Web - File - System      │
-│    budget)           |   Vision - RAG - Plan      │
-│                      |   Memory - Browser         │
+│    agentic loop,     |                            │
+│    tool recursion    |   Web - File - System      │
+│    cap, context      |   Vision - RAG - Plan      │
+│    budget)           |   Memory - Browser         │
 │                      |   API - Sports - Docs      │
-│                      |   Archive - Image Gen      │
-│                      |   Voice - Scheduler        │
+│   Morning Briefing   |   Archive - Image Gen      │
+│   (weather+cal+rem)  |   Voice - Scheduler        │
 ├──────────────────────┼────────────────────────────┤
 │   Code Cloud API     |   Embedded Web Services    │
 │   (OpenAI/Anthropic  |   (ChatGPT / Claude /      │
-│    /OpenRouter)      |    Gemini in sandboxed      │
-│                      |    BrowserWindows)          │
+│    /OpenRouter/Groq  |    Gemini in sandboxed      │
+│    /DeepSeek/Google)  |    BrowserWindows)          │
 └───────────┬──────────┴────────────────────────────┘
             | HTTP (localhost)
 ┌───────────v────────────────────────────────────────┐
 │                 Ollama (local)                      │
-│   llama3.2:3b  -  qwen2.5-coder:3b  -  llava      │
-│   dolphin-llama3:8b  -  mistral  -  nomic-embed    │
+│   phi4-mini  -  qwen2.5-coder:3b  -  moondream    │
+│   dolphin-phi:2.7b  -  nomic-embed-text            │
 │   localhost:11434                                   │
 └────────────────────────────────────────────────────┘
 ```
@@ -153,10 +156,11 @@ n8n will be available at `http://localhost:5678`. Import workflows from `n8n-wor
 ### 3. Pull AI Models
 
 ```bash
-ollama pull llama3.2:3b          # Primary chat model
-ollama pull qwen2.5-coder:3b     # Code generation model
-ollama pull llava:latest          # Vision model (image analysis)
-ollama pull dolphin-llama3:8b     # Uncensored mode (optional)
+ollama pull phi4-mini             # Primary chat model (best reasoning in 3-4B range)
+ollama pull moondream             # Vision model (lightweight, 1.7 GB)
+ollama pull nomic-embed-text      # Semantic embeddings for RAG + memory
+ollama pull dolphin-phi:2.7b      # Uncensored mode (optional, 1.6 GB)
+ollama pull qwen2.5-coder:3b     # Code generation model (optional)
 ```
 
 ### 4. Install and Run
@@ -178,8 +182,8 @@ Sadie/
 ├── widget/                       # Electron + React desktop application
 │   ├── src/
 │   │   ├── main/                 # Main process (message-router, tools, IPC)
-│   │   │   ├── tools/            # 20+ TypeScript tool handler modules
-│   │   │   └── __tests__/        # 70+ main-process unit test suites
+│   │   │   ├── tools/            # 60+ TypeScript tool handler modules
+│   │   │   └── __tests__/        # 80+ main-process unit test suites
 │   │   ├── renderer/             # React UI (components, styles)
 │   │   │   ├── components/       # ChatInterface, Settings, Sidebar, etc.
 │   │   │   ├── e2e/              # Playwright E2E test specs
@@ -211,7 +215,7 @@ Sadie/
 
 ## Testing
 
-SADIE has a comprehensive test suite with **110 test suites** and **1,533 unit tests**, plus Playwright E2E coverage.
+SADIE has a comprehensive test suite with **115 test suites** and **1,716 unit tests**, plus Playwright E2E coverage.
 
 ```bash
 cd widget
@@ -271,27 +275,40 @@ SADIE is developed as a capstone project at **Toi Ohomai Institute of Technology
 ### Completed
 
 - [x] Electron 28 + React 18 desktop shell with electron-vite build system
-- [x] 20+ modular TypeScript tool handlers with structured JSON tool-calling
-- [x] Ollama local LLM integration (llama3.2:3b, qwen2.5-coder:3b, LLaVA, dolphin-llama3:8b)
-- [x] Vision tools: describe and query images via LLaVA
-- [x] RAG document indexing with TF-IDF semantic search
+- [x] 60+ modular TypeScript tool handlers with structured JSON tool-calling
+- [x] Ollama local LLM integration (phi4-mini, qwen2.5-coder:3b, moondream, dolphin-phi:2.7b)
+- [x] Vision tools: describe and query images via moondream (1.7 GB, 4 GB VRAM friendly)
+- [x] Hybrid RAG: TF-IDF keyword search + nomic-embed-text semantic embeddings with Reciprocal Rank Fusion
+- [x] Agentic tool loops: LLM autonomously chains tools for multi-step requests with streaming progress
+- [x] Proactive morning briefing: weather + calendar + reminders summary on first daily interaction
 - [x] Embedded web services (ChatGPT, Claude, Gemini) in sandboxed panels
-- [x] Code cloud API routing (OpenAI / Anthropic / OpenRouter / Custom)
+- [x] Code cloud API routing (OpenAI / Anthropic / OpenRouter / Groq / DeepSeek / Google AI Studio / Custom)
+- [x] Hardware profile auto-detection: GPU VRAM-aware model defaults (4 GB / 8 GB / 16 GB+)
+- [x] 5 GB VRAM model stack: phi4-mini + moondream + dolphin-phi fits on budget GPUs
 - [x] Light / dark / system theme with futuristic UI accents
 - [x] Global hotkey (`Ctrl+Shift+Space`)
 - [x] Auto-update via electron-updater
 - [x] Image generation with Pollinations.ai and Stable Horde fallback
-- [x] NBA live scores, standings, and full-season results via ESPN
+- [x] NBA live scores, standings, full-season results via ESPN, fuzzy team name matching
+- [x] Google Calendar integration via ICS feed (no OAuth needed) + n8n webhook
 - [x] Persistent reminders and scheduled jobs
+- [x] Ollama health banner on startup
 - [x] Security hardening (SSRF, IPC, webhook auth, tool recursion cap)
 - [x] Model-aware context budgets for small models (3B and under)
-- [x] Cloud model metadata (Claude Opus 4, Sonnet 4, GPT-4o Mini, and more)
+- [x] Cloud model metadata with cost hints (Claude Opus 4, Sonnet 4, GPT-4o Mini, Gemini 2.0 Flash, and more)
+- [x] Mixture of Agents (MoA) with hardware-aware presets
+- [x] MCP server integration (stdio + SSE) with auto-discovery
+- [x] Skills system: trigger-based context injection for domain-specific expertise
 - [x] Analytics dashboard, conversation management, focus mode
-- [x] 110 test suites / 1,533 unit tests + Playwright E2E
+- [x] 115 test suites / 1,716 unit tests + Playwright E2E
 - [x] Windows NSIS installer via electron-builder
 
 ### Planned
 
+- [ ] Always-on voice mode with wake word detection
+- [ ] Screen awareness (screenshot capture + OCR for active window analysis)
+- [ ] Widget dashboard with glanceable tiles (weather, calendar, reminders, quick actions)
+- [ ] Conversation branching and forking with visual tree view
 - [ ] Internationalisation (i18n): multi-language support
 - [ ] Performance benchmarking and resource usage optimisation
 - [ ] User acceptance testing with target audience feedback

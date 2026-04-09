@@ -363,7 +363,16 @@ const electronAPI: ElectronAPI = {
   },
 
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
+  maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close'),
+  toggleWidgetMode: () => ipcRenderer.invoke('sadie:toggle-widget-mode') as Promise<boolean>,
+  getWidgetMode: () => ipcRenderer.invoke('sadie:get-widget-mode') as Promise<boolean>,
+  setAlwaysOnTop: (value: boolean) => ipcRenderer.send('sadie:set-always-on-top', value),
+  onWidgetModeChanged: (callback: (isWidget: boolean) => void) => {
+    const handler = (_event: any, isWidget: boolean) => callback(isWidget);
+    ipcRenderer.on('sadie:widget-mode-changed', handler);
+    return () => ipcRenderer.removeListener('sadie:widget-mode-changed', handler);
+  },
 
   // ============= Memory/Conversation APIs =============
 

@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, app, shell } from 'electron';
-import { getMainWindow } from './window-manager';
+import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
@@ -121,10 +121,36 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
     });
 
+    ipcMain.on('window-maximize', () => {
+      const win = mainWindow ?? getMainWindow();
+      if (win && !win.isDestroyed()) {
+        if (win.isMaximized()) {
+          win.unmaximize();
+        } else {
+          win.maximize();
+        }
+      }
+    });
+
     ipcMain.on('window-close', () => {
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {
         win.close();
+      }
+    });
+
+    ipcMain.handle('sadie:toggle-widget-mode', () => {
+      return toggleWidgetMode();
+    });
+
+    ipcMain.handle('sadie:get-widget-mode', () => {
+      return getWidgetMode();
+    });
+
+    ipcMain.on('sadie:set-always-on-top', (_event, value: boolean) => {
+      const win = mainWindow ?? getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.setAlwaysOnTop(value);
       }
     });
   

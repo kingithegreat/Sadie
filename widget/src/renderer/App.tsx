@@ -80,7 +80,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [widgetMode, setWidgetMode] = useState(true); // Start in widget mode
   const { toasts, addToast, dismissToast } = useToasts();
+
+  // Initialise widget mode from main process and listen for changes
+  useEffect(() => {
+    window.electron?.getWidgetMode?.().then(isWidget => setWidgetMode(isWidget));
+    const unsub = window.electron?.onWidgetModeChanged?.(isWidget => setWidgetMode(isWidget));
+    return () => { unsub?.(); };
+  }, []);
+
+  const handleToggleWidgetMode = useCallback(async () => {
+    const newMode = await window.electron?.toggleWidgetMode?.();
+    if (typeof newMode === 'boolean') setWidgetMode(newMode);
+  }, []);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -854,10 +867,92 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
   // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
+  const modeClasses = [
+    'app-container',
+    focusMode ? 'focus-mode' : '',
+    widgetMode ? 'widget-mode' : 'expanded-mode',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={`app-container${focusMode ? ' focus-mode' : ''}`} data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'} data-density={settings.messageDensity || 'comfortable'}>
+    <div className={modeClasses} data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'} data-density={settings.messageDensity || 'comfortable'}>
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Custom frameless titlebar — shown in widget mode */}
+      {widgetMode && (
+        <div className="widget-titlebar">
+          <div className="widget-titlebar-brand">
+            <span className={`widget-status-dot${status.ollama === 'offline' ? ' disconnected' : ''}`} />
+            <h1>SADIE</h1>
+          </div>
+          <div className="widget-titlebar-controls">
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              title="Settings"
+              aria-label="Settings"
+            >&#x2699;</button>
+            <button
+              type="button"
+              className="expand-btn"
+              onClick={handleToggleWidgetMode}
+              title="Expand to full window"
+              aria-label="Expand"
+            >&#x26F6;</button>
+            <button
+              type="button"
+              onClick={() => window.electron?.minimizeWindow?.()}
+              title="Minimize"
+              aria-label="Minimize"
+            >&#x2013;</button>
+            <button
+              type="button"
+              className="close-btn"
+              onClick={() => window.electron?.closeWindow?.()}
+              title="Close"
+              aria-label="Close"
+            >&#x2715;</button>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded mode: custom titlebar with collapse button */}
+      {!widgetMode && (
+        <div className="widget-titlebar expanded-titlebar">
+          <div className="widget-titlebar-brand">
+            <span className="widget-status-dot" />
+            <h1>SADIE</h1>
+          </div>
+          <div className="widget-titlebar-controls">
+            <button
+              type="button"
+              className="expand-btn"
+              onClick={handleToggleWidgetMode}
+              title="Collapse to widget"
+              aria-label="Collapse to widget"
+            >&#x25A3;</button>
+            <button
+              type="button"
+              onClick={() => window.electron?.minimizeWindow?.()}
+              title="Minimize"
+              aria-label="Minimize"
+            >&#x2013;</button>
+            <button
+              type="button"
+              onClick={() => window.electron?.maximizeWindow?.()}
+              title="Maximize"
+              aria-label="Maximize"
+            >&#x25A1;</button>
+            <button
+              type="button"
+              className="close-btn"
+              onClick={() => window.electron?.closeWindow?.()}
+              title="Close"
+              aria-label="Close"
+            >&#x2715;</button>
+          </div>
+        </div>
+      )}
 
       {/* Conversation Sidebar */}
       <Suspense fallback={null}>

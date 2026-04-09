@@ -1,5 +1,74 @@
 # Changelog
 
+## v0.10.0 — Agentic tool loops, morning briefing, hybrid RAG, and provider expansion
+
+### Added — Agentic Tool Loop Engine
+- **Multi-step request detection** (`agentic-loop.ts`): new `looksMultiStep()` heuristic detects compound requests using sequence words ("then", "after that"), "first…then" patterns, numbered steps, and multiple action domains.
+- **Agentic system prompt injection**: when a multi-step request is detected, an agentic system prompt is injected instructing the LLM to plan and execute tools step-by-step, with a safety cap of 6 agentic rounds.
+- **Streaming progress indicators**: during agentic execution, the UI shows per-step progress ("🔄 Step 1: Searching the web…" / "✅ web_search done") so users see what's happening.
+- **Full tool access in agentic mode**: bypasses the small-model 12-tool cap so the LLM can chain any of the 60+ tools.
+- 13 new unit tests for `looksMultiStep`, `buildAgenticSystemPrompt`, and `formatStepProgress`.
+
+### Added — Proactive Morning Briefing
+- **Daily briefing on first interaction** (`morning-briefing.ts`): on the first user message each calendar day, SADIE proactively generates a weather + calendar + reminders summary using parallel tool calls.
+- **Time-aware greeting**: "Good morning" / "Good afternoon" / "Good evening" with formatted date.
+- **Opt-out setting**: `settings.morningBriefing = false` disables the briefing.
+- **State persistence**: briefing state tracked in `memory/json-store/briefing-state.json` so it survives app restarts.
+- 4 new unit tests for `shouldOfferBriefing`, `markBriefingDelivered`, and `generateBriefing`.
+
+### Added — Hybrid RAG (Semantic + Keyword Search)
+- **Embedding at index time** (`rag.ts`): chunks now get `nomic-embed-text` 768-dim vector embeddings via Ollama's `/api/embeddings` endpoint, with concurrent batching (4 parallel, 100 chunk cap).
+- **Reciprocal Rank Fusion (RRF)**: `rag_query` combines TF-IDF keyword rankings and semantic embedding cosine similarity using RRF (k=60) for best-of-both-worlds retrieval.
+- **Graceful fallback**: if Ollama or `nomic-embed-text` is unavailable, TF-IDF still works as before — no breaking changes.
+- **Embedding warmup**: `ragSearchWarmup()` pre-computes query embeddings before the synchronous `ragSearch` auto-injection path.
+- **Backward compatible**: existing `rag-index.json` files without embeddings load fine; new indexes include embeddings alongside TF-IDF data.
+
+### Added — Cloud Provider Expansion
+- **3 new cloud LLM providers** (`custom-llm-client.ts`): Groq (free tier, fast inference), DeepSeek (GPT-4 class at 20x lower cost), Google AI Studio (Gemini models with free tier).
+- **Curated model lists with cost hints**: each provider shows model descriptions plus cost hints (e.g. "~$0.27/1M in", "Free tier") in the model picker.
+- **Auto-configured API URLs**: `PROVIDER_API_URLS` map auto-fills canonical base URLs for each named provider.
+- **Auto-detect provider from model name**: `detectProvider()` now recognises DeepSeek and Gemini model names.
+
+### Added — Hardware Profile Auto-Detection
+- **First-run VRAM detection** (`index.ts`): on first launch, auto-detects GPU VRAM via `nvidia-smi` and applies 4 GB / 8 GB / 16 GB+ model profile.
+- **Profile-based model defaults** (`config-manager.ts`): `HARDWARE_PROFILE_DEFAULTS` maps each profile to optimal chat/vision/uncensored models.
+- **One-time toast notification**: renderer shows a brief toast confirming the detected GPU and applied profile.
+
+### Changed — 5 GB VRAM Model Stack
+- **Default chat model**: `llama3.2:3b` → `phi4-mini` (best reasoning in 3-4B range, 2.5 GB).
+- **Default vision model**: `llava` (4.7 GB) → `moondream` (1.7 GB) — fits on 4 GB cards.
+- **Default uncensored model**: `dolphin-llama3:8b` (4.7 GB) → `dolphin-phi:2.7b` (1.6 GB).
+- **MoA presets updated**: balanced preset drops from ~13 GB to ~6.5 GB VRAM.
+- **`isSmallModel()` expanded**: now recognises decimal VRAM tags (`:1.5b`, `:2.7b`), moondream, dolphin-phi, gemma2:2b.
+
+### Changed — Follow-Up Routing Improvements
+- **Expanded topic-shift detection**: `isNewTopicPhrase` regex now catches imperative phrases (`give me`, `show me`, `describe`, `define`, `search for`, `look up`, `find`) with length-based thresholds.
+- **Domain-mismatch guard**: follow-ups >30 chars with zero lexical overlap to the previous tool's domain (NBA, weather, surf) are treated as new topics.
+- **Player availability routing**: "is curry playing?" now routes to `web_search` (with player name guard) instead of `nba_query` for injury/lineup data.
+- **Greeting detection**: greetings now clear stale intent so the LLM handles them fresh.
+
+### Changed — Calendar Integration
+- **Google Calendar ICS support** (`calendar.ts`): private ICS URL parsing with 5-minute cache — no OAuth or Google Cloud project needed.
+- **3-tier fallback**: ICS feed → n8n Google Calendar webhook → Outlook COM → local JSON.
+- **`CalEvent.source` type**: expanded from `'outlook' | 'local'` to `'outlook' | 'local' | 'google'`.
+
+### Changed — Ollama Health Banner
+- **Startup health check** (`index.ts`): pings `/api/tags` on launch and sends status to renderer.
+- **Persistent warning toast**: if Ollama isn't running, a non-dismissible warning banner appears with the configured URL.
+
+### Changed — IPC & Export
+- **Conversation export**: new `exportConversation` IPC handler supports Markdown and JSON formats.
+- **`exportConversationAsJSON`**: added to memory-manager exports.
+- **Hardware profile push event**: `sadie:hardware-profile-applied` IPC event for renderer toast.
+- **Ollama status push event**: `sadie:ollama-status` IPC event for health banner.
+
+### Tests
+- Test count: 1,604 → 1,716 (112 → 115 suites).
+- New test files: `agentic-loop.test.ts` (13 tests), `morning-briefing.test.ts` (4 tests).
+- Updated: `preprocess.test.ts` (player availability routing), `rag-tools.test.ts` (embedding mock), `moa.test.ts`, `small-model-optimizations.test.ts`, `config-manager.test.ts`.
+
+---
+
 ## v0.9.0 — Smart error recovery + hardware-aware MoA
 
 ### Fixed — Conversation Context & Streaming Reliability

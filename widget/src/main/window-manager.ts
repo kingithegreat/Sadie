@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen } from 'electron';
 import * as path from 'path';
 import { isDevelopment } from './env';
 import { is } from '@electron-toolkit/utils';
@@ -7,6 +7,11 @@ import { is } from '@electron-toolkit/utils';
 function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
 
 let mainWindow: BrowserWindow | null = null;
+
+// Widget mode dimensions and state
+const WIDGET_SIZE = { width: 420, height: 620 };
+const EXPANDED_SIZE = { width: 1200, height: 800 };
+let isWidgetMode = true; // Start in widget mode
 
 export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Creating main window...');
@@ -23,24 +28,24 @@ export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Creating new BrowserWindow...');
   try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Creating new BrowserWindow'); } catch (e) { safeCatch(e); }
 
-  // Create the browser window
+  // Create the browser window — frameless + transparent for glass morphism widget
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    // Allow OS-level resizing by default; keep other flags that make the
-    // window behave like a widget. Frameless windows remove native resize
-    // controls on some OSes, so set "frame: true" if you want a native
-    // titlebar and system resize handles. You can also use a custom
-    // draggable/resizable UI if you prefer to keep frameless.
+    width: WIDGET_SIZE.width,
+    height: WIDGET_SIZE.height,
+    minWidth: 320,
+    minHeight: 400,
     resizable: true,
     maximizable: true,
     minimizable: true,
     closable: true,
     movable: true,
-    alwaysOnTop: false,
-    frame: true,
-    transparent: false,
+    alwaysOnTop: true,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
     show: false,
+    // Don't show in taskbar when in widget mode — acts like a desktop widget
+    skipTaskbar: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -76,11 +81,12 @@ export function createMainWindow(): BrowserWindow {
     mainWindow.loadFile(htmlPath);
   }
 
-  // Show window when ready
+  // Show window when ready — position in bottom-right of screen
   mainWindow.once('ready-to-show', () => {
     console.log('[WINDOW] Window ready to show, showing...');
     try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Window ready to show'); } catch (e) { safeCatch(e); }
     if (mainWindow) {
+      positionWidget(mainWindow);
       mainWindow.show();
     }
   });
@@ -113,6 +119,49 @@ export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Window creation complete');
   try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Window creation complete'); } catch (e) { safeCatch(e); }
   return mainWindow;
+}
+
+/** Position the widget in the bottom-right corner of the primary display */
+function positionWidget(win: BrowserWindow) {
+  try {
+    const display = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = display.workAreaSize;
+    const [winW, winH] = win.getSize();
+    const padding = 20;
+    win.setPosition(screenW - winW - padding, screenH - winH - padding);
+  } catch (e) {
+    safeCatch(e);
+  }
+}
+
+/** Toggle between widget (compact) and expanded (full) mode */
+export function toggleWidgetMode(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) return isWidgetMode;
+
+  isWidgetMode = !isWidgetMode;
+
+  if (isWidgetMode) {
+    // Switch to compact widget
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setSize(WIDGET_SIZE.width, WIDGET_SIZE.height, true);
+    positionWidget(mainWindow);
+    console.log('[WINDOW] Switched to widget mode');
+  } else {
+    // Switch to expanded/full mode
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height, true);
+    mainWindow.center();
+    console.log('[WINDOW] Switched to expanded mode');
+  }
+
+  // Notify renderer of mode change
+  mainWindow.webContents.send('sadie:widget-mode-changed', isWidgetMode);
+  return isWidgetMode;
+}
+
+/** Get current widget mode state */
+export function getWidgetMode(): boolean {
+  return isWidgetMode;
 }
 
 export function getMainWindow(): BrowserWindow | null {

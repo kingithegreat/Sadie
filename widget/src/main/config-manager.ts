@@ -94,6 +94,8 @@ export interface Settings {
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
+  // Morning briefing (weather + calendar + reminders on first message of the day)
+  morningBriefing?: boolean;
   // UI settings
   messageDensity?: string;
   stableHordeApiKey?: string;
