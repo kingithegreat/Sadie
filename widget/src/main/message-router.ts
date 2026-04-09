@@ -1436,9 +1436,15 @@ async function synthesisStream(
   const cloudCfg = settings?.customLLM;
   const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
   if (isCloudActive) {
-    // Only pass the last 4 messages as context — synthesis doesn't need full history
+    // Only pass the last few messages as context — synthesis doesn't need full history
     // and long history can exceed provider context limits (especially free tiers).
-    const history = getHistory(convId).slice(-4).map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    // Ensure even count so messages alternate user/assistant (some providers reject
+    // consecutive same-role messages).
+    let recentHistory = getHistory(convId).slice(-4);
+    if (recentHistory.length > 0 && recentHistory[0].role === 'assistant') {
+      recentHistory = recentHistory.slice(1); // drop leading assistant to start on user
+    }
+    const history = recentHistory.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
     return streamFromCustomLLM(
       augmentedMessage, history, cloudCfg,
       'You are answering from pre-fetched search results. DO NOT say you are unable to fetch information — the results are already provided. Summarize the key facts in 2-4 concise sentences.',
@@ -3227,24 +3233,30 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               const augmentedMessage = buildSynthesisPrompt(searchContext, enhancedMessage);
 
+              let synthDone = false; // guard: onEnd and onError are mutually exclusive
               const handler = await synthesisStream(
                 augmentedMessage, convId,
                 (chunk) => {
-                  if (!activeStreams.has(streamId)) return;
+                  if (synthDone || !activeStreams.has(streamId)) return;
                   assistantResponse += chunk;
                   try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                 },
                 () => {
+                  if (synthDone) return; synthDone = true;
                   if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
                   try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                 },
                 (err) => {
-                  // Fallback: if LLM synthesis fails, show the raw search context instead of an error
+                  if (synthDone) return; synthDone = true;
+                  // Fallback: show raw search results + any partial response already streamed
                   console.error('[SADIE] LLM synthesis failed, falling back to raw results:', err?.message || err);
                   const fallback = searchContext || 'Sorry, I couldn\'t process the search results.';
-                  try { event.sender.send('sadie:stream-chunk', { chunk: fallback, streamId }); } catch (e) { safeCatch(e); }
-                  addToHistory(convId, 'assistant', fallback);
+                  const finalResponse = assistantResponse.trim() ? assistantResponse : fallback;
+                  if (!assistantResponse.trim()) {
+                    try { event.sender.send('sadie:stream-chunk', { chunk: fallback, streamId }); } catch (e) { safeCatch(e); }
+                  }
+                  addToHistory(convId, 'assistant', finalResponse);
                   try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                 },

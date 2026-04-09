@@ -121,14 +121,18 @@ export function createMainWindow(): BrowserWindow {
   return mainWindow;
 }
 
-/** Position the widget in the bottom-right corner of the primary display */
+/** Position the widget in the bottom-right corner of the display the window is currently on */
 function positionWidget(win: BrowserWindow) {
   try {
-    const display = screen.getPrimaryDisplay();
-    const { width: screenW, height: screenH } = display.workAreaSize;
+    const bounds = win.getBounds();
+    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
+    const workArea = display.workArea;
     const [winW, winH] = win.getSize();
     const padding = 20;
-    win.setPosition(screenW - winW - padding, screenH - winH - padding);
+    win.setPosition(
+      workArea.x + workArea.width - winW - padding,
+      workArea.y + workArea.height - winH - padding
+    );
   } catch (e) {
     safeCatch(e);
   }

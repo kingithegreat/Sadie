@@ -345,4 +345,39 @@ describe('createThinkTagStripper', () => {
     const strip = createThinkTagStripper();
     expect(strip('<think></think>Answer')).toBe('Answer');
   });
+
+  test('strips <thinking>…</thinking> tags (Qwen, Gemma)', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('<thinking>step 1, step 2</thinking>Result here.')).toBe('Result here.');
+  });
+
+  test('case-insensitive: strips <THINK>…</THINK>', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('<THINK>loud reasoning</THINK>Answer')).toBe('Answer');
+  });
+
+  test('case-insensitive: strips <Thinking>…</Thinking>', () => {
+    const strip = createThinkTagStripper();
+    expect(strip('<Thinking>mixed case</Thinking>OK')).toBe('OK');
+  });
+
+  test('flush() returns buffered partial tag at stream end', () => {
+    const strip = createThinkTagStripper();
+    let result = '';
+    result += strip('Hello <b');
+    result += strip.flush();
+    expect(result).toBe('Hello <b');
+  });
+
+  test('flush() returns empty when inside think block', () => {
+    const strip = createThinkTagStripper();
+    strip('<think>unfinished');
+    expect(strip.flush()).toBe('');
+  });
+
+  test('flush() returns empty when no pending content', () => {
+    const strip = createThinkTagStripper();
+    strip('Hello');
+    expect(strip.flush()).toBe('');
+  });
 });

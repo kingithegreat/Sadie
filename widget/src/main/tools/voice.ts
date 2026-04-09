@@ -24,29 +24,42 @@ const TTS_CACHE_DIR = path.join(os.tmpdir(), 'sadie-tts');
 // Singleton TTS instance (reused across calls for speed)
 let ttsInstance: MsEdgeTTS | null = null;
 let currentVoice: string = DEFAULT_VOICE;
-let ttsReady = false;
+let ttsInitPromise: Promise<MsEdgeTTS> | null = null; // guards concurrent init
 
 async function getTTS(voice?: string): Promise<MsEdgeTTS> {
   const targetVoice = voice || DEFAULT_VOICE;
-  if (ttsInstance && ttsReady && currentVoice === targetVoice) {
+  // Fast path: already initialized with the right voice
+  if (ttsInstance && currentVoice === targetVoice) {
     return ttsInstance;
   }
-  ttsInstance = new MsEdgeTTS();
-  try {
-    await ttsInstance.setMetadata(targetVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    currentVoice = targetVoice;
-    ttsReady = true;
-  } catch {
-    // If the preferred voice isn't available, try fallback
-    if (targetVoice !== FALLBACK_VOICE) {
-      await ttsInstance.setMetadata(FALLBACK_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-      currentVoice = FALLBACK_VOICE;
-      ttsReady = true;
-    } else {
-      throw new Error('No Edge TTS voice available');
-    }
+  // Guard: if another call is already initializing, wait for it
+  if (ttsInitPromise) {
+    const existing = await ttsInitPromise;
+    if (currentVoice === targetVoice) return existing;
   }
-  return ttsInstance;
+  // Initialize (only one caller runs this at a time)
+  ttsInitPromise = (async () => {
+    const inst = new MsEdgeTTS();
+    try {
+      await inst.setMetadata(targetVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+      ttsInstance = inst;
+      currentVoice = targetVoice;
+    } catch {
+      if (targetVoice !== FALLBACK_VOICE) {
+        await inst.setMetadata(FALLBACK_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+        ttsInstance = inst;
+        currentVoice = FALLBACK_VOICE;
+      } else {
+        throw new Error('No Edge TTS voice available');
+      }
+    }
+    return ttsInstance!;
+  })();
+  try {
+    return await ttsInitPromise;
+  } finally {
+    ttsInitPromise = null;
+  }
 }
 
 // Ensure cache dir exists

@@ -929,9 +929,9 @@ try {
   });
 
   // ── TTS (text-to-speech) ────────────────────────────────────────────────────
-  // Uses Web Speech API in the renderer via executeJavaScript (no extra deps, works offline)
+  // Uses Edge TTS neural voices (msedge-tts), falls back to Web Speech API
   ipcMain.handle('sadie:tts-speak', async (_event, text: string, rate?: number) => {
-    return speakHandler({ text, rate: rate ?? 1.0 }, {} as any);
+    return speakHandler({ text, rate: rate ?? 0 }, {} as any);
   });
 
   ipcMain.handle('sadie:tts-stop', async () => {

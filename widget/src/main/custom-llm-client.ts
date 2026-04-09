@@ -181,10 +181,12 @@ export function getModelMetadata(modelName: string): ModelMetadata {
     return { ...defaults, ...MODEL_METADATA[modelName] };
   }
 
-  // Check partial match
-  for (const [key, metadata] of Object.entries(MODEL_METADATA)) {
+  // Check partial match — sort keys longest-first so "gpt-4o-mini" matches
+  // before "gpt-4o" which matches before "gpt-4"
+  const sortedKeys = Object.keys(MODEL_METADATA).sort((a, b) => b.length - a.length);
+  for (const key of sortedKeys) {
     if (modelName.includes(key)) {
-      return { ...defaults, ...metadata };
+      return { ...defaults, ...MODEL_METADATA[key] };
     }
   }
 
@@ -243,42 +245,78 @@ async function retryWithBackoff<T>(
  * Stream from OpenAI-compatible API with function calling support
  */
 /**
- * Creates a stateful filter that strips <think>…</think> reasoning blocks
- * from streamed text (used by DeepSeek R1 and similar reasoning models).
- * Call the returned function on each chunk; it returns only user-visible text.
+ * Creates a stateful filter that strips reasoning blocks from streamed text.
+ * Supports: <think>, <thinking>, <THINK>, <THINKING> (case-insensitive).
+ * Handles tags split across arbitrary SSE chunks.
+ * Call `flush()` at stream end to recover any buffered partial-tag content.
  */
-export function createThinkTagStripper(): (text: string) => string {
-  let insideThinkTag = false;
-  let pendingTag = '';
+export function createThinkTagStripper(): ((text: string) => string) & { flush: () => string } {
+  let insideThink = false;
+  let buf = ''; // accumulates characters that might be part of a tag
 
-  return function stripThinkTags(text: string): string {
+  // Opening tags we recognise (lowercase for comparison)
+  const OPEN_TAGS = ['<think>', '<thinking>'];
+  // Matching close tags (same index)
+  const CLOSE_TAGS = ['</think>', '</thinking>'];
+  let activeCloseTag = ''; // set when we enter a think block
+
+  function couldBeOpenTag(s: string): boolean {
+    const lower = s.toLowerCase();
+    return OPEN_TAGS.some(tag => tag.startsWith(lower));
+  }
+  function matchesOpenTag(s: string): number {
+    const lower = s.toLowerCase();
+    return OPEN_TAGS.findIndex(tag => tag === lower);
+  }
+  function couldBeCloseTag(s: string): boolean {
+    const lower = s.toLowerCase();
+    return activeCloseTag.startsWith(lower);
+  }
+  function matchesCloseTag(s: string): boolean {
+    return s.toLowerCase() === activeCloseTag;
+  }
+
+  function strip(text: string): string {
     let output = '';
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
-      if (pendingTag.length > 0) {
-        pendingTag += ch;
-        if (!insideThinkTag) {
-          if ('<think>'.startsWith(pendingTag)) {
-            if (pendingTag === '<think>') { insideThinkTag = true; pendingTag = ''; }
+      if (buf.length > 0) {
+        buf += ch;
+        if (!insideThink) {
+          if (couldBeOpenTag(buf)) {
+            const idx = matchesOpenTag(buf);
+            if (idx >= 0) { insideThink = true; activeCloseTag = CLOSE_TAGS[idx]; buf = ''; }
           } else {
-            output += pendingTag;
-            pendingTag = '';
+            // Not a think tag — flush buffer as regular text
+            output += buf;
+            buf = '';
           }
         } else {
-          if ('</think>'.startsWith(pendingTag)) {
-            if (pendingTag === '</think>') { insideThinkTag = false; pendingTag = ''; }
+          if (couldBeCloseTag(buf)) {
+            if (matchesCloseTag(buf)) { insideThink = false; activeCloseTag = ''; buf = ''; }
           } else {
-            pendingTag = '';
+            buf = ''; // discard (inside think block)
           }
         }
       } else if (ch === '<') {
-        pendingTag = '<';
-      } else if (!insideThinkTag) {
+        buf = '<';
+      } else if (!insideThink) {
         output += ch;
       }
     }
     return output;
+  }
+
+  /** Call at stream end to flush any buffered partial-tag content. */
+  strip.flush = function flush(): string {
+    if (!buf) return '';
+    // If we're outside a think block, the pending text is real content
+    const out = insideThink ? '' : buf;
+    buf = '';
+    return out;
   };
+
+  return strip;
 }
 
 async function streamOpenAI(options: StreamOptions): Promise<void> {
@@ -320,17 +358,35 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
     let currentToolCall: { id: string; name: string; arguments: string } | null = null;
     let ended = false;
 
-    // Strip <think>…</think> reasoning blocks (DeepSeek R1, etc.)
+    // Strip <think>/<thinking> reasoning blocks (DeepSeek R1, Qwen, etc.)
     const stripThinkTags = createThinkTagStripper();
 
-    const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
+    // SSE line buffer: TCP chunks can split mid-line, so we accumulate
+    // partial lines and only process complete ones (terminated by \n).
+    let lineBuf = '';
+
+    const safeEnd = () => {
+      if (!ended) {
+        ended = true;
+        // Flush any partial tag content buffered by the think-tag stripper
+        const remainder = stripThinkTags.flush();
+        if (remainder) onChunk(remainder);
+        onEnd();
+      }
+    };
 
     stream.on('data', (chunk: Buffer) => {
       try {
-        const lines = chunk.toString('utf8').split('\n').filter(line => line.trim());
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.substring(6);
+        lineBuf += chunk.toString('utf8');
+        const parts = lineBuf.split('\n');
+        // Last element is either '' (line ended with \n) or an incomplete line
+        lineBuf = parts.pop() || '';
+
+        for (const line of parts) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (trimmed.startsWith('data: ')) {
+            const data = trimmed.substring(6);
             if (data === '[DONE]') {
               // If we have a pending tool call, emit it
               if (currentToolCall && onToolCall) {
@@ -350,7 +406,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
               const parsed = JSON.parse(data);
               const delta = parsed.choices?.[0]?.delta;
 
-              // Handle text content — strip <think> reasoning blocks
+              // Handle text content — strip <think>/<thinking> reasoning blocks
               if (delta?.content) {
                 const cleaned = stripThinkTags(delta.content);
                 if (cleaned) onChunk(cleaned);
