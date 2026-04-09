@@ -339,6 +339,20 @@ export interface ElectronAPI {
     error?: string;
   }>;
 
+  // List installed Ollama models
+  listOllamaModels?: () => Promise<{
+    success: boolean;
+    models: Array<{ name: string; size: number; modifiedAt: string; details: any }>;
+    error?: string;
+  }>;
+
+  // Delete an Ollama model
+  deleteOllamaModel?: (modelName: string) => Promise<{
+    success: boolean;
+    model?: string;
+    error?: string;
+  }>;
+
   // Push event: fires when main process determines Ollama reachability on startup
   onOllamaStatus?: (cb: (data: { online: boolean; url: string }) => void) => () => void;
 

@@ -352,6 +352,14 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:pull-model', modelName);
   },
 
+  listOllamaModels: async () => {
+    return await ipcRenderer.invoke('sadie:list-ollama-models');
+  },
+
+  deleteOllamaModel: async (modelName: string) => {
+    return await ipcRenderer.invoke('sadie:delete-ollama-model', modelName);
+  },
+
   hasPermission: async (toolName: string): Promise<{ success: boolean; allowed?: boolean; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.HAS_PERMISSION, toolName);
   },

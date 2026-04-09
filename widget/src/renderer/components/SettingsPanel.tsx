@@ -175,6 +175,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelFetchError, setModelFetchError] = useState<string | null>(null);
   const [_modelsFetchedAt, setModelsFetchedAt] = useState<number | null>(null);
+  const [installedOllamaModels, setInstalledOllamaModels] = useState<Array<{ name: string; size: number }>>([]);
+
+  // Fetch installed Ollama models on mount
+  useEffect(() => {
+    window.electron?.listOllamaModels?.().then(res => {
+      if (res?.success && res.models) setInstalledOllamaModels(res.models);
+    }).catch(() => {});
+  }, []);
 
   const PERMISSION_DESCRIPTIONS: Record<string, string> = {
     read_file: 'Read the contents of a file (safe).',
@@ -544,7 +552,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="setting-group">
           <label className="setting-label">Chat model</label>
           <div className="model-grid">
-            {ollamaModels.map((model) => (
+            {/* Show installed Ollama models first, then hardcoded recommendations */}
+            {(installedOllamaModels.length > 0
+              ? installedOllamaModels.map(m => {
+                  const known = ollamaModels.find(o => m.name === o.id || m.name.startsWith(o.id.split(':')[0]));
+                  return {
+                    id: m.name,
+                    name: known?.name || m.name,
+                    description: known?.description || `${(m.size / (1024*1024*1024)).toFixed(1)}GB`,
+                    installed: true,
+                  };
+                })
+              : ollamaModels.map(m => ({ ...m, installed: false }))
+            ).map((model) => (
               <button
                 key={model.id}
                 className={`model-card ${localSettings.chatModel === model.id ? 'active' : ''}`}
@@ -560,7 +580,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </button>
             ))}
           </div>
-          <small className="setting-hint">Used for standard chats with tool calling. Custom APIs override this.</small>
+          <small className="setting-hint">
+            {installedOllamaModels.length > 0
+              ? `Showing ${installedOllamaModels.length} installed model(s). Use the model selector to pull more.`
+              : 'Ollama offline — showing recommended models. Custom APIs override this.'}
+          </small>
         </div>
 
         <div className="setting-group">

@@ -522,6 +522,39 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // List installed Ollama models via /api/tags
+  ipcMain.handle('sadie:list-ollama-models', async () => {
+    const settings = getSettings();
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    try {
+      const res = await axios.get(`${ollamaBase}/api/tags`, { timeout: 5000 });
+      const models = (res.data?.models || []).map((m: any) => ({
+        name: m.name,
+        size: m.size,
+        modifiedAt: m.modified_at,
+        details: m.details || {},
+      }));
+      return { success: true, models };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err), models: [] };
+    }
+  });
+
+  // Delete an Ollama model
+  ipcMain.handle('sadie:delete-ollama-model', async (_event, modelName: string) => {
+    if (!modelName || typeof modelName !== 'string') {
+      return { success: false, error: 'Invalid model name' };
+    }
+    const settings = getSettings();
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    try {
+      await axios.delete(`${ollamaBase}/api/delete`, { data: { name: modelName }, timeout: 30000 });
+      return { success: true, model: modelName };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   // Pull an Ollama model with progress reporting
   ipcMain.handle('sadie:pull-model', async (_event, modelName: string) => {
     if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {

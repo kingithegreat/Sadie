@@ -1,5 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { CustomLLMConfig } from '../../shared/types';
+
+interface OllamaModel {
+  name: string;
+  size: number;
+  modifiedAt: string;
+  details: any;
+}
 
 interface ModelInfo {
   id: string;
@@ -8,6 +15,8 @@ interface ModelInfo {
   description: string;
   type: 'ollama' | 'custom';
   provider?: string;
+  installed?: boolean;
+  sizeGB?: number;
 }
 
 interface ModelSelectorProps {
@@ -19,6 +28,24 @@ interface ModelSelectorProps {
   locked?: boolean;
   lockedModelId?: string;
   lockReason?: string;
+}
+
+// Well-known models with descriptions — shown even if not installed (with a "pull" option)
+const RECOMMENDED_MODELS: ModelInfo[] = [
+  { id: 'phi4-mini', name: 'Phi 4 Mini (3.8B)', shortName: 'Phi4', description: 'Best reasoning for small VRAM (2.5GB)', type: 'ollama', sizeGB: 2.5 },
+  { id: 'qwen2.5:3b', name: 'Qwen 2.5 (3B)', shortName: 'Qwen 3B', description: 'Best tool-calling at this size (2GB)', type: 'ollama', sizeGB: 2 },
+  { id: 'qwen2.5:7b', name: 'Qwen 2.5 (7B)', shortName: 'Qwen 7B', description: 'Best overall local model (4.4GB)', type: 'ollama', sizeGB: 4.4 },
+  { id: 'llama3.2:3b', name: 'Llama 3.2 (3B)', shortName: 'Llama 3B', description: 'Reliable general chat (2GB)', type: 'ollama', sizeGB: 2 },
+  { id: 'mistral:latest', name: 'Mistral (7B)', shortName: 'Mistral', description: 'Great conversation quality (4.4GB)', type: 'ollama', sizeGB: 4.4 },
+  { id: 'llama3.1:8b', name: 'Llama 3.1 (8B)', shortName: 'Llama 8B', description: 'Strong general-purpose (4.7GB)', type: 'ollama', sizeGB: 4.7 },
+  { id: 'gemma2:9b', name: 'Gemma 2 (9B)', shortName: 'Gemma 9B', description: 'Google model, strong reasoning (5.4GB)', type: 'ollama', sizeGB: 5.4 },
+  { id: 'deepseek-r1:8b', name: 'DeepSeek R1 (8B)', shortName: 'DS-R1 8B', description: 'Reasoning model, step-by-step (4.9GB)', type: 'ollama', sizeGB: 4.9 },
+  { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder (7B)', shortName: 'Coder 7B', description: 'Best coding model (4.4GB)', type: 'ollama', sizeGB: 4.4 },
+];
+
+function formatSize(bytes: number): string {
+  const gb = bytes / (1024 * 1024 * 1024);
+  return gb >= 1 ? `${gb.toFixed(1)}GB` : `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
 }
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({
@@ -33,139 +60,108 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 }) => {
   const dropdownId = 'model-selector-menu';
   const [isOpen, setIsOpen] = useState(false);
+  const [installedModels, setInstalledModels] = useState<OllamaModel[]>([]);
+  const [pulling, setPulling] = useState<string | null>(null);
+  const [pullError, setPullError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Available Ollama models with descriptions
-  // Ordered by tool-calling capability (best first)
-  const ollamaModels: ModelInfo[] = [
-    {
-      id: 'qwen2.5:7b',
-      name: 'Qwen 2.5 (7B)',
-      shortName: 'Qwen',
-      description: '⭐ Best for tools & function calling (4.4GB)',
-      type: 'ollama'
-    },
-    {
-      id: 'llama3.2:3b',
-      name: 'Llama 3.2 (3B)',
-      shortName: 'Llama 3B',
-      description: 'Fast, good tool support (2GB)',
-      type: 'ollama'
-    },
-    {
-      id: 'mistral:latest',
-      name: 'Mistral',
-      shortName: 'Mistral',
-      description: 'Great conversation, weaker tools (4.4GB)',
-      type: 'ollama'
-    },
-    {
-      id: 'dolphin-llama3:8b',
-      name: 'Dolphin Llama 3 (8B)',
-      shortName: 'Dolphin',
-      description: 'Uncensored chat, no tool calling (4.7GB)',
-      type: 'ollama'
-    },
-    {
-      id: 'llava:latest',
-      name: 'LLaVA Vision',
-      shortName: 'LLaVA',
-      description: 'Image analysis only (4.7GB)',
-      type: 'ollama'
-    }
-  ];
+  // Fetch installed Ollama models
+  const fetchModels = useCallback(async () => {
+    try {
+      const result = await window.electron?.listOllamaModels?.();
+      if (result?.success && result.models) {
+        setInstalledModels(result.models);
+      }
+    } catch { /* Ollama offline */ }
+  }, []);
+
+  useEffect(() => {
+    fetchModels();
+    // Refresh every 30s (catches newly pulled models)
+    const interval = setInterval(fetchModels, 30000);
+    return () => clearInterval(interval);
+  }, [fetchModels]);
+
+  // Refresh after dropdown opens
+  useEffect(() => {
+    if (isOpen) fetchModels();
+  }, [isOpen, fetchModels]);
+
+  // Build the merged model list: installed models first, then recommended uninstalled ones
+  const installedModelInfos: ModelInfo[] = installedModels.map(m => {
+    // Prefer exact id match, then prefix match
+    const recommended =
+      RECOMMENDED_MODELS.find(r => r.id === m.name) ||
+      RECOMMENDED_MODELS.find(r => m.name.startsWith(r.id.split(':')[0]) && r.id.split(':')[0] === m.name.split(':')[0]);
+    return {
+      id: m.name,
+      name: recommended?.name || m.name,
+      shortName: recommended?.shortName || m.name.split(':')[0],
+      description: recommended?.description || formatSize(m.size),
+      type: 'ollama' as const,
+      installed: true,
+      sizeGB: m.size / (1024 * 1024 * 1024),
+    };
+  });
+
+  const uninstalledRecommended = RECOMMENDED_MODELS.filter(
+    r => !installedModels.some(m => m.name === r.id || m.name.split(':')[0] === r.id.split(':')[0])
+  ).map(r => ({ ...r, installed: false }));
 
   // Custom LLM option
-  const customModels: ModelInfo[] = customLLM?.enabled ? [
-    {
-      id: 'custom',
-      name: customLLM.name || 'Custom API',
-      shortName: customLLM.model?.split('/').pop()?.split(':')[0] || 'API',
-      description: `${customLLM.provider?.toUpperCase() || 'Custom'} - ${customLLM.model || 'Not configured'}`,
-      type: 'custom',
-      provider: customLLM.provider
-    }
-  ] : [];
+  const customModels: ModelInfo[] = customLLM?.enabled ? [{
+    id: 'custom',
+    name: customLLM.name || 'Custom API',
+    shortName: customLLM.model?.split('/').pop()?.split(':')[0] || 'API',
+    description: `${customLLM.provider?.toUpperCase() || 'Custom'} — ${customLLM.model || 'Not configured'}`,
+    type: 'custom',
+    provider: customLLM.provider,
+    installed: true,
+  }] : [];
 
-  const allModels = [...customModels, ...ollamaModels];
+  const allModels = [...customModels, ...installedModelInfos];
 
-  // Get current model display info
   const forcedModelId = lockedModelId || 'dolphin-llama3:8b';
-
-  const fallbackModel: ModelInfo = {
-    id: forcedModelId,
-    name: forcedModelId,
-    shortName: 'Dolphin',
-    description: 'Active while Uncensored Mode is enabled',
-    type: 'ollama'
-  };
 
   const getCurrentModelInfo = (): ModelInfo => {
     if (locked) {
-      return ollamaModels.find(m => m.id === forcedModelId) || fallbackModel;
+      return allModels.find(m => m.id === forcedModelId) || {
+        id: forcedModelId, name: forcedModelId, shortName: forcedModelId.split(':')[0],
+        description: 'Active while Uncensored Mode is enabled', type: 'ollama', installed: true,
+      };
     }
-    if (useCustomLLM && customModels.length > 0) {
-      return customModels[0];
-    }
-    return ollamaModels.find(m => m.id === currentModel) || {
-      id: currentModel,
-      name: currentModel,
-      shortName: currentModel.split(':')[0],
-      description: 'Currently selected model',
-      type: 'ollama'
+    if (useCustomLLM && customModels.length > 0) return customModels[0];
+    return allModels.find(m => m.id === currentModel) || {
+      id: currentModel, name: currentModel, shortName: currentModel.split(':')[0],
+      description: 'Currently selected model', type: 'ollama', installed: true,
     };
   };
 
   const currentModelInfo = getCurrentModelInfo();
 
-  // Get current index for prev/next navigation
-  const currentIndex = allModels.findIndex(m => 
+  // Prev/next navigation through installed models only
+  const currentIndex = allModels.findIndex(m =>
     (useCustomLLM && m.type === 'custom') || m.id === currentModel
   );
 
   const handlePrevModel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (locked) return;
+    if (locked || allModels.length === 0) return;
     const prevIndex = currentIndex <= 0 ? allModels.length - 1 : currentIndex - 1;
     const model = allModels[prevIndex];
-    if (model.type === 'custom') {
-      onModelChange(customLLM?.model || '', true);
-    } else {
-      onModelChange(model.id, false);
-    }
+    onModelChange(model.type === 'custom' ? (customLLM?.model || '') : model.id, model.type === 'custom');
   };
 
   const handleNextModel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (locked) return;
+    if (locked || allModels.length === 0) return;
     const nextIndex = currentIndex >= allModels.length - 1 ? 0 : currentIndex + 1;
     const model = allModels[nextIndex];
-    if (model.type === 'custom') {
-      onModelChange(customLLM?.model || '', true);
-    } else {
-      onModelChange(model.id, false);
-    }
+    onModelChange(model.type === 'custom' ? (customLLM?.model || '') : model.id, model.type === 'custom');
   };
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [isOpen]);
-
   const handleSelectModel = (model: ModelInfo) => {
-    if (locked) {
-      return;
-    }
-
+    if (locked) return;
     if (model.type === 'custom') {
       onModelChange(customLLM?.model || '', true);
     } else {
@@ -174,35 +170,48 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     setIsOpen(false);
   };
 
-  useEffect(() => {
-    if (locked) {
-      setIsOpen(false);
+  const handlePullModel = async (modelId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPulling(modelId);
+    setPullError(null);
+    try {
+      const result = await window.electron?.pullModel?.(modelId);
+      if (result?.success) {
+        await fetchModels(); // Refresh the list
+        setPulling(null);
+      } else {
+        setPullError(result?.error || 'Pull failed');
+        setPulling(null);
+      }
+    } catch (err: any) {
+      setPullError(err.message || 'Pull failed');
+      setPulling(null);
     }
-  }, [locked]);
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
+
+  useEffect(() => { if (locked) setIsOpen(false); }, [locked]);
 
   return (
     <div className={`model-selector ${locked ? 'locked' : ''}`} ref={dropdownRef}>
       <div className="model-selector-row">
-        {/* Prev button */}
-        <button
-          className="model-nav-btn"
-          onClick={handlePrevModel}
-          disabled={locked}
-          title="Previous model"
-          aria-label="Previous model"
-        >
-          ◀
-        </button>
+        <button className="model-nav-btn" onClick={handlePrevModel} disabled={locked} title="Previous model" aria-label="Previous model">◀</button>
 
-        {/* Main button showing current model */}
-        <button 
+        <button
           className="model-selector-button"
           type="button"
-          onClick={() => {
-            if (!locked) {
-              setIsOpen(!isOpen);
-            }
-          }}
+          onClick={() => { if (!locked) setIsOpen(!isOpen); }}
           title={locked ? (lockReason || 'Turn off Uncensored Mode to switch models') : `Using ${currentModelInfo?.name} — click to see all models`}
           aria-haspopup="menu"
           aria-controls={dropdownId}
@@ -216,58 +225,37 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           </div>
         </button>
 
-        {/* Next button */}
-        <button
-          className="model-nav-btn"
-          onClick={handleNextModel}
-          disabled={locked}
-          title="Next model"
-          aria-label="Next model"
-        >
-          ▶
-        </button>
+        <button className="model-nav-btn" onClick={handleNextModel} disabled={locked} title="Next model" aria-label="Next model">▶</button>
       </div>
 
       {locked && (
-        <div className="model-lock-hint">
-          🔒 {lockReason || 'Turn off Uncensored Mode to switch models'}
-        </div>
+        <div className="model-lock-hint">🔒 {lockReason || 'Turn off Uncensored Mode to switch models'}</div>
       )}
 
       {isOpen && (
-        <div id={dropdownId} className="model-dropdown" role="menu">
+        <div id={dropdownId} className="model-dropdown">
           <div className="model-dropdown-header">
-            <span>Available Models</span>
-            <button 
+            <span>Models</span>
+            <button
               className="add-custom-button"
-              role="menuitem"
-              onClick={() => {
-                setIsOpen(false);
-                onConfigureCustom();
-              }}
+              type="button"
+              onClick={() => { setIsOpen(false); onConfigureCustom(); }}
               title="Add custom API (OpenAI, Claude, etc.)"
             >
-              + Add API
+              + Cloud API
             </button>
           </div>
 
           <div className="model-list">
+            {/* Cloud APIs */}
             {customModels.length > 0 && (
               <>
-                <div className="model-section-label">Custom APIs</div>
+                <div className="model-section-label">Cloud API</div>
                 {customModels.map(model => (
-                  <button
-                    key={model.id}
-                    role="menuitem"
-                    className={`model-option ${useCustomLLM ? 'active' : ''}`}
-                    onClick={() => handleSelectModel(model)}
-                  >
+                  <button key={model.id}                    className={`model-option ${useCustomLLM ? 'active' : ''}`}
+                    onClick={() => handleSelectModel(model)}>
                     <div className="model-option-header">
-                      <span className="model-option-icon">
-                        {model.provider === 'openai' ? '🔵' : 
-                         model.provider === 'anthropic' ? '🟣' : 
-                         model.provider === 'openrouter' ? '🔶' : '⚡'}
-                      </span>
+                      <span className="model-option-icon">☁️</span>
                       <span className="model-option-name">{model.name}</span>
                       {useCustomLLM && <span className="active-badge">✓</span>}
                     </div>
@@ -277,22 +265,59 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
               </>
             )}
 
-            <div className="model-section-label">Local Ollama Models</div>
-            {ollamaModels.map(model => (
-              <button
-                key={model.id}
-                role="menuitem"
-                className={`model-option ${!useCustomLLM && currentModel === model.id ? 'active' : ''}`}
-                onClick={() => handleSelectModel(model)}
-              >
-                <div className="model-option-header">
-                  <span className="model-option-icon">🦙</span>
-                  <span className="model-option-name">{model.name}</span>
-                  {!useCustomLLM && currentModel === model.id && <span className="active-badge">✓</span>}
-                </div>
-                <span className="model-option-desc">{model.description}</span>
-              </button>
-            ))}
+            {/* Installed local models */}
+            {installedModelInfos.length > 0 && (
+              <>
+                <div className="model-section-label">Installed ({installedModelInfos.length})</div>
+                {installedModelInfos.map(model => (
+                  <button key={model.id}                    className={`model-option ${!useCustomLLM && currentModel === model.id ? 'active' : ''}`}
+                    onClick={() => handleSelectModel(model)}>
+                    <div className="model-option-header">
+                      <span className="model-option-icon">🦙</span>
+                      <span className="model-option-name">{model.name}</span>
+                      <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB.toFixed(1)}GB` : ''}</span>
+                      {!useCustomLLM && currentModel === model.id && <span className="active-badge">✓</span>}
+                    </div>
+                    <span className="model-option-desc">{model.description}</span>
+                  </button>
+                ))}
+              </>
+            )}
+
+            {/* Recommended models not yet installed */}
+            {uninstalledRecommended.length > 0 && (
+              <>
+                <div className="model-section-label">Available to Download</div>
+                {uninstalledRecommended.map(model => (
+                  <div key={model.id} className="model-option not-installed">
+                    <div className="model-option-header">
+                      <span className="model-option-icon">📦</span>
+                      <span className="model-option-name">{model.name}</span>
+                      <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB}GB` : ''}</span>
+                      <button
+                        className="pull-model-btn"
+                        onClick={(e) => handlePullModel(model.id, e)}
+                        disabled={pulling !== null}
+                      >
+                        {pulling === model.id ? '⏳ Pulling...' : '⬇ Pull'}
+                      </button>
+                    </div>
+                    <span className="model-option-desc">{model.description}</span>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* No models at all */}
+            {installedModelInfos.length === 0 && customModels.length === 0 && (
+              <div className="model-option-empty">
+                No models found. Is Ollama running?
+              </div>
+            )}
+
+            {pullError && (
+              <div className="model-pull-error">⚠️ {pullError}</div>
+            )}
           </div>
         </div>
       )}
