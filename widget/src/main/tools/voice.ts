@@ -168,7 +168,9 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
     } as any);
 
     // Play in renderer via HTML5 Audio
-    const fileUrl = `file://${audioFile.replace(/\\/g, '/')}`;
+    // Windows paths need file:///C:/... (three slashes)
+    const normalized = audioFile.replace(/\\/g, '/');
+    const fileUrl = normalized.startsWith('/') ? `file://${normalized}` : `file:///${normalized}`;
     await mainWindow.webContents.executeJavaScript(`
       (function() {
         // Stop any existing SADIE audio

@@ -647,7 +647,8 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
 
   // Opinion / analysis / prediction questions should go to the LLM for conversation,
   // not to data-fetching tools.  Defined early so all routing blocks can use it.
-  const isOpinionQuestion = /\b(do you think|what do you think|can .{1,40} (still|win|make|get)|will .{1,40} (win|make|get)|chances?|predict(ion)?s?|opinion|could .{1,40} (win|make)|how far .{1,40} go|contend(er|ers)?|what are .{1,40} odds|should .{1,40} trade|going to win|gonna win|reckon|expect|likely|realistically)\b/i.test(m);
+  const isOpinionQuestion = /\b(do you think|what do you think|can .{1,40} (still|win|make|get)|will .{1,40} (win|make|get)|chances?|predict(ion)?s?|opinion|could .{1,40} (win|make)|how far .{1,40} go|contend(er|ers)?|what are .{1,40} odds|should .{1,40} trade|going to win|gonna win|reckon|expect|likely|realistically)\b/i.test(m)
+    && !/\b(betting\s+odds|odds\s+(for|on|at)|moneyline|spread|tab\b|sportsbet|bet365)\b/i.test(m);
 
   // HELP / CAPABILITY CARD — must be first so "help" doesn't hit other patterns
   if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can sadie do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(userMessage.trim())) {
@@ -1125,6 +1126,11 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'web_search', arguments: { query: userMessage.trim(), maxResults: 5, fetchTopResult: true } }] };
   }
 
+  // BETTING / ODDS / PRICE intents — these need live web data
+  if (/\b(betting\s+odds|odds\s+(for|on|at)|moneyline|point\s*spread|over.?under|sportsbet|tab\b|bet365)\b/i.test(m)) {
+    return { calls: [{ name: 'web_search', arguments: { query: userMessage.trim(), maxResults: 5, fetchTopResult: true } }] };
+  }
+
   // WEB SEARCH intents — be careful not to match "what is this document" etc.
   if (/\b(search for|look up|tell me about|google)\b/i.test(m)) {
     const q = userMessage.trim();
@@ -1206,7 +1212,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
           // an NBA name, it's likely about that person in a different context
           // (e.g. "steph curry was not a philosopher").
           const hasNonSportsContext = /\b(philosopher|philosophy|history|science|politics|religion|music|movie|book|author|artist|actor|singer|poet|professor|doctor|lawyer|teacher|chef|cook|recipe)\b/i.test(fm);
-          const hasReferentialLanguage = /\b(they|them|their|how did|what about|how about|who won|who lost|and|also)\b/i.test(fm);
+          const hasReferentialLanguage = /\b(they|them|their|how did|what about|how about|who won|who lost|and|also|odds|betting|bet|tab|spread|moneyline|over.?under)\b/i.test(fm);
           if ((!hasNbaKeyword && !hasReferentialLanguage) || hasNonSportsContext) {
             clearLastIntent(conversationId!);
             return null; // Not basketball-related, let LLM handle fresh
@@ -1227,6 +1233,14 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
         if (toolName === 'image_generate') {
           clearLastIntent(conversationId!);
           return null;
+        }
+
+        // For get_news follow-ups, let the LLM answer from conversation history
+        // (the previous news results are already in context). Re-invoking would
+        // just dump the same raw articles again without answering the question.
+        if (toolName === 'get_news') {
+          clearLastIntent(conversationId!);
+          return null; // LLM handles with prior context
         }
 
         // For any other tool (get_weather, etc.) re-invoke with same args

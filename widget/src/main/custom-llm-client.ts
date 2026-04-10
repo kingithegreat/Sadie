@@ -320,7 +320,7 @@ export function createThinkTagStripper(): ((text: string) => string) & { flush: 
 }
 
 async function streamOpenAI(options: StreamOptions): Promise<void> {
-  const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000, tools, onChunk, onToolCall, onEnd, onError, signal } = options;
+  const { apiConfig, messages, model, temperature = 0.5, maxTokens = 2000, tools, onChunk, onToolCall, onEnd, onError, signal } = options;
   
   // Convert tools to OpenAI format
   const openaiTools = tools?.map(tool => toOpenAITool(tool));

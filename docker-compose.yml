@@ -54,10 +54,24 @@ services:
     networks:
       - sadie-network
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sadie-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - sadie-network
+
 volumes:
   n8n_data:
     driver: local
   qdrant_data:
+    driver: local
+
+  ollama_data:
     driver: local
 
 networks:

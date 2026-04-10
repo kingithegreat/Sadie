@@ -1,4 +1,5 @@
 
+import { useState } from 'react';
 import { debug as logDebug } from '../../shared/logger';
 import MessageList from './MessageList';
 import { InputBox } from './InputBox';
@@ -19,6 +20,9 @@ interface ChatInterfaceProps {
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onBookmark, onReact, onEdit, systemPrompt, onUpdateSystemPrompt }) => {
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
+  const hasGuidelines = !!(systemPrompt && systemPrompt.trim());
+
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';
     logDebug('[Renderer] sendMessage invoked', { text, documents: documents?.length || 0 });
@@ -27,25 +31,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
   };
   return (
     <div className="chat-interface">
-      {/* Per-conversation system prompt editor (inline, above messages) */}
-      <div className="conversation-system-prompt">
-        <label className="system-prompt-label">Chat guidelines</label>
-        <div className="system-prompt-controls">
-          <textarea
-            className="system-prompt-textarea"
-            aria-label="Conversation system prompt"
-            placeholder="Enter system / guideline text for this conversation (applies to model behavior)"
-            value={systemPrompt ?? ''}
-            onChange={(e) => onUpdateSystemPrompt?.(e.target.value)}
-          />
-          <button
-            className="btn btn-sm"
-            onClick={() => onUpdateSystemPrompt?.('')}
-            title="Clear system prompt"
-          >Clear</button>
-        </div>
-      </div>
-
       {/* Scrollable message list */}
       <div className="messages-container">
         <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} onBookmark={onBookmark} onReact={onReact} onEdit={onEdit} />
@@ -53,8 +38,38 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
 
       {/* Fixed input box at bottom */}
       <div className="input-container">
+        {/* Collapsible guidelines editor — above the input */}
+        {guidelinesOpen && (
+          <div className="conversation-system-prompt">
+            <div className="system-prompt-controls">
+              <textarea
+                className="system-prompt-textarea"
+                aria-label="Conversation system prompt"
+                placeholder="Custom instructions for this conversation..."
+                rows={2}
+                value={systemPrompt ?? ''}
+                onChange={(e) => onUpdateSystemPrompt?.(e.target.value)}
+                autoFocus
+              />
+              <button
+                type="button"
+                className="system-prompt-clear-btn"
+                onClick={() => { onUpdateSystemPrompt?.(''); setGuidelinesOpen(false); }}
+                title="Clear and close"
+              >✕</button>
+            </div>
+          </div>
+        )}
         <div className="input-wrapper">
           <InputBox onSendMessage={handleSend} />
+          <button
+            type="button"
+            className={`guidelines-toggle-btn ${hasGuidelines ? 'has-content' : ''}`}
+            onClick={() => setGuidelinesOpen(!guidelinesOpen)}
+            title={guidelinesOpen ? 'Hide guidelines' : 'Set chat guidelines'}
+          >
+            {hasGuidelines ? '📝' : '📋'}
+          </button>
         </div>
       </div>
     </div>
