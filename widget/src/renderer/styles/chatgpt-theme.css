@@ -983,7 +983,7 @@ body {
 .focus-mode-toggle {
   position: fixed;
   top: 6px;
-  right: 6px;
+  right: 120px;
   z-index: 1000;
   width: 28px;
   height: 28px;
