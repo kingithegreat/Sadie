@@ -1828,6 +1828,10 @@ export async function streamFromLLM(
       const providerSupportsTools = customConfig.provider === 'openai'
         || customConfig.provider === 'anthropic'
         || customConfig.provider === 'openrouter'
+        || customConfig.provider === 'cerebras'
+        || customConfig.provider === 'groq'
+        || customConfig.provider === 'deepseek'
+        || customConfig.provider === 'together'
         || customConfig.provider === 'custom';
       const toolDefs = providerSupportsTools ? getAllToolDefinitions() : undefined;
       

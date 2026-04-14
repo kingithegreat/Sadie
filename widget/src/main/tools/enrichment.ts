@@ -405,10 +405,14 @@ const HIGHLIGHT_BLOCKLIST = [
 
 function extractHighlights(content: string): string | null {
   if (!content) return null;
-  
+
   // Clean the content
   let text = content
     .replace(/<[^>]+>/g, ' ')
+    // Strip inline image URL fragments (ESPN embeds img=/i/teamlogos/... in text)
+    .replace(/img=[^\s)]+/gi, '')
+    .replace(/\.png[?&][^\s)]+/gi, '')
+    .replace(/\)[A-Z]{2,3}\s+\d{1,2}-\d{1,2}/g, (m) => m.replace(/^\)/, ''))  // fix ")NY 51-28" → "NY 51-28"
     .replace(/\s+/g, ' ')
     .trim();
   

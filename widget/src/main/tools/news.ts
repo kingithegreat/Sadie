@@ -99,9 +99,14 @@ function parseRss(xml: string): NewsItem[] {
   const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>|<entry[^>]*>([\s\S]*?)<\/entry>/gi;
   let match: RegExpExecArray | null;
 
+  const decodeEntities = (s: string): string =>
+    s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+
   const extractTag = (block: string, tag: string): string => {
     const m = block.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, 'i'));
-    return m ? m[1].replace(/<[^>]+>/g, '').trim() : '';
+    return m ? decodeEntities(m[1].replace(/<[^>]+>/g, '').trim()) : '';
   };
 
   while ((match = itemRegex.exec(xml)) !== null) {
