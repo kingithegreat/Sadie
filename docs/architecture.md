@@ -103,7 +103,7 @@ The Node.js Electron main process. Key responsibilities:
 
 ### Tool Handlers (`widget/src/main/tools/`)
 
-All 60+ tools are implemented as TypeScript modules that export tool definitions and handler functions. See the [Tool System](#tool-system) section below for details.
+All 70+ tools are implemented as TypeScript modules that export tool definitions and handler functions. See the [Tool System](#tool-system) section below for details.
 
 ---
 
@@ -137,19 +137,17 @@ All tool modules are imported and merged in `widget/src/main/tools/index.ts`.
 
 | Category | Tools |
 |---|---|
-| `filesystem` | `read_file`, `write_file`, `list_directory`, `delete_file`, `move_file`, `search_files`, `create_directory` |
-| `system` | `get_system_info`, `kill_process` |
-| `web` | `web_search`, `fetch_url`, `weather`, `browser_action` |
+| `filesystem` | `read_file`, `write_file`, `list_directory`, `delete_file`, `move_file`, `search_files`, `create_directory`, `create_docx`, `create_spreadsheet`, `create_pdf` |
+| `system` | `get_system_info`, `list_processes`, `get_process_info`, `kill_process`, `get_clipboard`, `set_clipboard`, `open_url`, `launch_app`, `screenshot`, `get_current_time` |
+| `web` | `web_search`, `fetch_url`, `get_weather`, `get_news`, `list_news_feeds`, `browser_action`, `image_generate` |
 | `vision` | `vision_describe`, `vision_query` |
 | `rag` | `rag_index`, `rag_query`, `rag_list`, `rag_clear` |
-| `memory` | `read_memory`, `write_memory`, `list_memory_keys`, `memorize`, `recall` |
+| `memory` | `remember`, `recall`, `forget`, `list_memories` |
 | `planning` | `plan_task`, `get_plans` |
-| `communication` | `email_send`, `email_draft`, `email_list` |
+| `communication` | `email_send`, `email_draft`, `email_list`, `calendar_events` |
 | `clipboard` | `clipboard_read`, `clipboard_write` |
-| `code` | `run_code_snippet` |
 | `voice` | `tts_speak`, `tts_stop`, `transcribe_audio` |
-| `git` | `git_status`, `git_diff`, `git_commit` |
-| `utility` | `api_request`, `get_calendar_events`, `generate_sports_report`, `image_generate`, `generate_document` |
+| `utility` | `run_terminal_command`, `get_terminal_history`, `grep_code`, `project_tree`, `analyze_file`, `run_code`, `git_status`, `git_log`, `git_diff`, `git_branches`, `git_commit`, `api_request`, `generate_sports_report`, `nba_query` |
 
 ### Execution Flow
 
@@ -242,7 +240,29 @@ All outbound HTTP requests from web tools pass through `isUrlSafe()`, which vali
 
 A 256-bit secret is generated per install and persisted to disk. All HTTP requests to n8n include `X-SADIE-Auth` header. n8n workflows validate this header via an Auth Guard Code node.
 
-### Layer 7: Tool Recursion Cap
+### Layer 7: Terminal Safety (`terminal.ts`)
+
+The `run_terminal_command` tool executes shell commands in a specified working directory. Safety is enforced via:
+
+- **Confirmation gate** — every command requires explicit user approval via the confirmation modal.
+- **Home-directory restriction** — the working directory must be inside the user's home directory.
+- **Catastrophic command blocklist** — patterns like `rm -rf /`, `format C:`, `dd of=/dev/sda`, `shutdown`, fork bombs, and registry deletion are blocked before the confirmation modal even appears.
+- **Timeout** — 60-second default, configurable up to 120 seconds.
+- **Output cap** — stdout/stderr are truncated to 16 KB in the result; exec buffer is 1 MB.
+- **ANSI stripping** — `FORCE_COLOR=0` and `NO_COLOR=1` environment variables suppress color codes for clean LLM consumption.
+
+### Layer 8: Codebase Tool Safety (`codebase.ts`)
+
+The `grep_code`, `project_tree`, and `analyze_file` tools are read-only and cannot modify files. Safety measures:
+
+- **Home-directory restriction** — all paths must be inside the user's home directory.
+- **Automatic skip list** — `node_modules`, `.git`, `dist`, `build`, `__pycache__`, and 15+ other artifact directories are excluded from traversal.
+- **Binary file exclusion** — 40+ binary extensions (images, archives, executables, fonts) are skipped in grep.
+- **File size limits** — grep skips files >1 MB; analyze_file refuses files >2 MB.
+- **Regex safety** — invalid regex patterns from the LLM fall back to literal string matching instead of crashing.
+- **Result caps** — grep: max 200 matches; tree: max 500 items; traversal depth: max 8 levels.
+
+### Layer 9: Tool Recursion Cap
 
 `MAX_TOOL_ROUNDS = 10` in `message-router.ts`. If the LLM attempts more than 10 consecutive tool calls in a single turn, the router halts and sends a user-facing warning.
 

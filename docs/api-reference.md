@@ -651,6 +651,173 @@ Search for a text pattern within a document.
 
 ---
 
+### Terminal
+
+#### `run_terminal_command` ⚠
+Execute a shell command in a terminal and return stdout/stderr. Use for build tools, package managers, test runners, docker, git, and general CLI tasks.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `command` | string | ✓ | — | The shell command to execute (e.g. `"npm test"`, `"docker compose up -d"`). Max 2048 chars. |
+| `cwd` | string | | current dir | Working directory (absolute path, must be inside user home). |
+| `timeout` | number | | `60` | Timeout in seconds (max 120). |
+
+**Returns:** `{ command, cwd, exit_code, stdout, stderr }`
+
+**Safety:** Blocked patterns include `rm -rf /`, `format C:`, `dd of=/dev/sda`, `shutdown`, `reboot`, fork bombs, and registry deletion. Working directory must exist and be within the user's home directory. Output is truncated to 16 KB per stream. ANSI color codes are suppressed.
+
+**Aliases:** `terminal`, `shell`, `exec`
+
+---
+
+#### `get_terminal_history`
+Get the last N commands that were executed via `run_terminal_command` this session.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `limit` | number | | `10` | Number of recent commands to return (max 50). |
+
+**Returns:** `{ count, total_session_commands, history: [{command, cwd, exitCode, stdoutPreview, timestamp}] }`
+
+---
+
+### Codebase
+
+#### `grep_code`
+Search file contents by regex pattern across a project directory. Returns matching lines with file paths and line numbers. Skips `node_modules`, `.git`, `dist`, `build`, and binary files automatically.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pattern` | string | ✓ | — | Regex pattern (e.g. `"function handleSubmit"`, `"TODO:"`, `"import.*React"`). |
+| `directory` | string | | current dir | Root directory to search (absolute path). |
+| `file_pattern` | string | | all text files | Glob filter (e.g. `"*.ts"`, `"*.{js,jsx,ts,tsx}"`). |
+| `case_sensitive` | boolean | | `false` | Case-sensitive search. |
+| `max_results` | number | | `50` | Max matches to return (max 200). |
+| `context_lines` | number | | `0` | Context lines before/after each match (max 5). |
+
+**Returns:** `{ pattern, directory, case_sensitive, match_count, matches: [{file, line, text, context?}] }`
+
+**Engine:** Uses `ripgrep` (rg) when available for speed, falls back to Node.js recursive search. Invalid regex patterns fall back to literal string matching.
+
+**Aliases:** `grep`, `search_code`
+
+---
+
+#### `project_tree`
+Get a directory tree structure for a project. Shows files and folders in a visual tree format.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `directory` | string | | current dir | Root directory (absolute path). |
+| `max_depth` | number | | `4` | Max traversal depth (max 8). |
+| `show_files` | boolean | | `true` | Show files (`true`) or only directories (`false`). |
+| `file_pattern` | string | | all files | Only show files matching this pattern (e.g. `"*.ts"`). |
+| `max_items` | number | | `200` | Max total items to include (max 500). |
+
+**Returns:** `{ directory, total_items, tree }` where `tree` is a formatted string with Unicode box-drawing characters.
+
+**Aliases:** `tree`
+
+---
+
+#### `analyze_file`
+Get a quick overview of a source file: language, line count, imports, exported symbols, function/class names, and the first comment block.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `file_path` | string | ✓ | Absolute path to the source file. |
+
+**Returns:** `{ file, path, language, lines, size_bytes, imports, exports, symbols, first_comment }`
+
+**Supported languages:** TypeScript, JavaScript, Python, Rust, Go, Java, Ruby, PHP, C, C++, C#, Swift, Kotlin, Scala, HTML, CSS, SCSS, LESS, JSON, YAML, TOML, XML, Markdown, SQL, Shell, PowerShell, Batch, Vue, Svelte.
+
+---
+
+### Git
+
+#### `git_status`
+Show the working tree status of a git repository.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `repo_path` | string | | SADIE project root | Absolute path to the git repository. |
+
+**Returns:** `{ branch, staged, unstaged, untracked, clean }`
+
+---
+
+#### `git_log`
+Show recent commit history for a repository.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `limit` | number | | `10` | Number of commits to return (max 50). |
+| `branch` | string | | `HEAD` | Branch to inspect. |
+
+**Returns:** `{ branch, count, commits: [{hash, author, email, date, message}] }`
+
+---
+
+#### `git_diff`
+Show the diff between the working tree and HEAD (or between two commits/branches). Output truncated to 8 KB.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `target` | string | | `"unstaged"` | `"staged"`, `"unstaged"`, a file path, or a ref like `"HEAD~1"`. |
+
+**Returns:** `{ diff, truncated, total_chars }`
+
+---
+
+#### `git_branches`
+List local (and optionally remote) branches.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `include_remote` | boolean | | `false` | Include remote tracking branches. |
+
+**Returns:** `{ current, branches: [{name, hash, upstream, current}] }`
+
+---
+
+#### `git_commit` ⚠
+Stage all changes and create a git commit.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `message` | string | ✓ | — | Commit message (max 200 chars). |
+| `stage_all` | boolean | | `true` | Stage all tracked changes before committing. |
+
+**Returns:** `{ message, output }`
+
+---
+
+### News
+
+#### `get_news`
+Fetch the latest headlines from a news RSS feed.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `source` | string | | `"bbc"` | Source key (`bbc`, `reuters`, `techcrunch`, `hacker_news`, `ars_technica`, `npr`, `guardian`, `espn`) or a full RSS URL. |
+| `limit` | number | | `10` | Max headlines (max 30). |
+| `topic_filter` | string | | — | Optional keyword to filter headlines (case-insensitive). |
+
+**Returns:** `{ source, count, items: [{title, link, published, summary}] }`
+
+---
+
+#### `list_news_feeds`
+List all built-in news feed sources and descriptions.
+
+_(No parameters.)_
+
+---
+
 ## 4. Permission System
 
 SADIE uses a two-layer permission model at tool execution time.
@@ -679,6 +846,7 @@ Some tools always pause for explicit approval regardless of the permissions abov
 - `forget` (memory deletion)
 - `clear_conversation_history`
 - `git_commit`
+- `run_terminal_command`
 - `kill_process`, `email_send`
 
 When the confirmation modal appears, the user chooses **Approve** or **Cancel**. There is no "always allow" path for confirmation-gated tools.

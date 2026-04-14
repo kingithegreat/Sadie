@@ -44,6 +44,8 @@ import { planningToolDefs, planningToolHandlers } from './planning';
 import { apiToolDefs, apiToolHandlers } from './api-tool';
 import { ragToolDefs, ragToolHandlers } from './rag';
 import { visionToolDefs, visionToolHandlers } from './vision';
+import { terminalToolDefs, terminalToolHandlers } from './terminal';
+import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 
 // Global tool registry
@@ -51,7 +53,13 @@ const toolRegistry = new Map<string, RegisteredTool>();
 
 // Aliases for tool names coming from models that may use different names
 const TOOL_ALIASES: Record<string, string> = {
-  nba_scores: 'nba_query'
+  nba_scores: 'nba_query',
+  terminal: 'run_terminal_command',
+  shell: 'run_terminal_command',
+  exec: 'run_terminal_command',
+  grep: 'grep_code',
+  search_code: 'grep_code',
+  tree: 'project_tree',
 };
 
 // Pending confirmations for tools that require user approval
@@ -114,12 +122,12 @@ const SMALL_MODEL_CORE_TOOLS = new Set([
   'read_file',
   'write_file',
   'list_directory',
-  'run_code',
+  'run_terminal_command',
+  'grep_code',
   'show_notification',
   'get_news',
   'remember',
   'recall',
-  'get_current_time',
 ]);
 
 export const SMALL_MODEL_MAX_TOOLS = 12;
@@ -562,6 +570,18 @@ export function initializeTools(): void {
   // Register vision tools (image analysis via Ollama multimodal)
   for (const def of visionToolDefs) {
     const handler = visionToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register terminal tools (shell command execution)
+  for (const def of terminalToolDefs) {
+    const handler = terminalToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register codebase tools (grep, tree, analyze)
+  for (const def of codebaseToolDefs) {
+    const handler = codebaseToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
