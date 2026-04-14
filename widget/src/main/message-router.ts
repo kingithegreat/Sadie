@@ -420,16 +420,31 @@ const MCP_MEMORY_ADD_OBS = 'mcp_memory_add_observations';
 
 /** Query the knowledge graph and return a compact context string, or null. */
 async function recallMemory(query: string): Promise<string | null> {
+  // Try MCP knowledge graph first
   try {
     const results = await executeToolBatch(
       [{ name: MCP_MEMORY_SEARCH, arguments: { query } }],
       { executionId: `mem-recall-${Date.now()}` } as any
     );
     const text = results?.[0]?.result?.text?.trim();
-    return text && text.length > 10 ? text : null;
+    if (text && text.length > 10) return text;
   } catch {
-    return null;
+    // MCP not available — try local fallback
   }
+  // Fallback: search local JSON memories via `recall` tool
+  try {
+    const results = await executeToolBatch(
+      [{ name: 'recall', arguments: { query, limit: 5 } }],
+      { executionId: `mem-recall-fallback-${Date.now()}` } as any
+    );
+    const memories = results?.[0]?.result?.memories;
+    if (Array.isArray(memories) && memories.length > 0) {
+      return memories.map((m: any) => m.content || m).join('\n');
+    }
+  } catch {
+    // Both paths failed
+  }
+  return null;
 }
 
 /** Extract notable facts from a user turn and store them in the knowledge graph. */
@@ -439,6 +454,7 @@ async function memorizeIfUseful(userMsg: string): Promise<void> {
   const isUseful =
     /\b(i(?:'m| am)\s+\w|my name|i live|i work|i prefer|i like|i love|i hate|i dislike|i use|i have|i own|remind me|remember that|note that)\b/i.test(m);
   if (!isUseful) return;
+  let stored = false;
   try {
     await executeToolBatch(
       [{ name: MCP_MEMORY_ADD_OBS, arguments: {
@@ -446,8 +462,21 @@ async function memorizeIfUseful(userMsg: string): Promise<void> {
       }}],
       { executionId: `mem-store-${Date.now()}` } as any
     );
+    stored = true;
   } catch {
-    // Ignore — memory MCP may not be running
+    // MCP memory not running — fall through to local fallback
+  }
+  // Fallback: also store via the local `remember` tool (JSON file) so memories
+  // persist even when MCP/Qdrant are unavailable.
+  if (!stored) {
+    try {
+      await executeToolBatch(
+        [{ name: 'remember', arguments: { content: userMsg.slice(0, 400), category: 'auto' } }],
+        { executionId: `mem-fallback-${Date.now()}` } as any
+      );
+    } catch {
+      // Both paths failed — silently ignore
+    }
   }
 }
 
