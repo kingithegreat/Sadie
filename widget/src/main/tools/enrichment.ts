@@ -151,7 +151,14 @@ export async function enrichNbaGames(
       summary += 'No games found for this query.\n';
     }
   }
-  
+
+  // Helpful note when user asked about lineups but all games are scheduled
+  // (ESPN only exposes starting lineups ~30 min before tipoff)
+  const asksForLineups = /\b(line.?up|starting\s*5|starting\s*five|starters)\b/i.test(query);
+  if (asksForLineups && allScheduled) {
+    summary += `\n\n_ℹ️ Starting lineups are usually announced ~30 minutes before tipoff and aren't available yet. Try again closer to game time, or ask for team rosters instead._`;
+  }
+
   // Add web context highlights
   if (webContext?.topContent) {
     const highlights = extractHighlights(webContext.topContent);

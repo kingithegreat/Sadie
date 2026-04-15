@@ -44,11 +44,14 @@ async function getTTS(voice?: string): Promise<MsEdgeTTS> {
       await inst.setMetadata(targetVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
       ttsInstance = inst;
       currentVoice = targetVoice;
-    } catch {
+      console.log(`[SADIE Voice] Edge TTS initialized with ${targetVoice}`);
+    } catch (err: any) {
+      console.warn(`[SADIE Voice] Edge TTS voice ${targetVoice} failed:`, err?.message || err);
       if (targetVoice !== FALLBACK_VOICE) {
         await inst.setMetadata(FALLBACK_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
         ttsInstance = inst;
         currentVoice = FALLBACK_VOICE;
+        console.log(`[SADIE Voice] Edge TTS fell back to ${FALLBACK_VOICE}`);
       } else {
         throw new Error('No Edge TTS voice available');
       }
@@ -235,13 +238,20 @@ async function speakFallback(args: any): Promise<ToolResult> {
 
         function pickVoice(voices) {
           const prefs = ['Microsoft Jenny', 'Microsoft Aria', 'Microsoft Zira',
-            'Google UK English Female', 'Samantha', 'Karen'];
+            'Microsoft Eva', 'Microsoft Hazel', 'Microsoft Heera',
+            'Google UK English Female', 'Samantha', 'Karen', 'Victoria'];
           for (const p of prefs) {
             const m = voices.find(v => v.name.includes(p));
             if (m) return m;
           }
-          return voices.find(v => v.lang.startsWith('en') && v.localService)
-            || voices.find(v => v.lang.startsWith('en')) || voices[0] || null;
+          // Explicitly filter out known male voice names as last resort
+          const maleNames = /\b(David|Mark|George|James|Guy|Ryan|Daniel|Alex|Fred|Thomas|William|Brian|Bruce|Tom)\b/i;
+          const femaleHint = /\b(female|woman|girl|Jenny|Aria|Zira|Eva|Hazel|Heera|Samantha|Karen|Victoria|Susan|Amy|Emma|Lisa|Sarah)\b/i;
+          const enVoices = voices.filter(v => v.lang.startsWith('en'));
+          return enVoices.find(v => femaleHint.test(v.name))
+            || enVoices.find(v => !maleNames.test(v.name) && v.localService)
+            || enVoices.find(v => !maleNames.test(v.name))
+            || enVoices[0] || voices[0] || null;
         }
 
         function go(voices) {
