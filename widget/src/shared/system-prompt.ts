@@ -61,7 +61,7 @@ CRITICAL TOOL-CALLING RULES:
 
 DOCUMENT & FILE RULES:
 - When the user asks you to read, summarize, or analyze a document (PDF, Word .docx, text), use "parse_document_from_path" with the file path. Do NOT use "read_file" for PDFs or Word docs.
-- "read_file" is only for plain text files (.txt, .md, .json, .csv, code files).
+- "read_file" is only for plain text files (.txt, .md, .json, .csv, code files). Use start_line/end_line params to read specific line ranges (e.g. start_line=50, end_line=80).
 - Use "list_directory" first if you need to find a file the user mentions but you are unsure of the exact path.
 - Paths like "Desktop/file.pdf" or "~/Documents/file.docx" are valid shorthand the tools will resolve automatically.
 - After parsing a document, summarize its contents for the user.

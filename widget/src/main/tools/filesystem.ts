@@ -131,7 +131,7 @@ export const listDirectoryDef: ToolDefinition = {
 
 export const readFileDef: ToolDefinition = {
   name: 'read_file',
-  description: 'Read the contents of a text file',
+  description: 'Read the contents of a text file. Supports line ranges (e.g. start_line=50, end_line=80) for targeted reading.',
   category: 'filesystem',
   parameters: {
     type: 'object',
@@ -142,8 +142,16 @@ export const readFileDef: ToolDefinition = {
       },
       maxLines: {
         type: 'number',
-        description: 'Maximum number of lines to read (default: 100)',
+        description: 'Maximum number of lines to read from the start (default: 100). Ignored if start_line is set.',
         default: 100
+      },
+      start_line: {
+        type: 'number',
+        description: 'Line number to start reading from (1-based). Use with end_line for targeted reading.'
+      },
+      end_line: {
+        type: 'number',
+        description: 'Line number to stop reading at (inclusive, 1-based). Defaults to start_line + 100 if omitted.'
       }
     },
     required: ['path']
@@ -614,11 +622,38 @@ export const readFileHandler: ToolHandler = async (args, _context): Promise<Tool
 
     const content = await fsPromises.readFile(validation.resolved, 'utf-8');
     const lines = content.split('\n');
+
+    // Line-range mode: start_line (1-based) with optional end_line
+    if (args.start_line != null) {
+      const startLine = Math.max(1, Math.floor(Number(args.start_line)));
+      const endLine = args.end_line != null
+        ? Math.min(lines.length, Math.floor(Number(args.end_line)))
+        : Math.min(lines.length, startLine + 99);
+      if (startLine > lines.length) {
+        return { success: false, error: `start_line ${startLine} exceeds file length (${lines.length} lines)` };
+      }
+      const slice = lines.slice(startLine - 1, endLine);
+      // Number each line for easy reference
+      const numbered = slice.map((l, i) => `${startLine + i}: ${l}`).join('\n');
+      return {
+        success: true,
+        result: {
+          path: validation.resolved,
+          content: numbered,
+          start_line: startLine,
+          end_line: Math.min(endLine, lines.length),
+          totalLines: lines.length,
+          truncated: endLine < lines.length,
+          size: stats.size
+        }
+      };
+    }
+
+    // Default: read from top with maxLines cap
     const maxLines = args.maxLines || 100;
-    
     const truncated = lines.length > maxLines;
     const resultLines = lines.slice(0, maxLines);
-    
+
     return {
       success: true,
       result: {
