@@ -360,12 +360,11 @@ function formatNbaGame(event: any): FormattedGame | null {
       gameTimeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
     }
     
-    // Format nicely
-    formatted = `**${awayTeam}** @ **${homeTeam}**${scoreStr}`;
-    if (awayRecord || homeRecord) {
-      formatted += `\n  ${awayTeam} (${awayRecord}) vs ${homeTeam} (${homeRecord})`;
-    }
-    formatted += `\n  📍 ${isScheduled ? `${gameTimeStr}` : statusShort}`;
+    // Format nicely — records inline with team name, one fact per line
+    const awayDisplay = awayRecord ? `**${awayTeam}** (${awayRecord})` : `**${awayTeam}**`;
+    const homeDisplay = homeRecord ? `**${homeTeam}** (${homeRecord})` : `**${homeTeam}**`;
+    formatted = `${awayDisplay} @ ${homeDisplay}${scoreStr}`;
+    formatted += `\n📍 ${isScheduled ? gameTimeStr : statusShort}`;
     if (isFinal) formatted += ' ✅';
     if (isInProgress) formatted += ' 🔴 Live';
     
@@ -375,13 +374,13 @@ function formatNbaGame(event: any): FormattedGame | null {
       const pointsLeader = leaders.find((l: any) => l.name === 'points');
       if (pointsLeader?.leaders?.[0]) {
         const leader = pointsLeader.leaders[0];
-        formatted += `\n  🏆 ${leader.athlete?.displayName || 'Leader'}: ${leader.displayValue}`;
+        formatted += `\n🏆 ${leader.athlete?.displayName || 'Leader'}: ${leader.displayValue}`;
       }
     }
-    
+
     // Add venue
     if (comp?.venue?.fullName) {
-      formatted += `\n  🏟️ ${comp.venue.fullName}`;
+      formatted += `\n🏟️ ${comp.venue.fullName}`;
     }
   } else {
     // Fallback to basic formatting
@@ -403,6 +402,8 @@ const HIGHLIGHT_BLOCKLIST = [
   /cookie|gdpr|ccpa|consent/i,
   /Image\s*\d+:/i,   // scraped image alt-text references
   /Prime Video|Paramount\+|Peacock|fuboTV/i,  // streaming service badges
+  /NBA\s*2K|2K2[0-9]|HYPE IS HERE|FULL GAME HIGHLIGHTS/i,  // video game / YouTube video titles
+  /\bWATCH\s+(NOW|LIVE|HERE)\b/i,
 ];
 
 function extractHighlights(content: string): string | null {
@@ -424,18 +425,32 @@ function extractHighlights(content: string): string | null {
   // Split and filter sentences
   const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 25);
   
+  // Reject video-title-style lines (many pipe separators or heavy ALL-CAPS ratio)
+  const looksLikeVideoTitle = (s: string): boolean => {
+    if ((s.match(/\|/g) || []).length >= 2) return true;
+    const letters = s.replace(/[^A-Za-z]/g, '');
+    if (letters.length >= 20) {
+      const upper = letters.replace(/[^A-Z]/g, '').length;
+      if (upper / letters.length > 0.6) return true;
+    }
+    return false;
+  };
+
   // Prefer basketball-relevant sentences
   const relevant = sentences.filter(s => {
     if (HIGHLIGHT_BLOCKLIST.some(re => re.test(s))) return false;
+    if (looksLikeVideoTitle(s)) return false;
     return /\b(score[ds]?|points?|win|won|defeat|beat|lead|quarter|half|final|basket|rebound|assist|three|dunk)\b/i.test(s);
   }).slice(0, 4);
-  
+
   if (relevant.length > 0) {
     return relevant.map(s => `• ${s}`).join('\n');
   }
-  
+
   // Fallback: any clean non-boilerplate sentences
-  const clean = sentences.filter(s => !HIGHLIGHT_BLOCKLIST.some(re => re.test(s))).slice(0, 3);
+  const clean = sentences.filter(s =>
+    !HIGHLIGHT_BLOCKLIST.some(re => re.test(s)) && !looksLikeVideoTitle(s)
+  ).slice(0, 3);
   return clean.length > 0 ? clean.map(s => `• ${s}`).join('\n') : null;
 }
 
