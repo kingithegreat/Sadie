@@ -218,7 +218,7 @@ describe('handleSlashCommand', () => {
 describe('compact prompt enhancements', () => {
   it('includes personality and conciseness rules', () => {
     expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('concise');
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('SHORT');
+    expect(SADIE_SYSTEM_PROMPT_COMPACT).toMatch(/LENGTH|under 10 words/);
   });
 
   it('includes tool invocation rules', () => {

@@ -60,6 +60,17 @@ test('compact prompt mentions personality or conciseness', () => {
   expect(SADIE_SYSTEM_PROMPT_COMPACT).toMatch(/concise|short|natural/i);
 });
 
+test('SADIE_SYSTEM_PROMPT contains a length-ladder rule for short inputs', () => {
+  // Guards against regressions where the "match the user's energy" rule gets diluted.
+  expect(SADIE_SYSTEM_PROMPT).toMatch(/LENGTH/);
+  expect(SADIE_SYSTEM_PROMPT).toMatch(/under 10 words|1-3 word/i);
+});
+
+test('SADIE_SYSTEM_PROMPT_COMPACT contains length-ladder guidance', () => {
+  expect(SADIE_SYSTEM_PROMPT_COMPACT).toMatch(/LENGTH|length/);
+  expect(SADIE_SYSTEM_PROMPT_COMPACT).toMatch(/under 10 words|1-3 word/i);
+});
+
 // ─── SADIE_USER_INFO content ──────────────────────────────────────────────────
 
 test('SADIE_USER_INFO.username is non-empty string in normal environment', () => {
