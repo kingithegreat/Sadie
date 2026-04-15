@@ -58,31 +58,37 @@ export async function enrichNbaGames(
   
   // Build search query for enrichment — always include today's date to avoid stale results
   const todayStr = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-  const searchQuery = options.customQuery || 
+  const searchQuery = options.customQuery ||
     (query ? `NBA ${query} box score highlights ${todayStr}` :
      teamNames.length > 0 ? `NBA ${teamNames.slice(0, 2).join(' ')} game recap highlights ${todayStr}` :
      `NBA games today scores highlights ${todayStr}`);
-  
+
+  // Skip web enrichment if every game is still pre-game — "highlights" for unplayed
+  // games are nonsense and just drag in unrelated promo copy.
+  const preGame = events.length > 0 && events.every((e: any) => e.status?.type?.state === 'pre');
+
   // Fetch web context
   let webContext: EnrichedResult['webContext'];
   try {
-    const searchResult = await webSearchHandler({
-      query: searchQuery,
-      maxResults: maxWebResults,
-      fetchTopResult: fetchContent
-    }, context || {} as any);
-    
-    if (searchResult.success && searchResult.result) {
-      const sr = searchResult.result;
-      webContext = {
+    if (!preGame) {
+      const searchResult = await webSearchHandler({
         query: searchQuery,
-        results: (sr.results || []).slice(0, maxWebResults).map((r: any) => ({
-          title: r.title || '',
-          url: r.url || '',
-          snippet: r.snippet || r.description || ''
-        })),
-        topContent: sr.topResultContent?.content || sr.topResultContent?.contentText
-      };
+        maxResults: maxWebResults,
+        fetchTopResult: fetchContent
+      }, context || {} as any);
+
+      if (searchResult.success && searchResult.result) {
+        const sr = searchResult.result;
+        webContext = {
+          query: searchQuery,
+          results: (sr.results || []).slice(0, maxWebResults).map((r: any) => ({
+            title: r.title || '',
+            url: r.url || '',
+            snippet: r.snippet || r.description || ''
+          })),
+          topContent: sr.topResultContent?.content || sr.topResultContent?.contentText
+        };
+      }
     }
   } catch (e) {
     console.error('[Enrichment] Web search failed:', e);

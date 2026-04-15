@@ -82,6 +82,27 @@ describe('enrichNbaGames', () => {
     expect(result.summary).toMatch(/no games have finished/i);
   });
 
+  test('skips web search entirely when all games are pre-game', async () => {
+    // Unplayed games have no highlights — fetching "recaps" just drags in promo noise.
+    const scheduledEvents = [
+      { id: '1', status: { type: { state: 'pre' } }, date: new Date().toISOString() },
+      { id: '2', status: { type: { state: 'pre' } }, date: new Date().toISOString() },
+    ];
+    const result = await enrichNbaGames(scheduledEvents, 'tonight');
+    expect(mockWebSearch).not.toHaveBeenCalled();
+    expect(result.webContext).toBeUndefined();
+  });
+
+  test('still runs web search when a game has started or finished', async () => {
+    mockWebSearch.mockResolvedValue(WITH_RESULTS as any);
+    const events = [
+      { id: '1', status: { type: { state: 'pre' } } },
+      { id: '2', status: { type: { state: 'post' } } },
+    ];
+    await enrichNbaGames(events, 'recap');
+    expect(mockWebSearch).toHaveBeenCalled();
+  });
+
   test('does not add scheduled banner when some games are in-progress', async () => {
     const events = [
       { id: '1', status: { type: { state: 'pre' } } },
