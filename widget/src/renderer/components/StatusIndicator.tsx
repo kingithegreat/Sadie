@@ -271,129 +271,111 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         )}
         <style>{`
         .backend-badge {
-          backgroundColor: rgba(255,213,85,0.18);
-          color: #ffd555;
-          padding: 6px 10px;
-          borderRadius: 12px;
-          fontSize: 12px;
-          fontWeight: 600;
-          marginLeft: 8px;
-          WebkitAppRegion: no-drag;
+          background: oklch(85% 0.15 85 / 0.12);
+          color: oklch(85% 0.15 85);
+          padding: 4px 10px;
+          border-radius: 9999px;
+          font-size: 11px;
+          font-weight: 500;
+          margin-left: 8px;
+          -webkit-app-region: no-drag;
           display: inline-flex;
-          gap: 8px;
-          alignItems: center;
-          border: 1px solid rgba(255,213,85,0.4);
+          gap: 6px;
+          align-items: center;
+          border: 1px solid oklch(85% 0.15 85 / 0.2);
         }
         .backend-detail {
-          WebkitAppearance: none;
+          -webkit-appearance: none;
           border: none;
           background: transparent;
-          color: #ffd555;
-          fontSize: 14px;
+          color: oklch(85% 0.15 85);
+          font-size: 14px;
           cursor: pointer;
           padding: 2px 6px;
         }
 
         .backend-retry {
-          WebkitAppearance: none;
+          -webkit-appearance: none;
           border: none;
           background: transparent;
-          color: #ffd555;
-          fontSize: 14px;
+          color: oklch(85% 0.15 85);
+          font-size: 14px;
           cursor: pointer;
           padding: 2px 6px;
         }
 
         .uncensored-toggle {
           display: flex;
-          alignItems: center;
-          gap: 6px;
-          padding: 4px 10px;
-          borderRadius: 12px;
-          background: #2a2a2a;
-          border: 1px solid #444;
+          align-items: center;
+          gap: 5px;
+          padding: 3px 10px;
+          border-radius: 9999px;
+          background: oklch(100% 0 0 / 0.04);
+          border: 1px solid oklch(100% 0 0 / 0.06);
           cursor: pointer;
-          transition: all 150ms ease;
-          WebkitAppRegion: no-drag;
-          fontSize: 11px;
-          color: #888;
+          transition: all 150ms cubic-bezier(0.2, 0, 0, 1);
+          -webkit-app-region: no-drag;
+          font-size: 11px;
+          color: oklch(50% 0 0);
         }
 
         .uncensored-toggle:hover {
-          background: #333;
-          borderColor: #555;
+          background: oklch(100% 0 0 / 0.06);
+          border-color: oklch(100% 0 0 / 0.10);
         }
 
         .uncensored-toggle.active {
-          background: linear-gradient(135deg, #4a1a1a, #1a1a4a);
-          borderColor: #f59e0b;
-          color: #f59e0b;
+          background: oklch(65% 0.2 25 / 0.12);
+          border-color: oklch(65% 0.2 25 / 0.3);
+          color: oklch(75% 0.15 25);
         }
 
         .uncensored-toggle .toggle-icon {
-          fontSize: 14px;
+          font-size: 13px;
         }
 
         .uncensored-toggle .toggle-label {
-          fontWeight: 500;
+          font-weight: 500;
         }
 
         .header-actions {
           display: flex;
-          gap: 8px;
-          WebkitAppRegion: no-drag;
-        }
-
-        .header-btn {
-          width: 32px;
-          height: 32px;
-          border: none;
-          borderRadius: 8px;
-          background: transparent;
-          color: #B4B4B4;
-          cursor: pointer;
-          display: flex;
-          alignItems: center;
-          justifyContent: center;
-          transition: 150ms ease;
-          fontSize: 16px;
-        }
-
-        .header-btn:hover {
-          background: #333333;
-          color: #ECECEC;
+          gap: 4px;
+          -webkit-app-region: no-drag;
         }
 
         .backend-popover {
           position: absolute;
           top: 48px;
           right: 16px;
-          background: #121212;
+          background: oklch(9% 0.005 78 / 0.95);
+          -webkit-backdrop-filter: blur(20px);
+          backdrop-filter: blur(20px);
           padding: 12px;
-          borderRadius: 8px;
-          border: 1px solid rgba(255,213,85,0.12);
-          minWidth: 320px;
-          maxWidth: 520px;
-          maxHeight: 40vh;
+          border-radius: 12px;
+          border: 1px solid oklch(100% 0 0 / 0.08);
+          min-width: 320px;
+          max-width: 520px;
+          max-height: 40vh;
           overflow: auto;
-          zIndex: 9999;
-          boxShadow: 0 8px 24px rgba(0,0,0,0.6);
+          z-index: 9999;
+          box-shadow: 0 8px 32px oklch(0% 0 0 / 0.4);
         }
 
         .backend-popover-text {
-          fontFamily: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
-          fontSize: 12px;
-          color: #EAEAEA;
-          whiteSpace: pre-wrap;
-          wordBreak: break-word;
+          font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 11px;
+          color: oklch(85% 0 0);
+          white-space: pre-wrap;
+          word-break: break-word;
           margin: 0 0 6px 0;
         }
 
         .backend-popover-actions {
           display: flex;
           gap: 8px;
-          justifyContent: flex-end;
-          paddingTop: 6px;
+          justify-content: flex-end;
+          padding-top: 6px;
         }
         `}</style>
       </div>
