@@ -204,6 +204,8 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
       result: {
         message: 'Speaking text',
         voice: currentVoice,
+        engine: 'edge-neural',
+        usedFallback: currentVoice === FALLBACK_VOICE,
         textLength: text.length,
       }
     };
@@ -280,7 +282,7 @@ async function speakFallback(args: any): Promise<ToolResult> {
   `);
 
   return result.success
-    ? { success: true, result: { message: 'Speaking (fallback voice)', voice: result.voice || 'system default', textLength: text.length } }
+    ? { success: true, result: { message: 'Speaking (Web Speech fallback)', voice: result.voice || 'system default', engine: 'web-speech', usedFallback: true, textLength: text.length } }
     : { success: false, error: result.error || 'Speech failed' };
   } catch (err: any) {
     return { success: false, error: `Speech failed: ${err.message}` };

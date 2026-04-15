@@ -122,8 +122,18 @@ describe('speakHandler', () => {
     const res = await speakHandler({ text: 'Fallback test' }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.message).toMatch(/fallback/i);
-    // Confirm it called executeJavaScript for Web Speech API
+    // UI needs to know we degraded
+    expect(res.result.engine).toBe('web-speech');
+    expect(res.result.usedFallback).toBe(true);
     expect(win.webContents.executeJavaScript).toHaveBeenCalled();
+  });
+
+  test('success result reports edge-neural engine and usedFallback flag', async () => {
+    mockGetAllWindows.mockReturnValue([fakeWindow({ success: true })]);
+    const res = await speakHandler({ text: 'Hi' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.engine).toBe('edge-neural');
+    expect(typeof res.result.usedFallback).toBe('boolean');
   });
 
   test('returns failure when both Edge TTS and Web Speech fail', async () => {
