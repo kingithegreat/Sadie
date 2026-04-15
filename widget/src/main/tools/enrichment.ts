@@ -401,6 +401,8 @@ const HIGHLIGHT_BLOCKLIST = [
   /about press|feature\s*&copy/i,
   /subscribe|newsletter|sign up|log in|create account/i,
   /cookie|gdpr|ccpa|consent/i,
+  /Image\s*\d+:/i,   // scraped image alt-text references
+  /Prime Video|Paramount\+|Peacock|fuboTV/i,  // streaming service badges
 ];
 
 function extractHighlights(content: string): string | null {
@@ -412,6 +414,9 @@ function extractHighlights(content: string): string | null {
     // Strip inline image URL fragments (ESPN embeds img=/i/teamlogos/... in text)
     .replace(/img=[^\s)]+/gi, '')
     .replace(/\.png[?&][^\s)]+/gi, '')
+    // Strip "Image N: ..." alt-text leaking from scraped pages
+    .replace(/Image\s*\d+:\s*[^\n•]*?(Logo|Icon|Photo|Banner|Thumbnail)[^\n•]*/gi, '')
+    .replace(/Image\s*\d+:[^\n•]{0,80}/gi, '')
     .replace(/\)[A-Z]{2,3}\s+\d{1,2}-\d{1,2}/g, (m) => m.replace(/^\)/, ''))  // fix ")NY 51-28" → "NY 51-28"
     .replace(/\s+/g, ' ')
     .trim();
