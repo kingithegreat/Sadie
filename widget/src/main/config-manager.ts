@@ -101,6 +101,8 @@ export interface Settings {
   stableHordeApiKey?: string;
   useCustomLLM?: boolean;
   customLLM?: import('../shared/types').CustomLLMConfig;
+  // Active project/workspace directory for dev tools (terminal, grep, tree)
+  projectPath?: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -174,6 +176,13 @@ const DEFAULT_SETTINGS: Settings = {
     kill_process: false,
     // Code execution — dangerous
     run_code: false,
+    // Terminal — requires confirmation per-command
+    run_terminal_command: false,
+    get_terminal_history: true,
+    // Codebase — all read-only, safe
+    grep_code: true,
+    project_tree: true,
+    analyze_file: true,
     // Email — all require confirmation
     email_send: false,
     email_draft: false,

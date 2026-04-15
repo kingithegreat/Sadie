@@ -223,6 +223,18 @@ interface ConversationMessage {
   timestamp: number;
 }
 
+// ── Project path helper for dev tools ──
+// Returns the user-configured project directory (if set), for use as default cwd.
+function getProjectPath(): string | undefined {
+  try {
+    const settings = getSettings();
+    if (settings.projectPath && typeof settings.projectPath === 'string') {
+      return settings.projectPath;
+    }
+  } catch { /* settings unavailable */ }
+  return undefined;
+}
+
 // Store conversation history by conversation_id (limited to last N messages)
 const conversationHistory: Map<string, ConversationMessage[]> = new Map();
 // Rolling text summaries of messages older than MAX_HISTORY_MESSAGES
@@ -1122,6 +1134,50 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'git_diff', arguments: { target: /\bstaged\b/i.test(m) ? 'staged' : 'unstaged' } }] };
   }
 
+  // TERMINAL COMMAND intents — "run npm test", "execute cargo build", "do pip install"
+  {
+    const termMatch = userMessage.match(
+      /\b(?:run|execute|do|try)\s+(?:the\s+)?(?:command\s+)?[`"']?([a-zA-Z][\w\-.]*(?:\s+[\w\-./\\:@=*"'<>|]+){0,15})[`"']?$/i
+    );
+    // Detect common dev commands by tool prefix
+    const isDevCmd = /\b(npm|npx|yarn|pnpm|bun|cargo|pip|pip3|python|python3|node|docker|docker-compose|make|cmake|go|rustc|javac|gradle|mvn|dotnet|flutter|ng|vue|vite|tsc|eslint|prettier|jest|vitest|pytest|mocha|webpack|rollup|esbuild)\s/i.test(m);
+    if (isDevCmd && termMatch) {
+      const cmd = termMatch[1].trim();
+      const projectDir = getProjectPath();
+      return { calls: [{ name: 'run_terminal_command', arguments: { command: cmd, ...(projectDir ? { cwd: projectDir } : {}) } }] };
+    }
+  }
+
+  // PROJECT TREE intent — "show project structure", "list the files", "what's in this project"
+  if (/\b(project|directory|folder)\s*(tree|structure|layout|hierarchy)\b/i.test(m) ||
+      /\bshow\s+(?:me\s+)?(?:the\s+)?(?:project|file|folder|dir)\s*(tree|structure|layout)?\b/i.test(m) ||
+      /\bwhat(?:'?s| is)\s+(?:in\s+)?(?:this|the)\s+project\b/i.test(m)) {
+    const projectDir = getProjectPath();
+    return { calls: [{ name: 'project_tree', arguments: { ...(projectDir ? { directory: projectDir } : {}), max_depth: 4 } }] };
+  }
+
+  // GREP CODE intent — "grep for handleSubmit", "find usages of useState", "search the code for TODO"
+  if (/\bgrep\s+(for\s+|code\s+)?/i.test(m) ||
+      /\bsearch\s+(the\s+)?(code|codebase|source|project|repo)\s+(for\s+)?/i.test(m) ||
+      /\b(find|show)\s+(all\s+)?(usages?|references?|occurrences?|definitions?|imports?\s+of|exports?\s+of)\b/i.test(m) ||
+      /\b(where\s+is|where\s+are|where\s+do)\s+(?:the\s+)?(?:function|class|variable|component|hook)\s/i.test(m)) {
+    const patternMatch = userMessage.match(
+      /(?:grep|search\s+(?:the\s+)?(?:code|codebase|source|project|repo)\s+for|find\s+(?:all\s+)?(?:usages?\s+of|references?\s+to|occurrences?\s+of|definitions?\s+of))\s*[`"']?([^`"'\n]{2,80})[`"']?/i
+    );
+    if (patternMatch) {
+      const projectDir = getProjectPath();
+      return { calls: [{ name: 'grep_code', arguments: { pattern: patternMatch[1].trim(), ...(projectDir ? { directory: projectDir } : {}) } }] };
+    }
+  }
+
+  // ANALYZE FILE intent — "analyze this file", "what's in main.ts", "show me the structure of"
+  if (/\b(analyze|inspect|overview)\s+(?:the\s+)?(?:file|source|module)\b/i.test(m)) {
+    const fileMatch = userMessage.match(/(?:file|source|module)\s+[`"']?([^\s`"']+\.\w{1,5})[`"']?/i);
+    if (fileMatch) {
+      return { calls: [{ name: 'analyze_file', arguments: { file_path: fileMatch[1] } }] };
+    }
+  }
+
   // RUN CODE intent (when code is provided inline)
   if (/\b(run|execute)\s+(?:this\s+)?(?:python|powershell)\b/i.test(m) ||
       (/\b(run|execute)\s+(?:this\s+)?(?:code|script)\b/i.test(m) && /```/.test(userMessage))) {
@@ -1708,6 +1764,8 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(voice|speak|say|whisper|transcribe|speech)\b/.test(m)) cats.add('voice');
   if (/\b(git|commit|diff|branch|status|log)\b/.test(m)) cats.add('utility');
   if (/\b(code|script|python|javascript|run|execute)\b/.test(m)) cats.add('utility');
+  if (/\b(terminal|shell|command|npm|yarn|pip|cargo|docker|make|build|test|lint|deploy)\b/.test(m)) cats.add('utility');
+  if (/\b(grep|search\s+code|find\s+function|project\s+tree|analyze\s+file|codebase)\b/.test(m)) cats.add('utility');
   if (/\b(nba|basketball|football|soccer|baseball|sports?|score|game|match)\b/.test(m)) cats.add('web');
   if (/\b(contact|phone\s*number|address\s*book)\b/.test(m)) cats.add('utility');
   if (/\b(plan|steps|how\s+do|how\s+should)\b/.test(m)) cats.add('utility');

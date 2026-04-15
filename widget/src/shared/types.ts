@@ -166,6 +166,8 @@ export interface Settings {
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
   // Hardware profile for model recommendations
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
+  // Active project/workspace directory for dev tools (terminal, grep, tree)
+  projectPath?: string;
   // Mixture of Agents (MoA) settings
   moaEnabled?: boolean;
   moaProposers?: string[];

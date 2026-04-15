@@ -370,6 +370,12 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `Create spreadsheet "${args.path}" with ${Array.isArray(args.rows) ? args.rows.length : '?'} rows?`;
     case 'create_pdf':
       return `Create PDF "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
+    case 'run_terminal_command':
+      return `Run command:\n$ ${args.command}${args.cwd ? `\nDirectory: ${args.cwd}` : ''}${args.timeout && args.timeout !== 60 ? `\nTimeout: ${args.timeout}s` : ''}`;
+    case 'git_commit':
+      return `Git commit: "${args.message}"${args.repo_path ? `\nRepo: ${args.repo_path}` : ''}`;
+    case 'kill_process':
+      return `Kill process${args.name ? ` "${args.name}"` : ''}${args.pid ? ` (PID ${args.pid})` : ''}${args.force ? ' (force)' : ''}?`;
     default:
       return `Execute ${toolName} with: ${JSON.stringify(args)}?`;
   }
