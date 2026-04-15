@@ -4062,10 +4062,9 @@ body {
   --glow-gold: oklch(80% 0.16 85);
   --glow-purple: oklch(65% 0.2 290);
   --neon-line: linear-gradient(90deg, transparent, var(--glow-cyan), transparent);
-  --scan-speed: 3s;
 }
 
-/* ── Header: animated neon underline ──────────────────────────────────────── */
+/* ── Header: static accent underline ──────────────────────────────────────── */
 .app-header {
   position: relative;
   overflow: hidden;
@@ -4077,44 +4076,21 @@ body {
   left: 0;
   right: 0;
   height: 1px;
-  background: var(--neon-line);
-  animation: headerScan var(--scan-speed) ease-in-out infinite;
-  opacity: 0.7;
-}
-@keyframes headerScan {
-  0%, 100% { transform: translateX(-100%); opacity: 0; }
-  30%, 70% { opacity: 0.7; }
-  50% { transform: translateX(100%); }
+  background: linear-gradient(90deg, transparent 5%, var(--glow-cyan) 35%, var(--glow-gold) 65%, transparent 95%);
+  opacity: 0.25;
 }
 
-/* ── Brand title: subtle glow shimmer ─────────────────────────────────────── */
+/* ── Brand title: accent gradient text ────────────────────────────────────── */
 .app-header h1 {
-  background: linear-gradient(
-    120deg,
-    var(--text-primary) 0%,
-    var(--text-primary) 40%,
-    var(--glow-gold) 50%,
-    var(--text-primary) 60%,
-    var(--text-primary) 100%
-  );
-  background-size: 250% 100%;
+  background: linear-gradient(135deg, var(--text-primary) 30%, var(--glow-gold) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: titleShimmer 6s ease-in-out infinite;
-}
-@keyframes titleShimmer {
-  0%, 100% { background-position: 0% center; }
-  50% { background-position: 100% center; }
 }
 
-/* ── Status dots: breathing glow rings ────────────────────────────────────── */
+/* ── Status dots: subtle static glow ──────────────────────────────────────── */
 .status-dot.connected {
-  animation: connectedGlow 2s ease-in-out infinite;
-}
-@keyframes connectedGlow {
-  0%, 100% { box-shadow: 0 0 4px rgba(74, 222, 128, 0.4); }
-  50% { box-shadow: 0 0 12px rgba(74, 222, 128, 0.7), 0 0 24px rgba(74, 222, 128, 0.2); }
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
 }
 
 /* ── Input box: focus neon glow ───────────────────────────────────────────── */
@@ -4170,77 +4146,7 @@ body {
   }
 }
 
-/* ── Assistant avatar: rotating gradient ring ─────────────────────────────── */
-.message-avatar.assistant {
-  position: relative;
-  overflow: visible;
-}
-.message-avatar.assistant::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    var(--glow-cyan),
-    var(--glow-purple),
-    var(--glow-gold),
-    var(--glow-cyan)
-  );
-  animation: avatarRingSpin 4s linear infinite;
-  z-index: -1;
-  opacity: 0.5;
-}
-@keyframes avatarRingSpin {
-  to { transform: rotate(360deg); }
-}
-
-/* ── User avatar: animated glow ring + entrance ──────────────────────────── */
-.message-avatar.user {
-  animation: userAvatarEntrance 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.message-avatar.user::before {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    oklch(70% 0.2 280),
-    oklch(70% 0.18 250),
-    oklch(70% 0.2 210),
-    oklch(70% 0.18 250),
-    oklch(70% 0.2 280)
-  );
-  z-index: -1;
-  opacity: 0.7;
-  animation: userRingSpin 4s linear infinite;
-}
-.message-avatar.user:hover::before {
-  opacity: 1;
-}
-.message-avatar.user:hover {
-  box-shadow: 0 0 18px oklch(65% 0.22 260 / 0.5), inset 0 1px 0 oklch(90% 0.05 260 / 0.3);
-  transform: scale(1.08);
-}
-@keyframes userAvatarEntrance {
-  0% {
-    opacity: 0;
-    transform: scale(0.5) rotate(-15deg);
-    box-shadow: 0 0 0 0 oklch(65% 0.2 260 / 0.6);
-  }
-  60% {
-    box-shadow: 0 0 0 10px oklch(65% 0.2 260 / 0);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) rotate(0deg);
-    box-shadow: 0 0 10px oklch(65% 0.2 260 / 0.35), inset 0 1px 0 oklch(90% 0.05 260 / 0.25);
-  }
-}
-@keyframes userRingSpin {
-  to { transform: rotate(360deg); }
-}
+/* Avatar spinning rings removed — clean static avatars */
 
 /* ── Streaming indicator: upgraded with glow ──────────────────────────────── */
 .streaming-indicator .dot {
@@ -4268,7 +4174,7 @@ body {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
 }
 
-/* ── Welcome screen: ambient floating particles via gradient ──────────────── */
+/* ── Welcome screen: soft static ambient glow ────────────────────────────── */
 .welcome-container {
   position: relative;
   overflow: hidden;
@@ -4276,39 +4182,27 @@ body {
 .welcome-container::before {
   content: '';
   position: absolute;
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, oklch(60% 0.15 210 / 0.08), transparent 70%);
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, oklch(60% 0.12 210 / 0.06), transparent 70%);
   border-radius: 50%;
-  animation: welcomeFloat1 8s ease-in-out infinite;
-  top: 10%;
-  left: 15%;
+  top: 5%;
+  left: 10%;
   pointer-events: none;
 }
 .welcome-container::after {
   content: '';
   position: absolute;
-  width: 160px;
-  height: 160px;
-  background: radial-gradient(circle, oklch(70% 0.12 85 / 0.06), transparent 70%);
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, oklch(70% 0.10 85 / 0.04), transparent 70%);
   border-radius: 50%;
-  animation: welcomeFloat2 10s ease-in-out infinite;
-  bottom: 15%;
-  right: 20%;
+  bottom: 10%;
+  right: 15%;
   pointer-events: none;
 }
-@keyframes welcomeFloat1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -20px) scale(1.1); }
-  66% { transform: translate(-15px, 15px) scale(0.95); }
-}
-@keyframes welcomeFloat2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  40% { transform: translate(-25px, 20px) scale(1.08); }
-  80% { transform: translate(20px, -10px) scale(0.92); }
-}
 
-/* ── Welcome icon: animated gradient border ───────────────────────────────── */
+/* ── Welcome icon: static accent ring ─────────────────────────────────────── */
 .welcome-icon {
   position: relative;
   overflow: visible;
@@ -4326,11 +4220,7 @@ body {
     var(--glow-gold)
   );
   z-index: -1;
-  animation: welcomeIconSpin 6s linear infinite;
-  opacity: 0.4;
-}
-@keyframes welcomeIconSpin {
-  to { transform: rotate(360deg); }
+  opacity: 0.25;
 }
 
 /* ── Code blocks: top-edge glow line ──────────────────────────────────────── */
@@ -4395,11 +4285,7 @@ body {
   box-shadow: 0 4px 20px oklch(0% 0 0 / 0.2), 0 0 0 1px oklch(60% 0.14 210 / 0.2);
 }
 .model-card.active {
-  animation: activeCardGlow 2.5s ease-in-out infinite;
-}
-@keyframes activeCardGlow {
-  0%, 100% { box-shadow: 0 10px 30px rgba(212, 175, 55, 0.12); }
-  50% { box-shadow: 0 10px 30px rgba(212, 175, 55, 0.25), 0 0 0 1px rgba(212, 175, 55, 0.3); }
+  box-shadow: 0 8px 24px rgba(212, 175, 55, 0.15), 0 0 0 1px rgba(212, 175, 55, 0.25);
 }
 
 /* ── Image previews: hover scale + glow border ────────────────────────────── */
@@ -4409,6 +4295,85 @@ body {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* ── Modern accent: sidebar items hover lift ─────────────────────────────── */
+.conversation-item {
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.conversation-item:hover {
+  background: oklch(100% 0 0 / 0.04);
+  transform: translateX(3px);
+  box-shadow: inset 3px 0 0 var(--glow-gold);
+}
+.conversation-item.active {
+  box-shadow: inset 3px 0 0 var(--glow-cyan);
+  background: oklch(100% 0 0 / 0.06);
+}
+
+/* ── Modern accent: mode buttons active indicator ────────────────────────── */
+.mode-btn.active {
+  position: relative;
+}
+.mode-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--glow-gold), var(--glow-cyan));
+  border-radius: 2px;
+}
+
+/* ── Modern accent: message bubble left-edge accent ──────────────────────── */
+.message-bubble.assistant-message {
+  border-left: 2px solid oklch(60% 0.12 210 / 0.2);
+  transition: border-color 0.2s ease;
+}
+.message-bubble.assistant-message:hover {
+  border-left-color: oklch(65% 0.14 210 / 0.4);
+}
+
+/* ── Modern accent: input textarea refined focus ─────────────────────────── */
+.input-box textarea:focus {
+  caret-color: var(--glow-gold);
+}
+
+/* ── Modern accent: smooth hover transitions on all interactive elements ─── */
+.header-btn,
+.send-button,
+.attach-button,
+.voice-button,
+.mode-btn,
+.density-btn,
+.menu-btn {
+  transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ── Modern accent: tool badge styling ───────────────────────────────────── */
+.tool-badge,
+.tool-tag {
+  border: 1px solid oklch(60% 0.1 210 / 0.15);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.tool-badge:hover,
+.tool-tag:hover {
+  border-color: oklch(65% 0.14 210 / 0.35);
+  background: oklch(60% 0.1 210 / 0.08);
+}
+
+/* ── Modern accent: scrollbar refined ────────────────────────────────────── */
+.messages-container::-webkit-scrollbar {
+  width: 6px;
+}
+.messages-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.messages-container::-webkit-scrollbar-thumb {
+  background: oklch(40% 0 0 / 0.3);
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
 /* ── Reduced motion: respect user preference ──────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -4416,6 +4381,57 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ── Suggested prompts ───────────────────────────────────────────────────── */
+.suggested-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px 12px;
+  animation: msgSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.suggested-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #888);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.suggested-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.suggested-pill {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid oklch(100% 0 0 / 0.08);
+  background: oklch(100% 0 0 / 0.04);
+  color: var(--text-primary, #e5e5e5);
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggested-pill:hover {
+  background: oklch(100% 0 0 / 0.08);
+  border-color: oklch(70% 0.12 210 / 0.3);
+  box-shadow: 0 2px 8px oklch(0% 0 0 / 0.15);
+  transform: translateY(-1px);
+}
+
+.suggested-pill:active {
+  transform: translateY(0) scale(0.97);
 }
 
 /* ── Input character counter ──────────────────────────────────────────────── */
@@ -4571,15 +4587,11 @@ body {
   position: relative;
   border-radius: 16px;
   overflow: hidden;
-  background: oklch(30% 0.04 240 / 0.55);
-  -webkit-backdrop-filter: blur(28px) saturate(1.5) brightness(1.1);
-  backdrop-filter: blur(28px) saturate(1.5) brightness(1.1);
-  border: 1px solid oklch(70% 0.06 240 / 0.2);
+  background: var(--bg-main);
+  border: 1px solid oklch(100% 0 0 / 0.08);
   box-shadow:
-    0 0 0 1px oklch(100% 0 0 / 0.06),
     0 8px 32px oklch(0% 0 0 / 0.35),
-    0 2px 8px oklch(0% 0 0 / 0.2),
-    inset 0 1px 0 oklch(100% 0 0 / 0.08);
+    0 2px 8px oklch(0% 0 0 / 0.2);
 }
 
 /* In widget mode: aggressively hide the full header, sidebar, panels */
@@ -4816,40 +4828,7 @@ body {
   border-radius: 0 0 2px 0;
 }
 
-/* ── Gold glow accent line at top of widget ──────────────────────────────── */
-.widget-mode::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    oklch(70% 0.12 240 / 0.6) 30%,
-    oklch(78% 0.14 240 / 0.8) 50%,
-    oklch(70% 0.12 240 / 0.6) 70%,
-    transparent 100%
-  );
-  z-index: 10;
-  border-radius: 16px 16px 0 0;
-}
-
-/* ── Subtle inner glow for depth ─────────────────────────────────────────── */
-.widget-mode::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 16px;
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse at 30% 0%,
-    oklch(70% 0.12 240 / 0.06) 0%,
-    transparent 50%
-  );
-  z-index: 0;
-}
+/* Gold glow and inner glow removed — clean flat widget */
 
 /* ── Widget status dot (inline with titlebar) ────────────────────────────── */
 .widget-status-dot {

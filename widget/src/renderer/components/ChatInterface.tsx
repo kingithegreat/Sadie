@@ -1,8 +1,9 @@
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { debug as logDebug } from '../../shared/logger';
 import MessageList from './MessageList';
 import { InputBox } from './InputBox';
+import SuggestedPrompts from './SuggestedPrompts';
 import type { ChatMessage } from '../types';
 import type { ImageAttachment as SharedImageAttachment, DocumentAttachment } from '../../shared/types';
 
@@ -22,6 +23,7 @@ interface ChatInterfaceProps {
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onBookmark, onReact, onEdit, systemPrompt, onUpdateSystemPrompt }) => {
   const [guidelinesOpen, setGuidelinesOpen] = useState(false);
   const hasGuidelines = !!(systemPrompt && systemPrompt.trim());
+  const inputBoxRef = useRef<{ setInput: (text: string) => void }>(null);
 
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';
@@ -29,12 +31,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
     try { (window as any).sadieCapture?.log(`[Renderer] sendMessage invoked msg=${text.substring(0,120)}`); } catch (e) {}
     onSendMessage(content, images, documents);
   };
+
+  const handleSuggestedSelect = (prompt: string) => {
+    // Send the suggested prompt directly
+    onSendMessage(prompt);
+  };
   return (
     <div className="chat-interface">
       {/* Scrollable message list */}
       <div className="messages-container">
         <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} onBookmark={onBookmark} onReact={onReact} onEdit={onEdit} />
       </div>
+
+      {/* Suggested prompts when chat is empty */}
+      {messages.length === 0 && (
+        <SuggestedPrompts onSelect={handleSuggestedSelect} />
+      )}
 
       {/* Fixed input box at bottom */}
       <div className="input-container">
