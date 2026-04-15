@@ -435,6 +435,51 @@ function linkifyText(text: string): React.ReactNode[] {
   return parts.length > 0 ? parts : [text];
 }
 
+/** Inline button that starts Ollama (`ollama serve`) via IPC. */
+function StartOllamaButton() {
+  const [starting, setStarting] = useState(false);
+  const [result, setResult] = useState<'idle' | 'done' | 'failed'>('idle');
+  const [errMsg, setErrMsg] = useState('');
+
+  const handleStart = async () => {
+    setStarting(true);
+    setResult('idle');
+    setErrMsg('');
+    try {
+      const res = await window.electron?.startOllama?.();
+      if (res?.success) setResult('done');
+      else { setResult('failed'); setErrMsg(res?.error || 'Failed to start Ollama'); }
+    } catch (e: any) {
+      setResult('failed');
+      setErrMsg(e?.message || 'Failed to start Ollama');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  if (result === 'done') {
+    return <span style={{ color: 'var(--accent-color, #00d4ff)', fontSize: '12px', fontWeight: 600 }}>✓ Ollama running — click Retry</span>;
+  }
+
+  return (
+    <>
+      <button
+        className="message-action-btn"
+        onClick={handleStart}
+        disabled={starting}
+        style={{ padding: '4px 12px' }}
+      >
+        {starting ? 'Starting Ollama...' : '▶ Start Ollama'}
+      </button>
+      {result === 'failed' && errMsg && (
+        <span style={{ color: 'var(--warning-color, #f59e0b)', fontSize: '11px', marginLeft: '4px', alignSelf: 'center' }}>
+          {errMsg}
+        </span>
+      )}
+    </>
+  );
+}
+
 /** Inline button that triggers `ollama pull <model>` via IPC. */
 function PullModelButton({ model }: { model: string }) {
   const [pulling, setPulling] = useState(false);
@@ -735,6 +780,9 @@ export function MessageBubble({
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           {message.recoveryHint.action === 'pull-model' && message.recoveryHint.model && (
                             <PullModelButton model={message.recoveryHint.model} />
+                          )}
+                          {message.recoveryHint.action === 'start-ollama' && (
+                            <StartOllamaButton />
                           )}
                           <button
                             className="message-action-btn"

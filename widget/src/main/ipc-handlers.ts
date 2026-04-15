@@ -570,6 +570,50 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Start Ollama (`ollama serve`) detached. Best-effort: succeeds if already
+  // running, or if `ollama` is on PATH; returns a clear error otherwise so the
+  // UI can tell the user to install/run it manually.
+  ipcMain.handle('sadie:start-ollama', async () => {
+    const settings = getSettings();
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+
+    // Already running? Don't spawn a duplicate.
+    try {
+      await axios.get(`${ollamaBase}/api/tags`, { timeout: 2000 });
+      return { success: true, alreadyRunning: true };
+    } catch { /* not running — proceed */ }
+
+    try {
+      const { spawn } = require('child_process');
+      const cmd = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
+      const child = spawn(cmd, ['serve'], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.on('error', safeCatch);
+      child.unref();
+
+      // Poll for readiness (up to ~8s) so the UI can flip from "offline" to "ready"
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          await axios.get(`${ollamaBase}/api/tags`, { timeout: 1500 });
+          return { success: true, alreadyRunning: false };
+        } catch { /* keep polling */ }
+      }
+      return { success: false, error: 'Ollama did not become ready within 8s. Check the terminal for errors.' };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.code === 'ENOENT'
+          ? 'Ollama is not installed or not on PATH. Install it from https://ollama.com/download.'
+          : String(err?.message || err),
+      };
+    }
+  });
+
   // Read telemetry consent log (JSONL) for UI display
   ipcMain.handle('sadie:read-consent-log', async () => {
     try {

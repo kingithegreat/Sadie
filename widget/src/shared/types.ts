@@ -341,6 +341,14 @@ export interface ElectronAPI {
     error?: string;
   }>;
 
+  // Attempt to start Ollama (`ollama serve`) detached. Resolves once the
+  // server responds on /api/tags, or with an error if it can't be launched.
+  startOllama?: () => Promise<{
+    success: boolean;
+    alreadyRunning?: boolean;
+    error?: string;
+  }>;
+
   // List installed Ollama models
   listOllamaModels?: () => Promise<{
     success: boolean;
