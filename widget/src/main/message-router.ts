@@ -224,7 +224,11 @@ interface ConversationMessage {
 }
 
 // ── Project path helper for dev tools ──
-// Returns the user-configured project directory (if set), for use as default cwd.
+// Priority: 1) user-configured projectPath, 2) auto-detected from cwd.
+const PROJECT_MARKERS = ['package.json', 'Cargo.toml', 'pyproject.toml', 'go.mod', 'pom.xml',
+  'build.gradle', 'Makefile', 'CMakeLists.txt', '.git', 'requirements.txt', 'setup.py',
+  'composer.json', 'Gemfile', 'pubspec.yaml', '*.sln', 'deno.json'];
+
 function getProjectPath(): string | undefined {
   try {
     const settings = getSettings();
@@ -232,7 +236,43 @@ function getProjectPath(): string | undefined {
       return settings.projectPath;
     }
   } catch { /* settings unavailable */ }
+  // Auto-detect: walk up from cwd looking for project markers
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    let dir = process.cwd();
+    const home = require('os').homedir();
+    for (let depth = 0; depth < 8; depth++) {
+      for (const marker of PROJECT_MARKERS) {
+        if (marker.startsWith('*')) continue; // glob markers need readdir
+        if (fs.existsSync(path.join(dir, marker))) return dir;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir || !parent.toLowerCase().startsWith(home.toLowerCase())) break;
+      dir = parent;
+    }
+  } catch { /* auto-detect failed */ }
   return undefined;
+}
+
+function setProjectPath(projectPath: string): string {
+  const fs = require('fs');
+  const path = require('path');
+  const resolved = path.resolve(projectPath);
+  const home = require('os').homedir();
+  if (!resolved.toLowerCase().startsWith(home.toLowerCase())) {
+    return `Project path must be inside your home directory (${home}).`;
+  }
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    return `Directory not found: ${resolved}`;
+  }
+  try {
+    const settings = getSettings();
+    saveSettings({ ...settings, projectPath: resolved });
+    return `Project set to **${resolved}**. Terminal commands, grep, and tree will use this as the default directory.`;
+  } catch (err: any) {
+    return `Failed to save project path: ${err.message}`;
+  }
 }
 
 // Store conversation history by conversation_id (limited to last N messages)
@@ -1134,6 +1174,19 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'git_diff', arguments: { target: /\bstaged\b/i.test(m) ? 'staged' : 'unstaged' } }] };
   }
 
+  // SET PROJECT intent — "set project to /path", "use /path as project", "open project /path"
+  {
+    const projectMatch = userMessage.match(
+      /(?:set|change|switch|use)\s+(?:the\s+)?(?:project|workspace|working\s+dir(?:ectory)?)\s+(?:to|as|path)?\s*[`"']?([^\s`"'][^`"']*?)[`"']?\s*$/i
+    ) || userMessage.match(
+      /(?:open|load)\s+(?:the\s+)?project\s+(?:at\s+|in\s+)?[`"']?([^\s`"'][^`"']*?)[`"']?\s*$/i
+    );
+    if (projectMatch) {
+      const result = setProjectPath(projectMatch[1].trim());
+      return { calls: [{ name: '__canned', arguments: { response: result } }] };
+    }
+  }
+
   // TERMINAL COMMAND intents — "run npm test", "execute cargo build", "do pip install"
   {
     const termMatch = userMessage.match(
@@ -1812,6 +1865,16 @@ export function handleSlashCommand(input: string, conversationId: string, modelN
     conversationHistory.set(conversationId, []);
     conversationDigest.set(conversationId, '');
     return '🔄 Conversation reset. History and digest cleared.';
+  }
+
+  // /project <path> — set active project directory
+  if (cmd.startsWith('/project')) {
+    const arg = input.trim().slice('/project'.length).trim();
+    if (!arg) {
+      const current = getProjectPath();
+      return current ? `📂 Current project: **${current}**\nUse \`/project <path>\` to change it.` : '📂 No project set. Use `/project <path>` to set one.';
+    }
+    return setProjectPath(arg);
   }
 
   return null; // Not a recognized slash command

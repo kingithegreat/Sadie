@@ -137,6 +137,7 @@ const DEFAULT_SETTINGS: Settings = {
     parse_document_from_path: true,
     // File system — dangerous: disabled by default
     write_file: false,
+    edit_file: false,
     delete_file: false,
     move_file: false,
     // System controls
@@ -176,8 +177,8 @@ const DEFAULT_SETTINGS: Settings = {
     kill_process: false,
     // Code execution — dangerous
     run_code: false,
-    // Terminal — requires confirmation per-command
-    run_terminal_command: false,
+    // Terminal — confirmation dialog gates every command; permission allows reaching that dialog
+    run_terminal_command: true,
     get_terminal_history: true,
     // Codebase — all read-only, safe
     grep_code: true,

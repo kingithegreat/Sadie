@@ -370,6 +370,8 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `Create spreadsheet "${args.path}" with ${Array.isArray(args.rows) ? args.rows.length : '?'} rows?`;
     case 'create_pdf':
       return `Create PDF "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
+    case 'edit_file':
+      return `Edit file "${args.path}":\nReplace: "${String(args.old_string || '').slice(0, 100)}${String(args.old_string || '').length > 100 ? '...' : ''}"\nWith: "${String(args.new_string || '').slice(0, 100)}${String(args.new_string || '').length > 100 ? '...' : ''}"${args.replace_all ? ' (all occurrences)' : ''}`;
     case 'run_terminal_command':
       return `Run command:\n$ ${args.command}${args.cwd ? `\nDirectory: ${args.cwd}` : ''}${args.timeout && args.timeout !== 60 ? `\nTimeout: ${args.timeout}s` : ''}`;
     case 'git_commit':

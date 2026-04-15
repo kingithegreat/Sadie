@@ -34,7 +34,7 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /del\s+\/[sfq]\s+[a-z]:\\/i,                             // del /s /f C:\
   /mkfs\b/i,                                                // mkfs (Linux format)
   /dd\s+.*of=\/dev\/sd/i,                                   // dd of=/dev/sda
-  /:(){ :\|:& };:/,                                         // fork bomb
+  /:\(\)\{[^}]*:\|:&\s*\};:/,                                // fork bomb
   />\s*\/dev\/sda/,                                         // > /dev/sda
   /shutdown\s|reboot\s/i,                                   // shutdown / reboot
   /reg\s+delete\s+hk/i,                                    // registry delete

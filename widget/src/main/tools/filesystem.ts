@@ -1092,6 +1092,109 @@ export const searchFilesHandler: ToolHandler = async (args, _context): Promise<T
   };
 };
 
+// ============= EDIT FILE (find-and-replace) =============
+
+export const editFileDef: ToolDefinition = {
+  name: 'edit_file',
+  description:
+    'Edit a file by replacing a specific text block with new content. ' +
+    'Use this instead of write_file when you only need to change part of a file. ' +
+    'Provide the exact text to find (old_string) and what to replace it with (new_string). ' +
+    'The old_string must match EXACTLY (including whitespace and indentation).',
+  category: 'filesystem',
+  requiresConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'The file path to edit'
+      },
+      old_string: {
+        type: 'string',
+        description: 'The exact text to find in the file (must be unique within the file)'
+      },
+      new_string: {
+        type: 'string',
+        description: 'The replacement text'
+      },
+      replace_all: {
+        type: 'boolean',
+        description: 'Replace all occurrences (default: false — only first match)',
+        default: false
+      }
+    },
+    required: ['path', 'old_string', 'new_string']
+  }
+};
+
+export const editFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
+  const filePath = expandPath(String(args.path || ''));
+  const validation = validatePath(filePath);
+  if (!validation.valid) return { success: false, error: validation.error };
+
+  const oldString = String(args.old_string || '');
+  const newString = String(args.new_string || '');
+  const replaceAll = args.replace_all === true;
+
+  if (!oldString) return { success: false, error: 'old_string is required' };
+  if (oldString === newString) return { success: false, error: 'old_string and new_string are identical' };
+
+  try {
+    const fullPath = validation.resolved!;
+    if (!fs.existsSync(fullPath)) {
+      return { success: false, error: `File not found: ${fullPath}` };
+    }
+
+    const content = await fsPromises.readFile(fullPath, 'utf-8');
+
+    if (!content.includes(oldString)) {
+      // Try to help: show nearby lines
+      const lines = content.split('\n');
+      const firstWord = oldString.trim().split(/\s+/)[0];
+      const nearMatches = lines
+        .map((l, i) => ({ line: i + 1, text: l }))
+        .filter(l => l.text.includes(firstWord))
+        .slice(0, 3);
+      const hint = nearMatches.length > 0
+        ? ` Nearby lines containing "${firstWord}": ${nearMatches.map(m => `line ${m.line}: "${m.text.trim().slice(0, 80)}"`).join(', ')}`
+        : '';
+      return { success: false, error: `old_string not found in file.${hint}` };
+    }
+
+    // Check uniqueness (unless replace_all)
+    if (!replaceAll) {
+      const count = content.split(oldString).length - 1;
+      if (count > 1) {
+        return {
+          success: false,
+          error: `old_string appears ${count} times in the file. Provide more context to make it unique, or set replace_all: true.`
+        };
+      }
+    }
+
+    const updated = replaceAll
+      ? content.split(oldString).join(newString)
+      : content.replace(oldString, newString);
+
+    await fsPromises.writeFile(fullPath, updated, 'utf-8');
+
+    const replacements = replaceAll ? content.split(oldString).length - 1 : 1;
+    return {
+      success: true,
+      result: {
+        path: fullPath,
+        replacements,
+        old_length: oldString.length,
+        new_length: newString.length,
+        file_lines: updated.split('\n').length
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: `edit_file failed: ${err.message}` };
+  }
+};
+
 export const fileSystemTools = {
   list_directory: { definition: listDirectoryDef, handler: listDirectoryHandler },
   read_file: { definition: readFileDef, handler: readFileHandler },
@@ -1101,6 +1204,7 @@ export const fileSystemTools = {
   copy_file: { definition: copyFileDef, handler: copyFileHandler },
   delete_file: { definition: deleteFileDef, handler: deleteFileHandler },
   write_file: { definition: writeFileDef, handler: writeFileHandler },
+  edit_file: { definition: editFileDef, handler: editFileHandler },
   create_docx: { definition: createDocxDef, handler: createDocxHandler },
   create_spreadsheet: { definition: createSpreadsheetDef, handler: createSpreadsheetHandler },
   create_pdf: { definition: createPdfDef, handler: createPdfHandler },
