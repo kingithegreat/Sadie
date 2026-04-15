@@ -88,4 +88,72 @@ export function logTelemetryEvent(event: string, details: Record<string, any> = 
   }
 }
 
-export default { initLogging, logStartup, logError, logTelemetryEvent };
+/**
+ * Read and aggregate tool_call telemetry events. Returns per-tool counts,
+ * error-type breakdown, and p50/p95 latencies — enough for an ops dashboard.
+ * Keeps no PII: only tool names, outcomes, durations, error categories.
+ */
+export function readToolCallAggregates(): {
+  totalCalls: number;
+  successRate: number;
+  perTool: Record<string, {
+    count: number;
+    success: number;
+    errors: number;
+    cancelled: number;
+    p50_ms: number;
+    p95_ms: number;
+    errorTypes: Record<string, number>;
+  }>;
+} {
+  const empty = { totalCalls: 0, successRate: 0, perTool: {} as any };
+  try {
+    const LOG_DIR = getLogDir();
+    const EVENT_LOG = path.join(LOG_DIR, 'telemetry-events.log');
+    if (!fs.existsSync(EVENT_LOG)) return empty;
+    const lines = fs.readFileSync(EVENT_LOG, 'utf-8').trim().split('\n').filter(Boolean);
+    const perTool: Record<string, any> = {};
+    let totalCalls = 0;
+    let totalSuccess = 0;
+    for (const line of lines) {
+      let evt: any;
+      try { evt = JSON.parse(line); } catch { continue; }
+      if (evt?.event !== 'tool_call') continue;
+      const d = evt.details || {};
+      const tool = d.tool || 'unknown';
+      const outcome = d.outcome || 'unknown';
+      const dur = typeof d.duration_ms === 'number' ? d.duration_ms : 0;
+      if (!perTool[tool]) {
+        perTool[tool] = { count: 0, success: 0, errors: 0, cancelled: 0, durations: [], errorTypes: {} };
+      }
+      const t = perTool[tool];
+      t.count++;
+      totalCalls++;
+      if (outcome === 'success') { t.success++; totalSuccess++; }
+      else if (outcome === 'cancelled') t.cancelled++;
+      else { t.errors++; const et = d.error_type || 'other'; t.errorTypes[et] = (t.errorTypes[et] || 0) + 1; }
+      if (dur > 0) t.durations.push(dur);
+    }
+    // Finalize with percentiles
+    for (const tool of Object.keys(perTool)) {
+      const t = perTool[tool];
+      const sorted = t.durations.sort((a: number, b: number) => a - b);
+      const p = (q: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : 0;
+      perTool[tool] = {
+        count: t.count,
+        success: t.success,
+        errors: t.errors,
+        cancelled: t.cancelled,
+        p50_ms: p(0.5),
+        p95_ms: p(0.95),
+        errorTypes: t.errorTypes,
+      };
+    }
+    const successRate = totalCalls > 0 ? totalSuccess / totalCalls : 0;
+    return { totalCalls, successRate, perTool };
+  } catch {
+    return empty;
+  }
+}
+
+export default { initLogging, logStartup, logError, logTelemetryEvent, readToolCallAggregates };

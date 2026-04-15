@@ -47,6 +47,19 @@ import { visionToolDefs, visionToolHandlers } from './vision';
 import { terminalToolDefs, terminalToolHandlers } from './terminal';
 import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
+import { logTelemetryEvent } from '../utils/logger';
+
+/** Classify a tool error into a coarse category for metrics aggregation */
+function classifyToolError(err: unknown): string {
+  const msg = (err instanceof Error ? err.message : String(err || '')).toLowerCase();
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'timeout';
+  if (msg.includes('permission') || msg.includes('denied') || msg.includes('eacces')) return 'permission';
+  if (msg.includes('enoent') || msg.includes('not found')) return 'not_found';
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('econnrefused') || msg.includes('enotfound')) return 'network';
+  if (msg.includes('parse') || msg.includes('json') || msg.includes('invalid')) return 'parse';
+  if (msg.includes('cancel')) return 'cancelled';
+  return 'other';
+}
 
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
@@ -224,9 +237,10 @@ export async function executeTool(
     const confirmMessage = formatConfirmationMessage(call.name, call.arguments);
     console.log(`[SADIE Tools] Requesting confirmation: ${confirmMessage}`);
     const confirmed = await context.requestConfirmation(confirmMessage);
-    
+
     if (!confirmed) {
       console.log(`[SADIE Tools] User cancelled operation`);
+      try { logTelemetryEvent('tool_call', { tool: call.name, outcome: 'cancelled', duration_ms: 0 }); } catch (_e) {}
       return {
         success: false,
         error: 'Operation cancelled by user'
@@ -234,13 +248,32 @@ export async function executeTool(
     }
     console.log(`[SADIE Tools] User confirmed operation`);
   }
-  
+
+  const startedAt = Date.now();
   try {
     const result = await tool.handler(call.arguments, context);
+    const duration_ms = Date.now() - startedAt;
     console.log(`[SADIE Tools] Result:`, result.success ? 'success' : result.error);
+    try {
+      logTelemetryEvent('tool_call', {
+        tool: call.name,
+        outcome: result.success ? 'success' : 'handler_error',
+        duration_ms,
+        error_type: result.success ? undefined : classifyToolError(result.error),
+      });
+    } catch (_e) {}
     return result;
   } catch (err: any) {
+    const duration_ms = Date.now() - startedAt;
     console.error(`[SADIE Tools] Error executing ${call.name}:`, err);
+    try {
+      logTelemetryEvent('tool_call', {
+        tool: call.name,
+        outcome: 'threw',
+        duration_ms,
+        error_type: classifyToolError(err),
+      });
+    } catch (_e) {}
     return {
       success: false,
       error: `Tool execution failed: ${err.message}`

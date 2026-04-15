@@ -11,6 +11,7 @@ import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { logTelemetryEvent } from '../utils/logger';
 
 // ── Preferred voice ──────────────────────────────────────────────────────────
 // Microsoft Ava is the newest, most natural US female neural voice (2024+).
@@ -45,13 +46,16 @@ async function getTTS(voice?: string): Promise<MsEdgeTTS> {
       ttsInstance = inst;
       currentVoice = targetVoice;
       console.log(`[SADIE Voice] Edge TTS initialized with ${targetVoice}`);
+      try { logTelemetryEvent('tts_voice_init', { voice: targetVoice, outcome: 'success' }); } catch (_e) {}
     } catch (err: any) {
       console.warn(`[SADIE Voice] Edge TTS voice ${targetVoice} failed:`, err?.message || err);
+      try { logTelemetryEvent('tts_voice_init', { voice: targetVoice, outcome: 'failed', error: err?.message || String(err) }); } catch (_e) {}
       if (targetVoice !== FALLBACK_VOICE) {
         await inst.setMetadata(FALLBACK_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
         ttsInstance = inst;
         currentVoice = FALLBACK_VOICE;
         console.log(`[SADIE Voice] Edge TTS fell back to ${FALLBACK_VOICE}`);
+        try { logTelemetryEvent('tts_voice_init', { voice: FALLBACK_VOICE, outcome: 'fallback_success' }); } catch (_e) {}
       } else {
         throw new Error('No Edge TTS voice available');
       }
@@ -206,6 +210,7 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
   } catch (err: any) {
     // Fallback to Web Speech API if Edge TTS fails
     console.error('[SADIE Voice] Edge TTS failed, falling back to Web Speech API:', err.message);
+    try { logTelemetryEvent('tts_fallback', { from: 'edge', to: 'web_speech', error: err?.message || String(err) }); } catch (_e) {}
     return speakFallback(args);
   }
 };

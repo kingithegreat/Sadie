@@ -40,7 +40,7 @@ import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { sadieWebhookHeaders } from './webhook-auth';
-import { logTelemetryEvent } from './utils/logger';
+import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 
 
 /**
@@ -623,6 +623,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
       const conversationCount = ids.length;
       const avg = conversationCount > 0 ? Math.round(totalMessages / conversationCount) : 0;
+      const toolCallStats = readToolCallAggregates();
       return {
         success: true,
         summary: {
@@ -630,6 +631,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
           totalMessages,
           avgMessagesPerConversation: avg,
           oldestConversation: oldest,
+          toolCallStats,
         },
       };
     } catch (err: any) {
