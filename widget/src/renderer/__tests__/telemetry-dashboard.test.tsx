@@ -258,3 +258,97 @@ describe('TelemetryDashboard — API edge cases', () => {
     expect(readTelemetryEvents).not.toHaveBeenCalled();
   });
 });
+
+// ── Tools tab ──────────────────────────────────────────────────────────────
+
+describe('TelemetryDashboard — tools tab', () => {
+  const toolCallStats = {
+    totalCalls: 42,
+    successRate: 0.905,
+    perTool: {
+      read_file: { count: 20, success: 19, errors: 1, cancelled: 0, p50_ms: 12, p95_ms: 45, errorTypes: { permission: 1 } },
+      web_search: { count: 22, success: 19, errors: 2, cancelled: 1, p50_ms: 300, p95_ms: 1200, errorTypes: { network: 1, timeout: 1 } },
+    },
+  };
+
+  function setupWithToolStats() {
+    return setup({
+      readTelemetryEvents: jest.fn().mockResolvedValue({ success: true, events: [] }),
+      getAnalyticsSummary: jest.fn().mockResolvedValue({
+        success: true,
+        summary: {
+          conversationCount: 5,
+          totalMessages: 30,
+          avgMessagesPerConversation: 6,
+          oldestConversation: null,
+          toolCallStats,
+        },
+      }),
+    });
+  }
+
+  test('renders Tools tab button', async () => {
+    setupWithToolStats();
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    expect(screen.getByText('Tools')).toBeInTheDocument();
+  });
+
+  test('shows total calls and success rate when Tools tab is active', async () => {
+    setupWithToolStats();
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Tools'));
+    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(screen.getByText('90.5%')).toBeInTheDocument();
+  });
+
+  test('renders per-tool table with tool names', async () => {
+    setupWithToolStats();
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Tools'));
+    expect(screen.getByText('read_file')).toBeInTheDocument();
+    expect(screen.getByText('web_search')).toBeInTheDocument();
+  });
+
+  test('shows p50 and p95 latencies', async () => {
+    setupWithToolStats();
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Tools'));
+    expect(screen.getByText('12ms')).toBeInTheDocument();
+    expect(screen.getByText('1200ms')).toBeInTheDocument();
+  });
+
+  test('shows error type breakdown', async () => {
+    setupWithToolStats();
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Tools'));
+    expect(screen.getByText(/network:1/)).toBeInTheDocument();
+    expect(screen.getByText(/timeout:1/)).toBeInTheDocument();
+  });
+
+  test('shows empty state when no tool calls exist', async () => {
+    setup({
+      getAnalyticsSummary: jest.fn().mockResolvedValue({
+        success: true,
+        summary: {
+          conversationCount: 0, totalMessages: 0, avgMessagesPerConversation: 0, oldestConversation: null,
+          toolCallStats: { totalCalls: 0, successRate: 0, perTool: {} },
+        },
+      }),
+    });
+    await act(async () => {
+      render(<TelemetryDashboard open={true} onClose={jest.fn()} />);
+    });
+    fireEvent.click(screen.getByText('Tools'));
+    expect(screen.getByText(/no tool calls recorded/i)).toBeInTheDocument();
+  });
+});

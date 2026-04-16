@@ -1,12 +1,29 @@
 import { useEffect, useState, useMemo } from 'react';
 
-type Tab = 'overview' | 'events' | 'conversations';
+type Tab = 'overview' | 'tools' | 'events' | 'conversations';
+
+interface PerToolStats {
+  count: number;
+  success: number;
+  errors: number;
+  cancelled: number;
+  p50_ms: number;
+  p95_ms: number;
+  errorTypes: Record<string, number>;
+}
+
+interface ToolCallStats {
+  totalCalls: number;
+  successRate: number;
+  perTool: Record<string, PerToolStats>;
+}
 
 interface AnalyticsSummary {
   conversationCount: number;
   totalMessages: number;
   avgMessagesPerConversation: number;
   oldestConversation: string | null;
+  toolCallStats?: ToolCallStats;
 }
 
 export default function TelemetryDashboard({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -107,6 +124,7 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
         {/* Tabs */}
         <div className="px-4 pt-2 border-b border-zinc-800 flex gap-1" style={{ flexShrink: 0 }}>
           <button className={tabStyle('overview')} onClick={() => setTab('overview')}>Overview</button>
+          <button className={tabStyle('tools')} onClick={() => setTab('tools')}>Tools</button>
           <button className={tabStyle('events')} onClick={() => setTab('events')}>Events</button>
           <button className={tabStyle('conversations')} onClick={() => setTab('conversations')}>Conversations</button>
         </div>
@@ -194,6 +212,73 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
                     ))}
                   </div>
                 </div>
+              )}
+            </>
+          )}
+
+          {!loading && !error && tab === 'tools' && (
+            <>
+              {summary?.toolCallStats && summary.toolCallStats.totalCalls > 0 ? (
+                <>
+                  <div className="mb-4 grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-zinc-800 rounded">
+                      <div className="text-sm text-zinc-400">Total tool calls</div>
+                      <div className="text-2xl font-semibold">{summary.toolCallStats.totalCalls}</div>
+                    </div>
+                    <div className="p-3 bg-zinc-800 rounded">
+                      <div className="text-sm text-zinc-400">Overall success rate</div>
+                      <div className="text-2xl font-semibold">
+                        {(summary.toolCallStats.successRate * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-sm text-zinc-400 mb-2">Per-tool breakdown</div>
+                  <div className="rounded border border-zinc-800 overflow-hidden" data-testid="tool-aggregates-table">
+                    <table className="w-full text-sm">
+                      <thead className="bg-zinc-800 text-zinc-400">
+                        <tr>
+                          <th className="text-left px-3 py-2">Tool</th>
+                          <th className="text-right px-3 py-2">Calls</th>
+                          <th className="text-right px-3 py-2">Success</th>
+                          <th className="text-right px-3 py-2">Errors</th>
+                          <th className="text-right px-3 py-2">Cancelled</th>
+                          <th className="text-right px-3 py-2">p50</th>
+                          <th className="text-right px-3 py-2">p95</th>
+                          <th className="text-left px-3 py-2">Error types</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(summary.toolCallStats.perTool)
+                          .sort((a, b) => b[1].count - a[1].count)
+                          .map(([name, t]) => {
+                            const rate = t.count > 0 ? t.success / t.count : 0;
+                            const rateColor = rate >= 0.95 ? 'text-emerald-400' : rate >= 0.8 ? 'text-yellow-400' : 'text-red-400';
+                            const errList = Object.entries(t.errorTypes || {})
+                              .sort((a, b) => b[1] - a[1])
+                              .map(([k, v]) => `${k}:${v}`)
+                              .join(', ');
+                            return (
+                              <tr key={name} className="border-t border-zinc-800">
+                                <td className="px-3 py-2 text-zinc-200 truncate" title={name}>{name}</td>
+                                <td className="px-3 py-2 text-right">{t.count}</td>
+                                <td className={`px-3 py-2 text-right ${rateColor}`}>
+                                  {t.success} ({(rate * 100).toFixed(0)}%)
+                                </td>
+                                <td className="px-3 py-2 text-right">{t.errors}</td>
+                                <td className="px-3 py-2 text-right text-zinc-400">{t.cancelled}</td>
+                                <td className="px-3 py-2 text-right text-zinc-400">{t.p50_ms}ms</td>
+                                <td className="px-3 py-2 text-right text-zinc-400">{t.p95_ms}ms</td>
+                                <td className="px-3 py-2 text-xs text-zinc-500 truncate" title={errList}>{errList || '—'}</td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="text-zinc-500">No tool calls recorded yet. Run some queries and come back.</div>
               )}
             </>
           )}
