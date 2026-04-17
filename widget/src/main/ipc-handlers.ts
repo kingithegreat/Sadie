@@ -10,6 +10,15 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { spawn, execFile } from 'child_process';
 
+// ── Timeout constants (ms) ─────────────────────────────────────────────────
+const HEALTH_CHECK_TIMEOUT = 2000;
+const OLLAMA_OP_TIMEOUT = 30_000;
+const OLLAMA_PULL_TIMEOUT = 600_000;
+const IMAGE_GEN_TIMEOUT = 120_000;
+const WEBHOOK_TIMEOUT = 600_000;
+const SPEECH_RECOGNITION_TIMEOUT = 20_000;
+const OLLAMA_READY_POLL_TIMEOUT = 1500;
+
 import {
   getSettings, 
   saveSettings, 
@@ -76,7 +85,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const n8nHealth = `${n8nBase.replace(/\/$/, '')}/healthz`;
       const result = { n8n: 'checking', ollama: 'checking', lastChecked: new Date().toISOString() } as any;
       try {
-        const r = await axios.get(n8nHealth, { timeout: 2000 });
+        const r = await axios.get(n8nHealth, { timeout: HEALTH_CHECK_TIMEOUT });
         if (r && r.status && r.status >= 200 && r.status < 300) result.n8n = 'online';
         else result.n8n = 'offline';
       } catch (e) {
@@ -87,7 +96,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         // Ollama may not expose /healthz; a simple GET on base URL will suffice for a quick check
         const settings = getSettings();
         const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || DEFAULT_OLLAMA_URL).trim();
-        const r2 = await axios.get(ollamaBase, { timeout: 2000 });
+        const r2 = await axios.get(ollamaBase, { timeout: HEALTH_CHECK_TIMEOUT });
         result.ollama = (r2 && r2.status && r2.status >= 200 && r2.status < 500) ? 'online' : 'offline';
       } catch (e) {
         result.ollama = 'offline';
@@ -174,7 +183,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         message: message,
         timestamp: new Date().toISOString()
       }, {
-        timeout: 30000,
+        timeout: OLLAMA_OP_TIMEOUT,
         headers: sadieWebhookHeaders()
       });
 
@@ -227,7 +236,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const settings = getSettings();
       const url = `${settings.n8nUrl}/webhook/sadie/image-generate`;
       console.log('[Main] Image generate via n8n ->', { url, action });
-      const response = await axios.post(url, { action, payload }, { timeout: 600000, headers: sadieWebhookHeaders() });
+      const response = await axios.post(url, { action, payload }, { timeout: WEBHOOK_TIMEOUT, headers: sadieWebhookHeaders() });
       if (response.data?.status === 'success') return response.data;
       console.log('[Main] n8n image generate returned non-success, trying direct backends');
     } catch (err: any) {
@@ -242,7 +251,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         prompt, steps, width, height,
         cfg_scale: payload?.cfg_scale || 7,
         sampler_name: payload?.sampler || 'Euler a',
-      }, { timeout: 120000 });
+      }, { timeout: IMAGE_GEN_TIMEOUT });
       if (r.data?.images?.[0]) {
         let seed = null;
         try { seed = JSON.parse(r.data.info || '{}').seed; } catch {}
@@ -255,7 +264,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     // Attempt 3: ComfyUI
     const comfy = process.env.COMFY_ENDPOINT || 'http://127.0.0.1:8188';
     try {
-      const r = await axios.post(`${comfy.replace(/\/$/, '')}/api/generate`, { prompt, steps, width, height }, { timeout: 120000 });
+      const r = await axios.post(`${comfy.replace(/\/$/, '')}/api/generate`, { prompt, steps, width, height }, { timeout: IMAGE_GEN_TIMEOUT });
       const b64 = r.data?.image || r.data?.artifacts?.[0]?.base64;
       if (b64) {
         return { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source: 'comfyui', image: b64, metadata: { prompt, width, height, steps, seed: r.data?.seed || '', model: 'comfyui' }, validation: { validated: true }, error: { message: '', code: '' } };
@@ -271,7 +280,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         const r = await axios.post(
           'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image',
           { text_prompts: [{ text: prompt, weight: 1 }], cfg_scale: payload?.cfg_scale || 7, height, width, samples: 1, steps },
-          { headers: { Authorization: `Bearer ${stabilityKey}`, 'Content-Type': 'application/json' }, timeout: 120000 }
+          { headers: { Authorization: `Bearer ${stabilityKey}`, 'Content-Type': 'application/json' }, timeout: IMAGE_GEN_TIMEOUT }
         );
         if (r.data?.artifacts?.[0]?.base64) {
           return { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source: 'stability', image: r.data.artifacts[0].base64, metadata: { prompt, width, height, steps, seed: r.data.artifacts[0].seed || '', model: 'stability' }, validation: { validated: true }, error: { message: '', code: '' } };
@@ -288,7 +297,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         const r = await axios.post(
           'https://api.openai.com/v1/images/generations',
           { prompt, n: 1, size: `${width}x${height}`, response_format: 'b64_json' },
-          { headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' }, timeout: 120000 }
+          { headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' }, timeout: IMAGE_GEN_TIMEOUT }
         );
         if (r.data?.data?.[0]?.b64_json) {
           return { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source: 'openai', image: r.data.data[0].b64_json, metadata: { prompt, width, height, steps, seed: '', model: 'dall-e' }, validation: { validated: true }, error: { message: '', code: '' } };
@@ -528,7 +537,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     const settings = getSettings();
     const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
     try {
-      const res = await axios.get(`${ollamaBase}/api/tags`, { timeout: 5000 });
+      const res = await axios.get(`${ollamaBase}/api/tags`, { timeout: OLLAMA_OP_TIMEOUT });
       const models = (res.data?.models || []).map((m: any) => ({
         name: m.name,
         size: m.size,
@@ -549,7 +558,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     const settings = getSettings();
     const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
     try {
-      await axios.delete(`${ollamaBase}/api/delete`, { data: { name: modelName }, timeout: 30000 });
+      await axios.delete(`${ollamaBase}/api/delete`, { data: { name: modelName }, timeout: OLLAMA_OP_TIMEOUT });
       return { success: true, model: modelName };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
@@ -564,7 +573,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     const settings = getSettings();
     const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
     try {
-      const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName }, { timeout: 600_000 });
+      const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName }, { timeout: OLLAMA_PULL_TIMEOUT });
       return { success: true, model: modelName, status: res?.data?.status || 'done' };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
@@ -580,7 +589,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
     // Already running? Don't spawn a duplicate.
     try {
-      await axios.get(`${ollamaBase}/api/tags`, { timeout: 2000 });
+      await axios.get(`${ollamaBase}/api/tags`, { timeout: HEALTH_CHECK_TIMEOUT });
       return { success: true, alreadyRunning: true };
     } catch { /* not running — proceed */ }
 
@@ -599,7 +608,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 500));
         try {
-          await axios.get(`${ollamaBase}/api/tags`, { timeout: 1500 });
+          await axios.get(`${ollamaBase}/api/tags`, { timeout: OLLAMA_READY_POLL_TIMEOUT });
           return { success: true, alreadyRunning: false };
         } catch { /* keep polling */ }
       }
@@ -842,7 +851,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const resp = await axios.post(
         `${ollamaBase}/api/generate`,
         { model, prompt, stream: false, options: { temperature: 0.3, num_predict: 20 } },
-        { timeout: 8000 }
+        { timeout: OLLAMA_OP_TIMEOUT }
       );
 
       let title: string = resp.data?.response ?? '';
@@ -963,7 +972,7 @@ try {
       }
 
       execFile('powershell', ['-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', tmpFile],
-        { timeout: 20000 },
+        { timeout: SPEECH_RECOGNITION_TIMEOUT },
         (error: any, stdout: string, stderr: string) => {
           try { fs.unlinkSync(tmpFile); } catch (_) {}
           if (error) {
