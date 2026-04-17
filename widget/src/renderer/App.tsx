@@ -79,7 +79,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
   const [widgetMode, setWidgetMode] = useState(true); // Start in widget mode
   const { toasts, addToast, dismissToast } = useToasts();
 
@@ -101,10 +100,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       if (e.ctrlKey && e.key === '/') {
         e.preventDefault();
         setShortcutsOpen(prev => !prev);
-      }
-      if (e.key === 'F11') {
-        e.preventDefault();
-        setFocusMode(prev => !prev);
       }
     };
     window.addEventListener('keydown', handler);
@@ -869,7 +864,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
   const modeClasses = [
     'app-container',
-    focusMode ? 'focus-mode' : '',
     widgetMode ? 'widget-mode' : 'expanded-mode',
   ].filter(Boolean).join(' ');
 
@@ -1027,23 +1021,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       />
 
       {/* Token counter — shown in chat mode */}
-      {mode === 'chat' && !focusMode && (
+      {mode === 'chat' && (
         <div className="token-counter-bar">
           <Suspense fallback={null}>
             <TokenCounter messages={messages} model={settings.chatModel || 'llama3.2:3b'} />
           </Suspense>
         </div>
       )}
-
-      {/* Focus mode toggle */}
-      <button
-        className={`focus-mode-toggle${focusMode ? ' active' : ''}`}
-        onClick={() => setFocusMode(prev => !prev)}
-        aria-label={focusMode ? 'Exit focus mode' : 'Enter focus mode'}
-        title={focusMode ? 'Exit focus mode (F11)' : 'Focus mode (F11)'}
-      >
-        {focusMode ? '⊞' : '⊡'}
-      </button>
 
       {/* Main Content Area */}
       {mode === 'chat' ? (
