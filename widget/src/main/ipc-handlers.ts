@@ -8,6 +8,7 @@ import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { spawn, execFile } from 'child_process';
 
 import {
   getSettings, 
@@ -584,7 +585,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     } catch { /* not running — proceed */ }
 
     try {
-      const { spawn } = require('child_process');
       const cmd = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
       const child = spawn(cmd, ['serve'], {
         detached: true,
@@ -925,10 +925,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    * Uses Windows SAPI through PowerShell
    */
   ipcMain.handle('sadie:start-speech-recognition', async () => {
-    const { exec } = require('child_process');
-    const os = require('os');
-    const path = require('path');
-    const fs = require('fs');
 
     return new Promise((resolve) => {
       // PowerShell script to use Windows Speech Recognition (SAPI — fully offline)
@@ -966,7 +962,7 @@ try {
         return;
       }
 
-      exec(`powershell -ExecutionPolicy Bypass -NonInteractive -File "${tmpFile}"`,
+      execFile('powershell', ['-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', tmpFile],
         { timeout: 20000 },
         (error: any, stdout: string, stderr: string) => {
           try { fs.unlinkSync(tmpFile); } catch (_) {}

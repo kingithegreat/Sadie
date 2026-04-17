@@ -298,8 +298,6 @@ export interface ElectronAPI {
   ragClear?: (docId: string) => Promise<{ success: boolean; result?: { removed_chunks: number; message: string }; error?: string }>;
   // Full-text search across all stored conversations
   searchConversations?: (query: string, maxResults?: number) => Promise<{ success: boolean; data: ConversationSearchResult[]; error?: string }>;
-  // Export a single conversation to a Markdown file on the Desktop
-  exportConversation?: (conversationId: string) => Promise<{ success: boolean; markdown?: string; path?: string; error?: string }>;
   // Auto-generate a short title for a conversation from the first exchange
   generateTitle?: (args: { conversationId: string; userMessage: string; assistantReply: string }) => Promise<{ success: boolean; title?: string; error?: string }>;
   // Push event: fires when main process updates a conversation title
