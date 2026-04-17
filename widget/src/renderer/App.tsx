@@ -216,7 +216,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // Listen for confirmation requests from main process (dangerous operations)
   useEffect(() => {
     const unsubscribe = window.electron.onConfirmationRequest?.((data) => {
-      console.log('[App] Confirmation request received:', data);
       setPendingConfirmationData({
         confirmationId: data.confirmationId,
         message: data.message,
@@ -226,7 +225,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     const permUnsub = window.electron.onPermissionRequest?.((data) => {
-      console.log('[App] Permission request received:', data);
       setPermissionRequestData({ requestId: data.requestId, missingPermissions: data.missingPermissions, reason: data.reason, streamId: data.streamId });
       setPermissionModalOpen(true);
     });
@@ -545,7 +543,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
           (window as any).__e2eEvents.push('sadie:stream-end');
-          console.log('[E2E-TRACE] renderer received sadie:stream-end', payload);
+          if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received sadie:stream-end', payload);
         } catch (e) {}
       },
       onStreamError: (payload: { streamId?: string; error?: string; message?: string; recoveryHint?: any }) => {
@@ -598,7 +596,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
           (window as any).__e2eEvents.push('sadie:stream-error');
-          console.log('[E2E-TRACE] renderer received sadie:stream-error', payload);
+          if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received sadie:stream-error', payload);
         } catch (e) {}
       },
     });

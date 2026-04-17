@@ -114,19 +114,13 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
 
   // Initialize speech recognition (online mode - requires internet)
   const startListening = useCallback(async () => {
-    console.log('[Voice] Starting speech recognition...');
-    console.log('[Voice] electron object:', (window as any).electron);
-    console.log('[Voice] startSpeechRecognition:', (window as any).electron?.startSpeechRecognition);
-    
     // First try Windows SAPI (offline, works reliably in Electron)
     if ((window as any).electron?.startSpeechRecognition) {
-      console.log('[Voice] Using Windows SAPI...');
       setIsListening(true);
       setErrorMessage('🎤 Listening… speak now');
       
       try {
         const result = await (window as any).electron.startSpeechRecognition();
-        console.log('[Voice] Result:', result);
         setIsListening(false);
         
         if (result.success && result.text) {

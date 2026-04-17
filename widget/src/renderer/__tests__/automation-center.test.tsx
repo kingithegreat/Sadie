@@ -82,7 +82,7 @@ describe('AutomationCenter — loading automations', () => {
       loadAutomations: jest.fn().mockRejectedValue(new Error('boom')),
     });
     await act(async () => { render(<AutomationCenter />); });
-    fireEvent.click(screen.getByRole('button', { name: '✕' }));
+    fireEvent.click(screen.getByRole('button', { name: /dismiss error/i }));
     expect(screen.queryByText('Failed to load automations')).toBeNull();
   });
 });

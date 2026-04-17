@@ -108,7 +108,7 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = () => {
       {error && (
         <div className="automation-error">
           <span>{error}</span>
-          <button onClick={() => setError(null)}>✕</button>
+          <button onClick={() => setError(null)} aria-label="Dismiss error">✕</button>
         </div>
       )}
 
@@ -207,17 +207,19 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = () => {
                   />
                   <span className="slider"></span>
                 </label>
-                <button 
-                  className="btn-icon" 
+                <button
+                  className="btn-icon"
                   onClick={() => runAutomation(automation.id)}
                   title="Run now"
+                  aria-label={`Run ${automation.name}`}
                 >
                   ▶
                 </button>
-                <button 
-                  className="btn-icon btn-danger" 
+                <button
+                  className="btn-icon btn-danger"
                   onClick={() => deleteAutomation(automation.id)}
                   title="Delete"
+                  aria-label={`Delete ${automation.name}`}
                 >
                   🗑
                 </button>

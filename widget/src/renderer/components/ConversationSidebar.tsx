@@ -259,7 +259,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
           <button className="search-btn" onClick={() => setShowSearch(true)} title="Search conversations" aria-label="Search conversations">
             🔍
           </button>
-          <button className="close-btn" onClick={onClose}>×</button>
+          <button className="close-btn" onClick={onClose} aria-label="Close sidebar">×</button>
         </div>
         
         <button className="new-chat-btn" onClick={onNewConversation}>
@@ -373,10 +373,11 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                       >
                         {conv.pinned ? '📌' : '📍'}
                       </button>
-                      <button 
-                        className="edit-btn" 
+                      <button
+                        className="edit-btn"
                         onClick={(e) => handleStartEdit(conv.id, conv.title, e)}
                         title="Rename"
+                        aria-label={`Rename ${conv.title}`}
                       >
                         ✏️
                       </button>
@@ -396,10 +397,11 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                       >
                         📦
                       </button>
-                      <button 
-                        className="delete-btn" 
+                      <button
+                        className="delete-btn"
                         onClick={(e) => handleDelete(conv.id, e)}
                         title="Delete"
+                        aria-label={`Delete ${conv.title}`}
                       >
                         🗑️
                       </button>

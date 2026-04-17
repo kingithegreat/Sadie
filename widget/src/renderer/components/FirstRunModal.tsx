@@ -35,7 +35,6 @@ export default function FirstRunModal({
     const payload = { ...draft, firstRun: false, telemetryEnabled: true, telemetryConsentTimestamp: new Date().toISOString() } as any;
     // Persist immediately via the electron bridge to reduce race windows
     try {
-      console.log('[E2E] FirstRun saving payload', payload);
       await (window as any).electron.saveSettings?.(payload);
     } catch (e) {
       console.warn('FirstRun immediate save failed:', e);
@@ -49,7 +48,6 @@ export default function FirstRunModal({
     // Even when skipping, ensure telemetry is recorded as required
     const payload = { ...draft, firstRun: false, telemetryEnabled: true, telemetryConsentTimestamp: new Date().toISOString() } as any;
     try {
-      console.log('[E2E] FirstRun saving payload (skip)', payload);
       await (window as any).electron.saveSettings?.(payload);
     } catch (e) {
       console.warn('FirstRun immediate save failed (skip):', e);

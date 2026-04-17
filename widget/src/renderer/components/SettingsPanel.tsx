@@ -450,8 +450,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       customLLM: { ...(prev.customLLM || { ...defaultCustomLLM }), apiUrl }
     }));
 
-    console.log('[Settings] Fetching models from:', apiUrl, 'provider:', provider);
-
     try {
       const result = await (window as any).electron.listCustomLLMModels({ apiUrl, apiKey, provider });
       if (result?.success && Array.isArray(result.models)) {
