@@ -240,8 +240,10 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('sadie:ollama-status', listener);
   },
 
-  exportConversation: async (conversationId: string, format?: 'markdown' | 'json') => {
-    return ipcRenderer.invoke('sadie:export-conversation', conversationId, format ?? 'markdown');
+  onModelFallback: (cb: (data: { from: string; to: string }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('sadie:model-fallback', listener);
+    return () => ipcRenderer.removeListener('sadie:model-fallback', listener);
   },
 
   removeShowWindowListener: () => {

@@ -36,6 +36,7 @@ interface Settings {
   moaProposers?: string[];
   moaAggregator?: string;
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
+  defaultLocation?: string;
 }
 
 interface SettingsPanelProps {
@@ -119,7 +120,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       messageDensity: (source as any).messageDensity || 'comfortable',
       moaEnabled: source.moaEnabled ?? false,
       moaProposers: source.moaProposers ?? [],
-      moaAggregator: source.moaAggregator ?? ''
+      moaAggregator: source.moaAggregator ?? '',
+      defaultLocation: (source as any).defaultLocation || ''
     };
   };
 
@@ -400,6 +402,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       stableHordeApiKey: (localSettings as any).stableHordeApiKey?.trim() || undefined,
       chatGuidelines: localSettings.chatGuidelines?.trim() || undefined,
       calendarIcsUrl: (localSettings as any).calendarIcsUrl?.trim() || undefined,
+      defaultLocation: (localSettings as any).defaultLocation?.trim() || undefined,
     } as SharedSettings;
     // Also persist any extra keys that the local-only interface tracks
     (nextSettings as any).notificationsEnabled = (localSettings as any).notificationsEnabled;
@@ -737,7 +740,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="setting-group">
-          <label className="setting-label">📝 Chat Guidelines</label>
+          <label className="setting-label">Default Location</label>
+          <input
+            type="text"
+            className="setting-input"
+            value={(localSettings as any).defaultLocation || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                defaultLocation: e.target.value
+              } as any)
+            }
+            placeholder="e.g. Auckland, London, New York"
+          />
+          <small className="setting-hint">Used for weather queries when you don't specify a location.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Chat Guidelines</label>
           <textarea
             className="setting-input setting-textarea"
             value={localSettings.chatGuidelines || ''}

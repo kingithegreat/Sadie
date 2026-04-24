@@ -315,9 +315,12 @@ describe('addMessageToConversation', () => {
     expect(reloaded!.title).toBe('First');
   });
 
-  test('returns false for a non-existent conversation', () => {
+  test('auto-creates conversation when it does not exist', () => {
     const msg = { id: 'msg1', role: 'user' as const, content: 'hi', timestamp: new Date().toISOString() };
-    expect(addMessageToConversation('no-such-conv', msg)).toBe(false);
+    expect(addMessageToConversation('no-such-conv', msg)).toBe(true);
+    const conv = getConversation('no-such-conv');
+    expect(conv).not.toBeNull();
+    expect(conv!.messages).toHaveLength(1);
   });
 
   test('auto-assigns an id when message has no id', () => {

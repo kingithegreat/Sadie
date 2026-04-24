@@ -267,10 +267,13 @@ export function createNewConversation(title?: string): StoredConversation {
 }
 
 export function addMessageToConversation(conversationId: string, message: Message): boolean {
-  const conversation = getConversation(conversationId);
+  let conversation = getConversation(conversationId);
   if (!conversation) {
-    console.warn(`[MemoryManager] addMessageToConversation: conversation not found conv=${conversationId}`);
-    return false;
+    const now = new Date().toISOString();
+    conversation = { id: conversationId, title: 'Untitled', messages: [], createdAt: now, updatedAt: now };
+    const store = loadConversationStore();
+    store.conversations.push(conversation);
+    saveConversationStore(store);
   }
   
   // Ensure message has an ID

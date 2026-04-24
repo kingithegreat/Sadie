@@ -172,6 +172,8 @@ export interface Settings {
   moaEnabled?: boolean;
   moaProposers?: string[];
   moaAggregator?: string;
+  // Default location for weather queries
+  defaultLocation?: string;
 }
 
 export interface ConnectionStatus {
@@ -363,6 +365,7 @@ export interface ElectronAPI {
 
   // Push event: fires when main process determines Ollama reachability on startup
   onOllamaStatus?: (cb: (data: { online: boolean; url: string }) => void) => () => void;
+  onModelFallback?: (cb: (data: { from: string; to: string }) => void) => () => void;
 
   // Export a single conversation to disk as Markdown or JSON
   exportConversation?: (conversationId: string, format?: 'markdown' | 'json') => Promise<{

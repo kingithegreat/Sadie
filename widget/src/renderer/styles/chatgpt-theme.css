@@ -3054,6 +3054,24 @@ body {
   white-space: nowrap;
 }
 
+.vram-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.vram-badge.over {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+}
+
+.vram-badge.tight {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+}
+
 .model-option.not-installed {
   opacity: 0.7;
   cursor: default;
@@ -4324,6 +4342,38 @@ body {
   opacity: 0.85;
 }
 
+.widget-model-selector {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+}
+
+.widget-model-selector .model-selector-button {
+  min-width: 80px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.widget-model-selector .model-nav-btn {
+  padding: 3px 5px;
+  font-size: 9px;
+}
+
+.widget-model-selector .model-name-display {
+  font-size: 11px;
+}
+
+.widget-model-selector .model-icon {
+  font-size: 12px;
+}
+
+.widget-model-selector .model-selector-row {
+  gap: 2px;
+}
+
 .widget-titlebar-controls {
   display: flex;
   align-items: center;
@@ -4496,6 +4546,36 @@ body {
   border-radius: 8px;
 }
 
+/* ── Zone error boundary ───────────────────────────────────────────────── */
+.error-boundary-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.error-boundary-label {
+  color: #f87171;
+}
+
+.error-boundary-retry {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.error-boundary-retry:hover {
+  background: var(--bg-light);
+  border-color: var(--accent-primary);
+}
+
 /* ── Widget mode: compact message actions ────────────────────────────────── */
 .widget-mode 
 .widget-mode .message-action-btn {
@@ -4503,9 +4583,28 @@ body {
   font-size: 11px;
 }
 
-/* Hide model selector row in widget mode — use settings to change model */
+/* Compact model selector in widget mode */
 .widget-mode .model-selector-row {
-  display: none;
+  gap: 2px;
+}
+
+.widget-mode .model-selector-button {
+  min-width: 90px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.widget-mode .model-nav-btn {
+  padding: 4px 6px;
+  font-size: 9px;
+}
+
+.widget-mode .model-name-display {
+  font-size: 11px;
+}
+
+.widget-mode .model-icon {
+  font-size: 13px;
 }
 
 /* ── Widget mode: hide clutter — bookmarks, reactions, timestamps ─────── */

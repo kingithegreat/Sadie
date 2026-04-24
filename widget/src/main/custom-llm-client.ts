@@ -102,9 +102,9 @@ const HUGGINGFACE_MODELS: CustomModelInfo[] = [
 
 // Cerebras — free tier, fastest inference (up to ~2000 tok/s)
 const CEREBRAS_MODELS: CustomModelInfo[] = [
-  { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', description: 'Best quality, ~2000 tok/s', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
-  { id: 'llama-3.1-8b', name: 'Llama 3.1 8B', description: 'Ultra-fast inference', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
-  { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill 70B', description: 'Reasoning model', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', description: 'Best quality on Cerebras', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'llama3.1-8b', name: 'Llama 3.1 8B', description: 'Ultra-fast inference', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
+  { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', description: 'Strong general-purpose model', provider: 'cerebras', contextWindow: 128000, costHint: 'Free tier' },
 ];
 
 // SambaNova — free tier, fast Llama and DeepSeek models

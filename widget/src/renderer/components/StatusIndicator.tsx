@@ -22,7 +22,8 @@ interface StatusIndicatorProps {
   useCustomLLM?: boolean;
   onModelChange?: (model: string, useCustom: boolean) => void;
   uncensoredModel?: string;
-} 
+  vramGB?: number | null;
+}
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   connectionStatus,
@@ -38,11 +39,12 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onDismissDiagnostic,
   mode = 'chat',
   onModeChange,
-  currentModel = 'llama3.2:3b',
+  currentModel = 'qwen2.5:7b',
   customLLM,
   useCustomLLM = false,
   onModelChange,
-  uncensoredModel = 'dolphin-llama3:8b'
+  uncensoredModel = 'dolphin-llama3:8b',
+  vramGB
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -137,6 +139,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               locked={uncensoredMode}
               lockedModelId={uncensoredModel}
               lockReason="Turn off 🔓 Uncensored Mode to switch models"
+              vramGB={vramGB}
             />
           )}
         </div>

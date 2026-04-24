@@ -396,6 +396,99 @@ describe('preProcessIntent', () => {
     });
   });
 
+  // ── Playoffs routing ─────────────────────────────────────────────────────
+
+  describe('playoffs routing', () => {
+    test('routes "NBA playoffs" to standings', async () => {
+      const res = await preProcessIntent('who is in the NBA playoffs?');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('nba_query');
+      expect(res!.calls[0].arguments.type).toBe('standings');
+    });
+
+    test('routes "playoff schedule" to games', async () => {
+      const res = await preProcessIntent('NBA playoff schedule');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('nba_query');
+      expect(res!.calls[0].arguments.type).toBe('games');
+    });
+
+    test('routes "playoff games" to games', async () => {
+      const res = await preProcessIntent('show me the playoff games tonight');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('nba_query');
+      expect(res!.calls[0].arguments.type).toBe('games');
+    });
+
+    test('routes "play offs bracket" to standings', async () => {
+      const res = await preProcessIntent('show me the NBA play offs bracket');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('nba_query');
+      expect(res!.calls[0].arguments.type).toBe('standings');
+    });
+  });
+
+  // ── Standings negation guard ───────────────────────────────────────────
+
+  describe('standings negation guard', () => {
+    test('"not standings" does NOT route to standings', async () => {
+      const res = await preProcessIntent('NBA not standings, show me the games');
+      expect(res).not.toBeNull();
+      if (res!.calls[0].arguments.type) {
+        expect(res!.calls[0].arguments.type).not.toBe('standings');
+      }
+    });
+
+    test('"don\'t show standings" does NOT route to standings', async () => {
+      const res = await preProcessIntent("NBA scores don't show standings");
+      expect(res).not.toBeNull();
+      if (res!.calls[0].arguments.type) {
+        expect(res!.calls[0].arguments.type).not.toBe('standings');
+      }
+    });
+  });
+
+  // ── Weather default location ──────────────────────────────────────────
+
+  describe('weather default location', () => {
+    test('weather query without location still returns get_weather', async () => {
+      const res = await preProcessIntent('what is the weather?');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('get_weather');
+      expect(res!.calls[0].arguments.location).toBeDefined();
+    });
+
+    test('weather query with location extracts location', async () => {
+      const res = await preProcessIntent('weather in Tokyo');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('get_weather');
+      expect(res!.calls[0].arguments.location.toLowerCase()).toBe('tokyo');
+    });
+
+    test('"shedule" typo routes to NBA', async () => {
+      const res = await preProcessIntent('NBA shedule');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('nba_query');
+    });
+  });
+
+  // ── Word boundary on location extraction ──────────────────────────────
+
+  describe('word boundary on location extraction', () => {
+    test('"what is the weather" does not extract "at" as location', async () => {
+      const res = await preProcessIntent('what is the weather?');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].arguments.location).not.toBe('her');
+    });
+
+    test('surf conditions "in Raglan" extracts Raglan', async () => {
+      const res = await preProcessIntent('surf conditions in Raglan');
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].arguments).toHaveProperty('query');
+      expect(res!.calls[0].arguments.query.toLowerCase()).toContain('raglan');
+    });
+  });
+
   // ── Garbage output detection ────────────────────────────────────────────
 
   describe('isGarbageOutput', () => {

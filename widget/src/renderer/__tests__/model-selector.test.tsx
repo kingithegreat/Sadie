@@ -209,6 +209,68 @@ describe('ModelSelector — locked state', () => {
   });
 });
 
+describe('ModelSelector — VRAM warnings', () => {
+  function getMainBtn() {
+    return document.querySelector('.model-selector-button') as HTMLElement;
+  }
+
+  test('shows "slow" badge for models exceeding VRAM', async () => {
+    await renderSelector({ vramGB: 3 });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    const badges = document.querySelectorAll('.vram-badge.over');
+    expect(badges.length).toBeGreaterThan(0);
+  });
+
+  test('shows "tight" badge for models near VRAM limit', async () => {
+    await renderSelector({ vramGB: 5 });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    const badges = document.querySelectorAll('.vram-badge.tight');
+    expect(badges.length).toBeGreaterThan(0);
+  });
+
+  test('shows no VRAM badges when VRAM is null', async () => {
+    await renderSelector({ vramGB: null });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    expect(document.querySelectorAll('.vram-badge').length).toBe(0);
+  });
+
+  test('shows no VRAM badges when VRAM is ample', async () => {
+    await renderSelector({ vramGB: 24 });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    expect(document.querySelectorAll('.vram-badge.over').length).toBe(0);
+  });
+
+  test('prev/next arrows show confirm dialog for oversized models', async () => {
+    const onModelChange = jest.fn();
+    window.confirm = jest.fn(() => false);
+    // Set vramGB to 2 so all models are "over"
+    await renderSelector({ currentModel: 'phi4-mini', vramGB: 2, onModelChange });
+    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
+    expect(window.confirm).toHaveBeenCalled();
+    // User declined — onModelChange should NOT be called
+    expect(onModelChange).not.toHaveBeenCalled();
+  });
+
+  test('prev/next arrows proceed when user confirms oversized model', async () => {
+    const onModelChange = jest.fn();
+    window.confirm = jest.fn(() => true);
+    await renderSelector({ currentModel: 'phi4-mini', vramGB: 2, onModelChange });
+    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
+    expect(window.confirm).toHaveBeenCalled();
+    expect(onModelChange).toHaveBeenCalledTimes(1);
+  });
+
+  test('dropdown selection shows confirm dialog for oversized models', async () => {
+    const onModelChange = jest.fn();
+    window.confirm = jest.fn(() => false);
+    await renderSelector({ vramGB: 2, onModelChange });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    fireEvent.click(screen.getByText('Qwen 2.5 (7B)'));
+    expect(window.confirm).toHaveBeenCalled();
+    expect(onModelChange).not.toHaveBeenCalled();
+  });
+});
+
 describe('ModelSelector — custom LLM', () => {
   const customLLM = {
     enabled: true,

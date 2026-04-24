@@ -103,13 +103,15 @@ export interface Settings {
   customLLM?: import('../shared/types').CustomLLMConfig;
   // Active project/workspace directory for dev tools (terminal, grep, tree)
   projectPath?: string;
+  // Default location for weather queries when user doesn't specify one
+  defaultLocation?: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {
   n8nUrl: 'http://localhost:5678',
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
-  chatModel: 'phi4-mini',               // best reasoning in the 3-4B range
+  chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
   uncensoredModel: 'dolphin-phi:2.7b',  // 1.6 GB — safe on 4-5 GB VRAM
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
   codeModel: '',
@@ -223,33 +225,44 @@ function ensureConfigDirectory(): void {
   }
 }
 
+// In-memory settings cache — avoids ~20 disk reads per message
+let _settingsCache: Settings | null = null;
+let _settingsCacheTime = 0;
+const SETTINGS_CACHE_TTL = 5000; // 5s safety net
+
+export function invalidateSettingsCache(): void {
+  _settingsCache = null;
+}
+
 export function getSettings(): Settings {
+  const now = Date.now();
+  if (_settingsCache && (now - _settingsCacheTime) < SETTINGS_CACHE_TTL) {
+    return { ..._settingsCache };
+  }
+
   try {
     const settingsPath = getSettingsPath();
-    
+
     if (!existsSync(settingsPath)) {
-      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings file does not exist, using defaults:', settingsPath);
-      return { ...DEFAULT_SETTINGS };
+      _settingsCache = { ...DEFAULT_SETTINGS };
+      _settingsCacheTime = now;
+      return { ..._settingsCache };
     }
-    
+
     const data = readFileSync(settingsPath, 'utf-8');
     const savedSettings = JSON.parse(data);
-    if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings loaded from:', settingsPath, 'keys:', Object.keys(savedSettings));
-    
-    // Merge with defaults to ensure all keys exist
+
     const merged = { ...DEFAULT_SETTINGS, ...savedSettings } as Settings;
     const mergedPermissions = {
       ...(DEFAULT_SETTINGS.permissions || {}),
       ...(savedSettings.permissions || {})
     } as Record<string, boolean>;
     merged.permissions = mergedPermissions;
-    // If running in assessor demo mode, enforce safe defaults: telemetry off and dangerous permissions disabled
     const demoMode = process.argv?.includes('--demo') || process.env.SADIE_DEMO_MODE === '1' || process.env.SADIE_DEMO_MODE === 'true';
     if (demoMode) {
       merged.telemetryEnabled = false;
       merged.telemetryConsentTimestamp = undefined;
       merged.telemetryConsentVersion = undefined;
-      // Force dangerous permissions off
       merged.permissions = {
         ...(merged.permissions || {}),
         delete_file: false,
@@ -258,14 +271,15 @@ export function getSettings(): Settings {
         screenshot: false
       };
     }
-    // Decrypt any encrypted secret fields
     for (const key of SECRET_KEYS) {
       const val = (merged as any)[key];
       if (typeof val === 'string' && val.length > 0) {
         (merged as any)[key] = decryptSecret(val);
       }
     }
-    return merged;
+    _settingsCache = merged;
+    _settingsCacheTime = now;
+    return { ...merged };
   } catch (error) {
     console.error('Failed to load settings:', error);
     return { ...DEFAULT_SETTINGS };
@@ -295,6 +309,7 @@ export function saveSettings(settings: Settings): void {
       }
     }
     writeFileSync(settingsPath, JSON.stringify(toSave, null, 2), 'utf-8');
+    invalidateSettingsCache();
     if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings saved successfully to:', settingsPath);
     // Log consent changes
     try {
@@ -329,19 +344,19 @@ export function getDefaultSettings(): Settings {
  */
 export const HARDWARE_PROFILE_DEFAULTS: Record<string, Partial<Settings>> = {
   '4gb': {
-    chatModel: 'phi4-mini',              // 2.5 GB — best reasoning that safely fits 4-5 GB
-    visionModel: 'moondream',           // 1.7 GB — lightweight vision
-    uncensoredModel: 'dolphin-phi:2.7b', // 1.6 GB — safe uncensored
+    chatModel: 'qwen2.5:7b',             // 4.4 GB — best IQ; VRAM warning in UI if tight
+    visionModel: 'moondream',             // 1.7 GB — lightweight vision
+    uncensoredModel: 'dolphin-phi:2.7b',  // 1.6 GB — safe uncensored
   },
   '8gb': {
-    chatModel: 'phi4-mini',              // still best small model; upgrade to 7b if desired
+    chatModel: 'qwen2.5:7b',             // 4.4 GB — fits comfortably
     visionModel: 'moondream',
     uncensoredModel: 'dolphin-phi:2.7b',
   },
   '16gb+': {
     chatModel: 'qwen2.5:7b',
     visionModel: 'llava',
-    uncensoredModel: 'dolphin-llama3:8b', // 16 GB+ cards can afford the full 8B model
+    uncensoredModel: 'dolphin-llama3:8b',
   },
 };
 

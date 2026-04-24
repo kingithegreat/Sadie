@@ -831,14 +831,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   }: { conversationId: string; userMessage: string; assistantReply: string }) => {
     try {
       const settings = getSettings();
-      const ollamaBase = (process.env.OLLAMA_URL || (settings as any).ollamaUrl || DEFAULT_OLLAMA_URL).trim();
-      // Use the configured chat model; if a cloud/custom LLM is active the title
-      // is still generated locally via Ollama (fast, cheap), so fall back to the
-      // Ollama default rather than forwarding a cloud model name.
-      const isCustomLLMActive = !!(settings as any).useCustomLLM && !!(settings as any).customLLM;
+      const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || DEFAULT_OLLAMA_URL).trim();
+      const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM;
       const model = isCustomLLMActive
-        ? (process.env.OLLAMA_MODEL || 'phi4-mini')
-        : (settings.chatModel || process.env.OLLAMA_MODEL || 'phi4-mini');
+        ? (process.env.OLLAMA_MODEL || 'qwen2.5:7b')
+        : (settings.chatModel || process.env.OLLAMA_MODEL || 'qwen2.5:7b');
 
       // Trim inputs so the title prompt stays tiny
       const userSnippet = userMessage.slice(0, 200);

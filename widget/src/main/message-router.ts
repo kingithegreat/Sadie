@@ -378,8 +378,8 @@ export function addToHistory(conversationId: string, role: 'user' | 'assistant',
   // results don't crowd out the current question in the context window.
   let trimmedContent = content;
   if (role === 'assistant' && content.length > SMALL_MODEL_HISTORY_MSG_CAP) {
-    const settings = getSettings() as any;
-    const modelName = (settings as any).chatModel || OLLAMA_CHAT_MODEL;
+    const settings = getSettings();
+    const modelName = settings.chatModel || OLLAMA_CHAT_MODEL;
     if (isSmallModel(modelName)) {
       trimmedContent = content.slice(0, SMALL_MODEL_HISTORY_MSG_CAP) + '…';
     }
@@ -752,8 +752,8 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     // COMPOUND: surf/swell + file → use web search, not weather API
     const isSurfFileQuery = /\b(surf|swell|waves?|tide|ocean|marine|break|beach\s*break)\b/i.test(m);
     if (isSurfFileQuery) {
-      const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+today|\s+tomorrow|\s+on|\s+and|$)/i) ||
-                       m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+      const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+today|\s+tomorrow|\s+on|\s+and|$)/i) ||
+                       m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
       let location = locMatch ? locMatch[1].trim() : '';
       location = location.replace(/\s*(today|tomorrow|tonight|this week|next week|on my|on the|and)$/i, '').trim();
       if (!location) location = 'New Zealand';
@@ -764,8 +764,8 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
 
     // COMPOUND: weather + file (no surf keywords)
     if (/\b(weather|forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) {
-      const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+today|\s+tomorrow|\s+on|\s+and|$)/i) ||
-                       m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+      const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+today|\s+tomorrow|\s+on|\s+and|$)/i) ||
+                       m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
       let location = locMatch ? locMatch[1].trim() : '';
       location = location.replace(/\s*(today|tomorrow|tonight|this week|next week|on my|on the|and)$/i, '').trim();
       if (!location) location = 'your location';
@@ -843,7 +843,19 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   };
   
   // STANDINGS: check before the general NBA block to avoid falling through to 'games'
-  if (/\b(nba|basketball)\b/i.test(m) && /\bstanding(s)?\b/i.test(m) && !hasMusicOrContentIntent && !isOpinionQuestion) {
+  // Guard: "not standings" or "no standings" means the user is correcting — skip this block
+  const negatesStandings = /\b(not|no|don'?t|without|instead of)\b.*\bstanding/i.test(m);
+  if (/\b(nba|basketball)\b/i.test(m) && /\bstanding(s)?\b/i.test(m) && !negatesStandings && !hasMusicOrContentIntent && !isOpinionQuestion) {
+    return { calls: [{ name: 'nba_query', arguments: { type: 'standings' } }] };
+  }
+
+  // PLAYOFFS intent — "who's in the playoffs", "ply offs", "play offs", "playoff bracket"
+  if (/\b(play\s*offs?|playoffs?|ply\s*offs?|postseason|bracket)\b/i.test(m) && !hasMusicOrContentIntent && !isOpinionQuestion) {
+    // "playoff schedule/games" → show games; otherwise show standings/bracket
+    if (/\b(schedule?|games?|when|matchup|series|round)\b/i.test(m)) {
+      const dateRange = getEtDate(0);
+      return { calls: [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: 10, query: '' } }] };
+    }
     return { calls: [{ name: 'nba_query', arguments: { type: 'standings' } }] };
   }
 
@@ -858,7 +870,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'web_search', arguments: { query: `NBA ${searchQuery}`, maxResults: 5, fetchTopResult: true } }] };
   }
 
-  if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedule)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion) {
+  if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedul[e]?|shedule|play\s*offs?|playoffs?)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion) {
     let teamQuery = '';
     // Exact match first
     for (const team of nbaTeams) {
@@ -930,8 +942,8 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
 
   // SURF / SWELL intents (standalone) — use web search for real surf data
   if (/\b(surf|swell|waves?|tide|ocean\s*conditions|beach\s*break)\b/i.test(m) && !/\b(weather|temperature|rain|forecast)\b/i.test(m) && !isOpinionQuestion) {
-    const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
-                     m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+    const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
+                     m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';
     location = location.replace(/\s*(tomorrow|today|tonight|this week|next week|give)$/i, '').trim();
     if (!location) location = 'New Zealand';
@@ -940,12 +952,15 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
 
   // WEATHER intents (standalone, no surf keywords)
   if ((/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) && !isOpinionQuestion) {
-    const locMatch = m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
-                     m.match(/(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
+    const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
+                     m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';
     location = location.replace(/\s*(tomorrow|today|tonight|this week|next week|give)$/i, '').trim();
-    if (location) return { calls: [{ name: 'get_weather', arguments: { location } }] };
-    return null;
+    if (!location) {
+      const settings = getSettings();
+      location = settings.defaultLocation || 'Auckland';
+    }
+    return { calls: [{ name: 'get_weather', arguments: { location } }] };
   }
 
   // DOCUMENT / FILE READING intents
@@ -1542,17 +1557,48 @@ export function makeSynthesisPromptCompact(searchContext: string, question: stri
  * Large models get the full verbose version.
  */
 export function buildSynthesisPrompt(searchContext: string, question: string): string {
-  const settings = getSettings() as any;
+  const settings = getSettings();
   const cloudCfg = settings?.customLLM;
   const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
   // When using cloud LLM the model is the cloud one — check that.
   // When using local Ollama, check the chat model.
   const modelName = isCloudActive
     ? (cloudCfg?.model || '')
-    : ((settings as any).chatModel || OLLAMA_CHAT_MODEL);
+    : (settings.chatModel || OLLAMA_CHAT_MODEL);
   return isSmallModel(modelName)
     ? makeSynthesisPromptCompact(searchContext, question)
     : makeSynthesisPrompt(searchContext, question);
+}
+
+/**
+ * Build a synthesis prompt for structured tool results (weather, NBA, etc.).
+ * Feeds the formatted data + user question to the LLM for a natural summary.
+ */
+function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolType: string): string {
+  const settings = getSettings();
+  const cloudCfg = settings?.customLLM;
+  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  const modelName = isCloudActive
+    ? (cloudCfg?.model || '')
+    : (settings.chatModel || OLLAMA_CHAT_MODEL);
+  const small = isSmallModel(modelName);
+
+  const hints: Record<string, string> = {
+    weather: small
+      ? 'Summarize in 2 sentences. Include practical advice (jacket, umbrella).'
+      : 'Summarize naturally in 2-3 sentences. Be conversational — mention how it feels and give practical advice (e.g. bring a jacket, good day for a walk). Don\'t repeat every data point.',
+    standings: small
+      ? 'Summarize top 3-4 teams per conference and playoff picture in 3-4 sentences.'
+      : 'Summarize the key takeaways in 3-5 sentences. Highlight the conference leaders, any surprising teams, and the playoff race. Don\'t repeat the full table — the user can see it.',
+    games: small
+      ? 'Summarize the notable games and scores in 2-3 sentences.'
+      : 'Highlight the most notable matchups, key results, and any standout performances in 3-4 sentences. Don\'t list every game — pick the interesting ones.',
+  };
+
+  const instruction = hints[toolType] || 'Summarize the key information in 2-4 sentences. Be conversational.';
+  const data = small ? toolData.slice(0, 2000) : toolData.slice(0, 4000);
+
+  return `[TOOL DATA]\n${data}\n[/TOOL DATA]\n\nThe user asked: "${userQuestion}"\n\n${instruction}`;
 }
 
 /**
@@ -1560,12 +1606,12 @@ export function buildSynthesisPrompt(searchContext: string, question: string): s
  * Small models get 1500 chars; large models get the default 3000.
  */
 function buildSearchContextForModel(sr: any): string {
-  const settings = getSettings() as any;
+  const settings = getSettings();
   const cloudCfg = settings?.customLLM;
   const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
   const modelName = isCloudActive
     ? (cloudCfg?.model || '')
-    : ((settings as any).chatModel || OLLAMA_CHAT_MODEL);
+    : (settings.chatModel || OLLAMA_CHAT_MODEL);
   const budget = isSmallModel(modelName) ? 1500 : 3000;
   return buildSearchContext(sr, budget);
 }
@@ -1584,7 +1630,7 @@ async function synthesisStream(
   requestConfirmation?: any,
   requestPermission?: any
 ): Promise<{ cancel: () => void }> {
-  const settings = getSettings() as any;
+  const settings = getSettings();
   const cloudCfg = settings?.customLLM;
   const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
   if (isCloudActive) {
@@ -1768,7 +1814,7 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 // Vision model for image analysis
 const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'moondream';
 // Default model for chat (should support tools)
-const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'phi4-mini';
+const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
 
 /**
  * Returns true for models with <=3B parameters based on their name.
@@ -1935,13 +1981,13 @@ export async function streamFromLLM(
   const settings = await getSettings();
   
   // Build system prompt — compact variant for small models (<=3B)
-  const activeModel = (settings as any).chatModel || OLLAMA_CHAT_MODEL;
+  const activeModel = settings.chatModel || OLLAMA_CHAT_MODEL;
 
   // Check if custom LLM is enabled and configured
-  if ((settings as any).useCustomLLM && (settings as any).customLLM) {
-    const validation = validateCustomLLMConfig((settings as any).customLLM);
+  if (settings.useCustomLLM && settings.customLLM) {
+    const validation = validateCustomLLMConfig(settings.customLLM);
     if (validation.valid) {
-      console.log(`[SADIE] Using custom LLM: ${(settings as any).customLLM.name} (${(settings as any).customLLM.provider})`);
+      console.log(`[SADIE] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})`);
 
       // Cloud vision: both OpenAI and Anthropic support vision, but our streaming
       // implementation currently only sends text messages. Fall back to Ollama vision model.
@@ -1953,13 +1999,13 @@ export async function streamFromLLM(
 
       const controller = new AbortController();
       const history = getHistory(conversationId);
-      const customConfig = (settings as any).customLLM as import('../shared/types').CustomLLMConfig;
+      const customConfig = settings.customLLM as import('../shared/types').CustomLLMConfig;
 
       // BUG FIX: Use the CLOUD model name for system prompt selection, not the local
       // Ollama model. Previously this used activeModel (phi4-mini) which triggered the
       // compact/small-model prompt even for large cloud models like llama-3.3-70b.
       const cloudModelName = customConfig.model || activeModel;
-      const systemPromptWithGuidelines = getSystemPromptForModel(cloudModelName, (settings as any).chatGuidelines);
+      const systemPromptWithGuidelines = getSystemPromptForModel(cloudModelName, settings.chatGuidelines);
 
       // Inject MCP memory recall into the system prompt (same as Ollama path).
       // Fire-and-forget memorization of any self-disclosures in this message.
@@ -2047,6 +2093,17 @@ export async function streamFromLLM(
         // else: handleToolCall will call onEnd after the follow-up stream completes
       };
       
+      // Wrap onError: if the cloud API fails (model retired, key expired, etc.)
+      // fall back to local Ollama instead of showing a misleading error.
+      const cloudOnError = (err: any) => {
+        const errMsg = typeof err === 'string' ? err : err?.message || String(err);
+        console.warn(`[SADIE] Cloud LLM failed: ${errMsg} — falling back to local Ollama`);
+        onChunk(`\n⚠️ Cloud API error: ${errMsg}\nFalling back to local model...\n\n`);
+        // Fall through to Ollama
+        streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options)
+          .catch((ollamaErr: any) => onError(ollamaErr));
+      };
+
       streamFromCustomLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
@@ -2054,12 +2111,12 @@ export async function streamFromLLM(
         cloudSystemPrompt,
         onChunk,
         wrappedOnEnd,
-        onError,
+        cloudOnError,
         controller.signal,
         toolDefs,
         providerSupportsTools ? handleToolCall : undefined
       );
-      
+
       return {
         cancel: () => controller.abort()
       };
@@ -2074,10 +2131,10 @@ export async function streamFromLLM(
   }
 
   // Code model cloud API: if a coding query is detected and a code API key is configured, route to the cloud API
-  const codeApiKey = ((settings as any).codeApiKey || '').trim();
-  const codeApiProvider = (settings as any).codeApiProvider || 'openai';
-  const codeApiUrl = ((settings as any).codeApiUrl || '').trim();
-  const preferredCodeModelForApi = ((settings as any).codeModel || '').trim();
+  const codeApiKey = (settings.codeApiKey || '').trim();
+  const codeApiProvider = settings.codeApiProvider || 'openai';
+  const codeApiUrl = (settings.codeApiUrl || '').trim();
+  const preferredCodeModelForApi = (settings.codeModel || '').trim();
   const isCodingQueryForApi = codeApiKey && preferredCodeModelForApi
     ? CODING_QUERY_PATTERN.test(message)
     : false;
@@ -2098,7 +2155,7 @@ export async function streamFromLLM(
       const controller = new AbortController();
       const history = getHistory(conversationId);
       // Build system prompt for the actual code model (may differ in size from chatModel)
-      const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, (settings as any).chatGuidelines);
+      const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines);
 
       // Code API supports tools for all non-custom providers
       const codeProviderSupportsTools = codeApiProvider === 'openai'
@@ -2164,7 +2221,7 @@ export async function streamFromLLM(
   ) {
     console.log(`[SADIE] MoA activated — ${settings.moaProposers.length} proposers → ${settings.moaAggregator}`);
     const history = getHistory(conversationId);
-    const moaSystemPrompt = getSystemPromptForModel(settings.moaAggregator, (settings as any).chatGuidelines);
+    const moaSystemPrompt = getSystemPromptForModel(settings.moaAggregator, settings.chatGuidelines);
 
     // Memory recall for proposers
     const recalled = await recallMemory(message).catch(() => null);
@@ -2220,14 +2277,14 @@ export async function streamFromOllamaWithTools(
   // model name (e.g. 'claude-sonnet-4-20250514'). This function ALWAYS talks to
   // local Ollama, so we must not forward a cloud model name — fall back to the
   // Ollama default instead.
-  const isCustomLLMActive = !!(settings as any).useCustomLLM && !!(settings as any).customLLM;
+  const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM;
   const preferredChatModel = isCustomLLMActive
     ? OLLAMA_CHAT_MODEL
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
   const preferredUncensoredModel = settings.uncensoredModel || OLLAMA_UNCENSORED_MODEL;
   const preferredVisionModel = settings.visionModel || OLLAMA_VISION_MODEL;
   // Use code model when a coding-heavy query is detected and a code model is configured
-  const preferredCodeModel = (settings as any).codeModel?.trim() || '';
+  const preferredCodeModel = settings.codeModel?.trim() || '';
   const isCodingQuery = preferredCodeModel ? CODING_QUERY_PATTERN.test(message) : false;
 
   const controller = new AbortController();
@@ -2442,13 +2499,11 @@ export async function streamFromOllamaWithTools(
         model,
         messages,
         stream: true,
-        // Keep model warm in VRAM between requests (avoids cold-start reload)
         keep_alive: '30m',
-        // Tune generation parameters for small models: moderate temperature for
-        // natural-sounding chat with enough consistency to avoid looping.
-        ...(smallModel
-          ? { options: { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3 } }
-          : {})
+        // mirostat 2 controls perplexity dynamically — temperature/top_p are ignored when mirostat is active
+        options: smallModel
+          ? { num_ctx: 4096, repeat_penalty: 1.3, num_predict: 1024, mirostat: 2, mirostat_tau: 3.0, mirostat_eta: 0.1 }
+          : { num_ctx: 8192, repeat_penalty: 1.15, num_predict: 2048, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 }
       };
       
       if (tools && tools.length > 0) {
@@ -2472,7 +2527,7 @@ export async function streamFromOllamaWithTools(
         
         if ((isModelError || isConnError) && !requestBody._failedOver) {
           // Build a fallback chain: current model's size class → default chat model → dolphin (always available as general-purpose fallback)
-          const fallbacks = [OLLAMA_CHAT_MODEL, 'llama3.2:3b'].filter(m => m !== requestBody.model);
+          const fallbacks = [OLLAMA_CHAT_MODEL, 'mistral:latest', 'llama3.2:3b'].filter(m => m !== requestBody.model);
           const fallbackModel = fallbacks[0];
           if (fallbackModel) {
             console.warn(`[SADIE] Primary model "${requestBody.model}" failed (${code || status}), failing over to "${fallbackModel}"`);
@@ -2981,7 +3036,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // ── SLASH COMMANDS — instant local actions, no LLM round-trip ──
         const trimmedMsg = request.message.trim();
         if (trimmedMsg.startsWith('/')) {
-          const activeModel = (getSettings() as any).chatModel || OLLAMA_CHAT_MODEL;
+          const activeModel = (getSettings()).chatModel || OLLAMA_CHAT_MODEL;
           const slashHandled = handleSlashCommand(trimmedMsg, convId, activeModel);
           if (slashHandled) {
             safeSend(event.sender, 'sadie:stream-chunk', { chunk: slashHandled, streamId });
@@ -3528,6 +3583,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
             // Format tool results into a nice response
             let responseText = '';
+            let synthesizeType = ''; // 'weather' | 'standings' | 'games' — routes through LLM for natural summary
             for (const result of (toolResults || [])) {
               if (!result?.result) continue;
               // Handle compound summary
@@ -3536,6 +3592,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               // Handle NBA standings
               else if (result.result.standings && Array.isArray(result.result.standings)) {
+                synthesizeType = 'standings';
                 result.result.standings.forEach((conf: any) => {
                   responseText += `🏀 **${conf.conference}**\n\n`;
                   responseText += `| # | Team | W | L | PCT | GB | Streak |\n`;
@@ -3548,6 +3605,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               // Handle NBA games — use enrichNbaGames so news/highlights are included
               else if (result.result.events && result.result.events.length > 0) {
+                synthesizeType = 'games';
                 const nbaFormat = intentResult?.calls?.[0]?.arguments?.format;
                 try {
                   const enriched = await enrichNbaGames(result.result.events, result.result.query || '', {
@@ -3585,6 +3643,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               // Handle weather results
               else if (result.result.temperature && result.result.condition) {
+                synthesizeType = 'weather';
                 responseText += `🌤️ **Weather for ${result.result.location || 'your location'}**\n\n`;
                 responseText += `Temperature: ${result.result.temperature.celsius || ''}`;
                 if (result.result.temperature.feelsLike) responseText += ` (feels like ${result.result.temperature.feelsLike})`;
@@ -3901,6 +3960,43 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
 
             if (responseText.trim()) {
+              // Route weather/NBA through LLM synthesis for natural conversational responses
+              if (synthesizeType) {
+                const synthPrompt = buildToolSynthesisPrompt(responseText, enhancedMessage, synthesizeType);
+                // Send the raw data first so the user sees something immediately
+                try { event.sender.send('sadie:stream-chunk', { chunk: responseText + '\n\n', streamId }); } catch (e) { safeCatch(e); }
+
+                let synthDone = false;
+                let synthResponse = '';
+                const handler = await synthesisStream(
+                  synthPrompt, convId,
+                  (chunk) => {
+                    if (synthDone || !activeStreams.has(streamId)) return;
+                    synthResponse += chunk;
+                    try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
+                  },
+                  () => {
+                    if (synthDone) return; synthDone = true;
+                    const fullResponse = responseText + '\n\n' + synthResponse;
+                    addToHistory(convId, 'assistant', fullResponse.trim());
+                    try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                    activeStreams.delete(streamId);
+                  },
+                  (err) => {
+                    if (synthDone) return; synthDone = true;
+                    console.error('[SADIE] Tool synthesis failed, using raw data:', err?.message || err);
+                    // Raw data already sent — just close the stream
+                    addToHistory(convId, 'assistant', responseText);
+                    try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                    activeStreams.delete(streamId);
+                  },
+                  undefined, requestConfirmation,
+                  (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                );
+                activeStreams.set(streamId, { destroy: handler.cancel });
+                return;
+              }
+
               addToHistory(convId, 'assistant', responseText);
               try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
               try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
@@ -4564,7 +4660,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                         ? [ ...fbHistory, { role: 'user', content: reqAny.message } ]
                         : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory, { role: 'user', content: reqAny.message } ],
                       stream: false,
-                      ...(fbSmall ? { options: { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3 } } : {})
+                      options: fbSmall
+                        ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
+                        : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 }
                     };
                     const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
                     const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
@@ -4610,7 +4708,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   ? [ ...fbHistory2, { role: 'user', content: reqAny.message } ]
                   : [ { role: 'system', content: systemPrompt }, ...fbHistory2, { role: 'user', content: reqAny.message } ],
                 stream: false,
-                ...(fbSmall2 ? { options: { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3 } } : {})
+                options: fbSmall2
+                  ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
+                  : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 }
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
               const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
@@ -4648,7 +4748,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   ? [ ...fbHistory3, { role: 'user', content: reqAny.message } ]
                   : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory3, { role: 'user', content: reqAny.message } ],
                 stream: false,
-                ...(fbSmall3 ? { options: { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3 } } : {})
+                options: fbSmall3
+                  ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
+                  : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 }
               };
               const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
               // Parse and send final assistant content

@@ -169,14 +169,14 @@ describe('applyHardwareProfile', () => {
 
   test('applies 4gb profile — safe models for 4 GB VRAM cards', () => {
     const result = applyHardwareProfile({ ...base, hardwareProfile: '4gb' });
-    expect(result.chatModel).toBe('phi4-mini');
+    expect(result.chatModel).toBe('qwen2.5:7b');
     expect(result.visionModel).toBe('moondream');
     expect(result.uncensoredModel).toBe('dolphin-phi:2.7b');
   });
 
   test('applies 8gb profile', () => {
     const result = applyHardwareProfile({ ...base, hardwareProfile: '8gb' });
-    expect(result.chatModel).toBe('phi4-mini');
+    expect(result.chatModel).toBe('qwen2.5:7b');
     expect(result.visionModel).toBe('moondream');
     expect(result.uncensoredModel).toBe('dolphin-phi:2.7b');
   });
@@ -204,5 +204,43 @@ describe('applyHardwareProfile', () => {
       expect(typeof defaults.visionModel).toBe('string');
       expect(typeof defaults.uncensoredModel).toBe('string');
     }
+  });
+});
+
+// ── Settings cache ──────────────────────────────────────────────────────────
+
+describe('settings cache', () => {
+  const { invalidateSettingsCache } = require('../../main/config-manager');
+
+  test('getSettings returns cached value on repeated calls within TTL', () => {
+    invalidateSettingsCache();
+    const s1 = getSettings();
+    const s2 = getSettings();
+    expect(s1).toEqual(s2);
+  });
+
+  test('getSettings returns a copy, not the cache reference', () => {
+    invalidateSettingsCache();
+    const s1 = getSettings();
+    s1.chatModel = 'mutated-model';
+    const s2 = getSettings();
+    expect(s2.chatModel).not.toBe('mutated-model');
+  });
+
+  test('saveSettings invalidates the cache', () => {
+    invalidateSettingsCache();
+    const s1 = getSettings();
+    s1.chatModel = 'new-model-test';
+    saveSettings(s1);
+    const s2 = getSettings();
+    expect(s2.chatModel).toBe('new-model-test');
+  });
+
+  test('defaultLocation is persisted and loaded', () => {
+    const s = getSettings();
+    s.defaultLocation = 'Wellington';
+    saveSettings(s);
+    const loaded = getSettings();
+    expect(loaded.defaultLocation).toBe('Wellington');
   });
 });

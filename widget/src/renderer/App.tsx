@@ -5,6 +5,8 @@ import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
 import PermissionModal from './components/PermissionModal';
 import { ToastContainer, useToasts } from './components/ToastContainer';
+import ModelSelector from './components/ModelSelector';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Lazy-load panels that aren't visible on first render
 const ToolsPanel = lazy(() => import("./components/ToolsPanel"));
@@ -119,6 +121,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
+  const [vramGB, setVramGB] = useState<number | null>(null);
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
@@ -136,6 +139,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           window.electron.loadConversations?.(),
         ]);
         if (mounted && loaded) setSettings(prev => ({ ...prev, ...loaded }));
+        // Detect GPU VRAM for model size warnings
+        window.electron.detectGpuVram?.().then(r => {
+          if (mounted && r?.success && r.vramGB) setVramGB(r.vramGB);
+        }).catch(() => {});
         if (mounted && convResult?.success && convResult.data) {
           const store = convResult.data;
           
@@ -268,6 +275,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       setStatus(prev => ({ ...prev, ollama: data.online ? 'online' : 'offline' }));
     });
 
+    const modelFbUnsub = window.electron.onModelFallback?.((data) => {
+      addToast(
+        `Model "${data.from}" not installed — switched to "${data.to}"`,
+        'warning',
+        8000
+      );
+      setSettings(prev => ({ ...prev, chatModel: data.to }));
+    });
+
+    // Re-read settings after subscribing to catch any model fallback that fired before mount
+    window.electron.getSettings?.().then(s => {
+      if (s?.chatModel) setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
+    });
+
     return () => {
       unsubscribe?.();
       permUnsub?.();
@@ -275,6 +296,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       hwUnsub?.();
       titleUnsub?.();
       ollamaUnsub?.();
+      modelFbUnsub?.();
     };
   }, []);
 
@@ -877,6 +899,26 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             <span className={`widget-status-dot${status.ollama === 'offline' ? ' disconnected' : ''}`} />
             <h1>SADIE</h1>
           </div>
+          <div className="widget-model-selector">
+            <ModelSelector
+              currentModel={settings.chatModel || 'qwen2.5:7b'}
+              customLLM={settings.customLLM}
+              useCustomLLM={settings.useCustomLLM}
+              onModelChange={async (model: string, useCustom: boolean) => {
+                const newSettings = { ...settings, chatModel: model, useCustomLLM: useCustom };
+                setSettings(newSettings);
+                await saveSettings(newSettings);
+                setMessages(prev => [...prev, {
+                  id: newId(), role: 'system',
+                  content: `Switched to ${useCustom ? (settings.customLLM?.name || 'Custom API') : model}`,
+                  createdAt: Date.now(), error: null
+                }]);
+              }}
+              onConfigureCustom={() => setSettingsOpen(true)}
+              locked={false}
+              vramGB={vramGB}
+            />
+          </div>
           <div className="widget-titlebar-controls">
             <button
               type="button"
@@ -947,16 +989,18 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       )}
 
       {/* Conversation Sidebar */}
-      <Suspense fallback={null}>
-        <ConversationSidebar
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          currentConversationId={conversationId}
-          onSelectConversation={handleSelectConversation}
-          onNewConversation={handleNewConversation}
-          onDeleteConversation={handleDeleteConversation}
-        />
-      </Suspense>
+      <ErrorBoundary zone="Sidebar">
+        <Suspense fallback={null}>
+          <ConversationSidebar
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            currentConversationId={conversationId}
+            onSelectConversation={handleSelectConversation}
+            onNewConversation={handleNewConversation}
+            onDeleteConversation={handleDeleteConversation}
+          />
+        </Suspense>
+      </ErrorBoundary>
 
       {/* Status Indicator / Header */}
       <StatusIndicator 
@@ -995,10 +1039,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
         mode={mode}
         onModeChange={setMode}
-        currentModel={settings.chatModel || 'llama3.2:3b'}
+        currentModel={settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
         uncensoredModel={settings.uncensoredModel || 'dolphin-llama3:8b'}
+        vramGB={vramGB}
         onModelChange={async (model: string, useCustom: boolean) => {
           const newSettings = {
             ...settings,
@@ -1029,17 +1074,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
       {/* Main Content Area */}
       {mode === 'chat' ? (
-        <ChatInterface 
-          messages={messages}
-          onSendMessage={handleSendMessage}
-          onUserCancel={handleUserCancel}
-          onRetry={retryMessage}
-          onBookmark={handleBookmark}
-          onReact={handleReact}
-          onEdit={handleEdit}
-          systemPrompt={conversationSystemPrompt}
-          onUpdateSystemPrompt={updateConversationSystemPrompt}
-        />
+        <ErrorBoundary zone="Chat">
+          <ChatInterface
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            onUserCancel={handleUserCancel}
+            onRetry={retryMessage}
+            onBookmark={handleBookmark}
+            onReact={handleReact}
+            onEdit={handleEdit}
+            systemPrompt={conversationSystemPrompt}
+            onUpdateSystemPrompt={updateConversationSystemPrompt}
+          />
+        </ErrorBoundary>
       ) : mode === 'automation' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <AutomationCenter />
@@ -1066,13 +1113,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
       {/* Settings Panel */}
       {settingsOpen && (
-        <Suspense fallback={null}>
-          <SettingsPanel
-            settings={settings}
-            onSave={saveSettings}
-            onClose={() => setSettingsOpen(false)}
-          />
-        </Suspense>
+        <ErrorBoundary zone="Settings">
+          <Suspense fallback={null}>
+            <SettingsPanel
+              settings={settings}
+              onSave={saveSettings}
+              onClose={() => setSettingsOpen(false)}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {/* Tools Panel */}

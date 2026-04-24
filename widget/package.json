@@ -9,9 +9,9 @@
   "license": "MIT",
   "scripts": {
     "start": "npm run build && electron .",
-    "test": "jest --config=jest.config.js --runInBand",
-    "test:smoke": "jest --config=jest.config.js --runInBand --testPathPattern=permissions-smoke.test.ts",
-    "test:file": "jest --config=jest.config.js --runInBand --testPathPattern",
+    "test": "jest --config=jest.config.ts --runInBand",
+    "test:smoke": "jest --config=jest.config.ts --runInBand --testPathPattern=permissions-smoke.test.ts",
+    "test:file": "jest --config=jest.config.ts --runInBand --testPathPattern",
     "build": "electron-vite build",
     "dev": "electron-vite dev",
     "predist": "powershell -NoProfile -ExecutionPolicy Bypass -File \"..\\scripts\\generate-icon.ps1\"",

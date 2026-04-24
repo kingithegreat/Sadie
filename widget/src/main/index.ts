@@ -17,6 +17,7 @@ import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import axios from 'axios';
+import { spawn } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -147,9 +148,9 @@ app.whenReady().then(async () => {
 
     // Ollama health check — ping /api/tags and notify renderer so it can show
     // a banner if Ollama isn't running yet.
+    let ollamaOnline = false;
     try {
       const ollamaUrl = getSettings().ollamaUrl || 'http://127.0.0.1:11434';
-      let ollamaOnline = false;
       try {
         await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
         ollamaOnline = true;
@@ -158,7 +159,64 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sadie:ollama-status', { online: ollamaOnline, url: ollamaUrl });
       }
+
+      // Validate configured chatModel is actually installed — auto-switch if not
+      if (ollamaOnline) {
+        try {
+          const currentSettings = getSettings();
+          const configuredModel = currentSettings.chatModel || 'qwen2.5:7b';
+          const tagsRes = await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
+          const installed: string[] = (tagsRes.data?.models || []).map((m: any) => m.name);
+          if (!installed.includes(configuredModel)) {
+            const preferred = ['qwen2.5:7b', 'mistral:latest', 'qwen2.5:3b', 'phi4-mini', 'llama3.2:3b'];
+            const fallback = preferred.find(p => installed.includes(p)) || installed.find(n => !n.includes('embed') && !n.includes('moondream'));
+            if (fallback && fallback !== configuredModel) {
+              console.warn(`[MAIN] chatModel "${configuredModel}" not installed — switching to "${fallback}"`);
+              saveSettings({ ...currentSettings, chatModel: fallback });
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('sadie:model-fallback', { from: configuredModel, to: fallback });
+              }
+            }
+          }
+        } catch (e) { console.error('[MAIN] Model validation error:', e); }
+      }
     } catch (e) { console.error('[MAIN] Ollama health check error:', e); }
+
+    // Ollama heartbeat — check every 30s and auto-restart if down.
+    // Only notify renderer on state CHANGE to avoid toast spam.
+    let lastOllamaOnline = ollamaOnline;
+    let restartInFlight = false;
+    const HEARTBEAT_INTERVAL = 30_000;
+    setInterval(async () => {
+      try {
+        const ollamaUrl = (getSettings().ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
+        await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
+        restartInFlight = false;
+        if (!lastOllamaOnline) {
+          lastOllamaOnline = true;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sadie:ollama-status', { online: true, url: ollamaUrl });
+          }
+        }
+      } catch {
+        if (lastOllamaOnline) {
+          console.log('[MAIN] Ollama heartbeat: offline — attempting auto-restart');
+          lastOllamaOnline = false;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sadie:ollama-status', { online: false, autoRestarting: true });
+          }
+        }
+        if (!restartInFlight) {
+          restartInFlight = true;
+          try {
+            const cmd = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
+            const child = spawn(cmd, ['serve'], { detached: true, stdio: 'ignore', windowsHide: true });
+            child.on('error', () => { restartInFlight = false; });
+            child.unref();
+          } catch { restartInFlight = false; }
+        }
+      }
+    }, HEARTBEAT_INTERVAL);
 
     // First-time hardware profile detection — runs only when no profile has been
     // set yet (i.e. fresh install or upgrade from an older version).
