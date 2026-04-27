@@ -47,7 +47,7 @@ This document describes the high-level architecture of SADIE: how the major comp
 │      │  Ollama (local)   │   │  n8n (optional)  │|                  │
 │      │  localhost:11434  │   │  localhost:5678   │|                  │
 │      │                   │   │                   │|                  │
-│      │  phi4-mini        │<──│  Workflow triggers│|                  │
+│      │  qwen2.5:7b        │<──│  Workflow triggers│|                  │
 │      │  moondream        │   │  HTTP webhooks   │|                  │
 │      │  nomic-embed-text │   │                   │|                  │
 │      │  dolphin-phi:2.7b │   └───────────────────┘|                  │
@@ -75,7 +75,8 @@ The React UI running inside Chromium. Key responsibilities:
 - **Tools panel** — lists all registered tools grouped by category with a live search filter.
 - **Analytics dashboard** — visualises conversation activity and tool usage metrics.
 - **Telemetry UI** — opt-in consent flow and event dashboard (no data leaves the machine).
-- **Focus mode** — distraction-free full-screen chat.
+- **Model selector** — dynamic Ollama model picker with install/pull, VRAM warnings, and prev/next navigation.
+- **ErrorBoundary zones** — wraps Chat, Sidebar, and Settings with compact crash recovery ("X crashed" + Retry).
 
 The renderer communicates with the main process exclusively through the preload bridge (`window.electron.*`). It never accesses Node.js APIs directly.
 
@@ -95,7 +96,7 @@ The Node.js Electron main process. Key responsibilities:
 | `agentic-loop.ts` | Multi-step request detection and agentic tool-chaining engine. Detects compound requests via heuristics, injects agentic system prompt, and streams step-progress indicators during autonomous tool execution (up to 6 rounds). |
 | `morning-briefing.ts` | Proactive daily briefing generator. On first interaction each day, runs weather + calendar + reminders tools in parallel and streams a formatted summary. State persisted in `briefing-state.json`. |
 | `ipc-handlers.ts` | Receives calls from the preload bridge and routes them to the correct subsystem. |
-| `config-manager.ts` | Reads and writes `config/default-config.json` and per-session settings with schema validation. |
+| `config-manager.ts` | Reads and writes `config/user-settings.json` with schema validation. Includes 5-second in-memory cache to avoid ~20 disk reads per message. Secret fields (API keys) are encrypted at rest via `safeStorage`. |
 | `window-manager.ts` | Manages always-on-top behaviour, global hotkey registration (`Ctrl+Shift+Space`), tray icon, and window lifecycle. |
 | `auto-updater.ts` | Checks for updates 5 seconds after startup via electron-updater. Sends IPC progress events to the renderer. Skipped in E2E/test mode. |
 | `scheduler.ts` | Manages persistent reminders and scheduled jobs. Saves to and loads from `userData/memory/json-store/reminders.json`. |
@@ -200,6 +201,48 @@ Models with 3B parameters or fewer (detected by `isSmallModel()`) receive scaled
 
 This prevents silent context overflow on 4,096-token models like `llama3.2:3b`.
 
+### LLM Synthesis for Tool Results
+
+When a deterministic tool (weather, NBA, web search) returns structured data, the router does not dump raw JSON to the user. Instead, it:
+
+1. Formats the data into a human-readable summary (e.g., temperature, condition, wind).
+2. Sends the raw summary as an immediate stream chunk so the user sees data instantly.
+3. Builds a `buildToolSynthesisPrompt()` with the data + original question.
+4. Streams a natural-language follow-up via `synthesisStream()`, which routes to the cloud LLM (if configured) or local Ollama.
+
+This produces conversational responses ("It's a warm 24°C in Auckland today…") instead of bullet-point data dumps.
+
+### VRAM Detection and Model Warnings
+
+On first launch, `detectGpuVram()` (via `moa.ts`) queries the GPU using PowerShell's `Get-CimInstance Win32_VideoController`. The detected VRAM is stored in settings as `hardwareProfile` and drives:
+
+- **Model selector badges** — "slow" (model exceeds VRAM) or "tight" (model fits but leaves <1 GB headroom).
+- **Confirmation dialog** — arrow navigation and dropdown selection both route through `selectModelWithVramCheck()`, which shows a confirm prompt for over-VRAM models.
+- **First-run auto-defaults** — if no hardware profile exists, the app applies model defaults matching the GPU tier (e.g., 4 GB users skip 8B+ models).
+
+### Ollama Heartbeat
+
+A 30-second interval (`HEARTBEAT_INTERVAL`) polls `GET /api/tags` on the configured Ollama URL. On state change:
+
+- **Online → Offline**: pushes `sadie:ollama-status { online: false, autoRestarting: true }` to the renderer, then spawns `ollama serve` in a detached process to attempt auto-recovery.
+- **Offline → Online**: pushes `sadie:ollama-status { online: true }`. The renderer shows/hides a status toast accordingly.
+
+### Model Fallback
+
+At startup, if the configured `chatModel` is not installed in Ollama, the main process selects the best available alternative (preferring larger models) and pushes `sadie:model-fallback { from, to }` to the renderer. The renderer updates its settings state and shows a warning toast.
+
+### Follow-Up Context Guards
+
+When a conversation has a `lastIntent` (e.g., the user just asked about weather), subsequent messages are checked for domain relevance before re-invoking the same tool:
+
+- **Weather**: requires weather keywords (`rain`, `forecast`, `temperature`, etc.) or referential language (`more`, `tomorrow`, `how about`). Without these, the intent is cleared and the message falls through to normal LLM routing.
+- **NBA**: similar keyword guards prevent non-sports queries from re-triggering `nba_query`.
+- **Web search**: domain-mismatch guard clears intent when the follow-up is clearly unrelated (>30 chars with no overlap).
+
+### Custom Chat Avatars
+
+The chat UI uses illustrated PNG avatars instead of emoji placeholders. `SadieChatAvatar.png` (illustrated character, square-cropped) and `UserChatAvatar.png` (golden hero icon) are Vite-imported as asset URLs and rendered as `<img>` elements inside `.message-avatar` containers with `object-fit: cover` and `border-radius: 50%`.
+
 ---
 
 ## Safety Model
@@ -287,7 +330,7 @@ Conversations are stored in the Electron `userData` directory and loaded via `lo
 
 ### Settings Persistence
 
-User settings are read from and written to `config/default-config.json` via the `loadSettings` / `saveSettings` IPC channels.
+User settings are read from and written to `%APPDATA%\SADIE\config\user-settings.json` via the `loadSettings` / `saveSettings` IPC channels. The `config-manager` caches settings in memory with a 5-second TTL to avoid repeated disk reads (~20 per message). Secret fields (API keys) are encrypted at rest using Electron's `safeStorage` API and decrypted transparently on read.
 
 ### Reminder Persistence
 

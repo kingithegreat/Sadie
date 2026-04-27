@@ -47,9 +47,9 @@ SADIE supports bringing your own LLM API from 11 named providers or any custom O
 - **Gemma 2 27B** — Google model, strong quality
 
 ### Cerebras (Free Tier)
-- **Llama 3.3 70B** — best quality, ~2000 tok/s inference speed
+- **Qwen 3 235B** — best quality on Cerebras, 128K context
 - **Llama 3.1 8B** — ultra-fast inference
-- **DeepSeek R1 Distill 70B** — reasoning model
+- **GPT-OSS 120B** — strong general-purpose model
 
 ### SambaNova (Free Tier)
 - **Llama 3.3 70B** — best quality on SambaNova

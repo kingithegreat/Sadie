@@ -465,6 +465,32 @@ describe('preProcessIntent', () => {
       expect(res!.calls[0].arguments.location.toLowerCase()).toBe('tokyo');
     });
 
+    test('non-weather follow-up after weather does NOT re-invoke weather', async () => {
+      const CONV_ID = 'test-weather-followup';
+      clearHistory(CONV_ID);
+      clearLastIntent(CONV_ID);
+      setLastIntent(CONV_ID,
+        { calls: [{ name: 'get_weather', arguments: { location: 'Auckland' } }] },
+        'what is the weather');
+      const res = await preProcessIntent('what the petrol price in nz?', CONV_ID);
+      // Should NOT route to get_weather
+      if (res) {
+        expect(res.calls[0].name).not.toBe('get_weather');
+      }
+    });
+
+    test('weather follow-up with weather keyword does re-invoke', async () => {
+      const CONV_ID = 'test-weather-followup-2';
+      clearHistory(CONV_ID);
+      clearLastIntent(CONV_ID);
+      setLastIntent(CONV_ID,
+        { calls: [{ name: 'get_weather', arguments: { location: 'Auckland' } }] },
+        'what is the weather');
+      const res = await preProcessIntent('what about tomorrow', CONV_ID);
+      expect(res).not.toBeNull();
+      expect(res!.calls[0].name).toBe('get_weather');
+    });
+
     test('"shedule" typo routes to NBA', async () => {
       const res = await preProcessIntent('NBA shedule');
       expect(res).not.toBeNull();

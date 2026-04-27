@@ -26,7 +26,7 @@ This guide walks you through installing and running SADIE on a fresh machine, fr
 |---|---|---|
 | [Node.js](https://nodejs.org) | 18 LTS or higher | Required to build and run the Electron application |
 | [npm](https://nodejs.org) | 9 or higher | Ships with Node.js |
-| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models (llama3.2:3b, qwen2.5-coder:3b, LLaVA) |
+| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models (qwen2.5:7b, qwen2.5-coder:3b, LLaVA) |
 | [Docker Desktop](https://docs.docker.com/get-docker/) | Latest | Required for n8n workflow orchestration (optional) |
 | [Git](https://git-scm.com) | Latest | Version control |
 
@@ -62,7 +62,7 @@ This script will:
 1. Verify that Node.js, npm, Docker, and Ollama are installed and meet minimum versions.
 2. Create any missing configuration files (`config/api-allowlist.json`, `config/default-config.json`).
 3. Run `npm install` inside `widget/` if `node_modules` is absent.
-4. Pull required Ollama models (`llama3.2:3b`, `qwen2.5-coder:3b`, `llava:latest`).
+4. Pull required Ollama models (`qwen2.5:7b`, `qwen2.5-coder:3b`, `llava:latest`).
 5. Print a checklist summary with instructions for anything requiring manual attention.
 
 > **Note:** Re-running the script is safe. It will not overwrite existing config files or re-pull models that are already installed.
@@ -94,7 +94,7 @@ curl http://localhost:11434/api/tags
 ### Required Models
 
 ```bash
-ollama pull llama3.2:3b          # Primary chat model (reasoning + tool-calling)
+ollama pull qwen2.5:7b           # Primary chat model (reasoning + tool-calling)
 ollama pull qwen2.5-coder:3b     # Code generation model
 ollama pull llava:latest          # Vision model (image analysis)
 ollama pull dolphin-llama3:8b     # Uncensored mode (optional)
@@ -151,7 +151,7 @@ When SADIE opens for the first time:
 1. **Welcome modal** — A first-run modal introduces SADIE's features and capabilities. Click **Get Started** to proceed.
 2. **Telemetry consent** — A consent prompt appears. Telemetry is opt-in only and stores data locally; nothing is sent to a remote server.
 3. **Global hotkey** — Defaults to `Ctrl+Shift+Space` (Windows). Changeable in **Settings > Widget Hotkey**.
-4. **Model selection** — Settings default to `llama3.2:3b` for chat and `qwen2.5-coder:3b` for code. Update in **Settings** if you pulled different models.
+4. **Model selection** — Settings default to `qwen2.5:7b` for chat and `qwen2.5-coder:3b` for code. The model selector shows VRAM warnings for models that exceed your GPU capacity. Update in **Settings** if you pulled different models.
 5. **n8n URL** — Defaults to `http://localhost:5678`. Update in **Settings > n8n URL** if you changed the docker-compose port.
 
 ---
@@ -181,7 +181,8 @@ What tools do you have?
 
 - Confirm `ollama serve` is running.
 - Run `ollama list` to see installed models.
-- Manually pull a model: `ollama pull llama3.2:3b`
+- Manually pull a model: `ollama pull qwen2.5:7b`
+- SADIE includes an Ollama heartbeat that auto-restarts Ollama if it goes down. Check the status indicator in the UI.
 - Verify the API is reachable: `curl http://localhost:11434/api/tags`
 
 ### Widget Does Not Start / Blank Screen

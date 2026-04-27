@@ -100,6 +100,14 @@ The renderer process communicates with the main process exclusively through the 
 | `ttsSpeak(text, rate?)` | Speak text aloud via system TTS. |
 | `ttsStop()` | Stop current TTS playback. |
 
+### Hardware & Model Management
+
+| Method | Returns | Description |
+|---|---|---|
+| `detectGpuVram()` | `Promise<{ vramGB: number \| null, gpuName: string \| null }>` | Detect GPU VRAM via PowerShell `Win32_VideoController`. Used for model selector warnings and first-run hardware profiling. |
+| `onOllamaStatus(cb)` | `() => void` (unsubscribe) | Fires on Ollama connectivity change. Payload: `{ online: boolean, url: string, autoRestarting?: boolean }`. Heartbeat checks every 30s. |
+| `onModelFallback(cb)` | `() => void` (unsubscribe) | Fires at startup when the configured chat model is not installed and a fallback was selected. Payload: `{ from: string, to: string }`. |
+
 ### Uncensored Mode
 
 | Method | Description |
@@ -178,6 +186,7 @@ The table below lists every named IPC channel. Direction: **R→M** = renderer s
 | `sadie:mcp-add-server` | R→M | Add MCP server. |
 | `sadie:mcp-remove-server` | R→M | Remove MCP server. |
 | `sadie:mcp-toggle-server` | R→M | Toggle MCP server. |
+| `sadie:detect-gpu-vram` | R→M | Detect GPU VRAM (PowerShell). Returns `{ vramGB, gpuName }`. |
 | `sadie:automation:image:generate` | R→M | Generate image via SD/cloud. |
 
 ### Fire-and-forget (send)
@@ -204,6 +213,8 @@ The table below lists every named IPC channel. Direction: **R→M** = renderer s
 | `sadie:show-window` | — | Show / focus widget. |
 | `sadie:hide-window` | — | Hide widget. |
 | `sadie:reminder-fired` | `{ message, label }` | A scheduled reminder fired. |
+| `sadie:ollama-status` | `{ online, url, autoRestarting? }` | Ollama heartbeat state change (every 30s check). |
+| `sadie:model-fallback` | `{ from, to }` | Configured model not installed; auto-switched to fallback. |
 | `sadie:router-log` | `string` | Diagnostic log line from message router (dev / E2E only). |
 | `sadie:append-renderer-log` | `string` | Renderer log forwarded to main for persistence. |
 

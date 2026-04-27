@@ -1388,6 +1388,18 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
           return null;
         }
 
+        // get_weather: only re-invoke if the follow-up has weather-related words
+        // or referential language. "petrol prices" after weather shouldn't re-fire weather.
+        if (toolName === 'get_weather') {
+          const hasWeatherKeyword = /\b(weather|temperature|rain|snow|forecast|wind|humid|cold|hot|warm|storm|cloudy|sunny|haze|hazy|fog|degrees|uv|umbrella|jacket)\b/i.test(userMessage);
+          const hasReferentialLanguage = /\b(more|detail|they|them|how about|what about|also|too|update|again|tomorrow|tonight|yesterday|later|this week|next week)\b/i.test(userMessage);
+          if (!hasWeatherKeyword && !hasReferentialLanguage) {
+            clearLastIntent(conversationId!);
+            return null;
+          }
+          return { calls: [{ name: 'get_weather', arguments: args }] };
+        }
+
         // For get_news follow-ups, let the LLM answer from conversation history
         // (the previous news results are already in context). Re-invoking would
         // just dump the same raw articles again without answering the question.
@@ -1396,7 +1408,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
           return null; // LLM handles with prior context
         }
 
-        // For any other tool (get_weather, etc.) re-invoke with same args
+        // For any other tool re-invoke with same args
         return { calls: [{ name: toolName, arguments: args }] };
       }
     }

@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import type { ChatMessage } from "../types";
+import sadieChatAvatarUrl from '../assets/SadieChatAvatar.png';
+import userChatAvatarUrl from '../assets/UserChatAvatar.png';
 
 // highlight.js — core + common languages (tree-shaken)
 import hljs from 'highlight.js/lib/core';
@@ -695,14 +697,14 @@ export function MessageBubble({
           </div>
 
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? "⚡" : "✨"}
+            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="SADIE" className="avatar-img" />}
           </div>
         </>
       ) : (
         <>
           {/* ASSISTANT: avatar first, content second */}
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? "⚡" : "✨"}
+            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="SADIE" className="avatar-img" />}
           </div>
 
           <div className="message-content">

@@ -469,15 +469,24 @@ body {
 }
 
 .message-avatar.user {
-  background: linear-gradient(135deg, oklch(55% 0.15 280), oklch(60% 0.14 250));
-  color: white;
-  border: 1px solid oklch(65% 0.12 260 / 0.3);
+  background: transparent;
+  border: none;
+  overflow: hidden;
+  border-radius: 50%;
 }
 
 .message-avatar.assistant {
-  background: linear-gradient(135deg, var(--accent-dark), oklch(60% 0.12 78));
-  color: var(--text-dark);
-  border: 1px solid oklch(72% 0.14 78 / 0.2);
+  background: transparent;
+  border: none;
+  overflow: hidden;
+  border-radius: 50%;
+}
+
+.message-avatar .avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 /* Message content */
@@ -2754,8 +2763,10 @@ body {
 /* (Duplicate message/bubble overrides removed — canonical styles are above) */
 
 .message-avatar.assistant {
-  background: linear-gradient(135deg, var(--sadie-charcoal-2), color-mix(in oklch, var(--sadie-charcoal-2), black 6%));
-  color: var(--sadie-gold-500);
+  background: transparent;
+  border: none;
+  overflow: hidden;
+  border-radius: 50%;
 }
 
 /* Send button: gold glow on hover */
