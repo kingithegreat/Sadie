@@ -26,7 +26,6 @@ import { voiceToolDefs, voiceToolHandlers } from './voice';
 import { memoryToolDefs, memoryToolHandlers } from './memory';
 import { documentToolDefs, documentToolHandlers } from './documents';
 import { nbaQueryDef, nbaQueryHandler } from './nba';
-import sports from './sports';
 import { notificationToolDefs, notificationToolHandlers } from './notification';
 import { codeRunnerToolDefs, codeRunnerToolHandlers } from './code-runner';
 import { reminderToolDefs, reminderToolHandlers } from './reminder';
@@ -509,8 +508,6 @@ export function initializeTools(): void {
 
   // Register NBA tool (balldontlie)
   registerTool(nbaQueryDef.name, nbaQueryDef, nbaQueryHandler);
-  // Register sports report tool
-  registerTool(sports.definition.name, sports.definition, sports.handler);
 
   // Register notification tools
   for (const def of notificationToolDefs) {

@@ -16,6 +16,7 @@ const ConversationSidebar = lazy(() => import("./components/ConversationSidebar"
 const AutomationCenter = lazy(() => import("./components/AutomationCenter").then(m => ({ default: m.AutomationCenter })));
 const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
 const WebServicesPanel = lazy(() => import("./components/WebServicesPanel"));
+const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
@@ -35,7 +36,7 @@ import type {
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'web';
+type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -71,7 +72,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }));
   });
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
-  const [_pendingToolCall, setPendingToolCall] = useState<any | null>(null);
+  const [, setPendingToolCall] = useState<any | null>(null);
   const [pendingConfirmationData, setPendingConfirmationData] = useState<any>(null);
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
   const [permissionRequestData, setPermissionRequestData] = useState<{ requestId?: string; missingPermissions?: string[]; reason?: string; streamId?: string } | null>(null);
@@ -1094,6 +1095,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       ) : mode === 'image' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <ImageGenerator />
+        </Suspense>
+      ) : mode === 'documents' ? (
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <DocumentViewer />
         </Suspense>
       ) : (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>

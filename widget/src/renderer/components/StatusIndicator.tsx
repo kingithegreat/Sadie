@@ -15,8 +15,8 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
-  mode?: 'chat' | 'automation' | 'image' | 'web';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'web') => void;
+  mode?: 'chat' | 'automation' | 'image' | 'web' | 'documents';
+  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'web' | 'documents') => void;
   currentModel?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
@@ -250,18 +250,18 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               💬 Chat
             </button>
             <button
-              className={`mode-btn ${mode === 'automation' ? 'active' : ''}`}
-              onClick={() => onModeChange('automation')}
-              title="Automation Control Center"
-            >
-              ⚙️ Automation
-            </button>
-            <button
               className={`mode-btn ${mode === 'image' ? 'active' : ''}`}
               onClick={() => onModeChange('image')}
               title="Image Mode"
             >
               🎨 Image
+            </button>
+            <button
+              className={`mode-btn ${mode === 'documents' ? 'active' : ''}`}
+              onClick={() => onModeChange('documents')}
+              title="Document Viewer"
+            >
+              📄 Docs
             </button>
             <button
               className={`mode-btn ${mode === 'web' ? 'active' : ''}`}

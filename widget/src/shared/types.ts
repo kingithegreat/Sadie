@@ -318,6 +318,17 @@ export interface ElectronAPI {
   mcpRemoveServer?: (name: string) => Promise<any>;
   mcpToggleServer?: (name: string, enabled: boolean) => Promise<any>;
 
+  parseDocument?: (filePath: string) => Promise<{
+    success: boolean;
+    text?: string;
+    html?: string;
+    fileName?: string;
+    pageCount?: number;
+    type?: string;
+    error?: string;
+  }>;
+  writeDocument?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+
   // GPU VRAM detection and hardware-aware model recommendations
   detectGpuVram?: () => Promise<{
     success: boolean;

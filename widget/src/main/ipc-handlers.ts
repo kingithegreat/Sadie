@@ -1097,6 +1097,77 @@ try {
     }
   });
 
+  // ── Document Viewer ────────────────────────────────────────────────────────
+  ipcMain.handle('sadie:parse-document', async (_event, filePath: string) => {
+    try {
+      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+
+      const ext = path.extname(resolved).toLowerCase();
+      const buffer = fs.readFileSync(resolved);
+      const fileName = path.basename(resolved);
+
+      // DOCX — return both HTML (for rendering) and plain text (for editing/export)
+      if (ext === '.docx') {
+        const mammoth = await import('mammoth');
+        const [htmlResult, textResult] = await Promise.all([
+          mammoth.convertToHtml({ buffer }),
+          mammoth.extractRawText({ buffer }),
+        ]);
+        return { success: true, html: htmlResult.value, text: textResult.value, fileName };
+      }
+
+      // PDF
+      if (ext === '.pdf') {
+        const pdfParse = require('pdf-parse');
+        const result = await pdfParse(buffer);
+        return { success: true, text: result.text, pageCount: result.numpages, fileName };
+      }
+
+      // Excel
+      if (ext === '.xlsx' || ext === '.xls') {
+        const ExcelJS = require('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer);
+        const lines: string[] = [];
+        workbook.eachSheet((sheet: any) => {
+          lines.push(`## Sheet: ${sheet.name}`);
+          sheet.eachRow((row: any) => {
+            const cells = (row.values as any[]) || [];
+            const values = cells.slice(1).map((v: any) => {
+              if (v === null || v === undefined) return '';
+              if (typeof v === 'object' && v.result !== undefined) return String(v.result);
+              if (typeof v === 'object' && v.text) return String(v.text);
+              return String(v);
+            });
+            lines.push(values.join('\t'));
+          });
+          lines.push('');
+        });
+        return { success: true, text: lines.join('\n'), type: 'spreadsheet', fileName };
+      }
+
+      // Plain text / code / CSV / markdown
+      return { success: true, text: buffer.toString('utf-8'), fileName };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('sadie:write-document', async (_event, filePath: string, content: string) => {
+    try {
+      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      const homeDir = os.homedir();
+      if (!resolved.toLowerCase().startsWith(homeDir.toLowerCase())) {
+        return { success: false, error: 'Access denied: path must be within home directory' };
+      }
+      fs.writeFileSync(resolved, content, 'utf-8');
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
   // Mark registration complete
   (global as any).__sadie_ipc_registered = true;
   if (isDevelopment) {

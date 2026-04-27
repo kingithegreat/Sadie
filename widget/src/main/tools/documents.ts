@@ -15,6 +15,7 @@ const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
 // Lazy load document parsers
 let pdfParse: any = null;
 let mammoth: typeof import('mammoth') | null = null;
+let ExcelJS: any = null;
 
 async function getPdfParser() {
   if (!pdfParse) {
@@ -29,6 +30,13 @@ async function getMammoth() {
     mammoth = await import('mammoth');
   }
   return mammoth;
+}
+
+async function getExcelJS() {
+  if (!ExcelJS) {
+    ExcelJS = require('exceljs');
+  }
+  return ExcelJS;
 }
 
 /**
@@ -68,6 +76,12 @@ function inferMimeType(ext: string): string {
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     case '.doc':
       return 'application/msword';
+    case '.xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case '.xls':
+      return 'application/vnd.ms-excel';
+    case '.csv':
+      return 'text/csv';
     case '.txt':
       return 'text/plain';
     default:
@@ -108,6 +122,39 @@ async function parseDocumentContent(
     return { text: result.value };
   }
   
+  // Excel spreadsheet (.xlsx)
+  if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    mimeType === 'application/vnd.ms-excel' ||
+    ext === '.xlsx' || ext === '.xls'
+  ) {
+    const EJ = await getExcelJS();
+    const workbook = new EJ.Workbook();
+    await workbook.xlsx.load(buffer);
+    const lines: string[] = [];
+    workbook.eachSheet((sheet: any) => {
+      lines.push(`## Sheet: ${sheet.name}`);
+      sheet.eachRow((row: any, rowNum: number) => {
+        const cells = row.values as any[];
+        // row.values is 1-indexed (index 0 is undefined)
+        const values = (cells || []).slice(1).map((v: any) => {
+          if (v === null || v === undefined) return '';
+          if (typeof v === 'object' && v.result !== undefined) return String(v.result);
+          if (typeof v === 'object' && v.text) return String(v.text);
+          return String(v);
+        });
+        lines.push(values.join('\t'));
+      });
+      lines.push('');
+    });
+    return { text: lines.join('\n') };
+  }
+
+  // CSV files
+  if (mimeType === 'text/csv' || ext === '.csv') {
+    return { text: buffer.toString('utf-8') };
+  }
+
   // Legacy Word document (.doc) - mammoth doesn't support .doc well
   if (mimeType === 'application/msword' || ext === '.doc') {
     // Try mammoth anyway, but warn user

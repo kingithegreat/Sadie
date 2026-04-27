@@ -350,6 +350,14 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:detect-gpu-vram');
   },
 
+  parseDocument: async (filePath: string) => {
+    return await ipcRenderer.invoke('sadie:parse-document', filePath);
+  },
+
+  writeDocument: async (filePath: string, content: string) => {
+    return await ipcRenderer.invoke('sadie:write-document', filePath, content);
+  },
+
   pullModel: async (modelName: string) => {
     return await ipcRenderer.invoke('sadie:pull-model', modelName);
   },
