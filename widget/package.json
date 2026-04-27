@@ -7,6 +7,10 @@
   "productName": "SADIE",
   "author": "kingithegreat",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kingithegreat/Sadie.git"
+  },
   "scripts": {
     "start": "npm run build && electron .",
     "test": "jest --config=jest.config.ts --runInBand",

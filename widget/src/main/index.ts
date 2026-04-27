@@ -16,6 +16,7 @@ import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
+import { shutdownMcpServers } from './mcp-client';
 import axios from 'axios';
 import { spawn } from 'child_process';
 
@@ -289,6 +290,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   globalShortcut.unregisterAll();
   closeAllServiceWindows();
+  shutdownMcpServers().catch(safeCatch);
 });
 
 app.on('window-all-closed', () => {

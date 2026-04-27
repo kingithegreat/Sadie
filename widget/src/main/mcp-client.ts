@@ -52,6 +52,10 @@ interface ConnectedServer {
 
 const connectedServers: ConnectedServer[] = [];
 
+const MCP_CONNECT_TIMEOUT = 15_000;
+const MCP_MAX_RETRIES = 2;
+const MCP_RETRY_DELAY = 3_000;
+
 // ─── Config path ─────────────────────────────────────────────────────────────
 
 function mcpConfigPath(): string {
@@ -105,10 +109,23 @@ export async function initializeMcpServers(
   }
 
   for (const config of enabled) {
-    try {
-      await connectServer(config, registerTool);
-    } catch (err) {
-      console.error(`[MCP] Failed to connect to server "${config.name}":`, err);
+    let connected = false;
+    for (let attempt = 0; attempt <= MCP_MAX_RETRIES && !connected; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`[MCP] Retrying "${config.name}" (attempt ${attempt + 1}/${MCP_MAX_RETRIES + 1})...`);
+          await new Promise(r => setTimeout(r, MCP_RETRY_DELAY));
+        }
+        await connectServer(config, registerTool);
+        connected = true;
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        if (attempt === MCP_MAX_RETRIES) {
+          console.error(`[MCP] Failed to connect to "${config.name}" after ${MCP_MAX_RETRIES + 1} attempts: ${msg}`);
+        } else {
+          console.warn(`[MCP] "${config.name}" attempt ${attempt + 1} failed: ${msg}`);
+        }
+      }
     }
   }
 }
@@ -135,7 +152,12 @@ async function connectServer(
     transport = new SSEClientTransport(new URL(config.url));
   }
 
-  await client.connect(transport);
+  await Promise.race([
+    client.connect(transport),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Connection timed out after ${MCP_CONNECT_TIMEOUT}ms`)), MCP_CONNECT_TIMEOUT)
+    ),
+  ]);
   console.log(`[MCP] Connected to "${config.name}"`);
 
   // Fetch the tool list
