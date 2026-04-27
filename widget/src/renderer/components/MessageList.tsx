@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import type { ChatMessage } from "../types";
 import { MessageBubble } from "./MessageBubble";
+import { getDailyQuote, getDailyJoke } from '../../shared/daily-content';
 
 export function MessageList({
   messages,
@@ -46,6 +47,8 @@ export function MessageList({
 
   // Show welcome message if no messages
   if (messages.length === 0) {
+    const quote = getDailyQuote();
+    const joke = getDailyJoke();
     return (
       <div className="welcome-container">
         <div className="welcome-icon">✨</div>
@@ -53,6 +56,17 @@ export function MessageList({
         <p className="welcome-subtitle">
           Your friendly local AI assistant. I can help you with questions, create folders, move files, and more. What would you like to do today?
         </p>
+        <div className="daily-content">
+          <div className="daily-card daily-quote">
+            <span className="daily-label">Quote of the Day</span>
+            <blockquote>"{quote.text}"</blockquote>
+            <cite>— {quote.author}</cite>
+          </div>
+          <div className="daily-card daily-joke">
+            <span className="daily-label">Joke of the Day</span>
+            <p>{joke}</p>
+          </div>
+        </div>
       </div>
     );
   }

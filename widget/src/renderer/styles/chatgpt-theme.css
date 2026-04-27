@@ -1650,6 +1650,71 @@ body {
   max-width: 400px;
 }
 
+.daily-content {
+  display: flex;
+  gap: 16px;
+  margin-top: 24px;
+  max-width: 600px;
+  width: 100%;
+}
+
+.daily-card {
+  flex: 1;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
+  text-align: left;
+}
+
+.daily-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.daily-quote blockquote {
+  margin: 0;
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.daily-quote cite {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+
+.daily-joke p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.widget-mode .daily-content {
+  flex-direction: column;
+  gap: 10px;
+  max-width: 320px;
+}
+
+.widget-mode .daily-card {
+  padding: 10px 12px;
+}
+
+.widget-mode .daily-quote blockquote,
+.widget-mode .daily-joke p {
+  font-size: 12px;
+}
+
 /* Image in messages */
 
 .message-image {
