@@ -314,6 +314,102 @@ export function updateMessageInConversation(
   return saveConversation(conversation);
 }
 
+// ============= Conversation Compaction =============
+
+const COMPACT_KEEP_RECENT = 20;
+const ARCHIVE_DIR = 'archives';
+
+function compressTurnsForCompaction(messages: Message[]): string {
+  return messages.map(m => {
+    const speaker = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'SADIE' : 'System';
+    const content = m.content
+      .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
+      .replace(/__SADIE_IMAGE__:[^\s]+/g, '[image]')
+      .replace(/```[\s\S]*?```/g, '[code block]')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (content.length <= 120) return `${speaker}: ${content}`;
+    const sentences = content.match(/[^.!?\n]+[.!?\n]+/g) ?? [];
+    if (sentences.length >= 2) {
+      const first = sentences[0]!.trim().slice(0, 100);
+      const last = sentences[sentences.length - 1]!.trim().slice(0, 80);
+      return first === last ? `${speaker}: ${first}` : `${speaker}: ${first} … ${last}`;
+    }
+    return `${speaker}: ${content.slice(0, 150)}…`;
+  }).join('\n');
+}
+
+export interface CompactResult {
+  success: boolean;
+  originalCount: number;
+  compactedCount: number;
+  archivePath?: string;
+  error?: string;
+}
+
+export function compactConversation(conversationId: string, keepRecent = COMPACT_KEEP_RECENT): CompactResult {
+  const conv = getConversation(conversationId);
+  if (!conv) return { success: false, originalCount: 0, compactedCount: 0, error: 'Conversation not found' };
+
+  const totalMessages = conv.messages.length;
+  if (totalMessages <= keepRecent) {
+    return { success: true, originalCount: totalMessages, compactedCount: totalMessages, error: 'Not enough messages to compact' };
+  }
+
+  const olderMessages = conv.messages.slice(0, totalMessages - keepRecent);
+  const recentMessages = conv.messages.slice(totalMessages - keepRecent);
+
+  // Archive original messages to a separate file
+  const storePath = getMemoryStorePath();
+  const archiveDir = path.join(storePath, ARCHIVE_DIR);
+  ensureDir(archiveDir);
+  const archiveFile = path.join(archiveDir, `archive-${conversationId}.json`);
+
+  // Append to existing archive if one exists
+  let existingArchive: Message[] = [];
+  try {
+    if (fs.existsSync(archiveFile)) {
+      const raw = fs.readFileSync(archiveFile, 'utf-8');
+      existingArchive = JSON.parse(raw);
+    }
+  } catch { /* start fresh */ }
+
+  const fullArchive = [...existingArchive, ...olderMessages];
+  fs.writeFileSync(archiveFile, JSON.stringify(fullArchive, null, 2), 'utf-8');
+
+  // Build a summary message from the older messages
+  const summaryText = compressTurnsForCompaction(olderMessages);
+  const summaryMessage: Message = {
+    id: `summary_${Date.now()}`,
+    role: 'system',
+    content: `[Conversation summary — ${olderMessages.length} earlier messages compacted]\n\n${summaryText}`,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Replace messages: summary + recent
+  conv.messages = [summaryMessage, ...recentMessages];
+  conv.updatedAt = new Date().toISOString();
+  saveConversation(conv);
+
+  return {
+    success: true,
+    originalCount: totalMessages,
+    compactedCount: conv.messages.length,
+    archivePath: archiveFile,
+  };
+}
+
+export function getConversationArchive(conversationId: string): Message[] | null {
+  const storePath = getMemoryStorePath();
+  const archiveFile = path.join(storePath, ARCHIVE_DIR, `archive-${conversationId}.json`);
+  try {
+    if (!fs.existsSync(archiveFile)) return null;
+    return JSON.parse(fs.readFileSync(archiveFile, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
 // ============= Search & Export =============
 
 export interface ConversationSearchResult {
@@ -454,6 +550,10 @@ export const MemoryManager = {
   // Tool stats
   loadToolStats,
   recordToolUsage,
+
+  // Compaction
+  compactConversation,
+  getConversationArchive,
 
   // Search & Export
   searchConversations,

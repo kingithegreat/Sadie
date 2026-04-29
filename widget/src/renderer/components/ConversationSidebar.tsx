@@ -39,6 +39,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [filterText, setFilterText] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [sortBy, setSortBy] = useState<'recent' | 'created' | 'name'>('recent');
+  const [compactStatus, setCompactStatus] = useState<Record<string, string>>({});
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -182,6 +183,33 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     { name: 'Fun', color: '#8b5cf6' },
   ];
 
+  const handleCompact = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+    if ((conv.messageCount || 0) <= 20) {
+      setCompactStatus(s => ({ ...s, [id]: 'too-few' }));
+      setTimeout(() => setCompactStatus(s => { const n = {...s}; delete n[id]; return n; }), 2500);
+      return;
+    }
+    setCompactStatus(s => ({ ...s, [id]: 'compacting' }));
+    try {
+      const r = await (window as any).electron.compactConversation?.(id);
+      if (r?.success && !r.error) {
+        setCompactStatus(s => ({ ...s, [id]: 'done' }));
+        setConversations(prev => prev.map(c =>
+          c.id === id ? { ...c, messageCount: r.compactedCount } : c
+        ));
+      } else {
+        setCompactStatus(s => ({ ...s, [id]: r?.error || 'error' }));
+      }
+      setTimeout(() => setCompactStatus(s => { const n = {...s}; delete n[id]; return n; }), 3000);
+    } catch {
+      setCompactStatus(s => ({ ...s, [id]: 'error' }));
+      setTimeout(() => setCompactStatus(s => { const n = {...s}; delete n[id]; return n; }), 3000);
+    }
+  };
+
   const handleToggleTag = async (id: string, tag: string) => {
     const conv = conversations.find(c => c.id === id);
     if (!conv) return;
@@ -322,6 +350,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                   { label: 'Export Markdown', icon: '⬇️', action: () => handleExport(conv.id, e as any, 'markdown') },
                   { label: 'Export JSON', icon: '📋', action: () => handleExport(conv.id, e as any, 'json') },
                   { label: conv.archived ? 'Restore' : 'Archive', icon: '📦', action: () => handleArchive(conv.id, e as any) },
+                  { label: `Compact${(conv.messageCount || 0) > 20 ? ` (${conv.messageCount} msgs)` : ''}`, icon: '🗜️', action: () => handleCompact(conv.id, e as any) },
                   { divider: true, label: '', action: () => {} },
                   ...TAG_OPTIONS.map(t => ({
                     label: `${(conv.tags || []).includes(t.name) ? '✓ ' : ''}${t.name}`,
@@ -354,6 +383,14 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                         <span className="conv-msg-count">{conv.messageCount || 0}</span>
                         <span className="conv-time">{formatDate(conv.updatedAt)}</span>
                       </div>
+                      {compactStatus[conv.id] && (
+                        <div className={`conv-compact-status ${compactStatus[conv.id] === 'done' ? 'success' : compactStatus[conv.id] === 'compacting' ? 'pending' : 'info'}`}>
+                          {compactStatus[conv.id] === 'compacting' ? '⏳ Compacting...' :
+                           compactStatus[conv.id] === 'done' ? '✅ Compacted' :
+                           compactStatus[conv.id] === 'too-few' ? 'ℹ️ <20 messages, nothing to compact' :
+                           `❌ ${compactStatus[conv.id]}`}
+                        </div>
+                      )}
                       {conv.tags && conv.tags.length > 0 && (
                         <div className="conv-tags">
                           {conv.tags.map(tag => (

@@ -775,6 +775,22 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   /**
+   * Compact a conversation — archive older messages, replace with summary
+   */
+  ipcMain.handle('sadie:compact-conversation', async (_event, conversationId: string, keepRecent?: number) => {
+    try {
+      const result = MemoryManager.compactConversation(conversationId, keepRecent);
+      if (result.success) {
+        clearHistory(conversationId);
+      }
+      return result;
+    } catch (err: any) {
+      console.error('Error compacting conversation:', err.message);
+      return { success: false, originalCount: 0, compactedCount: 0, error: err.message };
+    }
+  });
+
+  /**
    * Set active conversation
    */
   ipcMain.handle('sadie:set-active-conversation', async (_event, conversationId: string | null) => {

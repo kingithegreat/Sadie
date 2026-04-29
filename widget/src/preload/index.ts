@@ -418,6 +418,10 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:delete-conversation', conversationId);
   },
 
+  compactConversation: async (conversationId: string, keepRecent?: number) => {
+    return await ipcRenderer.invoke('sadie:compact-conversation', conversationId, keepRecent);
+  },
+
   setActiveConversation: async (conversationId: string | null): Promise<MemoryResult> => {
     return await ipcRenderer.invoke('sadie:set-active-conversation', conversationId);
   },

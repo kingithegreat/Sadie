@@ -792,6 +792,83 @@ body {
   right: auto;
 }
 
+/* ─── Compacted Summary Messages ─── */
+.message-wrapper.system-summary {
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px;
+}
+
+.compact-summary-details {
+  width: 100%;
+  max-width: 600px;
+  background: var(--bg-secondary, #16213e);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.compact-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+  -webkit-user-select: none;
+  user-select: none;
+  list-style: none;
+}
+
+.compact-summary-header::-webkit-details-marker {
+  display: none;
+}
+
+.compact-summary-header::after {
+  content: '▶';
+  margin-left: auto;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.compact-summary-details[open] .compact-summary-header::after {
+  transform: rotate(90deg);
+}
+
+.compact-summary-icon {
+  font-size: 14px;
+}
+
+.compact-summary-title {
+  font-weight: 500;
+  color: var(--text-secondary, #aaa);
+}
+
+.compact-summary-body {
+  padding: 10px 14px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary, #888);
+  border-top: 1px solid var(--border-color, rgba(255,255,255,0.06));
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-primary, #1a1a2e);
+}
+
+/* ─── Sidebar Compact Status ─── */
+.conv-compact-status {
+  font-size: 11px;
+  padding: 2px 0;
+  margin-top: 2px;
+}
+.conv-compact-status.success { color: #34d399; }
+.conv-compact-status.pending { color: #f59e0b; }
+.conv-compact-status.info { color: var(--text-secondary, #888); }
+
 /* ─── Reactions Bar ─── */
 .reactions-bar {
   display: flex;

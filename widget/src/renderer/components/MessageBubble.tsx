@@ -534,9 +534,11 @@ export function MessageBubble({
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
+  const isSystem = message.role === "system";
   const state = message.streamingState;
   const hasContent = Boolean(message.content && message.content.trim());
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
+  const isCompactedSummary = isSystem && message.content?.startsWith('[Conversation summary');
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
@@ -603,6 +605,28 @@ export function MessageBubble({
       setSpeaking(false);
     }
   }, [message.content, speaking]);
+
+  // Render compacted summary messages with a distinct collapsed style
+  if (isCompactedSummary) {
+    const lines = (message.content || '').split('\n');
+    const header = lines[0] || '';
+    const body = lines.slice(2).join('\n');
+    return (
+      <div className="message-wrapper system-summary" data-message-id={message.id ?? ""}>
+        <details className="compact-summary-details">
+          <summary className="compact-summary-header">
+            <span className="compact-summary-icon">🗜️</span>
+            <span className="compact-summary-title">{header.replace(/^\[|\]$/g, '')}</span>
+          </summary>
+          <pre className="compact-summary-body">{body}</pre>
+        </details>
+      </div>
+    );
+  }
+
+  // Hide other system messages from rendering
+  if (isSystem) return null;
+
   return (
     <div
       className={`message-wrapper ${isUser ? "user" : "assistant"}${message.bookmarked ? ' bookmarked' : ''}`}

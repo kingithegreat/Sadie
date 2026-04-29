@@ -235,6 +235,7 @@ export interface ElectronAPI {
   createConversation?: (title?: string) => Promise<MemoryResult<StoredConversation>>;
   saveConversation?: (conversation: StoredConversation) => Promise<MemoryResult>;
   deleteConversation?: (conversationId: string) => Promise<MemoryResult>;
+  compactConversation?: (conversationId: string, keepRecent?: number) => Promise<{ success: boolean; originalCount: number; compactedCount: number; archivePath?: string; error?: string }>;
   setActiveConversation?: (conversationId: string | null) => Promise<MemoryResult>;
   addMessage?: (conversationId: string, message: Message) => Promise<MemoryResult>;
   updateMessage?: (conversationId: string, messageId: string, updates: Partial<Message>) => Promise<MemoryResult>;
