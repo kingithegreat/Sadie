@@ -171,19 +171,18 @@ describe('streamFromLLM', () => {
       expect(typeof handle.cancel).toBe('function');
     });
 
-    test('image attachment ⇒ falls back to Ollama with warning', async () => {
+    test('image attachment ⇒ sends images to cloud LLM', async () => {
       const cbs = callbacks();
       const images = [{ data: 'base64data', mimeType: 'image/png' }];
       const handle = await streamFromLLM(
         'describe this image', images as any, 'conv-4',
         cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError,
       );
-      // Should NOT have called the custom LLM
-      expect(mockStreamFromCustomLLM).not.toHaveBeenCalled();
-      // Should have sent a warning chunk
-      expect(cbs.onChunk).toHaveBeenCalledWith(
-        expect.stringContaining('Image attachments use Ollama vision model'),
-      );
+      // Cloud vision: should delegate to custom LLM with image data
+      expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(1);
+      const callArgs = mockStreamFromCustomLLM.mock.calls[0];
+      // Last arg is imageData array
+      expect(callArgs[callArgs.length - 1]).toEqual([{ base64: 'base64data', mimeType: 'image/png' }]);
       expect(typeof handle.cancel).toBe('function');
     });
 

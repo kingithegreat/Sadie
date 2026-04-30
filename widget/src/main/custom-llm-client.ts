@@ -9,7 +9,7 @@ import { toOpenAITool, toAnthropicTool } from './tools/types';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
+  content: string | Array<{ type: string; text?: string; image_url?: { url: string }; source?: { type: string; media_type: string; data: string } }>;
   name?: string;
   tool_calls?: Array<{
     id: string;
@@ -461,7 +461,8 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
  * - assistant messages with tool_calls are converted to tool_use content arrays.
  */
 function toAnthropicMessages(messages: ChatMessage[]): { system: string; messages: any[] } {
-  const system = messages.find(m => m.role === 'system')?.content || '';
+  const rawSystem = messages.find(m => m.role === 'system')?.content || '';
+  const system = typeof rawSystem === 'string' ? rawSystem : rawSystem.map(b => b.text || '').join('\n');
   const result: any[] = [];
 
   for (const msg of messages) {
@@ -502,7 +503,21 @@ function toAnthropicMessages(messages: ChatMessage[]): { system: string; message
       continue;
     }
 
-    result.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content });
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      const anthropicContent = msg.content.map(block => {
+        if (block.type === 'image_url' && block.image_url?.url) {
+          const match = block.image_url.url.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
+          }
+        }
+        if (block.type === 'text') return { type: 'text', text: block.text || '' };
+        return block;
+      });
+      result.push({ role: 'user', content: anthropicContent });
+    } else {
+      result.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content });
+    }
   }
 
   return { system, messages: result };
@@ -729,24 +744,35 @@ export async function streamFromCustomLLM(
   onError: (err: any) => void,
   abortSignal?: AbortSignal,
   tools?: ToolDefinition[],
-  onToolCall?: (toolCall: { name: string; arguments: any; id?: string }) => void
+  onToolCall?: (toolCall: { name: string; arguments: any; id?: string }) => void,
+  imageData?: Array<{ base64: string; mimeType?: string }>
 ): Promise<{ cancel: () => void }> {
-  
-  // Validate config (don't assign — validateCustomLLMConfig returns {valid,error}, not a config)
+
   const validation = validateCustomLLMConfig(apiConfig);
   if (!validation.valid) {
     onError(new Error(validation.error || 'Invalid custom LLM config'));
     return { cancel: () => {} };
   }
-  
-  // Auto-configure provider detection and metadata
+
   apiConfig = autoConfigureCustomLLM(apiConfig);
-  
-  // Build messages array
+
+  // Build the user message — multimodal if images are present
+  let userContent: ChatMessage['content'] = message;
+  if (imageData && imageData.length > 0 && message) {
+    const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+      { type: 'text', text: message },
+    ];
+    for (const img of imageData) {
+      const mime = img.mimeType || 'image/png';
+      parts.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${img.base64}` } });
+    }
+    userContent = parts;
+  }
+
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...conversationHistory,
-    { role: 'user', content: message }
+    { role: 'user', content: userContent }
   ];
   
   const options: StreamOptions = {

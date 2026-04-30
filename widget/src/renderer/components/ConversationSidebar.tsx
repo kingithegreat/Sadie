@@ -11,6 +11,7 @@ interface Conversation {
   pinned?: boolean;
   archived?: boolean;
   tags?: string[];
+  model?: string;
 }
 
 interface ConversationSidebarProps {
@@ -210,6 +211,21 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     }
   };
 
+  const handleSetModel = async (id: string) => {
+    const conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+    const current = conv.model || '';
+    const input = prompt(`Model override for this conversation:\n(leave blank to use global default)`, current);
+    if (input === null) return; // cancelled
+    const newModel = input.trim() || undefined;
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, model: newModel } : c));
+    try {
+      await (window as any).electron.saveConversation?.({ ...conv, model: newModel });
+    } catch (err) {
+      console.error('Failed to set conversation model:', err);
+    }
+  };
+
   const handleToggleTag = async (id: string, tag: string) => {
     const conv = conversations.find(c => c.id === id);
     if (!conv) return;
@@ -351,6 +367,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                   { label: 'Export JSON', icon: '📋', action: () => handleExport(conv.id, e as any, 'json') },
                   { label: conv.archived ? 'Restore' : 'Archive', icon: '📦', action: () => handleArchive(conv.id, e as any) },
                   { label: `Compact${(conv.messageCount || 0) > 20 ? ` (${conv.messageCount} msgs)` : ''}`, icon: '🗜️', action: () => handleCompact(conv.id, e as any) },
+                  { label: `Model${conv.model ? `: ${conv.model}` : ' (default)'}`, icon: '🤖', action: () => handleSetModel(conv.id) },
                   { divider: true, label: '', action: () => {} },
                   ...TAG_OPTIONS.map(t => ({
                     label: `${(conv.tags || []).includes(t.name) ? '✓ ' : ''}${t.name}`,
@@ -390,6 +407,9 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                            compactStatus[conv.id] === 'too-few' ? 'ℹ️ <20 messages, nothing to compact' :
                            `❌ ${compactStatus[conv.id]}`}
                         </div>
+                      )}
+                      {conv.model && (
+                        <div className="conv-model-badge" title={`Using model: ${conv.model}`}>🤖 {conv.model}</div>
                       )}
                       {conv.tags && conv.tags.length > 0 && (
                         <div className="conv-tags">

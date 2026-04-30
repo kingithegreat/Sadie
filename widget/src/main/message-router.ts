@@ -1991,27 +1991,41 @@ export async function streamFromLLM(
   options?: { hasDocuments?: boolean }
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
-  
+
+  // Per-conversation model override (set via sidebar context menu)
+  const storedConvForModel = MemoryManager.getConversation(conversationId);
+  const perConvModel = storedConvForModel?.model?.trim() || undefined;
+
   // Build system prompt — compact variant for small models (<=3B)
-  const activeModel = settings.chatModel || OLLAMA_CHAT_MODEL;
+  const activeModel = perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
 
   // Check if custom LLM is enabled and configured
   if (settings.useCustomLLM && settings.customLLM) {
     const validation = validateCustomLLMConfig(settings.customLLM);
     if (validation.valid) {
-      console.log(`[SADIE] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})`);
+      console.log(`[SADIE] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
 
-      // Cloud vision: both OpenAI and Anthropic support vision, but our streaming
-      // implementation currently only sends text messages. Fall back to Ollama vision model.
-      // TODO: Send base64 images in cloud API messages for full cloud vision support.
+      // Extract base64 images for cloud vision
+      let cloudImageData: Array<{ base64: string; mimeType?: string }> | undefined;
       if (images && images.length > 0) {
-        onChunk('\n\n⚠️ Image attachments use Ollama vision model (cloud vision coming soon).\n\n');
-        return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
+        cloudImageData = [];
+        for (const img of images) {
+          let base64 = img.data || img.base64 || '';
+          let mimeType = img.mimeType || 'image/png';
+          if (!base64 && img.dataUrl) {
+            const match = img.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) { mimeType = match[1]; base64 = match[2]; }
+          }
+          if (base64) cloudImageData.push({ base64, mimeType });
+        }
+        if (cloudImageData.length === 0) cloudImageData = undefined;
       }
 
       const controller = new AbortController();
       const history = getHistory(conversationId);
-      const customConfig = settings.customLLM as import('../shared/types').CustomLLMConfig;
+      const customConfig = perConvModel
+        ? { ...(settings.customLLM as import('../shared/types').CustomLLMConfig), model: perConvModel }
+        : settings.customLLM as import('../shared/types').CustomLLMConfig;
 
       // BUG FIX: Use the CLOUD model name for system prompt selection, not the local
       // Ollama model. Previously this used activeModel (phi4-mini) which triggered the
@@ -2128,7 +2142,8 @@ export async function streamFromLLM(
         cloudOnError,
         controller.signal,
         toolDefs,
-        providerSupportsTools ? handleToolCall : undefined
+        providerSupportsTools ? handleToolCall : undefined,
+        cloudImageData
       );
 
       return {
@@ -2292,9 +2307,11 @@ export async function streamFromOllamaWithTools(
   // local Ollama, so we must not forward a cloud model name — fall back to the
   // Ollama default instead.
   const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM;
-  const preferredChatModel = isCustomLLMActive
+  // Per-conversation model override for local Ollama path
+  const ollamaConvModel = MemoryManager.getConversation(conversationId)?.model?.trim();
+  const preferredChatModel = (isCustomLLMActive && !ollamaConvModel)
     ? OLLAMA_CHAT_MODEL
-    : (settings.chatModel || OLLAMA_CHAT_MODEL);
+    : (ollamaConvModel || settings.chatModel || OLLAMA_CHAT_MODEL);
   const preferredUncensoredModel = settings.uncensoredModel || OLLAMA_UNCENSORED_MODEL;
   const preferredVisionModel = settings.visionModel || OLLAMA_VISION_MODEL;
   // Use code model when a coding-heavy query is detected and a code model is configured

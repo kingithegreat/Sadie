@@ -65,6 +65,8 @@ export interface StoredConversation {
   messages: Message[];
   /** Optional per-conversation system prompt / guidelines */
   systemPrompt?: string;
+  /** Optional per-conversation model override (e.g. 'qwen2.5:7b' or 'gpt-4o') */
+  model?: string;
   pinned?: boolean;
   archived?: boolean;
   tags?: string[];

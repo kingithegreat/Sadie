@@ -2341,6 +2341,16 @@ body {
   white-space: nowrap;
 }
 
+.conv-model-badge {
+  font-size: 10px;
+  color: var(--text-secondary, #aaa);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
 .conv-tags {
   display: flex;
   gap: 3px;
