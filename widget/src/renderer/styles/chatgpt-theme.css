@@ -155,6 +155,7 @@ body {
   row-gap: var(--spacing-sm);
   overflow: visible;
   min-width: 0;
+  -webkit-app-region: no-drag;
 }
 
 .header-brand,
