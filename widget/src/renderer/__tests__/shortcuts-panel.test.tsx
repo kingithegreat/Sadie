@@ -17,14 +17,24 @@ describe('ShortcutsPanel', () => {
     expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument();
   });
 
-  test('lists all shortcuts', () => {
+  test('lists shortcuts from all categories', () => {
     render(<ShortcutsPanel open={true} onClose={noop} />);
-    expect(screen.getByText('Toggle SADIE widget')).toBeInTheDocument();
+    expect(screen.getByText(/Toggle SADIE widget/)).toBeInTheDocument();
     expect(screen.getByText('Send message')).toBeInTheDocument();
     expect(screen.getByText('Toggle voice input')).toBeInTheDocument();
-    expect(screen.getByText('Close current panel')).toBeInTheDocument();
+    expect(screen.getByText(/Close current panel/)).toBeInTheDocument();
     expect(screen.getByText('Show keyboard shortcuts')).toBeInTheDocument();
     expect(screen.getByText('New line in message')).toBeInTheDocument();
+    expect(screen.getByText('New conversation')).toBeInTheDocument();
+    expect(screen.getByText('Toggle sidebar')).toBeInTheDocument();
+  });
+
+  test('renders category headings', () => {
+    render(<ShortcutsPanel open={true} onClose={noop} />);
+    expect(screen.getByText('General')).toBeInTheDocument();
+    expect(screen.getByText('Chat')).toBeInTheDocument();
+    expect(screen.getByText('Navigation')).toBeInTheDocument();
+    expect(screen.getByText('Panels')).toBeInTheDocument();
   });
 
   test('renders kbd elements for key combos', () => {

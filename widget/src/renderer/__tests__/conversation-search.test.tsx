@@ -86,7 +86,7 @@ describe('ConversationSearch', () => {
     // Click the conversation group header button
     const openBtns = screen.getAllByRole('button', { name: /open conversation/i });
     fireEvent.click(openBtns[0]);
-    expect(onSelect).toHaveBeenCalledWith('c1');
+    expect(onSelect).toHaveBeenCalledWith('c1', 'm1');
     expect(onClose).toHaveBeenCalled();
   });
 

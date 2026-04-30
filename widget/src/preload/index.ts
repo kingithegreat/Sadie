@@ -246,6 +246,12 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('sadie:model-fallback', listener);
   },
 
+  onConversationCompacted: (cb: (data: { conversationId: string; originalCount: number; compactedCount: number }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('sadie:conversation-compacted', listener);
+    return () => ipcRenderer.removeListener('sadie:conversation-compacted', listener);
+  },
+
   removeShowWindowListener: () => {
     ipcRenderer.removeAllListeners(ALLOWED_CHANNELS.SHOW_WINDOW);
   },
@@ -348,6 +354,14 @@ const electronAPI: ElectronAPI = {
 
   detectGpuVram: async () => {
     return await ipcRenderer.invoke('sadie:detect-gpu-vram');
+  },
+
+  exportSettings: async () => {
+    return await ipcRenderer.invoke('sadie:export-settings');
+  },
+
+  importSettings: async (filePath: string) => {
+    return await ipcRenderer.invoke('sadie:import-settings', filePath);
   },
 
   parseDocument: async (filePath: string) => {

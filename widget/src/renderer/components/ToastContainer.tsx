@@ -57,14 +57,23 @@ const ToastItem: React.FC<{ toast: Toast; onDismiss: (id: string) => void }> = (
   );
 };
 
-/** Hook to manage toast state */
+export interface NotificationRecord {
+  id: string;
+  message: string;
+  type: Toast['type'];
+  timestamp: number;
+}
+
+/** Hook to manage toast state with persistent notification history */
 export function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [history, setHistory] = useState<NotificationRecord[]>([]);
   const counterRef = useRef(0);
 
   const addToast = useCallback((message: string, type: Toast['type'] = 'info', duration?: number) => {
     const id = `toast-${++counterRef.current}-${Date.now()}`;
     setToasts(prev => [...prev, { id, message, type, duration }]);
+    setHistory(prev => [{ id, message, type, timestamp: Date.now() }, ...prev].slice(0, 100));
     return id;
   }, []);
 
@@ -72,7 +81,11 @@ export function useToasts() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  return { toasts, addToast, dismissToast };
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+  }, []);
+
+  return { toasts, addToast, dismissToast, history, clearHistory };
 }
 
 export default ToastContainer;

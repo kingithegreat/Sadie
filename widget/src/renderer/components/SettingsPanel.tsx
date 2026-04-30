@@ -1706,6 +1706,49 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         )}
       </div>
 
+      {/* Backup / Restore */}
+      <div className="settings-section sp-backup-section">
+        <h3 className="section-title">Backup & Restore</h3>
+        <p className="sp-backup-desc">
+          Export all settings, conversations, and preferences as a single backup file, or restore from one.
+        </p>
+        <div className="sp-backup-btns">
+          <button
+            className="button button-secondary"
+            onClick={async () => {
+              const r = await (window as any).electron.exportSettings?.();
+              if (r?.success) alert(`Backup saved to:\n${r.path}`);
+              else alert(`Export failed: ${r?.error || 'Unknown error'}`);
+            }}
+          >
+            Export Backup
+          </button>
+          <label className="button button-secondary sp-backup-import-label">
+            Import Backup
+            <input
+              type="file"
+              accept=".json"
+              className="sp-backup-file-input"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const filePath = (file as any).path;
+                if (!filePath) { alert('Could not read file path'); return; }
+                if (!confirm('This will overwrite your current settings. Continue?')) return;
+                const r = await (window as any).electron.importSettings?.(filePath);
+                if (r?.success) {
+                  alert('Settings restored! Restart SADIE for full effect.');
+                  try { await (window as any).electron.restartApp?.(); } catch {}
+                } else {
+                  alert(`Import failed: ${r?.error || 'Unknown error'}`);
+                }
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </div>
+      </div>
+
       <div className="settings-footer">
         <button className="button button-cancel" onClick={handleCancel}>
           Cancel

@@ -17,7 +17,7 @@ interface ConversationSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   currentConversationId: string | null;
-  onSelectConversation: (id: string) => void;
+  onSelectConversation: (id: string, messageId?: string) => void;
   onNewConversation: () => void;
   onDeleteConversation: (id: string) => void;
 }
@@ -269,7 +269,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   if (showSearch) {
     return (
       <ConversationSearch
-        onSelectConversation={(id) => { onSelectConversation(id); onClose(); }}
+        onSelectConversation={(id, msgId) => { onSelectConversation(id, msgId); onClose(); }}
         onClose={() => setShowSearch(false)}
       />
     );

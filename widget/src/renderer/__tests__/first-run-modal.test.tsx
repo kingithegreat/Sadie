@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 /**
  * first-run-modal.test.tsx
- * Tests for src/renderer/components/FirstRunModal.tsx
+ * Tests for src/renderer/components/FirstRunModal.tsx (multi-step wizard)
  */
 
 import { render, screen, fireEvent, act } from '@testing-library/react';
@@ -24,11 +24,22 @@ const baseSettings: Settings = {
 };
 
 function makeMockElectron(saveSettings = jest.fn().mockResolvedValue(undefined)) {
-  return { saveSettings };
+  return {
+    saveSettings,
+    checkConnection: jest.fn().mockResolvedValue({ ollama: 'online' }),
+    listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }] }),
+  };
+}
+
+async function advanceToStep(targetStep: number) {
+  for (let i = 0; i < targetStep; i++) {
+    await act(async () => {
+      fireEvent.click(screen.getByText('Next'));
+    });
+  }
 }
 
 beforeEach(() => {
-  // Make window.electron available in jsdom
   (window as any).electron = makeMockElectron();
 });
 
@@ -51,23 +62,24 @@ describe('FirstRunModal — open/closed', () => {
     expect(screen.getByText('Welcome to SADIE')).toBeInTheDocument();
   });
 
-  test('renders Finish and Skip buttons', () => {
+  test('renders Next and Skip setup buttons on first step', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.getByText('Finish')).toBeInTheDocument();
-    expect(screen.getByText('Skip')).toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeInTheDocument();
+    expect(screen.getByText('Skip setup')).toBeInTheDocument();
   });
 });
 
-describe('FirstRunModal — Finish button', () => {
+describe('FirstRunModal — Get Started button (final step)', () => {
   test('calls onSave with firstRun: false', async () => {
     const onSave = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
+    await advanceToStep(4);
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0][0]).toMatchObject({ firstRun: false });
@@ -78,8 +90,9 @@ describe('FirstRunModal — Finish button', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
+    await advanceToStep(4);
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onSave.mock.calls[0][0]).toMatchObject({ telemetryEnabled: true });
   });
@@ -89,33 +102,36 @@ describe('FirstRunModal — Finish button', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
+    await advanceToStep(4);
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Get Started'));
     });
     const ts = onSave.mock.calls[0][0].telemetryConsentTimestamp;
     expect(typeof ts).toBe('string');
     expect(ts.length).toBeGreaterThan(0);
   });
 
-  test('calls onClose after Finish', async () => {
+  test('calls onClose after Get Started', async () => {
     const onClose = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={onClose} />
     );
+    await advanceToStep(4);
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  test('calls window.electron.saveSettings on Finish', async () => {
+  test('calls window.electron.saveSettings on Get Started', async () => {
     const saveSettings = jest.fn().mockResolvedValue(undefined);
-    (window as any).electron = { saveSettings };
+    (window as any).electron = { ...makeMockElectron(saveSettings), saveSettings };
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
+    await advanceToStep(4);
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Get Started'));
     });
     expect(saveSettings).toHaveBeenCalledTimes(1);
   });
@@ -126,8 +142,9 @@ describe('FirstRunModal — Finish button', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
+    await advanceToStep(4);
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onSave).toHaveBeenCalledTimes(1);
   });
@@ -138,88 +155,98 @@ describe('FirstRunModal — Finish button', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
+    // Without electron, Next won't trigger checkOllama correctly but should still work
+    for (let i = 0; i < 4; i++) {
+      await act(async () => {
+        fireEvent.click(screen.getByText('Next'));
+      });
+    }
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('FirstRunModal — Skip button', () => {
-  test('calls onSave with firstRun: false on Skip', async () => {
+describe('FirstRunModal — Skip setup button', () => {
+  test('calls onSave with firstRun: false on Skip setup', async () => {
     const onSave = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Skip'));
+      fireEvent.click(screen.getByText('Skip setup'));
     });
     expect(onSave.mock.calls[0][0]).toMatchObject({ firstRun: false, telemetryEnabled: true });
   });
 
-  test('calls onClose after Skip', async () => {
+  test('calls onClose after Skip setup', async () => {
     const onClose = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={onClose} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Skip'));
+      fireEvent.click(screen.getByText('Skip setup'));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('FirstRunModal — permissions', () => {
-  test('renders a checkbox for each permission key', () => {
+describe('FirstRunModal — permissions (step 4)', () => {
+  test('renders a checkbox for each permission key on the permissions step', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
+    await advanceToStep(3);
     const checkboxes = screen.getAllByRole('checkbox');
-    // Expect at least one checkbox per permission (plus the disabled telemetry checkbox)
     expect(checkboxes.length).toBeGreaterThanOrEqual(Object.keys(baseSettings.permissions!).length);
   });
 
-  test('toggling a permission includes updated value in Finish payload', async () => {
+  test('toggling a permission includes updated value in Get Started payload', async () => {
     const onSave = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
-    // Find the "move file" checkbox (text label rendered as "move file")
+    await advanceToStep(3);
     const moveFileCheckbox = screen.getByRole('checkbox', { name: /move file/i });
     fireEvent.click(moveFileCheckbox);
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Next'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onSave.mock.calls[0][0].permissions?.move_file).toBe(true);
   });
 });
 
-describe('FirstRunModal — defaultTeam input', () => {
-  test('renders the defaultTeam input field', () => {
+describe('FirstRunModal — wizard navigation', () => {
+  test('shows Back button after first step', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.getByPlaceholderText(/e\.g\., Lakers/i)).toBeInTheDocument();
+    expect(screen.queryByText('Back')).toBeNull();
+    await advanceToStep(1);
+    expect(screen.getByText('Back')).toBeInTheDocument();
   });
 
-  test('reflects settings.defaultTeam as initial value', () => {
-    const settings = { ...baseSettings, defaultTeam: 'Lakers' };
+  test('Back button returns to previous step', async () => {
     render(
-      <FirstRunModal open={true} settings={settings} onSave={jest.fn()} onClose={jest.fn()} />
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.getByPlaceholderText(/Lakers/i)).toHaveValue('Lakers');
-  });
-
-  test('includes updated defaultTeam in Finish payload', async () => {
-    const onSave = jest.fn();
-    render(
-      <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
-    );
-    const input = screen.getByPlaceholderText(/e\.g\., Lakers/i);
-    fireEvent.change(input, { target: { value: 'Celtics' } });
+    await advanceToStep(1);
+    expect(screen.getByText('Connection Check')).toBeInTheDocument();
     await act(async () => {
-      fireEvent.click(screen.getByText('Finish'));
+      fireEvent.click(screen.getByText('Back'));
     });
-    expect(onSave.mock.calls[0][0].defaultTeam).toBe('Celtics');
+    expect(screen.getByText('Welcome to SADIE')).toBeInTheDocument();
+  });
+
+  test('progress dots are rendered', () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    const dots = document.querySelectorAll('.wizard-dot');
+    expect(dots.length).toBe(5);
   });
 });

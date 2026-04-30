@@ -10,7 +10,7 @@ interface SearchResult {
 }
 
 interface ConversationSearchProps {
-  onSelectConversation: (id: string) => void;
+  onSelectConversation: (id: string, messageId?: string) => void;
   onClose: () => void;
 }
 
@@ -124,7 +124,7 @@ const ConversationSearch: React.FC<ConversationSearchProps> = ({ onSelectConvers
                 <button
                   type="button"
                   className="search-group-open"
-                  onClick={() => { onSelectConversation(convId); onClose(); }}
+                  onClick={() => { onSelectConversation(convId, hits[0]?.messageId); onClose(); }}
                   aria-label={`Open conversation ${hits[0].conversationTitle || 'Untitled'}`}
                 >
                   <span className="search-group-title">{hits[0].conversationTitle || 'Untitled'}</span>
@@ -144,10 +144,10 @@ const ConversationSearch: React.FC<ConversationSearchProps> = ({ onSelectConvers
                 <div
                   key={`${hit.messageId}-${i}`}
                   className="search-hit"
-                  onClick={() => { onSelectConversation(convId); onClose(); }}
+                  onClick={() => { onSelectConversation(convId, hit.messageId); onClose(); }}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={e => { if (e.key === 'Enter') { onSelectConversation(convId); onClose(); } }}
+                  onKeyDown={e => { if (e.key === 'Enter') { onSelectConversation(convId, hit.messageId); onClose(); } }}
                 >
                   <span className="hit-role">{hit.role === 'user' ? 'You' : 'SADIE'}</span>
                   <span className="hit-snippet">{highlight(hit.snippet, query)}</span>

@@ -814,6 +814,29 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       try { (global as any).__SADIE_MAIN_LOG_BUFFER = (global as any).__SADIE_MAIN_LOG_BUFFER || []; (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id}`); } catch (e) { safeCatch(e); }
       const success = MemoryManager.addMessageToConversation(conversationId, message);
       console.log(`[IPC] addMessage -> success=${success}`);
+
+      // Auto-compact when conversation exceeds threshold
+      const AUTO_COMPACT_THRESHOLD = 50;
+      try {
+        const conv = MemoryManager.getConversation(conversationId);
+        if (conv && conv.messages.length >= AUTO_COMPACT_THRESHOLD) {
+          const alreadyCompacted = conv.messages.some(m => m.role === 'system' && m.content?.startsWith('[Conversation summary'));
+          if (!alreadyCompacted) {
+            const result = MemoryManager.compactConversation(conversationId);
+            if (result.success && !result.error) {
+              clearHistory(conversationId);
+              const win = mainWindow ?? getMainWindow();
+              win?.webContents.send('sadie:conversation-compacted', {
+                conversationId,
+                originalCount: result.originalCount,
+                compactedCount: result.compactedCount,
+              });
+              console.log(`[IPC] Auto-compacted ${conversationId}: ${result.originalCount} → ${result.compactedCount} messages`);
+            }
+          }
+        }
+      } catch (e) { safeCatch(e); }
+
       return { success };
     } catch (err: any) {
       console.error('Error adding message:', err.message);
@@ -1109,6 +1132,59 @@ try {
       return { success: true, content, path: filePath };
     } catch (err: any) {
       console.error('[IPC] sadie:export-conversation error:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Settings Export/Import ──────────────────────────────────────────────────
+
+  ipcMain.handle('sadie:export-settings', async () => {
+    try {
+      const settings = getSettings();
+      const convStore = MemoryManager.loadConversationStore();
+      const prefs = MemoryManager.loadPreferences();
+      const toolStats = MemoryManager.loadToolStats();
+      const bundle = {
+        _sadie_backup: true,
+        exportedAt: new Date().toISOString(),
+        version: app.getVersion(),
+        settings,
+        preferences: prefs,
+        conversations: convStore,
+        toolStats,
+      };
+      const desktop = path.join(os.homedir(), 'Desktop');
+      const filename = `sadie-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const filePath = path.join(desktop, filename);
+      fs.writeFileSync(filePath, JSON.stringify(bundle, null, 2), 'utf-8');
+      return { success: true, path: filePath };
+    } catch (err: any) {
+      console.error('[IPC] sadie:export-settings error:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('sadie:import-settings', async (_event, filePath: string) => {
+    try {
+      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+      const raw = fs.readFileSync(resolved, 'utf-8');
+      const bundle = JSON.parse(raw);
+      if (!bundle._sadie_backup) return { success: false, error: 'Not a valid SADIE backup file' };
+
+      if (bundle.settings) {
+        const current = getSettings();
+        saveSettings({ ...current, ...bundle.settings });
+      }
+      if (bundle.preferences) {
+        MemoryManager.savePreferences(bundle.preferences);
+      }
+      if (bundle.conversations) {
+        MemoryManager.saveConversationStore(bundle.conversations);
+      }
+      return { success: true, restoredAt: new Date().toISOString() };
+    } catch (err: any) {
+      console.error('[IPC] sadie:import-settings error:', err.message);
       return { success: false, error: err.message };
     }
   });

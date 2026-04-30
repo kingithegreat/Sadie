@@ -12,6 +12,8 @@ interface StatusIndicatorProps {
   onToolsClick?: () => void;
   onRagClick?: () => void;
   onAnalyticsClick?: () => void;
+  onNotificationsClick?: () => void;
+  notificationCount?: number;
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
@@ -34,6 +36,8 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onToolsClick,
   onRagClick,
   onAnalyticsClick,
+  onNotificationsClick,
+  notificationCount = 0,
   backendDiagnostic,
   onCopyDiagnostic,
   onDismissDiagnostic,
@@ -229,6 +233,17 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
             aria-label="Analytics"
           >
             📊
+          </button>
+        )}
+        {onNotificationsClick && (
+          <button
+            onClick={onNotificationsClick}
+            className="header-btn notif-bell-btn"
+            title="Notification history"
+            aria-label="Notifications"
+          >
+            🔔
+            {notificationCount > 0 && <span className="notif-badge">{notificationCount > 9 ? '9+' : notificationCount}</span>}
           </button>
         )}
         <button

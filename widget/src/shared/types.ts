@@ -319,6 +319,9 @@ export interface ElectronAPI {
   mcpRemoveServer?: (name: string) => Promise<any>;
   mcpToggleServer?: (name: string, enabled: boolean) => Promise<any>;
 
+  exportSettings?: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  importSettings?: (filePath: string) => Promise<{ success: boolean; restoredAt?: string; error?: string }>;
+
   parseDocument?: (filePath: string) => Promise<{
     success: boolean;
     text?: string;
@@ -378,6 +381,7 @@ export interface ElectronAPI {
   // Push event: fires when main process determines Ollama reachability on startup
   onOllamaStatus?: (cb: (data: { online: boolean; url: string }) => void) => () => void;
   onModelFallback?: (cb: (data: { from: string; to: string }) => void) => () => void;
+  onConversationCompacted?: (cb: (data: { conversationId: string; originalCount: number; compactedCount: number }) => void) => () => void;
 
   // Export a single conversation to disk as Markdown or JSON
   exportConversation?: (conversationId: string, format?: 'markdown' | 'json') => Promise<{

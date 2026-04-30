@@ -21,6 +21,7 @@ const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
 const ShortcutsPanel = lazy(() => import("./components/ShortcutsPanel"));
+const NotificationHistory = lazy(() => import("./components/NotificationHistory"));
 import type {
   ChatMessage,
   StreamingState
@@ -82,8 +83,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [notifHistoryOpen, setNotifHistoryOpen] = useState(false);
   const [widgetMode, setWidgetMode] = useState(true); // Start in widget mode
-  const { toasts, addToast, dismissToast } = useToasts();
+  const { toasts, addToast, dismissToast, history: notifHistory, clearHistory: clearNotifHistory } = useToasts();
 
   // Initialise widget mode from main process and listen for changes
   useEffect(() => {
@@ -103,6 +105,30 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       if (e.ctrlKey && e.key === '/') {
         e.preventDefault();
         setShortcutsOpen(prev => !prev);
+      } else if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        handleNewConversation();
+      } else if (e.ctrlKey && e.key === 'b') {
+        e.preventDefault();
+        setSidebarOpen(prev => !prev);
+      } else if (e.ctrlKey && e.key === ',') {
+        e.preventDefault();
+        setSettingsOpen(prev => !prev);
+      } else if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault();
+        setSidebarOpen(true);
+      } else if (e.ctrlKey && e.key === '1') {
+        e.preventDefault();
+        setMode('chat');
+      } else if (e.ctrlKey && e.key === '2') {
+        e.preventDefault();
+        setMode('image');
+      } else if (e.ctrlKey && e.key === '3') {
+        e.preventDefault();
+        setMode('documents');
+      } else if (e.ctrlKey && e.key === '4') {
+        e.preventDefault();
+        setMode('web');
       }
     };
     window.addEventListener('keydown', handler);
@@ -285,6 +311,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       setSettings(prev => ({ ...prev, chatModel: data.to }));
     });
 
+    const compactUnsub = window.electron.onConversationCompacted?.((data) => {
+      addToast(
+        `Conversation auto-compacted: ${data.originalCount} messages archived down to ${data.compactedCount}`,
+        'info',
+        6000
+      );
+    });
+
     // Re-read settings after subscribing to catch any model fallback that fired before mount
     window.electron.getSettings?.().then(s => {
       if (s?.chatModel) setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
@@ -298,6 +332,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       titleUnsub?.();
       ollamaUnsub?.();
       modelFbUnsub?.();
+      compactUnsub?.();
     };
   }, []);
 
@@ -447,14 +482,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   /**
    * Handle selecting a different conversation
    */
-  const handleSelectConversation = async (id: string) => {
+  const handleSelectConversation = async (id: string, scrollToMessageId?: string) => {
     try {
       const convData = await window.electron.getConversation?.(id);
       if (convData?.success && convData.data) {
         setConversationId(id);
         setConversationSystemPrompt(convData.data.systemPrompt || '');
         await window.electron.setActiveConversation?.(id);
-        
+
         // Convert stored messages to ChatMessage format
         const loadedMsgs: ChatMessage[] = convData.data.messages.map((m: SharedMessage) => ({
           id: m.id ?? newId(),
@@ -465,6 +500,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
         }));
         setMessages(loadedMsgs);
+
+        // Scroll to the target message after render
+        if (scrollToMessageId) {
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              const el = document.querySelector(`[data-message-id="${scrollToMessageId}"]`);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('search-flash');
+                setTimeout(() => el.classList.remove('search-flash'), 2000);
+              }
+            }, 100);
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to load conversation:', err);
@@ -1011,6 +1060,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onToolsClick={() => setToolsOpen(true)}
         onRagClick={() => setRagPanelOpen(true)}
         onAnalyticsClick={() => setAnalyticsOpen(true)}
+        onNotificationsClick={() => setNotifHistoryOpen(true)}
+        notificationCount={notifHistory.length}
         onMenuClick={() => setSidebarOpen(true)}
         onExportChat={async () => {
           const lines: string[] = [`# SADIE Chat Export\n_Exported: ${new Date().toLocaleString()}_\n`];
@@ -1151,6 +1202,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {shortcutsOpen && (
         <Suspense fallback={null}>
           <ShortcutsPanel open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* Notification History */}
+      {notifHistoryOpen && (
+        <Suspense fallback={null}>
+          <NotificationHistory open={notifHistoryOpen} onClose={() => setNotifHistoryOpen(false)} history={notifHistory} onClear={clearNotifHistory} />
         </Suspense>
       )}
 
