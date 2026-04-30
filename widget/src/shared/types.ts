@@ -115,7 +115,7 @@ export interface CustomLLMConfig {
   name: string;
   apiUrl: string;
   apiKey?: string;
-  provider: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
+  provider: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   model?: string;
   enabled: boolean;
   metadata?: ModelMetadata;
@@ -152,7 +152,7 @@ export interface Settings {
   // Code model routing
   codeModel?: string;
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;

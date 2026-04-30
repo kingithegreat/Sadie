@@ -2040,6 +2040,8 @@ export async function streamFromLLM(
         || customConfig.provider === 'groq'
         || customConfig.provider === 'deepseek'
         || customConfig.provider === 'together'
+        || customConfig.provider === 'huggingface'
+        || customConfig.provider === 'sambanova'
         || customConfig.provider === 'custom';
       const toolDefs = providerSupportsTools ? getAllToolDefinitions() : undefined;
       

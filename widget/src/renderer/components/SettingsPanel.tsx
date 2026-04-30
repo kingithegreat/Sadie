@@ -371,9 +371,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const selectedProvider = localSettings.customLLM?.provider || 'openai';
+  const curatedProviders = ['openai', 'anthropic', 'groq', 'deepseek', 'google-ai-studio', 'huggingface', 'cerebras', 'sambanova', 'together'];
+  const isCuratedProvider = curatedProviders.includes(selectedProvider);
   const providerRequiresApiKey = selectedProvider !== 'custom';
   const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
-  const isConnected = availableModels.length > 0 && hasApiKey;
+  const isConnected = availableModels.length > 0;
 
   useEffect(() => {
     setAvailableModels([]);
@@ -434,7 +436,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       return;
     }
 
-    if (providerRequiresApiKey && !apiKey) {
+    if (!isCuratedProvider && providerRequiresApiKey && !apiKey) {
       setModelFetchError('Enter your API key first');
       return;
     }

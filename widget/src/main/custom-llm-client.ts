@@ -155,7 +155,7 @@ function normalizeModelsPayload(payload: any): any[] {
 /**
  * Auto-detect provider from model name
  */
-function detectProvider(modelName: string): 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom' {
+function detectProvider(modelName: string): CustomLLMConfig['provider'] {
   const lower = modelName.toLowerCase();
   if (lower.includes('gpt') || lower.startsWith('o1')) return 'openai';
   if (lower.includes('claude')) return 'anthropic';
@@ -767,12 +767,18 @@ export async function streamFromCustomLLM(
     case 'anthropic':
       streamAnthropic(options);
       break;
-    
+
     case 'openai':
     case 'openrouter':
+    case 'groq':
+    case 'deepseek':
+    case 'google-ai-studio':
+    case 'huggingface':
+    case 'cerebras':
+    case 'sambanova':
+    case 'together':
     case 'custom':
     default:
-      // OpenAI format is most common, use as default
       streamOpenAI(options);
       break;
   }
