@@ -228,9 +228,28 @@ describe('analyzeAndRouteMessage', () => {
     expect(r.type).toBe('llm');
   });
 
-  test('attached document review prompt does not route to filesystem tools', async () => {
+  test('attached document review prompt without embedded content asks for reattach instead of using filesystem tools', async () => {
     const intent = await mr.preProcessIntent('[Document attached: Mid-point review.pdf]\n\nhow could i improve this');
-    expect(intent).toBeNull();
+    expect(intent).toEqual({
+      calls: [{
+        name: '__canned',
+        arguments: {
+          response: "I couldn't access the attached document content for this request. Please reattach the document and try again."
+        }
+      }]
+    });
+  });
+
+  test('failed attachment parse does not fall back to filesystem tools', async () => {
+    const intent = await mr.preProcessIntent('[Failed to parse document: Mid-point review.pdf - parser error]\n\nReview the attached document and tell me what to improve');
+    expect(intent).toEqual({
+      calls: [{
+        name: '__canned',
+        arguments: {
+          response: "I couldn't access the attached document content for this request. Please reattach the document and try again."
+        }
+      }]
+    });
   });
 });
 

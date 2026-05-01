@@ -811,10 +811,23 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   // explicitly asking for filesystem navigation.
   const hasAttachedDocumentMarker = m.includes('[document attached:');
   const hasEmbeddedDocumentContent = m.includes('=== document:') && m.includes('=== end of ');
+  const hasAttachedDocumentPrompt = /\breview the attached document\b/i.test(userMessage);
+  const hasDocumentParseFailure = /\[(?:failed|error) to parse document:/i.test(userMessage);
   const wantsFilesystemLookup = /\b(find|locate|browse|list|show|open)\b/i.test(m)
     && /\b(file|folder|directory|desktop|documents|downloads|path)\b/i.test(m);
-  if ((hasAttachedDocumentMarker || hasEmbeddedDocumentContent) && !wantsFilesystemLookup) {
+  if (hasEmbeddedDocumentContent && !wantsFilesystemLookup) {
     return null; // LLM already has the document text in context
+  }
+
+  if ((hasAttachedDocumentMarker || hasAttachedDocumentPrompt || hasDocumentParseFailure) && !wantsFilesystemLookup) {
+    return {
+      calls: [{
+        name: '__canned',
+        arguments: {
+          response: "I couldn't access the attached document content for this request. Please reattach the document and try again."
+        }
+      }]
+    };
   }
 
   // ─── COMPOUND FILE INTENTS ───
