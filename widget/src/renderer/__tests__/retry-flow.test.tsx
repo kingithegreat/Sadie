@@ -57,7 +57,7 @@ describe('retry flow (renderer)', () => {
     await waitFor(() => expect(screen.getByText('partial')).toBeInTheDocument());
 
     act(() => { errorHandler?.({ streamId, error: 'upstream error' }); });
-    await waitFor(() => expect(screen.getByText('Error')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument());
 
     // The Retry button should now be visible
     const retryBtn = screen.getByText('↻ Retry');

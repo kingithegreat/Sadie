@@ -107,7 +107,7 @@ describe('stream end and error handling (renderer)', () => {
     act(() => { errorHandler?.({ streamId, error: 'test error' }); });
 
     // Error badge should appear and cancel button should disappear
-    await waitFor(() => expect(screen.getByText('Error')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
     // Retry button should appear for errored messages
     expect(screen.getByText('↻ Retry')).toBeInTheDocument();
@@ -139,7 +139,7 @@ describe('stream end and error handling (renderer)', () => {
 
     // The new message should exist but be empty and have an Error badge
     // Find any Error badge in the DOM - we expect at least one
-    await waitFor(() => expect(screen.getAllByText('Error').length).toBeGreaterThanOrEqual(1));
+    await waitFor(() => expect(screen.getAllByText('Something went wrong').length).toBeGreaterThanOrEqual(1));
 
   });
 });

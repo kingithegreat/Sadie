@@ -780,30 +780,23 @@ export function MessageBubble({
                 {state === "error" && (
                   <>
                     {message.recoveryHint ? (
-                      <div className="error-recovery-banner" style={{
-                        background: 'var(--bg-secondary, #16213e)',
-                        borderLeft: '3px solid var(--warning-color, #f59e0b)',
-                        borderRadius: '6px',
-                        padding: '8px 12px',
-                        marginTop: '6px',
-                        fontSize: '13px',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '16px' }}>
+                      <div className="error-recovery-card">
+                        <div className="error-recovery-header">
+                          <span className="error-recovery-icon">
                             {message.recoveryHint.service === 'ollama' ? '🔌' :
                              message.recoveryHint.service === 'model' ? '📦' :
                              message.recoveryHint.service === 'n8n' ? '⚙️' : '⚠️'}
                           </span>
-                          <span style={{ color: 'var(--warning-color, #f59e0b)', fontWeight: 600 }}>
+                          <span className="error-recovery-title">
                             {message.recoveryHint.service === 'ollama' ? 'Ollama Offline' :
                              message.recoveryHint.service === 'model' ? 'Model Missing' :
                              message.recoveryHint.service === 'n8n' ? 'n8n Unavailable' : 'Error'}
                           </span>
                         </div>
-                        <p style={{ margin: '0 0 8px 0', opacity: 0.9, lineHeight: 1.4 }}>
+                        <p className="error-recovery-message">
                           {message.recoveryHint.userMessage}
                         </p>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <div className="error-recovery-actions">
                           {message.recoveryHint.action === 'pull-model' && message.recoveryHint.model && (
                             <PullModelButton model={message.recoveryHint.model} />
                           )}
@@ -813,27 +806,29 @@ export function MessageBubble({
                           <button
                             className="message-action-btn"
                             onClick={() => onRetry(message.id!)}
-                            style={{ padding: '4px 12px' }}
                           >
                             ↻ {message.recoveryHint.actionLabel || 'Retry'}
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <>
-                        <span className="status-text error">Error</span>
+                      <div className="error-inline-card">
+                        <span className="error-inline-label">Something went wrong</span>
+                        <div className="error-inline-actions">
+                          <button
+                            className="message-action-btn"
+                            onClick={() => onRetry(message.id!)}
+                          >
+                            ↻ Retry
+                          </button>
+                        </div>
                         {message.error && (
-                          <span className="status-text" style={{ opacity: 0.8, fontSize: '11px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {message.error}
-                          </span>
+                          <details className="error-diagnostics">
+                            <summary className="error-diagnostics-toggle">Technical details</summary>
+                            <pre className="error-diagnostics-text">{message.error}</pre>
+                          </details>
                         )}
-                        <button
-                          className="message-action-btn"
-                          onClick={() => onRetry(message.id!)}
-                        >
-                          ↻ Retry
-                        </button>
-                      </>
+                      </div>
                     )}
                   </>
                 )}
