@@ -1,4 +1,4 @@
-import { preProcessIntent, addToHistory, clearHistory, setLastIntent, clearLastIntent, bumpLastIntentAge, getCannedResponse, isGarbageOutput, isSmallModel } from '../message-router';
+import { preProcessIntent, clearHistory, setLastIntent, clearLastIntent, bumpLastIntentAge, getCannedResponse, isGarbageOutput, isSmallModel } from '../message-router';
 
 describe('preProcessIntent', () => {
   test('identifies NBA queries as nba_query', async () => {

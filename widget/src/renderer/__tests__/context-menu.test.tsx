@@ -3,7 +3,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ContextMenu, useContextMenu } from '../components/ContextMenu';
 import type { ContextMenuItem } from '../components/ContextMenu';
-import React from 'react';
 
 describe('ContextMenu', () => {
   const noop = () => {};

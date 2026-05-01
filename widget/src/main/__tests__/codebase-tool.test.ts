@@ -22,7 +22,6 @@ import {
   analyzeFileDef
 } from '../tools/codebase';
 
-const HOME = os.homedir();
 const TMP = os.tmpdir();
 
 // Create a temp project structure for testing

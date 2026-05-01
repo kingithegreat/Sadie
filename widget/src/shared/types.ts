@@ -53,6 +53,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
+  createdAt?: string;
   error?: boolean;
   streamingState?: 'pending' | 'streaming' | 'finished' | 'cancelled' | 'error';
   image?: ImageAttachment | null;
@@ -127,6 +128,7 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   widgetHotkey: string;
+  globalHotkey?: string;
   theme?: 'light' | 'dark' | 'system';
   uncensoredMode?: boolean;
   chatModel?: string;
@@ -158,6 +160,8 @@ export interface Settings {
   codeApiUrl?: string;
   // Custom chat guidelines appended to system prompt
   chatGuidelines?: string;
+  // Calendar integration
+  calendarIcsUrl?: string;
   // Notification preferences
   notificationsEnabled?: boolean;
   notificationSound?: boolean;

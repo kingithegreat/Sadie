@@ -11,7 +11,7 @@
  *   - isSimpleGreeting (via analyzeAndRouteMessage)
  */
 
-import axios from 'axios';
+import 'axios';
 
 // ── Mock Electron ────────────────────────────────────────────────────────────
 jest.mock('electron', () => ({

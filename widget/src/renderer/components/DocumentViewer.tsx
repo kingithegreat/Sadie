@@ -138,6 +138,7 @@ const DocumentViewer: React.FC = () => {
       } else {
         // Use chat to invoke create_docx / create_pdf tool
         const result = await window.electron.sendMessage({
+          user_id: 'local',
           message: `Create a ${format} file at "${targetPath}" with the title "${baseName}" and the following content:\n\n${doc.content.slice(0, 8000)}`,
           conversation_id: '__doc_export__',
         });

@@ -33,6 +33,6 @@ export interface SystemInfoResult {
 }
 
 // Concrete response types for each tool
-type SadieWebSearchResponse = SadieToolResponse<WebSearchResult[]>;
-type SadieFileManagerResponse = SadieToolResponse<FileManagerResult>;
-type SadieSystemInfoResponse = SadieToolResponse<SystemInfoResult>;
+export type SadieWebSearchResponse = SadieToolResponse<WebSearchResult[]>;
+export type SadieFileManagerResponse = SadieToolResponse<FileManagerResult>;
+export type SadieSystemInfoResponse = SadieToolResponse<SystemInfoResult>;

@@ -6,12 +6,6 @@ jest.mock('electron', () => ({
   app: { getPath: jest.fn(() => '/tmp/sadie-test') },
 }));
 
-import * as path from 'path';
-import * as fs from 'fs';
-
-// Point the loader at the real skills/ directory
-const SKILLS_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'skills');
-
 describe('skills-loader', () => {
   // Import after mocks
   let loadSkills: typeof import('../skills-loader').loadSkills;

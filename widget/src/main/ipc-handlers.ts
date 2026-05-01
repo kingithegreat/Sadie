@@ -664,17 +664,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('sadie:get-analytics-summary', async () => {
     try {
       const store = MemoryManager.loadConversationStore();
-      const conversations = store?.conversations || {};
-      const ids = Object.keys(conversations);
+      const conversations = store?.conversations || [];
       let totalMessages = 0;
       let oldest: string | null = null;
-      for (const id of ids) {
-        const conv = conversations[id];
+      for (const conv of conversations) {
         totalMessages += (conv?.messages?.length || 0);
         const created = conv?.createdAt;
         if (created && (!oldest || created < oldest)) oldest = created;
       }
-      const conversationCount = ids.length;
+      const conversationCount = conversations.length;
       const avg = conversationCount > 0 ? Math.round(totalMessages / conversationCount) : 0;
       const toolCallStats = readToolCallAggregates();
       return {

@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import ConversationSearch from '../components/ConversationSearch';
 
 const mockSearchConversations = jest.fn();

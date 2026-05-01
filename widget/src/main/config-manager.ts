@@ -53,6 +53,7 @@ export interface Settings {
   theme: 'light' | 'dark' | 'system';
   alwaysOnTop: boolean;
   globalHotkey: string;
+  widgetHotkey?: string;
   confirmDangerousActions: boolean;
   saveConversationHistory: boolean;
   hideOnBlur: boolean;
@@ -78,7 +79,7 @@ export interface Settings {
   openaiApiKey?: string;
   // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
   // Hardware profile — drives model defaults and VRAM recommendations
   hardwareProfile?: '4gb' | '8gb' | '16gb+';

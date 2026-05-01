@@ -13,7 +13,6 @@ jest.mock('child_process', () => ({
 }));
 
 // Mock fs.statSync for cwd validation in terminal.ts
-const realFs = jest.requireActual('fs');
 jest.mock('fs', () => {
   const actual = jest.requireActual('fs');
   return {
@@ -40,7 +39,7 @@ const SAFE_DIR = path.join(HOME, 'Desktop', 'sadie');
 
 // Helper to mock exec success
 function mockExecResolve(stdout: string, stderr = '') {
-  mockExecImpl.mockImplementation((cmd: string, opts: any, cb?: Function) => {
+  mockExecImpl.mockImplementation((_cmd: string, opts: any, cb?: Function) => {
     const callback = typeof opts === 'function' ? opts : cb;
     if (callback) callback(null, { stdout, stderr });
     return { on: jest.fn() };
@@ -49,7 +48,7 @@ function mockExecResolve(stdout: string, stderr = '') {
 
 // Helper to mock exec failure
 function mockExecReject(exitCode: number, stdout = '', stderr = '', killed = false) {
-  mockExecImpl.mockImplementation((cmd: string, opts: any, cb?: Function) => {
+  mockExecImpl.mockImplementation((_cmd: string, opts: any, cb?: Function) => {
     const callback = typeof opts === 'function' ? opts : cb;
     const err: any = new Error('Command failed');
     err.code = exitCode;

@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import MessageList from '../components/MessageList';
 import type { ChatMessage } from '../types';
 

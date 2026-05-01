@@ -134,7 +134,7 @@ async function parseDocumentContent(
     const lines: string[] = [];
     workbook.eachSheet((sheet: any) => {
       lines.push(`## Sheet: ${sheet.name}`);
-      sheet.eachRow((row: any, rowNum: number) => {
+      sheet.eachRow((row: any, _rowNum: number) => {
         const cells = row.values as any[];
         // row.values is 1-indexed (index 0 is undefined)
         const values = (cells || []).slice(1).map((v: any) => {

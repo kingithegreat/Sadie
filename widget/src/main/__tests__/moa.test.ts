@@ -203,7 +203,7 @@ describe('runMoAPipeline', () => {
 
     const cb = makeCallbacks();
     // Don't await — we want to cancel mid-flight
-    const handlePromise = runMoAPipeline(makeOptions(), cb);
+    void runMoAPipeline(makeOptions(), cb);
 
     // Give the async code a tick to start
     await new Promise(r => setTimeout(r, 50));
@@ -234,7 +234,7 @@ describe('runMoAPipeline', () => {
       { role: 'assistant', content: 'previous answer' },
     ];
 
-    mockedAxios.post.mockImplementation((_url, body: any) => {
+    mockedAxios.post.mockImplementation((_url, _body: any) => {
       return Promise.resolve({ data: createMockStream('response') });
     });
 
@@ -242,7 +242,7 @@ describe('runMoAPipeline', () => {
 
     // Check that proposer calls include history messages
     const proposerCall = mockedAxios.post.mock.calls[0];
-    const messages = proposerCall[1].messages;
+    const messages = (proposerCall[1] as any).messages;
     // messages[0] is system prompt, then history, then user message
     expect(messages[1].content).toBe('previous question');
     expect(messages[2].content).toBe('previous answer');
@@ -301,7 +301,7 @@ describe('runMoAPipeline', () => {
   });
 
   test('logs telemetry after pipeline completes', async () => {
-    mockedAxios.post.mockImplementation((_url, body: any) => {
+    mockedAxios.post.mockImplementation((_url, _body: any) => {
       return Promise.resolve({ data: createMockStream('response') });
     });
 

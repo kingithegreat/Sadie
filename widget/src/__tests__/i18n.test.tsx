@@ -1,7 +1,6 @@
 /**
  * @jest-environment jsdom
  */
-import React from 'react';
 import { render, screen, act } from '@testing-library/react';
 import { I18nProvider, useI18n, SUPPORTED_LOCALES } from '../renderer/i18n';
 

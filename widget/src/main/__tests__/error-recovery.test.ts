@@ -19,7 +19,7 @@ jest.mock('../utils/logger', () => ({
 }));
 jest.mock('child_process', () => ({
   execFile: jest.fn(),
-  exec: jest.fn((cmd: string, cb: any) => cb(null, '', '')),
+  exec: jest.fn((_cmd: string, cb: any) => cb(null, '', '')),
   spawn: jest.fn(),
 }));
 jest.mock('electron', () => ({
@@ -35,7 +35,7 @@ jest.mock('electron', () => ({
   BrowserWindow: jest.fn(),
 }));
 
-import { classifyError, RecoveryHint } from '../message-router';
+import { classifyError } from '../message-router';
 
 // ── classifyError ───────────────────────────────────────────────────────────
 

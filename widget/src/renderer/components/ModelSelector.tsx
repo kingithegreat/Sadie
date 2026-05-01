@@ -48,6 +48,10 @@ function formatSize(bytes: number): string {
   return gb >= 1 ? `${gb.toFixed(1)}GB` : `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
 }
 
+function normalizeModelId(id: string): string {
+  return (id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 function getVramWarning(modelSizeGB: number | undefined, vramGB: number | null | undefined): 'ok' | 'tight' | 'over' {
   if (!vramGB || !modelSizeGB) return 'ok';
   if (modelSizeGB > vramGB) return 'over';
@@ -147,7 +151,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       };
     }
     if (useCustomLLM && customModels.length > 0) return customModels[0];
-    return allModels.find(m => m.id === currentModel) || {
+    return allModels.find(m => normalizeModelId(m.id) === normalizeModelId(currentModel)) || {
       id: currentModel, name: currentModel, shortName: currentModel.split(':')[0],
       description: 'Currently selected model', type: 'ollama', installed: true,
     };
@@ -157,7 +161,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   // Prev/next navigation through installed models only
   const currentIndex = allModels.findIndex(m =>
-    (useCustomLLM && m.type === 'custom') || m.id === currentModel
+    (useCustomLLM && m.type === 'custom') || normalizeModelId(m.id) === normalizeModelId(currentModel)
   );
 
   const selectModelWithVramCheck = (model: ModelInfo) => {
@@ -294,7 +298,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                   const warn = getVramWarning(model.sizeGB, vramGB);
                   return (
                     <button key={model.id}
-                      className={`model-option ${!useCustomLLM && currentModel === model.id ? 'active' : ''} ${warn !== 'ok' ? 'vram-warn' : ''}`}
+                      className={`model-option ${!useCustomLLM && normalizeModelId(currentModel) === normalizeModelId(model.id) ? 'active' : ''} ${warn !== 'ok' ? 'vram-warn' : ''}`}
                       onClick={() => handleSelectModel(model)}>
                       <div className="model-option-header">
                         <span className="model-option-icon">🦙</span>
@@ -302,7 +306,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                         <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB.toFixed(1)}GB` : ''}</span>
                         {warn === 'over' && <span className="vram-badge over" title={`Exceeds ${vramGB}GB VRAM — will use CPU offload (slow)`}>⚠️ slow</span>}
                         {warn === 'tight' && <span className="vram-badge tight" title={`Tight fit for ${vramGB}GB VRAM`}>⚡ tight</span>}
-                        {!useCustomLLM && currentModel === model.id && <span className="active-badge">✓</span>}
+                        {!useCustomLLM && normalizeModelId(currentModel) === normalizeModelId(model.id) && <span className="active-badge">✓</span>}
                       </div>
                       <span className="model-option-desc">{model.description}</span>
                     </button>

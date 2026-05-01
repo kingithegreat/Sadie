@@ -7,6 +7,7 @@ interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   widgetHotkey: string;
+  globalHotkey?: string;
   chatModel?: string;
   uncensoredModel?: string;
   visionModel?: string;
@@ -24,7 +25,7 @@ interface Settings {
   stableHordeApiKey?: string;
   codeModel?: string;
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
   chatGuidelines?: string;
   calendarIcsUrl?: string;
@@ -113,15 +114,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       codeApiProvider: source.codeApiProvider || 'openai',
       codeApiUrl: source.codeApiUrl || '',
       chatGuidelines: source.chatGuidelines || '',
-      calendarIcsUrl: (source as any).calendarIcsUrl || '',
-      notificationsEnabled: (source as any).notificationsEnabled !== false,
-      notificationSound: !!(source as any).notificationSound,
-      notificationDuration: (source as any).notificationDuration ?? 8000,
-      messageDensity: (source as any).messageDensity || 'comfortable',
+      calendarIcsUrl: source.calendarIcsUrl || '',
+      notificationsEnabled: source.notificationsEnabled !== false,
+      notificationSound: !!source.notificationSound,
+      notificationDuration: source.notificationDuration ?? 8000,
+      messageDensity: source.messageDensity || 'comfortable',
       moaEnabled: source.moaEnabled ?? false,
       moaProposers: source.moaProposers ?? [],
       moaAggregator: source.moaAggregator ?? '',
-      defaultLocation: (source as any).defaultLocation || ''
+      defaultLocation: source.defaultLocation || ''
     };
   };
 

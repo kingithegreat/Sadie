@@ -84,12 +84,7 @@ jest.mock('../tools', () => ({
 }));
 
 // ── Import after all mocks ──────────────────────────────────────────────────
-import { streamFromLLM, streamFromOllamaWithTools } from '../message-router';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-const noop = () => {};
-const noopAsync = () => Promise.resolve(true);
-const noopPermission = () => Promise.resolve({ decision: 'cancel' as const });
+import { streamFromLLM } from '../message-router';
 
 function callbacks() {
   return {

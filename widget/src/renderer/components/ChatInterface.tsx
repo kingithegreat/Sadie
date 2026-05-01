@@ -1,5 +1,5 @@
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { debug as logDebug } from '../../shared/logger';
 import MessageList from './MessageList';
 import { InputBox } from './InputBox';
@@ -23,7 +23,6 @@ interface ChatInterfaceProps {
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onBookmark, onReact, onEdit, systemPrompt, onUpdateSystemPrompt }) => {
   const [guidelinesOpen, setGuidelinesOpen] = useState(false);
   const hasGuidelines = !!(systemPrompt && systemPrompt.trim());
-  const inputBoxRef = useRef<{ setInput: (text: string) => void }>(null);
 
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';
