@@ -63,4 +63,22 @@ describe('model routing prompt mode', () => {
     const payload = ((window as any).electron.sendStreamMessage as jest.Mock).mock.calls[0][0];
     expect(payload.modelOverride).toBe('qwen2.5:7b');
   });
+
+  test('prompt mode keeps the current model when the suggestion is declined', async () => {
+    render(<App />);
+
+    const textarea = await screen.findByLabelText('Message SADIE');
+    fireEvent.change(textarea, { target: { value: 'compare the pros and cons of local versus cloud models for privacy' } });
+    fireEvent.click(screen.getByText('Send'));
+
+    await waitFor(() => expect(screen.getByText('Suggest Better Model')).toBeInTheDocument());
+    expect((window as any).electron.sendStreamMessage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Keep current model'));
+
+    await waitFor(() => expect((window as any).electron.sendStreamMessage).toHaveBeenCalledTimes(1));
+    const payload = ((window as any).electron.sendStreamMessage as jest.Mock).mock.calls[0][0];
+    expect(payload.modelOverride).toBeUndefined();
+    expect(screen.queryByText('Suggest Better Model')).toBeNull();
+  });
 });
