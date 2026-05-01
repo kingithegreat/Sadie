@@ -102,14 +102,9 @@ export function getAllToolDefinitions(): ToolDefinition[] {
  */
 const DOCUMENT_TOOL_NAMES = ['parse_document', 'get_document_content', 'list_documents', 'search_document'];
 
-/**
- * Get tool definitions in Ollama format
- * @param options.excludeDocumentTools - If true, excludes document parsing tools (use when no docs attached)
- * @param options.categories - If provided, only include tools in these categories (for small models)
- */
-export function getOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+function filterToolDefinitions(options?: { excludeDocumentTools?: boolean; categories?: string[] }): ToolDefinition[] {
   let tools = getAllToolDefinitions();
-  
+
   if (options?.excludeDocumentTools) {
     tools = tools.filter(t => !DOCUMENT_TOOL_NAMES.includes(t.name));
   }
@@ -118,8 +113,30 @@ export function getOllamaTools(options?: { excludeDocumentTools?: boolean; categ
     const cats = new Set(options.categories);
     tools = tools.filter(t => t.category && cats.has(t.category));
   }
-  
-  return tools.map(toOllamaTool);
+
+  return tools;
+}
+
+export function getFocusedToolDefinitions(options?: { excludeDocumentTools?: boolean; categories?: string[] }): ToolDefinition[] {
+  const filtered = filterToolDefinitions(options);
+  if (options?.categories && options.categories.length > 0) {
+    return filtered;
+  }
+
+  return filtered.filter(t => SMALL_MODEL_CORE_TOOLS.has(t.name));
+}
+
+/**
+ * Get tool definitions in Ollama format
+ * @param options.excludeDocumentTools - If true, excludes document parsing tools (use when no docs attached)
+ * @param options.categories - If provided, only include tools in these categories (for small models)
+ */
+export function getOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+  return filterToolDefinitions(options).map(toOllamaTool);
+}
+
+export function getFocusedOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+  return getFocusedToolDefinitions(options).map(toOllamaTool);
 }
 
 /**

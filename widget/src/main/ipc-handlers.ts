@@ -30,7 +30,7 @@ import {
 import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
-import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory } from './message-router';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
@@ -849,6 +849,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('sadie:update-message', async (_event, { conversationId, messageId, updates }: { conversationId: string; messageId: string; updates: Partial<Message> }) => {
     try {
       const success = MemoryManager.updateMessageInConversation(conversationId, messageId, updates);
+      if (success) {
+        resyncHistoryFromStore(conversationId);
+      }
       return { success };
     } catch (err: any) {
       console.error('Error updating message:', err.message);

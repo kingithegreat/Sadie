@@ -37,6 +37,10 @@ export interface SadieRequestWithImages extends SadieRequest {
   image?: ImageAttachment;
   images?: ImageAttachment[];
   documents?: DocumentAttachment[];
+  /** Optional per-message local-model override used for task-aware auto-routing. */
+  modelOverride?: string;
+  /** True when resending an earlier turn so the router should not duplicate history. */
+  retry?: boolean;
 }
 
 export interface SadieResponse {
@@ -131,6 +135,7 @@ export interface Settings {
   globalHotkey?: string;
   theme?: 'light' | 'dark' | 'system';
   uncensoredMode?: boolean;
+  modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;
   uncensoredModel?: string;
   visionModel?: string;

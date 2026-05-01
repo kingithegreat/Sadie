@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { CustomLLMConfig } from '../../shared/types';
+import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 
 interface OllamaModel {
   name: string;
@@ -17,6 +17,7 @@ interface ModelInfo {
   provider?: string;
   installed?: boolean;
   sizeGB?: number;
+  costHint?: string;
 }
 
 interface ModelSelectorProps {
@@ -34,12 +35,20 @@ interface ModelSelectorProps {
 // Well-known models with descriptions — shown even if not installed (with a "pull" option)
 const RECOMMENDED_MODELS: ModelInfo[] = [
   { id: 'qwen2.5:7b', name: 'Qwen 2.5 (7B)', shortName: 'Qwen 7B', description: 'Smartest local model — best tool use & reasoning (4.4GB)', type: 'ollama', sizeGB: 4.4 },
+  { id: 'qwen2.5:14b', name: 'Qwen 2.5 (14B)', shortName: 'Qwen 14B', description: 'Stronger reasoning and coding for bigger GPUs (8.2GB)', type: 'ollama', sizeGB: 8.2 },
+  { id: 'gemma4:e4b', name: 'Gemma 4 (E4B)', shortName: 'Gemma4 E4B', description: 'Google quality-focused Gemma 4 — strong general chat, but heavier (~5.5GB)', type: 'ollama', sizeGB: 5.5 },
+  { id: 'gemma4:e2b', name: 'Gemma 4 (E2B)', shortName: 'Gemma4 E2B', description: 'Lighter Gemma 4 option for modest hardware (~3GB)', type: 'ollama', sizeGB: 3.0 },
+  { id: 'gemma3:4b', name: 'Gemma 3 (4B)', shortName: 'Gemma3 4B', description: 'Google lightweight — vision & multilingual (3.3GB)', type: 'ollama', sizeGB: 3.3 },
   { id: 'mistral:latest', name: 'Mistral (7B)', shortName: 'Mistral', description: 'Best conversation quality (4.4GB)', type: 'ollama', sizeGB: 4.4 },
+  { id: 'mistral-small:latest', name: 'Mistral Small (24B)', shortName: 'Mistral Sm', description: 'Powerful reasoning, function calling (14GB)', type: 'ollama', sizeGB: 14 },
+  { id: 'mistral-nemo:latest', name: 'Mistral Nemo (12B)', shortName: 'Nemo', description: 'Great all-rounder, 128K context (7.1GB)', type: 'ollama', sizeGB: 7.1 },
   { id: 'deepseek-r1:8b', name: 'DeepSeek R1 (8B)', shortName: 'DS-R1 8B', description: 'Chain-of-thought reasoning, slower but precise (4.9GB)', type: 'ollama', sizeGB: 4.9 },
   { id: 'phi4-mini', name: 'Phi 4 Mini (3.8B)', shortName: 'Phi4', description: 'Best reasoning for small VRAM (2.5GB)', type: 'ollama', sizeGB: 2.5 },
   { id: 'qwen2.5:3b', name: 'Qwen 2.5 (3B)', shortName: 'Qwen 3B', description: 'Good tool-calling, lightweight (2GB)', type: 'ollama', sizeGB: 2 },
   { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder (7B)', shortName: 'Coder 7B', description: 'Best coding model (4.4GB)', type: 'ollama', sizeGB: 4.4 },
+  { id: 'qwen2.5-coder:14b', name: 'Qwen 2.5 Coder (14B)', shortName: 'Coder 14B', description: 'Higher-end local coding quality (8.2GB)', type: 'ollama', sizeGB: 8.2 },
   { id: 'llama3.1:8b', name: 'Llama 3.1 (8B)', shortName: 'Llama 8B', description: 'Strong general-purpose (4.7GB)', type: 'ollama', sizeGB: 4.7 },
+  { id: 'llama3.1:70b', name: 'Llama 3.1 (70B)', shortName: 'Llama 70B', description: 'Top-tier local quality for high-end rigs (43GB)', type: 'ollama', sizeGB: 43 },
   { id: 'llama3.2:3b', name: 'Llama 3.2 (3B)', shortName: 'Llama 3B', description: 'Reliable general chat (2GB)', type: 'ollama', sizeGB: 2 },
 ];
 
@@ -49,7 +58,7 @@ function formatSize(bytes: number): string {
 }
 
 function normalizeModelId(id: string): string {
-  return (id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return (id || '').toLowerCase().replace(/:latest$/, '').replace(/[^a-z0-9]/g, '');
 }
 
 function getVramWarning(modelSizeGB: number | undefined, vramGB: number | null | undefined): 'ok' | 'tight' | 'over' {
@@ -73,8 +82,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const dropdownId = 'model-selector-menu';
   const [isOpen, setIsOpen] = useState(false);
   const [installedModels, setInstalledModels] = useState<OllamaModel[]>([]);
+  const [cloudModels, setCloudModels] = useState<CustomModelInfo[]>([]);
+  const [cloudLoading, setCloudLoading] = useState(false);
   const [pulling, setPulling] = useState<string | null>(null);
   const [pullError, setPullError] = useState<string | null>(null);
+  const [vramWarning, setVramWarning] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch installed Ollama models
@@ -84,7 +96,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       if (result?.success && result.models) {
         setInstalledModels(result.models);
       } else {
-        // Retry once after 2s (Ollama may be busy loading a model)
         setTimeout(async () => {
           try {
             const retry = await window.electron?.listOllamaModels?.();
@@ -95,24 +106,45 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     } catch { /* Ollama offline */ }
   }, []);
 
+  // Fetch available cloud models for configured provider
+  const fetchCloudModels = useCallback(async () => {
+    if (!customLLM?.enabled || !customLLM.apiUrl) return;
+    setCloudLoading(true);
+    try {
+      const result = await window.electron?.listCustomLLMModels?.({
+        apiUrl: customLLM.apiUrl,
+        apiKey: customLLM.apiKey,
+        provider: customLLM.provider,
+      });
+      if (result?.success && result.models) {
+        setCloudModels(result.models);
+      }
+    } catch { /* failed to fetch */ }
+    setCloudLoading(false);
+  }, [customLLM?.enabled, customLLM?.apiUrl, customLLM?.apiKey, customLLM?.provider]);
+
   useEffect(() => {
     fetchModels();
-    // Refresh every 30s (catches newly pulled models)
     const interval = setInterval(fetchModels, 30000);
     return () => clearInterval(interval);
   }, [fetchModels]);
 
-  // Refresh after dropdown opens
+  // Fetch cloud models on mount if provider is configured
   useEffect(() => {
-    if (isOpen) fetchModels();
-  }, [isOpen, fetchModels]);
+    if (customLLM?.enabled) fetchCloudModels();
+  }, [customLLM?.enabled, fetchCloudModels]);
+
+  // Refresh both when dropdown opens
+  useEffect(() => {
+    if (isOpen) {
+      fetchModels();
+      if (customLLM?.enabled) fetchCloudModels();
+    }
+  }, [isOpen, fetchModels, fetchCloudModels, customLLM?.enabled]);
 
   // Build the merged model list: installed models first, then recommended uninstalled ones
   const installedModelInfos: ModelInfo[] = installedModels.map(m => {
-    // Prefer exact id match, then prefix match
-    const recommended =
-      RECOMMENDED_MODELS.find(r => r.id === m.name) ||
-      RECOMMENDED_MODELS.find(r => m.name.startsWith(r.id.split(':')[0]) && r.id.split(':')[0] === m.name.split(':')[0]);
+    const recommended = RECOMMENDED_MODELS.find(r => normalizeModelId(r.id) === normalizeModelId(m.name));
     return {
       id: m.name,
       name: recommended?.name || m.name,
@@ -125,23 +157,39 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   });
 
   const uninstalledRecommended = RECOMMENDED_MODELS.filter(
-    r => !installedModels.some(m => m.name === r.id || m.name.split(':')[0] === r.id.split(':')[0])
+    r => !installedModels.some(m => normalizeModelId(m.name) === normalizeModelId(r.id))
   ).map(r => ({ ...r, installed: false }));
 
-  // Custom LLM option
-  const customModels: ModelInfo[] = customLLM?.enabled ? [{
-    id: 'custom',
-    name: customLLM.name || 'Custom API',
-    shortName: customLLM.model?.split('/').pop()?.split(':')[0] || 'API',
-    description: `${customLLM.provider?.toUpperCase() || 'Custom'} — ${customLLM.model || 'Not configured'}`,
-    type: 'custom',
-    provider: customLLM.provider,
+  // Build cloud model list from fetched provider models
+  const customModelInfos: ModelInfo[] = cloudModels.map(cm => ({
+    id: cm.id,
+    name: cm.name || cm.id,
+    shortName: (cm.name || cm.id).split('/').pop()?.split(':')[0] || cm.id,
+    description: [cm.description, cm.costHint].filter(Boolean).join(' — '),
+    type: 'custom' as const,
+    provider: cm.provider || customLLM?.provider,
     installed: true,
-  }] : [];
+    costHint: cm.costHint,
+  }));
 
-  const allModels = [...customModels, ...installedModelInfos];
+  // Fallback: if cloud fetch returned nothing but we have a configured model, show it
+  if (customModelInfos.length === 0 && customLLM?.enabled) {
+    customModelInfos.push({
+      id: customLLM.model || 'custom',
+      name: customLLM.name || 'Custom API',
+      shortName: customLLM.model?.split('/').pop()?.split(':')[0] || 'API',
+      description: `${customLLM.provider?.toUpperCase() || 'Custom'} — ${customLLM.model || 'Not configured'}`,
+      type: 'custom',
+      provider: customLLM.provider,
+      installed: true,
+    });
+  }
+
+  const allModels = [...customModelInfos, ...installedModelInfos];
 
   const forcedModelId = lockedModelId || 'dolphin-llama3:8b';
+
+  const activeCustomModelId = customLLM?.model || '';
 
   const getCurrentModelInfo = (): ModelInfo => {
     if (locked) {
@@ -150,7 +198,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         description: 'Active while Uncensored Mode is enabled', type: 'ollama', installed: true,
       };
     }
-    if (useCustomLLM && customModels.length > 0) return customModels[0];
+    if (useCustomLLM && customModelInfos.length > 0) {
+      return customModelInfos.find(m => m.id === activeCustomModelId) || customModelInfos[0];
+    }
     return allModels.find(m => normalizeModelId(m.id) === normalizeModelId(currentModel)) || {
       id: currentModel, name: currentModel, shortName: currentModel.split(':')[0],
       description: 'Currently selected model', type: 'ollama', installed: true,
@@ -159,20 +209,21 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const currentModelInfo = getCurrentModelInfo();
 
-  // Prev/next navigation through installed models only
-  const currentIndex = allModels.findIndex(m =>
-    (useCustomLLM && m.type === 'custom') || normalizeModelId(m.id) === normalizeModelId(currentModel)
-  );
+  // Prev/next navigation through all models
+  const currentIndex = allModels.findIndex(m => {
+    if (useCustomLLM && m.type === 'custom') return m.id === activeCustomModelId;
+    return normalizeModelId(m.id) === normalizeModelId(currentModel);
+  });
 
   const selectModelWithVramCheck = (model: ModelInfo) => {
     const warn = getVramWarning(model.sizeGB, vramGB);
     if (warn === 'over') {
-      const ok = window.confirm(
-        `⚠️ ${model.name} needs ~${model.sizeGB}GB but your GPU has ${vramGB}GB VRAM.\n\nIt will run slowly (CPU offload). Continue anyway?`
-      );
-      if (!ok) return;
+      setVramWarning(`⚠️ ${model.name} needs ~${model.sizeGB}GB VRAM — may run slowly on your GPU (CPU offload)`);
+      setTimeout(() => setVramWarning(null), 5000);
+    } else {
+      setVramWarning(null);
     }
-    onModelChange(model.type === 'custom' ? (customLLM?.model || '') : model.id, model.type === 'custom');
+    onModelChange(model.id, model.type === 'custom');
   };
 
   const handlePrevModel = (e: React.MouseEvent) => {
@@ -202,7 +253,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     try {
       const result = await window.electron?.pullModel?.(modelId);
       if (result?.success) {
-        await fetchModels(); // Refresh the list
+        await fetchModels();
         setPulling(null);
       } else {
         setPullError(result?.error || 'Pull failed');
@@ -228,6 +279,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   useEffect(() => { if (locked) setIsOpen(false); }, [locked]);
 
+  const providerLabel = customLLM?.provider
+    ? customLLM.provider.charAt(0).toUpperCase() + customLLM.provider.slice(1)
+    : 'Cloud API';
+
   return (
     <div className={`model-selector ${locked ? 'locked' : ''}`} ref={dropdownRef}>
       <div className="model-selector-row">
@@ -240,10 +295,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           title={locked ? (lockReason || 'Turn off Uncensored Mode to switch models') : `Using ${currentModelInfo?.name} — click to see all models`}
           aria-haspopup="menu"
           aria-controls={dropdownId}
-          aria-expanded={isOpen}
+          aria-expanded={isOpen ? 'true' : 'false'}
         >
           <div className="model-selector-current">
-            <span className="model-icon">{useCustomLLM ? '☁️' : '🦙'}</span>
+            <span className="model-icon">{currentModelInfo?.type === 'custom' ? '☁️' : '🦙'}</span>
             <span className="model-name-display">{currentModelInfo?.shortName || currentModelInfo?.name || 'Select'}</span>
             {locked && <span className="model-lock-badge">🔒</span>}
             <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>▼</span>
@@ -255,6 +310,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       {locked && (
         <div className="model-lock-hint">🔒 {lockReason || 'Turn off Uncensored Mode to switch models'}</div>
+      )}
+
+      {vramWarning && (
+        <div className="model-vram-warning">{vramWarning}</div>
       )}
 
       {isOpen && (
@@ -272,28 +331,36 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           </div>
 
           <div className="model-list">
-            {/* Cloud APIs */}
-            {customModels.length > 0 && (
+            {/* Cloud API models */}
+            {customLLM?.enabled && (
               <>
-                <div className="model-section-label">Cloud API</div>
-                {customModels.map(model => (
-                  <button key={model.id}                    className={`model-option ${useCustomLLM ? 'active' : ''}`}
-                    onClick={() => handleSelectModel(model)}>
-                    <div className="model-option-header">
-                      <span className="model-option-icon">☁️</span>
-                      <span className="model-option-name">{model.name}</span>
-                      {useCustomLLM && <span className="active-badge">✓</span>}
-                    </div>
-                    <span className="model-option-desc">{model.description}</span>
-                  </button>
-                ))}
+                <div className="model-section-label">
+                  ☁️ {providerLabel}
+                  {cloudLoading && <span className="cloud-loading"> loading...</span>}
+                </div>
+                {customModelInfos.map(model => {
+                  const isActive = useCustomLLM && model.id === activeCustomModelId;
+                  return (
+                    <button key={model.id}
+                      className={`model-option ${isActive ? 'active' : ''}`}
+                      onClick={() => handleSelectModel(model)}>
+                      <div className="model-option-header">
+                        <span className="model-option-icon">☁️</span>
+                        <span className="model-option-name">{model.name}</span>
+                        {model.costHint && <span className="model-cost-badge">{model.costHint}</span>}
+                        {isActive && <span className="active-badge">✓</span>}
+                      </div>
+                      <span className="model-option-desc">{model.description}</span>
+                    </button>
+                  );
+                })}
               </>
             )}
 
             {/* Installed local models */}
             {installedModelInfos.length > 0 && (
               <>
-                <div className="model-section-label">Installed ({installedModelInfos.length})</div>
+                <div className="model-section-label">🦙 Installed ({installedModelInfos.length})</div>
                 {installedModelInfos.map(model => {
                   const warn = getVramWarning(model.sizeGB, vramGB);
                   return (
@@ -318,7 +385,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             {/* Recommended models not yet installed */}
             {uninstalledRecommended.length > 0 && (
               <>
-                <div className="model-section-label">Available to Download</div>
+                <div className="model-section-label">📦 Available to Download</div>
                 {uninstalledRecommended.map(model => {
                   const warn = getVramWarning(model.sizeGB, vramGB);
                   return (
@@ -346,7 +413,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             )}
 
             {/* No models at all */}
-            {installedModelInfos.length === 0 && customModels.length === 0 && (
+            {installedModelInfos.length === 0 && !customLLM?.enabled && (
               <div className="model-option-empty">
                 No models found. Is Ollama running?
               </div>

@@ -46,6 +46,7 @@ export interface Settings {
   n8nUrl: string;
   ollamaUrl: string;
   // Model selection
+  modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;
   uncensoredModel?: string;
   visionModel?: string;
@@ -112,6 +113,7 @@ const DEFAULT_SETTINGS: Settings = {
   n8nUrl: 'http://localhost:5678',
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
+  modelRoutingMode: 'prompt',
   chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
   uncensoredModel: 'dolphin-phi:2.7b',  // 1.6 GB — safe on 4-5 GB VRAM
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)

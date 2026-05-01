@@ -73,7 +73,8 @@ const GROQ_MODELS: CustomModelInfo[] = [
   { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'Best quality on Groq', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
   { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', description: 'Fastest inference', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
   { id: 'gemma2-9b-it', name: 'Gemma 2 9B', description: 'Google model, strong reasoning', provider: 'groq', contextWindow: 8192, costHint: 'Free tier' },
-  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', description: '32K context, strong reasoning', provider: 'groq', contextWindow: 32768, costHint: 'Free tier' },
+  { id: 'mistral-saba-24b', name: 'Mistral Saba 24B', description: 'Fast Mistral, multilingual', provider: 'groq', contextWindow: 32768, costHint: 'Free tier' },
+  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', description: '32K context, MoE architecture', provider: 'groq', contextWindow: 32768, costHint: 'Free tier' },
   { id: 'llama-3.1-70b-versatile', name: 'Llama 3.1 70B', description: 'High quality', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
 ];
 

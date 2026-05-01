@@ -8,6 +8,7 @@ interface Settings {
   n8nUrl: string;
   widgetHotkey: string;
   globalHotkey?: string;
+  modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;
   uncensoredModel?: string;
   visionModel?: string;
@@ -52,7 +53,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose
 }) => {
   const defaultModels = {
-    chatModel: 'phi4-mini',
+    chatModel: 'qwen2.5:7b',
     uncensoredModel: 'dolphin-phi:2.7b',
     visionModel: 'moondream',
     codeModel: 'qwen2.5-coder:3b'
@@ -99,6 +100,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
     return {
       ...source,
+      modelRoutingMode: source.modelRoutingMode || 'prompt',
       chatModel: source.chatModel || defaultModels.chatModel,
       uncensoredModel: source.uncensoredModel || defaultModels.uncensoredModel,
       visionModel: source.visionModel || defaultModels.visionModel,
@@ -241,7 +243,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleManualVram = (gb: number) => {
-    // Client-side recommendation matching the server-side recommendConfig() logic
+    // Client-side recommendation tuned for the current local model pack.
     type Rec = { mode: 'moa' | 'single'; preset?: string | null; model?: string | null; reason: string };
     let rec: Rec | null = null;
     if (gb >= 10) {
@@ -249,9 +251,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     } else if (gb >= 8) {
       rec = { mode: 'moa', preset: 'balanced', reason: `Balanced MoA fits your ${gb} GB VRAM` };
     } else if (gb >= 6) {
-      rec = { mode: 'single', model: 'phi4-mini', reason: `Best reasoning model for ${gb} GB — phi4-mini at 2.5GB leaves plenty of headroom. MoA needs 8+ GB.` };
+      rec = { mode: 'single', model: 'qwen2.5:7b', reason: `qwen2.5:7b is the strongest tool-calling and general chat model that still fits around ${gb} GB.` };
     } else if (gb >= 4) {
-      rec = { mode: 'single', model: 'phi4-mini', reason: `phi4-mini is the best small model for ${gb} GB VRAM — 2.5GB with 2GB headroom for context.` };
+      rec = { mode: 'single', model: 'qwen2.5:3b', reason: `qwen2.5:3b is the best fit for ${gb} GB when you still want reliable tool use.` };
     } else if (gb >= 2) {
       rec = { mode: 'single', model: 'llama3.2:3b', reason: `Best fit for ${gb} GB. Index files with RAG for smarter answers.` };
     }
@@ -273,7 +275,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       }
     } else if (rec.mode === 'single') {
       // Disable MoA and set the recommended single model
-      setLocalSettings({ ...localSettings, moaEnabled: false, chatModel: rec.model || 'phi4-mini' });
+      setLocalSettings({ ...localSettings, moaEnabled: false, chatModel: rec.model || 'qwen2.5:7b' });
     }
   };
 
@@ -592,6 +594,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="setting-group">
+          <label className="setting-label">Model routing</label>
+          <select
+            aria-label="Model routing mode"
+            className="setting-input"
+            value={localSettings.modelRoutingMode || 'prompt'}
+            onChange={(e) => setLocalSettings({
+              ...localSettings,
+              modelRoutingMode: e.target.value as 'off' | 'prompt' | 'auto'
+            })}
+          >
+            <option value="off">Off — never override my chosen model</option>
+            <option value="prompt">Prompt — suggest a better model for the task</option>
+            <option value="auto">Auto — switch requests automatically</option>
+          </select>
+          <small className="setting-hint">Controls whether SADIE only suggests stronger local models for a task or applies them automatically.</small>
+        </div>
+
+        <div className="setting-group">
           <label className="setting-label">Uncensored model</label>
           <input
             type="text"
@@ -722,8 +742,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className={`hw-profile-btn${localSettings.hardwareProfile === p ? ' active' : ''}`}
                 onClick={() => {
                   const profileDefaults: Record<string, Partial<Settings>> = {
-                    '4gb':   { chatModel: 'phi4-mini',   visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
-                    '8gb':   { chatModel: 'phi4-mini',   visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
+                    '4gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
+                    '8gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
                     '16gb+': { chatModel: 'qwen2.5:7b',  visionModel: 'llava',     uncensoredModel: 'dolphin-llama3:8b' },
                   };
                   setLocalSettings({ ...localSettings, ...(profileDefaults[p] || {}), hardwareProfile: p });
@@ -735,9 +755,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
           <small className="setting-hint">
             Applies safe model defaults for your GPU.&nbsp;
-            <strong>4 GB:</strong> qwen2.5:3b + moondream (vision) + dolphin-phi:2.7b (uncensored).&nbsp;
-            <strong>8 GB:</strong> qwen2.5:7b + llava.&nbsp;
-            <strong>16 GB+:</strong> full-size models + MoA recommended.
+            <strong>4 GB:</strong> qwen2.5:7b if it fits, otherwise qwen2.5:3b + moondream.&nbsp;
+            <strong>8 GB:</strong> qwen2.5:7b + moondream.&nbsp;
+            <strong>16 GB+:</strong> qwen2.5:7b + llava + MoA recommended.
             Auto-detected on first launch — only change if it was wrong.
           </small>
         </div>

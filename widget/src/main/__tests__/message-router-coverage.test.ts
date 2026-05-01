@@ -11,7 +11,7 @@
  *   - isSimpleGreeting (via analyzeAndRouteMessage)
  */
 
-import 'axios';
+
 
 // ── Mock Electron ────────────────────────────────────────────────────────────
 jest.mock('electron', () => ({
@@ -226,6 +226,11 @@ describe('analyzeAndRouteMessage', () => {
   test('general chat message routes to llm', async () => {
     const r = await mr.analyzeAndRouteMessage('Please explain how recursion works in simple terms');
     expect(r.type).toBe('llm');
+  });
+
+  test('attached document review prompt does not route to filesystem tools', async () => {
+    const intent = await mr.preProcessIntent('[Document attached: Mid-point review.pdf]\n\nhow could i improve this');
+    expect(intent).toBeNull();
   });
 });
 

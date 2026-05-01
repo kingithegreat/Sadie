@@ -8,7 +8,7 @@ import streamFromSadieProxy from './stream-proxy-client';
 import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { SADIE_SYSTEM_PROMPT, SADIE_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
-import { initializeTools, getOllamaTools, getSmallModelTools, getAllToolDefinitions, executeToolBatch, ToolCall, ToolContext } from './tools';
+import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
@@ -23,6 +23,7 @@ import { matchSkills } from './skills-loader';
 import { shouldUseMoA, runMoAPipeline } from './moa';
 import { looksMultiStep, buildAgenticSystemPrompt, formatStepProgress } from './agentic-loop';
 import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from './morning-briefing';
+import { shouldOfferToolsForMessage } from '../shared/model-advisor';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -209,6 +210,63 @@ async function parseDocuments(documents: DocumentAttachment[]): Promise<string[]
   }
   
   return parsedTexts;
+}
+
+function formatNbaEventsStrict(events: any[], label?: string, maxGames = 10): string {
+  const header = label || `NBA Games — ${new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}`;
+  const lines: string[] = [`🏀 **${header}**`, ''];
+
+  for (const game of (events || []).slice(0, maxGames)) {
+    const competition = game.competitions?.[0];
+    const competitors = Array.isArray(competition?.competitors) ? competition.competitors : [];
+    const away = competitors.find((c: any) => c.homeAway === 'away') || competitors[0];
+    const home = competitors.find((c: any) => c.homeAway === 'home') || competitors[1];
+    const awayName = away?.team?.displayName || 'Away';
+    const homeName = home?.team?.displayName || 'Home';
+    const state = game.status?.type?.state || '';
+    const statusDetail = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
+    const isScheduled = state === 'pre' || /scheduled|pre-?game/i.test(statusDetail);
+    const awayScore = away?.score;
+    const homeScore = home?.score;
+    const hasScores = !isScheduled && awayScore != null && homeScore != null;
+    const scoreLine = hasScores ? ` **${awayScore}-${homeScore}**` : '';
+
+    let meta = statusDetail;
+    if (isScheduled && game.date) {
+      meta = new Date(game.date).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      });
+    }
+
+    const venueName = competition?.venue?.fullName || '';
+    const venueCity = competition?.venue?.address?.city || '';
+    const venueState = competition?.venue?.address?.state || competition?.venue?.address?.province || '';
+    const venueBits = [venueName, [venueCity, venueState].filter(Boolean).join(', ')].filter(Boolean);
+
+    lines.push(`**${awayName}** @ **${homeName}**${scoreLine}`);
+    lines.push(`Status: ${meta}`);
+    if (venueBits.length > 0) lines.push(`Venue: ${venueBits.join(' — ')}`);
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
+function isDocumentReviewRequest(message: string): boolean {
+  return /\b(improve|improvement|review|feedback|critique|analyse|analyze|edit|rewrite|make this better|how could i improve|how can i improve)\b/i.test(message);
+}
+
+function buildDocumentReviewPrompt(userMessage: string): string {
+  const request = userMessage.trim() || 'Review this document.';
+  return [
+    'Review the attached document and respond as a writing reviewer.',
+    'Give concrete, actionable feedback under these headings: Overall assessment, Strong points, Main issues, and Specific revisions.',
+    'Quote or reference the document where helpful. Do not browse the filesystem. Do not ask to locate the file.',
+    `User request: ${request}`,
+  ].join('\n');
 }
 
 // Track active streams (Node Readable) by streamId so we can cancel them
@@ -422,6 +480,12 @@ export function clearHistory(conversationId: string) {
   lastIntentMap.delete(conversationId);
 }
 
+export function resyncHistoryFromStore(conversationId: string): void {
+  if (!conversationId) return;
+  clearHistory(conversationId);
+  ensureHydrated(conversationId);
+}
+
 /**
  * Seed the in-memory conversationHistory from MemoryManager the first time a
  * conversation is accessed in a new process session. This restores LLM context
@@ -437,7 +501,13 @@ export function ensureHydrated(conversationId: string): void {
     const stored = MemoryManager.getConversation(conversationId);
     if (!stored || !stored.messages || stored.messages.length === 0) return;
     const msgs: ConversationMessage[] = stored.messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .filter(m => {
+        if (m.role === 'user') return true;
+        if (m.role !== 'assistant') return false;
+        if ((m.streamingState && m.streamingState !== 'finished') || m.error) return false;
+        if (!String(m.content || '').trim()) return false;
+        return true;
+      })
       .map(m => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
@@ -736,9 +806,14 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: '__help', arguments: {} }] };
   }
 
-  // If the message already contains embedded document content (from attachments),
-  // let the LLM summarize it directly — do NOT route to web search or other tools.
-  if (m.includes('=== document:') && m.includes('=== end of ')) {
+  // If the message contains attached document markers or embedded parsed document
+  // content, keep the request on the document-review path unless the user is
+  // explicitly asking for filesystem navigation.
+  const hasAttachedDocumentMarker = m.includes('[document attached:');
+  const hasEmbeddedDocumentContent = m.includes('=== document:') && m.includes('=== end of ');
+  const wantsFilesystemLookup = /\b(find|locate|browse|list|show|open)\b/i.test(m)
+    && /\b(file|folder|directory|desktop|documents|downloads|path)\b/i.test(m);
+  if ((hasAttachedDocumentMarker || hasEmbeddedDocumentContent) && !wantsFilesystemLookup) {
     return null; // LLM already has the document text in context
   }
 
@@ -1988,16 +2063,22 @@ export async function streamFromLLM(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean }
+  options?: { hasDocuments?: boolean; modelOverride?: string }
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
+  const hasDocuments = options?.hasDocuments ?? false;
+  const skipToolsForGreeting = isSimpleGreeting(message);
+  const intentCategories = detectToolCategories(message);
+  const shouldOfferTools = !skipToolsForGreeting
+    && shouldOfferToolsForMessage(message, { hasImages: !!images?.length, hasDocuments });
 
   // Per-conversation model override (set via sidebar context menu)
   const storedConvForModel = MemoryManager.getConversation(conversationId);
   const perConvModel = storedConvForModel?.model?.trim() || undefined;
+  const perRequestModel = options?.modelOverride?.trim() || undefined;
 
   // Build system prompt — compact variant for small models (<=3B)
-  const activeModel = perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
+  const activeModel = perRequestModel || perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
 
   // Check if custom LLM is enabled and configured
   if (settings.useCustomLLM && settings.customLLM) {
@@ -2057,7 +2138,9 @@ export async function streamFromLLM(
         || customConfig.provider === 'huggingface'
         || customConfig.provider === 'sambanova'
         || customConfig.provider === 'custom';
-      const toolDefs = providerSupportsTools ? getAllToolDefinitions() : undefined;
+      const toolDefs = providerSupportsTools && shouldOfferTools
+        ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
+        : undefined;
       
       // Track whether a tool call was received (to know if onEnd should be deferred)
       let toolCallReceived = false;
@@ -2190,7 +2273,10 @@ export async function streamFromLLM(
       const codeProviderSupportsTools = codeApiProvider === 'openai'
         || codeApiProvider === 'anthropic'
         || codeApiProvider === 'openrouter';
-      const codeToolDefs = codeProviderSupportsTools ? getAllToolDefinitions() : undefined;
+      const codeToolDefs = codeProviderSupportsTools
+        && shouldOfferToolsForMessage(message, { hasDocuments })
+        ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
+        : undefined;
 
       let codeToolCallReceived = false;
       const handleCodeToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
@@ -2295,7 +2381,7 @@ export async function streamFromOllamaWithTools(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean }
+  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean; modelOverride?: string }
 ): Promise<{ cancel: () => void }> {
   // Synthesis calls pass pre-fetched search results — we must NOT offer tools or
   // the LLM will call web_search again, doubling the context and potentially
@@ -2309,9 +2395,10 @@ export async function streamFromOllamaWithTools(
   const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM;
   // Per-conversation model override for local Ollama path
   const ollamaConvModel = MemoryManager.getConversation(conversationId)?.model?.trim();
+  const perRequestModel = options?.modelOverride?.trim();
   const preferredChatModel = (isCustomLLMActive && !ollamaConvModel)
     ? OLLAMA_CHAT_MODEL
-    : (ollamaConvModel || settings.chatModel || OLLAMA_CHAT_MODEL);
+    : (perRequestModel || ollamaConvModel || settings.chatModel || OLLAMA_CHAT_MODEL);
   const preferredUncensoredModel = settings.uncensoredModel || OLLAMA_UNCENSORED_MODEL;
   const preferredVisionModel = settings.visionModel || OLLAMA_VISION_MODEL;
   // Use code model when a coding-heavy query is detected and a code model is configured
@@ -2502,11 +2589,14 @@ export async function streamFromOllamaWithTools(
   // and offering tools causes it to redundantly call web_search, blowing the context.
   // For small models, use the compact core-tool set instead of all 80+ tools.
   const isAgentic = options?.agenticMode === true;
-  const intentCategories = smallModel ? detectToolCategories(message) : undefined;
-  const tools = (modelSupportsTools && !skipToolsForGreeting && !isSynthesisCall)
+  const intentCategories = detectToolCategories(message);
+  const shouldOfferTools = !skipToolsForGreeting
+    && !isSynthesisCall
+    && shouldOfferToolsForMessage(message, { hasImages, hasDocuments });
+  const tools = (modelSupportsTools && shouldOfferTools)
     ? (smallModel && !isAgentic
       ? getSmallModelTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
-      : getOllamaTools({ excludeDocumentTools: !hasDocuments }))
+      : getFocusedOllamaTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories }))
     : undefined;
   
   console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, hasDocuments=${hasDocuments}, isGreeting=${skipToolsForGreeting}, message="${message.substring(0, 30)}..."`);
@@ -3152,13 +3242,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           console.log(`[SADIE] Parsing ${request.documents.length} document(s)...`);
           const documentContents = await parseDocuments(request.documents);
           if (documentContents.length > 0) {
-            enhancedMessage = documentContents.join('\n\n') + '\n\n' + request.message;
+            const docContext = documentContents.join('\n\n');
+            enhancedMessage = isDocumentReviewRequest(request.message)
+              ? `${docContext}\n\n${buildDocumentReviewPrompt(request.message)}`
+              : `${docContext}\n\n${request.message}`;
           }
         }
         
-        // Add user message to conversation history
-        addToHistory(convId, 'user', enhancedMessage);
-        bumpLastIntentAge(convId);
+        // Add user message to conversation history unless this is an explicit retry
+        // of a previously persisted turn.
+        if (!request.retry) {
+          addToHistory(convId, 'user', enhancedMessage);
+          bumpLastIntentAge(convId);
+        }
         
         // Track assistant response for history
         let assistantResponse = '';
@@ -3653,23 +3749,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 } catch (enrichErr: any) {
                   // Fallback to basic formatting if enrichment fails
                   console.error('[SADIE] NBA enrichment failed, using basic format:', enrichErr?.message);
-                  const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-                  responseText += `🏀 **NBA Games — ${today}**\n\n`;
-                  result.result.events.slice(0, 10).forEach((game: any) => {
-                  const comps = game.competitions?.[0];
-                  const competitors = comps?.competitors || [];
-                  const sorted = [...competitors].sort((a: any, b: any) => (a.homeAway === 'home' ? 1 : -1) - (b.homeAway === 'home' ? 1 : -1));
-                  const away = sorted[0]; const home = sorted[1];
-                  const awayName = away?.team?.displayName || 'Away';
-                  const homeName = home?.team?.displayName || 'Home';
-                  const isScheduled = game.status?.type?.state === 'pre' || game.status?.type?.description === 'Scheduled';
-                  const awayScore = away?.score; const homeScore = home?.score;
-                  const scores = (!isScheduled && awayScore != null && homeScore != null) ? ` **${awayScore}–${homeScore}**` : '';
-                  const statusDetail = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
-                  const gameTime = game.date ? new Date(game.date).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : '';
-                  const timeStr = isScheduled && gameTime ? gameTime : statusDetail;
-                  responseText += `**${awayName}** @ **${homeName}**${scores}\n📍 ${timeStr}\n\n`;
-                  });
+                  const queryLabel = result.result.query ? `NBA Games — ${result.result.query}` : undefined;
+                  responseText += formatNbaEventsStrict(result.result.events, queryLabel, 10) + '\n';
                 }
               }
               // Handle weather results
@@ -4539,12 +4620,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   }
                   // Handle NBA games
                   else if (result.result.events && result.result.events.length > 0) {
-                    responseText += 'Here are the games:\n\n';
-                    result.result.events.slice(0, 5).forEach((game: any) => {
-                      const teams = game.competitions?.[0]?.competitors?.map((c: any) => c.team.displayName).join(' vs ') || 'Unknown matchup';
-                      const status = game.status?.type?.shortDetail || game.status?.type?.description || 'Scheduled';
-                      responseText += `${teams} - ${status}\n`;
-                    });
+                    const queryLabel = result.result.query ? `NBA Games — ${result.result.query}` : undefined;
+                    responseText += formatNbaEventsStrict(result.result.events, queryLabel, 10) + '\n';
                   }
                   // Handle weather results (wttr.in shape)
                   else if (result.result.temperature && result.result.condition) {
@@ -4683,7 +4760,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   console.log('[SADIE] direct stream onError: attempting non-stream fallback...');
                   try {
                     const fbHistory = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
-                    const fbModel = uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL;
+                    const fbModel = (typeof reqAny.modelOverride === 'string' && reqAny.modelOverride.trim())
+                      || (uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL);
                     const fbSmall = isSmallModel(fbModel);
                     const fallbackBody: any = {
                       model: fbModel,
@@ -4715,7 +4793,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               },
               requestConfirmation,
               (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
-              { hasDocuments: hasCurrentDocuments }
+              { hasDocuments: hasCurrentDocuments, modelOverride: reqAny.modelOverride }
             );
 
             activeStreams.set(streamId, { destroy: handler.cancel });

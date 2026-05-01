@@ -164,8 +164,8 @@ describe('runMoAPipeline', () => {
   });
 
   test('still aggregates when one proposer fails', async () => {
-    mockedAxios.post.mockImplementation((_url, body: any) => {
-      const model = body.model;
+    mockedAxios.post.mockImplementation((_url, _body: any) => {
+      const model = _body.model;
       if (model === 'model-a') {
         return Promise.reject(new Error('model not found'));
       }

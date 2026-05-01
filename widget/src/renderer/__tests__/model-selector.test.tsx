@@ -136,7 +136,7 @@ describe('ModelSelector — dropdown', () => {
   test('shows Available to Download section for uninstalled recommended models', async () => {
     await renderSelector();
     await act(async () => { fireEvent.click(getMainBtn()); });
-    expect(screen.getByText('Available to Download')).toBeInTheDocument();
+    expect(screen.getByText(/Available to Download/)).toBeInTheDocument();
   });
 
   test('shows no-models message when Ollama is offline', async () => {
@@ -237,37 +237,35 @@ describe('ModelSelector — VRAM warnings', () => {
   test('shows no VRAM badges when VRAM is ample', async () => {
     await renderSelector({ vramGB: 24 });
     await act(async () => { fireEvent.click(getMainBtn()); });
-    expect(document.querySelectorAll('.vram-badge.over').length).toBe(0);
+    ['Qwen 2.5 (7B)', 'Mistral (7B)', 'Phi 4 Mini (3.8B)'].forEach((name) => {
+      const option = screen.getByText(name).closest('.model-option');
+      expect(option?.querySelector('.vram-badge.over')).toBeNull();
+    });
   });
 
-  test('prev/next arrows show confirm dialog for oversized models', async () => {
+  test('prev/next arrows show an inline warning for oversized models', async () => {
     const onModelChange = jest.fn();
-    window.confirm = jest.fn(() => false);
-    // Set vramGB to 2 so all models are "over"
     await renderSelector({ currentModel: 'phi4-mini', vramGB: 2, onModelChange });
     fireEvent.click(screen.getByRole('button', { name: /next model/i }));
-    expect(window.confirm).toHaveBeenCalled();
-    // User declined — onModelChange should NOT be called
-    expect(onModelChange).not.toHaveBeenCalled();
-  });
-
-  test('prev/next arrows proceed when user confirms oversized model', async () => {
-    const onModelChange = jest.fn();
-    window.confirm = jest.fn(() => true);
-    await renderSelector({ currentModel: 'phi4-mini', vramGB: 2, onModelChange });
-    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
-    expect(window.confirm).toHaveBeenCalled();
+    expect(screen.getByText(/may run slowly on your gpu/i)).toBeInTheDocument();
     expect(onModelChange).toHaveBeenCalledTimes(1);
   });
 
-  test('dropdown selection shows confirm dialog for oversized models', async () => {
+  test('prev/next arrows still switch models when warning is shown', async () => {
     const onModelChange = jest.fn();
-    window.confirm = jest.fn(() => false);
+    await renderSelector({ currentModel: 'phi4-mini', vramGB: 2, onModelChange });
+    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
+    expect(onModelChange).toHaveBeenCalledTimes(1);
+    expect(onModelChange).toHaveBeenCalledWith('qwen2.5:7b', false);
+  });
+
+  test('dropdown selection shows an inline warning for oversized models', async () => {
+    const onModelChange = jest.fn();
     await renderSelector({ vramGB: 2, onModelChange });
     await act(async () => { fireEvent.click(getMainBtn()); });
     fireEvent.click(screen.getByText('Qwen 2.5 (7B)'));
-    expect(window.confirm).toHaveBeenCalled();
-    expect(onModelChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/may run slowly on your gpu/i)).toBeInTheDocument();
+    expect(onModelChange).toHaveBeenCalledWith('qwen2.5:7b', false);
   });
 });
 
@@ -286,7 +284,7 @@ describe('ModelSelector — custom LLM', () => {
     await act(async () => {
       fireEvent.click(document.querySelector('.model-selector-button') as HTMLElement);
     });
-    expect(screen.getByText('Cloud API')).toBeInTheDocument();
+    expect(screen.getAllByText(/Openai/i).length).toBeGreaterThan(0);
   });
 
   test('shows custom model name in the dropdown', async () => {
@@ -299,6 +297,6 @@ describe('ModelSelector — custom LLM', () => {
 
   test('shows cloud icon when useCustomLLM is true', async () => {
     await renderSelector({ customLLM, useCustomLLM: true });
-    expect(screen.getByText('☁️')).toBeInTheDocument();
+    expect(screen.getAllByText('☁️').length).toBeGreaterThan(0);
   });
 });

@@ -34,6 +34,8 @@ import type {
   SadieRequestWithImages,
   Settings as SharedSettings
 } from '../shared/types';
+import { recommendLocalModelForTask } from '../shared/model-advisor';
+import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
@@ -42,6 +44,14 @@ type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents';
 interface AppProps {
   /** Optional initial messages for tests */
   initialMessages?: SharedMessage[];
+}
+
+interface PendingModelSuggestion {
+  text: string;
+  messageText: string;
+  images?: ImageAttachment[] | null;
+  documents?: DocumentAttachment[] | null;
+  recommendation: ModelRecommendation;
 }
 
 const App: React.FC<AppProps> = ({ initialMessages }) => {
@@ -149,6 +159,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
   const [vramGB, setVramGB] = useState<number | null>(null);
+  const lastModelTipRef = useRef<string>('');
+  const [pendingModelSuggestion, setPendingModelSuggestion] = useState<PendingModelSuggestion | null>(null);
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
@@ -676,16 +688,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
   }, [unsubscribeStream, conversationId, updatePersistedMessage]);
 
-  const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
-    const text = content?.trim() ?? '';
+  const dispatchMessage = useCallback(async (
+    text: string,
+    messageText: string,
+    images?: ImageAttachment[] | null,
+    documents?: DocumentAttachment[] | null,
+    modelOverride?: string,
+  ) => {
     if (!text && (!images || images.length === 0) && (!documents || documents.length === 0)) return;
-
-    // If documents are attached, prepend info about them to the message
-    let messageText = text;
-    if (documents && documents.length > 0) {
-      const docInfo = documents.map(d => `[Document attached: ${d.filename}]`).join('\n');
-      messageText = docInfo + (text ? '\n\n' + text : '\n\nPlease analyze this document.');
-    }
 
     // Ensure we have an active conversation before persisting messages.
     // If none exists, create one and use its id for immediate persistence.
@@ -712,22 +722,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       role: 'user',
       content: messageText,
       createdAt: Date.now(),
-      // Store preview URLs so the bubble can render image thumbnails
       ...(images && images.length > 0
         ? { images: images.map(img => ({ url: img.url || img.dataUrl || (img.data ? `data:${img.mimeType || 'image/png'};base64,${img.data}` : ''), filename: img.filename })).filter(i => i.url) }
         : {}),
     };
     setMessages(prev => [...prev, userMsg]);
-    
-    // Persist user message (use created conversation id if we just made one)
-    // Await here so the auto-title saveConversation below reads a consistent
-    // snapshot — if we were fire-and-forget, the title save could overwrite
-    // and silently discard the newly-added message.
     await persistMessage(userMsg, activeConvId ?? undefined);
 
-    // Auto-title conversation from first user message
     if (messages.length === 0 && (activeConvId || conversationId) && text) {
-      // Strip leading question words and filler to produce a compact title
       const cleaned = text
         .replace(/^(what('?s| is| are| were)?|who('?s| is| are)?|how('?s| is| are| do| does)?|can you|could you|please|tell me|show me|give me|do you know|i want to know)\s+/i, '')
         .replace(/\bin the nba\b/i, 'NBA')
@@ -735,7 +737,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         .trim();
       const titleSource = cleaned || text;
       const autoTitle = titleSource.length > 45 ? titleSource.slice(0, 45).trimEnd() + '…' : titleSource;
-      // Capitalise first letter
       const finalTitle = autoTitle.charAt(0).toUpperCase() + autoTitle.slice(1);
       try {
         const convData = await window.electron.getConversation?.(activeConvId || conversationId || '');
@@ -750,7 +751,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }
     }
 
-    // Assistant placeholder
     const assistantId = newId();
     const assistantPlaceholder: ChatMessage = {
       id: assistantId,
@@ -760,20 +760,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       streamingState: 'streaming'
     };
     setMessages(prev => [...prev, assistantPlaceholder]);
-    
-    // Persist assistant placeholder (will be updated when streaming completes)
     persistMessage(assistantPlaceholder, activeConvId ?? undefined);
-
-    // subscribe to stream updates before sending to avoid lost chunks
     subscribeToStream(assistantId, assistantId);
 
-    // Prepare stream request
     const streamRequest: (SadieRequestWithImages & { streamId?: string }) = {
       user_id: 'desktop_user',
       conversation_id: activeConvId || conversationId || 'default',
       message: messageText,
       timestamp: new Date().toISOString(),
       conversationPrompt: conversationSystemPrompt || undefined,
+      modelOverride,
     };
     if (images && images.length > 0) {
       streamRequest.images = images;
@@ -783,15 +779,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       streamRequest.documents = documents;
     }
 
-    // register a single unsubscribe placeholder if subscribeToStream used the subscription
-    // window.electron.subscribeToStream already stored an unsubscribe in streamSubsRef
-
     try {
       logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
       try { (window as any).sadieCapture?.log(`[Renderer] Sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ ...streamRequest, streamId: assistantId });
-      // Test-only watchdog: if no stream-end or stream-error arrives within timeout,
-      // mark the stream as error so E2E tests don't hang indefinitely.
       if (process.env.NODE_ENV === 'test') {
         const timeoutMs = Number(process.env.SADIE_E2E_PROBE_TIMEOUT_MS) || 6000;
         try {
@@ -807,16 +798,74 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       console.error(err);
       updateMessage(assistantId, m => ({
         ...m,
-        streamingState: "error",
-        error: err?.message ?? "Failed to send",
+        streamingState: 'error',
+        error: err?.message ?? 'Failed to send',
       }));
-      // In test runs, expose a global flag so E2E harness can detect the error
       if (process.env.NODE_ENV === 'test') {
         try { (window as any).__sadie_error_received = true; (window as any).__sadie_error_event = err; } catch (e) {}
       }
       unsubscribeStream(assistantId);
     }
-  }, [conversationId, conversationSystemPrompt, subscribeToStream, unsubscribeStream, updateMessage, newId]);
+  }, [conversationId, conversationSystemPrompt, messages.length, newId, persistMessage, subscribeToStream, unsubscribeStream, updateMessage]);
+
+  const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
+    const text = content?.trim() ?? '';
+    if (!text && (!images || images.length === 0) && (!documents || documents.length === 0)) return;
+
+    let messageText = text;
+    if (documents && documents.length > 0) {
+      const docInfo = documents.map(d => `[Document attached: ${d.filename}]`).join('\n');
+      messageText = docInfo + (text ? '\n\n' + text : '\n\nPlease analyze this document.');
+    }
+
+    let modelOverride: string | undefined;
+    if (!settings.useCustomLLM) {
+      try {
+        const res = await window.electron?.listOllamaModels?.();
+        if (res?.success) {
+          const modelRoutingMode = settings.modelRoutingMode || 'prompt';
+          const recommendation = recommendLocalModelForTask({
+            message: text || messageText,
+            installedModels: (res.models || []).map((model: { name: string }) => model.name),
+            chatModel: settings.chatModel,
+            codeModel: settings.codeModel,
+            visionModel: settings.visionModel,
+            hasImages: !!images?.length,
+            hasDocuments: !!documents?.length,
+          });
+          if (recommendation && modelRoutingMode !== 'off') {
+            if (modelRoutingMode === 'auto') {
+              modelOverride = recommendation.recommendedModel;
+            } else if (modelRoutingMode === 'prompt') {
+              setPendingModelSuggestion({
+                text,
+                messageText,
+                images,
+                documents,
+                recommendation,
+              });
+              return;
+            }
+
+            const tipKey = `${recommendation.task}:${recommendation.currentModel}:${recommendation.recommendedModel}`;
+            if (lastModelTipRef.current !== tipKey) {
+              lastModelTipRef.current = tipKey;
+              addToast(
+                modelRoutingMode === 'auto'
+                  ? `Auto-switching this ${recommendation.task} request to ${recommendation.recommendedModel} instead of ${recommendation.currentModel}. ${recommendation.reason}`
+                  : `Suggested for this ${recommendation.task} request: ${recommendation.recommendedModel} instead of ${recommendation.currentModel}. ${recommendation.reason}`,
+                'info',
+                8000,
+              );
+            }
+          }
+        }
+      } catch {
+        // Keep the request moving even if model inventory lookup fails.
+      }
+    }
+    await dispatchMessage(text, messageText, images, documents, modelOverride);
+  }, [addToast, dispatchMessage, settings.chatModel, settings.codeModel, settings.modelRoutingMode, settings.useCustomLLM, settings.visionModel]);
 
 
   /**
@@ -833,6 +882,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     setPendingToolCall(null);
     setPendingConfirmationData(null);
   };
+
+  const handleConfirmModelSuggestion = useCallback(async () => {
+    if (!pendingModelSuggestion) return;
+    const pending = pendingModelSuggestion;
+    setPendingModelSuggestion(null);
+    await dispatchMessage(
+      pending.text,
+      pending.messageText,
+      pending.images,
+      pending.documents,
+      pending.recommendation.recommendedModel,
+    );
+  }, [dispatchMessage, pendingModelSuggestion]);
 
   const retryMessage = useCallback(async (assistantId: string) => {
     const idx = messages.findIndex(m => m.id === assistantId);
@@ -855,7 +917,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     try {
       logDebug('[Renderer] Retry sending stream request', { streamId: assistantId, message: prevUser.content });
       try { (window as any).sadieCapture?.log(`[Renderer] Retry sending stream request streamId=${assistantId}`); } catch (e) {}
-      await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId || 'default', message: prevUser.content, timestamp: new Date().toISOString(), images: undefined });
+      await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId || 'default', message: prevUser.content, timestamp: new Date().toISOString(), images: undefined, retry: true });
     } catch (err: any) {
       updateMessage(assistantId, m => ({
         ...m,
@@ -930,6 +992,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     setPendingConfirmationData(null);
   };
 
+  const handleRejectModelSuggestion = useCallback(async () => {
+    if (!pendingModelSuggestion) return;
+    const pending = pendingModelSuggestion;
+    setPendingModelSuggestion(null);
+    await dispatchMessage(
+      pending.text,
+      pending.messageText,
+      pending.images,
+      pending.documents,
+      undefined,
+    );
+  }, [dispatchMessage, pendingModelSuggestion]);
+
   // canSend is handled by child InputBox; the renderer only needs to know hydration state
 
   const modeClasses = [
@@ -955,12 +1030,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               customLLM={settings.customLLM}
               useCustomLLM={settings.useCustomLLM}
               onModelChange={async (model: string, useCustom: boolean) => {
-                const newSettings = { ...settings, chatModel: model, useCustomLLM: useCustom };
+                const newSettings = {
+                  ...settings,
+                  chatModel: model,
+                  useCustomLLM: useCustom,
+                  ...(useCustom && settings.customLLM ? {
+                    customLLM: { ...settings.customLLM, model }
+                  } : {}),
+                };
                 setSettings(newSettings);
                 await saveSettings(newSettings);
                 setMessages(prev => [...prev, {
                   id: newId(), role: 'system',
-                  content: `Switched to ${useCustom ? (settings.customLLM?.name || 'Custom API') : model}`,
+                  content: `Switched to ${useCustom ? `☁️ ${model}` : `🦙 ${model}`}`,
                   createdAt: Date.now(), error: null
                 }]);
               }}
@@ -1100,15 +1182,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           const newSettings = {
             ...settings,
             chatModel: model,
-            useCustomLLM: useCustom
+            useCustomLLM: useCustom,
+            ...(useCustom && settings.customLLM ? {
+              customLLM: { ...settings.customLLM, model }
+            } : {}),
           };
           setSettings(newSettings);
           await saveSettings(newSettings);
-          // Add a system message to notify the user
           setMessages(prev => [...prev, {
             id: newId(),
             role: 'system',
-            content: `Switched to ${useCustom ? (settings.customLLM?.name || 'Custom API') : model}`,
+            content: `Switched to ${useCustom ? `☁️ ${model}` : `🦙 ${model}`}`,
             createdAt: Date.now(),
             error: null
           }]);
@@ -1164,6 +1248,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           warnings={pendingConfirmationData.warnings || []}
           onConfirm={handleConfirmAction}
           onReject={handleRejectAction}
+        />
+      )}
+
+      {pendingModelSuggestion && (
+        <ActionConfirmation
+          title="Suggest Better Model"
+          message="SADIE found a stronger local model for this one request."
+          actionSummary={`Use ${pendingModelSuggestion.recommendation.recommendedModel} instead of ${pendingModelSuggestion.recommendation.currentModel} for this ${pendingModelSuggestion.recommendation.task} request?`}
+          warnings={[pendingModelSuggestion.recommendation.reason]}
+          confirmLabel="Use suggested model"
+          rejectLabel="Keep current model"
+          onConfirm={handleConfirmModelSuggestion}
+          onReject={handleRejectModelSuggestion}
         />
       )}
 
