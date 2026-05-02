@@ -704,6 +704,46 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Append renderer log to in-memory buffer for diagnostics
+  ipcMain.on('sadie:append-renderer-log', (_event, line: string) => {
+    try {
+      if (!(global as any).__SADIE_RENDERER_LOGS) (global as any).__SADIE_RENDERER_LOGS = [];
+      (global as any).__SADIE_RENDERER_LOGS.push(line);
+      if ((global as any).__SADIE_RENDERER_LOGS.length > 500) {
+        (global as any).__SADIE_RENDERER_LOGS.shift();
+      }
+    } catch (e) { safeCatch(e); }
+  });
+
+  // Capture logs: write runtime snapshot to temp file and return path
+  ipcMain.handle('sadie:capture-logs', async () => {
+    try {
+      const rendererLogs = (global as any).__SADIE_RENDERER_LOGS || [];
+      const mainLogs = (global as any).__SADIE_MAIN_LOG_BUFFER || [];
+      const logContent = [
+        '=== SADIE Log Capture ===',
+        `Timestamp: ${new Date().toISOString()}`,
+        '',
+        '--- Main Process Logs ---',
+        ...mainLogs,
+        '',
+        '--- Renderer Logs ---',
+        ...rendererLogs,
+      ].join('\n');
+      const logPath = path.join(os.tmpdir(), `sadie-logs-${Date.now()}.txt`);
+      fs.writeFileSync(logPath, logContent, 'utf-8');
+      return { success: true, path: logPath };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Restart the application
+  ipcMain.handle('sadie:restart-app', async () => {
+    app.relaunch();
+    app.quit();
+  });
+
   // ============= Memory / Conversation Handlers =============
 
   /**

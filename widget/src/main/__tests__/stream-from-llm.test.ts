@@ -79,6 +79,7 @@ jest.mock('../tools', () => ({
   initializeTools: jest.fn(),
   getOllamaTools: jest.fn(() => []),
   getSmallModelTools: jest.fn(() => []),
+  getFocusedToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),
   getAllToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),
   executeToolBatch: jest.fn(() => Promise.resolve([{ result: { text: '' } }])),
 }));
@@ -205,6 +206,31 @@ describe('streamFromLLM', () => {
       handle.cancel();
       expect(signal.aborted).toBe(true);
     });
+
+    test('429 from custom LLM surfaces the cloud error instead of falling back to Ollama', async () => {
+      mockStreamFromCustomLLM.mockImplementationOnce((
+        _message: string,
+        _history: any,
+        _config: any,
+        _systemPrompt: string,
+        _onChunk: (text: string) => void,
+        _onEnd: () => void,
+        onError: (err: any) => void,
+      ) => {
+        onError(new Error('Request failed with status code 429'));
+        return Promise.resolve({ cancel: jest.fn() });
+      });
+
+      const cbs = callbacks();
+      await streamFromLLM(
+        'explain closures', undefined, 'conv-429',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError,
+      );
+
+      expect(cbs.onError).toHaveBeenCalledTimes(1);
+      expect(cbs.onError.mock.calls[0][0].message).toContain('Cloud API error (OPENAI gpt-4o): Request failed with status code 429');
+      expect(cbs.onChunk).not.toHaveBeenCalledWith(expect.stringContaining('Falling back to local model'));
+    });
   });
 
   // ── Code API path ────────────────────────────────────────────────────────
@@ -277,7 +303,7 @@ describe('streamFromLLM', () => {
       mockValidateCustomLLMConfig.mockReturnValue({ valid: true });
       const cbs = callbacks();
       await streamFromLLM(
-        'hello', undefined, 'conv-11',
+        'what is the weather in Auckland', undefined, 'conv-11',
         cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError,
       );
       // Should have passed tool definitions to streamFromCustomLLM

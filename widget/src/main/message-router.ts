@@ -269,6 +269,20 @@ function buildDocumentReviewPrompt(userMessage: string): string {
   ].join('\n');
 }
 
+export function shouldInjectMorningBriefingForRequest(
+  request: Pick<SadieRequestWithImages, 'message' | 'documents' | 'images'>,
+  shouldOffer: boolean = shouldOfferBriefing()
+): boolean {
+  if (!shouldOffer) return false;
+
+  const message = String(request.message || '').toLowerCase();
+  const hasAttachmentMarker = message.includes('[document attached:') || message.includes('[image attached:');
+  const hasDocuments = !!(request.documents && request.documents.length > 0);
+  const hasImages = !!(request.images && request.images.length > 0);
+
+  return !hasAttachmentMarker && !hasDocuments && !hasImages;
+}
+
 // Track active streams (Node Readable) by streamId so we can cancel them
 const activeStreams: Map<string, { destroy?: () => void; stream?: NodeJS.ReadableStream }> = new Map();
 
@@ -703,12 +717,41 @@ export function classifyError(message: string, details?: string): RecoveryHint {
     };
   }
 
+  if (combined.includes('cloud api error') || combined.includes('status code 429') ||
+      combined.includes('rate limit') || combined.includes('quota') ||
+      combined.includes('insufficient_quota') || combined.includes('unauthorized') ||
+      combined.includes('forbidden') || combined.includes('authentication')) {
+    return {
+      service: 'unknown',
+      userMessage: 'The cloud provider rejected the request. Check your API key, quota, billing, and model access in Settings.',
+      action: 'check-settings',
+      actionLabel: 'Settings',
+    };
+  }
+
   return {
     service: 'unknown',
     userMessage: message || 'Something went wrong.',
     action: 'retry',
     actionLabel: 'Retry',
   };
+}
+
+function shouldSurfaceCloudErrorWithoutFallback(errMsg: string): boolean {
+  const normalized = errMsg.toLowerCase();
+  return /status code 4\d\d/.test(normalized)
+    || normalized.includes('rate limit')
+    || normalized.includes('quota')
+    || normalized.includes('insufficient_quota')
+    || normalized.includes('unauthorized')
+    || normalized.includes('forbidden')
+    || normalized.includes('authentication')
+    || (normalized.includes('invalid') && (normalized.includes('api') || normalized.includes('model')));
+}
+
+function describeCloudTarget(config: import('../shared/types').CustomLLMConfig): string {
+  const provider = config.provider?.toUpperCase?.() || 'CLOUD';
+  return config.model ? `${provider} ${config.model}` : provider;
 }
 
 // ── Music link helpers ──────────────────────────────────────────────────────
@@ -2217,12 +2260,20 @@ export async function streamFromLLM(
         // else: handleToolCall will call onEnd after the follow-up stream completes
       };
       
-      // Wrap onError: if the cloud API fails (model retired, key expired, etc.)
-      // fall back to local Ollama instead of showing a misleading error.
+      // Wrap onError: surface hard cloud-side failures instead of masking them
+      // behind a local Ollama reply. Only unreachable/transient failures fall back.
       const cloudOnError = (err: any) => {
         const errMsg = typeof err === 'string' ? err : err?.message || String(err);
-        console.warn(`[SADIE] Cloud LLM failed: ${errMsg} — falling back to local Ollama`);
-        onChunk(`\n⚠️ Cloud API error: ${errMsg}\nFalling back to local model...\n\n`);
+        const cloudTarget = describeCloudTarget(customConfig);
+        if (shouldSurfaceCloudErrorWithoutFallback(errMsg)) {
+          const surfacedError = new Error(`Cloud API error (${cloudTarget}): ${errMsg}`);
+          console.warn(`[SADIE] ${surfacedError.message} — not falling back to local Ollama`);
+          onError(surfacedError);
+          return;
+        }
+
+        console.warn(`[SADIE] Cloud LLM unavailable (${cloudTarget}): ${errMsg} — falling back to local Ollama`);
+        onChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
         // Fall through to Ollama
         streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options)
           .catch((ollamaErr: any) => onError(ollamaErr));
@@ -3276,7 +3327,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // On the first interaction each calendar day, generate a proactive
         // weather + calendar + reminders summary and stream it before the
         // normal response.  Runs in the background so it doesn't block.
-        if (shouldOfferBriefing()) {
+        if (shouldInjectMorningBriefingForRequest(request)) {
           markBriefingDelivered(); // mark immediately to prevent double-trigger
           generateBriefing(requestConfirmation).then((briefing) => {
             if (briefing && activeStreams.has(streamId)) {
@@ -3303,10 +3354,15 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // ─── SMART ROUTING (applies to ALL modes: direct Ollama, proxy, n8n) ───
         // Run intent detection BEFORE streaming so deterministic tool execution
         // takes priority over unreliable LLM tool-calling.
+        // Use the RAW user message for intent detection — not enhancedMessage which
+        // includes parsed document text that can false-positive on tool regexes.
         {
-          const intentResult = await preProcessIntent(enhancedMessage, convId);
-          if (intentResult && convId) setLastIntent(convId, intentResult, enhancedMessage);
-          console.log('[SADIE] preProcessIntent called with:', enhancedMessage.substring(0, 60));
+          const intentInput = (request.documents && request.documents.length > 0)
+            ? request.message
+            : enhancedMessage;
+          const intentResult = await preProcessIntent(intentInput, convId);
+          if (intentResult && convId) setLastIntent(convId, intentResult, intentInput);
+          console.log('[SADIE] preProcessIntent called with:', intentInput.substring(0, 60));
           console.log('[SADIE] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
 
           if (intentResult && intentResult.calls && intentResult.calls.length > 0) {

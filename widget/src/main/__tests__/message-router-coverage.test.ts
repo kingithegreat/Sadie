@@ -251,6 +251,22 @@ describe('analyzeAndRouteMessage', () => {
       }]
     });
   });
+
+  test('morning briefing is suppressed for attachment requests', () => {
+    expect(mr.shouldInjectMorningBriefingForRequest({
+      message: '[Document attached: Mid-point review.pdf]\n\nsumerise',
+      documents: [{ id: 'doc-1', filename: 'Mid-point review.pdf', mimeType: 'application/pdf', size: 123, data: 'abc' }],
+      images: undefined,
+    }, true)).toBe(false);
+  });
+
+  test('morning briefing stays available for normal text chat', () => {
+    expect(mr.shouldInjectMorningBriefingForRequest({
+      message: 'good morning',
+      documents: undefined,
+      images: undefined,
+    }, true)).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

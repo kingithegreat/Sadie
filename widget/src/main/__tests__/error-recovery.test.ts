@@ -88,6 +88,14 @@ describe('classifyError', () => {
     expect(hint.userMessage).toContain('timed out');
   });
 
+  test('detects cloud rate limit errors', () => {
+    const hint = classifyError('Cloud API error (OPENAI gpt-4o): Request failed with status code 429');
+    expect(hint.service).toBe('unknown');
+    expect(hint.action).toBe('check-settings');
+    expect(hint.actionLabel).toBe('Settings');
+    expect(hint.userMessage).toContain('cloud provider');
+  });
+
   test('returns generic retry for unknown errors', () => {
     const hint = classifyError('Something unexpected happened', 'weird error');
     expect(hint.service).toBe('unknown');

@@ -387,7 +387,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, [localSettings.customLLM?.apiUrl, selectedProvider, localSettings.useCustomLLM]);
 
   const handleSave = () => {
-    const llmToSave = localSettings.customLLM ? { ...localSettings.customLLM, enabled: !!localSettings.useCustomLLM } : undefined;
+    const llmToSave = localSettings.customLLM
+      ? { ...localSettings.customLLM, enabled: !!localSettings.customLLM.enabled }
+      : undefined;
     // Ensure known providers always save with canonical URL
     if (llmToSave) {
       const canonicalUrl = getDefaultApiUrl(llmToSave.provider);
@@ -413,6 +415,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     (nextSettings as any).notificationsEnabled = (localSettings as any).notificationsEnabled;
     (nextSettings as any).notificationSound = (localSettings as any).notificationSound;
     (nextSettings as any).notificationDuration = (localSettings as any).notificationDuration;
+    (nextSettings as any).messageDensity = (localSettings as any).messageDensity || 'comfortable';
+    (nextSettings as any).hardwareProfile = (localSettings as any).hardwareProfile;
+    (nextSettings as any).moaProposers = (localSettings as any).moaProposers;
+    (nextSettings as any).moaAggregator = (localSettings as any).moaAggregator;
     onSave(nextSettings);
     onClose();
   };
@@ -463,11 +469,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       if (result?.success && Array.isArray(result.models)) {
         setAvailableModels(result.models);
         setModelsFetchedAt(Date.now());
-        // Auto-enable custom LLM and select first model
+        // Keep cloud configured and ready, but local remains the default
+        // until the user explicitly turns on cloud chats.
         if (result.models.length > 0) {
           setLocalSettings(prev => ({
             ...prev,
-            useCustomLLM: true,
             customLLM: { 
               ...(prev.customLLM || { ...defaultCustomLLM }), 
               model: prev.customLLM?.model || result.models[0].id,
@@ -996,10 +1002,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           )}
 
           {/* Status indicator */}
-          {localSettings.useCustomLLM && localSettings.customLLM?.model && (
+          {localSettings.customLLM?.enabled && localSettings.customLLM?.model && (
             <div className="custom-llm-status">
-              <span className="status-dot active"></span>
-              Using {localSettings.customLLM.model}
+              <span className={`status-dot ${localSettings.useCustomLLM ? 'active' : ''}`}></span>
+              {localSettings.useCustomLLM
+                ? `Using ${localSettings.customLLM.model}`
+                : `Connected: ${localSettings.customLLM.model} is available when you choose it`}
             </div>
           )}
 
@@ -1016,7 +1024,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   })
                 }
               />
-              <span>Use this API for all chats</span>
+              <span>Use this API by default for chats</span>
             </label>
           )}
         </div>
