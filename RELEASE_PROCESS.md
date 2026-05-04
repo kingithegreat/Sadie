@@ -35,7 +35,7 @@ npx jest --config jest.config.ts --no-coverage
 npm run e2e
 ```
 
-**Expected**: 112 suites, 1,604 tests, 0 failures.
+**Expected**: 120 suites, 1,872 tests, 0 failures.
 
 ### 2. Security Validation
 
@@ -170,6 +170,8 @@ SADIE uses Electron's built-in auto-update mechanism:
 - Update metadata is fetched from the GitHub Releases API.
 - Downloads are verified with signature checks.
 - Users are prompted to install updates.
+
+The repository field is already configured in [widget/package.json](widget/package.json). The remaining operational step is publishing a GitHub Release with the packaged installer artifacts so update metadata exists for clients to consume.
 
 ---
 

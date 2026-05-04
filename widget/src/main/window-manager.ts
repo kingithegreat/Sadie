@@ -11,7 +11,7 @@ let mainWindow: BrowserWindow | null = null;
 // Widget mode dimensions and state
 const WIDGET_SIZE = { width: 420, height: 620 };
 const EXPANDED_SIZE = { width: 1200, height: 800 };
-let isWidgetMode = true; // Start in widget mode
+let isWidgetMode = process.env.SADIE_E2E === '1' ? false : true;
 
 export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Creating main window...');
@@ -30,8 +30,8 @@ export function createMainWindow(): BrowserWindow {
 
   // Create the browser window — frameless + transparent for glass morphism widget
   mainWindow = new BrowserWindow({
-    width: WIDGET_SIZE.width,
-    height: WIDGET_SIZE.height,
+    width: isWidgetMode ? WIDGET_SIZE.width : EXPANDED_SIZE.width,
+    height: isWidgetMode ? WIDGET_SIZE.height : EXPANDED_SIZE.height,
     minWidth: 320,
     minHeight: 400,
     resizable: true,
@@ -39,7 +39,7 @@ export function createMainWindow(): BrowserWindow {
     minimizable: true,
     closable: true,
     movable: true,
-    alwaysOnTop: true,
+    alwaysOnTop: isWidgetMode,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -68,6 +68,17 @@ export function createMainWindow(): BrowserWindow {
     }
   });
 
+  // Prevent the renderer from being navigated away from the app (XSS / open-redirect mitigation)
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const allowed = is.dev && process.env['ELECTRON_RENDERER_URL']
+      ? url.startsWith(process.env['ELECTRON_RENDERER_URL'])
+      : url.startsWith('file://');
+    if (!allowed) {
+      event.preventDefault();
+      console.warn('[SECURITY] Blocked navigation to:', url);
+    }
+  });
+
   const htmlPath = path.join(__dirname, '../renderer/index.html');
   console.log('[WINDOW] Loading HTML from:', htmlPath);
   try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] [WINDOW] Loading HTML from: ${htmlPath}`); } catch (e) { safeCatch(e); }
@@ -86,7 +97,11 @@ export function createMainWindow(): BrowserWindow {
     console.log('[WINDOW] Window ready to show, showing...');
     try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Window ready to show'); } catch (e) { safeCatch(e); }
     if (mainWindow) {
-      positionWidget(mainWindow);
+      if (isWidgetMode) {
+        positionWidget(mainWindow);
+      } else {
+        mainWindow.center();
+      }
       mainWindow.show();
     }
   });

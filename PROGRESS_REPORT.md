@@ -3,7 +3,7 @@
 **Student Name:** Aden King
 **Student Number:** [Insert Student Number]
 **Project:** SADIE — Structured AI Desktop Intelligence Engine
-**Date:** 27 April 2026
+**Date:** 2 May 2026
 
 ---
 
@@ -25,7 +25,7 @@ The project distinguishes itself from cloud-based assistants (ChatGPT, Copilot) 
 
 ### 1.2 Where you are on the timeline
 
-The project began on **17 November 2025** and is currently **5 months into development** with **362 commits** across the main branch. The project is in the **stabilisation and polish phase** — all core features are implemented and functional, and current work focuses on reliability, response quality, performance optimisation, and UI refinement.
+The project began on **17 November 2025** and is currently **just under 6 months into development** with **378 commits** across the main branch. The project is in the **stabilisation and polish phase** — all core features are implemented and functional, and current work focuses on reliability, response quality, performance optimisation, and release-readiness reconciliation.
 
 Development velocity has accelerated significantly in recent months:
 
@@ -60,7 +60,7 @@ Development velocity has accelerated significantly in recent months:
 | Settings panel | ✅ Complete | Full configuration UI with hardware profiling, GPU VRAM detection |
 | Telemetry dashboard | ✅ Complete | Tool call analytics with p50/p95 latency |
 | Error boundaries | ✅ Complete | Zone-level crash isolation (Chat, Sidebar, Settings) |
-| Test suite | ✅ Complete | 1,884 tests, 62% line coverage |
+| Test suite | ✅ Complete | 1,872 unit tests across 120 suites, plus Playwright E2E coverage and 62% line coverage |
 | First-run onboarding | ✅ Complete | Permission setup, team selection, telemetry consent |
 | Context menu system | ✅ Complete | Right-click actions on conversations |
 | Suggested prompts | ✅ Complete | History-based prompt suggestions |
@@ -83,7 +83,7 @@ Development velocity has accelerated significantly in recent months:
 | Feature | Status | Rationale |
 |---------|--------|-----------|
 | MCP server integration | 🔄 In Progress | Retry logic (3 attempts with timeout) and shutdown-on-quit added; fetch server still unreliable due to upstream MCP SDK issue |
-| Installer/auto-update | ⏳ Planned | electron-builder config exists; auto-updater wired with IPC events; needs repository field and first GitHub Release |
+| Installer/auto-update | 🔄 In Progress | electron-builder config exists, the auto-updater is wired with IPC events, and the repository field is already configured; remaining work is packaged-release validation and the first GitHub Release artifact |
 
 **Previously listed as incomplete but already done:**
 
@@ -114,13 +114,13 @@ The project follows an **Agile iterative development methodology** with short sp
 
 Key practices employed:
 
-- **Test-Driven Development (TDD)** for critical subsystems — the tool registry, message router, and config manager all have comprehensive test suites written alongside (or before) the implementation. The project currently has **1,884 automated tests** with enforced coverage thresholds.
+- **Test-Driven Development (TDD)** for critical subsystems — the tool registry, message router, and config manager all have comprehensive test suites written alongside (or before) the implementation. The project currently has **1,872 unit tests across 120 suites**, with additional Playwright end-to-end coverage and enforced coverage thresholds.
 
 - **Continuous Integration** — a GitHub Actions workflow runs the full test suite on every push, with coverage gates (branches: 41%, functions: 53%, lines: 57%, statements: 54%) that prevent merging regressions.
 
 - **Iterative user testing** — the developer uses the application daily as their primary AI assistant. Bugs like the weather location parsing issue and the hidden model selector were discovered through this dogfooding process, not through formal QA.
 
-- **Incremental commits** — with 362 commits over 5 months, changes are small and focused. Each commit addresses a single concern (feature, fix, refactor, or test), making it easy to bisect regressions and understand the history.
+- **Incremental commits** — with 378 commits over nearly 6 months, changes are small and focused. Each commit addresses a single concern (feature, fix, refactor, or test), making it easy to bisect regressions and understand the history.
 
 ### 2.2 Where you are currently in the process
 
@@ -139,7 +139,7 @@ The Agile iterative approach has been **highly effective** for this project for 
 
 - **Rapid feedback loops** — daily dogfooding catches real bugs that automated tests miss (e.g., the `"what"` → `"at"` regex bug would not have been caught by unit tests because no test used that exact phrasing)
 - **Flexible scope** — features like the Automation Center, Image Generator, and RAG panel were added incrementally as the architecture stabilised, without requiring upfront design
-- **Regression prevention** — the 1,860-test suite catches breaks immediately. When the default model was changed from `phi4-mini` to `qwen2.5:7b`, tests immediately flagged stale references, all fixed within minutes
+- **Regression prevention** — the 1,872-unit-test suite catches breaks immediately. When the default model was changed from `phi4-mini` to `qwen2.5:7b`, tests immediately flagged stale references, all fixed within minutes
 - **Small commits** — when the weather parsing bug was traced, `git blame` immediately identified when and why the regex was introduced, making the fix straightforward
 
 **Weaknesses:**
@@ -224,7 +224,7 @@ The Agile iterative approach has been **highly effective** for this project for 
 
 4. **Privacy-first architecture requires more engineering effort** — running models locally means managing VRAM budgets, model downloads, context window limits, and hardware-specific defaults. Cloud APIs abstract all of this away. The tradeoff is justified for the privacy guarantee.
 
-5. **Automated testing is essential for a codebase of this complexity** — with 234 TypeScript source files, 70+ tools, and a complex intent routing system, the 1,884-test suite has prevented dozens of regressions during rapid iteration.
+5. **Automated testing is essential for a codebase of this complexity** — with 234 TypeScript source files, 70+ tools, and a complex intent routing system, the 1,872-unit-test suite plus Playwright coverage has prevented dozens of regressions during rapid iteration.
 
 ### 4.2 Is more research required?
 
@@ -255,7 +255,7 @@ The core scope remains unchanged. The project delivers what was proposed: a priv
 |--------|--------|---------|--------|
 | Core features | All proposed features implemented | 20/20 major features complete | ✅ On track |
 | Test coverage | > 50% line coverage | 62.28% lines, 59.22% statements | ✅ Exceeding |
-| Test count | Comprehensive suite | 1,884 tests, 119 suites | ✅ Exceeding |
+| Test count | Comprehensive suite | 1,872 unit tests, 120 suites | ✅ Exceeding |
 | Code quality | TypeScript strict mode | 234 source files, reducing `as any` casts | 🔄 Improving |
 | Stability | No crash-level bugs | Error boundaries isolate failures; 0 unhandled crashes | ✅ On track |
 | Performance | Responsive UI | Settings caching implemented; UI is responsive | ✅ On track |
@@ -269,14 +269,14 @@ The main risk is **scope creep** — the tool count has grown from an initial pl
 
 | Metric | Value |
 |--------|-------|
-| Total commits | 362 |
-| Development period | Nov 2025 — Apr 2026 (5 months) |
+| Total commits | 378 |
+| Development period | Nov 2025 — May 2026 (just under 6 months) |
 | Source files (TypeScript/TSX) | 234 |
 | Lines of TypeScript | ~14,000 |
 | Lines of CSS | ~4,800 |
 | Test files | 129 |
-| Test count | 1,884 |
-| Test suites | 119 |
+| Test count | 1,872 |
+| Test suites | 120 |
 | Coverage (lines) | 62.17% |
 | Coverage (branches) | 46.16% |
 | Coverage (functions) | 57.63% |
@@ -374,7 +374,7 @@ Branches   : █████████░░░░░░░░░░░  46.16
 Functions  : ███████████░░░░░░░░░  57.63%
 Lines      : ████████████░░░░░░░░  62.17%
 ════════════════════════════════════════════
-Test Suites: 119 passed   |  Tests: 1,884 passed
+Test Suites: 120 passed   |  Tests: 1,872 passed
 ```
 
 ## Appendix: Development Velocity
@@ -390,5 +390,5 @@ Mar 2026  ███████████████████████�
 Apr 2026  ██████████████████████████████████████    85*
 ═══════════════════════════════════════════════════════
                                    * month in progress
-Total: 362 commits over 5 months
+Total: 378 commits over just under 6 months
 ```

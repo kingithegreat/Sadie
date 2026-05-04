@@ -12,6 +12,15 @@ import * as dns from 'dns';
 import * as net from 'net';
 import { isE2E } from '../env';
 
+// Keep-alive agents — reuse TCP+TLS connections across requests
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 6, timeout: 60000 });
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 6, timeout: 60000 });
+
+// Response body size limits (bytes)
+const MAX_TEXT_RESPONSE = 2 * 1024 * 1024;   // 2 MB for HTML/text fetches
+const MAX_BINARY_RESPONSE = 10 * 1024 * 1024; // 10 MB for image buffers
+const MAX_API_RESPONSE = 5 * 1024 * 1024;     // 5 MB for API JSON responses
+
 // Search/image API keys — loaded from settings on first use
 let _tavilyApiKey: string | null = null;
 let _serperApiKey: string | null = null;
@@ -133,36 +142,44 @@ function httpGet(url: string, headers: Record<string, string> = {}): Promise<str
     const client = isHttps ? https : http;
     
     const options = {
+      agent: isHttps ? httpsAgent : httpAgent,
       headers: {
-        // Use a browser-like User-Agent - DuckDuckGo blocks bot-like agents
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
         ...headers
       }
     };
-    
+
     const req = client.get(url, options, (res) => {
-      // Handle redirects
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        const redirectUrl = res.headers.location.startsWith('http') 
-          ? res.headers.location 
+        const redirectUrl = res.headers.location.startsWith('http')
+          ? res.headers.location
           : new URL(res.headers.location, url).href;
         return httpGet(redirectUrl, headers).then(resolve).catch(reject);
       }
-      
+
       if (res.statusCode && res.statusCode >= 400) {
         reject(new Error(`HTTP ${res.statusCode}`));
         return;
       }
-      
+
       let data = '';
+      let bytes = 0;
       res.setEncoding('utf8');
-      res.on('data', chunk => data += chunk);
+      res.on('data', chunk => {
+        bytes += Buffer.byteLength(chunk);
+        if (bytes > MAX_TEXT_RESPONSE) {
+          req.destroy();
+          resolve(data); // return what we have so far
+          return;
+        }
+        data += chunk;
+      });
       res.on('end', () => resolve(data));
       res.on('error', reject);
     });
-    
+
     req.on('error', reject);
     req.setTimeout(15000, () => {
       req.destroy();
@@ -618,6 +635,7 @@ async function searchTavily(query: string, maxResults: number): Promise<{
   const data = await new Promise<string>((resolve, reject) => {
     const req = https.request('https://api.tavily.com/search', {
       method: 'POST',
+      agent: httpsAgent,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
@@ -631,7 +649,12 @@ async function searchTavily(query: string, maxResults: number): Promise<{
         return;
       }
       let d = '';
-      res.on('data', (c: Buffer) => d += c.toString());
+      let bytes = 0;
+      res.on('data', (c: Buffer) => {
+        bytes += c.length;
+        if (bytes > MAX_API_RESPONSE) { req.destroy(); resolve(d); return; }
+        d += c.toString();
+      });
       res.on('end', () => resolve(d));
       res.on('error', reject);
     });
@@ -1104,13 +1127,15 @@ export const imageGenerateDef: ToolDefinition = {
 // ── Shared HTTP POST helper used by image backends ──────────────────────────
 function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, string> = {}, timeoutMs = 120000): Promise<any> {
   return new Promise((resolve, reject) => {
-    const lib = urlStr.startsWith('https') ? https : http;
+    const isHttps = urlStr.startsWith('https');
+    const lib = isHttps ? https : http;
     const url = new URL(urlStr);
     const options = {
       hostname: url.hostname,
-      port: url.port || (urlStr.startsWith('https') ? 443 : 80),
+      port: url.port || (isHttps ? 443 : 80),
       path: url.pathname + url.search,
       method: 'POST',
+      agent: isHttps ? httpsAgent : httpAgent,
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
@@ -1120,7 +1145,17 @@ function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, 
     };
     const req = lib.request(options, (res: any) => {
       const chunks: Buffer[] = [];
-      res.on('data', (c: Buffer) => chunks.push(c));
+      let bytes = 0;
+      res.on('data', (c: Buffer) => {
+        bytes += c.length;
+        if (bytes > MAX_API_RESPONSE) {
+          req.destroy();
+          const body = Buffer.concat(chunks).toString();
+          try { resolve(JSON.parse(body)); } catch { resolve({ _raw: body }); }
+          return;
+        }
+        chunks.push(c);
+      });
       res.on('end', () => {
         const body = Buffer.concat(chunks).toString();
         try { resolve(JSON.parse(body)); } catch { resolve({ _raw: body }); }
@@ -1136,20 +1171,29 @@ function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, 
 // ── Buffer GET (for binary responses like images) ──────────────────────────
 function httpGetBuffer(urlStr: string, timeoutMs = 30000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const lib = urlStr.startsWith('https') ? https : http;
-    const req = lib.get(urlStr, { timeout: timeoutMs } as any, (res: any) => {
+    const isHttps = urlStr.startsWith('https');
+    const lib = isHttps ? https : http;
+    const req = lib.get(urlStr, { timeout: timeoutMs, agent: isHttps ? httpsAgent : httpAgent } as any, (res: any) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         resolve(httpGetBuffer(res.headers.location as string, timeoutMs));
         return;
       }
-      // Fail fast on error status codes — don't wait for the body
       if (res.statusCode >= 400) {
-        res.resume(); // drain so the socket is released
+        res.resume();
         reject(new Error(`HTTP ${res.statusCode}`));
         return;
       }
       const chunks: Buffer[] = [];
-      res.on('data', (c: Buffer) => chunks.push(c));
+      let bytes = 0;
+      res.on('data', (c: Buffer) => {
+        bytes += c.length;
+        if (bytes > MAX_BINARY_RESPONSE) {
+          req.destroy();
+          reject(new Error(`Response too large (>${MAX_BINARY_RESPONSE / 1024 / 1024} MB)`));
+          return;
+        }
+        chunks.push(c);
+      });
       res.on('end', () => resolve(Buffer.concat(chunks)));
     });
     req.on('error', reject);

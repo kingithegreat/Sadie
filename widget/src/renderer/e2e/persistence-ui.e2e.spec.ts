@@ -19,16 +19,22 @@ test('UI -> message persistence and debug logs available', async () => {
   await page.getByLabel('Message SADIE').fill('persistence-ui-test');
   await page.getByRole('button', { name: /send/i }).click();
 
-  // Wait for assistant placeholder to appear (message persisted on send)
-  await page.waitForTimeout(500);
-
   // Query conversation store via preload API
   const store = await page.evaluate(async () => (window as any).electron.loadConversations?.());
   expect(store).toBeDefined();
   const activeId = store.data?.activeConversationId || (store.data?.conversations?.[0]?.id);
   expect(activeId).toBeDefined();
 
-  const conv = await page.evaluate(async (id) => (window as any).electron.getConversation?.(id), activeId);
+  // Persistence is async; poll until the just-sent user message is observable in storage.
+  let conv: any = null;
+  const started = Date.now();
+  while (Date.now() - started < 5000) {
+    conv = await page.evaluate(async (id) => (window as any).electron.getConversation?.(id), activeId);
+    if (conv?.data?.messages?.some((m: any) => String(m.content).includes('persistence-ui-test'))) {
+      break;
+    }
+    await page.waitForTimeout(100);
+  }
   expect(conv?.success).toBe(true);
   expect(conv.data?.messages?.some((m: any) => String(m.content).includes('persistence-ui-test'))).toBe(true);
 

@@ -498,7 +498,12 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     const docFiles = files.filter(f => isDocumentFile(f) && !f.type.startsWith('image/'));
     const ragFiles = files.filter(f => !f.type.startsWith('image/') && !isDocumentFile(f) && looksLikeRagFile(f));
     if (imageFiles.length) await processFiles(imageFiles);
-    if (docFiles.length) await processDocuments(docFiles);
+    if (docFiles.length) {
+      await processDocuments(docFiles);
+      // Also index document files into RAG for future queries
+      const ragEligible = docFiles.filter(f => (f as any).path);
+      if (ragEligible.length) handleRagIndex(ragEligible).catch(() => {});
+    }
     // Index non-image, non-chat-document files into RAG automatically
     if (ragFiles.length) await handleRagIndex(ragFiles);
   };

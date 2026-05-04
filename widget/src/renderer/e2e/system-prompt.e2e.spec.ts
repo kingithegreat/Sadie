@@ -3,6 +3,17 @@ process.env.SADIE_E2E = 'true';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
+async function completeFirstRunWizardIfVisible(page: any) {
+  const firstRunHeader = page.getByText('Welcome to SADIE');
+  if (!(await firstRunHeader.isVisible().catch(() => false))) return;
+
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /Get Started/i }).click();
+}
+
 // Verifies that a per-conversation system prompt (Chat guidelines) is included
 // in the model input (the /api/chat POST body sent to Ollama).
 test('conversation system prompt is sent to model (prepended)', async () => {
@@ -76,15 +87,11 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   await waitForAppReady(page);
 
   // Ensure first-run modal (if any) is dismissed so we can interact with main UI
-  try {
-    const firstRunHeader = page.getByText('Welcome to SADIE');
-    if (await firstRunHeader.isVisible().catch(() => false)) {
-      await page.getByRole('button', { name: /Finish/i }).click();
-    }
-  } catch (e) {}
+  await completeFirstRunWizardIfVisible(page);
 
   // Set a conversation system prompt via the new UI element (Chat guidelines)
   const convPrompt = 'You are a terse assistant that replies in one sentence.';
+  await page.locator('.guidelines-toggle-btn').click();
   await page.getByLabel('Conversation system prompt').fill(convPrompt);
   await page.waitForTimeout(1000); // Wait for the system prompt to be saved
 

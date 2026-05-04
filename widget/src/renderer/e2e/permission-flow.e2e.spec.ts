@@ -31,15 +31,14 @@ test('permission escalation: Allow once, Always allow, persistence across restar
 
   // Verify permissions are disabled as expected
   const perms = await page.evaluate(async () => ({
-    generate: await (window as any).electron.hasPermission('generate_sports_report'),
     write: await (window as any).electron.hasPermission('write_file')
   }));
-  if (perms.generate?.allowed !== false || perms.write?.allowed !== false) {
+  if (perms.write?.allowed !== false) {
     throw new Error(`Permissions not reset as expected: ${JSON.stringify(perms)}`);
   }
 
-  // Invoke the tool batch which requires generate_sports_report + write_file
-  const call = [{ name: 'generate_sports_report', arguments: { league: 'nba', date: '2025-12-14', directory: 'Desktop/TestNBA', format: 'txt' } }];
+  // Invoke a real tool batch that requires write_file.
+  const call = [{ name: 'write_file', arguments: { path: 'Desktop/TestNBA/report.txt', content: 'permission-flow-smoke' } }];
 
   // Start the invoke in the renderer context (it will cause a permission-request IPC)
   const invokePromise = page.evaluate(async (c) => await (window as any).electron.invoke('sadie:__e2e_invoke_tool_batch', { calls: c }), call);
@@ -159,12 +158,11 @@ test('no permission modal when permissions already allowed', async () => {
   await page.evaluate(async () => {
     const s = await (window as any).electron.getSettings();
     s.permissions = s.permissions || {};
-    s.permissions.generate_sports_report = true;
     s.permissions.write_file = true;
     await (window as any).electron.saveSettings(s);
   });
 
-  const call = [{ name: 'generate_sports_report', arguments: { league: 'nba', date: '2025-12-14', directory: 'Desktop/TestNBA', format: 'txt' } }];
+  const call = [{ name: 'write_file', arguments: { path: 'Desktop/TestNBA/report.txt', content: 'permission-flow-smoke' } }];
 
   // Invoke and ensure it runs immediately and no modal appears
   const invoke = page.evaluate(async (c) => await (window as any).electron.invoke('sadie:__e2e_invoke_tool_batch', { calls: c }), call);

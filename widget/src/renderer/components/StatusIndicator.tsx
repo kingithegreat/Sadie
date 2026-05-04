@@ -140,6 +140,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
       {onModeChange && (
         <div className="mode-switcher">
           <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => onModeChange('chat')} title="Chat Mode">💬 Chat</button>
+          <button className={`mode-btn ${mode === 'automation' ? 'active' : ''}`} onClick={() => onModeChange('automation')} title="Automation Mode">🛠 Automation</button>
           <button className={`mode-btn ${mode === 'image' ? 'active' : ''}`} onClick={() => onModeChange('image')} title="Image Mode">🎨 Image</button>
           <button className={`mode-btn ${mode === 'documents' ? 'active' : ''}`} onClick={() => onModeChange('documents')} title="Document Viewer">📄 Docs</button>
           <button className={`mode-btn ${mode === 'web' ? 'active' : ''}`} onClick={() => onModeChange('web')} title="Web Services">🌐 Web</button>

@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.0 — Release readiness, routing hardening, and cloud default safeguards
+
+### Fixed
+- **Attachment routing fallback** (`message-router.ts`): document-attached requests now route through the embedded-content-aware preprocessing path, preventing false "couldn't access" responses when document content is present.
+- **Coding query cloud gating** (`message-router.ts`, `stream-from-llm.test.ts`): code-oriented prompts no longer jump to a cloud code API just because credentials exist; cloud routing now requires explicit enablement.
+- **Settings provider switching safety** (`SettingsPanel.tsx`, `settings-cloud-default.test.tsx`): switching cloud providers now clears stale model state, disables cloud-by-default, and forces a reconnect before activation.
+- **Image generation panel parity** (`ipc-handlers.ts`): the automation panel now delegates to the same hardened `image_generate` handler used in chat instead of maintaining a separate backend cascade.
+
+### Changed
+- **RAG parity on cloud path** (`message-router.ts`, `InputBox.tsx`): cloud-model requests now receive the same document-context injection path as local routing, and attached documents are opportunistically indexed for later retrieval.
+- **Release metadata** (`widget/package.json`): current widget package version is `1.1.0` with the GitHub repository already configured for packaging and updater resolution.
+
+---
+
 ## v0.10.0 — Agentic tool loops, morning briefing, hybrid RAG, and provider expansion
 
 ### Added — Agentic Tool Loop Engine

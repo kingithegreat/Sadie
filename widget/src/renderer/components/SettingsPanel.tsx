@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob } from '../../shared/types';
@@ -178,6 +178,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showTelemetryModal, setShowTelemetryModal] = useState(false);
   const [availableModels, setAvailableModels] = useState<CustomModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const [modelFetchError, setModelFetchError] = useState<string | null>(null);
   const [_modelsFetchedAt, setModelsFetchedAt] = useState<number | null>(null);
   const [installedOllamaModels, setInstalledOllamaModels] = useState<Array<{ name: string; size: number }>>([]);
@@ -355,6 +356,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     });
   }, []);
 
+  useEffect(() => {
+    panelRef.current?.focus();
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   // Load MCP server list on mount
   const loadMcpServers = async () => {
     try {
@@ -497,6 +512,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   return (
     <div className="settings-overlay" role="presentation" onClick={onClose}>
       <div
+        ref={panelRef}
         className="settings-panel"
         role="dialog"
         aria-modal="true"
@@ -901,11 +917,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     ...localSettings.customLLM!, 
                     provider: newProvider,
                     apiUrl: getDefaultApiUrl(newProvider),
-                    apiKey: autoFillKey
-                  }
+                    apiKey: autoFillKey,
+                    model: '',
+                    enabled: false
+                  },
+                  useCustomLLM: false
                 });
                 setAvailableModels([]);
                 setModelFetchError(null);
+                setModelsFetchedAt(null);
               }}
             >
               <option value="openai">OpenAI</option>

@@ -2170,7 +2170,7 @@ export async function streamFromLLM(
       const cloudModelName = customConfig.model || activeModel;
       const systemPromptWithGuidelines = getSystemPromptForModel(cloudModelName, settings.chatGuidelines);
 
-      // Inject MCP memory recall into the system prompt (same as Ollama path).
+      // Inject MCP memory recall and RAG context into the system prompt (same as Ollama path).
       // Fire-and-forget memorization of any self-disclosures in this message.
       // Cap recall for small models to avoid blowing the context window.
       const cloudModelSmall = isSmallModel(cloudModelName);
@@ -2181,6 +2181,16 @@ export async function streamFromLLM(
         cloudSystemPrompt += `\n\n[Remembered facts about the user from prior sessions]\n${cappedRecall}`;
       }
       memorizeIfUseful(message).catch(() => {});
+
+      // RAG: inject relevant indexed document context
+      try {
+        await ragSearchWarmup(message).catch(() => {});
+        const ragHit = ragSearch(message);
+        if (ragHit) {
+          const ragText = cloudModelSmall ? ragHit.text.slice(0, 600) : ragHit.text;
+          cloudSystemPrompt += `\n\n[Relevant document context from "${ragHit.filename}" (score: ${ragHit.score.toFixed(2)})]\n${ragText}`;
+        }
+      } catch { /* RAG search non-critical */ }
 
       // Get tool definitions for providers that support function calling
       // anthropic is now included following the Anthropic tool calling implementation
@@ -2311,7 +2321,7 @@ export async function streamFromLLM(
   const codeApiProvider = settings.codeApiProvider || 'openai';
   const codeApiUrl = (settings.codeApiUrl || '').trim();
   const preferredCodeModelForApi = (settings.codeModel || '').trim();
-  const isCodingQueryForApi = codeApiKey && preferredCodeModelForApi
+  const isCodingQueryForApi = settings.useCustomLLM && codeApiKey && preferredCodeModelForApi
     ? CODING_QUERY_PATTERN.test(message)
     : false;
 
@@ -3354,12 +3364,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // ─── SMART ROUTING (applies to ALL modes: direct Ollama, proxy, n8n) ───
         // Run intent detection BEFORE streaming so deterministic tool execution
         // takes priority over unreliable LLM tool-calling.
-        // Use the RAW user message for intent detection — not enhancedMessage which
-        // includes parsed document text that can false-positive on tool regexes.
+        // When documents are attached, use enhancedMessage so that the
+        // `=== Document: ===` markers are visible to preProcessIntent — this
+        // lets the embedded-content check pass and routes to the LLM instead
+        // of returning the canned "couldn't access" error.
         {
-          const intentInput = (request.documents && request.documents.length > 0)
-            ? request.message
-            : enhancedMessage;
+          const intentInput = enhancedMessage;
           const intentResult = await preProcessIntent(intentInput, convId);
           if (intentResult && convId) setLastIntent(convId, intentResult, intentInput);
           console.log('[SADIE] preProcessIntent called with:', intentInput.substring(0, 60));
@@ -3374,6 +3384,25 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // Ensure stream is tracked
               if (!activeStreams.has(streamId)) {
                 activeStreams.set(streamId, { destroy: () => {} });
+              }
+
+              // Stream a brief tool-activity indicator so the user sees what's happening
+              const toolActivityLabels: Record<string, string> = {
+                get_weather: 'Checking weather',
+                web_search: 'Searching the web',
+                nba_query: 'Looking up NBA data',
+                get_news: 'Fetching news',
+                list_directory: 'Browsing files',
+                read_file: 'Reading file',
+                search_files: 'Searching files',
+                run_terminal_command: 'Running command',
+                remember: 'Saving to memory',
+                recall: 'Checking memory',
+              };
+              const firstToolName = intentResult.calls[0]?.name;
+              const activityLabel = toolActivityLabels[firstToolName];
+              if (activityLabel && !firstToolName.startsWith('__')) {
+                safeSend(event.sender, 'sadie:stream-chunk', { chunk: `*${activityLabel}...*\n\n`, streamId });
               }
 
               let toolResults: any[] | null = null;

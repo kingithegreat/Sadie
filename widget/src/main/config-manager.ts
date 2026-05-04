@@ -5,7 +5,7 @@ import { logTelemetryConsent } from './utils/logger';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
-  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'codeApiKey', 'calendarIcsUrl'
+  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl'
 ];
 
 /**
@@ -280,6 +280,10 @@ export function getSettings(): Settings {
         (merged as any)[key] = decryptSecret(val);
       }
     }
+    // Decrypt nested customLLM.apiKey
+    if (merged.customLLM && typeof (merged.customLLM as any).apiKey === 'string' && (merged.customLLM as any).apiKey.length > 0) {
+      (merged.customLLM as any).apiKey = decryptSecret((merged.customLLM as any).apiKey);
+    }
     _settingsCache = merged;
     _settingsCacheTime = now;
     return { ...merged };
@@ -310,6 +314,10 @@ export function saveSettings(settings: Settings): void {
       if (typeof val === 'string' && val.length > 0) {
         (toSave as any)[key] = encryptSecret(val);
       }
+    }
+    // Encrypt nested customLLM.apiKey
+    if (toSave.customLLM && typeof (toSave.customLLM as any).apiKey === 'string' && (toSave.customLLM as any).apiKey.length > 0) {
+      (toSave.customLLM as any).apiKey = encryptSecret((toSave.customLLM as any).apiKey);
     }
     writeFileSync(settingsPath, JSON.stringify(toSave, null, 2), 'utf-8');
     invalidateSettingsCache();

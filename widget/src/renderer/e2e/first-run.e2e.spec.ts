@@ -12,6 +12,19 @@ function makeTempProfile() {
   return base;
 }
 
+async function completeFirstRunWizard(page: any) {
+  await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await expect(page.getByText('Connection Check')).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await expect(page.getByText('Choose a Model')).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await expect(page.getByText('Permissions')).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: /Get Started/i }).click();
+}
+
 test.describe('First-run onboarding and config persistence', () => {
   test('fresh profile shows first-run modal with safe defaults and persists after finish', async () => {
     const tmp = makeTempProfile();
@@ -19,44 +32,32 @@ test.describe('First-run onboarding and config persistence', () => {
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
-    // FirstRun modal should be visible - telemetry is required and shown checked+disabled
+    // FirstRun wizard should be visible.
     await expect(page.getByText('Welcome to SADIE')).toBeVisible();
-    // Target the telemetry checkbox specifically inside the telemetry section for stability
-    const telemetryCheckbox = page.locator('div.first-run-section', { hasText: 'Telemetry' }).locator('input[type="checkbox"]').first();
-    await expect(telemetryCheckbox).toBeVisible();
-    // Some test runs may start with the checkbox unchecked due to timing; if so, try to force telemetry,
-    // but don't fail the test only on the UI state — assert persisted config instead.
-    const telemetryIsChecked = await telemetryCheckbox.isChecked();
-    if (!telemetryIsChecked) {
-      console.warn('[E2E] Telemetry checkbox not checked; proceeding using persisted settings expectation');
-    } else {
-      await expect(telemetryCheckbox).toBeChecked();
-    }
-    const telemetryIsDisabled = await telemetryCheckbox.isDisabled();
-    if (!telemetryIsDisabled) console.warn('[E2E] Telemetry checkbox is enabled in this run; continuing.');
+    await page.getByRole('button', { name: /^Next$/i }).click();
+    await expect(page.getByText('Connection Check')).toBeVisible({ timeout: 5000 });
+    await page.getByRole('button', { name: /^Next$/i }).click();
+    await expect(page.getByText('Choose a Model')).toBeVisible({ timeout: 5000 });
+    await page.getByRole('button', { name: /^Next$/i }).click();
+    await expect(page.getByText('Permissions')).toBeVisible({ timeout: 5000 });
 
-    // The default NBA team should be 'GSW' - find an input with this value
-    const teamInputValue = await page.locator('input[value="GSW"]').first();
-    await expect(teamInputValue).toBeVisible();
-
-    // Ensure some dangerous tool toggles (e.g., delete file) are present and OFF within the modal
-    const modal = page.locator('div', { hasText: 'Welcome to SADIE' }).first();
-    const deleteFileCheckbox = modal.getByLabel('delete file', { exact: true });
+    // Dangerous tool toggles should still be present and off by default.
+    const deleteFileCheckbox = page.getByLabel('delete file', { exact: true });
     await expect(deleteFileCheckbox).toBeVisible();
     await expect(deleteFileCheckbox).not.toBeChecked();
 
-    // Click Finish setup
-    await page.getByRole('button', { name: /Finish/i }).click();
+    // Complete onboarding.
+    await page.getByRole('button', { name: /^Next$/i }).click();
+    await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
+    await page.getByRole('button', { name: /Get Started/i }).click();
 
     // After finish, config.json should exist in userData config path
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     await expect(fs.existsSync(configPath)).toBeTruthy();
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.firstRun).toBe(false);
-    // Telemetry is required; persisted value should be a boolean (recording may be handled asynchronously)
-    expect(typeof config.telemetryEnabled).toBe('boolean');
+    expect(config.telemetryEnabled).toBe(true);
     expect(config.permissions.delete_file).toBe(false);
-    expect(config.defaultTeam).toBe('GSW');
 
     await app.close();
   });
@@ -99,9 +100,8 @@ test.describe('First-run onboarding and config persistence', () => {
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
-    // Finish onboarding
-    await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
-    await page.getByRole('button', { name: /Finish/i }).click();
+    // Complete onboarding through the current step wizard.
+    await completeFirstRunWizard(page);
 
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     // Wait for the saved config to reflect telemetry enabled (or the runtime settings to reflect it)

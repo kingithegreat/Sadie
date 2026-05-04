@@ -5,6 +5,17 @@ import { startMockUpstream } from './mockUpstream';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
+async function completeFirstRunWizardIfVisible(page: any) {
+  const firstRunHeader = page.getByText('Welcome to SADIE');
+  if (!(await firstRunHeader.isVisible().catch(() => false))) return;
+
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /^Next$/i }).click();
+  await page.getByRole('button', { name: /Get Started/i }).click();
+}
+
 test('streams chunks to UI', async () => {
   // Use a larger per-chunk delay so cancellation has time to reach main before
   // the server emits more chunks; this makes the cancellation assertion deterministic.
@@ -227,7 +238,8 @@ test('handles upstream error', async () => {
 
   // After the error event the UI should transition to the 'error' state and show the error indicator
   await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 10000 });
-  await expect(assistant).toContainText('Error', { timeout: 10000 });
+  await expect(assistant).toContainText('n8n Unavailable', { timeout: 10000 });
+  await expect(assistant).toContainText('Retry with Ollama', { timeout: 10000 });
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));
@@ -290,15 +302,7 @@ test('falls back to non-stream final text on stream init error', async () => {
   await waitForAppReady(page);
 
   // If the first-run modal is visible (fresh profile), finish setup so the test can interact with the main UI
-  try {
-    const firstRunHeader = page.getByText('Welcome to SADIE');
-    if (await firstRunHeader.isVisible().catch(() => false)) {
-      // Finish the onboarding with defaults
-      await page.getByRole('button', { name: /Finish/i }).click();
-      // Give the main UI a moment to render
-      await page.waitForSelector('[data-role="assistant-message"]', { timeout: 5000 }).catch(() => {});
-    }
-  } catch (e) {}
+  await completeFirstRunWizardIfVisible(page);
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
   await page.getByLabel('Message SADIE').fill('hello');
@@ -334,8 +338,9 @@ test('falls back to non-stream final text on stream init error', async () => {
   // eslint-disable-next-line no-console
   console.log('[E2E-TRACE] __e2e_trigger_fallback response', res);
   expect(res && res.ok).toBe(true);
-  // The app now surfaces stream-init failures as an explicit Error + Retry UI (not silent fallback)
-  await expect(assistant).toContainText('Error', { timeout: 10000 });
+  // The app surfaces stream-init failures with a recovery card.
+  await expect(assistant).toContainText('Ollama Offline', { timeout: 10000 });
+  await expect(assistant).toContainText('Start Ollama', { timeout: 10000 });
   await expect(assistant).toContainText('Retry', { timeout: 10000 });
   await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 5000 });
 

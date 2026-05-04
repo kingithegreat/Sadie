@@ -215,7 +215,7 @@ Sadie/
 
 ## Testing
 
-SADIE has a comprehensive test suite with **115 test suites** and **1,716 unit tests**, plus Playwright E2E coverage.
+SADIE has a comprehensive test suite with **120 test suites** and **1,872 unit tests**, plus Playwright E2E coverage.
 
 ```bash
 cd widget
@@ -300,7 +300,7 @@ SADIE is developed as a capstone project at **Toi Ohomai Institute of Technology
 - [x] MCP server integration (stdio + SSE) with auto-discovery
 - [x] Skills system: trigger-based context injection for domain-specific expertise
 - [x] Analytics dashboard, conversation management, focus mode
-- [x] 115 test suites / 1,716 unit tests + Playwright E2E
+- [x] 120 test suites / 1,872 unit tests + Playwright E2E
 - [x] Windows NSIS installer via electron-builder
 
 ### Planned

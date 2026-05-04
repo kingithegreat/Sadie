@@ -66,6 +66,8 @@ export const listNewsFeedsDef: ToolDefinition = {
 
 // ============= HELPERS =============
 
+const MAX_FEED_SIZE = 2 * 1024 * 1024; // 2 MB cap for RSS feeds
+
 function httpGet(url: string, timeoutMs = 8000): Promise<string> {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
@@ -75,7 +77,16 @@ function httpGet(url: string, timeoutMs = 8000): Promise<string> {
         return;
       }
       let data = '';
-      res.on('data', (c: Buffer) => (data += c.toString()));
+      let bytes = 0;
+      res.on('data', (c: Buffer) => {
+        bytes += c.length;
+        if (bytes > MAX_FEED_SIZE) {
+          req.destroy();
+          resolve(data);
+          return;
+        }
+        data += c.toString();
+      });
       res.on('end', () => resolve(data));
     });
     req.setTimeout(timeoutMs, () => {

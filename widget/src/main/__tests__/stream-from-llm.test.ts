@@ -238,6 +238,7 @@ describe('streamFromLLM', () => {
     beforeEach(() => {
       // No custom LLM — validation will fail
       mockValidateCustomLLMConfig.mockReturnValue({ valid: false, error: 'not configured' });
+      mockSettings.useCustomLLM = true;
       mockSettings.codeApiKey = 'sk-code-test';
       mockSettings.codeApiProvider = 'openai';
       mockSettings.codeModel = 'gpt-4o';
@@ -282,6 +283,17 @@ describe('streamFromLLM', () => {
       const cbs = callbacks();
       await streamFromLLM(
         'write a python sort function', undefined, 'conv-10',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError,
+      );
+      expect(mockStreamFromCustomLLM).not.toHaveBeenCalled();
+    });
+
+    test('coding query with codeApiKey does not use code API unless cloud is explicitly enabled', async () => {
+      mockSettings.useCustomLLM = false;
+      mockValidateCustomLLMConfig.mockReturnValue({ valid: true });
+      const cbs = callbacks();
+      await streamFromLLM(
+        'write a python sort function', undefined, 'conv-10b',
         cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError,
       );
       expect(mockStreamFromCustomLLM).not.toHaveBeenCalled();

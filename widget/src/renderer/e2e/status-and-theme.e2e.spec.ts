@@ -41,7 +41,7 @@ test.describe('Connection status and theme', () => {
 
     // The status bar should show Ollama and/or n8n connection indicators
     // Look for status dots or badges in the header area
-    const statusArea = page.locator('.status-bar, .connection-status, .backend-badge').first();
+    const statusArea = page.locator('.status-bar-inline, .backend-badge, .status-item').first();
     await expect(statusArea).toBeVisible({ timeout: 10000 });
 
     await app.close();

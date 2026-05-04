@@ -14,8 +14,6 @@ import { spawn, execFile } from 'child_process';
 const HEALTH_CHECK_TIMEOUT = 2000;
 const OLLAMA_OP_TIMEOUT = 30_000;
 const OLLAMA_PULL_TIMEOUT = 600_000;
-const IMAGE_GEN_TIMEOUT = 120_000;
-const WEBHOOK_TIMEOUT = 600_000;
 const SPEECH_RECOGNITION_TIMEOUT = 20_000;
 const OLLAMA_READY_POLL_TIMEOUT = 1500;
 
@@ -28,7 +26,7 @@ import {
   exportTelemetryConsent 
 } from './config-manager';
 import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
-import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey } from './tools/web';
+import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
@@ -215,111 +213,65 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  // Image generation: try n8n first, then direct backends as fallback
-  ipcMain.handle('sadie:automation:image:generate', async (_event, { action, payload }) => {
+  // Image generation panel: delegates to the same tool handler used in chat
+  ipcMain.handle('sadie:automation:image:generate', async (_event, { payload }) => {
     const prompt = String(payload?.prompt || '').trim();
     const width = Number(payload?.width) || 512;
     const height = Number(payload?.height) || 512;
     const steps = Number(payload?.steps) || 20;
+    const backend = payload?.backend || 'hybrid';
 
-    // Safety check
-    const banned = ['porn','sex','pedo','child abuse','rape','kill','bomb','terror'];
-    if (banned.some(t => prompt.toLowerCase().includes(t))) {
-      return { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt }, validation: { validated: false }, error: { message: 'Prompt rejected by safety filter', code: 'SAFETY_POLICY_REJECTED' } };
-    }
-    if (width > 1536 || height > 1536) {
-      return { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt, width, height }, validation: { validated: false }, error: { message: 'Resolution exceeds hard limit (max 1536)', code: 'SAFETY_POLICY_REJECTED' } };
+    if (!prompt) {
+      return { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt }, validation: { validated: false }, error: { message: 'Prompt is required', code: 'INVALID_INPUT' } };
     }
 
-    // Attempt 1: n8n (orchestrated multi-backend)
     try {
-      const settings = getSettings();
-      const url = `${settings.n8nUrl}/webhook/sadie/image-generate`;
-      console.log('[Main] Image generate via n8n ->', { url, action });
-      const response = await axios.post(url, { action, payload }, { timeout: WEBHOOK_TIMEOUT, headers: sadieWebhookHeaders() });
-      if (response.data?.status === 'success') return response.data;
-      console.log('[Main] n8n image generate returned non-success, trying direct backends');
+      const toolResult = await webToolHandlers['image_generate'](
+        { prompt, width, height, steps, backend },
+        { executionId: `img-panel-${Date.now()}` } as any
+      );
+
+      if (toolResult.success && toolResult.result?.image_base64) {
+        return {
+          status: 'success',
+          timestamp: new Date().toISOString(),
+          operation: 'image_generate',
+          source: toolResult.result.source || 'unknown',
+          image: toolResult.result.image_base64,
+          metadata: { prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
+          validation: { validated: true },
+          error: { message: '', code: '' }
+        };
+      }
+
+      return {
+        status: 'failure',
+        timestamp: new Date().toISOString(),
+        operation: 'image_generate',
+        source: null,
+        image: null,
+        metadata: { prompt, width, height, steps },
+        validation: { validated: false },
+        error: {
+          message: toolResult.error || 'Image generation failed',
+          code: 'GENERATION_FAILED'
+        }
+      };
     } catch (err: any) {
-      console.log('[Main] n8n image generate unavailable, trying direct backends:', err.message);
-    }
-
-    // Attempt 2: AUTOMATIC1111 (local Stable Diffusion)
-    const localSd = process.env.LOCAL_SD_ENDPOINT || 'http://127.0.0.1:7860';
-    try {
-      const sdUrl = `${localSd.replace(/\/$/, '')}/sdapi/v1/txt2img`;
-      const r = await axios.post(sdUrl, {
-        prompt, steps, width, height,
-        cfg_scale: payload?.cfg_scale || 7,
-        sampler_name: payload?.sampler || 'Euler a',
-      }, { timeout: IMAGE_GEN_TIMEOUT });
-      if (r.data?.images?.[0]) {
-        let seed = null;
-        try { seed = JSON.parse(r.data.info || '{}').seed; } catch {}
-        return { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source: 'local_sd', image: r.data.images[0], metadata: { prompt, width, height, steps, seed: seed || '', model: 'automatic1111' }, validation: { validated: true }, error: { message: '', code: '' } };
-      }
-    } catch {
-      console.log('[Main] AUTOMATIC1111 not available');
-    }
-
-    // Attempt 3: ComfyUI
-    const comfy = process.env.COMFY_ENDPOINT || 'http://127.0.0.1:8188';
-    try {
-      const r = await axios.post(`${comfy.replace(/\/$/, '')}/api/generate`, { prompt, steps, width, height }, { timeout: IMAGE_GEN_TIMEOUT });
-      const b64 = r.data?.image || r.data?.artifacts?.[0]?.base64;
-      if (b64) {
-        return { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source: 'comfyui', image: b64, metadata: { prompt, width, height, steps, seed: r.data?.seed || '', model: 'comfyui' }, validation: { validated: true }, error: { message: '', code: '' } };
-      }
-    } catch {
-      console.log('[Main] ComfyUI not available');
-    }
-
-    // Attempt 4: Stability AI (cloud)
-    const stabilityKey = process.env.STABILITY_API_KEY || '';
-    if (stabilityKey) {
-      try {
-        const r = await axios.post(
-          'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image',
-          { text_prompts: [{ text: prompt, weight: 1 }], cfg_scale: payload?.cfg_scale || 7, height, width, samples: 1, steps },
-          { headers: { Authorization: `Bearer ${stabilityKey}`, 'Content-Type': 'application/json' }, timeout: IMAGE_GEN_TIMEOUT }
-        );
-        if (r.data?.artifacts?.[0]?.base64) {
-          return { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source: 'stability', image: r.data.artifacts[0].base64, metadata: { prompt, width, height, steps, seed: r.data.artifacts[0].seed || '', model: 'stability' }, validation: { validated: true }, error: { message: '', code: '' } };
+      return {
+        status: 'failure',
+        timestamp: new Date().toISOString(),
+        operation: 'image_generate',
+        source: null,
+        image: null,
+        metadata: { prompt, width, height, steps },
+        validation: { validated: false },
+        error: {
+          message: err.message || 'Unexpected error during image generation',
+          code: 'INTERNAL_ERROR'
         }
-      } catch {
-        console.log('[Main] Stability AI failed');
-      }
+      };
     }
-
-    // Attempt 5: OpenAI DALL-E (cloud)
-    const openaiKey = process.env.OPENAI_API_KEY || '';
-    if (openaiKey) {
-      try {
-        const r = await axios.post(
-          'https://api.openai.com/v1/images/generations',
-          { prompt, n: 1, size: `${width}x${height}`, response_format: 'b64_json' },
-          { headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' }, timeout: IMAGE_GEN_TIMEOUT }
-        );
-        if (r.data?.data?.[0]?.b64_json) {
-          return { status: 'success', timestamp: new Date().toISOString(), operation: 'image_generate', source: 'openai', image: r.data.data[0].b64_json, metadata: { prompt, width, height, steps, seed: '', model: 'dall-e' }, validation: { validated: true }, error: { message: '', code: '' } };
-        }
-      } catch {
-        console.log('[Main] OpenAI DALL-E failed');
-      }
-    }
-
-    return {
-      status: 'failure',
-      timestamp: new Date().toISOString(),
-      operation: 'image_generate',
-      source: null,
-      image: null,
-      metadata: { prompt, width, height, steps },
-      validation: { validated: false },
-      error: {
-        message: 'No image generation backends available. Install AUTOMATIC1111 or ComfyUI locally, or set STABILITY_API_KEY / OPENAI_API_KEY for cloud generation.',
-        code: 'NO_PROVIDER_AVAILABLE'
-      }
-    };
   });
 
   /**

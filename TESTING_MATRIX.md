@@ -8,8 +8,8 @@ Comprehensive test suite inventory covering unit tests, E2E tests, and integrati
 
 | Metric | Value |
 |---|---|
-| **Unit Test Suites** | 110 |
-| **Individual Unit Tests** | 1,533 |
+| **Unit Test Suites** | 120 |
+| **Individual Unit Tests** | 1,872 |
 | **E2E Scenarios** | 12+ (Playwright) |
 | **Test Framework** | Jest (unit), Playwright (E2E) |
 | **Zero Tolerance** | All tests must pass on every commit |
