@@ -251,6 +251,31 @@ describe('FirstRunModal — Get Started (final step)', () => {
     // Model should be set from the test-connection response or provider default
     expect(onSave.mock.calls[0][0].customLLM.model).toBe('test-model');
   });
+
+  test('switching provider after a successful test clears the prior success state and requires retest', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Cloud API'));
+    });
+
+    const input = screen.getByPlaceholderText('Paste your API key');
+    fireEvent.change(input, { target: { value: 'sk-test-key' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Test Connection'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('OpenAI'));
+    });
+
+    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
 });
 
 describe('FirstRunModal — Skip setup button', () => {

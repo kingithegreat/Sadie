@@ -132,6 +132,7 @@ export default function FirstRunModal({
     if (!cloudApiKey.trim()) return;
     setCloudTesting(true);
     setCloudOk(null);
+    setCloudModel('');
     try {
       const apiUrl = PROVIDER_URLS[cloudProvider] || '';
       const res = await (window as any).electron.listCustomLLMModels?.({
@@ -303,7 +304,7 @@ export default function FirstRunModal({
                     type="button"
                     key={p.id}
                     className={`wizard-cloud-chip${cloudProvider === p.id ? ' selected' : ''}`}
-                    onClick={() => { setCloudProvider(p.id); setCloudOk(null); }}
+                    onClick={() => { setCloudProvider(p.id); setCloudOk(null); setCloudModel(''); }}
                   >
                     {p.name}
                     {p.freeHint && <span className="wizard-free-badge">free</span>}
@@ -316,7 +317,7 @@ export default function FirstRunModal({
                 className="first-run-input"
                 placeholder="Paste your API key"
                 value={cloudApiKey}
-                onChange={e => { setCloudApiKey(e.target.value); setCloudOk(null); }}
+                onChange={e => { setCloudApiKey(e.target.value); setCloudOk(null); setCloudModel(''); }}
                 autoComplete="off"
               />
 
