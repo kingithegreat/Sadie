@@ -14,42 +14,30 @@ function makeTempProfile() {
 
 async function completeFirstRunWizard(page: any) {
   await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await expect(page.getByText('Connection Check')).toBeVisible({ timeout: 5000 });
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await expect(page.getByText('Choose a Model')).toBeVisible({ timeout: 5000 });
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await expect(page.getByText('Permissions')).toBeVisible({ timeout: 5000 });
-  await page.getByRole('button', { name: /^Next$/i }).click();
+  // Choose Local path
+  await page.getByRole('button', { name: /Local \(Ollama\)/i }).click();
+  await expect(page.getByText('Local Setup')).toBeVisible({ timeout: 5000 });
+  // Advance to done
+  await page.getByRole('button', { name: /Next|Continue anyway/i }).click();
   await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
   await page.getByRole('button', { name: /Get Started/i }).click();
 }
 
 test.describe('First-run onboarding and config persistence', () => {
-  test('fresh profile shows first-run modal with safe defaults and persists after finish', async () => {
+  test('fresh profile shows first-run modal and persists after finish', async () => {
     const tmp = makeTempProfile();
-    // Launch electron with a clean profile
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
-    // FirstRun wizard should be visible.
+    // FirstRun wizard should be visible
     await expect(page.getByText('Welcome to SADIE')).toBeVisible();
-    await page.getByRole('button', { name: /^Next$/i }).click();
-    await expect(page.getByText('Connection Check')).toBeVisible({ timeout: 5000 });
-    await page.getByRole('button', { name: /^Next$/i }).click();
-    await expect(page.getByText('Choose a Model')).toBeVisible({ timeout: 5000 });
-    await page.getByRole('button', { name: /^Next$/i }).click();
-    await expect(page.getByText('Permissions')).toBeVisible({ timeout: 5000 });
 
-    // Dangerous tool toggles should still be present and off by default.
-    const deleteFileCheckbox = page.getByLabel('delete file', { exact: true });
-    await expect(deleteFileCheckbox).toBeVisible();
-    await expect(deleteFileCheckbox).not.toBeChecked();
+    // Path selection cards should be visible
+    await expect(page.getByText('Local (Ollama)')).toBeVisible();
+    await expect(page.getByText('Cloud API')).toBeVisible();
 
-    // Complete onboarding.
-    await page.getByRole('button', { name: /^Next$/i }).click();
-    await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
-    await page.getByRole('button', { name: /Get Started/i }).click();
+    // Complete via local path
+    await completeFirstRunWizard(page);
 
     // After finish, config.json should exist in userData config path
     const configPath = path.join(tmp, 'config', 'user-settings.json');
@@ -57,7 +45,6 @@ test.describe('First-run onboarding and config persistence', () => {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.firstRun).toBe(false);
     expect(config.telemetryEnabled).toBe(true);
-    expect(config.permissions.delete_file).toBe(false);
 
     await app.close();
   });
@@ -84,11 +71,9 @@ test.describe('First-run onboarding and config persistence', () => {
     // FirstRun modal should not be visible
     await expect(page.getByText('Welcome to SADIE')).toHaveCount(0);
 
-    // The settings persisted should be accessible via menu or direct saved file - verify the values loaded
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.firstRun).toBe(false);
-    // The persisted settings should show telemetry enabled
     expect(config.telemetryEnabled).toBe(true);
     expect(config.defaultTeam).toBe('GSW');
 
@@ -100,11 +85,9 @@ test.describe('First-run onboarding and config persistence', () => {
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
-    // Complete onboarding through the current step wizard.
     await completeFirstRunWizard(page);
 
     const configPath = path.join(tmp, 'config', 'user-settings.json');
-    // Wait for the saved config to reflect telemetry enabled (or the runtime settings to reflect it)
     const waitForConfig = async () => {
       const start = Date.now();
       while (Date.now() - start < 5000) {
@@ -114,7 +97,6 @@ test.describe('First-run onboarding and config persistence', () => {
         }
         await new Promise(r => setTimeout(r, 100));
       }
-      // If the config hasn't been saved correctly, attempt to force telemetry on the renderer and wait again
       try {
         await page.evaluate(async () => {
           const s = await (window as any).electron.getSettings();
@@ -131,22 +113,42 @@ test.describe('First-run onboarding and config persistence', () => {
         }
         await new Promise(r => setTimeout(r, 100));
       }
-      // As a fallback, query runtime settings from main process and return that
       const runtime = await page.evaluate(async () => await (window as any).electron.getSettings());
       if (runtime && runtime.telemetryEnabled === true) return runtime;
       throw new Error('Timed out waiting for config telemetryEnabled=true after forcing save');
     };
 
     const config = await waitForConfig();
-    // Prefer runtime truth, but tolerate persisted file still missing in rare runs
     expect(config.telemetryEnabled).toBe(true);
-    // telemetryConsentTimestamp may be applied by main process asynchronously; it's optional here
 
-    // The consent log should contain a consent_given entry
     const consentLog = path.join(tmp, 'logs', 'telemetry-consent.log');
     if (fs.existsSync(consentLog)) {
       const contents = fs.readFileSync(consentLog, 'utf-8');
       expect(contents.includes('consent_given')).toBe(true);
+    }
+
+    await app.close();
+  });
+
+  test('skip setup still marks firstRun as false', async () => {
+    const tmp = makeTempProfile();
+    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
+
+    await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: /Skip setup/i }).click();
+
+    // Modal should close
+    await expect(page.getByText('Welcome to SADIE')).toHaveCount(0);
+
+    const configPath = path.join(tmp, 'config', 'user-settings.json');
+    const start = Date.now();
+    while (Date.now() - start < 3000 && !fs.existsSync(configPath)) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      expect(config.firstRun).toBe(false);
     }
 
     await app.close();

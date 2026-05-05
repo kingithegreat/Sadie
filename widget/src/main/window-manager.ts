@@ -50,7 +50,7 @@ export function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,       // Disable sandbox to allow Web Speech API
+      sandbox: true,
       webviewTag: false     // Not used — web services use dedicated BrowserWindows
     }
   });

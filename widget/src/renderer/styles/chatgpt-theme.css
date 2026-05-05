@@ -3714,6 +3714,60 @@ body {
 /* Footer layout for wizard: skip left, nav buttons right */
 .first-run-footer { justify-content: space-between; }
 
+/* Path selection cards (local vs cloud) */
+.wizard-path-cards { display: flex; gap: 12px; margin-top: 16px; }
+.wizard-path-card {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 16px 12px; border-radius: 12px; cursor: pointer;
+  border: 2px solid var(--border-light, #333); background: var(--bg-secondary, #16213e);
+  transition: border-color 0.15s, background 0.15s; text-align: center;
+  color: var(--text-primary); font-size: 14px;
+}
+.wizard-path-card:hover { border-color: var(--accent-primary, #4a6cf7); }
+.wizard-path-card.selected { border-color: var(--accent-primary, #4a6cf7); background: rgba(74,108,247,0.08); }
+.wizard-path-icon { font-size: 32px; }
+.wizard-path-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+
+/* GPU info banner spacing */
+.wizard-gpu-info { margin-bottom: 12px; }
+
+/* Model compact display */
+.wizard-model-compact { margin-top: 12px; }
+
+/* Button row for inline actions */
+.wizard-btn-row { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Install hint text */
+.wizard-install-hint { margin-top: 8px; }
+
+/* Cloud provider chip grid */
+.wizard-cloud-provider-grid {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.wizard-cloud-chip {
+  padding: 6px 12px; border-radius: 16px; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--border-light, #333); background: var(--bg-secondary, #16213e);
+  color: var(--text-primary); transition: border-color 0.15s, background 0.15s;
+  display: flex; align-items: center; gap: 4px;
+}
+.wizard-cloud-chip:hover { border-color: var(--accent-primary, #4a6cf7); }
+.wizard-cloud-chip.selected { border-color: var(--accent-primary, #4a6cf7); background: rgba(74,108,247,0.12); }
+.wizard-free-badge {
+  font-size: 10px; background: rgba(16,185,129,0.2); color: #10b981;
+  padding: 1px 5px; border-radius: 6px; font-weight: 600; text-transform: uppercase;
+}
+
+/* Test connection row spacing */
+.wizard-test-row { margin-top: 8px; }
+
+/* Suggestion chips on done step */
+.wizard-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; justify-content: center; }
+.wizard-suggestion-chip {
+  padding: 6px 14px; border-radius: 16px; font-size: 13px;
+  background: var(--bg-secondary, #16213e); color: var(--text-secondary);
+  border: 1px solid var(--border-light, #333);
+}
+
 /* Settings backup section */
 .sp-backup-section { border-top: 1px solid var(--border-light, #333); padding-top: 16px; margin-top: 8px; }
 .sp-backup-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }

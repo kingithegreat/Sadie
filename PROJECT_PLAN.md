@@ -40,102 +40,79 @@ Design and develop a privacy-first desktop AI assistant that runs large language
 
 ---
 
-## Project Phases
+## Product Roadmap
 
-### Phase 1 — Foundation ✅
+SADIE already has a broad local-first feature base. The next roadmap is not about adding every possible capability. It is about becoming the most reliable, easiest-to-run local AI desktop option for Windows users who want privacy, strong defaults, and useful local workflows.
 
-- [x] Electron application scaffold with electron-vite
-- [x] React renderer with component architecture
-- [x] Preload bridge with context isolation
-- [x] IPC communication layer with allowlist
-- [x] Ollama integration for local LLM inference
-- [x] Basic chat UI with streaming responses
-- [x] Configuration management (settings persistence)
-- [x] Logging system with file output
+### Strategic Goal
 
-### Phase 2 — Tool System ✅
+Make local AI feel easier, safer, and more useful than defaulting to a cloud chat product.
 
-- [x] Tool registry with `registerTool()` API
-- [x] Intent detection (regex + keyword matching)
-- [x] File system operations (read, write, create, search)
-- [x] Web search with fallback chain
-- [x] Code execution sandbox with timeout
-- [x] Computer vision (llava model integration)
-- [x] Permission model with escalation flow
-- [x] JSON schema validation for tool arguments
+### Product Pillars
 
-### Phase 3 — Intelligence and Memory ✅
+1. Zero-friction setup
+2. Hardware-aware performance
+3. Local-first reliability
+4. Clear privacy guarantees
+5. Opinionated model defaults
+6. Measured quality and proof
 
-- [x] Short-term memory (conversation context window)
-- [x] Long-term memory (key-value JSON store)
-- [x] RAG indexing (TF-IDF chunking and search)
-- [x] Memory-aware system prompts
-- [x] Context budget system for small models (3B–8B)
-- [x] Reminder system with persistence
-- [x] Scheduler with cron-like triggers
+### Release 1 — Setup and Trust (Next 30 Days)
 
-### Phase 4 — Safety and Security ✅
+- Deliver a first-run setup flow that verifies Ollama, available RAM/VRAM, disk space, ports, and required permissions.
+- Add hardware-tier presets for low-end, balanced, and high-performance machines.
+- Recommend the right default model stack for chat, coding, vision, and embeddings.
+- Improve failure handling for missing models, stopped Ollama service, and invalid local configuration.
+- Surface a plain-language privacy contract explaining what stays local and what can leave the device.
+- Instrument baseline product metrics: startup time, first-token latency, model load time, and tool success rate.
 
-- [x] 7-layer safety pipeline (profanity → harm → PII → injection → tool-abuse → output → audit)
-- [x] Content Security Policy on renderer
-- [x] IPC channel allowlist enforcement
-- [x] SSRF protection (blocked internal IPs)
-- [x] Path traversal protection (normalised paths)
-- [x] Toast XML sanitisation
-- [x] Git message injection prevention
-- [x] PID validation for process management
-- [x] Tool recursion cap
-- [x] Webhook HMAC authentication
+### Release 2 — Reliability and Local Utility (30 to 60 Days)
 
-### Phase 5 — User Experience ✅
+- Build a model manager with download guidance, health checks, fallback routing, and task-specific defaults.
+- Harden offline workflows so core chat, file tasks, RAG, memory, and export continue to work without internet access.
+- Improve index and cache recovery paths so corrupted local state is repairable from the UI.
+- Reduce time-to-first-use by simplifying setup docs, startup messaging, and model selection.
+- Publish a compatibility matrix for supported Windows configurations and recommended model bundles.
+- Add focused regression coverage for onboarding, model fallback, and offline-mode behavior.
 
-- [x] Dark, light, and system themes
-- [x] Conversation sidebar with search and filter
-- [x] Conversation pinning, archiving, and tagging
-- [x] Message bookmarks and reactions
-- [x] Message editing and timestamps
-- [x] Reading time estimates
-- [x] Keyboard shortcuts system
-- [x] Toast notification system
-- [x] Focus mode (distraction-free chat)
-- [x] Drag-drop file support
-- [x] Message density toggle (compact/comfortable)
-- [x] Input character counter
-- [x] Date separators in message list
-- [x] JSON export for conversations
+### Release 3 — Differentiation and Proof (60 to 90 Days)
 
-### Phase 6 — Cloud and Integration ✅
+- Expand the workflows that are uniquely strong on-device: local document intelligence, desktop automation, coding assistance, and scheduled personal workflows.
+- Ship benchmark-backed comparisons for common hardware tiers, including latency, memory footprint, and recommended models.
+- Tighten installer, update, and recovery flows so non-technical users can maintain the app with minimal support.
+- Use user feedback to remove friction from the highest-frequency local workflows before adding broad new features.
+- Refine product positioning around privacy-first local productivity rather than general AI feature parity.
 
-- [x] Cloud LLM integration (6 providers)
-- [x] MODEL_METADATA with native token limits
-- [x] n8n workflow orchestration
-- [x] MCP server client
-- [x] Whisper speech recognition
-- [x] Text-to-speech
-- [x] NBA/sports data via ESPN API
-- [x] Full-season sports data fetch
-- [x] Browser content extraction
-- [x] Image generation (Pollinations + Stable Horde fallback)
+### Current Priorities
 
-### Phase 7 — Polish and Quality ✅
+1. First-run diagnostics and onboarding
+2. Model recommendation and fallback system
+3. Performance measurement and optimization
+4. Reliability and recovery UX
+5. Privacy clarity in product and docs
+6. Installer, updates, and support readiness
 
-- [x] Analytics dashboard
-- [x] Telemetry with opt-in consent
-- [x] Auto-update system
-- [x] System tray with global hotkey
-- [x] User avatar upgrade
-- [x] Futuristic UI accents (cyan/magenta gradients)
-- [x] i18n foundation (locale loading framework)
-- [x] Performance tuning (log buffer caps, dead code removal)
-- [x] Comprehensive documentation overhaul
+### Success Metrics
 
-### Phase 8 — Testing ✅
+| Metric | Target Direction |
+|---|---|
+| Time from install to first successful response | Down |
+| First-run failure rate | Down |
+| Model download completion rate | Up |
+| Cold start time | Down |
+| First-token latency | Down |
+| Successful tool execution rate | Up |
+| Document indexing success rate | Up |
+| Offline task completion rate | Up |
+| 7-day and 30-day retention | Up |
 
-- [x] 112 unit test suites with 1,604 tests
-- [x] Playwright E2E test suite (12+ scenarios)
-- [x] Security-focused test coverage
-- [x] Context budget test coverage
-- [x] All tests passing with zero failures
+### Features to Defer Until Core Experience Improves
+
+- Always-on voice mode
+- Wake word detection
+- Expanded visual conversation branching
+- Broader language support beyond the existing i18n foundation
+- Additional cloud integrations that do not improve the local-first experience
 
 ---
 

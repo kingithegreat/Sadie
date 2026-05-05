@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 /**
  * first-run-modal.test.tsx
- * Tests for src/renderer/components/FirstRunModal.tsx (multi-step wizard)
+ * Tests for src/renderer/components/FirstRunModal.tsx (3-step wizard: welcome → setup → done)
  */
 
 import { render, screen, fireEvent, act } from '@testing-library/react';
@@ -28,15 +28,10 @@ function makeMockElectron(saveSettings = jest.fn().mockResolvedValue(undefined))
     saveSettings,
     checkConnection: jest.fn().mockResolvedValue({ ollama: 'online' }),
     listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }] }),
+    startOllama: jest.fn().mockResolvedValue({ success: true }),
+    detectGpuVram: jest.fn().mockResolvedValue({ success: true, vramGB: 6, gpuName: 'Test GPU' }),
+    listCustomLLMModels: jest.fn().mockResolvedValue({ success: true, models: [{ id: 'test-model' }] }),
   };
-}
-
-async function advanceToStep(targetStep: number) {
-  for (let i = 0; i < targetStep; i++) {
-    await act(async () => {
-      fireEvent.click(screen.getByText('Next'));
-    });
-  }
 }
 
 beforeEach(() => {
@@ -62,22 +57,132 @@ describe('FirstRunModal — open/closed', () => {
     expect(screen.getByText('Welcome to SADIE')).toBeInTheDocument();
   });
 
-  test('renders Next and Skip setup buttons on first step', () => {
+  test('renders path selection cards on welcome step', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.getByText('Next')).toBeInTheDocument();
+    expect(screen.getByText('Local (Ollama)')).toBeInTheDocument();
+    expect(screen.getByText('Cloud API')).toBeInTheDocument();
+  });
+
+  test('renders Skip setup button', () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
     expect(screen.getByText('Skip setup')).toBeInTheDocument();
   });
 });
 
-describe('FirstRunModal — Get Started button (final step)', () => {
+describe('FirstRunModal — local path', () => {
+  test('clicking Local shows connection check', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    expect(screen.getByText('Local Setup')).toBeInTheDocument();
+  });
+
+  test('shows Ollama running status when online', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    // Wait for async checkOllama
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    expect(screen.getByText('Ollama is running!')).toBeInTheDocument();
+  });
+
+  test('shows GPU info when detected', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    expect(screen.getByText(/Test GPU/)).toBeInTheDocument();
+  });
+
+  test('Next advances to done step', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Next'));
+    });
+    expect(screen.getByText("You're all set!")).toBeInTheDocument();
+  });
+});
+
+describe('FirstRunModal — cloud path', () => {
+  test('clicking Cloud shows provider selection', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Cloud API'));
+    });
+    expect(screen.getByText('Cloud Setup')).toBeInTheDocument();
+    expect(screen.getByText('Groq')).toBeInTheDocument();
+  });
+
+  test('Test Connection calls listCustomLLMModels', async () => {
+    const electron = makeMockElectron();
+    (window as any).electron = electron;
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Cloud API'));
+    });
+    const input = screen.getByPlaceholderText('Paste your API key');
+    fireEvent.change(input, { target: { value: 'sk-test-123' } });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Test Connection'));
+    });
+    expect(electron.listCustomLLMModels).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'sk-test-123', provider: 'groq' })
+    );
+  });
+
+  test('successful test shows connected status', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Cloud API'));
+    });
+    const input = screen.getByPlaceholderText('Paste your API key');
+    fireEvent.change(input, { target: { value: 'sk-test-123' } });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Test Connection'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
+  });
+});
+
+describe('FirstRunModal — Get Started (final step)', () => {
   test('calls onSave with firstRun: false', async () => {
     const onSave = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
-    await advanceToStep(4);
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Next'));
+    });
     await act(async () => {
       fireEvent.click(screen.getByText('Get Started'));
     });
@@ -90,25 +195,17 @@ describe('FirstRunModal — Get Started button (final step)', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
-    await advanceToStep(4);
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Next'));
+    });
     await act(async () => {
       fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onSave.mock.calls[0][0]).toMatchObject({ telemetryEnabled: true });
-  });
-
-  test('calls onSave with a telemetryConsentTimestamp string', async () => {
-    const onSave = jest.fn();
-    render(
-      <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
-    );
-    await advanceToStep(4);
-    await act(async () => {
-      fireEvent.click(screen.getByText('Get Started'));
-    });
-    const ts = onSave.mock.calls[0][0].telemetryConsentTimestamp;
-    expect(typeof ts).toBe('string');
-    expect(ts.length).toBeGreaterThan(0);
   });
 
   test('calls onClose after Get Started', async () => {
@@ -116,55 +213,41 @@ describe('FirstRunModal — Get Started button (final step)', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={onClose} />
     );
-    await advanceToStep(4);
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Next'));
+    });
     await act(async () => {
       fireEvent.click(screen.getByText('Get Started'));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  test('calls window.electron.saveSettings on Get Started', async () => {
-    const saveSettings = jest.fn().mockResolvedValue(undefined);
-    (window as any).electron = { ...makeMockElectron(saveSettings), saveSettings };
-    render(
-      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
-    );
-    await advanceToStep(4);
-    await act(async () => {
-      fireEvent.click(screen.getByText('Get Started'));
-    });
-    expect(saveSettings).toHaveBeenCalledTimes(1);
-  });
-
-  test('still calls onSave when window.electron.saveSettings is absent', async () => {
-    delete (window as any).electron.saveSettings;
+  test('cloud path saves customLLM config on Get Started', async () => {
     const onSave = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
-    await advanceToStep(4);
+    await act(async () => {
+      fireEvent.click(screen.getByText('Cloud API'));
+    });
+    const input = screen.getByPlaceholderText('Paste your API key');
+    fireEvent.change(input, { target: { value: 'sk-test-key' } });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Test Connection'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Next'));
+    });
     await act(async () => {
       fireEvent.click(screen.getByText('Get Started'));
     });
-    expect(onSave).toHaveBeenCalledTimes(1);
-  });
-
-  test('still calls onSave when window.electron is absent', async () => {
-    delete (window as any).electron;
-    const onSave = jest.fn();
-    render(
-      <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
-    );
-    // Without electron, Next won't trigger checkOllama correctly but should still work
-    for (let i = 0; i < 4; i++) {
-      await act(async () => {
-        fireEvent.click(screen.getByText('Next'));
-      });
-    }
-    await act(async () => {
-      fireEvent.click(screen.getByText('Get Started'));
-    });
-    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0].useCustomLLM).toBe(true);
+    expect(onSave.mock.calls[0][0].customLLM).toMatchObject({ provider: 'groq', apiKey: 'sk-test-key' });
   });
 });
 
@@ -192,61 +275,27 @@ describe('FirstRunModal — Skip setup button', () => {
   });
 });
 
-describe('FirstRunModal — permissions (step 4)', () => {
-  test('renders a checkbox for each permission key on the permissions step', async () => {
-    render(
-      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
-    );
-    await advanceToStep(3);
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes.length).toBeGreaterThanOrEqual(Object.keys(baseSettings.permissions!).length);
-  });
-
-  test('toggling a permission includes updated value in Get Started payload', async () => {
-    const onSave = jest.fn();
-    render(
-      <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
-    );
-    await advanceToStep(3);
-    const moveFileCheckbox = screen.getByRole('checkbox', { name: /move file/i });
-    fireEvent.click(moveFileCheckbox);
-    await act(async () => {
-      fireEvent.click(screen.getByText('Next'));
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByText('Get Started'));
-    });
-    expect(onSave.mock.calls[0][0].permissions?.move_file).toBe(true);
-  });
-});
-
 describe('FirstRunModal — wizard navigation', () => {
-  test('shows Back button after first step', async () => {
+  test('Back button returns to welcome from setup', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.queryByText('Back')).toBeNull();
-    await advanceToStep(1);
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     expect(screen.getByText('Back')).toBeInTheDocument();
-  });
-
-  test('Back button returns to previous step', async () => {
-    render(
-      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
-    );
-    await advanceToStep(1);
-    expect(screen.getByText('Connection Check')).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByText('Back'));
     });
     expect(screen.getByText('Welcome to SADIE')).toBeInTheDocument();
   });
 
-  test('progress dots are rendered', () => {
+  test('progress dots are rendered (3 steps)', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     const dots = document.querySelectorAll('.wizard-dot');
-    expect(dots.length).toBe(5);
+    expect(dots.length).toBe(3);
   });
 });

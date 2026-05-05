@@ -272,43 +272,37 @@ SADIE is developed as a capstone project at **Toi Ohomai Institute of Technology
 
 ## Roadmap
 
-### Completed
+SADIE's next roadmap is focused on becoming the strongest local-first AI desktop option for Windows users. That means setup, performance, reliability, privacy, and proof come before broad feature expansion.
 
-- [x] Electron 28 + React 18 desktop shell with electron-vite build system
-- [x] 60+ modular TypeScript tool handlers with structured JSON tool-calling
-- [x] Ollama local LLM integration (phi4-mini, qwen2.5-coder:3b, moondream, dolphin-phi:2.7b)
-- [x] Vision tools: describe and query images via moondream (1.7 GB, 4 GB VRAM friendly)
-- [x] Hybrid RAG: TF-IDF keyword search + nomic-embed-text semantic embeddings with Reciprocal Rank Fusion
-- [x] Agentic tool loops: LLM autonomously chains tools for multi-step requests with streaming progress
-- [x] Proactive morning briefing: weather + calendar + reminders summary on first daily interaction
-- [x] Embedded web services (ChatGPT, Claude, Gemini) in sandboxed panels
-- [x] Code cloud API routing (OpenAI / Anthropic / OpenRouter / Groq / DeepSeek / Google AI Studio / Custom)
-- [x] Hardware profile auto-detection: GPU VRAM-aware model defaults (4 GB / 8 GB / 16 GB+)
-- [x] 5 GB VRAM model stack: phi4-mini + moondream + dolphin-phi fits on budget GPUs
-- [x] Light / dark / system theme with futuristic UI accents
-- [x] Global hotkey (`Ctrl+Shift+Space`)
-- [x] Auto-update via electron-updater
-- [x] Image generation with Pollinations.ai and Stable Horde fallback
-- [x] NBA live scores, standings, full-season results via ESPN, fuzzy team name matching
-- [x] Google Calendar integration via ICS feed (no OAuth needed) + n8n webhook
-- [x] Persistent reminders and scheduled jobs
-- [x] Ollama health banner on startup
-- [x] Security hardening (SSRF, IPC, webhook auth, tool recursion cap)
-- [x] Model-aware context budgets for small models (3B and under)
-- [x] Cloud model metadata with cost hints (Claude Opus 4, Sonnet 4, GPT-4o Mini, Gemini 2.0 Flash, and more)
-- [x] Mixture of Agents (MoA) with hardware-aware presets
-- [x] MCP server integration (stdio + SSE) with auto-discovery
-- [x] Skills system: trigger-based context injection for domain-specific expertise
-- [x] Analytics dashboard, conversation management, focus mode
-- [x] 120 test suites / 1,872 unit tests + Playwright E2E
-- [x] Windows NSIS installer via electron-builder
+### Next 30 Days
 
-### Planned
+- First-run diagnostics for Ollama, hardware, ports, disk space, and permissions
+- Hardware-aware presets for low-end, balanced, and high-performance machines
+- Better model recommendations for chat, coding, vision, and embeddings
+- Clear error recovery for missing models, stopped Ollama, and invalid config
+- Plain-language privacy contract in product and docs
+- Baseline performance metrics for startup, load, and first-token latency
 
-- [ ] Always-on voice mode with wake word detection
-- [ ] Screen awareness (screenshot capture + OCR for active window analysis)
-- [ ] Widget dashboard with glanceable tiles (weather, calendar, reminders, quick actions)
-- [ ] Conversation branching and forking with visual tree view
-- [ ] Internationalisation (i18n): multi-language support
-- [ ] Performance benchmarking and resource usage optimisation
-- [ ] User acceptance testing with target audience feedback
+### 30 to 60 Days
+
+- Model manager with fallback routing and download guidance
+- Stronger offline-mode support for core local workflows
+- Repair paths for corrupted indexes, caches, and local state
+- Simpler setup and support flows for non-technical users
+- Compatibility matrix for Windows hardware tiers
+- Regression coverage for onboarding, model fallback, and offline behavior
+
+### 60 to 90 Days
+
+- Deeper local workflows for document intelligence, desktop automation, and coding tasks
+- Published benchmarks by hardware tier with recommended model bundles
+- Better installer, update, and recovery experience
+- User-feedback-driven reduction of friction in the most common local workflows
+- Sharper positioning around privacy-first local productivity
+
+### Deferred Until the Core Experience Is Stronger
+
+- Always-on voice mode and wake word detection
+- Conversation branching UI
+- Broad i18n expansion
+- Additional cloud integrations that do not improve the local-first product

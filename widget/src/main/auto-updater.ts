@@ -1,12 +1,21 @@
 // Auto-update support using electron-updater
 // Checks for updates from GitHub Releases on startup and notifies the user
 import { autoUpdater } from 'electron-updater';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
 
+function isAutoUpdateEnabled(): boolean {
+  return app.isPackaged && process.env.SADIE_ENABLE_AUTO_UPDATE === '1';
+}
+
 export function initAutoUpdater(mainWindow: BrowserWindow): void {
+  if (!isAutoUpdateEnabled()) {
+    console.log('[UPDATER] Disabled: set SADIE_ENABLE_AUTO_UPDATE=1 for signed packaged releases');
+    return;
+  }
+
   // Disable auto-download — let the user decide
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -62,6 +71,11 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
 
 /** Trigger download of a pending update (called from IPC) */
 export function downloadUpdate(): void {
+  if (!isAutoUpdateEnabled()) {
+    console.log('[UPDATER] Download skipped because auto-updates are disabled');
+    return;
+  }
+
   autoUpdater.downloadUpdate().catch((err) => {
     console.error('[UPDATER] Download failed:', err?.message || err);
   });
@@ -69,5 +83,10 @@ export function downloadUpdate(): void {
 
 /** Install downloaded update and restart */
 export function installUpdate(): void {
+  if (!isAutoUpdateEnabled()) {
+    console.log('[UPDATER] Install skipped because auto-updates are disabled');
+    return;
+  }
+
   autoUpdater.quitAndInstall(false, true);
 }

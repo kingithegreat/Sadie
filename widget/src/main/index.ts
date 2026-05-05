@@ -22,6 +22,37 @@ import { spawn } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
 
+const ALLOWED_WEB_SERVICE_PERMISSIONS = new Set([
+  'clipboard-read',
+  'clipboard-sanitized-write',
+  'media',
+  'microphone',
+  'camera',
+  'notifications',
+]);
+
+const ALLOWED_WEB_SERVICE_POPUP_HOST_SUFFIXES = [
+  'chatgpt.com',
+  'openai.com',
+  'claude.ai',
+  'anthropic.com',
+  'gemini.google.com',
+  'google.com',
+  'googleusercontent.com',
+  'gstatic.com',
+];
+
+function isAllowedWebServicePopupUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && ALLOWED_WEB_SERVICE_POPUP_HOST_SUFFIXES.some(
+      suffix => parsed.hostname === suffix || parsed.hostname.endsWith(`.${suffix}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Global error handlers — prevent silent crashes and unhandled promise rejections
 process.on('uncaughtException', (err) => {
   console.error('[MAIN] Uncaught exception:', err);
@@ -67,10 +98,8 @@ app.whenReady().then(async () => {
   for (const name of ['chatgpt', 'claude', 'gemini']) {
     const sesh = session.fromPartition(`persist:${name}`);
     sesh.setUserAgent(CHROME_UA);
-    // Allow all permission requests (camera, mic, notifications, clipboard, etc.)
-    // so login flows don't silently fail due to denied permissions.
-    sesh.setPermissionRequestHandler((_webContents, _permission, callback) => {
-      callback(true);
+    sesh.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(ALLOWED_WEB_SERVICE_PERMISSIONS.has(permission));
     });
   }
 
@@ -84,6 +113,10 @@ app.whenReady().then(async () => {
   mainWindow.webContents.on('did-attach-webview', (_event, wvContents) => {
     wvContents.setUserAgent(CHROME_UA);
     wvContents.setWindowOpenHandler(({ url }) => {
+      if (!isAllowedWebServicePopupUrl(url)) {
+        return { action: 'deny' };
+      }
+
       const popup = new BrowserWindow({
         width: 520,
         height: 760,

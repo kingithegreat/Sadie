@@ -23,6 +23,37 @@ const SERVICES = {
 
 type ServiceId = keyof typeof SERVICES;
 
+const ALLOWED_PERMISSION_SET = new Set([
+  'clipboard-read',
+  'clipboard-sanitized-write',
+  'media',
+  'microphone',
+  'camera',
+  'notifications',
+]);
+
+const ALLOWED_POPUP_HOST_SUFFIXES = [
+  'chatgpt.com',
+  'openai.com',
+  'claude.ai',
+  'anthropic.com',
+  'gemini.google.com',
+  'google.com',
+  'googleusercontent.com',
+  'gstatic.com',
+];
+
+function isAllowedPopupUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && ALLOWED_POPUP_HOST_SUFFIXES.some(
+      suffix => parsed.hostname === suffix || parsed.hostname.endsWith(`.${suffix}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Registry of open service windows (one per service, kept alive)
 const windows: Partial<Record<ServiceId, BrowserWindow>> = {};
 
@@ -32,7 +63,9 @@ function createServiceWindow(id: ServiceId): BrowserWindow {
   // Pre-configure the session for this service: Chrome UA + allow all permissions
   const sesh = session.fromPartition(svc.partition);
   sesh.setUserAgent(CHROME_UA);
-  sesh.setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
+  sesh.setPermissionRequestHandler((_wc, permission, cb) => {
+    cb(ALLOWED_PERMISSION_SET.has(permission));
+  });
 
   const win = new BrowserWindow({
     width: 1100,
@@ -54,6 +87,10 @@ function createServiceWindow(id: ServiceId): BrowserWindow {
   // Open OAuth popups (e.g. Google sign-in) in a new BrowserWindow rather
   // than trying to embed them — ensures the full OAuth flow works
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isAllowedPopupUrl(url)) {
+      return { action: 'deny' };
+    }
+
     const popup = new BrowserWindow({
       width: 520,
       height: 760,
