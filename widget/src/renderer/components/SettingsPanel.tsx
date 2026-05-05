@@ -183,6 +183,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [_modelsFetchedAt, setModelsFetchedAt] = useState<number | null>(null);
   const [installedOllamaModels, setInstalledOllamaModels] = useState<Array<{ name: string; size: number }>>([]);
 
+  // Collapsible sections — General and Models open by default
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    general: true,
+    models: true,
+    cloud: false,
+    api_keys: false,
+    appearance: false,
+    permissions: false,
+    advanced: false,
+  });
+  const toggleSection = (id: string) => setOpenSections(s => ({ ...s, [id]: !s[id] }));
+
   // Fetch installed Ollama models on mount
   useEffect(() => {
     window.electron?.listOllamaModels?.().then(res => {
@@ -529,6 +541,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       </div>
 
       <div className="settings-body">
+        {/* ── General ── */}
+        <button type="button" className={`sp-section-toggle${openSections.general ? ' open' : ''}`} onClick={() => toggleSection('general')}>
+          <span className="sp-section-arrow">{openSections.general ? '▾' : '▸'}</span> General
+        </button>
+        {openSections.general && <>
         <div className="setting-group">
           <label className="setting-label">
             <input
@@ -576,7 +593,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             placeholder="http://localhost:5678"
           />
         </div>
+        </>}
 
+        {/* ── Models ── */}
+        <button type="button" className={`sp-section-toggle${openSections.models ? ' open' : ''}`} onClick={() => toggleSection('models')}>
+          <span className="sp-section-arrow">{openSections.models ? '▾' : '▸'}</span> Models
+        </button>
+        {openSections.models && <>
         <div className="setting-group">
           <label className="setting-label">Chat model</label>
           <div className="model-grid">
@@ -712,7 +735,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           />
           <small className="setting-hint">Local Ollama model for coding. Leave blank to use the chat model. Recommended for your GPU: <code>qwen2.5-coder:3b</code> (~2GB VRAM). If a Code API key is set below, it takes priority over this.</small>
         </div>
+        </>}
 
+        {/* ── Cloud & Integration ── */}
+        <button type="button" className={`sp-section-toggle${openSections.cloud ? ' open' : ''}`} onClick={() => toggleSection('cloud')}>
+          <span className="sp-section-arrow">{openSections.cloud ? '▾' : '▸'}</span> Cloud &amp; Integration
+        </button>
+        {openSections.cloud && <>
         <div className="setting-group">
           <label className="setting-label">🔑 Code model — Cloud API (optional)</label>
           <div className="api-key-row">
@@ -817,7 +846,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           />
           <small className="setting-hint">Custom instructions appended to the system prompt for all conversations.</small>
         </div>
+        </>}
 
+        {/* ── Appearance & Notifications ── */}
+        <button type="button" className={`sp-section-toggle${openSections.appearance ? ' open' : ''}`} onClick={() => toggleSection('appearance')}>
+          <span className="sp-section-arrow">{openSections.appearance ? '▾' : '▸'}</span> Appearance &amp; Notifications
+        </button>
+        {openSections.appearance && <>
         {/* Google Calendar ICS */}
         <div className="setting-group">
           <label className="setting-label">📅 Google Calendar</label>
@@ -891,7 +926,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
           <small className="setting-hint">Controls spacing between messages in the chat.</small>
         </div>
+        </>}
 
+        {/* ── API Keys ── */}
+        <button type="button" className={`sp-section-toggle${openSections.api_keys ? ' open' : ''}`} onClick={() => toggleSection('api_keys')}>
+          <span className="sp-section-arrow">{openSections.api_keys ? '▾' : '▸'}</span> API Keys &amp; Cloud LLM
+        </button>
+        {openSections.api_keys && <>
         {/* Custom LLM API Section - Simplified */}
         <div className="setting-group custom-llm-section">
           <label className="setting-label">☁️ Cloud API (OpenAI, Anthropic, etc.)</label>
@@ -1296,7 +1337,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           />
           <small className="setting-hint">Secondary search — Google results via API. Get a key at <a href="https://serper.dev" target="_blank" rel="noreferrer noopener">serper.dev</a></small>
         </div>
+        </>}
 
+        {/* ── Permissions & Advanced ── */}
+        <button type="button" className={`sp-section-toggle${openSections.permissions ? ' open' : ''}`} onClick={() => toggleSection('permissions')}>
+          <span className="sp-section-arrow">{openSections.permissions ? '▾' : '▸'}</span> Permissions &amp; Advanced
+        </button>
+        {openSections.permissions && <>
         <div className="setting-group">
           <label className="setting-label">Widget Hotkey (read-only)</label>
           <input
@@ -1429,6 +1476,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <pre className="sp-telemetry-pre">{telemetryLogPreview()}</pre>
           </div>
         </div>
+        </>}
         <TelemetryConsentModal
           open={showTelemetryModal}
           onAccept={async () => {

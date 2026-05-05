@@ -8,10 +8,12 @@
 
 // Mock http module used inside imageGenerateHandler
 jest.mock('http', () => ({
-  request: jest.fn()
+  request: jest.fn(),
+  Agent: class MockAgent { constructor() {} }
 }));
 jest.mock('https', () => ({
-  request: jest.fn()
+  request: jest.fn(),
+  Agent: class MockAgent { constructor() {} }
 }));
 
 import { imageGenerateDef, imageGenerateHandler } from '../tools/web';

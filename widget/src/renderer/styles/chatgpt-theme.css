@@ -3768,6 +3768,18 @@ body {
   border: 1px solid var(--border-light, #333);
 }
 
+/* Collapsible settings section toggle */
+.sp-section-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 10px 0; margin: 4px 0 2px; border: none; background: none;
+  font-size: 14px; font-weight: 600; color: var(--text-primary);
+  cursor: pointer; border-top: 1px solid var(--border-light, #333);
+  text-align: left;
+}
+.sp-section-toggle:first-child { border-top: none; }
+.sp-section-toggle:hover { color: var(--accent-primary, #4a6cf7); }
+.sp-section-arrow { font-size: 12px; width: 14px; display: inline-block; }
+
 /* Settings backup section */
 .sp-backup-section { border-top: 1px solid var(--border-light, #333); padding-top: 16px; margin-top: 8px; }
 .sp-backup-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }

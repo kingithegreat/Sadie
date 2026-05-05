@@ -27,10 +27,17 @@ describe('SettingsPanel — notification preferences', () => {
   });
   afterEach(() => { delete (window as any).electron; });
 
+  function expandSection(container: HTMLElement, label: string) {
+    const toggles = Array.from(container.querySelectorAll('.sp-section-toggle'));
+    const btn = toggles.find(t => t.textContent?.includes(label)) as HTMLElement | undefined;
+    if (btn) fireEvent.click(btn);
+  }
+
   test('renders notification toggle checkboxes', () => {
     const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
     );
+    expandSection(container, 'Appearance');
     const labels = Array.from(container.querySelectorAll('.setting-label'));
     expect(labels.some(l => l.textContent?.includes('Notifications'))).toBe(true);
     expect(labels.some(l => l.textContent?.includes('Show toast notifications'))).toBe(true);
@@ -41,6 +48,7 @@ describe('SettingsPanel — notification preferences', () => {
     const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
     );
+    expandSection(container, 'Appearance');
     const select = container.querySelector('select[aria-label="Toast notification duration"]') as HTMLSelectElement;
     expect(select).not.toBeNull();
     expect(select.value).toBe('8000');
@@ -51,6 +59,7 @@ describe('SettingsPanel — notification preferences', () => {
     const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={onSave} onClose={noop} />
     );
+    expandSection(container, 'Appearance');
     // Change duration
     const select = container.querySelector('select[aria-label="Toast notification duration"]') as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '3000' } });

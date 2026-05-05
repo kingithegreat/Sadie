@@ -33,11 +33,18 @@ describe('SettingsPanel — cloud connection defaults', () => {
     delete (window as any).electron;
   });
 
+  function expandSection(container: HTMLElement, label: string) {
+    const toggles = Array.from(container.querySelectorAll('.sp-section-toggle'));
+    const btn = toggles.find(t => t.textContent?.includes(label)) as HTMLElement | undefined;
+    if (btn) fireEvent.click(btn);
+  }
+
   test('connecting a cloud API keeps local chat as default until explicitly enabled', async () => {
     const onSave = jest.fn();
     const { container, getByText } = render(
       <SettingsPanel settings={baseSettings as any} onSave={onSave} onClose={noop} />
     );
+    expandSection(container, 'API Keys');
 
     const apiKeyInput = container.querySelector('.custom-llm-section .api-key-input') as HTMLInputElement;
     expect(apiKeyInput).toBeTruthy();
@@ -80,6 +87,7 @@ describe('SettingsPanel — cloud connection defaults', () => {
         onClose={noop}
       />
     );
+    expandSection(container, 'API Keys');
 
     const providerSelect = getByLabelText('Cloud API provider') as HTMLSelectElement;
     fireEvent.change(providerSelect, { target: { value: 'anthropic' } });

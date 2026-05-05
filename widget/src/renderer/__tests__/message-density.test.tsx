@@ -26,10 +26,17 @@ describe('SettingsPanel — message density', () => {
   });
   afterEach(() => { delete (window as any).electron; });
 
+  function expandSection(container: HTMLElement, label: string) {
+    const toggles = Array.from(container.querySelectorAll('.sp-section-toggle'));
+    const btn = toggles.find(t => t.textContent?.includes(label)) as HTMLElement | undefined;
+    if (btn) fireEvent.click(btn);
+  }
+
   test('renders density options with 3 buttons', () => {
     const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
     );
+    expandSection(container, 'Appearance');
     const buttons = container.querySelectorAll('.density-btn');
     expect(buttons.length).toBe(3);
     const labels = Array.from(buttons).map(b => b.textContent);
@@ -40,6 +47,7 @@ describe('SettingsPanel — message density', () => {
     const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
     );
+    expandSection(container, 'Appearance');
     const buttons = container.querySelectorAll('.density-btn');
     const active = Array.from(buttons).find(b => b.classList.contains('active'));
     expect(active).not.toBeUndefined();
@@ -50,6 +58,7 @@ describe('SettingsPanel — message density', () => {
     const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
     );
+    expandSection(container, 'Appearance');
     const buttons = container.querySelectorAll('.density-btn');
     fireEvent.click(buttons[0]); // Compact
     expect(buttons[0].classList.contains('active')).toBe(true);
@@ -60,6 +69,7 @@ describe('SettingsPanel — message density', () => {
     const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={onSave} onClose={noop} />
     );
+    expandSection(container, 'Appearance');
     const buttons = container.querySelectorAll('.density-btn');
     fireEvent.click(buttons[2]); // Spacious
 

@@ -27,8 +27,8 @@ jest.mock('electron', () => ({
 // jest.spyOn cannot redeclare them; use jest.mock to replace the whole module.
 const mockGet = jest.fn();
 const mockRequest = jest.fn();
-jest.mock('https', () => ({ get: mockGet, request: mockRequest }));
-jest.mock('http', () => ({ get: jest.fn() }));
+jest.mock('https', () => ({ get: mockGet, request: mockRequest, Agent: class MockAgent { constructor() {} } }));
+jest.mock('http', () => ({ get: jest.fn(), Agent: class MockAgent { constructor() {} } }));
 // dns.promises.lookup — isUrlSafe calls this; make it resolve safely for any host
 jest.mock('dns', () => ({
   promises: {
