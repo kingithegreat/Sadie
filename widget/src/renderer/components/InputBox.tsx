@@ -56,10 +56,21 @@ export type InputBoxProps = {
   disabled?: boolean;
 };
 
+const PLACEHOLDER_HINTS = [
+  'Message SADIE...',
+  'Try: "What\'s the weather?"',
+  'Try: "Summarize my clipboard"',
+  'Try: "What\'s in the news?"',
+  'Try: "Search the web for..."',
+  'Try: "Read this file..."',
+  'Drop a PDF here to chat about it',
+];
+
 export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) {
   type LocalImage = ImageAttachment & { id: string };
   type LocalDocument = DocumentAttachment & { id: string };
   const [inputValue, setInputValue] = useState('');
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [attachedImages, setAttachedImages] = useState<LocalImage[]>([]);
   const [attachedDocuments, setAttachedDocuments] = useState<LocalDocument[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -73,6 +84,13 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [ragStatus, setRagStatus] = useState<null | 'indexing' | { ok: boolean; message: string }>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  // Rotate placeholder hints every 5 seconds when input is empty
+  useEffect(() => {
+    if (inputValue) return;
+    const id = setInterval(() => setPlaceholderIndex(i => (i + 1) % PLACEHOLDER_HINTS.length), 5000);
+    return () => clearInterval(id);
+  }, [inputValue]);
 
   // Sync uncensored mode from main process and listen for toggle events
   useEffect(() => {
@@ -537,7 +555,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
       )}
 
       <div className="input-top">
-        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" maxLength={4000} />
+        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message SADIE" maxLength={4000} />
         <div className={`char-counter${inputValue.length > 3000 ? (inputValue.length > 3800 ? ' danger' : ' warning') : ''}`}>{inputValue.length} / 4000</div>
 
         <div className="input-actions">

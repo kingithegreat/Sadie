@@ -248,6 +248,8 @@ describe('FirstRunModal — Get Started (final step)', () => {
     });
     expect(onSave.mock.calls[0][0].useCustomLLM).toBe(true);
     expect(onSave.mock.calls[0][0].customLLM).toMatchObject({ provider: 'groq', apiKey: 'sk-test-key' });
+    // Model should be set from the test-connection response or provider default
+    expect(onSave.mock.calls[0][0].customLLM.model).toBe('test-model');
   });
 });
 

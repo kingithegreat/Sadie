@@ -19,6 +19,19 @@ const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint
   { id: 'huggingface', name: 'Hugging Face', freeHint: 'Free inference' },
 ];
 
+const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-sonnet-4-20250514',
+  openrouter: 'openai/gpt-4o-mini',
+  groq: 'llama-3.3-70b-versatile',
+  deepseek: 'deepseek-chat',
+  'google-ai-studio': 'gemini-2.0-flash',
+  huggingface: 'meta-llama/Llama-3.1-8B-Instruct',
+  cerebras: 'llama-3.3-70b',
+  sambanova: 'DeepSeek-R1-Distill-Llama-70B',
+  together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+};
+
 const PROVIDER_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com/v1',
@@ -59,6 +72,7 @@ export default function FirstRunModal({
   const [cloudApiKey, setCloudApiKey] = useState('');
   const [cloudTesting, setCloudTesting] = useState(false);
   const [cloudOk, setCloudOk] = useState<boolean | null>(null);
+  const [cloudModel, setCloudModel] = useState('');
 
   useEffect(() => { setDraft(settings); }, [settings]);
 
@@ -125,7 +139,11 @@ export default function FirstRunModal({
         apiKey: cloudApiKey.trim(),
         provider: cloudProvider
       });
-      setCloudOk(res?.success && res.models?.length > 0);
+      const ok = res?.success && res.models?.length > 0;
+      setCloudOk(ok);
+      if (ok && res.models?.[0]?.id) {
+        setCloudModel(res.models[0].id);
+      }
     } catch {
       setCloudOk(false);
     } finally {
@@ -147,13 +165,14 @@ export default function FirstRunModal({
 
     if (setupPath === 'cloud' && cloudApiKey.trim()) {
       const apiUrl = PROVIDER_URLS[cloudProvider] || '';
+      const model = cloudModel || PROVIDER_DEFAULT_MODELS[cloudProvider] || '';
       payload.useCustomLLM = true;
       payload.customLLM = {
         name: CLOUD_PROVIDERS.find(p => p.id === cloudProvider)?.name || 'Cloud LLM',
         apiUrl,
         apiKey: cloudApiKey.trim(),
         provider: cloudProvider,
-        model: '',
+        model,
         enabled: true
       };
     }
