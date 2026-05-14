@@ -487,7 +487,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // List installed Ollama models via /api/tags
   ipcMain.handle('sadie:list-ollama-models', async () => {
     const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
     try {
       const res = await axios.get(`${ollamaBase}/api/tags`, { timeout: OLLAMA_OP_TIMEOUT });
       const models = (res.data?.models || []).map((m: any) => ({
@@ -508,7 +508,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { success: false, error: 'Invalid model name' };
     }
     const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
     try {
       await axios.delete(`${ollamaBase}/api/delete`, { data: { name: modelName }, timeout: OLLAMA_OP_TIMEOUT });
       return { success: true, model: modelName };
@@ -523,7 +523,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { success: false, error: 'Invalid model name' };
     }
     const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
     try {
       const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName }, { timeout: OLLAMA_PULL_TIMEOUT });
       return { success: true, model: modelName, status: res?.data?.status || 'done' };
@@ -537,7 +537,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // UI can tell the user to install/run it manually.
   ipcMain.handle('sadie:start-ollama', async () => {
     const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
 
     // Already running? Don't spawn a duplicate.
     try {

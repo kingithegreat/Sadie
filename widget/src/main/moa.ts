@@ -15,7 +15,7 @@ import { logTelemetryEvent } from './utils/logger';
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const DEFAULT_OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const DEFAULT_OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 
 /** Maximum time (ms) to wait for a single proposer before giving up. */
 const PROPOSER_TIMEOUT_MS = 120_000;

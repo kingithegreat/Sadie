@@ -831,7 +831,14 @@ export function getCannedResponse(message: string): string | null {
 // and imported directly by unit tests.
 export async function preProcessIntent(userMessage: string, conversationId?: string): Promise<{ calls: any[] } | null> {
   if (!userMessage || typeof userMessage !== 'string') return null;
-  const m = userMessage.toLowerCase();
+  const rawM = userMessage.toLowerCase();
+  let m = rawM;
+
+  const hasEmbeddedDocumentContent = rawM.includes('=== document:') && rawM.includes('=== end of ');
+  if (hasEmbeddedDocumentContent) {
+    m = m.replace(/===\s*document:.*?===\s*end of.*?===/gs, '').trim();
+    if (!m) m = rawM; // fallback
+  }
 
   // ── CANNED RESPONSES — skip LLM entirely for trivial queries ──
   const canned = getCannedResponse(userMessage);
@@ -845,7 +852,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     && !/\b(betting\s+odds|odds\s+(for|on|at)|moneyline|spread|tab\b|sportsbet|bet365)\b/i.test(m);
 
   // HELP / CAPABILITY CARD — must be first so "help" doesn't hit other patterns
-  if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can sadie do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(userMessage.trim())) {
+  if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can sadie do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(m.trim())) {
     return { calls: [{ name: '__help', arguments: {} }] };
   }
 
@@ -853,9 +860,8 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   // content, keep the request on the document-review path unless the user is
   // explicitly asking for filesystem navigation.
   const hasAttachedDocumentMarker = m.includes('[document attached:');
-  const hasEmbeddedDocumentContent = m.includes('=== document:') && m.includes('=== end of ');
-  const hasAttachedDocumentPrompt = /\breview the attached document\b/i.test(userMessage);
-  const hasDocumentParseFailure = /\[(?:failed|error) to parse document:/i.test(userMessage);
+  const hasAttachedDocumentPrompt = /\breview the attached document\b/i.test(m);
+  const hasDocumentParseFailure = /\[(?:failed|error) to parse document:/i.test(m);
   const wantsFilesystemLookup = /\b(find|locate|browse|list|show|open)\b/i.test(m)
     && /\b(file|folder|directory|desktop|documents|downloads|path)\b/i.test(m);
   if (hasEmbeddedDocumentContent && !wantsFilesystemLookup) {

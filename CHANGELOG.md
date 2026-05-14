@@ -3,6 +3,8 @@
 ## Unreleased — Document-aware routing, launch hardening, and test/doc alignment
 
 ### Fixed
+- **Ollama IPv6 resolution failure** (`ipc-handlers.ts`, `moa.ts`): changed hardcoded `localhost` references to `127.0.0.1` to prevent Node.js 18+ from attempting to connect to Ollama over IPv6 (`::1`), which caused false-offline errors.
+- **Hallucinated document intents** (`message-router.ts`): intent regex checks now strip embedded `=== document: ... ===` content before evaluating the user message, preventing the LLM from falsely triggering tools (like `get_weather` or file writing) based on the uploaded document's text.
 - **Document forwarding on non-stream requests** (`message-router.ts`, `n8n.integration.test.ts`): requests with `documents[]` are now expanded before routing and before forwarding to n8n, so upstream logic receives extracted document context instead of only `[Document attached: ...]` markers.
 - **Document retry safety** (`App.tsx`, `MessageBubble.tsx`, `retry-flow.test.tsx`): failed turns that originally included uploaded documents now instruct the user to reattach the file instead of retrying with a marker-only replay.
 - **Small-model classification** (`small-model-optimizations.test.ts`): `gemma2:2b` remains a compact-model candidate, while `gemma2:9b` is no longer misclassified as small.
