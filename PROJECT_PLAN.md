@@ -121,7 +121,7 @@ Make local AI feel easier, safer, and more useful than defaulting to a cloud cha
 | Deliverable | Status | Location |
 |---|---|---|
 | Source code | Complete | `widget/src/` |
-| Unit tests (112 suites) | Complete | `widget/src/*/__tests__/` |
+| Unit tests (120 suites, 1,872 tests) | Complete | `widget/src/*/__tests__/` |
 | E2E tests | Complete | `widget/src/renderer/e2e/` |
 | NSIS installer | Complete | `widget/dist/` (via `npm run dist`) |
 | Architecture documentation | Complete | `docs/architecture.md`, `FINAL_ARCHITECTURE_DIAGRAM.md` |

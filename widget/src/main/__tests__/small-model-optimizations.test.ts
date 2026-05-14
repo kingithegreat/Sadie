@@ -126,6 +126,7 @@ describe('isSmallModel', () => {
     expect(isSmallModel('dolphin-phi:2.7b')).toBe(true);
     // gemma2:2b
     expect(isSmallModel('gemma2:2b')).toBe(true);
+    expect(isSmallModel('gemma2:9b')).toBe(false);
   });
 
   it('does not mis-classify phi3.5 without mini suffix as small', () => {

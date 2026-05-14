@@ -62,10 +62,10 @@ npm install
 Download Ollama from [ollama.com](https://ollama.com/download), then pull the required models:
 
 ```bash
-ollama pull llama3.2:3b          # Primary chat model
+ollama pull qwen2.5:7b           # Primary chat model
 ollama pull qwen2.5-coder:3b     # Code model
-ollama pull llava:latest          # Vision model
-ollama pull dolphin-llama3:8b     # Uncensored mode (optional)
+ollama pull moondream            # Current default vision model
+ollama pull dolphin-phi:2.7b     # Uncensored mode (optional)
 ```
 
 Verify models are available:
@@ -74,7 +74,7 @@ Verify models are available:
 ollama list
 ```
 
-> **Note:** SADIE defaults to `llama3.2:3b` for chat and `qwen2.5-coder:3b` for code. Models can be changed in Settings.
+> **Note:** SADIE currently defaults to `qwen2.5:7b` for chat, `moondream` for vision, and `qwen2.5-coder:3b` for code. Models can be changed in Settings.
 
 ---
 
@@ -125,7 +125,7 @@ npm run build
 npm run dist
 ```
 
-> **Important:** SADIE uses **electron-vite** (not Webpack). The `npm run dev` command starts the Vite dev server for the renderer with HMR and builds the main process. There are no separate `build:main` / `build:renderer` scripts — `npm run build` handles everything.
+> **Important:** SADIE uses **electron-vite** (not Webpack). The `npm run dev` command starts the Vite dev server for the renderer with HMR and builds the main process. The wrapper script also clears `ELECTRON_RUN_AS_NODE`, which VS Code terminals often inherit and which would otherwise make Electron start in Node-only mode. There are no separate `build:main` / `build:renderer` scripts — `npm run build` handles everything.
 
 ---
 
@@ -133,7 +133,7 @@ npm run dist
 
 ### Unit Tests
 
-SADIE has **110 test suites** with **1,533 unit tests**.
+SADIE maintains broad Jest and Playwright coverage across router, tools, renderer flows, and Electron E2E scenarios. See `TESTING_MATRIX.md` for the current inventory.
 
 ```bash
 cd widget
@@ -173,7 +173,7 @@ npx playwright test --headed
 
 - Ollama must be running for E2E tests.
 - Set `SADIE_E2E=true` for test mode.
-- E2E tests use an isolated `userData` directory for each run.
+- E2E tests use an isolated `userData` directory for each run via `SADIE_E2E_USER_DATA_DIR` instead of Chromium CLI flags.
 
 ---
 
@@ -297,6 +297,8 @@ npx playwright test --ui               # Debug with Playwright UI
 npx playwright show-trace test-results/ # View test traces
 npx playwright test --headed            # Run with visible browser
 ```
+
+If Playwright or manual Electron launches die immediately with "bad option" or Node-only behavior, verify `ELECTRON_RUN_AS_NODE` is unset. The repo's `npm run dev` and `npm start` scripts already handle this.
 
 ### TypeScript Errors
 

@@ -25,7 +25,7 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
   openrouter: 'openai/gpt-4o-mini',
   groq: 'llama-3.3-70b-versatile',
   deepseek: 'deepseek-chat',
-  'google-ai-studio': 'gemini-2.0-flash',
+  'google-ai-studio': 'gemini-2.5-flash',
   huggingface: 'meta-llama/Llama-3.1-8B-Instruct',
   cerebras: 'llama-3.3-70b',
   sambanova: 'DeepSeek-R1-Distill-Llama-70B',
@@ -318,6 +318,7 @@ export default function FirstRunModal({
                 placeholder="Paste your API key"
                 value={cloudApiKey}
                 onChange={e => { setCloudApiKey(e.target.value); setCloudOk(null); setCloudModel(''); }}
+                onKeyDown={e => { if (e.key === 'Enter' && cloudApiKey.trim()) testCloudConnection(); }}
                 autoComplete="off"
               />
 

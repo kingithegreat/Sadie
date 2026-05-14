@@ -23,7 +23,7 @@ Comprehensive test suite inventory covering unit tests, E2E tests, and integrati
 | **Unit Testing** | Jest + ts-jest | TypeScript-native unit tests |
 | **E2E Testing** | Playwright | Full Electron app automation |
 | **Mocking** | jest.mock, jest.fn | Dependency isolation |
-| **Test Isolation** | Unique userData dirs per E2E run | No cross-test contamination |
+| **Test Isolation** | Unique `SADIE_E2E_USER_DATA_DIR` per E2E run | No cross-test contamination |
 | **Coverage** | Jest --coverage | Branch and line coverage |
 
 ### Running Tests
@@ -140,7 +140,7 @@ npx playwright test --ui
 | `memory-manager.system-prompt.test.ts` | Memory-aware prompts | Context injection |
 | `scheduler.test.ts` | Scheduler/reminders | Persistence, cron triggers |
 | `mcp-client.test.ts` | MCP server client | Connection management, tool discovery |
-| `n8n.integration.test.ts` | n8n integration | Workflow execution |
+| `n8n.integration.test.ts` | n8n integration | Workflow execution, document payload expansion before forwarding |
 | `n8n-workflow-schema.test.ts` | n8n workflow validation | Schema compliance |
 | `persistence.integration.test.ts` | Persistence integration | Cross-session data integrity |
 | `stream-proxy-client.test.ts` (main) | Stream proxy client | Connection, chunk handling |
@@ -159,7 +159,7 @@ npx playwright test --ui
 | `stream-cancel-confirmation.test.tsx` | Cancel confirmation flow | State machine transitions |
 | `markdown-renderer.test.tsx` | Markdown rendering (code, bold, links, lists) | Correct DOM output, copy button |
 | `copy-response.test.tsx` | Copy full response button | Clipboard API, visual feedback |
-| `retry-flow.test.tsx` | Retry on error re-sends message | Stream re-subscription, content reset |
+| `retry-flow.test.tsx` | Retry on error re-sends message or requests reattach | Stream re-subscription, content reset, document reattach guard |
 | `first-run-modal.test.tsx` | Onboarding modal | Display, dismissal, persistence |
 | `action-confirmation.test.tsx` | Dangerous action confirmation dialog | Allow/deny, permission escalation |
 | `permission-modal.test.tsx` | Permission modal flow | Allow-once / always-allow |
@@ -192,7 +192,7 @@ npx playwright test --ui
 | `token-counter.test.tsx` | Token counter component | Token display |
 | `tools-panel.test.tsx` | Tools panel listing | Tool availability display |
 | `automation-center.test.tsx` | Automation center UI | Workflow listing |
-| `persistence-send.test.tsx` | Send uses correct conversation ID | No stale ID bugs |
+| `persistence-send.test.tsx` | Send uses correct conversation ID and preserves first-send attachments | No stale ID bugs, document payload included on first stream request |
 | `stream-proxy-client.test.ts` (renderer) | Stream proxy client | Connection handling |
 
 ---
@@ -247,7 +247,7 @@ npx playwright test --ui
 
 - Ollama must be running with test models pulled.
 - `SADIE_E2E=true` environment variable must be set.
-- Each test uses an isolated `userData` directory.
+- Each test uses an isolated temp profile via `SADIE_E2E_USER_DATA_DIR`.
 - Video recording captures failures automatically.
 
 ---

@@ -24,7 +24,7 @@ The renderer process communicates with the main process exclusively through the 
 | Method | Description |
 |---|---|
 | `sendMessage(request: SadieRequest): Promise<SadieResponse>` | Send a single non-streaming message and receive a complete response. |
-| `sendStreamMessage(request: SadieRequestWithImages): Promise<void>` | Start a streaming conversation turn. Chunks arrive via `onStreamChunk`. |
+| `sendStreamMessage(request: SadieRequestWithImages & { streamId?: string }): Promise<void>` | Start a streaming conversation turn. The request may include `images[]`, `documents[]`, `modelOverride`, and `retry`. Chunks arrive via `onStreamChunk`. |
 | `cancelStream(streamId?: string): void` | Cancel an in-progress stream. Omitting `streamId` cancels all active streams. |
 
 ### Stream Events
@@ -33,7 +33,7 @@ The renderer process communicates with the main process exclusively through the 
 |---|---|---|
 | `onStreamChunk(cb)` | `sadie:stream-chunk` | `{ streamId?: string; chunk: string }` |
 | `onStreamEnd(cb)` | `sadie:stream-end` | `{ streamId?: string; cancelled?: boolean }` |
-| `onStreamError(cb)` | `sadie:stream-error` | `{ streamId?: string; error?: string }` |
+| `onStreamError(cb)` | `sadie:stream-error` | `{ streamId?: string; error?: string; message?: string; details?: string; diagnostic?: any; recoveryHint?: any }` |
 | `subscribeToStream(streamId, handlers)` | all three above | filtered by `streamId` |
 
 ### Confirmation & Permission Modals
@@ -193,7 +193,7 @@ The table below lists every named IPC channel. Direction: **R→M** = renderer s
 
 | Channel | Dir | Payload | Description |
 |---|---|---|---|
-| `sadie:stream-message` | R→M | `SadieRequestWithImages` | Start streaming turn. |
+| `sadie:stream-message` | R→M | `SadieRequestWithImages & { streamId?: string }` | Start streaming turn with optional image/document attachments, model override, and retry metadata. |
 | `sadie:stream-cancel` | R→M | `{ streamId? }` | Cancel stream. |
 | `sadie:confirmation-response` | R→M | `{ confirmationId, confirmed }` | User confirmation reply. |
 | `sadie:permission-response` | R→M | `{ requestId, decision, missingPermissions? }` | User permission reply. |
@@ -207,7 +207,7 @@ The table below lists every named IPC channel. Direction: **R→M** = renderer s
 | `sadie:reply` | `SadieResponse` | Non-streaming reply. |
 | `sadie:stream-chunk` | `{ streamId, chunk }` | One streaming token chunk. |
 | `sadie:stream-end` | `{ streamId, cancelled? }` | Stream completed or cancelled. |
-| `sadie:stream-error` | `{ streamId, error, message?, details? }` | Stream error (e.g. n8n unavailable). |
+| `sadie:stream-error` | `{ streamId, error, message?, details?, diagnostic?, recoveryHint? }` | Stream error. `recoveryHint` may instruct the renderer to start Ollama, pull a missing model, retry, or reattach a document. |
 | `sadie:confirmation-request` | `{ confirmationId, message, streamId }` | Dangerous tool needs approval. |
 | `sadie:permission-request` | `{ requestId, missingPermissions, reason, streamId? }` | Tool needs a permission grant. |
 | `sadie:show-window` | — | Show / focus widget. |

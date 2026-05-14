@@ -803,12 +803,14 @@ export function MessageBubble({
                           {message.recoveryHint.action === 'start-ollama' && (
                             <StartOllamaButton />
                           )}
-                          <button
-                            className="message-action-btn"
-                            onClick={() => onRetry(message.id!)}
-                          >
-                            ↻ {message.recoveryHint.actionLabel || 'Retry'}
-                          </button>
+                          {message.recoveryHint.action !== 'reattach-document' && (
+                            <button
+                              className="message-action-btn"
+                              onClick={() => onRetry(message.id!)}
+                            >
+                              ↻ {message.recoveryHint.actionLabel || 'Retry'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     ) : (

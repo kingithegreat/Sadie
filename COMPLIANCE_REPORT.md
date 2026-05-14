@@ -138,7 +138,7 @@ All items previously listed as missing have been fully implemented as of v0.9.1.
 
 ### 6. ✅ **Testing Infrastructure — Complete**
 
-**State**: 418 unit tests (Jest + TypeScript) in `widget/src/__tests__/`, 12 E2E tests (Playwright) in `widget/src/__tests__/e2e/`. All tests pass. Coverage >80%.
+**State**: 1,872 unit tests (Jest + TypeScript) in `widget/src/__tests__/`, 12 E2E tests (Playwright) in `widget/src/__tests__/e2e/`. All tests pass. Coverage >60%.
 
 ### 7. ✅ **Documentation — Complete**
 
@@ -259,5 +259,6 @@ All items previously listed as missing have been fully implemented as of v0.9.1.
 ---
 
 **End of Compliance Report — v0.9.1, March 6, 2026**
+
 
 

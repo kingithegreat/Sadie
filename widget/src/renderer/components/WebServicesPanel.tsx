@@ -13,9 +13,9 @@
 import React, { useEffect, useState } from 'react';
 
 const SERVICES = [
-  { id: 'chatgpt', label: 'ChatGPT', icon: '🤖', desc: 'GPT-4o, o1, image generation', color: '#10a37f', url: 'chatgpt.com' },
-  { id: 'claude',  label: 'Claude',  icon: '◆',  desc: 'Claude 3.5 Sonnet & Opus',    color: '#d97706', url: 'claude.ai'  },
-  { id: 'gemini',  label: 'Gemini',  icon: '✦',  desc: 'Gemini 1.5 Pro & Ultra',      color: '#4285f4', url: 'gemini.google.com' },
+  { id: 'chatgpt', label: 'ChatGPT', icon: '🤖', desc: 'GPT-4o, o3, image generation',  color: '#10a37f', url: 'chatgpt.com' },
+  { id: 'claude',  label: 'Claude',  icon: '◆',  desc: 'Claude Opus, Sonnet & Haiku', color: '#d97706', url: 'claude.ai'  },
+  { id: 'gemini',  label: 'Gemini',  icon: '✦',  desc: 'Gemini 2.5 Pro & Flash',      color: '#4285f4', url: 'gemini.google.com' },
 ] as const;
 
 type ServiceId = (typeof SERVICES)[number]['id'];

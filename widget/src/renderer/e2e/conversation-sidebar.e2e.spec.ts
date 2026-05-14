@@ -83,17 +83,17 @@ test.describe('Conversation sidebar', () => {
     // Click New Chat
     await sidebar.locator('.new-chat-btn').click();
 
-    // Re-open sidebar (it may close after new chat)
+    // Ensure the sidebar is open before checking the refreshed list.
     await page.waitForTimeout(500);
-    try {
+    const sidebarAfterNewChat = page.locator('.conversation-sidebar');
+    const isSidebarVisible = await sidebarAfterNewChat.isVisible().catch(() => false);
+    if (!isSidebarVisible) {
       await menuBtn.click();
-      await expect(sidebar).toBeVisible({ timeout: 3000 });
-    } catch {
-      // Sidebar may already be open
+      await expect(sidebarAfterNewChat).toBeVisible({ timeout: 3000 });
     }
 
     // There should be at least one conversation now
-    const newCount = await sidebar.locator('.conversation-item').count();
+    const newCount = await sidebarAfterNewChat.locator('.conversation-item').count();
     expect(newCount).toBeGreaterThanOrEqual(initialCount);
 
     await app.close();

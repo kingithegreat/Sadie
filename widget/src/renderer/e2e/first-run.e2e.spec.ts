@@ -14,13 +14,14 @@ function makeTempProfile() {
 
 async function completeFirstRunWizard(page: any) {
   await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
+  const modal = page.locator('.first-run-modal');
   // Choose Local path
-  await page.getByRole('button', { name: /Local \(Ollama\)/i }).click();
+  await modal.getByRole('button', { name: /Local \(Ollama\)/i }).click();
   await expect(page.getByText('Local Setup')).toBeVisible({ timeout: 5000 });
   // Advance to done
-  await page.getByRole('button', { name: /Next|Continue anyway/i }).click();
+  await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
   await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
-  await page.getByRole('button', { name: /Get Started/i }).click();
+  await modal.getByRole('button', { name: /Get Started/i }).click();
 }
 
 test.describe('First-run onboarding and config persistence', () => {

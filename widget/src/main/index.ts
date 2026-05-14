@@ -77,6 +77,12 @@ function pushMainLog(line: string) {
 import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
 applyIpcHandlePatch();
 
+// E2E tests pass a custom userData directory via env var so Playwright doesn't
+// need to use Chromium CLI flags that conflict with Node's option parser.
+if (process.env.SADIE_E2E_USER_DATA_DIR) {
+  app.setPath('userData', process.env.SADIE_E2E_USER_DATA_DIR);
+}
+
 // Remove the Chrome automation flag that Cloudflare and anti-bot systems
 // (used by Claude, ChatGPT, Gemini) use as their primary detection signal.
 // MUST be called before app.whenReady().

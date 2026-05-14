@@ -67,7 +67,7 @@ SADIE is a multi-process Electron application. The **renderer process** (React) 
 
 The React UI running inside Chromium. Key responsibilities:
 
-- **Chat surface** — renders message history, handles user input, displays streaming token-by-token responses with cancel/retry controls.
+- **Chat surface** — renders message history, handles user input, displays streaming token-by-token responses with cancel/retry controls, and blocks marker-only retries for document-attached turns by asking the user to reattach the file.
 - **Conversation sidebar** — lists conversations with timestamps, message count badges, pinning, archiving, tags, reactions, and full-text search.
 - **Action confirmation** — modal dialog for approving destructive or sensitive tool calls before execution.
 - **Permission modal** — prompts the user to allow-once, always-allow, or cancel when a tool requires a permission that has not yet been granted.
@@ -92,7 +92,7 @@ The Node.js Electron main process. Key responsibilities:
 
 | Module | Purpose |
 |---|---|
-| `message-router.ts` | Parses user messages, detects tool intent, streams Ollama completions, executes tool batches, and returns synthesised results. Contains context budget logic for small models, agentic loop orchestration, and morning briefing trigger. |
+| `message-router.ts` | Parses user messages, expands `documents[]` into extracted prompt context before routing or forwarding upstream, detects tool intent, streams Ollama completions, executes tool batches, and returns synthesised results. Contains context budget logic for small models, agentic loop orchestration, recovery-hint classification, and morning briefing trigger. |
 | `agentic-loop.ts` | Multi-step request detection and agentic tool-chaining engine. Detects compound requests via heuristics, injects agentic system prompt, and streams step-progress indicators during autonomous tool execution (up to 6 rounds). |
 | `morning-briefing.ts` | Proactive daily briefing generator. On first interaction each day, runs weather + calendar + reminders tools in parallel and streams a formatted summary. State persisted in `briefing-state.json`. |
 | `ipc-handlers.ts` | Receives calls from the preload bridge and routes them to the correct subsystem. |
@@ -187,6 +187,14 @@ message-router.ts → preProcessIntent() [deterministic regex routing]
                     |
                     |-- Missing --> Permission modal (allow once / always / cancel)
 ```
+
+### Document Attachment Preprocessing
+
+When a request includes `documents[]`, SADIE extracts document content before intent analysis and before forwarding to n8n. This prevents the router from treating the placeholder line `[Document attached: ...]` as the real user payload.
+
+- **Non-stream requests** use the expanded document text for both routing and upstream forwarding.
+- **Streaming requests** preserve the original upload on first send, but retries do not attempt to reconstruct missing file bytes from chat history.
+- **Retry safety**: if a failed assistant turn was created from a document-attached message, the renderer surfaces a `reattach-document` recovery hint instead of resending a marker-only request.
 
 ### Context Budget for Small Models
 
@@ -344,7 +352,7 @@ SADIE supports optional cloud LLM routing for enhanced capabilities:
 
 ### Code Cloud API
 
-Coding queries (detected by `CODING_QUERY_PATTERN`) are automatically routed to a configured cloud provider when an API key is present. Supported providers:
+Coding queries (detected by `CODING_QUERY_PATTERN`) are routed to a configured cloud provider only when the code API path is explicitly enabled, not merely because provider credentials exist. Supported providers:
 
 - **OpenAI** (GPT-4, GPT-4o, GPT-4o Mini)
 - **Anthropic** (Claude Opus 4, Claude Sonnet 4, Claude 3.5 Haiku)
@@ -353,7 +361,7 @@ Coding queries (detected by `CODING_QUERY_PATTERN`) are automatically routed to 
 
 ### Embedded Web Services
 
-ChatGPT, Claude, and Gemini are accessible directly inside SADIE via sandboxed `BrowserWindow` panels. Each panel uses correct Chrome User-Agent, `allowpopups`, and a preload script that clears `navigator.webdriver` to bypass Cloudflare bot-detection. Login and interaction works normally with existing subscriptions.
+ChatGPT, Claude, and Gemini are accessible directly inside SADIE via sandboxed `BrowserWindow` panels rather than Electron `<webview>` elements. Login and interaction work through the dedicated window manager and service permission hardening.
 
 ### Model Metadata
 
@@ -378,7 +386,7 @@ Chat messages are rendered with a custom Markdown renderer supporting fenced cod
 
 ### Streaming UI
 
-Responses are displayed token-by-token in real time. Users can cancel mid-stream or retry failed messages.
+Responses are displayed token-by-token in real time. Users can cancel mid-stream or retry failed messages. For document-attached turns, retries intentionally require reattaching the source file so SADIE does not resend a prompt that contains only the attachment marker.
 
 ---
 
@@ -399,7 +407,7 @@ widget/
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Start Vite dev server (renderer HMR) + Electron main process |
+| `npm run dev` | Start Vite dev server (renderer HMR) + Electron main process via the wrapper that clears `ELECTRON_RUN_AS_NODE` |
 | `npm run build` | Compile everything (TypeScript + Vite build) |
 | `npm run dist` | Create platform-specific installer via electron-builder |
 
@@ -411,13 +419,13 @@ The Windows installer is an NSIS `.exe` with per-user install, directory chooser
 
 Tests live at two levels:
 
-| Level | Location | Runner | Count |
+| Level | Location | Runner | Coverage |
 |---|---|---|---|
-| Unit (tools, router, utils) | `widget/src/main/__tests__/` | Jest + ts-jest | 70+ suites |
-| Unit (renderer components) | `widget/src/renderer/__tests__/` | Jest + React Testing Library | 25+ suites |
-| E2E (full application) | `widget/src/renderer/e2e/` | Playwright | 12+ scenarios |
+| Unit (tools, router, utils) | `widget/src/main/__tests__/` | Jest + ts-jest | Routing, tools, persistence, IPC, safety |
+| Unit (renderer components) | `widget/src/renderer/__tests__/` | Jest + React Testing Library | Streaming UI, retry flows, onboarding, settings, sidebar |
+| E2E (full application) | `widget/src/renderer/e2e/` | Playwright | Electron launch, onboarding, persistence, streaming, permissions |
 
-**Total: 112 suites, 1,604 unit tests.**
+Each Playwright run uses an isolated temp profile via `SADIE_E2E_USER_DATA_DIR` so tests do not share conversation or settings state.
 
 Run all tests:
 

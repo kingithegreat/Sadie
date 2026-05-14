@@ -26,7 +26,7 @@ This guide walks you through installing and running SADIE on a fresh machine, fr
 |---|---|---|
 | [Node.js](https://nodejs.org) | 18 LTS or higher | Required to build and run the Electron application |
 | [npm](https://nodejs.org) | 9 or higher | Ships with Node.js |
-| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models (qwen2.5:7b, qwen2.5-coder:3b, LLaVA) |
+| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models. Current runtime defaults are `qwen2.5:7b` for chat and `moondream` for vision. |
 | [Docker Desktop](https://docs.docker.com/get-docker/) | Latest | Required for n8n workflow orchestration (optional) |
 | [Git](https://git-scm.com) | Latest | Version control |
 
@@ -62,7 +62,7 @@ This script will:
 1. Verify that Node.js, npm, Docker, and Ollama are installed and meet minimum versions.
 2. Create any missing configuration files (`config/api-allowlist.json`, `config/default-config.json`).
 3. Run `npm install` inside `widget/` if `node_modules` is absent.
-4. Pull required Ollama models (`qwen2.5:7b`, `qwen2.5-coder:3b`, `llava:latest`).
+4. Pull the setup script's baseline Ollama models (`qwen2.5:7b`, `qwen2.5-coder:3b`, `moondream`, `nomic-embed-text`, `dolphin-phi:2.7b`) for first-run compatibility.
 5. Print a checklist summary with instructions for anything requiring manual attention.
 
 > **Note:** Re-running the script is safe. It will not overwrite existing config files or re-pull models that are already installed.
@@ -91,14 +91,17 @@ ollama list
 curl http://localhost:11434/api/tags
 ```
 
-### Required Models
+### Recommended Models
 
 ```bash
-ollama pull qwen2.5:7b           # Primary chat model (reasoning + tool-calling)
+ollama pull qwen2.5:7b           # Primary chat model (current default)
 ollama pull qwen2.5-coder:3b     # Code generation model
-ollama pull llava:latest          # Vision model (image analysis)
-ollama pull dolphin-llama3:8b     # Uncensored mode (optional)
+ollama pull moondream            # Current default vision model
+ollama pull nomic-embed-text     # Embeddings for RAG and memory enrichment
+ollama pull dolphin-phi:2.7b     # Uncensored mode (optional)
 ```
+
+The setup script still bootstraps `llava:latest` as a compatibility baseline. If you want the current default vision path, pull `moondream` as shown above.
 
 ---
 
@@ -126,7 +129,7 @@ npm install     # First time only
 npm run dev
 ```
 
-The Vite dev server provides hot module replacement for renderer changes. Main process changes trigger an automatic rebuild.
+The Vite dev server provides hot module replacement for renderer changes. Main process changes trigger an automatic rebuild. `npm run dev` clears `ELECTRON_RUN_AS_NODE` before starting Electron so the app launches correctly from integrated terminals.
 
 ### Production Build
 
@@ -149,9 +152,10 @@ npm run dist    # Uses electron-builder; output in widget/release/
 When SADIE opens for the first time:
 
 1. **Welcome modal** — A first-run modal introduces SADIE's features and capabilities. Click **Get Started** to proceed.
+1. **Mode choice** — Choose **Local (Ollama)** for offline use or a cloud provider for hosted inference.
 2. **Telemetry consent** — A consent prompt appears. Telemetry is opt-in only and stores data locally; nothing is sent to a remote server.
 3. **Global hotkey** — Defaults to `Ctrl+Shift+Space` (Windows). Changeable in **Settings > Widget Hotkey**.
-4. **Model selection** — Settings default to `qwen2.5:7b` for chat and `qwen2.5-coder:3b` for code. The model selector shows VRAM warnings for models that exceed your GPU capacity. Update in **Settings** if you pulled different models.
+4. **Model selection** — Settings default to `qwen2.5:7b` for chat and `moondream` for vision. The model selector shows VRAM warnings for models that exceed your GPU capacity. Update in **Settings** if you pulled different models.
 5. **n8n URL** — Defaults to `http://localhost:5678`. Update in **Settings > n8n URL** if you changed the docker-compose port.
 
 ---
@@ -191,6 +195,7 @@ What tools do you have?
 - Confirm `node_modules` exists: `ls widget/node_modules`. If not, run `npm install` inside `widget/`.
 - Check `widget/logs/` for error logs written during startup.
 - Try a clean rebuild: `npm run build` then `npm start`.
+- If Electron behaves like a plain Node.js process in an integrated terminal, use `npm run dev` or clear `ELECTRON_RUN_AS_NODE` before launching manually.
 
 ### n8n Unavailable
 

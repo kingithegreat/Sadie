@@ -10,6 +10,13 @@ import { Message } from '../shared/types';
 
 // Resolve memory store path relative to app root (not asar)
 function getMemoryStorePath(): string {
+  // E2E launches point userData at a temp directory. Respect that path so
+  // Playwright profiles do not leak conversation state through the shared
+  // workspace-level memory store.
+  if (process.env.SADIE_E2E_USER_DATA_DIR || process.env.SADIE_E2E === '1') {
+    return path.join(app.getPath('userData'), 'memory', 'json-store');
+  }
+
   // In development, use the project's memory folder
   // In production, this would be relative to the app installation
   const isDev = !app.isPackaged;
@@ -125,6 +132,7 @@ function readJsonFile<T>(filename: string, defaultValue: T): T {
 // data always wins on the next flush.
 const _writeQueue = new Map<string, { data: string; resolve: (ok: boolean) => void }>();
 const _writeInFlight = new Set<string>();
+const _latestSnapshot = new Map<string, string>();
 
 function flushWrite(filePath: string): void {
   const entry = _writeQueue.get(filePath);
@@ -156,6 +164,7 @@ export function __flushWritesSync(): void {
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, entry.data, 'utf-8');
+      _latestSnapshot.set(filePath, entry.data);
       entry.resolve(true);
     } catch (err) {
       entry.resolve(false);
@@ -168,6 +177,7 @@ function writeJsonFile<T>(filename: string, data: T): boolean {
   ensureDir(storePath);
   const filePath = path.join(storePath, filename);
   const serialised = JSON.stringify(data, null, 2);
+  _latestSnapshot.set(filePath, serialised);
   // Fire-and-forget async write; queue deduplication ensures no torn writes.
   _writeQueue.set(filePath, { data: serialised, resolve: () => {} });
   setImmediate(() => flushWrite(filePath));
@@ -190,12 +200,13 @@ export function savePreferences(prefs: Partial<UserPreferences>): UserPreference
 // ============= Conversations =============
 
 export function loadConversationStore(): ConversationStore {
-  // Check in-memory write queue first to avoid stale-disk reads when a write is pending.
+  // Check the latest in-memory snapshot first to avoid stale-disk reads while
+  // a write is queued or already in-flight.
   const filePath = path.join(getMemoryStorePath(), STORE_FILES.conversations);
-  const pending = _writeQueue.get(filePath);
-  if (pending) {
+  const latest = _latestSnapshot.get(filePath);
+  if (latest) {
     try {
-      return JSON.parse(pending.data) as ConversationStore;
+      return JSON.parse(latest) as ConversationStore;
     } catch {
       // fall through to disk read
     }

@@ -5,11 +5,12 @@ interface SuggestedPromptsProps {
 }
 
 const DEFAULT_PROMPTS = [
-  'What can you help me with?',
-  'Summarize my recent files',
-  'What is the weather today?',
+  "What's the weather today?",
+  'Summarize my clipboard',
+  "What's in the news?",
+  'Search the web for...',
   'Help me write an email',
-  'Search the web for latest news',
+  'Read and summarize a file',
 ];
 
 /**
@@ -96,6 +97,7 @@ const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({ onSelect }) => {
       <div className="suggested-pills">
         {suggestions.map((prompt, i) => (
           <button
+            type="button"
             key={i}
             className="suggested-pill"
             onClick={() => onSelect(prompt)}

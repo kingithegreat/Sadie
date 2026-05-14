@@ -485,6 +485,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         setConversationSystemPrompt(result.data.systemPrompt || '');
         setMessages([]);
         await window.electron.setActiveConversation?.(result.data.id);
+        window.dispatchEvent(new CustomEvent('sadie:conversation-created', {
+          detail: {
+            ...result.data,
+            messageCount: result.data.messages?.length || 0,
+          }
+        }));
       }
     } catch (err) {
       console.error('Failed to create conversation:', err);
@@ -901,6 +907,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     if (idx <= 0) return;
     const prevUser = messages[idx - 1];
     if (!prevUser || prevUser.role !== "user") return;
+    const hasDocumentAttachmentMarker = /\[document attached:/i.test(prevUser.content);
 
     // reset assistant bubble
     updateMessage(assistantId, m => ({
@@ -911,6 +918,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       createdAt: Date.now(),
       durationMs: undefined,
     }));
+
+    if (hasDocumentAttachmentMarker) {
+      updateMessage(assistantId, m => ({
+        ...m,
+        streamingState: "error",
+        error: "Document attachments are not preserved for retries. Please reattach the document and send the request again.",
+        recoveryHint: {
+          service: 'unknown',
+          userMessage: 'This request included a document attachment. Please reattach the document and send it again.',
+          action: 'reattach-document',
+          actionLabel: 'Reattach document',
+        },
+      }));
+      return;
+    }
 
     subscribeToStream(assistantId, assistantId);
 
@@ -926,7 +948,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }));
       unsubscribeStream(assistantId);
     }
-  }, [messages, settings, subscribeToStream, unsubscribeStream, updateMessage]);
+  }, [messages, subscribeToStream, unsubscribeStream, updateMessage, conversationId]);
 
   // Optimistic cancellation requested by the user in the UI.
   const handleUserCancel = (id: string) => {
@@ -1086,7 +1108,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {!widgetMode && (
         <div className="widget-titlebar expanded-titlebar">
           <div className="widget-titlebar-brand">
-            <span className="widget-status-dot" />
+            <span className={`widget-status-dot${status.ollama === 'offline' ? ' disconnected' : ''}`} />
             <h1>SADIE</h1>
           </div>
           <div className="widget-titlebar-controls">
@@ -1310,13 +1332,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       )}
 
       {firstRunOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<div className="first-run-overlay"><div className="first-run-modal first-run-loading">Loading...</div></div>}>
           <FirstRunModal
             open={firstRunOpen}
-          settings={settings as any}
-          onSave={(s) => saveSettings(s as any)}
-          onClose={() => setFirstRunOpen(false)}
-        />
+            settings={settings as any}
+            onSave={(s) => saveSettings(s as any)}
+            onClose={() => setFirstRunOpen(false)}
+          />
         </Suspense>
       )}
     </div>

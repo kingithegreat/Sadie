@@ -17,7 +17,7 @@ Individual tool execution workflows:
 - **file-manager.json**: File operations (read, write, list, delete, search)
 - **file-manager-hardened.json**: Hardened file manager with schema validation, path traversal guards, confirmation-required workflow paths, and standardized response envelope
 - **memory-manager.json**: Context storage and retrieval (facts, preferences, search)
-- **vision-tool.json**: Image analysis using LLaVA and Tesseract OCR
+- **vision-tool.json**: Image analysis workflow; the Electron app currently defaults to `moondream` for local vision while legacy workflow setups may still reference LLaVA
 - **system-info.json**: System information queries (disk usage, processes, computer info)
 - **planning-agent.json**: Multi-step task breakdown and planning
 - **api-tool.json**: HTTP requests to external/local APIs
@@ -46,8 +46,8 @@ Individual tool execution workflows:
 - All workflows use absolute paths: `C:/Users/adenk/Desktop/sadie`
 - Ollama endpoint: `http://localhost:11434`
  - Ollama endpoint: `http://localhost:11434`
-- Primary model: `llama3.2:3b`
-- Vision model: `llava:latest`
+- Primary model: `qwen2.5:7b`
+- Vision model: `moondream` recommended for current Electron defaults (`llava:latest` remains a compatible legacy baseline for older workflow configs)
 - Memory storage: `memory/json-store/` directory
 
 ## Workflow Communication

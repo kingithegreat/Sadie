@@ -12,12 +12,12 @@
     "url": "https://github.com/kingithegreat/Sadie.git"
   },
   "scripts": {
-    "start": "npm run build && electron .",
+    "start": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; require('child_process').execSync('electron .', {stdio:'inherit',env:process.env})\"",
     "test": "jest --config=jest.config.ts --runInBand",
     "test:smoke": "jest --config=jest.config.ts --runInBand --testPathPattern=permissions-smoke.test.ts",
     "test:file": "jest --config=jest.config.ts --runInBand --testPathPattern",
     "build": "electron-vite build",
-    "dev": "electron-vite dev",
+    "dev": "node scripts/electron-dev.js",
     "predist": "powershell -NoProfile -ExecutionPolicy Bypass -File \"..\\scripts\\generate-icon.ps1\"",
     "dist": "npm run build && electron-builder --config ../electron-builder.yml",
     "postinstall": "electron-builder install-app-deps",

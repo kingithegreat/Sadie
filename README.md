@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-3178c6)
 ![React](https://img.shields.io/badge/React-18-61dafb)
 ![AI](https://img.shields.io/badge/AI-Ollama%20(local)-green)
-![Tests](https://img.shields.io/badge/tests-115%20suites%20%7C%201716%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-Jest%20%2B%20Playwright-brightgreen)
 ![License](https://img.shields.io/badge/license-Private-lightgrey)
 
 ---
@@ -37,6 +37,7 @@ It combines:
 | **File Manager** | Safe read, write, list, move, delete, and search with path validation and directory whitelisting |
 | **System Info** | Disk usage, memory, running processes, and network adapter inspection |
 | **Vision / OCR** | Describe images and extract text via `vision_describe` and `vision_query` using Ollama moondream |
+| **Document Review** | Attached documents are parsed into prompt context before routing, and failed retries ask for reattachment instead of replaying a marker-only prompt |
 | **RAG Engine** | Drag-and-drop document indexing (PDF, Word, code, CSV, Markdown) with hybrid TF-IDF + semantic embedding search via nomic-embed-text |
 | **Agentic Tool Loops** | Multi-step requests are automatically detected and the LLM chains tools autonomously with streaming progress indicators |
 | **Morning Briefing** | Proactive daily summary of weather, calendar events, and reminders on first interaction |
@@ -110,8 +111,8 @@ All tools execute locally as TypeScript handlers. SADIE calls whichever tool the
             | HTTP (localhost)
 ┌───────────v────────────────────────────────────────┐
 │                 Ollama (local)                      │
-│   phi4-mini  -  qwen2.5-coder:3b  -  moondream    │
-│   dolphin-phi:2.7b  -  nomic-embed-text            │
+│   qwen2.5:7b - qwen2.5-coder:3b - moondream       │
+│   dolphin-phi:2.7b - nomic-embed-text             │
 │   localhost:11434                                   │
 └────────────────────────────────────────────────────┘
 ```
@@ -156,11 +157,11 @@ n8n will be available at `http://localhost:5678`. Import workflows from `n8n-wor
 ### 3. Pull AI Models
 
 ```bash
-ollama pull phi4-mini             # Primary chat model (best reasoning in 3-4B range)
-ollama pull moondream             # Vision model (lightweight, 1.7 GB)
+ollama pull qwen2.5:7b            # Primary chat model
+ollama pull qwen2.5-coder:3b      # Code generation model (optional)
+ollama pull moondream             # Default vision model (lightweight, 1.7 GB)
 ollama pull nomic-embed-text      # Semantic embeddings for RAG + memory
 ollama pull dolphin-phi:2.7b      # Uncensored mode (optional, 1.6 GB)
-ollama pull qwen2.5-coder:3b     # Code generation model (optional)
 ```
 
 ### 4. Install and Run
@@ -170,6 +171,8 @@ cd widget
 npm install
 npm run dev
 ```
+
+`npm run dev` uses the repo's Electron wrapper, which clears `ELECTRON_RUN_AS_NODE` before launching Electron so the app starts correctly from VS Code and other integrated terminals.
 
 SADIE will launch with hot-reload enabled. Press `Ctrl+Shift+Space` to toggle the window from any application.
 
@@ -215,7 +218,7 @@ Sadie/
 
 ## Testing
 
-SADIE has a comprehensive test suite with **120 test suites** and **1,872 unit tests**, plus Playwright E2E coverage.
+SADIE maintains a comprehensive Jest and Playwright coverage suite. See `TESTING_MATRIX.md` for the current inventory and scenario coverage.
 
 ```bash
 cd widget

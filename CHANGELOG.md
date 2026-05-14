@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — Document-aware routing, launch hardening, and test/doc alignment
+
+### Fixed
+- **Document forwarding on non-stream requests** (`message-router.ts`, `n8n.integration.test.ts`): requests with `documents[]` are now expanded before routing and before forwarding to n8n, so upstream logic receives extracted document context instead of only `[Document attached: ...]` markers.
+- **Document retry safety** (`App.tsx`, `MessageBubble.tsx`, `retry-flow.test.tsx`): failed turns that originally included uploaded documents now instruct the user to reattach the file instead of retrying with a marker-only replay.
+- **Small-model classification** (`small-model-optimizations.test.ts`): `gemma2:2b` remains a compact-model candidate, while `gemma2:9b` is no longer misclassified as small.
+- **Electron E2E profile isolation** (`index.ts`, `memory-manager.ts`, `launchElectron.ts`, `persistence-ui.e2e.spec.ts`, `streaming.e2e.spec.ts`): Playwright launches now pass a temp profile via `SADIE_E2E_USER_DATA_DIR`, preventing shared state leaks and avoiding broken Chromium CLI flag handling.
+
+### Changed
+- **Widget dev/start scripts** (`widget/package.json`, `widget/scripts/electron-dev.js`): `npm run dev` and `npm start` now clear `ELECTRON_RUN_AS_NODE` before launching Electron so integrated terminals do not boot the app in Node-only mode.
+- **First-run and provider polish** (`FirstRunModal.tsx`, `WebServicesPanel.tsx`): Google AI Studio onboarding now defaults to `gemini-2.5-flash`, and web-service descriptions were refreshed for current ChatGPT, Claude, and Gemini branding.
+- **Renderer/E2E reliability docs** (`README.md`, `docs/*`, `DEVELOPER_BUILD_GUIDE.md`, `TESTING_MATRIX.md`): canonical documentation now reflects current document routing, retry behavior, model defaults, and launch workflow.
+
 ## v1.1.0 — Release readiness, routing hardening, and cloud default safeguards
 
 ### Fixed

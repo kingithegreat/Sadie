@@ -1857,7 +1857,22 @@ function summarizeToolResults(results: any[]): string {
 // NOT be called. Returns structured assistant payloads for the renderer.
 export async function processIncomingRequest(request: SadieRequestWithImages | SadieRequest, n8nUrl: string, decisionOverride?: RoutingDecision) {
   try {
-    const decision = decisionOverride ?? await analyzeAndRouteMessage(request.message as string);
+    let enhancedMessage = request.message as string;
+    if ('documents' in request && request.documents && request.documents.length > 0) {
+      const documentContents = await parseDocuments(request.documents);
+      if (documentContents.length > 0) {
+        const docContext = documentContents.join('\n\n');
+        enhancedMessage = isDocumentReviewRequest(request.message)
+          ? `${docContext}\n\n${buildDocumentReviewPrompt(request.message)}`
+          : `${docContext}\n\n${request.message}`;
+      }
+    }
+
+    const requestForRouting = enhancedMessage === request.message
+      ? request
+      : { ...request, message: enhancedMessage };
+
+    const decision = decisionOverride ?? await analyzeAndRouteMessage(enhancedMessage);
     // diagnostic log for tests
     try { console.log('[ROUTER DIAG] decision=', JSON.stringify(decision)); } catch (e) { safeCatch(e); }
 
@@ -1934,7 +1949,7 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
       const targetUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
       try {
         try { pushRouter(`POSTing to n8n webhook = ${targetUrl}`); } catch (e) { safeCatch(e); }
-        const response = await axios.post(targetUrl, request, {
+        const response = await axios.post(targetUrl, requestForRouting, {
           timeout: DEFAULT_TIMEOUT,
           headers: sadieWebhookHeaders()
         });
@@ -2864,8 +2879,9 @@ export async function streamFromOllamaWithTools(
             onChunk('\n___REPLACE___');
             flushedLength = 0;
           }
-          // Strip extra system messages to simplify context — keep only the
-          // main system prompt and the user message
+          // AGGRESSIVE TRUNCATION: On retry, we strip ALL history for small models.
+          // This clears KV cache confusion and gives the model the full context window
+          // to answer the single most recent question.
           const retryMessages: ChatMessage[] = [
             messages.find(m => m.role === 'system')!,
             { role: 'user' as const, content: message }
@@ -3137,6 +3153,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     
     // Streaming responses via HTTP chunked response (POST -> stream)
     ipcMain.on('sadie:stream-message', async (event: IpcMainEvent, request: SadieRequestWithImages & { streamId?: string }) => {
+      const streamStartMs = Date.now();
       console.log('[DIAG] Received sadie:stream-message', { request, env: { SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, isE2E, NODE_ENV: process.env.NODE_ENV } });
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received sadie:stream-message', { request });
       try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
@@ -4231,12 +4248,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct Ollama path');
           try { pushRouter('Taking direct Ollama path'); } catch (e) { safeCatch(e); }
           // Direct Ollama streaming - no n8n required
+          let ttfbLogged = false;
           const handler = await streamFromOllama(
             enhancedMessage,
             request.images,
             convId,
             (chunk) => {
               if (!activeStreams.has(streamId)) return;
+              if (!ttfbLogged) {
+                ttfbLogged = true;
+                const ttfb = Date.now() - streamStartMs;
+                console.log(`[PERF] TTFB streamId=${streamId} ${ttfb}ms`);
+                try { event.sender.send('sadie:stream-ttfb', { streamId, ttfbMs: ttfb }); } catch (e) { safeCatch(e); }
+              }
               assistantResponse += chunk;
               try { pushRouter(`OLLAMA emitted chunk streamId=${streamId} len=${String(chunk?.length ?? 0)}`); } catch (e) { safeCatch(e); }
               event.sender.send('sadie:stream-chunk', { chunk, streamId });

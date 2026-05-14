@@ -1,74 +1,108 @@
 # SADIE Handoff Ledger
 
-Use this file as the single source of truth for active work when multiple coding agents are touching the repo.
+Use this file as the single source of truth for active work when multiple coding agents or humans are touching the repo.
+This ledger is shared by Copilot, Gemini Code Assist, Claude Code, and manual contributors.
 
 ## Rules
 
 1. Read this file and check `git diff --stat` before editing.
-2. Claim one work slice at a time. Do not split ownership by line range inside the same file.
-3. After each meaningful change, update only these sections:
+2. Claim your agent in `Agent Board` before editing files.
+3. Claim one work slice at a time. Do not split ownership by line range inside the same file.
+4. If another agent already owns a file you need, hand off instead of editing in parallel.
+5. After each meaningful change, update only these sections:
    - `Current Slice`
    - `Changed In This Slice`
    - `Files Touched`
    - `Validation`
    - `Next Safe Step`
-4. If another agent has already claimed a file you need, hand off instead of parallel editing it.
-5. Do not treat chat history as source of truth. This file plus the working tree is the source of truth.
+6. Use `Open Risks` for unresolved facts, not chat history or side notes.
+7. Do not treat chat history as source of truth. This file plus the working tree is the source of truth.
+
+## Agent Board
+
+| Agent | Status | Slice | Files |
+| --- | --- | --- | --- |
+| Copilot | Active | Release validation, document-routing hardening, handoff setup, and doc sync | `widget/src/main/message-router.ts`, `widget/src/main/__tests__/n8n.integration.test.ts`, `widget/src/main/__tests__/small-model-optimizations.test.ts`, `widget/src/renderer/App.tsx`, `widget/src/renderer/components/MessageBubble.tsx`, `widget/src/renderer/__tests__/retry-flow.test.tsx`, `widget/src/renderer/__tests__/persistence-send.test.tsx`, `COPILOT_HANDOFF.md`, `COPILOT_CONTEXT.md`, `README.md`, `docs/architecture.md`, `docs/setup-guide.md`, `docs/api-reference.md`, `docs/custom-llm-api.md`, `DEVELOPER_BUILD_GUIDE.md`, `TESTING_MATRIX.md`, `CHANGELOG.md`, `n8n-workflows/README.md` |
+| Gemini Code Assist | Available | Pick up only after updating this table | none claimed |
+| Claude Code | Available | Pick up only after updating this table | none claimed |
+| Human | Available | Manual QA, release checks, packaging | not file-bound |
 
 ## Current Slice
 
-Release trust hardening, onboarding validation, and product roadmap reset.
+Release validation, document-routing hardening, multi-agent handoff setup, and documentation sync.
 
 ## Owner
 
-Shared repo handoff for Copilot and Claude Code.
+Shared repo handoff for Copilot, Gemini Code Assist, Claude Code, and manual contributors.
 
 ## Changed In This Slice
 
-- Enabled sandbox for the main app window.
-- Added a packaged renderer Content Security Policy.
-- Restricted web-service session permissions to an allowlist.
-- Restricted web-service popup windows to approved HTTPS hosts.
-- Disabled auto-updater by default unless `SADIE_ENABLE_AUTO_UPDATE=1` is set for a packaged release.
-- Confirmed the redesigned first-run unit tests pass against the current local/cloud onboarding flow.
-- Replaced the old completed-phase roadmap with a forward-looking local-first product roadmap.
+- Fixed non-stream document handling in `message-router.ts` so requests with `documents[]` are expanded before routing or forwarding upstream instead of being evaluated from the bare `[Document attached: ...]` marker.
+- Fixed renderer retry behavior for document-attached turns so SADIE asks the user to reattach the file instead of retrying with marker-only text.
+- Added regression coverage for first-send document uploads, non-stream document forwarding, and document retry behavior.
+- Corrected `isSmallModel()` so `gemma2:2b` stays in the compact-model bucket but `gemma2:9b` does not.
+- Ran a broader 8-suite regression sweep across router, prompt selection, preprocessing, n8n integration, small-model logic, retry flow, and persistence-send coverage.
+- Upgraded the handoff ledger so Gemini and other assistants can share one coordination system without creating parallel handoff files.
+- Aligned the canonical docs with current document-routing, retry, model-default, E2E launch, and widget dev-start behavior.
 
 ## Files Touched
 
-- `widget/src/main/window-manager.ts`
-- `widget/src/main/web-services.ts`
-- `widget/src/main/index.ts`
-- `widget/src/main/auto-updater.ts`
-- `widget/src/renderer/index.html`
-- `widget/src/renderer/components/FirstRunModal.tsx`
-- `widget/src/renderer/__tests__/first-run-modal.test.tsx`
-- `widget/src/renderer/e2e/first-run.e2e.spec.ts`
-- `widget/src/renderer/styles/chatgpt-theme.css`
-- `PROJECT_PLAN.md`
+- `COPILOT_HANDOFF.md`
+- `COPILOT_CONTEXT.md`
+- `widget/src/main/message-router.ts`
+- `widget/src/main/__tests__/n8n.integration.test.ts`
+- `widget/src/main/__tests__/small-model-optimizations.test.ts`
+- `widget/src/renderer/App.tsx`
+- `widget/src/renderer/components/MessageBubble.tsx`
+- `widget/src/renderer/__tests__/retry-flow.test.tsx`
+- `widget/src/renderer/__tests__/persistence-send.test.tsx`
 - `README.md`
+- `docs/architecture.md`
+- `docs/setup-guide.md`
+- `docs/api-reference.md`
+- `docs/custom-llm-api.md`
+- `DEVELOPER_BUILD_GUIDE.md`
+- `TESTING_MATRIX.md`
+- `CHANGELOG.md`
+- `n8n-workflows/README.md`
 
 ## Validation
 
-- `cd widget && npm run build` `PASS`
-- `cd widget && npm run test:file -- first-run-modal.test.tsx` `PASS` `19/19`
-- `cd widget && npx playwright test src/renderer/e2e/first-run.e2e.spec.ts` `FAIL` `investigate before more onboarding edits`
-- `PROJECT_PLAN.md` and `README.md` Markdown validation `PASS`
+- `npm --prefix "C:\Users\adenk\Desktop\sadie\widget" run test -- --runTestsByPath "src/renderer/__tests__/retry-flow.test.tsx"` `PASS`
+- `npm --prefix "C:\Users\adenk\Desktop\sadie\widget" run test -- --runTestsByPath "src/renderer/__tests__/persistence-send.test.tsx"` `PASS`
+- `npm --prefix "C:\Users\adenk\Desktop\sadie\widget" run test -- --runTestsByPath "src/main/__tests__/n8n.integration.test.ts"` `PASS`
+- `npm --prefix "C:\Users\adenk\Desktop\sadie\widget" run test -- --runTestsByPath "src/main/__tests__/small-model-optimizations.test.ts"` `PASS`
+- `npm --prefix "C:\Users\adenk\Desktop\sadie\widget" run test -- --runTestsByPath "src/main/__tests__/message-router-coverage.test.ts" "src/main/__tests__/routing-gating.test.ts" "src/main/__tests__/model-prompt-selection.test.ts" "src/main/__tests__/preprocess.test.ts" "src/main/__tests__/n8n.integration.test.ts" "src/main/__tests__/small-model-optimizations.test.ts" "src/renderer/__tests__/retry-flow.test.tsx" "src/renderer/__tests__/persistence-send.test.tsx"` `PASS` (8 suites, 174 tests)
 
 ## Open Risks
 
-- Windows code signing is still an external release requirement. The repo now avoids unsafe default updater behavior, but signing itself is not solved in code.
-- The first-run Playwright spec is currently failing and needs to be debugged against the live onboarding flow before more onboarding changes land.
-- `FirstRunModal.tsx` and its tests are active collaboration surfaces. Avoid concurrent edits without updating this file first.
+- Windows code signing remains an external release requirement.
+- Real Ollama and packaged-release sanity checks still need a manual pass outside Jest.
+- Temporary debug artifacts under `widget/.tmp-e2e-*` and report folders still need cleanup before merge.
 
 ## Next Safe Step
 
-Read the Playwright failure output for `src/renderer/e2e/first-run.e2e.spec.ts`, fix the mismatch in the smallest possible slice, and rerun only that spec before touching broader onboarding UX. After that, align status-heavy docs that still describe the project as fully complete with the new roadmap.
+Run one manual desktop sanity pass with document upload, retry, and Gemma model selection, then delete disposable debug artifacts and package for release validation.
+
+## Handoff Procedure
+
+1. Read `COPILOT_CONTEXT.md`, this file, and `git diff --stat`.
+2. Update `Agent Board` before changing files.
+3. Keep one active slice only. If the slice changes, rewrite `Current Slice` instead of appending history.
+4. Use `Files Touched` to declare ownership at file granularity.
+5. When handing off, leave `Next Safe Step` small enough that the next agent can validate it quickly.
+6. If you stop mid-debug, leave the failing command in `Validation` with `FAIL` and put the blocker in `Open Risks`.
 
 ## Handoff Entry Template
 
 Copy this block for the next update:
 
 ```md
+## Agent Board
+| Agent | Status | Slice | Files |
+| --- | --- | --- | --- |
+| <agent> | Active|Blocked|Done | <slice> | `<path>`, `<path>` |
+
 ## Current Slice
 <one active slice>
 

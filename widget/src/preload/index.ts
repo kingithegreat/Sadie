@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
-import * as path from 'path';
 import { debug as logDebug } from '../shared/logger';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
@@ -554,9 +553,10 @@ contextBridge.exposeInMainWorld('electron', electronAPI as unknown as ElectronAP
 contextBridge.exposeInMainWorld('sadieCapture', {
   log: (msg: string) => { try { pushRendererLog(msg); } catch (e) { safeCatch(e); } }
 });
-// Expose the built path to the webview preload script so WebServicesPanel can
-// set it as the <webview preload="..."> attribute — must run before page scripts.
-contextBridge.exposeInMainWorld('_webviewPreload', path.join(__dirname, 'webview.js'));
+// Legacy compatibility stub: the current WebServicesPanel uses dedicated
+// BrowserWindows instead of <webview>, so do not touch __dirname here. In
+// sandboxed preloads bundled by Electron/Vite, __dirname is not guaranteed.
+contextBridge.exposeInMainWorld('_webviewPreload', null);
 // Expose web service controls for the launcher panel
 contextBridge.exposeInMainWorld('_webServices', {
   open:   (id: string) => ipcRenderer.invoke('sadie:open-web-service', id),

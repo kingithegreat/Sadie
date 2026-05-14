@@ -202,7 +202,9 @@ Write-Head "5/6  Ollama models"
 $requiredModels = @(
     @{ name = "qwen2.5:7b";           desc = "Primary chat + tool-calling model" },
     @{ name = "qwen2.5-coder:3b";     desc = "Code model (fits in 4GB VRAM)" },
-    @{ name = "llava:latest";         desc = "Vision/image analysis model" }
+    @{ name = "moondream";            desc = "Vision/image analysis model" },
+    @{ name = "nomic-embed-text";     desc = "Embeddings for RAG and memory" },
+    @{ name = "dolphin-phi:2.7b";     desc = "Uncensored mode (optional fallback)" }
 )
 
 if ($SkipModelPull) {

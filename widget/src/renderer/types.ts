@@ -27,7 +27,7 @@ export type ChatMessage = {
   recoveryHint?: {
     service: 'ollama' | 'n8n' | 'model' | 'unknown';
     userMessage: string;
-    action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings';
+    action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings' | 'reattach-document';
     actionLabel?: string;
     model?: string;
   } | null;

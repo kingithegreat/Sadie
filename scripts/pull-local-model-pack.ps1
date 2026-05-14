@@ -6,8 +6,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $desiredModels = @(
-  'qwen2.5:3b',
   'qwen2.5:7b',
+  'qwen2.5-coder:3b',
+  'moondream',
+  'nomic-embed-text',
+  'dolphin-phi:2.7b',
+  'qwen2.5:3b',
   'qwen2.5-coder:7b',
   'llama3.2:3b',
   'llama3.1:8b',

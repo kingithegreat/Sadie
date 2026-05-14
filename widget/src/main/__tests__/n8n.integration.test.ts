@@ -1,6 +1,7 @@
 import http from 'http';
 import { AddressInfo } from 'net';
 import { processIncomingRequest } from '../message-router';
+import { documentToolHandlers } from '../tools/documents';
 
 function startMockServer(handler: (req: http.IncomingMessage, body: any, res: http.ServerResponse) => void) {
   const server = http.createServer(async (req, res) => {
@@ -23,6 +24,10 @@ function startMockServer(handler: (req: http.IncomingMessage, body: any, res: ht
 
 describe('n8n integration (mock endpoints)', () => {
   jest.setTimeout(10000);
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   test('processIncomingRequest - successful LLM response from n8n', async () => {
     const { server, port } = await startMockServer((req, _body, res) => {
@@ -80,6 +85,53 @@ describe('n8n integration (mock endpoints)', () => {
     expect((resp as any).success).toBe(true);
     expect((resp as any).data).toBeDefined();
     expect((resp as any).data.assistant.content).toContain('Received images');
+
+    server.close();
+  });
+
+  test('processIncomingRequest - document payload is expanded before forwarding to n8n', async () => {
+    const parseSpy = jest.spyOn(documentToolHandlers, 'parse_document').mockResolvedValue({
+      success: true,
+      result: { document_id: 'doc-1' }
+    } as any);
+    const contentSpy = jest.spyOn(documentToolHandlers, 'get_document_content').mockResolvedValue({
+      success: true,
+      result: { content: 'Midpoint review content here.' }
+    } as any);
+
+    let receivedBody: any = null;
+    const { server, port } = await startMockServer((req, body, res) => {
+      if (req.method === 'POST' && req.url === '/webhook/sadie/chat') {
+        receivedBody = body;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ assistant: { role: 'assistant', content: 'Received document' } }));
+        return;
+      }
+      res.writeHead(404); res.end();
+    });
+
+    const n8nUrl = `http://127.0.0.1:${port}`;
+
+    const resp = await processIncomingRequest({
+      user_id: 'u4',
+      conversation_id: 'c4',
+      message: '[Document attached: SADIE_Midpoint_Review.docx]\n\nthis was you what do i think?',
+      documents: [{
+        id: 'doc-1',
+        filename: 'SADIE_Midpoint_Review.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        size: 123,
+        data: 'ZmFrZQ=='
+      }]
+    } as any, n8nUrl, { type: 'llm' } as any);
+
+    expect(resp).toBeDefined();
+    expect((resp as any).success).toBe(true);
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(contentSpy).toHaveBeenCalledTimes(1);
+    expect(receivedBody.message).toContain('=== Document: SADIE_Midpoint_Review.docx ===');
+    expect(receivedBody.message).toContain('Midpoint review content here.');
+    expect(receivedBody.message).toContain('this was you what do i think?');
 
     server.close();
   });

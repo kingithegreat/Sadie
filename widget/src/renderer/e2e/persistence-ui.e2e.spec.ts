@@ -1,19 +1,49 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 process.env.SADIE_E2E = 'true';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
+function makeTempProfile() {
+  const base = path.join(os.tmpdir(), `sadie-e2e-persistence-${Date.now()}`);
+  if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
+  fs.mkdirSync(base, { recursive: true });
+  return base;
+}
+
+function seedConfig(dir: string) {
+  const confDir = path.join(dir, 'config');
+  fs.mkdirSync(confDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(confDir, 'user-settings.json'),
+    JSON.stringify({
+      firstRun: false,
+      telemetryEnabled: true,
+      permissions: { delete_file: false },
+      defaultTeam: 'GSW',
+      n8nUrl: 'http://localhost:5678',
+      modelRoutingMode: 'off',
+      widgetHotkey: 'Ctrl+Shift+Space',
+      alwaysOnTop: true,
+      theme: 'dark',
+    }, null, 2),
+    'utf-8'
+  );
+}
+
 test('UI -> message persistence and debug logs available', async () => {
-  const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' });
+  const tmp = makeTempProfile();
+  seedConfig(tmp);
+  const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
   await waitForAppReady(page);
 
-  // Ensure there's an active conversation; if none, create one
-  const convs = await page.evaluate(async () => (window as any).electron.loadConversations?.());
-  if (!convs || !convs.data || !convs.data.activeConversationId) {
-    await page.getByRole('button', { name: /new chat/i }).click();
-    // Wait for the async handleNewConversation IPC round-trips to complete
-    await page.waitForTimeout(1000);
-  }
+  await page.waitForFunction(async () => {
+    const store = await (window as any).electron.loadConversations?.();
+    const conversations = store?.data?.conversations || [];
+    return Boolean(store?.data?.activeConversationId || conversations.length > 0);
+  }, null, { timeout: 10000 });
 
   // Send a user message
   await page.getByLabel('Message SADIE').fill('persistence-ui-test');
@@ -22,21 +52,33 @@ test('UI -> message persistence and debug logs available', async () => {
   // Query conversation store via preload API
   const store = await page.evaluate(async () => (window as any).electron.loadConversations?.());
   expect(store).toBeDefined();
-  const activeId = store.data?.activeConversationId || (store.data?.conversations?.[0]?.id);
-  expect(activeId).toBeDefined();
 
-  // Persistence is async; poll until the just-sent user message is observable in storage.
-  let conv: any = null;
+  // Persistence is async; poll until the just-sent user message is observable in any stored conversation.
+  let persisted = false;
+  let matchedConversation: any = null;
   const started = Date.now();
-  while (Date.now() - started < 5000) {
-    conv = await page.evaluate(async (id) => (window as any).electron.getConversation?.(id), activeId);
-    if (conv?.data?.messages?.some((m: any) => String(m.content).includes('persistence-ui-test'))) {
+  while (Date.now() - started < 10000) {
+    const snapshot = await page.evaluate(async () => (window as any).electron.loadConversations?.());
+    const conversationIds = snapshot?.data?.conversations?.map((c: any) => c.id) || [];
+
+    for (const id of conversationIds) {
+      const conv = await page.evaluate(async (conversationId) => (window as any).electron.getConversation?.(conversationId), id);
+      if (conv?.success && conv.data?.messages?.some((m: any) => String(m.content).includes('persistence-ui-test'))) {
+        persisted = true;
+        matchedConversation = conv;
+        break;
+      }
+    }
+
+    if (persisted) {
       break;
     }
+
     await page.waitForTimeout(100);
   }
-  expect(conv?.success).toBe(true);
-  expect(conv.data?.messages?.some((m: any) => String(m.content).includes('persistence-ui-test'))).toBe(true);
+  expect(persisted).toBe(true);
+  expect(matchedConversation?.success).toBe(true);
+  expect(matchedConversation.data?.messages?.some((m: any) => String(m.content).includes('persistence-ui-test'))).toBe(true);
 
   // Also fetch debug logs exposed by main/preload
   const debug = await page.evaluate(async () => (window as any).electron.readDebugLogs?.());

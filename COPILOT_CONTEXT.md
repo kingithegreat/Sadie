@@ -5,6 +5,7 @@ This file is the stable reference for repo structure and conventions.
 Do not use this file as a live task log.
 
 For in-progress work, ownership, touched files, and validation state, use `COPILOT_HANDOFF.md`.
+That ledger is shared across Copilot, Gemini Code Assist, Claude Code, and manual contributors.
 
 ## Project Identity
 
@@ -19,7 +20,7 @@ For in-progress work, ownership, touched files, and validation state, use `COPIL
 
 ## Working Agreement
 
-- `COPILOT_HANDOFF.md` is the live coordination file.
+- `COPILOT_HANDOFF.md` is the live coordination file for every agent.
 - This file should only contain durable facts that remain useful after a work slice ends.
 - If a fact becomes stale, update it here. If it is only about current work, put it in the handoff file instead.
 
@@ -43,6 +44,8 @@ npm run dist
 npm run e2e
 npm run test:file -- <pattern>
 ```
+
+From the repo root, prefer `npm --prefix "C:\Users\adenk\Desktop\sadie\widget" <command>` because the top-level package does not expose the widget dev flow directly.
 
 ## Current Durable Conventions
 

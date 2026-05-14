@@ -7,11 +7,10 @@ async function completeFirstRunWizardIfVisible(page: any) {
   const firstRunHeader = page.getByText('Welcome to SADIE');
   if (!(await firstRunHeader.isVisible().catch(() => false))) return;
 
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /Get Started/i }).click();
+  const modal = page.locator('.first-run-modal');
+  await modal.getByRole('button', { name: /Local \(Ollama\)/i }).click();
+  await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
+  await modal.getByRole('button', { name: /Get Started/i }).click();
 }
 
 // Verifies that a per-conversation system prompt (Chat guidelines) is included

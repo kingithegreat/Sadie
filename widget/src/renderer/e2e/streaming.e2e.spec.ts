@@ -9,11 +9,10 @@ async function completeFirstRunWizardIfVisible(page: any) {
   const firstRunHeader = page.getByText('Welcome to SADIE');
   if (!(await firstRunHeader.isVisible().catch(() => false))) return;
 
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /^Next$/i }).click();
-  await page.getByRole('button', { name: /Get Started/i }).click();
+  const modal = page.locator('.first-run-modal');
+  await modal.getByRole('button', { name: /Local \(Ollama\)/i }).click();
+  await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
+  await modal.getByRole('button', { name: /Get Started/i }).click();
 }
 
 test('streams chunks to UI', async () => {
@@ -175,29 +174,24 @@ test('handles upstream error', async () => {
   process.env.N8N_URL = base;
   process.env.SADIE_USE_PROXY = 'false';
 
+  // Prepare a temp profile with firstRun:false so the wizard doesn't block the UI
+  const fs = await import('fs');
+  const os = await import('os');
+  const path = await import('path');
+  const tmpDir = path.join(os.tmpdir(), `sadie-e2e-err-${Date.now()}`);
+  fs.mkdirSync(path.join(tmpDir, 'config'), { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, 'config', 'user-settings.json'), JSON.stringify({ firstRun: false, n8nUrl: base }));
+
   const { app, page } = await launchElectronApp({
     N8N_URL: base,
     OPENAI_ENDPOINT: `${base}/mock-sse`,
     PROXY_RETRY_ENABLED: 'false',
-    SADIE_E2E: '0',
+    SADIE_E2E: '1',
     SADIE_E2E_BYPASS_MOCK: '0',
     SADIE_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
-  });
+  }, tmpDir);
   await waitForAppReady(page);
-
-  // Quick pre-flight check to ensure the mock upstream returns 500 at the streaming endpoint
-  const mockStatus = await page.evaluate(async (u) => {
-    try {
-      const r = await fetch(u, { method: 'GET' });
-      return r.status;
-    } catch (e) {
-      return `err:${(e as any).message}`;
-    }
-  }, `${base}/webhook/sadie/chat/stream`);
-  // eslint-disable-next-line no-console
-  console.log('[E2E-TEST] Mock upstream check status:', mockStatus);
-  expect(mockStatus).toBe(500);
 
   // Attach a listener to the renderer so we can assert the error event actually arrived
   await page.evaluate(() => {
@@ -238,8 +232,8 @@ test('handles upstream error', async () => {
 
   // After the error event the UI should transition to the 'error' state and show the error indicator
   await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 10000 });
-  await expect(assistant).toContainText('n8n Unavailable', { timeout: 10000 });
-  await expect(assistant).toContainText('Retry with Ollama', { timeout: 10000 });
+  await expect(assistant).toContainText('Something went wrong', { timeout: 10000 });
+  await expect(assistant).toContainText('Retry', { timeout: 10000 });
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));

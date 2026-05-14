@@ -98,4 +98,33 @@ describe('retry flow (renderer)', () => {
     // Retry should NOT be present
     expect(screen.queryByText('↻ Retry')).toBeNull();
   });
+
+  test('retrying a document-attached turn asks for reattach instead of resending a marker-only request', async () => {
+    render(<App />);
+
+    const textarea = screen.getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    fireEvent.change(textarea, {
+      target: {
+        value: '[Document attached: SADIE_Midpoint_Review.docx]\n\nthis was you what do i think?'
+      }
+    });
+    fireEvent.click(screen.getByText('Send'));
+
+    await waitFor(() => expect((window as any).electron.sendStreamMessage).toHaveBeenCalled());
+    const streamId = capturedStreamId as string;
+
+    act(() => { errorHandler?.({ streamId, error: 'upstream error' }); });
+    await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument());
+
+    const sendMock = (window as any).electron.sendStreamMessage as jest.Mock;
+    sendMock.mockClear();
+
+    fireEvent.click(screen.getByText('↻ Retry'));
+
+    await waitFor(() => {
+      expect(screen.getByText('This request included a document attachment. Please reattach the document and send it again.')).toBeInTheDocument();
+    });
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('↻ Retry')).toBeNull();
+  });
 });

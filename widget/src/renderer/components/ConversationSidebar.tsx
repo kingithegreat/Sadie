@@ -79,8 +79,44 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         prev.map(c => c.id === conversationId ? { ...c, title } : c)
       );
     };
+    const onConversationCreated = (e: Event) => {
+      const detail = (e as CustomEvent).detail as Partial<Conversation> | undefined;
+      if (!detail?.id) return;
+      const convId = detail.id;
+
+      setConversations(prev => {
+        const existing = prev.find(c => c.id === convId);
+        const nextConversation: Conversation = {
+          id: convId,
+          title: detail.title || 'Untitled',
+          createdAt: detail.createdAt || new Date().toISOString(),
+          updatedAt: detail.updatedAt || detail.createdAt || new Date().toISOString(),
+          messageCount: detail.messageCount || 0,
+          pinned: detail.pinned,
+          archived: detail.archived,
+          tags: detail.tags,
+          model: detail.model,
+        };
+
+        const updated = existing
+          ? prev.map(c => c.id === detail.id ? { ...c, ...nextConversation } : c)
+          : [nextConversation, ...prev];
+
+        updated.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
+
+        return updated;
+      });
+    };
     window.addEventListener('sadie:title-updated', onTitleUpdated);
-    return () => window.removeEventListener('sadie:title-updated', onTitleUpdated);
+    window.addEventListener('sadie:conversation-created', onConversationCreated);
+    return () => {
+      window.removeEventListener('sadie:title-updated', onTitleUpdated);
+      window.removeEventListener('sadie:conversation-created', onConversationCreated);
+    };
   }, []);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {

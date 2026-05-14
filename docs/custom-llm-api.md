@@ -35,6 +35,8 @@ SADIE supports bringing your own LLM API from 11 named providers or any custom O
 - **Gemini 1.5 Pro** — 1M context window (~$1.25/1M)
 - **Gemini 1.5 Flash** — fast (Free tier)
 
+The built-in provider list currently exposes the curated Gemini 2.0 and 1.5 set above. Separately, the first-run cloud onboarding flow now pre-fills Google AI Studio with `gemini-2.5-flash`; if you want to use that model, keep the onboarding default or enter it manually, then test the connection before enabling cloud chat.
+
 ### OpenRouter
 - Access to 100+ models through a single API
 - Includes models from OpenAI, Anthropic, Google, Meta, and more
