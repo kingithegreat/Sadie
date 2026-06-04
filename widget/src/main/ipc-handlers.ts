@@ -23,7 +23,8 @@ import {
   assertPermission, 
   getSettingsPath, 
   resetPermissions, 
-  exportTelemetryConsent 
+  exportTelemetryConsent,
+  getDefaultSettings
 } from './config-manager';
 import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers } from './tools/web';
@@ -49,6 +50,73 @@ import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { sadieWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
+
+function normalizeOllamaBaseUrl(raw?: string): string {
+  const input = (raw || DEFAULT_OLLAMA_URL).trim();
+  let withScheme = /^https?:\/\//i.test(input) ? input : `http://${input}`;
+  // Replace localhost with 127.0.0.1 because Ollama on Windows binds to IPv4 127.0.0.1
+  // and Node.js >= 17 prefers IPv6 (::1), causing ECONNREFUSED or timeouts.
+  withScheme = withScheme.replace(/:\/\/localhost(:|\/|$)/i, '://127.0.0.1$1');
+  try {
+    const u = new URL(withScheme);
+    // Users sometimes paste /api or /api/tags into settings; normalize to host root.
+    u.pathname = u.pathname.replace(/\/api(?:\/tags)?\/?$/i, '');
+    const base = `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '');
+    return base || DEFAULT_OLLAMA_URL;
+  } catch {
+    return DEFAULT_OLLAMA_URL;
+  }
+}
+
+function getConfiguredOllamaBaseUrl(): string {
+  const settings = getSettings();
+  return normalizeOllamaBaseUrl(process.env.OLLAMA_URL || settings.ollamaUrl || DEFAULT_OLLAMA_URL);
+}
+
+async function launchOllamaServe(): Promise<{ started: boolean; error?: string }> {
+  const candidates = process.platform === 'win32'
+    ? [
+        'ollama.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Ollama', 'ollama.exe'),
+      ]
+    : ['ollama'];
+
+  for (const cmd of candidates) {
+    if (!cmd) continue;
+    const outcome = await new Promise<{ ok: boolean; notFound: boolean; message?: string }>((resolve) => {
+      try {
+        const child = spawn(cmd, ['serve'], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        let settled = false;
+        child.once('error', (err: any) => {
+          if (settled) return;
+          settled = true;
+          resolve({ ok: false, notFound: err?.code === 'ENOENT', message: String(err?.message || err) });
+        });
+        child.unref();
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve({ ok: true, notFound: false });
+        }, 200);
+      } catch (e: any) {
+        resolve({ ok: false, notFound: true, message: String(e?.message || e) });
+      }
+    });
+
+    if (outcome.ok) return { started: true };
+    if (!outcome.notFound) return { started: false, error: outcome.message || 'Failed to start Ollama.' };
+  }
+
+  return {
+    started: false,
+    error: 'Ollama executable not found. Install from https://ollama.com/download or add it to PATH.',
+  };
+}
 
 
 /**
@@ -92,8 +160,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
       try {
         // Ollama may not expose /healthz; a simple GET on base URL will suffice for a quick check
-        const settings = getSettings();
-        const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || DEFAULT_OLLAMA_URL).trim();
+        const ollamaBase = getConfiguredOllamaBaseUrl();
         const r2 = await axios.get(ollamaBase, { timeout: HEALTH_CHECK_TIMEOUT });
         result.ollama = (r2 && r2.status && r2.status >= 200 && r2.status < 500) ? 'online' : 'offline';
       } catch (e) {
@@ -282,7 +349,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return getSettings();
     } catch (err: any) {
       console.error('Error loading settings:', err.message);
-      return getSettings();
+      return getDefaultSettings();
     }
   });
 
@@ -486,8 +553,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   // List installed Ollama models via /api/tags
   ipcMain.handle('sadie:list-ollama-models', async () => {
-    const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
+    const ollamaBase = getConfiguredOllamaBaseUrl();
     try {
       const res = await axios.get(`${ollamaBase}/api/tags`, { timeout: OLLAMA_OP_TIMEOUT });
       const models = (res.data?.models || []).map((m: any) => ({
@@ -507,8 +573,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     if (!modelName || typeof modelName !== 'string') {
       return { success: false, error: 'Invalid model name' };
     }
-    const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
+    const ollamaBase = getConfiguredOllamaBaseUrl();
     try {
       await axios.delete(`${ollamaBase}/api/delete`, { data: { name: modelName }, timeout: OLLAMA_OP_TIMEOUT });
       return { success: true, model: modelName };
@@ -522,8 +587,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
       return { success: false, error: 'Invalid model name' };
     }
-    const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
+    const ollamaBase = getConfiguredOllamaBaseUrl();
     try {
       const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName }, { timeout: OLLAMA_PULL_TIMEOUT });
       return { success: true, model: modelName, status: res?.data?.status || 'done' };
@@ -536,27 +600,24 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // running, or if `ollama` is on PATH; returns a clear error otherwise so the
   // UI can tell the user to install/run it manually.
   ipcMain.handle('sadie:start-ollama', async () => {
-    const settings = getSettings();
-    const ollamaBase = (process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
+    const ollamaBase = getConfiguredOllamaBaseUrl();
 
     // Already running? Don't spawn a duplicate.
     try {
       await axios.get(`${ollamaBase}/api/tags`, { timeout: HEALTH_CHECK_TIMEOUT });
       return { success: true, alreadyRunning: true };
-    } catch { /* not running — proceed */ }
+    } catch (e) {
+      console.error('[OLLAMA HEALTH CHECK ERROR]', e);
+    }
 
     try {
-      const cmd = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
-      const child = spawn(cmd, ['serve'], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      });
-      child.on('error', safeCatch);
-      child.unref();
+      const launched = await launchOllamaServe();
+      if (!launched.started) {
+        return { success: false, error: launched.error || 'Failed to start Ollama.' };
+      }
 
-      // Poll for readiness (up to ~8s) so the UI can flip from "offline" to "ready"
-      const deadline = Date.now() + 8000;
+      // Poll for readiness (up to ~30s) so the UI can flip from "offline" to "ready"
+      const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 500));
         try {
@@ -564,14 +625,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
           return { success: true, alreadyRunning: false };
         } catch { /* keep polling */ }
       }
-      return { success: false, error: 'Ollama did not become ready within 8s. Check the terminal for errors.' };
+      return { success: false, error: 'Ollama did not become ready within 30s. Check the terminal for errors.' };
     } catch (err: any) {
-      return {
-        success: false,
-        error: err?.code === 'ENOENT'
-          ? 'Ollama is not installed or not on PATH. Install it from https://ollama.com/download.'
-          : String(err?.message || err),
-      };
+      return { success: false, error: String(err?.message || err) };
     }
   });
 
@@ -943,7 +999,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // Resolve and restrict to user home directory to prevent path traversal
       const normalizedPath = path.resolve(filePath);
       const homeDir = require('os').homedir();
-      if (!normalizedPath.toLowerCase().startsWith(homeDir.toLowerCase())) {
+      const homeWithSep = homeDir.toLowerCase() + path.sep;
+      if (normalizedPath.toLowerCase() !== homeDir.toLowerCase() && !normalizedPath.toLowerCase().startsWith(homeWithSep)) {
         return { success: false, error: 'Access denied: path must be within home directory' };
       }
       if (!fs.existsSync(normalizedPath)) {
@@ -968,7 +1025,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // Resolve and restrict to user home directory to prevent path traversal
       const normalizedPath = path.resolve(filePath);
       const homeDir = require('os').homedir();
-      if (!normalizedPath.toLowerCase().startsWith(homeDir.toLowerCase())) {
+      const homeWithSep = homeDir.toLowerCase() + path.sep;
+      if (normalizedPath.toLowerCase() !== homeDir.toLowerCase() && !normalizedPath.toLowerCase().startsWith(homeWithSep)) {
         return { success: false, error: 'Access denied: path must be within home directory' };
       }
       if (!fs.existsSync(normalizedPath)) {
@@ -1267,7 +1325,8 @@ try {
     try {
       const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
       const homeDir = os.homedir();
-      if (!resolved.toLowerCase().startsWith(homeDir.toLowerCase())) {
+      const homeWithSep = homeDir.toLowerCase() + path.sep;
+      if (resolved.toLowerCase() !== homeDir.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {
         return { success: false, error: 'Access denied: path must be within home directory' };
       }
       fs.writeFileSync(resolved, content, 'utf-8');

@@ -60,6 +60,7 @@ class OfflineSpeechRecognition {
               { 
                 progress_callback: (progress) => {
                   if (progress.status === 'progress') {
+                    window.sadieWhisperProgress = Math.round(progress.progress);
                     console.log('[SADIE] Model loading:', Math.round(progress.progress) + '%');
                   }
                 }

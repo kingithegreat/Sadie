@@ -236,6 +236,13 @@ describe('fetchAvailableCustomModels', () => {
     expect(models.some(m => m.id.includes('gemini'))).toBe(true);
   });
 
+    test('returns google-gemini model list (no http call)', async () => {
+      const models = await fetchAvailableCustomModels({ apiUrl: 'https://generativelanguage.googleapis.com/v1beta', provider: 'google-gemini' as any });
+      expect(models.length).toBeGreaterThan(0);
+      expect(models.every(m => m.provider === 'google-gemini')).toBe(true);
+      expect(models.some(m => m.id.includes('gemini'))).toBe(true);
+    });
+
   test('groq models have contextWindow defined', async () => {
     const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.groq.com/openai/v1', provider: 'groq' as any });
     expect(models.every(m => typeof m.contextWindow === 'number' && m.contextWindow > 0)).toBe(true);
@@ -423,6 +430,50 @@ describe('streamFromCustomLLM', () => {
     expect(axios.post).toHaveBeenCalled();
     const callUrl: string = (axios.post as jest.Mock).mock.calls[0][0];
     expect(callUrl).toContain('messages');
+  });
+
+  test('routes native google-gemini provider to generateContent endpoint', async () => {
+    (axios.post as jest.Mock).mockResolvedValue({
+      data: {
+        candidates: [
+          { content: { parts: [{ text: 'AI is pattern-based prediction.' }] } }
+        ]
+      }
+    });
+
+    const onEnd = jest.fn();
+    const onError = jest.fn();
+    const onChunk = jest.fn();
+
+    await streamFromCustomLLM(
+      'Explain how AI works in a few words',
+      [],
+      {
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AIza-test',
+        model: 'gemini-flash-latest',
+        provider: 'google-gemini',
+        name: 'Gemini native',
+        enabled: true,
+      } as any,
+      'system',
+      onChunk,
+      onEnd,
+      onError
+    );
+
+    // streamFromCustomLLM schedules provider work and returns a cancel handle;
+    // wait one microtask so the provider path can emit callbacks.
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(axios.post).toHaveBeenCalled();
+    const callUrl: string = (axios.post as jest.Mock).mock.calls[0][0];
+    const callHeaders = (axios.post as jest.Mock).mock.calls[0][2]?.headers;
+    expect(callUrl).toContain('/models/gemini-flash-latest:generateContent');
+    expect(callHeaders?.['X-goog-api-key']).toBe('AIza-test');
+    expect(onChunk).toHaveBeenCalledWith(expect.stringContaining('AI is pattern-based prediction'));
+    expect(onEnd).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
   });
 
   test('routes custom provider to streamOpenAI path', async () => {

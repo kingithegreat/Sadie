@@ -661,6 +661,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         setMessages(prev => {
           return prev.map(m => {
             if (m.id !== assistantId) return m;
+            if (m.streamingState === 'finished' || m.streamingState === 'cancelled') return m;
             const updatedMsg = {
               ...m,
               streamingState: "error" as StreamingState,

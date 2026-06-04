@@ -26,7 +26,7 @@ interface Settings {
   stableHordeApiKey?: string;
   codeModel?: string;
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
   chatGuidelines?: string;
   calendarIcsUrl?: string;
@@ -77,6 +77,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       case 'groq': return 'https://api.groq.com/openai/v1';
       case 'deepseek': return 'https://api.deepseek.com/v1';
       case 'google-ai-studio': return 'https://generativelanguage.googleapis.com/v1beta/openai';
+      case 'google-gemini': return 'https://generativelanguage.googleapis.com/v1beta';
       case 'huggingface': return 'https://api-inference.huggingface.co/v1';
       case 'cerebras': return 'https://api.cerebras.ai/v1';
       case 'sambanova': return 'https://api.sambanova.ai/v1';
@@ -128,47 +129,63 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     };
   };
 
-  // Models ordered by quality (best first for 5GB VRAM setup)
+  // Models ordered by quality for modest local GPUs. Users can still choose any installed model.
   const ollamaModels = [
     {
       id: 'phi4-mini',
       name: 'Phi 4 Mini (3.8B)',
-      description: '⭐ Best reasoning in the small model range — fits 4-5GB VRAM (2.5GB)'
+      description: 'Best small reasoning model; recommended for 4 GB VRAM (2.5GB)',
+      sizeGB: 2.5,
+      recommendedFor: ['4gb']
     },
     {
       id: 'qwen2.5:3b',
       name: 'Qwen 2.5 (3B)',
-      description: 'Best tool-calling at this size, reliable function calling (2GB)'
+      description: 'Best lightweight tool-calling model; reliable on 4 GB VRAM (2GB)',
+      sizeGB: 2,
+      recommendedFor: ['4gb']
     },
     {
       id: 'qwen2.5-coder:3b',
       name: 'Qwen 2.5 Coder (3B)',
-      description: '💻 Best small coding model — strong at debugging & logic (2GB)'
+      description: 'Best small coding model; strong at debugging and logic (2GB)',
+      sizeGB: 2,
+      recommendedFor: ['4gb', '8gb']
     },
     {
       id: 'qwen2.5-coder:7b',
       name: 'Qwen 2.5 Coder (7B)',
-      description: '💻 Best coding model — needs 6GB+ VRAM (4.4GB)'
+      description: 'Best local coding quality; tight on 4 GB, recommended for 8 GB+ (4.4GB)',
+      sizeGB: 4.4,
+      recommendedFor: ['8gb', '16gb+']
     },
     {
       id: 'deepseek-coder-v2:latest',
       name: 'DeepSeek Coder V2',
-      description: '💻 Excellent code completion & debugging — needs 10GB+ (8.9GB)'
+      description: 'Excellent code completion and debugging; high VRAM only (8.9GB)',
+      sizeGB: 8.9,
+      recommendedFor: ['16gb+']
     },
     {
       id: 'llama3.2:3b',
       name: 'Llama 3.2 (3B)',
-      description: 'Reliable fallback — good general chat (2GB)'
+      description: 'Reliable fallback; good general chat on 4 GB VRAM (2GB)',
+      sizeGB: 2,
+      recommendedFor: ['4gb']
     },
     {
       id: 'moondream',
       name: 'Moondream 2 (Vision)',
-      description: '👁️ Lightweight vision model — fits 4-5GB VRAM comfortably (1.7GB)'
+      description: 'Lightweight vision model; fits 4 GB VRAM comfortably (1.7GB)',
+      sizeGB: 1.7,
+      recommendedFor: ['4gb', '8gb']
     },
     {
       id: 'dolphin-phi:2.7b',
       name: 'Dolphin Phi (2.7B)',
-      description: 'Uncensored chat — safe for 4-5GB VRAM (1.6GB)'
+      description: 'Uncensored chat; safe for 4 GB VRAM (1.6GB)',
+      sizeGB: 1.6,
+      recommendedFor: ['4gb', '8gb']
     },
   ];
 
@@ -264,13 +281,40 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     } else if (gb >= 8) {
       rec = { mode: 'moa', preset: 'balanced', reason: `Balanced MoA fits your ${gb} GB VRAM` };
     } else if (gb >= 6) {
-      rec = { mode: 'single', model: 'qwen2.5:7b', reason: `qwen2.5:7b is the strongest tool-calling and general chat model that still fits around ${gb} GB.` };
+      rec = { mode: 'single', model: 'phi4-mini', reason: `phi4-mini is the safest high-quality local model around ${gb} GB. You can still choose qwen2.5:7b if you want to trade reliability for quality.` };
     } else if (gb >= 4) {
       rec = { mode: 'single', model: 'qwen2.5:3b', reason: `qwen2.5:3b is the best fit for ${gb} GB when you still want reliable tool use.` };
     } else if (gb >= 2) {
       rec = { mode: 'single', model: 'llama3.2:3b', reason: `Best fit for ${gb} GB. Index files with RAG for smarter answers.` };
     }
     setGpuInfo(prev => ({ ...prev, manualVram: gb, vramGB: gb, recommendation: rec }));
+  };
+
+  const profileVramGB = (profile?: Settings['hardwareProfile']): number | null => {
+    if (profile === '4gb') return 4;
+    if (profile === '8gb') return 8;
+    if (profile === '16gb+') return 16;
+    return null;
+  };
+
+  const effectiveVramGB = gpuInfo.vramGB ?? profileVramGB(localSettings.hardwareProfile);
+  const effectiveProfile = localSettings.hardwareProfile || (
+    effectiveVramGB === null ? undefined : effectiveVramGB >= 16 ? '16gb+' : effectiveVramGB >= 8 ? '8gb' : '4gb'
+  );
+
+  const getModelFit = (model: { id: string; sizeGB?: number; recommendedFor?: string[] }) => {
+    if (effectiveProfile && model.recommendedFor?.includes(effectiveProfile)) return 'recommended';
+    if (!effectiveVramGB || !model.sizeGB) return 'unknown';
+    if (model.sizeGB > effectiveVramGB) return 'over';
+    if (model.sizeGB > effectiveVramGB * 0.8) return 'tight';
+    return 'ok';
+  };
+
+  const modelFitLabel = (fit: string) => {
+    if (fit === 'recommended') return 'Recommended';
+    if (fit === 'tight') return 'Tight fit';
+    if (fit === 'over') return 'May be slow';
+    return '';
   };
 
   const applyRecommendation = () => {
@@ -401,7 +445,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const selectedProvider = localSettings.customLLM?.provider || 'openai';
-  const curatedProviders = ['openai', 'anthropic', 'groq', 'deepseek', 'google-ai-studio', 'huggingface', 'cerebras', 'sambanova', 'together'];
+  const curatedProviders = ['openai', 'anthropic', 'groq', 'deepseek', 'google-ai-studio', 'google-gemini', 'huggingface', 'cerebras', 'sambanova', 'together'];
   const isCuratedProvider = curatedProviders.includes(selectedProvider);
   const providerRequiresApiKey = selectedProvider !== 'custom';
   const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
@@ -603,7 +647,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="setting-group">
           <label className="setting-label">Chat model</label>
           <div className="model-grid">
-            {/* Show installed Ollama models first, then hardcoded recommendations */}
+            {/* Show installed Ollama models with hardware-aware recommendations. */}
             {(installedOllamaModels.length > 0
               ? installedOllamaModels.map(m => {
                   const known = ollamaModels.find(o => m.name === o.id || m.name.startsWith(o.id.split(':')[0]));
@@ -611,29 +655,42 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     id: m.name,
                     name: known?.name || m.name,
                     description: known?.description || `${(m.size / (1024*1024*1024)).toFixed(1)}GB`,
+                    sizeGB: known?.sizeGB || (m.size / (1024*1024*1024)),
+                    recommendedFor: known?.recommendedFor,
                     installed: true,
                   };
                 })
               : ollamaModels.map(m => ({ ...m, installed: false }))
-            ).map((model) => (
-              <button
-                key={model.id}
-                className={`model-card ${localSettings.chatModel === model.id ? 'active' : ''}`}
-                onClick={() =>
-                  setLocalSettings({
-                    ...localSettings,
-                    chatModel: model.id
-                  })
-                }
-              >
-                <div className="model-card-label">{model.name}</div>
-                <p className="model-card-desc">{model.description}</p>
-              </button>
-            ))}
+            ).sort((a, b) => {
+              const rank: Record<string, number> = { recommended: 0, ok: 1, tight: 2, over: 3, unknown: 4 };
+              return (rank[getModelFit(a)] ?? 4) - (rank[getModelFit(b)] ?? 4);
+            }).map((model) => {
+              const fit = getModelFit(model);
+              const fitLabel = modelFitLabel(fit);
+              return (
+                <button
+                  key={model.id}
+                  className={`model-card ${localSettings.chatModel === model.id ? 'active' : ''} ${fit !== 'ok' && fit !== 'unknown' ? `model-fit-${fit}` : ''}`}
+                  title={fit === 'over' ? `This model is larger than the detected ${effectiveVramGB} GB VRAM and may fall back to CPU or fail to load.` : undefined}
+                  onClick={() =>
+                    setLocalSettings({
+                      ...localSettings,
+                      chatModel: model.id
+                    })
+                  }
+                >
+                  <div className="model-card-label">
+                    {model.name}
+                    {fitLabel && <span className="model-fit-badge">{fitLabel}</span>}
+                  </div>
+                  <p className="model-card-desc">{model.description}</p>
+                </button>
+              );
+            })}
           </div>
           <small className="setting-hint">
             {installedOllamaModels.length > 0
-              ? `Showing ${installedOllamaModels.length} installed model(s). Use the model selector to pull more.`
+              ? `Showing ${installedOllamaModels.length} installed model(s). Recommendations are based on ${effectiveVramGB ? `${effectiveVramGB} GB VRAM` : 'your hardware profile'}; you can still choose any model.`
               : 'Ollama offline — showing recommended models. Custom APIs override this.'}
           </small>
         </div>
@@ -757,6 +814,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
               <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
               <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>
+              <option value="google-gemini">Google Gemini Native API</option>
               <option value="huggingface">Hugging Face (free tier — open-source models)</option>
               <option value="cerebras">Cerebras (free tier — fastest inference)</option>
               <option value="sambanova">SambaNova (free tier — Llama, DeepSeek)</option>
@@ -793,7 +851,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className={`hw-profile-btn${localSettings.hardwareProfile === p ? ' active' : ''}`}
                 onClick={() => {
                   const profileDefaults: Record<string, Partial<Settings>> = {
-                    '4gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
+                    '4gb':   { chatModel: 'phi4-mini', visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
                     '8gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-phi:2.7b', moaEnabled: false },
                     '16gb+': { chatModel: 'qwen2.5:7b',  visionModel: 'llava',     uncensoredModel: 'dolphin-llama3:8b' },
                   };
@@ -806,7 +864,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
           <small className="setting-hint">
             Applies safe model defaults for your GPU.&nbsp;
-            <strong>4 GB:</strong> qwen2.5:7b if it fits, otherwise qwen2.5:3b + moondream.&nbsp;
+            <strong>4 GB:</strong> phi4-mini or qwen2.5:3b + moondream.&nbsp;
             <strong>8 GB:</strong> qwen2.5:7b + moondream.&nbsp;
             <strong>16 GB+:</strong> qwen2.5:7b + llava + MoA recommended.
             Auto-detected on first launch — only change if it was wrong.
@@ -975,6 +1033,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
               <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
               <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>
+              <option value="google-gemini">Google Gemini Native API</option>
               <option value="huggingface">Hugging Face (free tier — open-source models)</option>
               <option value="cerebras">Cerebras (free tier — fastest inference)</option>
               <option value="sambanova">SambaNova (free tier — Llama, DeepSeek)</option>
@@ -1018,6 +1077,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 selectedProvider === 'groq' ? 'gsk_...' :
                 selectedProvider === 'deepseek' ? 'sk-...' :
                 selectedProvider === 'google-ai-studio' ? 'AIza...' :
+                selectedProvider === 'google-gemini' ? 'AIza...' :
                 'API Key'
               }
             />
@@ -1492,7 +1552,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onClose={() => setShowTelemetryModal(false)}
         />
         {showTelemetryDashboard && <TelemetryDashboard open={showTelemetryDashboard} onClose={() => setShowTelemetryDashboard(false)} /> }
-      </div>
 
       {/* ── Scheduled Jobs ─────────────────────────────────────────────────── */}
       <div className="settings-section">
@@ -1847,6 +1906,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </label>
         </div>
       </div>
+
+      </div>{/* end settings-body */}
 
       <div className="settings-footer">
         <button className="button button-cancel" onClick={handleCancel}>

@@ -201,10 +201,9 @@ Write-Head "5/6  Ollama models"
 
 $requiredModels = @(
     @{ name = "qwen2.5:7b";           desc = "Primary chat + tool-calling model" },
-    @{ name = "qwen2.5-coder:3b";     desc = "Code model (fits in 4GB VRAM)" },
-    @{ name = "moondream";            desc = "Vision/image analysis model" },
-    @{ name = "nomic-embed-text";     desc = "Embeddings for RAG and memory" },
-    @{ name = "dolphin-phi:2.7b";     desc = "Uncensored mode (optional fallback)" }
+    @{ name = "nomic-embed-text";     desc = "Embeddings for RAG and memory" }
+    # Note: Additional models (moondream, gemma2, etc.) should be downloaded 
+    # in-app or manually to save initial setup time and disk space.
 )
 
 if ($SkipModelPull) {

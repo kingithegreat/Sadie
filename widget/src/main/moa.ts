@@ -55,7 +55,7 @@ export const SINGLE_MODEL_RECOMMENDATIONS: Array<{
 }> = [
   { minVram: 6, model: 'phi4-mini', label: 'phi4-mini — best reasoning in the 3-4B range, fits 5-6 GB+' },
   { minVram: 4, model: 'phi4-mini', label: 'phi4-mini — best small model, safely fits 4-5 GB VRAM' },
-  { minVram: 2, model: 'qwen2.5:3b', label: 'qwen2.5:3b — best tool-calling for 2-3 GB VRAM' },
+  { minVram: 2, model: 'qwen2.5:3b', label: 'qwen2.5:3b - reliable lightweight local chat for 2-3 GB VRAM' },
 ];
 
 // ── Hardware detection & recommendation ─────────────────────────────────────

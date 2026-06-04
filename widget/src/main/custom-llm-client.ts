@@ -42,8 +42,8 @@ const MODEL_METADATA: Record<string, Partial<ModelMetadata>> = {
   'gpt-3.5-turbo': { contextWindow: 16385, maxTokens: 4096, supportsTools: true, supportsVision: false, supportsStreaming: true },
   'claude-opus-4': { contextWindow: 200000, maxTokens: 16384, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'claude-sonnet-4': { contextWindow: 200000, maxTokens: 16384, supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-3-5-sonnet': { contextWindow: 200000, maxTokens: 8192, supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-3-5-haiku': { contextWindow: 200000, maxTokens: 8192, supportsTools: true, supportsVision: true, supportsStreaming: true },
+  'claude-3-5-sonnet': { contextWindow: 200000, maxTokens: 8192, supportsTools: true, supportsVision: true, supportsStreaming: true }, // Increased from 4096
+  'claude-3-5-haiku': { contextWindow: 200000, maxTokens: 8192, supportsTools: true, supportsVision: true, supportsStreaming: true }, // Increased from 4096
   'claude-3-opus': { contextWindow: 200000, maxTokens: 4096, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'claude-3-sonnet': { contextWindow: 200000, maxTokens: 4096, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'claude-3-haiku': { contextWindow: 200000, maxTokens: 4096, supportsTools: true, supportsVision: false, supportsStreaming: true },
@@ -92,6 +92,14 @@ const GOOGLE_AI_MODELS: CustomModelInfo[] = [
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
 ];
 
+// Gemini native API (generateContent endpoint)
+const GOOGLE_GEMINI_NATIVE_MODELS: CustomModelInfo[] = [
+  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Latest Flash model alias', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Fast & smart', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
+  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Large context and stronger reasoning', provider: 'google-gemini', contextWindow: 1048576, costHint: '~$1.25/1M in' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and cost-efficient', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
+];
+
 // Hugging Face Inference API — free tier, huge open-source model catalog
 const HUGGINGFACE_MODELS: CustomModelInfo[] = [
   { id: 'meta-llama/Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', description: 'Best open-source quality', provider: 'huggingface', contextWindow: 128000, costHint: 'Free tier' },
@@ -133,6 +141,7 @@ export const PROVIDER_API_URLS: Record<string, string> = {
   groq: 'https://api.groq.com/openai/v1',
   deepseek: 'https://api.deepseek.com/v1',
   'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
+  'google-gemini': 'https://generativelanguage.googleapis.com/v1beta',
   huggingface: 'https://api-inference.huggingface.co/v1',
   cerebras: 'https://api.cerebras.ai/v1',
   sambanova: 'https://api.sambanova.ai/v1',
@@ -622,6 +631,75 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
   }
 }
 
+function toGeminiContents(messages: ChatMessage[]): Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> {
+  const out: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+  for (const msg of messages) {
+    if (msg.role === 'system') continue;
+    const role: 'user' | 'model' = msg.role === 'assistant' ? 'model' : 'user';
+    const text = typeof msg.content === 'string'
+      ? msg.content
+      : msg.content
+          .map((part) => (part.type === 'text' ? (part.text || '') : ''))
+          .filter(Boolean)
+          .join('\n');
+    if (!text.trim()) continue;
+    out.push({ role, parts: [{ text }] });
+  }
+  return out;
+}
+
+async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
+  const { apiConfig, messages, model, temperature = 0.5, maxTokens = 2000, onChunk, onEnd, onError, signal } = options;
+  try {
+    const baseUrl = trimTrailingSlash(apiConfig.apiUrl || PROVIDER_API_URLS['google-gemini']);
+    const selectedModel = model || apiConfig.model || 'gemini-flash-latest';
+    const endpoint = `${baseUrl}/models/${encodeURIComponent(selectedModel)}:generateContent`;
+
+    const systemText = messages
+      .filter((m) => m.role === 'system')
+      .map((m) => (typeof m.content === 'string' ? m.content : m.content.map((p) => p.text || '').join('\n')))
+      .join('\n\n')
+      .trim();
+
+    const payload: any = {
+      contents: toGeminiContents(messages),
+      generationConfig: {
+        temperature,
+        maxOutputTokens: maxTokens
+      }
+    };
+
+    if (systemText) {
+      payload.systemInstruction = { parts: [{ text: systemText }] };
+    }
+
+    const response = await retryWithBackoff(() => axios.post(
+      endpoint,
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-goog-api-key': apiConfig.apiKey || ''
+        },
+        timeout: 45000,
+        signal
+      }
+    ), 2, 800);
+
+    const candidate = response.data?.candidates?.[0];
+    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+    const text = parts
+      .map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
+      .filter(Boolean)
+      .join('');
+
+    if (text) onChunk(text);
+    onEnd();
+  } catch (err: any) {
+    onError(err);
+  }
+}
+
 /**
  * Auto-configure API settings based on model name
  */
@@ -659,6 +737,7 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'groq') return GROQ_MODELS;
   if (provider === 'deepseek') return DEEPSEEK_MODELS;
   if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
+  if (provider === 'google-gemini') return GOOGLE_GEMINI_NATIVE_MODELS;
   if (provider === 'huggingface') return HUGGINGFACE_MODELS;
   if (provider === 'cerebras') return CEREBRAS_MODELS;
   if (provider === 'sambanova') return SAMBANOVA_MODELS;
@@ -800,6 +879,11 @@ export async function streamFromCustomLLM(
     case 'groq':
     case 'deepseek':
     case 'google-ai-studio':
+      streamOpenAI(options);
+      break;
+    case 'google-gemini':
+      streamGoogleGeminiNative(options);
+      break;
     case 'huggingface':
     case 'cerebras':
     case 'sambanova':

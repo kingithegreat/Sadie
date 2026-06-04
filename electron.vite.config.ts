@@ -1,49 +1,68 @@
-// electron.vite.config.ts
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import react from '@vitejs/plugin-react'
+import { readFileSync } from 'fs'
+import { builtinModules } from 'module'
 import { resolve } from 'path'
 
-export default defineConfig({
+const repoRoot = process.cwd()
+const widgetPackageJson = JSON.parse(
+  readFileSync(resolve(repoRoot, 'widget/package.json'), 'utf-8')
+)
+const packageNames = new Set([
+  'electron',
+  ...builtinModules,
+  ...builtinModules.map((name) => `node:${name}`),
+  ...Object.keys(widgetPackageJson.dependencies || {}),
+  ...Object.keys(widgetPackageJson.optionalDependencies || {}),
+  ...Object.keys(widgetPackageJson.peerDependencies || {})
+])
+const external = (id: string): boolean => {
+  for (const name of packageNames) {
+    if (id === name || id.startsWith(`${name}/`)) return true
+  }
+  return false
+}
+
+export default {
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
+        external,
         input: {
-          index: resolve(__dirname, 'widget/src/main/index.ts')
+          index: resolve(repoRoot, 'widget/src/main/index.ts')
         }
       }
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
+        external,
         input: {
-          index: resolve(__dirname, 'widget/src/preload/index.ts')
+          index: resolve(repoRoot, 'widget/src/preload/index.ts'),
+          webview: resolve(repoRoot, 'widget/src/preload/webview.ts')
         }
       }
     }
   },
   renderer: {
-    root: resolve(__dirname, 'widget', 'src', 'renderer'),
-    plugins: [react()],
-    // This alias allows the Widget to steal components from your Webapp
+    root: resolve(repoRoot, 'widget/src/renderer'),
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, 'shared')
+        '@shared': resolve(repoRoot, 'widget/src/shared')
       }
     },
     build: {
-      // Target the Chromium version bundled with Electron 28 — skip polyfills
       target: 'chrome120',
       rollupOptions: {
+        input: {
+          index: resolve(repoRoot, 'widget/src/renderer/index.html')
+        },
         output: {
           manualChunks: {
             'vendor-react': ['react', 'react-dom'],
-            'vendor-hljs': ['highlight.js'],
+            'vendor-hljs': ['highlight.js']
           }
         }
       }
     }
   }
-})
+}

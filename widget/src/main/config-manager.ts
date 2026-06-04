@@ -80,7 +80,7 @@ export interface Settings {
   openaiApiKey?: string;
   // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
   codeApiKey?: string;
-  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
+  codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
   // Hardware profile — drives model defaults and VRAM recommendations
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
@@ -355,7 +355,7 @@ export function getDefaultSettings(): Settings {
  */
 export const HARDWARE_PROFILE_DEFAULTS: Record<string, Partial<Settings>> = {
   '4gb': {
-    chatModel: 'qwen2.5:7b',             // 4.4 GB — best IQ; VRAM warning in UI if tight
+    chatModel: 'phi4-mini',              // 2.5 GB - safer default for 4 GB cards
     visionModel: 'moondream',             // 1.7 GB — lightweight vision
     uncensoredModel: 'dolphin-phi:2.7b',  // 1.6 GB — safe uncensored
   },

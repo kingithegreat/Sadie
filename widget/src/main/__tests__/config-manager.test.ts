@@ -169,7 +169,7 @@ describe('applyHardwareProfile', () => {
 
   test('applies 4gb profile — safe models for 4 GB VRAM cards', () => {
     const result = applyHardwareProfile({ ...base, hardwareProfile: '4gb' });
-    expect(result.chatModel).toBe('qwen2.5:7b');
+    expect(result.chatModel).toBe('phi4-mini');
     expect(result.visionModel).toBe('moondream');
     expect(result.uncensoredModel).toBe('dolphin-phi:2.7b');
   });

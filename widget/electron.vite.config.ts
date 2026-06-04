@@ -25,11 +25,22 @@ export default defineConfig({
     }
   },
   renderer: {
-    root: 'src/renderer',
+    root: resolve(__dirname, 'src/renderer'),
     plugins: [react()],
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, '..', 'shared')
+        '@shared': resolve(__dirname, 'src/shared')
+      }
+    },
+    build: {
+      target: 'chrome120',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-hljs': ['highlight.js']
+          }
+        }
       }
     }
   }

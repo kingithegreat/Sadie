@@ -67,6 +67,7 @@ jest.mock('../custom-llm-client', () => ({
     groq: 'https://api.groq.com/openai/v1',
     deepseek: 'https://api.deepseek.com/v1',
     'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
+    'google-gemini': 'https://generativelanguage.googleapis.com/v1beta',
     huggingface: 'https://api-inference.huggingface.co/v1',
     cerebras: 'https://api.cerebras.ai/v1',
     sambanova: 'https://api.sambanova.ai/v1',

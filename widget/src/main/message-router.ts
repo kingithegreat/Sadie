@@ -848,8 +848,11 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
 
   // Opinion / analysis / prediction questions should go to the LLM for conversation,
   // not to data-fetching tools.  Defined early so all routing blocks can use it.
-  const isOpinionQuestion = /\b(do you think|what do you think|can .{1,40} (still|win|make|get)|will .{1,40} (win|make|get)|chances?|predict(ion)?s?|opinion|could .{1,40} (win|make)|how far .{1,40} go|contend(er|ers)?|what are .{1,40} odds|should .{1,40} trade|going to win|gonna win|reckon|expect|likely|realistically)\b/i.test(m)
+  const isOpinionQuestion = /\b(who will( likely)? win|who is going to win|who'?s going to win|do you think|what do you think|can .{1,40} (still|win|make|get)|will .{1,40} (win|make|get)|chances?|predict(ion)?s?|opinion|could .{1,40} (win|make)|how far .{1,40} go|contend(er|ers)?|what are .{1,40} odds|should .{1,40} trade|going to win|gonna win|reckon|expect|likely|realistically)\b/i.test(m)
     && !/\b(betting\s+odds|odds\s+(for|on|at)|moneyline|spread|tab\b|sportsbet|bet365)\b/i.test(m);
+
+  // Conversational corrections/acknowledgments should go to the LLM, not force tool execution
+  const isConversational = /^(no\b|yes\b|yep\b|nope\b|thanks\b|thank you\b|ok\b|okay\b|sure\b|right\b|wrong\b|this is(n'?t| not)\b|that'?s (not|wrong)\b|wait\b)/i.test(m.trim());
 
   // HELP / CAPABILITY CARD — must be first so "help" doesn't hit other patterns
   if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can sadie do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(m.trim())) {
@@ -883,9 +886,9 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   // Check these FIRST so "make a file with NBA games" doesn't just return
   // NBA results without writing a file.
   const wantsFile = /\b(create|make|write|save|put|give\s+me)\b/i.test(m) &&
-                    /\b(file|document|note|text)\b/i.test(m);
+                    /\b(file|document|doc|docx|note|text)\b/i.test(m);
 
-  if (wantsFile && !isOpinionQuestion) {
+  if (wantsFile && !isOpinionQuestion && !isConversational) {
     // COMPOUND: surf/swell + file → use web search, not weather API
     const isSurfFileQuery = /\b(surf|swell|waves?|tide|ocean|marine|break|beach\s*break)\b/i.test(m);
     if (isSurfFileQuery) {
@@ -1007,7 +1010,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'web_search', arguments: { query: `NBA ${searchQuery}`, maxResults: 5, fetchTopResult: true } }] };
   }
 
-  if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedul[e]?|shedule|play\s*offs?|playoffs?)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion) {
+  if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedul[e]?|shedule|play\s*offs?|playoffs?)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion && !isConversational) {
     let teamQuery = '';
     // Exact match first
     for (const team of nbaTeams) {
@@ -1078,7 +1081,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   }
 
   // SURF / SWELL intents (standalone) — use web search for real surf data
-  if (/\b(surf|swell|waves?|tide|ocean\s*conditions|beach\s*break)\b/i.test(m) && !/\b(weather|temperature|rain|forecast)\b/i.test(m) && !isOpinionQuestion) {
+  if (/\b(surf|swell|waves?|tide|ocean\s*conditions|beach\s*break)\b/i.test(m) && !/\b(weather|temperature|rain|forecast)\b/i.test(m) && !isOpinionQuestion && !isConversational) {
     const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
                      m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';
@@ -1088,7 +1091,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   }
 
   // WEATHER intents (standalone, no surf keywords)
-  if ((/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) && !isOpinionQuestion) {
+  if ((/w[eh]a?th?e?r/i.test(m) || /\b(forecast|temperature|rain|sunny|cloudy|humidity)\b/i.test(m)) && !isOpinionQuestion && !isConversational) {
     const locMatch = m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]*?)(?:\s+tomorrow|\s+today|\s+tonight|\s+this week|\s+give|$)/i) ||
                      m.match(/\b(?:in|for|at)\s+([a-zA-Z][a-zA-Z\s,]+)/i);
     let location = locMatch ? locMatch[1].trim() : '';
@@ -1456,6 +1459,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
       // like "give me more detail". Stricter phrases ("what is", "explain") use
       // a shorter threshold because they almost always start a new topic.
       const isNewTopicPhrase =
+        /^(what do (you|u|o) think|what do you make of|thoughts? on)\b.{0,}/i.test(trimmed) ||
         /^(what is|what are|who is|who are|where is|where are|when is|when are|why is|why are|how is|how are|tell me about|explain|can you explain|describe|define|search for|look up|find)\b.{8,}/i.test(trimmed) ||
         /^(give me|show me|list|write|create|generate)\b.{20,}/i.test(trimmed);
       // If the previous intent was domain-specific (nba, weather, surf), detect
@@ -1469,9 +1473,9 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
       };
       const domainRe = domainKeywords[prevToolName];
       const isDomainMismatch = domainRe ? !domainRe.test(trimmed) && trimmed.length > 30 : false;
-      const isNewTopic = isGreeting || isNewTopicPhrase || isDomainMismatch;
+      const isNewTopic = isGreeting || isNewTopicPhrase || isDomainMismatch || isOpinionQuestion;
       if (isNewTopic) {
-        // Greeting or new question — clear stale intent so LLM handles it fresh
+        // Greeting, new question, or opinion — clear stale intent so LLM handles it fresh
         if (conversationId) clearLastIntent(conversationId);
       } else {
         const toolName = prev.intent.calls[0]?.name;
@@ -1543,6 +1547,13 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
         if (toolName === 'get_news') {
           clearLastIntent(conversationId!);
           return null; // LLM handles with prior context
+        }
+
+        // Never auto-reinvoke internal pseudo tools (compound/canned helpers)
+        // because follow-ups like "what do you think?" should go to the LLM.
+        if (toolName.startsWith('__')) {
+          clearLastIntent(conversationId!);
+          return null;
         }
 
         // For any other tool re-invoke with same args
@@ -2739,10 +2750,9 @@ export async function streamFromOllamaWithTools(
         const status = primaryErr?.response?.status;
         const errMsg = (primaryErr?.response?.data?.error || primaryErr?.message || '').toLowerCase();
         const isModelError = status === 404 || errMsg.includes('not found') || errMsg.includes('model');
-        const isConnError = code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT';
         
-        if ((isModelError || isConnError) && !requestBody._failedOver) {
-          // Build a fallback chain: current model's size class → default chat model → dolphin (always available as general-purpose fallback)
+        if (isModelError && !requestBody._failedOver) {
+          // Build a fallback chain if the model is missing (do not failover on network/connection errors)
           const fallbacks = [OLLAMA_CHAT_MODEL, 'mistral:latest', 'llama3.2:3b'].filter(m => m !== requestBody.model);
           const fallbackModel = fallbacks[0];
           if (fallbackModel) {
@@ -3851,12 +3861,17 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   responseText += '\n';
                 });
               }
-              // Handle NBA games — use enrichNbaGames so news/highlights are included
-              else if (result.result.events && result.result.events.length > 0) {
+              // Handle NBA games — include empty game lists so they don't fall through
+              // to calendar formatting when NBA APIs return zero events.
+              else if (
+                result.result.events !== undefined &&
+                (result.result.resultCount !== undefined || result.result.allScheduled !== undefined)
+              ) {
                 synthesizeType = 'games';
                 const nbaFormat = intentResult?.calls?.[0]?.arguments?.format;
                 try {
-                  const enriched = await enrichNbaGames(result.result.events, result.result.query || '', {
+                  const nbaEvents = Array.isArray(result.result.events) ? result.result.events : [];
+                  const enriched = await enrichNbaGames(nbaEvents, result.result.query || '', {
                     maxWebResults: 3,
                     fetchContent: true,
                     format: nbaFormat,
@@ -3871,7 +3886,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   // Fallback to basic formatting if enrichment fails
                   console.error('[SADIE] NBA enrichment failed, using basic format:', enrichErr?.message);
                   const queryLabel = result.result.query ? `NBA Games — ${result.result.query}` : undefined;
-                  responseText += formatNbaEventsStrict(result.result.events, queryLabel, 10) + '\n';
+                  const nbaEvents = Array.isArray(result.result.events) ? result.result.events : [];
+                  responseText += formatNbaEventsStrict(nbaEvents, queryLabel, 10) + '\n';
                 }
               }
               // Handle weather results
@@ -4037,7 +4053,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 }
               }
               // Handle calendar event list
-              else if (result.result.events !== undefined) {
+              else if (result.result.events !== undefined && result.result.days_ahead !== undefined) {
                 const events: any[] = result.result.events || [];
                 if (events.length === 0) {
                   const days = result.result.days_ahead ?? 7;

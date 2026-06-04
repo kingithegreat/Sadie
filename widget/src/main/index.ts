@@ -17,10 +17,58 @@ import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import { shutdownMcpServers } from './mcp-client';
+import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
 import { spawn } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
+function normalizeOllamaBaseUrl(raw?: string): string {
+  const input = (raw || DEFAULT_OLLAMA_URL).trim();
+  let withScheme = /^https?:\/\//i.test(input) ? input : `http://${input}`;
+  withScheme = withScheme.replace(/:\/\/localhost(:|\/|$)/i, '://127.0.0.1$1');
+  try {
+    const u = new URL(withScheme);
+    u.pathname = u.pathname.replace(/\/api(?:\/tags)?\/?$/i, '');
+    const base = `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '');
+    return base || DEFAULT_OLLAMA_URL;
+  } catch {
+    return DEFAULT_OLLAMA_URL;
+  }
+}
+
+async function tryStartOllamaBackground(): Promise<void> {
+  const candidates = process.platform === 'win32'
+    ? [
+        'ollama.exe',
+        `${process.env.LOCALAPPDATA || ''}\\Programs\\Ollama\\ollama.exe`,
+        `${process.env.ProgramFiles || 'C:\\Program Files'}\\Ollama\\ollama.exe`,
+      ]
+    : ['ollama'];
+
+  for (const cmd of candidates) {
+    if (!cmd) continue;
+    const ok = await new Promise<boolean>((resolve) => {
+      try {
+        const child = spawn(cmd, ['serve'], { detached: true, stdio: 'ignore', windowsHide: true });
+        let settled = false;
+        child.once('error', () => {
+          if (settled) return;
+          settled = true;
+          resolve(false);
+        });
+        child.unref();
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve(true);
+        }, 200);
+      } catch {
+        resolve(false);
+      }
+    });
+    if (ok) return;
+  }
+}
 
 const ALLOWED_WEB_SERVICE_PERMISSIONS = new Set([
   'clipboard-read',
@@ -190,11 +238,28 @@ app.whenReady().then(async () => {
     // a banner if Ollama isn't running yet.
     let ollamaOnline = false;
     try {
-      const ollamaUrl = getSettings().ollamaUrl || 'http://127.0.0.1:11434';
+      const ollamaUrl = normalizeOllamaBaseUrl(getSettings().ollamaUrl || 'http://127.0.0.1:11434');
       try {
         await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
         ollamaOnline = true;
       } catch { /* not running */ }
+      if (!ollamaOnline) {
+        // Try to launch Ollama, then poll until it responds (it can take 5–15 s to bind).
+        await tryStartOllamaBackground();
+        const RETRY_DELAYS = [2000, 4000, 5000, 5000, 5000]; // up to ~21 s total
+        for (const delay of RETRY_DELAYS) {
+          await new Promise(r => setTimeout(r, delay));
+          try {
+            await axios.get(`${ollamaUrl}/api/tags`, { timeout: 4000 });
+            ollamaOnline = true;
+            // Notify renderer as soon as Ollama comes online mid-poll.
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('sadie:ollama-status', { online: true, url: ollamaUrl });
+            }
+            break;
+          } catch { /* still starting */ }
+        }
+      }
       console.log(`[MAIN] Ollama health: ${ollamaOnline ? 'online' : 'offline'} (${ollamaUrl})`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sadie:ollama-status', { online: ollamaOnline, url: ollamaUrl });
@@ -229,7 +294,7 @@ app.whenReady().then(async () => {
     const HEARTBEAT_INTERVAL = 30_000;
     setInterval(async () => {
       try {
-        const ollamaUrl = (getSettings().ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
+        const ollamaUrl = normalizeOllamaBaseUrl(getSettings().ollamaUrl || 'http://127.0.0.1:11434');
         await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
         restartInFlight = false;
         if (!lastOllamaOnline) {
@@ -249,11 +314,9 @@ app.whenReady().then(async () => {
         if (!restartInFlight) {
           restartInFlight = true;
           try {
-            const cmd = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
-            const child = spawn(cmd, ['serve'], { detached: true, stdio: 'ignore', windowsHide: true });
-            child.on('error', () => { restartInFlight = false; });
-            child.unref();
-          } catch { restartInFlight = false; }
+            await tryStartOllamaBackground();
+          } catch { }
+          restartInFlight = false;
         }
       }
     }, HEARTBEAT_INTERVAL);

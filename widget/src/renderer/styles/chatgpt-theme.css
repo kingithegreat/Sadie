@@ -1773,9 +1773,9 @@ body {
   backdrop-filter: blur(24px) saturate(1.3);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg), 0 0 0 1px oklch(100% 0 0 / 0.06);
-  inline-size: 90%;
-  max-inline-size: 480px;
-  max-block-size: 85vh;
+  inline-size: 96%;
+  max-inline-size: 720px;
+  max-block-size: 95vh;
   overflow: hidden;
   animation: settingsSlideUp 350ms cubic-bezier(0.2, 0, 0, 1);
   border: 1px solid oklch(100% 0 0 / 0.08);
@@ -1809,8 +1809,8 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--spacing-md);
-  max-height: calc(85vh - 80px);
+  padding: 20px 24px;
+  min-height: 0;
 }
 
 .settings-body::-webkit-scrollbar {
@@ -1877,6 +1877,10 @@ body {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .model-card-desc {
@@ -1885,18 +1889,48 @@ body {
   margin: 4px 0 0;
 }
 
+.model-fit-badge {
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 6px;
+}
+
+.model-fit-recommended {
+  border-color: color-mix(in srgb, var(--success-color, #22c55e) 55%, var(--bg-dark));
+}
+
+.model-fit-recommended .model-fit-badge {
+  border-color: var(--success-color, #22c55e);
+  color: var(--success-color, #22c55e);
+}
+
+.model-fit-tight .model-fit-badge {
+  border-color: var(--warning-color, #f59e0b);
+  color: var(--warning-color, #f59e0b);
+}
+
+.model-fit-over .model-fit-badge {
+  border-color: var(--danger-color, #ef4444);
+  color: var(--danger-color, #ef4444);
+}
+
 
 
 /* Setting input fields (used in SettingsPanel component) */
 .setting-input {
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 10px 14px;
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-sm);
   font-size: 14px;
   color: var(--text-primary);
   background: var(--bg-dark);
   transition: var(--transition-fast);
+  line-height: 1.4;
 }
 
 .setting-input:focus {
@@ -1913,22 +1947,25 @@ body {
 }
 
 .setting-group {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: 28px;
 }
 
 .setting-label {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
-  margin-bottom: var(--spacing-xs);
+  margin-bottom: 8px;
+  padding: 10px 0;
+  line-height: 1.4;
 }
 
 .setting-hint {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
-  margin-top: var(--spacing-xs);
+  margin-top: 8px;
+  line-height: 1.5;
 }
 
 .setting-sub-label {
@@ -2207,8 +2244,9 @@ body {
 .sp-telemetry-log { max-height: 220px; overflow: auto; background: #0f1724; padding: 8px; border-radius: 6px; }
 .sp-telemetry-pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; color: #cbd5e1; margin: 0; white-space: pre-wrap; }
 .settings-section {
-  margin-bottom: 24px;
-  padding: 16px;
+  margin-bottom: 36px;
+  margin-top: 12px;
+  padding: 22px 20px;
   background: var(--bg-dark);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
@@ -3395,9 +3433,9 @@ body {
   }
 }
 
-@container settings (max-width: 400px) {
+@container settings (max-width: 480px) {
   .settings-panel {
-    inline-size: 95%;
+    inline-size: 98%;
     max-inline-size: none;
   }
 }
@@ -3631,15 +3669,15 @@ body {
 
 /* Collapsible settings section toggle */
 .sp-section-toggle {
-  display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 10px 0; margin: 4px 0 2px; border: none; background: none;
-  font-size: 14px; font-weight: 600; color: var(--text-primary);
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 14px 0; margin: 6px 0 4px; border: none; background: none;
+  font-size: 15px; font-weight: 600; color: var(--text-primary);
   cursor: pointer; border-top: 1px solid var(--border-light, #333);
-  text-align: left;
+  text-align: left; letter-spacing: -0.01em;
 }
 .sp-section-toggle:first-child { border-top: none; }
 .sp-section-toggle:hover { color: var(--accent-primary, #4a6cf7); }
-.sp-section-arrow { font-size: 12px; width: 14px; display: inline-block; }
+.sp-section-arrow { font-size: 13px; width: 16px; display: inline-block; }
 
 /* Settings backup section */
 .sp-backup-section { border-top: 1px solid var(--border-light, #333); padding-top: 16px; margin-top: 8px; }
@@ -4267,14 +4305,14 @@ body {
 .custom-llm-section {
   background: var(--bg-darker);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
+  padding: 20px;
   border: 1px solid var(--border-light);
 }
 
 .custom-llm-section > .setting-label:first-child {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 16px;
   color: var(--text-primary);
 }
 
@@ -4285,13 +4323,13 @@ body {
 .provider-select {
   width: 100%;
   font-size: 14px;
-  padding: 10px 12px;
+  padding: 11px 14px;
 }
 
 .api-key-row {
   display: flex;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .api-key-input {
@@ -4300,10 +4338,10 @@ body {
 }
 
 .connect-btn {
-  min-width: 100px;
-  padding: 10px 16px;
+  min-width: 110px;
+  padding: 11px 18px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   border-radius: var(--radius-md);
   background: var(--accent-primary);
   color: var(--text-dark);

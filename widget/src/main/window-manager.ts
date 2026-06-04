@@ -9,7 +9,7 @@ function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
 let mainWindow: BrowserWindow | null = null;
 
 // Widget mode dimensions and state
-const WIDGET_SIZE = { width: 420, height: 620 };
+const WIDGET_SIZE = { width: 560, height: 820 };
 const EXPANDED_SIZE = { width: 1200, height: 800 };
 let isWidgetMode = process.env.SADIE_E2E === '1' ? false : true;
 

@@ -68,8 +68,8 @@ const JOKES: string[] = [
 
 function dayOfYear(): number {
   const now = new Date();
-  const start = new Date(now.getFullYear(), 0, 0);
-  const diff = now.getTime() - start.getTime();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), 0, 0));
+  const diff = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - start.getTime();
   return Math.floor(diff / 86400000);
 }
 
