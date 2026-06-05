@@ -105,3 +105,15 @@ persist*.txt
 persist*/
 hello.txt
 memory/rag-index.json
+
+# Build output (root-level)
+out/
+
+# Claude Code tooling
+.claude/
+
+# Memory archives (local data)
+memory/json-store/archives/
+
+# Temporary E2E debug artifacts
+widget/.tmp-e2e-*
