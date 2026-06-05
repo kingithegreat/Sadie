@@ -24,12 +24,12 @@ This ledger is shared by Copilot, Gemini Code Assist, Claude Code, and manual co
 | --- | --- | --- | --- |
 | Copilot | Available | Pick up only after updating this table | none claimed |
 | Gemini Code Assist | Available | Pick up only after updating this table | none claimed |
-| Claude Code | Available | Pick up only after updating this table | none claimed |
-| Human | Active | Update docs to match app state, push commits | `COPILOT_HANDOFF.md`, `ENVIRONMENT_STATUS.md`, `PROGRESS_REPORT.md` |
+| Claude Code | Done | Committed Codex handoff + pushed 11 commits to origin/main | `COPILOT_HANDOFF.md`, `CLAUDE_CODE_NEXT_STEPS.md` |
+| Human | Available | Pick up only after updating this table | none claimed |
 
 ## Current Slice
 
-Update all documentation to reflect current app state: recent IPC refactoring, LLM client improvements, settings panel enhancements, and infrastructure optimizations.
+Codex handoff complete. Ollama URL fix committed and all pending commits pushed to origin/main.
 
 ## Owner
 
@@ -37,33 +37,36 @@ Shared repo handoff for Copilot, Gemini Code Assist, Claude Code, and manual con
 
 ## Changed In This Slice
 
-- Updated Agent Board: Gemini released, Human claimed docs update slice
-- Updated model defaults to `qwen2.5:7b`
-- Documented recent optimizations (settings cache, Ollama heartbeat, LLM synthesis)
-- Updated COPILOT_HANDOFF.md to reflect current workstream
+- Committed Codex's Ollama URL fix (dynamic resolution replacing stale module-level constant)
+- Committed updated docs (AUDIT_SUMMARY, ENVIRONMENT_STATUS, PROGRESS_REPORT)
+- Added CLAUDE_CODE_NEXT_STEPS.md (Codex handoff notes)
+- Pushed 11 commits to origin/main (branch now up to date with remote)
 
 ## Files Touched
 
 - `COPILOT_HANDOFF.md`
+- `CLAUDE_CODE_NEXT_STEPS.md`
+- `AUDIT_SUMMARY.md`
 - `ENVIRONMENT_STATUS.md`
-- `PROGRESS_REPORT.md` (minor status updates)
-- `README.md` (if model references need updating)
+- `PROGRESS_REPORT.md`
+- `widget/src/main/message-router.ts`
+- `widget/src/main/ipc-handlers.ts`
+- `widget/src/main/__tests__/synthesis-guard.test.ts`
 
 ## Validation
 
-- Documentation updates reviewed and applied
-- `git status` confirms 24 modified files ready for commit
-- No breaking changes to functionality
+- `git push origin main` PASS — 11 commits pushed
+- Code review of Ollama URL fix PASS — correct dynamic resolution
+- `git status` clean — no uncommitted changes
 
 ## Open Risks
 
 - MCP server integration: fetch server unreliable due to upstream MCP SDK issue
 - Installer/auto-update: packaged-release validation pending before first GitHub Release
-- Line ending normalization: CRLF replacement warnings on 8 files before commit
 
 ## Next Safe Step
 
-Commit the 24 modified files with message: "docs: update to match current app state (qwen2.5:7b default, settings cache, Ollama heartbeat, LLM synthesis, avatars, API key encryption)" then push the 8 ahead commits to origin/main.
+Verify chat UI model switching works end-to-end (see CLAUDE_CODE_NEXT_STEPS.md items 1-2).
 
 ## Handoff Procedure
 
