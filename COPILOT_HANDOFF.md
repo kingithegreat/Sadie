@@ -23,13 +23,13 @@ This ledger is shared by Copilot, Gemini Code Assist, Claude Code, and manual co
 | Agent | Status | Slice | Files |
 | --- | --- | --- | --- |
 | Copilot | Available | Pick up only after updating this table | none claimed |
-| Gemini Code Assist | Active | Draft GitHub release notes for v1.1.0 | `CHANGELOG.md`, `COPILOT_HANDOFF.md` |
+| Gemini Code Assist | Available | Pick up only after updating this table | none claimed |
 | Claude Code | Available | Pick up only after updating this table | none claimed |
-| Human | Available | Review and publish release | not file-bound |
+| Human | Active | Update docs to match app state, push commits | `COPILOT_HANDOFF.md`, `ENVIRONMENT_STATUS.md`, `PROGRESS_REPORT.md` |
 
 ## Current Slice
 
-Draft the GitHub release notes for version 1.1.0 based on the recent `CHANGELOG.md` updates.
+Update all documentation to reflect current app state: recent IPC refactoring, LLM client improvements, settings panel enhancements, and infrastructure optimizations.
 
 ## Owner
 
@@ -37,25 +37,33 @@ Shared repo handoff for Copilot, Gemini Code Assist, Claude Code, and manual con
 
 ## Changed In This Slice
 
-- Assumed human QA passed.
-- Claimed slice to draft release notes for v1.1.0.
+- Updated Agent Board: Gemini released, Human claimed docs update slice
+- Updated model defaults to `qwen2.5:7b`
+- Documented recent optimizations (settings cache, Ollama heartbeat, LLM synthesis)
+- Updated COPILOT_HANDOFF.md to reflect current workstream
 
 ## Files Touched
 
 - `COPILOT_HANDOFF.md`
+- `ENVIRONMENT_STATUS.md`
+- `PROGRESS_REPORT.md` (minor status updates)
+- `README.md` (if model references need updating)
 
 ## Validation
 
-- Human QA assumed `PASS`.
+- Documentation updates reviewed and applied
+- `git status` confirms 24 modified files ready for commit
+- No breaking changes to functionality
 
 ## Open Risks
 
-- Windows code signing remains an external release requirement.
-- Real Ollama and packaged-release sanity checks still need a manual pass outside Jest.
+- MCP server integration: fetch server unreliable due to upstream MCP SDK issue
+- Installer/auto-update: packaged-release validation pending before first GitHub Release
+- Line ending normalization: CRLF replacement warnings on 8 files before commit
 
 ## Next Safe Step
 
-Human: Review the drafted release notes. If they look good, create the `v1.1.0` tag and publish the release on GitHub with the `SADIE Setup 1.1.0.exe` artifact.
+Commit the 24 modified files with message: "docs: update to match current app state (qwen2.5:7b default, settings cache, Ollama heartbeat, LLM synthesis, avatars, API key encryption)" then push the 8 ahead commits to origin/main.
 
 ## Handoff Procedure
 

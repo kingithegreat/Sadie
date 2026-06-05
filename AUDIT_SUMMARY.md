@@ -11,9 +11,9 @@ Provide a secure, extensible AI assistant running entirely on the user's machine
 
 Use:
 
-n8n for workflow orchestration,
+n8n for optional workflow orchestration,
 
-Ollama for local LLM inference (e.g., llama3.2:3b, LLaVA),
+Ollama for local LLM inference (e.g., qwen2.5:7b for chat, moondream for vision),
 
 PowerShell and TypeScript tools for system-level operations,
 
@@ -94,7 +94,7 @@ The active file web.ts implements web-related tools (search, URL fetch, weather)
 
 2. Current Status
 
-Based on COMPLIANCE_REPORT.md, PROJECT_PLAN.md, and recent code changes (v1.1.0, May 2026), SADIE is **100% functionally complete**. All planned phases are implemented, tested, and shipped.
+Based on COMPLIANCE_REPORT.md, PROJECT_PLAN.md, and recent code changes (June 2026), SADIE is **100% functionally complete** with significant optimization and hardening work completed. All planned phases are implemented, tested, and continuously refined for reliability and performance.
 
 2.1 Implemented and Working
 
@@ -112,7 +112,7 @@ Tool routing,
 
 Memory persistence (/data/memory).
 
-Integrated with Ollama (e.g., llama3.2:3b) for local inference.
+Integrated with Ollama (e.g., qwen2.5:7b) for local inference with health checks and auto-restart.
 
 Safety System
 

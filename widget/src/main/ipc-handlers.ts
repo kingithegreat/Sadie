@@ -957,7 +957,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
           title = resp.data?.choices?.[0]?.message?.content ?? '';
         }
       } else {
-        const ollamaBase = (process.env.OLLAMA_URL || (settings as any).ollamaUrl || DEFAULT_OLLAMA_URL).trim();
+        const ollamaBase = getConfiguredOllamaBaseUrl();
         const model = settings.chatModel || process.env.OLLAMA_MODEL || 'qwen2.5:7b';
         const prompt = `${titleInstruction}\nUser: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:`;
         const resp = await axios.post(

@@ -113,7 +113,22 @@ export function isGarbageOutput(text: string): string | null {
 
   return null;
 }
-const OLLAMA_URL = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
+function normalizeOllamaBaseUrl(raw?: string): string {
+  const input = (raw || DEFAULT_OLLAMA_URL).trim();
+  try {
+    const u = new URL(input);
+    if (u.hostname === 'localhost') u.hostname = '127.0.0.1';
+    const base = u.toString().replace(/\/+$/, '');
+    return base || DEFAULT_OLLAMA_URL;
+  } catch {
+    return DEFAULT_OLLAMA_URL;
+  }
+}
+
+function getConfiguredOllamaBaseUrl(): string {
+  const settings = getSettings();
+  return normalizeOllamaBaseUrl(process.env.OLLAMA_URL || settings.ollamaUrl || DEFAULT_OLLAMA_URL);
+}
 
 // Track if we've already warned about custom LLM config (to avoid spamming)
 let customLLMWarningShown = false;
@@ -2706,6 +2721,7 @@ export async function streamFromOllamaWithTools(
     : undefined;
   
   console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, hasDocuments=${hasDocuments}, isGreeting=${skipToolsForGreeting}, message="${message.substring(0, 30)}..."`);
+  const ollamaBase = getConfiguredOllamaBaseUrl();
   
   // Tool execution context
   const toolContext: ToolContext = {
@@ -2740,7 +2756,7 @@ export async function streamFromOllamaWithTools(
       // Model failover: try primary model first; on connection/model errors, retry with fallback
       let response: any;
       try {
-        response = await axios.post(`${OLLAMA_URL}/api/chat`, requestBody, {
+        response = await axios.post(`${ollamaBase}/api/chat`, requestBody, {
           responseType: 'stream',
           timeout: 0,
           signal: controller.signal
@@ -2767,7 +2783,7 @@ export async function streamFromOllamaWithTools(
               const sysIdx = messages.findIndex(m => m.role === 'system');
               if (sysIdx >= 0) messages[sysIdx].content = newPrompt;
             }
-            response = await axios.post(`${OLLAMA_URL}/api/chat`, requestBody, {
+            response = await axios.post(`${ollamaBase}/api/chat`, requestBody, {
               responseType: 'stream',
               timeout: 0,
               signal: controller.signal
@@ -4917,7 +4933,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                         ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
                         : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 }
                     };
-                    const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
+                    const fallbackRes = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
                     const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
                     const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                     if (finalText) {
@@ -4965,7 +4981,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
                   : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 }
               };
-              const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
+              const fallbackRes = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
               const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
               const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
               if (finalText) {
@@ -5005,7 +5021,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
                   : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 }
               };
-              const fallbackRes = await axios.post(`${OLLAMA_URL}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
+              const fallbackRes = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
               // Parse and send final assistant content
               try {
                 const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));

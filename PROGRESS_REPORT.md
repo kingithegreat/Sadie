@@ -3,7 +3,7 @@
 **Student Name:** Aden King
 **Student Number:** [Insert Student Number]
 **Project:** SADIE — Structured AI Desktop Intelligence Engine
-**Date:** 2 May 2026
+**Date:** 5 June 2026 (updated)
 
 ---
 
@@ -25,7 +25,7 @@ The project distinguishes itself from cloud-based assistants (ChatGPT, Copilot) 
 
 ### 1.2 Where you are on the timeline
 
-The project began on **17 November 2025** and is currently **just under 6 months into development** with **378 commits** across the main branch. The project is in the **stabilisation and polish phase** — all core features are implemented and functional, and current work focuses on reliability, response quality, performance optimisation, and release-readiness reconciliation.
+The project began on **17 November 2025** and is currently **just over 6 months into development** with **386 commits** across the main branch. The project is in the **stabilisation and polish phase** — all core features are implemented and functional, and current work focuses on reliability, response quality, performance optimisation, IPC refactoring, and release-readiness preparation.
 
 Development velocity has accelerated significantly in recent months:
 
@@ -36,7 +36,8 @@ Development velocity has accelerated significantly in recent months:
 | Jan 2026 | 7 | Reduced activity (planning/research) |
 | Feb 2026 | 29 | Tool system, model selector, settings |
 | Mar 2026 | 125 | Major feature push — tools, UI overhaul, testing |
-| Apr 2026 (partial) | 85 | Stability, performance, bug fixes, polish, avatars, docs |
+| May 2026 | 85 | Stability, performance, bug fixes, polish, avatars, docs |
+| Jun 2026 (current) | 8 | IPC refactoring, LLM client hardening, settings panel polish, docs sync |
 
 ### 1.3 What is completed and not completed
 
@@ -77,6 +78,15 @@ Development velocity has accelerated significantly in recent months:
 | Custom chat avatars | ✅ Complete | Illustrated SADIE character and golden user icon replace emoji placeholders |
 | API key encryption | ✅ Complete | Secret fields encrypted at rest via Electron `safeStorage` |
 | Default model upgrade | ✅ Complete | Switched from `llama3.2:3b` → `qwen2.5:7b` for significantly better response quality |
+
+**Latest optimizations (June 2026):**
+
+| Feature | Status | Details |
+|---------|--------|----------|
+| IPC refactoring | ✅ Complete | Enhanced message-router, custom-llm-client, and ipc-handlers for better reliability |
+| Settings panel polish | ✅ Complete | UI improvements and test coverage enhancements (+125 lines) |
+| Custom LLM client improvements | ✅ Complete | Better error handling and fallback logic (+92 lines) |
+| Documentation sync | 🔄 In Progress | Aligning all docs to match June 2026 app state and recent architecture changes |
 
 **Not yet completed:**
 
@@ -269,8 +279,8 @@ The main risk is **scope creep** — the tool count has grown from an initial pl
 
 | Metric | Value |
 |--------|-------|
-| Total commits | 378 |
-| Development period | Nov 2025 — May 2026 (just under 6 months) |
+| Total commits | 386 |
+| Development period | Nov 2025 — Jun 2026 (6+ months) |
 | Source files (TypeScript/TSX) | 234 |
 | Lines of TypeScript | ~14,000 |
 | Lines of CSS | ~4,800 |

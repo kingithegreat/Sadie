@@ -92,7 +92,12 @@ describe('streamFromOllamaWithTools — noTools guard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Reset settings to no cloud model
-    Object.assign(mockSettings, { chatModel: 'llama3.2:3b', useCustomLLM: false, customLLM: null });
+    Object.assign(mockSettings, {
+      chatModel: 'llama3.2:3b',
+      ollamaUrl: 'http://127.0.0.1:11434',
+      useCustomLLM: false,
+      customLLM: null
+    });
     (axios.post as jest.MockedFunction<any>).mockResolvedValue({ data: makeMockOllamaStream() });
   });
 
@@ -130,11 +135,26 @@ describe('streamFromOllamaWithTools — noTools guard', () => {
     const requestBody = postCalls[0][1];
     expect(requestBody).not.toHaveProperty('tools');
   });
+
+  test('uses the configured Ollama URL for chat requests', async () => {
+    Object.assign(mockSettings, {
+      ollamaUrl: 'http://localhost:11434/',
+      useCustomLLM: false,
+      customLLM: null,
+    });
+
+    await callStream('Hello', { noTools: true });
+
+    const postCalls = (axios.post as jest.MockedFunction<any>).mock.calls;
+    expect(postCalls.length).toBeGreaterThan(0);
+    expect(postCalls[0][0]).toBe('http://127.0.0.1:11434/api/chat');
+  });
 });
 
 describe('streamFromOllamaWithTools — cloud model guard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.assign(mockSettings, { ollamaUrl: 'http://127.0.0.1:11434' });
     (axios.post as jest.MockedFunction<any>).mockResolvedValue({ data: makeMockOllamaStream() });
   });
 

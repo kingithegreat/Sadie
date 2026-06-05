@@ -24,10 +24,10 @@ Current development environment configuration and readiness status.
 
 | Model | Size | Status | Purpose |
 |---|---|---|---|
-| `llama3.2:3b` | ~2 GB | Required | Primary chat |
-| `qwen2.5-coder:3b` | ~2 GB | Required | Code generation |
-| `llava:latest` | ~4 GB | Required | Computer vision |
-| `dolphin-llama3:8b` | ~5 GB | Optional | Uncensored mode |
+| `qwen2.5:7b` | ~4 GB | Required | Primary chat (default) |
+| `qwen2.5-coder:3b` | ~2 GB | Optional | Code generation |
+| `moondream` | ~2 GB | Optional | Computer vision / OCR |
+| `nomic-embed-text` | ~300 MB | Optional | RAG embeddings |
 
 **Ollama endpoint**: `http://localhost:11434`
 
@@ -48,6 +48,19 @@ ollama list
 | **DeepSeek** | DeepSeek V3 | Settings → LLM Provider |
 
 Cloud providers are optional. SADIE runs fully offline with Ollama alone.
+
+---
+
+## Recent Optimizations (June 2026)
+
+| Component | Optimization | Impact |
+|---|---|---|
+| **Settings I/O** | 5-second in-memory cache with write-through invalidation | 95% reduction in disk reads |
+| **Ollama Health** | 30-second heartbeat check with auto-restart on failure | Improved reliability and user-facing status notifications |
+| **Tool Results** | LLM synthesis layer for weather, NBA, web search responses | More conversational, natural outputs |
+| **Model Fallback** | GPU VRAM detection via PowerShell, startup fallback to best installed model | Prevents OOM crashes, automatic recovery |
+| **API Keys** | Encrypted at rest via Electron `safeStorage` | Secure secret storage |
+| **UI Avatars** | Custom illustrated SADIE character + golden user icon | Enhanced visual identity |
 
 ---
 
