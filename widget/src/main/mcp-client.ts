@@ -238,7 +238,7 @@ function getDefaultServers(): McpServerConfig[] {
       name: 'fetch',
       command: 'cmd',
       args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-fetch'],
-      enabled: true,
+      enabled: false,
     },
     {
       type: 'stdio',

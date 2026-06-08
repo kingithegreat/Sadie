@@ -130,6 +130,14 @@ describe('seedMcpDefaults', () => {
     expect(names).toContain('memory');
   });
 
+  test('fetch server defaults to disabled', () => {
+    seedMcpDefaults();
+    const cfg = loadMcpConfig();
+    const fetch = cfg.servers.find(s => s.name === 'fetch');
+    expect(fetch).toBeDefined();
+    expect(fetch!.enabled).toBe(false);
+  });
+
   test('does not overwrite existing config on re-seed', () => {
     saveMcpConfig({ servers: [{ type: 'sse' as const, name: 'custom', url: 'http://custom', enabled: true }] });
     seedMcpDefaults(); // should be a no-op
