@@ -489,6 +489,52 @@ async function searchDuckDuckGo(query: string, maxResults: number): Promise<Arra
   return results;
 }
 
+// Search using DuckDuckGo Lite (simpler HTML, more reliable than full DDG)
+async function searchDDGLite(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  const encodedQuery = encodeURIComponent(query);
+  const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}`;
+
+  console.log('[SADIE Web] Searching DDG Lite for:', query);
+  const html = await httpGet(searchUrl, {
+    'Accept': 'text/html',
+    'Accept-Language': 'en-US,en;q=0.5',
+  });
+  console.log('[SADIE Web] DDG Lite response length:', html.length);
+
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // DDG Lite uses simple table rows:
+  //   <a rel="nofollow" href="URL" class="result-link">Title</a>
+  //   followed by <td class="result-snippet">Snippet text</td>
+  const linkPat = /<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const snippetPat = /<td[^>]*class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi;
+
+  const links: Array<{ url: string; title: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = linkPat.exec(html)) !== null) {
+    const url = m[1].trim();
+    const title = stripHtml(m[2]).trim();
+    if (url.startsWith('http') && title.length > 3 && isAllowedDomain(url)) {
+      links.push({ url, title });
+    }
+  }
+
+  const snippets: string[] = [];
+  while ((m = snippetPat.exec(html)) !== null) {
+    snippets.push(stripHtml(m[1]).trim());
+  }
+
+  for (let i = 0; i < Math.min(links.length, maxResults); i++) {
+    results.push({
+      title: links[i].title,
+      url: links[i].url,
+      snippet: snippets[i] || '',
+    });
+  }
+
+  return results;
+}
+
 // Search using Brave Search (another fallback)
 async function searchBrave(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
   const encodedQuery = encodeURIComponent(query);
@@ -840,6 +886,14 @@ const SEARCH_PROVIDERS: SearchProvider[] = [
     }
   },
   {
+    name: 'DDG Lite',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchDDGLite(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  },
+  {
     name: 'Google',
     available: () => true,
     search: async (query, max) => {
@@ -880,6 +934,7 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     let results: Array<{ title: string; url: string; snippet: string }> = [];
     let tavilyAnswer: string | undefined;
     let tavilySources: Array<{ url: string; title: string; content: string }> = [];
+    let searchProvider = 'none';
 
     for (const provider of SEARCH_PROVIDERS) {
       if (!provider.available()) continue;
@@ -890,6 +945,7 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
           results = providerResult.results;
           tavilySources = providerResult.sources;
           if (providerResult.answer) tavilyAnswer = providerResult.answer;
+          searchProvider = provider.name;
           console.log(`[SADIE Web] ${provider.name} returned ${results.length} results`);
           break;
         }
@@ -943,6 +999,19 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       console.log(`[SADIE Web] Got content from ${sources.length}/${toFetch.length} source(s)`);
     }
 
+    // When page fetches all failed but we have snippets from the search results,
+    // use snippets as lightweight source content so the LLM has real data to work with.
+    if (sources.length === 0 && results.length > 0) {
+      const snippetSources = results
+        .filter(r => r.snippet && r.snippet.length > 30)
+        .slice(0, fetchResultCount)
+        .map(r => ({ url: r.url, title: r.title, content: r.snippet }));
+      if (snippetSources.length > 0) {
+        sources = snippetSources;
+        console.log(`[SADIE Web] Using ${snippetSources.length} snippet(s) as fallback sources`);
+      }
+    }
+
     const topContent = sources[0] ?? null;
     // Trim source content for small models — long walls of text cause hallucination.
     // Keep first 800 chars per source (enough for key facts, short enough to reason over).
@@ -954,14 +1023,16 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     const resultPayload: any = {
       query,
       resultCount: results.length,
+      searchProvider,
       results: results.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
       sources: trimmedSources,
+      sourceCount: sources.length,
       // Keep topResultContent for backward-compat with any code that reads it
       topResultContent: topContent ? { ...topContent, content: topContent.content.length > 800 ? topContent.content.substring(0, 800) + '...' : topContent.content } : null,
       instruction: 'Summarize the KEY facts from these sources in 2-4 sentences. Do not repeat raw text. If the sources do not answer the question, say so.',
       note: sources.length > 0
-        ? `Fetched content from ${sources.length} source(s): ${sources.map(s => `"${s.title}"`).join(', ')}`
-        : 'Could not fetch detailed content. You may need to use fetch_url on specific results.',
+        ? `Fetched content from ${sources.length} source(s) via ${searchProvider}: ${sources.map(s => `"${s.title}"`).join(', ')}`
+        : `Search via ${searchProvider} found links but could not fetch detailed content.`,
     };
     // Include Tavily AI answer if available
     if (tavilyAnswer) {

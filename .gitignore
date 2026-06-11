@@ -54,7 +54,6 @@ widget/test-results/
 widget/playwright-report/
 widget/trace-output/
 widget/release/
-widget/jest-result.json
 
 # Docker volumes
 docker-data/

@@ -1025,6 +1025,12 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'web_search', arguments: { query: `NBA ${searchQuery}`, maxResults: 5, fetchTopResult: true } }] };
   }
 
+  // NBA/sports prediction questions — use web_search so we get real-time expert
+  // analysis instead of the LLM hallucinating outdated predictions.
+  if (isOpinionQuestion && /\b(nba|basketball|finals?|playoffs?|championship)\b/i.test(m) && !hasMusicOrContentIntent && !isConversational) {
+    return { calls: [{ name: 'web_search', arguments: { query: userMessage.trim(), maxResults: 5, fetchTopResult: true } }] };
+  }
+
   if ((nbaTeamIsIntent || /\b(nba|basketball|game(s)?|scores?|playing|play next|play today|schedul[e]?|shedule|play\s*offs?|playoffs?)\b/i.test(m)) && !hasMusicOrContentIntent && !isOpinionQuestion && !isConversational) {
     let teamQuery = '';
     // Exact match first
@@ -1439,6 +1445,20 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'web_search', arguments: { query: userMessage.trim(), maxResults: 5, fetchTopResult: true } }] };
   }
 
+  // BARE "search the web" / "search it" / "web search" — user wants a web search
+  // but didn't specify a query.  Derive the query from the previous user message
+  // when available, otherwise use the raw message.
+  if (/^(search\s+(?:the\s+)?web|web\s+search|search\s+(?:it|that|this)|just\s+search(?:\s+it)?|(?:can\s+you\s+)?search\s+(?:the\s+)?(?:internet|web|online))[!?.]*$/i.test(m.trim())) {
+    let q = userMessage.trim();
+    if (conversationId) {
+      const prev = getLastIntent(conversationId);
+      if (prev?.userMessage) {
+        q = prev.userMessage.trim();
+      }
+    }
+    return { calls: [{ name: 'web_search', arguments: { query: q, maxResults: 5, fetchTopResult: true } }] };
+  }
+
   // WEB SEARCH intents — be careful not to match "what is this document" etc.
   if (/\b(search for|look up|tell me about|google)\b/i.test(m)) {
     const q = userMessage.trim();
@@ -1697,17 +1717,23 @@ function buildSearchContext(sr: any, charBudget = 3000): string {
  * Exported so it can be unit-tested without spinning up Electron.
  */
 export function makeSynthesisPrompt(searchContext: string, question: string): string {
-  return `[SEARCH RESULTS]\n${searchContext}\n[/SEARCH RESULTS]\n\n` +
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  return `[SEARCH RESULTS — retrieved ${today}]\n${searchContext}\n[/SEARCH RESULTS]\n\n` +
     `IMPORTANT: You have already been given the search results above. ` +
     `DO NOT say you are unable to fetch, access, or retrieve information — you have the results. ` +
     `DO NOT start your response with any disclaimer such as "I'm unable to fetch", ` +
     `"I cannot access", "I don't have real-time access", or anything similar. ` +
     `Answer directly and immediately.\n\n` +
+    `Today's date is ${today}.\n\n` +
     `Using ONLY the search results above, answer the following question concisely. ` +
     `Report the key facts and cite sources inline (e.g. "According to [title], ..."). ` +
     `If the results contain limited information, state what was found — do NOT suggest the user ` +
     `check YouTube, news websites, Wikipedia, or any other source.\n\n` +
-    `CRITICAL: Do NOT fabricate, guess, or invent any facts not present in the search results. ` +
+    `CRITICAL: Do NOT fabricate, guess, or invent ANY facts, dates, statistics, odds, scores, ` +
+    `or names not explicitly present in the search results above. If you cannot find a specific ` +
+    `answer in the results, say "Based on the search results, I couldn't find specific information ` +
+    `about [topic]" and summarize what IS in the results instead. ` +
+    `NEVER make up betting odds, scores, dates, or rankings. ` +
     `For sports data: if games show as "Scheduled" or "Pre-game", say they haven't been played yet — ` +
     `do NOT guess final scores, stat lines, or outcomes. Only report what is explicitly in the results.\n\n` +
     `Question: ${question}`;
@@ -1720,9 +1746,12 @@ export function makeSynthesisPrompt(searchContext: string, question: string): st
  */
 export function makeSynthesisPromptCompact(searchContext: string, question: string): string {
   const trimmed = searchContext.slice(0, 1500);
-  return `[SEARCH RESULTS]\n${trimmed}\n[/SEARCH RESULTS]\n\n` +
-    `Answer the question from the results above. Do NOT say you cannot access data. ` +
-    `Do NOT invent facts. For scheduled games, say they haven't been played.\n\n` +
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  return `[SEARCH RESULTS — ${today}]\n${trimmed}\n[/SEARCH RESULTS]\n\n` +
+    `Today is ${today}. Answer the question ONLY from the results above.\n` +
+    `RULES: Do NOT say you cannot access data. Do NOT invent or guess ANY facts, ` +
+    `odds, scores, dates, or statistics not in the results. If the answer is not in ` +
+    `the results, say so honestly. For scheduled games, say they haven't been played.\n\n` +
     `Question: ${question}`;
 }
 
@@ -1820,7 +1849,7 @@ async function synthesisStream(
     const history = recentHistory.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
     return streamFromCustomLLM(
       augmentedMessage, history, cloudCfg,
-      'You are answering from pre-fetched search results. DO NOT say you are unable to fetch information — the results are already provided. Summarize the key facts in 2-4 concise sentences.',
+      `You are answering from pre-fetched search results. Today is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}. DO NOT say you are unable to fetch information — the results are already provided. DO NOT fabricate or guess any facts, dates, odds, scores, or statistics not in the results. Summarize the key facts in 2-4 concise sentences.`,
       onChunk, onEnd, onError, signal
     );
   }
@@ -3719,9 +3748,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             if (webSearchResult) {
               const sr = webSearchResult.result;
               const searchContext = buildSearchContextForModel(sr);
-              if (!searchContext) {
-                // Web search ran but returned empty content — tell the user
-                const noResultMsg = `I searched the web for that but couldn't retrieve useful content. Try rephrasing, or check a news source directly.`;
+              // Content quality gate: check if we have enough real content to
+              // synthesize from.  Titles/URLs alone cause the LLM to hallucinate.
+              const hasRealContent = searchContext &&
+                searchContext.length > 80 &&
+                // Check for actual prose, not just numbered link lists
+                (searchContext.split(/\n/).some(l => l.length > 60 && !/^\s*\d+\.\s+\S+:\s*\(?(https?:)/.test(l)) ||
+                 /summary:/i.test(searchContext));
+              if (!searchContext || !hasRealContent) {
+                // Web search ran but returned only thin links — tell the user honestly
+                const linkList = Array.isArray(sr.results) && sr.results.length > 0
+                  ? '\n\nHere are some links that may help:\n' + sr.results.slice(0, 5).map((r: any, i: number) => `${i + 1}. [${r.title}](${r.url})`).join('\n')
+                  : '';
+                const noResultMsg = `I searched the web but couldn't retrieve enough content to give you a reliable answer.${linkList}\n\nTry rephrasing your question, or I can open one of these links in your browser.`;
                 addToHistory(convId, 'assistant', noResultMsg);
                 try { event.sender.send('sadie:stream-chunk', { chunk: noResultMsg, streamId }); } catch (e) { safeCatch(e); }
                 try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }

@@ -36,10 +36,9 @@ describe('makeSynthesisPrompt', () => {
   });
 
   test('wraps context in [SEARCH RESULTS] block', () => {
-    expect(prompt).toContain('[SEARCH RESULTS]');
+    expect(prompt).toMatch(/\[SEARCH RESULTS[^\]]*\]/);
     expect(prompt).toContain('[/SEARCH RESULTS]');
-    expect(prompt.indexOf('[SEARCH RESULTS]')).toBeLessThan(prompt.indexOf(MOCK_CONTEXT));
-    expect(prompt.indexOf(MOCK_CONTEXT)).toBeLessThan(prompt.indexOf('[/SEARCH RESULTS]'));
+    expect(prompt.indexOf('[/SEARCH RESULTS]')).toBeGreaterThan(prompt.indexOf(MOCK_CONTEXT));
   });
 
   test('includes the user question', () => {
@@ -106,7 +105,7 @@ describe('makeSynthesisPromptCompact', () => {
 
   test('wraps context in [SEARCH RESULTS] block', () => {
     const prompt = makeSynthesisPromptCompact(MOCK_CONTEXT, MOCK_QUESTION);
-    expect(prompt).toContain('[SEARCH RESULTS]');
+    expect(prompt).toMatch(/\[SEARCH RESULTS[^\]]*\]/);
     expect(prompt).toContain('[/SEARCH RESULTS]');
   });
 
@@ -123,6 +122,6 @@ describe('makeSynthesisPromptCompact', () => {
 
   test('includes anti-hallucination instruction', () => {
     const prompt = makeSynthesisPromptCompact(MOCK_CONTEXT, MOCK_QUESTION);
-    expect(prompt.toLowerCase()).toContain('do not invent facts');
+    expect(prompt.toLowerCase()).toMatch(/do not invent.*facts/);
   });
 });

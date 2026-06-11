@@ -113,33 +113,35 @@ describe('NBA opinion guard — analysis questions skip NBA tool', () => {
 
   test('"do you think the warriors can still win the season?" does NOT route to nba_query', async () => {
     const r = await preProcessIntent('do you think the warriors can still win the season?');
-    // Should fall through to general LLM chat (null = no tool match)
-    expect(r).toBeNull();
+    // Should NOT route to nba_query — may route to web_search or fall through to LLM
+    if (r) expect(r.calls[0].name).not.toBe('nba_query');
   });
 
   test('"can the lakers make the playoffs?" does NOT route to nba_query', async () => {
     const r = await preProcessIntent('can the lakers make the playoffs?');
-    expect(r).toBeNull();
+    // May route to web_search for live analysis — that's OK, just not nba_query
+    if (r) expect(r.calls[0].name).not.toBe('nba_query');
   });
 
   test('"what are the celtics chances of winning the championship?" does NOT route to nba_query', async () => {
     const r = await preProcessIntent('what are the celtics chances of winning the championship?');
-    expect(r).toBeNull();
+    if (r) expect(r.calls[0].name).not.toBe('nba_query');
   });
 
   test('"will the bucks win it all this year?" does NOT route to nba_query', async () => {
     const r = await preProcessIntent('will the bucks win it all this year?');
-    expect(r).toBeNull();
+    if (r) expect(r.calls[0].name).not.toBe('nba_query');
   });
 
   test('"who do you think will win the NBA championship?" does NOT route to nba_query', async () => {
     const r = await preProcessIntent('who do you think will win the NBA championship?');
-    expect(r).toBeNull();
+    // Should route to web_search for real-time expert analysis
+    if (r) expect(r.calls[0].name).not.toBe('nba_query');
   });
 
   test('"realistically can the warriors contend?" does NOT route to nba_query', async () => {
     const r = await preProcessIntent('realistically can the warriors contend?');
-    expect(r).toBeNull();
+    if (r) expect(r.calls[0].name).not.toBe('nba_query');
   });
 
   // Ensure factual queries STILL route correctly
