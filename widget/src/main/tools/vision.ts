@@ -27,12 +27,12 @@ function getVisionConfig(): { ollamaUrl: string; visionModel: string } {
     const s = getSettings();
     return {
       ollamaUrl: (s.ollamaUrl || process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/$/, ''),
-      visionModel: s.visionModel || process.env.OLLAMA_VISION_MODEL || 'llava',
+      visionModel: s.visionModel || process.env.OLLAMA_VISION_MODEL || 'moondream',
     };
   } catch {
     return {
       ollamaUrl: (process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/$/, ''),
-      visionModel: process.env.OLLAMA_VISION_MODEL || 'llava',
+      visionModel: process.env.OLLAMA_VISION_MODEL || 'moondream',
     };
   }
 }

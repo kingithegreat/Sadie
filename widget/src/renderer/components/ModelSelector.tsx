@@ -187,7 +187,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const allModels = [...customModelInfos, ...installedModelInfos];
 
-  const forcedModelId = lockedModelId || 'dolphin-llama3:8b';
+  const forcedModelId = lockedModelId || 'qwen2.5:7b';
 
   const activeCustomModelId = customLLM?.model || '';
 

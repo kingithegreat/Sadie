@@ -268,7 +268,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   customLLM,
   useCustomLLM = false,
   onModelChange,
-  uncensoredModel = 'dolphin-llama3:8b',
+  uncensoredModel = 'qwen2.5:7b',
   vramGB
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);

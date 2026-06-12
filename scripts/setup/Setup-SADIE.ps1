@@ -130,9 +130,9 @@ $dfgPath = Join-Path $Base "config\default-config.json"
 if (-not (Test-Path $dfgPath)) {
     $defaultConfig = [ordered]@{
         n8nUrl            = "http://localhost:5678"
-        ollamaUrl         = "http://localhost:11434"
+        ollamaUrl         = "http://127.0.0.1:11434"
         chatModel         = "qwen2.5:7b"
-        visionModel       = "llava:latest"
+        visionModel       = "moondream"
         alwaysOnTop       = $false
         widgetHotkey      = "CommandOrControl+Shift+Space"
         telemetryEnabled  = $false

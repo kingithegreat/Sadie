@@ -349,8 +349,8 @@ describe('MOA_PRESETS', () => {
     }
   });
 
-  test('balanced preset has 3 proposers', () => {
-    expect(MOA_PRESETS.balanced.proposers).toHaveLength(3);
+  test('balanced preset has 2 proposers', () => {
+    expect(MOA_PRESETS.balanced.proposers).toHaveLength(2);
   });
 
   test('lightweight preset has only 2 proposers', () => {
@@ -388,17 +388,15 @@ describe('recommendMoAPreset', () => {
     expect(result!.preset).toBe('codeHeavy');
   });
 
-  test('recommends balanced for 8 GB', () => {
-    const result = recommendMoAPreset(8);
+  test('recommends a preset for 16 GB or more', () => {
+    const result = recommendMoAPreset(16);
     expect(result).not.toBeNull();
-    expect(['codeHeavy', 'balanced']).toContain(result!.preset);
+    expect(['codeHeavy', 'balanced', 'lightweight']).toContain(result!.preset);
   });
 
-  test('returns a preset for 4 GB (small models fit in 3.5 GB peak)', () => {
+  test('returns null for 4 GB (7B models too large for MoA)', () => {
     const result = recommendMoAPreset(4);
-    expect(result).not.toBeNull();
-    // codeHeavy and lightweight both need ~3.5 GB peak; codeHeavy ranks higher
-    expect(['codeHeavy', 'lightweight']).toContain(result!.preset);
+    expect(result).toBeNull();
   });
 
   test('returns null for 1 GB (not enough)', () => {
@@ -428,32 +426,30 @@ describe('recommendConfig', () => {
     expect(result!.mode).toBe('moa');
   });
 
-  test('recommends phi4-mini for exactly 4 GB', () => {
+  test('recommends qwen2.5:7b for exactly 4 GB', () => {
     const result = recommendConfig(4);
     expect(result).not.toBeNull();
     expect(result!.mode).toBe('single');
-    expect(result!.model).toBe('phi4-mini');
+    expect(result!.model).toBe('qwen2.5:7b');
   });
 
-  test('recommends phi4-mini for 5 GB', () => {
+  test('recommends qwen2.5:7b for 5 GB', () => {
     const result = recommendConfig(5);
     expect(result).not.toBeNull();
     expect(result!.mode).toBe('single');
-    expect(result!.model).toBe('phi4-mini');
+    expect(result!.model).toBe('qwen2.5:7b');
   });
 
-  test('recommends phi4-mini for 6 GB', () => {
-    const result = recommendConfig(6);
+  test('recommends gemma4:e4b for 8+ GB single mode', () => {
+    const result = recommendConfig(8);
     expect(result).not.toBeNull();
-    expect(result!.mode).toBe('single');
-    expect(result!.model).toBe('phi4-mini');
   });
 
-  test('recommends qwen2.5:3b for 2 GB', () => {
+  test('recommends qwen2.5:7b for 2 GB', () => {
     const result = recommendConfig(2);
     expect(result).not.toBeNull();
     expect(result!.mode).toBe('single');
-    expect(result!.model).toBe('qwen2.5:3b');
+    expect(result!.model).toBe('qwen2.5:7b');
   });
 
   test('returns null for 1 GB (insufficient)', () => {

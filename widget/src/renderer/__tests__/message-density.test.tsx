@@ -29,7 +29,7 @@ describe('SettingsPanel — message density', () => {
   function expandSection(container: HTMLElement, label: string) {
     const toggles = Array.from(container.querySelectorAll('.sp-section-toggle'));
     const btn = toggles.find(t => t.textContent?.includes(label)) as HTMLElement | undefined;
-    if (btn) fireEvent.click(btn);
+    if (btn && btn.textContent?.includes('▸')) fireEvent.click(btn);
   }
 
   test('renders density options with 3 buttons', () => {

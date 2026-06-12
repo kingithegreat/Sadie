@@ -1199,7 +1199,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         currentModel={settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
-        uncensoredModel={settings.uncensoredModel || 'dolphin-llama3:8b'}
+        uncensoredModel={settings.uncensoredModel || 'qwen2.5:7b'}
         vramGB={vramGB}
         onModelChange={async (model: string, useCustom: boolean) => {
           const newSettings = {
@@ -1226,7 +1226,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {mode === 'chat' && (
         <div className="token-counter-bar">
           <Suspense fallback={null}>
-            <TokenCounter messages={messages} model={settings.chatModel || 'llama3.2:3b'} />
+            <TokenCounter messages={messages} model={settings.chatModel || 'qwen2.5:7b'} />
           </Suspense>
         </div>
       )}

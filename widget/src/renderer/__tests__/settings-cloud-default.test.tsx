@@ -36,7 +36,7 @@ describe('SettingsPanel — cloud connection defaults', () => {
   function expandSection(container: HTMLElement, label: string) {
     const toggles = Array.from(container.querySelectorAll('.sp-section-toggle'));
     const btn = toggles.find(t => t.textContent?.includes(label)) as HTMLElement | undefined;
-    if (btn) fireEvent.click(btn);
+    if (btn && btn.textContent?.includes('▸')) fireEvent.click(btn);
   }
 
   test('connecting a cloud API keeps local chat as default until explicitly enabled', async () => {

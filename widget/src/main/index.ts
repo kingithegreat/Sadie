@@ -273,7 +273,7 @@ app.whenReady().then(async () => {
           const tagsRes = await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
           const installed: string[] = (tagsRes.data?.models || []).map((m: any) => m.name);
           if (!installed.includes(configuredModel)) {
-            const preferred = ['qwen2.5:7b', 'mistral:latest', 'qwen2.5:3b', 'phi4-mini', 'llama3.2:3b'];
+            const preferred = ['qwen2.5:7b', 'gemma4:e4b', 'qwen2.5-coder:7b'];
             const fallback = preferred.find(p => installed.includes(p)) || installed.find(n => !n.includes('embed') && !n.includes('moondream'));
             if (fallback && fallback !== configuredModel) {
               console.warn(`[MAIN] chatModel "${configuredModel}" not installed — switching to "${fallback}"`);

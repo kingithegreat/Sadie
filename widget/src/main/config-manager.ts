@@ -5,7 +5,7 @@ import { logTelemetryConsent } from './utils/logger';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
-  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl'
+  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'geminiApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl'
 ];
 
 /**
@@ -78,6 +78,7 @@ export interface Settings {
   // LLM provider API keys
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  geminiApiKey?: string;
   // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
   codeApiKey?: string;
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
@@ -115,7 +116,7 @@ const DEFAULT_SETTINGS: Settings = {
   ollamaUrl: 'http://127.0.0.1:11434',
   modelRoutingMode: 'prompt',
   chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
-  uncensoredModel: 'dolphin-phi:2.7b',  // 1.6 GB — safe on 4-5 GB VRAM
+  uncensoredModel: 'qwen2.5:7b',       // no dedicated uncensored model installed
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
   codeModel: '',
   theme: 'system',
@@ -315,9 +316,15 @@ export function saveSettings(settings: Settings): void {
         (toSave as any)[key] = encryptSecret(val);
       }
     }
-    // Encrypt nested customLLM.apiKey
+    // Encrypt nested customLLM.apiKey (guard against bloated re-encryption)
     if (toSave.customLLM && typeof (toSave.customLLM as any).apiKey === 'string' && (toSave.customLLM as any).apiKey.length > 0) {
-      (toSave.customLLM as any).apiKey = encryptSecret((toSave.customLLM as any).apiKey);
+      const rawKey = (toSave.customLLM as any).apiKey as string;
+      if (rawKey.length > 10_000) {
+        console.error('[CONFIG] customLLM.apiKey suspiciously large (%d chars) — clearing to prevent bloat', rawKey.length);
+        (toSave.customLLM as any).apiKey = '';
+      } else {
+        (toSave.customLLM as any).apiKey = encryptSecret(rawKey);
+      }
     }
     writeFileSync(settingsPath, JSON.stringify(toSave, null, 2), 'utf-8');
     invalidateSettingsCache();
@@ -355,19 +362,19 @@ export function getDefaultSettings(): Settings {
  */
 export const HARDWARE_PROFILE_DEFAULTS: Record<string, Partial<Settings>> = {
   '4gb': {
-    chatModel: 'phi4-mini',              // 2.5 GB - safer default for 4 GB cards
-    visionModel: 'moondream',             // 1.7 GB — lightweight vision
-    uncensoredModel: 'dolphin-phi:2.7b',  // 1.6 GB — safe uncensored
+    chatModel: 'qwen2.5:7b',
+    visionModel: 'moondream',
+    uncensoredModel: 'qwen2.5:7b',
   },
   '8gb': {
-    chatModel: 'qwen2.5:7b',             // 4.4 GB — fits comfortably
+    chatModel: 'qwen2.5:7b',
     visionModel: 'moondream',
-    uncensoredModel: 'dolphin-phi:2.7b',
+    uncensoredModel: 'qwen2.5:7b',
   },
   '16gb+': {
-    chatModel: 'qwen2.5:7b',
-    visionModel: 'llava',
-    uncensoredModel: 'dolphin-llama3:8b',
+    chatModel: 'gemma4:e4b',
+    visionModel: 'moondream',
+    uncensoredModel: 'qwen2.5:7b',
   },
 };
 

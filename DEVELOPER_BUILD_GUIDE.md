@@ -62,10 +62,9 @@ npm install
 Download Ollama from [ollama.com](https://ollama.com/download), then pull the required models:
 
 ```bash
-ollama pull qwen2.5:7b           # Primary chat model
-ollama pull qwen2.5-coder:3b     # Code model
-ollama pull moondream            # Current default vision model
-ollama pull dolphin-phi:2.7b     # Uncensored mode (optional)
+ollama pull qwen2.5:7b           # Primary chat model (4.7 GB)
+ollama pull qwen2.5-coder:7b    # Code model (optional, 4.4 GB)
+ollama pull moondream            # Default vision model (1.7 GB)
 ```
 
 Verify models are available:
@@ -74,7 +73,7 @@ Verify models are available:
 ollama list
 ```
 
-> **Note:** SADIE currently defaults to `qwen2.5:7b` for chat, `moondream` for vision, and `qwen2.5-coder:3b` for code. Models can be changed in Settings.
+> **Note:** SADIE defaults to `qwen2.5:7b` for chat, `moondream` for vision, and `qwen2.5-coder:7b` for code. Models can be changed in Settings.
 
 ---
 
@@ -285,7 +284,7 @@ npm install
 ### Ollama Connection Issues
 
 ```bash
-curl http://localhost:11434/api/tags    # Verify Ollama is running
+curl http://127.0.0.1:11434/api/tags   # Verify Ollama is running
 ollama list                             # Check model availability
 ollama serve                            # Restart Ollama
 ```

@@ -111,9 +111,9 @@ All tools execute locally as TypeScript handlers. SADIE calls whichever tool the
             | HTTP (localhost)
 ┌───────────v────────────────────────────────────────┐
 │                 Ollama (local)                      │
-│   qwen2.5:7b - qwen2.5-coder:3b - moondream       │
-│   dolphin-phi:2.7b - nomic-embed-text             │
-│   localhost:11434                                   │
+│   qwen2.5:7b - qwen2.5-coder:7b - moondream       │
+│   gemma4:e4b - nomic-embed-text                    │
+│   127.0.0.1:11434                                   │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -157,11 +157,11 @@ n8n will be available at `http://localhost:5678`. Import workflows from `n8n-wor
 ### 3. Pull AI Models
 
 ```bash
-ollama pull qwen2.5:7b            # Primary chat model
-ollama pull qwen2.5-coder:3b      # Code generation model (optional)
-ollama pull moondream             # Default vision model (lightweight, 1.7 GB)
+ollama pull qwen2.5:7b            # Primary chat model (4.7 GB)
+ollama pull qwen2.5-coder:7b     # Code generation model (optional, 4.4 GB)
+ollama pull moondream             # Default vision model (1.7 GB)
 ollama pull nomic-embed-text      # Semantic embeddings for RAG + memory
-ollama pull dolphin-phi:2.7b      # Uncensored mode (optional, 1.6 GB)
+ollama pull gemma4:e4b            # 16 GB+ GPU recommended (9.6 GB, optional)
 ```
 
 ### 4. Install and Run

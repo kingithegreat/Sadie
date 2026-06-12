@@ -117,3 +117,14 @@ memory/json-store/archives/
 
 # Temporary E2E debug artifacts
 widget/.tmp-e2e-*
+
+# Office documents and presentation files (keep in Google Drive, not git)
+*.docx
+*.pptx
+*.xlsx
+
+# Support packets / debug archives
+support-packet-*.zip
+
+# Jest result artifacts
+widget/jest-result.json

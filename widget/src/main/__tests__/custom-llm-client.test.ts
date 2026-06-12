@@ -432,14 +432,9 @@ describe('streamFromCustomLLM', () => {
     expect(callUrl).toContain('messages');
   });
 
-  test('routes native google-gemini provider to generateContent endpoint', async () => {
-    (axios.post as jest.Mock).mockResolvedValue({
-      data: {
-        candidates: [
-          { content: { parts: [{ text: 'AI is pattern-based prediction.' }] } }
-        ]
-      }
-    });
+  test('routes native google-gemini provider to streamGenerateContent SSE endpoint', async () => {
+    const fakeStream = makeFakeStream();
+    (axios.post as jest.Mock).mockResolvedValue({ data: fakeStream });
 
     const onEnd = jest.fn();
     const onError = jest.fn();
@@ -462,16 +457,18 @@ describe('streamFromCustomLLM', () => {
       onError
     );
 
-    // streamFromCustomLLM schedules provider work and returns a cancel handle;
-    // wait one microtask so the provider path can emit callbacks.
+    // Emit SSE data then end the stream
+    fakeStream.emit('data', Buffer.from('data: {"candidates":[{"content":{"parts":[{"text":"AI is pattern-based prediction."}]}}]}\n'));
+    fakeStream.emit('end');
+
     await new Promise(r => setTimeout(r, 0));
 
     expect(axios.post).toHaveBeenCalled();
     const callUrl: string = (axios.post as jest.Mock).mock.calls[0][0];
     const callHeaders = (axios.post as jest.Mock).mock.calls[0][2]?.headers;
-    expect(callUrl).toContain('/models/gemini-flash-latest:generateContent');
+    expect(callUrl).toContain('/models/gemini-flash-latest:streamGenerateContent?alt=sse');
     expect(callHeaders?.['X-goog-api-key']).toBe('AIza-test');
-    expect(onChunk).toHaveBeenCalledWith(expect.stringContaining('AI is pattern-based prediction'));
+    expect(onChunk).toHaveBeenCalledWith('AI is pattern-based prediction.');
     expect(onEnd).toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
   });

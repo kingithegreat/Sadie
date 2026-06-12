@@ -86,15 +86,15 @@ const DEEPSEEK_MODELS: CustomModelInfo[] = [
 
 // Google AI Studio — Gemini models with generous free tier
 const GOOGLE_AI_MODELS: CustomModelInfo[] = [
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest — thinking + tools, free tier', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
   { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Fast & smart', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
-  { id: 'gemini-2.0-flash-thinking-exp', name: 'Gemini 2.0 Flash Thinking', description: 'Reasoning mode', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
   { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: '1M context window', provider: 'google-ai-studio', contextWindow: 1048576, costHint: '~$1.25/1M in' },
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
 ];
 
 // Gemini native API (generateContent endpoint)
 const GOOGLE_GEMINI_NATIVE_MODELS: CustomModelInfo[] = [
-  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Latest Flash model alias', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest & best free model — thinking + tools', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
   { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Fast & smart', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
   { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Large context and stronger reasoning', provider: 'google-gemini', contextWindow: 1048576, costHint: '~$1.25/1M in' },
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and cost-efficient', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
@@ -652,8 +652,8 @@ async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
   const { apiConfig, messages, model, temperature = 0.5, maxTokens = 2000, onChunk, onEnd, onError, signal } = options;
   try {
     const baseUrl = trimTrailingSlash(apiConfig.apiUrl || PROVIDER_API_URLS['google-gemini']);
-    const selectedModel = model || apiConfig.model || 'gemini-flash-latest';
-    const endpoint = `${baseUrl}/models/${encodeURIComponent(selectedModel)}:generateContent`;
+    const selectedModel = model || apiConfig.model || 'gemini-2.5-flash';
+    const endpoint = `${baseUrl}/models/${encodeURIComponent(selectedModel)}:streamGenerateContent?alt=sse`;
 
     const systemText = messages
       .filter((m) => m.role === 'system')
@@ -673,7 +673,7 @@ async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
       payload.systemInstruction = { parts: [{ text: systemText }] };
     }
 
-    const response = await retryWithBackoff(() => axios.post(
+    const response = await axios.post(
       endpoint,
       payload,
       {
@@ -681,20 +681,37 @@ async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
           'Content-Type': 'application/json',
           'X-goog-api-key': apiConfig.apiKey || ''
         },
-        timeout: 45000,
+        timeout: 120000,
+        responseType: 'stream',
         signal
       }
-    ), 2, 800);
+    );
 
-    const candidate = response.data?.candidates?.[0];
-    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
-    const text = parts
-      .map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
-      .filter(Boolean)
-      .join('');
-
-    if (text) onChunk(text);
-    onEnd();
+    let buffer = '';
+    const stream = response.data as NodeJS.ReadableStream;
+    stream.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf-8');
+      let boundary = buffer.indexOf('\n');
+      while (boundary !== -1) {
+        const line = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 1);
+        if (line.startsWith('data: ')) {
+          const json = line.slice(6);
+          try {
+            const parsed = JSON.parse(json);
+            const parts = parsed?.candidates?.[0]?.content?.parts;
+            if (Array.isArray(parts)) {
+              for (const p of parts) {
+                if (typeof p?.text === 'string' && p.text) onChunk(p.text);
+              }
+            }
+          } catch { /* skip malformed SSE lines */ }
+        }
+        boundary = buffer.indexOf('\n');
+      }
+    });
+    stream.on('end', () => onEnd());
+    stream.on('error', (err: any) => onError(err));
   } catch (err: any) {
     onError(err);
   }

@@ -45,12 +45,12 @@ This document describes the high-level architecture of SADIE: how the major comp
 │                                                  |                  │
 │      ┌───────────────────┐   ┌──────────────────┐|                  │
 │      │  Ollama (local)   │   │  n8n (optional)  │|                  │
-│      │  localhost:11434  │   │  localhost:5678   │|                  │
+│      │  127.0.0.1:11434 │   │  localhost:5678   │|                  │
 │      │                   │   │                   │|                  │
-│      │  qwen2.5:7b        │<──│  Workflow triggers│|                  │
+│      │  qwen2.5:7b       │<──│  Workflow triggers│|                  │
 │      │  moondream        │   │  HTTP webhooks   │|                  │
 │      │  nomic-embed-text │   │                   │|                  │
-│      │  dolphin-phi:2.7b │   └───────────────────┘|                  │
+│      │  qwen2.5-coder:7b │   └───────────────────┘|                  │
 │      └───────────────────┘                        |                  │
 │                                                   |                  │
 │      Local disk: config/ , memory/ , logs/  <─────┘                  │
@@ -207,7 +207,7 @@ Models with 3B parameters or fewer (detected by `isSmallModel()`) receive scaled
 | Memory recall cap | 300 characters | Unlimited |
 | System prompt | Compact (~400 tokens) | Full (~1,500 tokens) |
 
-This prevents silent context overflow on 4,096-token models like `llama3.2:3b`.
+This prevents silent context overflow on models with small context windows.
 
 ### LLM Synthesis for Tool Results
 

@@ -44,10 +44,9 @@ Individual tool execution workflows:
 ## Configuration Notes
 
 - All workflows use absolute paths: `C:/Users/adenk/Desktop/sadie`
-- Ollama endpoint: `http://localhost:11434`
- - Ollama endpoint: `http://localhost:11434`
+- Ollama endpoint: `http://127.0.0.1:11434`
 - Primary model: `qwen2.5:7b`
-- Vision model: `moondream` recommended for current Electron defaults (`llava:latest` remains a compatible legacy baseline for older workflow configs)
+- Vision model: `moondream`
 - Memory storage: `memory/json-store/` directory
 
 ## Workflow Communication

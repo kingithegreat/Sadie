@@ -2144,9 +2144,8 @@ export function handleSlashCommand(input: string, conversationId: string, modelN
 
   return null; // Not a recognized slash command
 }
-// Uncensored model — dolphin-phi:2.7b replaces dolphin-llama3:8b as the default;
-// it fits in 4 GB VRAM (~1.6 GB) while dolphin-llama3:8b needs 5-6 GB.
-const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-phi:2.7b';
+// Uncensored model — defaults to qwen2.5:7b (supports tool calling)
+const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'qwen2.5:7b';
 
 // Current mode (can be toggled via IPC)
 let uncensoredModeEnabled = false;
@@ -2728,9 +2727,8 @@ export async function streamFromOllamaWithTools(
     ...(imageData.length > 0 ? { images: imageData } : {})
   });
   
-  // Get tools (disable for vision models, models that don't support tools, and simple greetings)
-  // dolphin-llama3 doesn't support Ollama tool calling
-  const modelSupportsTools = !hasImages && model !== preferredUncensoredModel;
+  // Disable tools for vision models and simple greetings; all current chat models support tool calling
+  const modelSupportsTools = !hasImages;
   const skipToolsForGreeting = isSimpleGreeting(message);
   const hasDocuments = options?.hasDocuments ?? false;
   
@@ -2773,9 +2771,12 @@ export async function streamFromOllamaWithTools(
         stream: true,
         keep_alive: '30m',
         // mirostat 2 controls perplexity dynamically — temperature/top_p are ignored when mirostat is active
-        options: smallModel
-          ? { num_ctx: 4096, repeat_penalty: 1.3, num_predict: 1024, mirostat: 2, mirostat_tau: 3.0, mirostat_eta: 0.1 }
-          : { num_ctx: 8192, repeat_penalty: 1.15, num_predict: 2048, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 }
+        options: (() => {
+          const lowVram = getSettings().hardwareProfile === '4gb';
+          if (smallModel) return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.3, num_predict: 1024, mirostat: 2, mirostat_tau: 3.0, mirostat_eta: 0.1 };
+          if (lowVram)    return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.15, num_predict: 1024, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
+          return { num_ctx: 8192, num_gpu: 99, repeat_penalty: 1.15, num_predict: 2048, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
+        })()
       };
       
       if (tools && tools.length > 0) {
@@ -2798,7 +2799,7 @@ export async function streamFromOllamaWithTools(
         
         if (isModelError && !requestBody._failedOver) {
           // Build a fallback chain if the model is missing (do not failover on network/connection errors)
-          const fallbacks = [OLLAMA_CHAT_MODEL, 'mistral:latest', 'llama3.2:3b'].filter(m => m !== requestBody.model);
+          const fallbacks = [OLLAMA_CHAT_MODEL, 'gemma4:e4b', 'qwen2.5-coder:7b'].filter(m => m !== requestBody.model);
           const fallbackModel = fallbacks[0];
           if (fallbackModel) {
             console.warn(`[SADIE] Primary model "${requestBody.model}" failed (${code || status}), failing over to "${fallbackModel}"`);
@@ -4321,10 +4322,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           try { pushRouter('Agentic mode: multi-step request detected'); } catch (e) { safeCatch(e); }
         }
 
-        if (useDirectOllama) {
-          if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct Ollama path');
-          try { pushRouter('Taking direct Ollama path'); } catch (e) { safeCatch(e); }
-          // Direct Ollama streaming - no n8n required
+        const cloudSettings = getSettings();
+        const cloudLLMActive = !!(cloudSettings.useCustomLLM && cloudSettings.customLLM && (cloudSettings.customLLM as any).apiKey && (cloudSettings.customLLM as any).model);
+
+        if (useDirectOllama || cloudLLMActive) {
+          if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct path:', cloudLLMActive ? 'cloud LLM active' : 'direct Ollama');
+          try { pushRouter(cloudLLMActive ? 'Cloud LLM active — bypassing n8n' : 'Taking direct Ollama path'); } catch (e) { safeCatch(e); }
+          // Direct streaming (cloud LLM or local Ollama) - no n8n required
           let ttfbLogged = false;
           const handler = await streamFromOllama(
             enhancedMessage,
@@ -5081,8 +5085,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
         console.log('[SADIE] n8n failed:', error?.message || error);
         try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) { safeCatch(e); }
-          if (useDirectOllama) {
-          console.log('[SADIE] Falling back to direct Ollama...');
+          const fallbackCloudActive = (() => { const s = getSettings(); return !!(s.useCustomLLM && s.customLLM && (s.customLLM as any).apiKey && (s.customLLM as any).model); })();
+          if (useDirectOllama || fallbackCloudActive) {
+          console.log('[SADIE] Falling back to', fallbackCloudActive ? 'cloud LLM...' : 'direct Ollama...');
           try {
           let fallbackResponse = '';
           const handler = await streamFromOllama(

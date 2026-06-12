@@ -10,9 +10,9 @@
     "timeout_ms": 30000
   },
   "ollama": {
-    "url": "http://localhost:11434",
-    "primary_model": "llama3.2:3b",
-    "vision_model": "llava:latest",
+    "url": "http://127.0.0.1:11434",
+    "primary_model": "qwen2.5:7b",
+    "vision_model": "moondream",
     "voice_model": "whisper:latest",
     "embedding_model": "nomic-embed-text:latest",
     "temperature": 0.7,

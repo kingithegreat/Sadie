@@ -10,6 +10,7 @@ const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint
   { id: 'groq', name: 'Groq', freeHint: 'Free tier available' },
   { id: 'openrouter', name: 'OpenRouter', freeHint: 'Free models available' },
   { id: 'google-ai-studio', name: 'Google AI Studio', freeHint: 'Free tier' },
+  { id: 'google-gemini', name: 'Google Gemini Native', freeHint: 'Free tier' },
   { id: 'anthropic', name: 'Anthropic' },
   { id: 'openai', name: 'OpenAI' },
   { id: 'deepseek', name: 'DeepSeek' },
@@ -26,6 +27,7 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
   groq: 'llama-3.3-70b-versatile',
   deepseek: 'deepseek-chat',
   'google-ai-studio': 'gemini-2.5-flash',
+  'google-gemini': 'gemini-2.5-flash',
   huggingface: 'meta-llama/Llama-3.1-8B-Instruct',
   cerebras: 'llama-3.3-70b',
   sambanova: 'DeepSeek-R1-Distill-Llama-70B',
@@ -39,6 +41,7 @@ const PROVIDER_URLS: Record<string, string> = {
   groq: 'https://api.groq.com/openai/v1',
   deepseek: 'https://api.deepseek.com/v1',
   'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
+  'google-gemini': 'https://generativelanguage.googleapis.com/v1beta',
   huggingface: 'https://api-inference.huggingface.co/v1',
   cerebras: 'https://api.cerebras.ai/v1',
   sambanova: 'https://api.sambanova.ai/v1',
@@ -176,6 +179,9 @@ export default function FirstRunModal({
         model,
         enabled: true
       };
+      if (cloudProvider === 'anthropic') payload.anthropicApiKey = cloudApiKey.trim();
+      else if (cloudProvider === 'openai') payload.openaiApiKey = cloudApiKey.trim();
+      else if (cloudProvider === 'google-ai-studio' || cloudProvider === 'google-gemini') payload.geminiApiKey = cloudApiKey.trim();
     }
 
     try { await (window as any).electron.saveSettings?.(payload); } catch (e) { console.warn('FirstRun save failed:', e); }

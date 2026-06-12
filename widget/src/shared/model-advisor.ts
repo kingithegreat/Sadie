@@ -88,12 +88,12 @@ export function recommendLocalModelForTask(options: RecommendModelOptions): Mode
   const preferredModels = task === 'vision'
     ? [options.visionModel || '', 'llava', 'moondream']
     : task === 'coding'
-      ? [options.codeModel || '', 'qwen2.5-coder:14b', 'qwen2.5-coder:7b', 'qwen2.5-coder:3b', 'qwen2.5:14b', 'qwen2.5:7b']
+      ? [options.codeModel || '', 'qwen2.5-coder:14b', 'qwen2.5-coder:7b', 'qwen2.5:14b', 'qwen2.5:7b']
       : task === 'tool-use'
-        ? ['qwen2.5:14b', 'qwen2.5:7b', 'qwen2.5:3b', 'phi4-mini', 'qwen2.5-coder:7b']
+        ? ['qwen2.5:14b', 'qwen2.5:7b', 'gemma4:e4b', 'qwen2.5-coder:7b']
         : task === 'reasoning'
-          ? ['qwen2.5:14b', 'qwen2.5:7b', 'phi4-mini', 'gemma4:e4b', 'gemma4:e2b', 'llama3.1:8b']
-          : ['qwen2.5:14b', 'qwen2.5:7b', 'phi4-mini', 'gemma4:e4b', 'gemma4:e2b', options.chatModel || ''];
+          ? ['qwen2.5:14b', 'qwen2.5:7b', 'gemma4:e4b', 'gemma4:e2b', 'llama3.1:8b']
+          : ['qwen2.5:14b', 'qwen2.5:7b', 'gemma4:e4b', 'gemma4:e2b', options.chatModel || ''];
 
   const recommendedModel = pickInstalledModel(preferredModels, options.installedModels);
   if (!recommendedModel || normalizeModelId(recommendedModel) === normalizeModelId(currentModel)) {

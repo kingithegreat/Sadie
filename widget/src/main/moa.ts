@@ -29,21 +29,21 @@ const MIN_PROPOSALS = 1;
 export const MOA_PRESETS = {
   balanced: {
     label: 'Balanced (recommended)',
-    description: 'Good mix of reasoning, coding, and general knowledge — fits 5–8 GB VRAM',
-    proposers: ['phi4-mini', 'qwen2.5:3b', 'llama3.2:3b'],
-    aggregator: 'phi4-mini'
+    description: 'General + coding models with gemma4 aggregation — needs 16+ GB VRAM',
+    proposers: ['qwen2.5:7b', 'qwen2.5-coder:7b'],
+    aggregator: 'gemma4:e4b'
   },
   codeHeavy: {
     label: 'Code-focused',
-    description: 'Optimised for programming and debugging — fits 5–8 GB VRAM',
-    proposers: ['qwen2.5-coder:3b', 'phi4-mini'],
-    aggregator: 'phi4-mini'
+    description: 'Coding-optimised with strong aggregator — needs 16+ GB VRAM',
+    proposers: ['qwen2.5-coder:7b', 'qwen2.5:7b'],
+    aggregator: 'gemma4:e4b'
   },
   lightweight: {
     label: 'Lightweight',
-    description: 'Minimal VRAM — works on 4 GB cards',
-    proposers: ['qwen2.5:3b', 'llama3.2:3b'],
-    aggregator: 'phi4-mini'
+    description: 'Two 7B proposers with qwen aggregation — needs 10+ GB VRAM',
+    proposers: ['qwen2.5:7b', 'qwen2.5-coder:7b'],
+    aggregator: 'qwen2.5:7b'
   }
 } as const;
 
@@ -53,22 +53,19 @@ export const SINGLE_MODEL_RECOMMENDATIONS: Array<{
   model: string;
   label: string;
 }> = [
-  { minVram: 6, model: 'phi4-mini', label: 'phi4-mini — best reasoning in the 3-4B range, fits 5-6 GB+' },
-  { minVram: 4, model: 'phi4-mini', label: 'phi4-mini — best small model, safely fits 4-5 GB VRAM' },
-  { minVram: 2, model: 'qwen2.5:3b', label: 'qwen2.5:3b - reliable lightweight local chat for 2-3 GB VRAM' },
+  { minVram: 8, model: 'gemma4:e4b', label: 'gemma4:e4b — most capable local model, needs 8+ GB VRAM' },
+  { minVram: 4, model: 'qwen2.5:7b', label: 'qwen2.5:7b — best general + tool-calling model for 4+ GB VRAM' },
+  { minVram: 2, model: 'qwen2.5:7b', label: 'qwen2.5:7b — may be tight on 2-3 GB but still best available' },
 ];
 
 // ── Hardware detection & recommendation ─────────────────────────────────────
 
 /** Model VRAM requirements in GB (approximate, quantised weights). */
 const MODEL_VRAM: Record<string, number> = {
-  'phi4-mini': 2.5,
-  'qwen2.5:3b': 2,
-  'qwen2.5-coder:3b': 2,
+  'gemma4:e4b': 9.6,
+  'qwen2.5:7b': 4.7,
   'qwen2.5-coder:7b': 4.4,
-  'dolphin-phi:2.7b': 1.6,
   'moondream': 1.7,
-  'llama3.2:3b': 2,
   'nomic-embed-text': 0.3,
   'deepseek-coder-v2:latest': 8.9,
 };

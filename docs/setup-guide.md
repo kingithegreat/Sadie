@@ -62,7 +62,7 @@ This script will:
 1. Verify that Node.js, npm, Docker, and Ollama are installed and meet minimum versions.
 2. Create any missing configuration files (`config/api-allowlist.json`, `config/default-config.json`).
 3. Run `npm install` inside `widget/` if `node_modules` is absent.
-4. Pull the setup script's baseline Ollama models (`qwen2.5:7b`, `qwen2.5-coder:3b`, `moondream`, `nomic-embed-text`, `dolphin-phi:2.7b`) for first-run compatibility.
+4. Pull the baseline Ollama models (`qwen2.5:7b`, `qwen2.5-coder:7b`, `moondream`, `nomic-embed-text`) for first-run compatibility.
 5. Print a checklist summary with instructions for anything requiring manual attention.
 
 > **Note:** Re-running the script is safe. It will not overwrite existing config files or re-pull models that are already installed.
@@ -88,20 +88,18 @@ Verify it is reachable:
 ```bash
 ollama list
 # Or check the API endpoint directly:
-curl http://localhost:11434/api/tags
+curl http://127.0.0.1:11434/api/tags
 ```
 
 ### Recommended Models
 
 ```bash
-ollama pull qwen2.5:7b           # Primary chat model (current default)
-ollama pull qwen2.5-coder:3b     # Code generation model
-ollama pull moondream            # Current default vision model
+ollama pull qwen2.5:7b           # Primary chat model (4.7 GB)
+ollama pull qwen2.5-coder:7b    # Code generation model (optional, 4.4 GB)
+ollama pull moondream            # Default vision model (1.7 GB)
 ollama pull nomic-embed-text     # Embeddings for RAG and memory enrichment
-ollama pull dolphin-phi:2.7b     # Uncensored mode (optional)
+ollama pull gemma4:e4b           # 16 GB+ GPU recommended (9.6 GB, optional)
 ```
-
-The setup script still bootstraps `llava:latest` as a compatibility baseline. If you want the current default vision path, pull `moondream` as shown above.
 
 ---
 
@@ -187,7 +185,7 @@ What tools do you have?
 - Run `ollama list` to see installed models.
 - Manually pull a model: `ollama pull qwen2.5:7b`
 - SADIE includes an Ollama heartbeat that auto-restarts Ollama if it goes down. Check the status indicator in the UI.
-- Verify the API is reachable: `curl http://localhost:11434/api/tags`
+- Verify the API is reachable: `curl http://127.0.0.1:11434/api/tags`
 
 ### Widget Does Not Start / Blank Screen
 

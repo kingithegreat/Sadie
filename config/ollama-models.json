@@ -28,9 +28,9 @@
     }
   },
   "endpoints": {
-    "generate": "http://localhost:11434/api/generate",
-    "chat": "http://localhost:11434/api/chat",
-    "embeddings": "http://localhost:11434/api/embeddings",
-    "tags": "http://localhost:11434/api/tags"
+    "generate": "http://127.0.0.1:11434/api/generate",
+    "chat": "http://127.0.0.1:11434/api/chat",
+    "embeddings": "http://127.0.0.1:11434/api/embeddings",
+    "tags": "http://127.0.0.1:11434/api/tags"
   }
 }

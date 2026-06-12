@@ -57,8 +57,9 @@ function setupHttpsGetResponse(responseBody: string): void {
     setTimeout: jest.fn().mockReturnThis(),
     destroy: jest.fn(),
   };
-  mockGet.mockImplementation((_url: any, _opts: any, callback: any) => {
-    callback(mockRes);
+  mockGet.mockImplementation((...args: any[]) => {
+    const cb = args.find(arg => typeof arg === 'function');
+    if (cb) cb(mockRes);
     return mockReq;
   });
 }
@@ -81,8 +82,9 @@ function setupHttpsRequestResponse(responseBody: string): void {
     setTimeout: jest.fn().mockReturnThis(),
     destroy: jest.fn(),
   };
-  mockRequest.mockImplementation((_url: any, _opts: any, callback: any) => {
-    callback(mockRes);
+  mockRequest.mockImplementation((...args: any[]) => {
+    const cb = args.find(arg => typeof arg === 'function');
+    if (cb) cb(mockRes);
     return mockReqObj;
   });
 }
