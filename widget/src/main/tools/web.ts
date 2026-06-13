@@ -1286,7 +1286,7 @@ async function tryPollinations(prompt: string, width: number, height: number): P
   try {
     const seed = Math.floor(Math.random() * 1e9);
     const encodedPrompt = encodeURIComponent(prompt);
-    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`;
+    const url = `https://pollinations.ai/p/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true`;
     const buf = await httpGetBuffer(url, 60000);
     // A valid image should be at least a few KB; reject obviously invalid responses
     if (!buf || buf.length < 1024) {

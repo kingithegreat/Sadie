@@ -7,8 +7,8 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import AutomationCenter from '../components/AutomationCenter';
 
-const AUTO_A = { id: 'a1', name: 'Daily Backup', description: 'Backs up files', trigger: 'schedule', enabled: true };
-const AUTO_B = { id: 'b1', name: 'Git Push', description: 'Pushes changes', trigger: 'manual', enabled: false };
+const AUTO_A = { id: 'a1', name: 'Daily Backup', description: 'Backs up files', instructions: 'Backup my documents', trigger: 'schedule', enabled: true, createdAt: '2026-01-01T00:00:00Z' };
+const AUTO_B = { id: 'b1', name: 'Git Push', description: 'Pushes changes', instructions: 'Run git push', trigger: 'manual', enabled: false, createdAt: '2026-01-01T00:00:00Z' };
 
 function setupElectron(overrides: Record<string, () => Promise<any>> = {}) {
   (window as any).electron = {
@@ -16,7 +16,7 @@ function setupElectron(overrides: Record<string, () => Promise<any>> = {}) {
     updateAutomation: jest.fn().mockResolvedValue({}),
     runAutomation: jest.fn().mockResolvedValue({}),
     deleteAutomation: jest.fn().mockResolvedValue({}),
-    createAutomation: jest.fn().mockResolvedValue({ automation: { id: 'new1', name: 'New', description: '', trigger: 'manual', enabled: true } }),
+    createAutomation: jest.fn().mockResolvedValue({ automation: { id: 'new1', name: 'New', description: '', instructions: 'do something', trigger: 'manual', enabled: true, createdAt: '2026-01-01T00:00:00Z' } }),
     ...overrides,
   };
 }
@@ -99,7 +99,9 @@ describe('AutomationCenter — create automation form', () => {
     setupElectron();
     await act(async () => { render(<AutomationCenter />); });
     fireEvent.click(screen.getByRole('button', { name: /New Automation/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Cancel/i }));
+    // Click the form's Cancel button (not the header toggle)
+    const cancelButtons = screen.getAllByRole('button', { name: /Cancel/i });
+    fireEvent.click(cancelButtons[cancelButtons.length - 1]);
     expect(screen.queryByText('Create New Automation')).toBeNull();
   });
 
@@ -108,8 +110,9 @@ describe('AutomationCenter — create automation form', () => {
     await act(async () => { render(<AutomationCenter />); });
     fireEvent.click(screen.getByRole('button', { name: /New Automation/i }));
     fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: 'My Auto' } });
+    fireEvent.change(screen.getByLabelText(/Instructions/i), { target: { value: 'do stuff' } });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^Create$/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Create Automation/i }));
     });
     expect(screen.getByText('New')).toBeInTheDocument();
   });
@@ -119,9 +122,23 @@ describe('AutomationCenter — create automation form', () => {
     setupElectron({ createAutomation });
     await act(async () => { render(<AutomationCenter />); });
     fireEvent.click(screen.getByRole('button', { name: /New Automation/i }));
-    // Leave name blank
+    // Leave name blank, but fill instructions
+    fireEvent.change(screen.getByLabelText(/Instructions/i), { target: { value: 'do stuff' } });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^Create$/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Create Automation/i }));
+    });
+    expect(createAutomation).not.toHaveBeenCalled();
+  });
+
+  test('Create button does nothing when instructions are empty', async () => {
+    const createAutomation = jest.fn();
+    setupElectron({ createAutomation });
+    await act(async () => { render(<AutomationCenter />); });
+    fireEvent.click(screen.getByRole('button', { name: /New Automation/i }));
+    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: 'My Auto' } });
+    // Leave instructions blank
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Create Automation/i }));
     });
     expect(createAutomation).not.toHaveBeenCalled();
   });
@@ -133,8 +150,9 @@ describe('AutomationCenter — create automation form', () => {
     await act(async () => { render(<AutomationCenter />); });
     fireEvent.click(screen.getByRole('button', { name: /New Automation/i }));
     fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: 'X' } });
+    fireEvent.change(screen.getByLabelText(/Instructions/i), { target: { value: 'do stuff' } });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^Create$/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Create Automation/i }));
     });
     expect(screen.getByText('Failed to create automation')).toBeInTheDocument();
   });

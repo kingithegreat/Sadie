@@ -69,6 +69,8 @@ The React UI running inside Chromium. Key responsibilities:
 
 - **Chat surface** — renders message history, handles user input, displays streaming token-by-token responses with cancel/retry controls, and blocks marker-only retries for document-attached turns by asking the user to reattach the file.
 - **Conversation sidebar** — lists conversations with timestamps, message count badges, pinning, archiving, tags, reactions, and full-text search.
+- **Automation Center** — create, edit, and run reusable automations. Each automation stores plain-English instructions that SADIE executes through its full tool chain. Supports manual and scheduled triggers (15 min – 24 h intervals) with background timers. Includes example templates and expandable result viewer.
+- **Quiz Mode** — interactive coding quiz with 12 topics, 3 difficulty levels, and configurable question counts. Generates multiple-choice questions via batched Ollama calls. Tracks persistent progress (accuracy, streak, per-topic scores) and awards letter grades.
 - **Action confirmation** — modal dialog for approving destructive or sensitive tool calls before execution.
 - **Permission modal** — prompts the user to allow-once, always-allow, or cancel when a tool requires a permission that has not yet been granted.
 - **Settings panel** — edits and persists user preferences (models, hotkey, permissions, API keys, theme, notification preferences).
@@ -80,11 +82,24 @@ The React UI running inside Chromium. Key responsibilities:
 
 The renderer communicates with the main process exclusively through the preload bridge (`window.electron.*`). It never accesses Node.js APIs directly.
 
+### Application Modes
+
+The renderer supports six modes, switchable via the sidebar or keyboard shortcuts:
+
+| Mode | Shortcut | Component | Purpose |
+|---|---|---|---|
+| `chat` | Ctrl+1 | `App.tsx` (inline) | Main conversational interface |
+| `automation` | Ctrl+2 | `AutomationCenter.tsx` | Create and run reusable automations |
+| `image` | Ctrl+3 | `ImagePanel` | AI image generation via Pollinations.ai |
+| `documents` | Ctrl+4 | `DocumentPanel` | Document viewer/editor |
+| `web` | — | `WebPanel` | Embedded web browser |
+| `quiz` | Ctrl+5 | `QuizPanel.tsx` | Interactive coding quiz |
+
 ### Preload Bridge (`widget/src/preload/index.ts`)
 
 The `contextBridge` layer that safely exposes a typed API surface (`ElectronAPI`) to the renderer. Each renderer-callable function maps 1:1 to a named IPC channel. This eliminates `nodeIntegration` and keeps the renderer fully sandboxed.
 
-Key bindings: `sendMessage`, `sendStreamMessage`, `cancelStream`, `saveSettings`, `loadSettings`, `listTools`, `loadConversations`, `createConversation`, `startSpeechRecognition`, `ttsSpeak`, `ragIndex`, `openExternal`, and 40+ additional channels.
+Key bindings: `sendMessage`, `sendStreamMessage`, `cancelStream`, `saveSettings`, `loadSettings`, `listTools`, `loadConversations`, `createConversation`, `startSpeechRecognition`, `ttsSpeak`, `ragIndex`, `openExternal`, `generateQuiz`, `saveQuizProgress`, `loadQuizProgress`, `loadAutomations`, `createAutomation`, `updateAutomation`, `deleteAutomation`, `runAutomation`, and 40+ additional channels.
 
 ### Main Process (`widget/src/main/`)
 
@@ -95,7 +110,7 @@ The Node.js Electron main process. Key responsibilities:
 | `message-router.ts` | Parses user messages, expands `documents[]` into extracted prompt context before routing or forwarding upstream, detects tool intent, streams Ollama completions, executes tool batches, and returns synthesised results. Contains context budget logic for small models, agentic loop orchestration, recovery-hint classification, and morning briefing trigger. |
 | `agentic-loop.ts` | Multi-step request detection and agentic tool-chaining engine. Detects compound requests via heuristics, injects agentic system prompt, and streams step-progress indicators during autonomous tool execution (up to 6 rounds). |
 | `morning-briefing.ts` | Proactive daily briefing generator. On first interaction each day, runs weather + calendar + reminders tools in parallel and streams a formatted summary. State persisted in `briefing-state.json`. |
-| `ipc-handlers.ts` | Receives calls from the preload bridge and routes them to the correct subsystem. |
+| `ipc-handlers.ts` | Receives calls from the preload bridge and routes them to the correct subsystem. Includes Automation Center CRUD, scheduled-automation timer engine, and Quiz Mode generation/progress persistence. |
 | `config-manager.ts` | Reads and writes `config/user-settings.json` with schema validation. Includes 5-second in-memory cache to avoid ~20 disk reads per message. Secret fields (API keys) are encrypted at rest via `safeStorage`. |
 | `window-manager.ts` | Manages always-on-top behaviour, global hotkey registration (`Ctrl+Shift+Space`), tray icon, and window lifecycle. |
 | `auto-updater.ts` | Checks for updates 5 seconds after startup via electron-updater. Sends IPC progress events to the renderer. Skipped in E2E/test mode. |
@@ -343,6 +358,29 @@ User settings are read from and written to `%APPDATA%\SADIE\config\user-settings
 ### Reminder Persistence
 
 Scheduled reminders are saved to `userData/memory/json-store/reminders.json` and reloaded on app restart via `scheduler.ts`.
+
+### Automation Persistence
+
+Automations are stored in `userData/automations.json`. Each automation contains:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `id` | `string` | UUID |
+| `name` | `string` | Display name |
+| `description` | `string` | Optional description |
+| `instructions` | `string` | Plain-English prompt executed by SADIE's tool chain |
+| `trigger` | `'manual' \| 'schedule'` | How the automation is invoked |
+| `scheduleMinutes` | `number` | Interval for scheduled triggers (15–1440) |
+| `enabled` | `boolean` | Whether the automation is active |
+| `lastRun` | `string` | ISO timestamp of the last execution |
+| `lastResult` | `string` | Output text from the last run |
+| `createdAt` | `string` | ISO timestamp of creation |
+
+Scheduled automations use `setInterval`-based background timers. On app boot (after 5 s), `startAutomationSchedule()` reads all automations and starts timers for enabled scheduled ones. Timers re-sync every 60 s to pick up CRUD changes. When a timer fires, it calls `executeAutomation()` (which uses `processIncomingRequest` with direct Ollama fallback) and sends a `sadie:reminder-fired` event to the renderer so the result appears in chat.
+
+### Quiz Progress Persistence
+
+Quiz progress is stored in `userData/quiz-progress.json` and tracks per-topic accuracy, best streak, total questions answered, and historical scores.
 
 ---
 

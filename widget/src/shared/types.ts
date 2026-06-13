@@ -431,4 +431,72 @@ export interface ElectronAPI {
     path?: string;
     error?: string;
   }>;
+
+  // Quiz mode: generate quiz questions via LLM
+  generateQuiz?: (params: QuizRequest) => Promise<QuizResponse>;
+  // Quiz mode: save progress to disk
+  saveQuizProgress?: (progress: QuizProgress) => Promise<{ success: boolean; error?: string }>;
+  // Quiz mode: load saved progress
+  loadQuizProgress?: () => Promise<{ success: boolean; data?: QuizProgress; error?: string }>;
+
+  // Automation Center
+  loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
+  createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number }) => Promise<{ automation: SavedAutomation }>;
+  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
+  deleteAutomation?: (data: { id: string }) => Promise<{ success: boolean }>;
+  runAutomation?: (data: { id: string }) => Promise<{ success: boolean; result?: string; error?: string }>;
+}
+
+// ── Quiz Types ──────────────────────────────────────────────────────────────
+
+export type QuizDifficulty = 'beginner' | 'intermediate' | 'advanced';
+export type QuizQuestionType = 'multiple-choice' | 'code-output' | 'bug-fix' | 'fill-blank' | 'concept';
+
+export interface QuizRequest {
+  topic: string;
+  difficulty: QuizDifficulty;
+  questionCount: number;
+  questionTypes?: QuizQuestionType[];
+  language?: string;
+}
+
+export interface QuizQuestion {
+  id: string;
+  type: QuizQuestionType;
+  question: string;
+  code?: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface QuizResponse {
+  success: boolean;
+  questions?: QuizQuestion[];
+  error?: string;
+}
+
+export interface QuizProgress {
+  totalQuizzes: number;
+  totalCorrect: number;
+  totalAnswered: number;
+  topicScores: Record<string, { correct: number; total: number }>;
+  streak: number;
+  bestStreak: number;
+  lastQuizDate?: string;
+}
+
+// ── Automation Types ────────────────────────────────────────────────────────
+
+export interface SavedAutomation {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  trigger: 'manual' | 'schedule';
+  scheduleMinutes?: number;
+  enabled: boolean;
+  lastRun?: string;
+  lastResult?: string;
+  createdAt: string;
 }

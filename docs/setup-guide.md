@@ -201,6 +201,18 @@ To see all available tools, open **Settings > View Tools** or ask:
 What tools do you have?
 ```
 
+### Try the Other Modes
+
+SADIE has six modes, accessible from the sidebar or via keyboard shortcuts:
+
+| Mode | Shortcut | What to Try |
+|---|---|---|
+| **Chat** | Ctrl+1 | Ask a question, run a tool, attach a document |
+| **Automation** | Ctrl+2 | Create a "Morning News Summary" automation and click ▶ Run |
+| **Image** | Ctrl+3 | Type a prompt to generate an image via Pollinations.ai |
+| **Documents** | Ctrl+4 | View and manage documents |
+| **Quiz** | Ctrl+5 | Pick a coding topic (Python, JS, etc.), difficulty, and take a quiz |
+
 ---
 
 ## Troubleshooting
@@ -288,6 +300,7 @@ Or re-run the setup script:
 | `logs/` | Runtime log files |
 | `scripts/` | Setup, build, and utility scripts |
 | `scripts/setup/Setup-SADIE.ps1` | Automated setup and preflight script |
+| `scripts/generate-docs.js` | Generates capstone .docx files (poster, report, presentation, demo) |
 | `prompts/` | System prompts and intent detection templates |
 | `schemas/` | JSON schemas for tool call validation |
 | `docs/` | Developer and API documentation |

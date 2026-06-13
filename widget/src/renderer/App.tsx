@@ -17,6 +17,7 @@ const AutomationCenter = lazy(() => import("./components/AutomationCenter").then
 const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
 const WebServicesPanel = lazy(() => import("./components/WebServicesPanel"));
 const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
+const QuizPanel = lazy(() => import("./components/QuizPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
@@ -39,7 +40,7 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents';
+type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -139,6 +140,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       } else if (e.ctrlKey && e.key === '4') {
         e.preventDefault();
         setMode('web');
+      } else if (e.ctrlKey && e.key === '5') {
+        e.preventDefault();
+        setMode('quiz');
       }
     };
     window.addEventListener('keydown', handler);
@@ -1257,6 +1261,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       ) : mode === 'documents' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <DocumentViewer />
+        </Suspense>
+      ) : mode === 'quiz' ? (
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <QuizPanel />
         </Suspense>
       ) : (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>

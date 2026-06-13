@@ -569,6 +569,26 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on('sadie:title-updated', handler);
     return () => ipcRenderer.removeListener('sadie:title-updated', handler);
   },
+
+  // Automation Center
+  loadAutomations: async () =>
+    ipcRenderer.invoke('sadie:load-automations'),
+  createAutomation: async (data: any) =>
+    ipcRenderer.invoke('sadie:create-automation', data),
+  updateAutomation: async (data: any) =>
+    ipcRenderer.invoke('sadie:update-automation', data),
+  deleteAutomation: async (data: any) =>
+    ipcRenderer.invoke('sadie:delete-automation', data),
+  runAutomation: async (data: any) =>
+    ipcRenderer.invoke('sadie:run-automation', data),
+
+  // Quiz mode
+  generateQuiz: async (params: any) =>
+    ipcRenderer.invoke('sadie:generate-quiz', params),
+  saveQuizProgress: async (progress: any) =>
+    ipcRenderer.invoke('sadie:save-quiz-progress', progress),
+  loadQuizProgress: async () =>
+    ipcRenderer.invoke('sadie:load-quiz-progress'),
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.

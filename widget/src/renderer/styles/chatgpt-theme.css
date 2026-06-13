@@ -5816,3 +5816,433 @@ body {
     transition: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Automation Center
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.automation-center {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  overflow-y: auto;
+  height: 100%;
+  scrollbar-width: thin;
+}
+
+.automation-header {
+  margin-bottom: 20px;
+}
+
+.automation-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.automation-header p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.automation-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: oklch(55% 0.2 25 / 0.12);
+  border: 1px solid oklch(55% 0.2 25 / 0.25);
+  color: oklch(65% 0.2 25);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.automation-error button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+
+.automation-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.automation-center .btn-primary {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: oklch(62% 0.22 265);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.automation-center .btn-primary:hover:not(:disabled) {
+  background: oklch(55% 0.22 265);
+}
+
+.automation-center .btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.automation-center .btn-secondary {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid oklch(100% 0 0 / 0.12);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.automation-center .btn-secondary:hover:not(:disabled) {
+  background: oklch(100% 0 0 / 0.05);
+}
+
+.automation-center .btn-secondary:disabled {
+  opacity: 0.4;
+}
+
+/* ── Create Form ── */
+
+.automation-create-form {
+  padding: 20px;
+  border-radius: 12px;
+  background: oklch(100% 0 0 / 0.03);
+  border: 1px solid oklch(100% 0 0 / 0.08);
+  margin-bottom: 20px;
+}
+
+.automation-create-form h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 16px 0;
+}
+
+.automation-create-form .form-group {
+  margin-bottom: 14px;
+}
+
+.automation-create-form .form-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.automation-create-form .form-group input,
+.automation-create-form .form-group textarea,
+.automation-create-form .form-group select {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid oklch(100% 0 0 / 0.12);
+  background: oklch(100% 0 0 / 0.04);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.automation-create-form .form-group input:focus,
+.automation-create-form .form-group textarea:focus,
+.automation-create-form .form-group select:focus {
+  border-color: oklch(62% 0.22 265);
+}
+
+.automation-create-form .form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ── Example Chips ── */
+
+.automation-examples {
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.example-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.example-chip {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid oklch(100% 0 0 / 0.1);
+  background: oklch(100% 0 0 / 0.03);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.example-chip:hover {
+  background: oklch(62% 0.22 265 / 0.1);
+  border-color: oklch(62% 0.22 265 / 0.3);
+  color: oklch(62% 0.22 265);
+}
+
+/* ── Automation List ── */
+
+.automation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.automation-loading,
+.automation-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.automation-empty p {
+  margin: 4px 0;
+}
+
+.automation-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid oklch(100% 0 0 / 0.08);
+  background: oklch(100% 0 0 / 0.02);
+  transition: all 0.15s ease;
+}
+
+.automation-card:hover {
+  background: oklch(100% 0 0 / 0.04);
+}
+
+.automation-card.disabled {
+  opacity: 0.5;
+}
+
+.automation-card.running {
+  border-color: oklch(62% 0.22 265 / 0.3);
+  background: oklch(62% 0.22 265 / 0.04);
+}
+
+.automation-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.automation-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.automation-title-row h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.automation-badges {
+  display: flex;
+  gap: 4px;
+}
+
+.trigger-badge,
+.schedule-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: oklch(62% 0.22 265 / 0.1);
+  color: oklch(62% 0.22 265);
+}
+
+.schedule-badge {
+  background: oklch(55% 0.18 150 / 0.1);
+  color: oklch(55% 0.18 150);
+}
+
+.automation-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 4px 0;
+}
+
+.automation-instructions {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 6px 0;
+  line-height: 1.4;
+  background: oklch(100% 0 0 / 0.03);
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-left: 3px solid oklch(62% 0.22 265 / 0.3);
+}
+
+.automation-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.last-run {
+  color: var(--text-muted);
+}
+
+/* ── Result Section ── */
+
+.automation-result-section {
+  margin-top: 6px;
+}
+
+.result-toggle {
+  background: none;
+  border: none;
+  color: oklch(62% 0.22 265);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.result-toggle:hover {
+  text-decoration: underline;
+}
+
+.automation-result {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: oklch(10% 0 0);
+  color: oklch(85% 0 0);
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Controls ── */
+
+.automation-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-left: 12px;
+}
+
+.automation-center .btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid oklch(100% 0 0 / 0.1);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.automation-center .btn-icon:hover:not(:disabled) {
+  background: oklch(100% 0 0 / 0.08);
+}
+
+.automation-center .btn-icon:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.automation-center .btn-danger:hover:not(:disabled) {
+  background: oklch(55% 0.2 25 / 0.12);
+  color: oklch(65% 0.2 25);
+}
+
+/* ── Toggle Switch ── */
+
+.automation-card .toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.automation-card .toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.automation-card .toggle .slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: oklch(100% 0 0 / 0.12);
+  border-radius: 20px;
+  transition: background 0.2s ease;
+}
+
+.automation-card .toggle .slider::before {
+  content: '';
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+}
+
+.automation-card .toggle input:checked + .slider {
+  background: oklch(62% 0.22 265);
+}
+
+.automation-card .toggle input:checked + .slider::before {
+  transform: translateX(16px);
+}

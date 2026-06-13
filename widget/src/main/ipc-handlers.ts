@@ -30,7 +30,7 @@ import {
 import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
-import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore, processIncomingRequest } from './message-router';
 import { getAllToolDefinitions } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
@@ -1487,6 +1487,273 @@ try {
 
       sendProgress({ model: modelName, status: 'success', percent: 100 });
       return { success: true, model: modelName };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Automation Center ──────────────────────────────────────────────────────
+
+  const AUTOMATIONS_FILE = path.join(app.getPath('userData'), 'automations.json');
+
+  function readAutomations(): any[] {
+    try {
+      if (!fs.existsSync(AUTOMATIONS_FILE)) return [];
+      return JSON.parse(fs.readFileSync(AUTOMATIONS_FILE, 'utf8'));
+    } catch { return []; }
+  }
+
+  function writeAutomations(automations: any[]) {
+    fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify(automations, null, 2), 'utf8');
+  }
+
+  ipcMain.handle('sadie:load-automations', async () => {
+    return { automations: readAutomations() };
+  });
+
+  ipcMain.handle('sadie:create-automation', async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number }) => {
+    const automations = readAutomations();
+    const automation = {
+      id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: data.name,
+      description: data.description,
+      instructions: data.instructions,
+      trigger: data.trigger === 'schedule' ? 'schedule' : 'manual',
+      scheduleMinutes: data.trigger === 'schedule' ? (data.scheduleMinutes || 60) : undefined,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    automations.push(automation);
+    writeAutomations(automations);
+    return { automation };
+  });
+
+  ipcMain.handle('sadie:update-automation', async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => {
+    const automations = readAutomations();
+    const idx = automations.findIndex((a: any) => a.id === data.id);
+    if (idx === -1) return { success: false, error: 'Automation not found' };
+    const auto = automations[idx];
+    if (data.enabled !== undefined) auto.enabled = data.enabled;
+    if (data.name !== undefined) auto.name = data.name;
+    if (data.description !== undefined) auto.description = data.description;
+    if (data.instructions !== undefined) auto.instructions = data.instructions;
+    if (data.trigger !== undefined) auto.trigger = data.trigger;
+    if (data.scheduleMinutes !== undefined) auto.scheduleMinutes = data.scheduleMinutes;
+    writeAutomations(automations);
+    return { success: true };
+  });
+
+  ipcMain.handle('sadie:delete-automation', async (_event, data: { id: string }) => {
+    const automations = readAutomations().filter((a: any) => a.id !== data.id);
+    writeAutomations(automations);
+    return { success: true };
+  });
+
+  function extractResultText(result: any): string {
+    // tools route: { success, data: { assistant: { content } } }
+    if (result?.data?.assistant?.content) return result.data.assistant.content;
+    // n8n route may return nested output
+    if (result?.data?.output) return result.data.output;
+    if (result?.data?.response) return typeof result.data.response === 'string' ? result.data.response : JSON.stringify(result.data.response);
+    if (typeof result?.data === 'string' && result.data.length > 0) return result.data;
+    // error responses
+    if (result?.message && result.message !== 'OK') return result.message;
+    if (result?.details) return result.details;
+    return '';
+  }
+
+  async function executeAutomation(auto: any): Promise<{ success: boolean; result?: string; error?: string }> {
+    if (!auto?.instructions) return { success: false, error: 'Automation has no instructions' };
+
+    let resultText = '';
+    try {
+      const settings = getSettings();
+      const result = await processIncomingRequest({
+        user_id: 'automation',
+        conversation_id: `automation-${auto.id}`,
+        message: auto.instructions,
+        timestamp: new Date().toISOString(),
+      }, settings.n8nUrl || 'http://localhost:5678');
+
+      resultText = extractResultText(result);
+
+      // If processIncomingRequest returned nothing useful (e.g. n8n down, empty tools),
+      // fall back to direct Ollama chat
+      if (!resultText || resultText === 'Connection refused by backend.') {
+        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
+        const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
+          model: ollamaModel,
+          messages: [
+            { role: 'system', content: 'You are SADIE, a helpful AI assistant. Carry out the user\'s automation task and respond with the result.' },
+            { role: 'user', content: auto.instructions },
+          ],
+          stream: false,
+          options: { num_predict: 2048 },
+        }, { timeout: 120_000 });
+        resultText = ollamaRes.data?.message?.content || ollamaRes.data?.response || 'No response from model';
+      }
+    } catch (err: any) {
+      // Last resort: try direct Ollama even if processIncomingRequest threw
+      try {
+        const settings = getSettings();
+        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
+        const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
+          model: ollamaModel,
+          messages: [
+            { role: 'system', content: 'You are SADIE, a helpful AI assistant. Carry out the user\'s automation task and respond with the result.' },
+            { role: 'user', content: auto.instructions },
+          ],
+          stream: false,
+          options: { num_predict: 2048 },
+        }, { timeout: 120_000 });
+        resultText = ollamaRes.data?.message?.content || ollamaRes.data?.response || '';
+      } catch { /* fallback also failed */ }
+
+      if (!resultText) {
+        resultText = `Error: ${err?.message || err}`;
+      }
+    }
+
+    // Persist result
+    const automations = readAutomations();
+    const stored = automations.find((a: any) => a.id === auto.id);
+    if (stored) {
+      stored.lastRun = new Date().toISOString();
+      stored.lastResult = resultText;
+      writeAutomations(automations);
+    }
+
+    return resultText.startsWith('Error:')
+      ? { success: false, error: resultText }
+      : { success: true, result: resultText };
+  }
+
+  ipcMain.handle('sadie:run-automation', async (_event, data: { id: string }) => {
+    const automations = readAutomations();
+    const auto = automations.find((a: any) => a.id === data.id);
+    if (!auto) return { success: false, error: 'Automation not found' };
+    return executeAutomation(auto);
+  });
+
+  // ── Scheduled automation timer ──
+  const automationTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+  function startAutomationSchedule() {
+    // Clear all existing timers
+    for (const t of automationTimers.values()) clearInterval(t);
+    automationTimers.clear();
+
+    const automations = readAutomations();
+    for (const auto of automations) {
+      if (auto.trigger === 'schedule' && auto.enabled && auto.scheduleMinutes > 0) {
+        const ms = auto.scheduleMinutes * 60_000;
+        const timer = setInterval(async () => {
+          const fresh = readAutomations().find((a: any) => a.id === auto.id);
+          if (!fresh || !fresh.enabled) return;
+          console.log(`[Automation] Running scheduled: "${fresh.name}"`);
+          const result = await executeAutomation(fresh);
+          // Notify renderer
+          try {
+            const win = BrowserWindow.getAllWindows()[0];
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('sadie:reminder-fired', {
+                message: `Automation "${fresh.name}" completed: ${result.result || result.error || 'done'}`,
+                label: fresh.name,
+              });
+            }
+          } catch { /* ignore */ }
+        }, ms);
+        automationTimers.set(auto.id, timer);
+      }
+    }
+  }
+
+  // Start scheduled automations on boot (with a delay to let the app settle)
+  setTimeout(startAutomationSchedule, 5000);
+
+  // Re-sync schedules every 60s to pick up CRUD changes
+  setInterval(startAutomationSchedule, 60_000);
+
+  // ── Quiz Mode ──────────────────────────────────────────────────────────────
+
+  const QUIZ_PROGRESS_FILE = path.join(app.getPath('userData'), 'quiz-progress.json');
+
+  ipcMain.handle('sadie:generate-quiz', async (_event, params: { topic: string; difficulty: string; questionCount: number; questionTypes?: string[]; language?: string }) => {
+    try {
+      const { topic, difficulty, questionCount } = params;
+      const model = getSettings().chatModel || 'qwen2.5:7b';
+
+      // Generate in small batches to avoid timeout on slower GPUs
+      const BATCH_SIZE = 3;
+      const allQuestions: any[] = [];
+      const batches = Math.ceil(questionCount / BATCH_SIZE);
+
+      for (let b = 0; b < batches; b++) {
+        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
+        const prompt = `Generate ${count} ${difficulty} ${topic} quiz questions. Return ONLY a JSON array, no other text.
+Each object: {"type":"multiple-choice","question":"...","code":"","options":["A","B","C","D"],"correctIndex":0,"explanation":"..."}
+Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausible options. Use short code if relevant.`;
+
+        const response = await axios.post('http://127.0.0.1:11434/api/generate', {
+          model,
+          prompt,
+          system: `You output ONLY valid JSON arrays. No markdown. No backticks. No explanation. ${difficulty} difficulty ${topic} coding quiz.`,
+          stream: false,
+          options: { temperature: 0.8, num_predict: 1500 }
+        }, { timeout: 60_000 });
+
+        const raw = response.data?.response || '';
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed)) allQuestions.push(...parsed);
+          } catch { /* skip bad batch */ }
+        }
+      }
+
+      if (allQuestions.length === 0) {
+        return { success: false, error: 'Could not generate quiz questions. Check that Ollama is running.' };
+      }
+
+      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => ({
+        id: `q-${Date.now()}-${i}`,
+        type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
+        question: String(q.question || ''),
+        code: q.code || '',
+        options: Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : ['A', 'B', 'C', 'D'],
+        correctIndex: typeof q.correctIndex === 'number' ? Math.min(Math.max(q.correctIndex, 0), 3) : 0,
+        explanation: String(q.explanation || 'No explanation provided.'),
+      }));
+
+      for (const q of validated) {
+        while (q.options.length < 4) q.options.push('(no option)');
+      }
+
+      return { success: true, questions: validated };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('sadie:save-quiz-progress', async (_event, progress: any) => {
+    try {
+      fs.writeFileSync(QUIZ_PROGRESS_FILE, JSON.stringify(progress, null, 2), 'utf8');
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('sadie:load-quiz-progress', async () => {
+    try {
+      if (!fs.existsSync(QUIZ_PROGRESS_FILE)) {
+        return { success: true, data: null };
+      }
+      const raw = fs.readFileSync(QUIZ_PROGRESS_FILE, 'utf8');
+      return { success: true, data: JSON.parse(raw) };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
