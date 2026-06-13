@@ -27,10 +27,15 @@ function makeMockElectron(saveSettings = jest.fn().mockResolvedValue(undefined))
   return {
     saveSettings,
     checkConnection: jest.fn().mockResolvedValue({ ollama: 'online' }),
-    listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }] }),
+    listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }, { name: 'nomic-embed-text' }] }),
     startOllama: jest.fn().mockResolvedValue({ success: true }),
+    checkOllamaInstalled: jest.fn().mockResolvedValue({ installed: true, path: '/usr/bin/ollama' }),
     detectGpuVram: jest.fn().mockResolvedValue({ success: true, vramGB: 6, gpuName: 'Test GPU' }),
     listCustomLLMModels: jest.fn().mockResolvedValue({ success: true, models: [{ id: 'test-model' }] }),
+    pullModelStream: jest.fn().mockResolvedValue({ success: true }),
+    onPullModelProgress: jest.fn().mockReturnValue(() => {}),
+    onOllamaDownloadProgress: jest.fn().mockReturnValue(() => {}),
+    downloadOllama: jest.fn().mockResolvedValue({ success: true }),
   };
 }
 
@@ -93,7 +98,7 @@ describe('FirstRunModal — local path', () => {
     });
     // Wait for async checkOllama
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
-    expect(screen.getByText('Ollama is running!')).toBeInTheDocument();
+    expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
   });
 
   test('shows GPU info when detected', async () => {

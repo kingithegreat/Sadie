@@ -6,21 +6,42 @@ This guide walks you through installing and running SADIE on a fresh machine, fr
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Clone the Repository](#step-1--clone-the-repository)
-3. [Automated Setup Script](#step-2--run-the-automated-setup-script)
-4. [Start Ollama](#step-3--start-ollama)
-5. [Start n8n (Optional)](#step-4--start-n8n-optional)
-6. [Launch SADIE](#step-5--launch-sadie)
-7. [First-Run Onboarding](#step-6--first-run-onboarding)
-8. [Verify Tools](#step-7--verify-tools-are-working)
-9. [Troubleshooting](#troubleshooting)
-10. [Updating SADIE](#updating-sadie)
-11. [File and Directory Reference](#file-and-directory-reference)
+1. [One-Click Install (Recommended)](#one-click-install-recommended)
+2. [Prerequisites (Developer Setup)](#prerequisites-developer-setup)
+3. [Clone the Repository](#step-1--clone-the-repository)
+4. [Automated Setup Script](#step-2--run-the-automated-setup-script)
+5. [Start Ollama](#step-3--start-ollama)
+6. [Start n8n (Optional)](#step-4--start-n8n-optional)
+7. [Launch SADIE](#step-5--launch-sadie)
+8. [First-Run Onboarding](#step-6--first-run-onboarding)
+9. [Verify Tools](#step-7--verify-tools-are-working)
+10. [Troubleshooting](#troubleshooting)
+11. [Updating SADIE](#updating-sadie)
+12. [File and Directory Reference](#file-and-directory-reference)
 
 ---
 
-## Prerequisites
+## One-Click Install (Recommended)
+
+The simplest way to get SADIE running:
+
+1. **Download** `SADIE-Setup.exe` from the latest release, or build it yourself:
+   ```bash
+   cd widget
+   npm run dist    # Outputs to widget/dist-electron/
+   ```
+2. **Double-click** the installer. It installs to your user profile (no admin rights needed) and launches SADIE automatically.
+3. **Follow the setup wizard.** On first launch, SADIE will:
+   - Detect your GPU and set a hardware profile.
+   - Download and install Ollama if it's not already on your machine.
+   - Pull the essential AI models (`qwen2.5:7b` for chat, `nomic-embed-text` for embeddings) with a progress bar.
+   - Drop you into the chat interface, ready to go.
+
+That's it — no terminal, no manual model pulls, no Docker. Everything below is for developers who want to run from source.
+
+---
+
+## Prerequisites (Developer Setup)
 
 | Requirement | Version | Notes |
 |---|---|---|
@@ -140,21 +161,26 @@ npm run build
 
 ```bash
 cd widget
-npm run dist    # Uses electron-builder; output in widget/release/
+npm run dist    # Uses electron-builder; output in widget/dist-electron/
 ```
 
 ---
 
 ## Step 6 — First-Run Onboarding
 
-When SADIE opens for the first time:
+When SADIE opens for the first time, a setup wizard guides you through configuration:
 
-1. **Welcome modal** — A first-run modal introduces SADIE's features and capabilities. Click **Get Started** to proceed.
-1. **Mode choice** — Choose **Local (Ollama)** for offline use or a cloud provider for hosted inference.
-2. **Telemetry consent** — A consent prompt appears. Telemetry is opt-in only and stores data locally; nothing is sent to a remote server.
-3. **Global hotkey** — Defaults to `Ctrl+Shift+Space` (Windows). Changeable in **Settings > Widget Hotkey**.
-4. **Model selection** — Settings default to `qwen2.5:7b` for chat and `moondream` for vision. The model selector shows VRAM warnings for models that exceed your GPU capacity. Update in **Settings** if you pulled different models.
-5. **n8n URL** — Defaults to `http://localhost:5678`. Update in **Settings > n8n URL** if you changed the docker-compose port.
+1. **Welcome screen** — Choose between **Local (Ollama)** for fully offline AI or **Cloud API** for hosted inference (GPT-4o, Claude, Gemini, and free-tier providers).
+2. **Local path** — The wizard automatically:
+   - Detects your GPU and VRAM to set a hardware profile.
+   - Checks if Ollama is installed. If not, offers a one-click "Install Ollama automatically" button that downloads and installs it silently.
+   - Starts Ollama if it's installed but not running.
+   - Pulls essential models (`qwen2.5:7b`, `nomic-embed-text`) with real-time progress bars.
+   - Shows "Ollama is ready!" when everything is set up.
+3. **Cloud path** — Pick a provider, paste an API key, and test the connection. Free-tier providers are marked.
+4. **Done** — Click **Get Started** to enter the chat interface. Telemetry consent is handled automatically (local-only, no remote data).
+5. **Global hotkey** — Defaults to `Ctrl+Shift+Space` (Windows). Changeable in **Settings > Widget Hotkey**.
+6. **n8n URL** — Defaults to `http://localhost:5678`. Update in **Settings > n8n URL** if you changed the docker-compose port.
 
 ---
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import type { Settings, CustomLLMConfig } from '../../shared/types';
 
 type Step = 'welcome' | 'setup' | 'done';
@@ -48,6 +48,35 @@ const PROVIDER_URLS: Record<string, string> = {
   together: 'https://api.together.xyz/v1',
 };
 
+const ESSENTIAL_MODELS = [
+  { name: 'qwen2.5:7b', desc: 'Chat model', sizeHint: '4.7 GB' },
+  { name: 'nomic-embed-text', desc: 'Embeddings for RAG', sizeHint: '274 MB' },
+];
+
+type LocalSetupPhase =
+  | 'checking'
+  | 'ollama-missing'
+  | 'downloading-ollama'
+  | 'starting-ollama'
+  | 'checking-models'
+  | 'pulling-models'
+  | 'ready';
+
+interface ModelPullProgress {
+  model: string;
+  status: string;
+  percent: number | null;
+  completedMB: number | null;
+  totalMB: number | null;
+}
+
+interface OllamaDownloadProgress {
+  stage: string;
+  percent: number;
+  downloadedMB?: number;
+  totalMB?: number;
+}
+
 export default function FirstRunModal({
   open,
   settings,
@@ -64,11 +93,15 @@ export default function FirstRunModal({
   const [setupPath, setSetupPath] = useState<SetupPath>(null);
 
   // Local path state
-  const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
-  const [ollamaChecking, setOllamaChecking] = useState(false);
-  const [ollamaStarting, setOllamaStarting] = useState(false);
+  const [localPhase, setLocalPhase] = useState<LocalSetupPhase>('checking');
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<OllamaDownloadProgress | null>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [modelPullProgress, setModelPullProgress] = useState<ModelPullProgress | null>(null);
+  const [modelsPulled, setModelsPulled] = useState<string[]>([]);
+  const [modelPullIndex, setModelPullIndex] = useState(0);
   const [gpuInfo, setGpuInfo] = useState<{ vramGB: number | null; gpuName: string | null } | null>(null);
+  const pullCancelledRef = useRef(false);
 
   // Cloud path state
   const [cloudProvider, setCloudProvider] = useState<CustomLLMConfig['provider']>('groq');
@@ -79,46 +112,23 @@ export default function FirstRunModal({
 
   useEffect(() => { setDraft(settings); }, [settings]);
 
-  if (!open) return null;
+  // Subscribe to pull progress events
+  useEffect(() => {
+    const unsub = (window as any).electron.onPullModelProgress?.((data: ModelPullProgress) => {
+      setModelPullProgress(data);
+    });
+    return () => { unsub?.(); };
+  }, []);
 
-  const stepIndex = STEPS.indexOf(step);
+  // Subscribe to Ollama download progress events
+  useEffect(() => {
+    const unsub = (window as any).electron.onOllamaDownloadProgress?.((data: OllamaDownloadProgress) => {
+      setDownloadProgress(data);
+    });
+    return () => { unsub?.(); };
+  }, []);
 
-  const checkOllama = async () => {
-    setOllamaChecking(true);
-    try {
-      const status = await (window as any).electron.checkConnection?.();
-      const online = status?.ollama === 'online';
-      setOllamaOk(online);
-      if (online) {
-        const modelList = await (window as any).electron.listOllamaModels?.();
-        if (modelList?.success && modelList.models) {
-          setModels(modelList.models.map((m: any) => m.name || m));
-        }
-      }
-    } catch {
-      setOllamaOk(false);
-    } finally {
-      setOllamaChecking(false);
-    }
-  };
-
-  const startOllama = async () => {
-    setOllamaStarting(true);
-    try {
-      const res = await (window as any).electron.startOllama?.();
-      if (res?.success || res?.alreadyRunning) {
-        await checkOllama();
-      } else {
-        setOllamaOk(false);
-      }
-    } catch {
-      setOllamaOk(false);
-    } finally {
-      setOllamaStarting(false);
-    }
-  };
-
-  const detectHardware = async () => {
+  const detectHardware = useCallback(async () => {
     try {
       const res = await (window as any).electron.detectGpuVram?.();
       if (res?.success) {
@@ -129,6 +139,101 @@ export default function FirstRunModal({
         }
       }
     } catch { /* non-critical */ }
+  }, []);
+
+  const checkModelsAndPull = useCallback(async () => {
+    setLocalPhase('checking-models');
+    try {
+      const modelList = await (window as any).electron.listOllamaModels?.();
+      const installed: string[] = (modelList?.models || []).map((m: any) => m.name || m);
+      setModels(installed);
+
+      const missing = ESSENTIAL_MODELS.filter(m => !installed.some(i => i.startsWith(m.name.split(':')[0])));
+      if (missing.length === 0) {
+        setLocalPhase('ready');
+        return;
+      }
+
+      setLocalPhase('pulling-models');
+      pullCancelledRef.current = false;
+      const pulled: string[] = [];
+      for (let i = 0; i < missing.length; i++) {
+        if (pullCancelledRef.current) break;
+        setModelPullIndex(i);
+        setModelPullProgress({ model: missing[i].name, status: 'starting pull...', percent: 0, completedMB: null, totalMB: null });
+        try {
+          await (window as any).electron.pullModelStream?.(missing[i].name);
+          pulled.push(missing[i].name);
+          setModelsPulled([...pulled]);
+        } catch (e: any) {
+          console.warn('Model pull failed:', missing[i].name, e);
+        }
+      }
+      setModelPullProgress(null);
+
+      const updatedList = await (window as any).electron.listOllamaModels?.();
+      setModels((updatedList?.models || []).map((m: any) => m.name || m));
+      setLocalPhase('ready');
+    } catch {
+      setLocalPhase('ready');
+    }
+  }, []);
+
+  const runLocalSetup = useCallback(async () => {
+    setLocalPhase('checking');
+    setOllamaError(null);
+    detectHardware();
+
+    // 1. Check if Ollama is running
+    try {
+      const status = await (window as any).electron.checkConnection?.();
+      if (status?.ollama === 'online') {
+        await checkModelsAndPull();
+        return;
+      }
+    } catch { /* not running */ }
+
+    // 2. Check if Ollama is installed
+    const installCheck = await (window as any).electron.checkOllamaInstalled?.();
+    if (installCheck?.installed) {
+      // Installed but not running — start it
+      setLocalPhase('starting-ollama');
+      try {
+        const startRes = await (window as any).electron.startOllama?.();
+        if (startRes?.success) {
+          await checkModelsAndPull();
+          return;
+        }
+        setOllamaError(startRes?.error || 'Could not start Ollama');
+        setLocalPhase('ollama-missing');
+      } catch (e: any) {
+        setOllamaError(e?.message || 'Failed to start Ollama');
+        setLocalPhase('ollama-missing');
+      }
+      return;
+    }
+
+    // 3. Not installed
+    setLocalPhase('ollama-missing');
+  }, [detectHardware, checkModelsAndPull]);
+
+  const handleDownloadOllama = async () => {
+    setLocalPhase('downloading-ollama');
+    setOllamaError(null);
+    setDownloadProgress({ stage: 'downloading', percent: 0 });
+    try {
+      const res = await (window as any).electron.downloadOllama?.();
+      if (res?.success) {
+        await checkModelsAndPull();
+      } else {
+        setOllamaError(res?.error || 'Installation failed');
+        setLocalPhase('ollama-missing');
+      }
+    } catch (e: any) {
+      setOllamaError(e?.message || 'Download failed');
+      setLocalPhase('ollama-missing');
+    }
+    setDownloadProgress(null);
   };
 
   const testCloudConnection = async () => {
@@ -159,8 +264,7 @@ export default function FirstRunModal({
     setSetupPath(path);
     setStep('setup');
     if (path === 'local') {
-      checkOllama();
-      detectHardware();
+      runLocalSetup();
     }
   };
 
@@ -195,6 +299,11 @@ export default function FirstRunModal({
     onSave(payload);
     onClose();
   };
+
+  if (!open) return null;
+
+  const stepIndex = STEPS.indexOf(step);
+  const localBusy = localPhase === 'checking' || localPhase === 'downloading-ollama' || localPhase === 'starting-ollama' || localPhase === 'pulling-models';
 
   return (
     <div className="first-run-overlay">
@@ -248,16 +357,107 @@ export default function FirstRunModal({
                 </div>
               )}
 
-              {/* Ollama status */}
-              {ollamaChecking ? (
-                <div className="wizard-status checking">Checking Ollama...</div>
-              ) : ollamaOk === true ? (
-                <>
-                  <div className="wizard-status success">Ollama is running!</div>
-                  {models.length > 0 ? (
+              {/* Phase: Checking */}
+              {localPhase === 'checking' && (
+                <div className="wizard-status checking">
+                  <span className="wizard-spinner" />Checking your system...
+                </div>
+              )}
+
+              {/* Phase: Ollama missing — offer download */}
+              {localPhase === 'ollama-missing' && (
+                <div className="wizard-setup-section">
+                  <div className="wizard-status error">
+                    <p>Ollama is not installed. SADIE needs it for local AI.</p>
+                  </div>
+                  {ollamaError && <p className="wizard-error-detail">{ollamaError}</p>}
+                  <div className="wizard-btn-row">
+                    <button type="button" className="first-run-btn first-run-btn-primary" onClick={handleDownloadOllama}>
+                      Install Ollama automatically
+                    </button>
+                    <button type="button" className="first-run-btn first-run-btn-secondary" onClick={runLocalSetup}>
+                      Retry
+                    </button>
+                  </div>
+                  <p className="wizard-step-desc wizard-install-hint">
+                    Or <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">install manually</a>, then click Retry.
+                  </p>
+                </div>
+              )}
+
+              {/* Phase: Downloading Ollama */}
+              {localPhase === 'downloading-ollama' && (
+                <div className="wizard-setup-section">
+                  <div className="wizard-status checking">
+                    <span className="wizard-spinner" />
+                    {downloadProgress?.stage === 'downloading'
+                      ? `Downloading Ollama... ${downloadProgress.percent}%${downloadProgress.totalMB ? ` (${downloadProgress.downloadedMB || 0} / ${downloadProgress.totalMB} MB)` : ''}`
+                      : downloadProgress?.stage === 'installing'
+                        ? 'Installing Ollama...'
+                        : downloadProgress?.stage === 'starting'
+                          ? 'Starting Ollama...'
+                          : 'Setting up Ollama...'}
+                  </div>
+                  {downloadProgress && downloadProgress.stage === 'downloading' && (
+                    <div className="wizard-progress-bar">
+                      <div className="wizard-progress-fill" style={{ width: `${downloadProgress.percent}%` }} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Phase: Starting Ollama */}
+              {localPhase === 'starting-ollama' && (
+                <div className="wizard-status checking">
+                  <span className="wizard-spinner" />Starting Ollama...
+                </div>
+              )}
+
+              {/* Phase: Checking models */}
+              {localPhase === 'checking-models' && (
+                <div className="wizard-status checking">
+                  <span className="wizard-spinner" />Checking installed models...
+                </div>
+              )}
+
+              {/* Phase: Pulling models */}
+              {localPhase === 'pulling-models' && (
+                <div className="wizard-setup-section">
+                  <div className="wizard-status checking">
+                    <span className="wizard-spinner" />
+                    Downloading AI models ({modelPullIndex + 1} of {ESSENTIAL_MODELS.length})
+                  </div>
+                  {modelPullProgress && (
+                    <div className="wizard-model-pull-info">
+                      <p className="wizard-pull-model-name">
+                        {modelPullProgress.model}
+                        {modelPullProgress.totalMB
+                          ? ` — ${modelPullProgress.completedMB || 0} / ${modelPullProgress.totalMB} MB`
+                          : modelPullProgress.status ? ` — ${modelPullProgress.status}` : ''}
+                      </p>
+                      <div className="wizard-progress-bar">
+                        <div className="wizard-progress-fill" style={{ width: `${modelPullProgress.percent || 0}%` }} />
+                      </div>
+                    </div>
+                  )}
+                  {modelsPulled.length > 0 && (
+                    <div className="wizard-pulled-list">
+                      {modelsPulled.map(m => (
+                        <span key={m} className="wizard-pulled-check">✓ {m}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Phase: Ready */}
+              {localPhase === 'ready' && (
+                <div className="wizard-setup-section">
+                  <div className="wizard-status success">Ollama is ready!</div>
+                  {models.length > 0 && (
                     <div className="wizard-model-compact">
                       <p className="wizard-step-desc">
-                        Found {models.length} model{models.length > 1 ? 's' : ''}. Using: <strong>{draft.chatModel || models[0]}</strong>
+                        {models.length} model{models.length > 1 ? 's' : ''} installed. Using: <strong>{draft.chatModel || models[0]}</strong>
                       </p>
                       {models.length > 1 && (
                         <select
@@ -270,32 +470,9 @@ export default function FirstRunModal({
                         </select>
                       )}
                     </div>
-                  ) : (
-                    <div className="wizard-status info">
-                      <p>No models installed yet. SADIE will pull one for you on first chat, or run:</p>
-                      <code>ollama pull qwen2.5:7b</code>
-                    </div>
                   )}
-                </>
-              ) : ollamaOk === false ? (
-                <div className="wizard-status error">
-                  <p>Ollama not detected.</p>
-                  <div className="wizard-btn-row">
-                    <button
-                      type="button"
-                      className="first-run-btn first-run-btn-primary"
-                      onClick={startOllama}
-                      disabled={ollamaStarting}
-                    >
-                      {ollamaStarting ? 'Starting...' : 'Start Ollama'}
-                    </button>
-                    <button type="button" className="first-run-btn first-run-btn-secondary" onClick={checkOllama}>Retry</button>
-                  </div>
-                  <p className="wizard-step-desc wizard-install-hint">
-                    Or <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">install Ollama</a> first, then retry.
-                  </p>
                 </div>
-              ) : null}
+              )}
             </div>
           )}
 
@@ -368,16 +545,16 @@ export default function FirstRunModal({
           <button type="button" onClick={handleSkip} className="first-run-btn first-run-btn-secondary">Skip setup</button>
           <div className="wizard-nav-btns">
             {step === 'setup' && (
-              <button type="button" onClick={() => { setStep('welcome'); setSetupPath(null); }} className="first-run-btn first-run-btn-secondary">Back</button>
+              <button type="button" onClick={() => { setStep('welcome'); setSetupPath(null); pullCancelledRef.current = true; }} className="first-run-btn first-run-btn-secondary">Back</button>
             )}
             {step === 'setup' && (
               <button
                 type="button"
                 onClick={() => setStep('done')}
                 className="first-run-btn first-run-btn-primary"
-                disabled={setupPath === 'cloud' && cloudOk !== true && cloudApiKey.trim().length > 0}
+                disabled={(setupPath === 'local' && localBusy) || (setupPath === 'cloud' && cloudOk !== true && cloudApiKey.trim().length > 0)}
               >
-                {setupPath === 'local' && ollamaOk !== true ? 'Continue anyway' : 'Next'}
+                {setupPath === 'local' && localPhase === 'ready' ? 'Next' : setupPath === 'local' && localBusy ? 'Setting up...' : setupPath === 'local' ? 'Continue anyway' : 'Next'}
               </button>
             )}
             {step === 'done' && (

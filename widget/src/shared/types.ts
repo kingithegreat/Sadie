@@ -368,6 +368,36 @@ export interface ElectronAPI {
     error?: string;
   }>;
 
+  // Pull an Ollama model with streaming progress events
+  pullModelStream?: (modelName: string) => Promise<{
+    success: boolean;
+    model?: string;
+    error?: string;
+  }>;
+
+  // Subscribe to model pull progress events (fired during pullModelStream)
+  onPullModelProgress?: (cb: (data: {
+    model: string;
+    status: string;
+    percent: number | null;
+    completedMB: number | null;
+    totalMB: number | null;
+  }) => void) => () => void;
+
+  // Check if Ollama is installed on the system (checks PATH and common locations)
+  checkOllamaInstalled?: () => Promise<{ installed: boolean; path: string | null }>;
+
+  // Download and silently install Ollama, then start the server
+  downloadOllama?: () => Promise<{ success: boolean; error?: string }>;
+
+  // Subscribe to Ollama download/install progress events
+  onOllamaDownloadProgress?: (cb: (data: {
+    stage: 'downloading' | 'installing' | 'starting' | 'ready';
+    percent: number;
+    downloadedMB?: number;
+    totalMB?: number;
+  }) => void) => () => void;
+
   // Attempt to start Ollama (`ollama serve`) detached. Resolves once the
   // server responds on /api/tags, or with an error if it can't be launched.
   startOllama?: () => Promise<{

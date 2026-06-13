@@ -19,7 +19,7 @@
     "build": "electron-vite build",
     "dev": "node scripts/electron-dev.js",
     "predist": "powershell -NoProfile -ExecutionPolicy Bypass -File \"..\\scripts\\generate-icon.ps1\"",
-    "dist": "npm run build && electron-builder --config ../electron-builder.yml",
+    "dist": "npm run build && electron-builder",
     "postinstall": "electron-builder install-app-deps",
     "e2e:install": "playwright install --with-deps",
     "e2e": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test",
@@ -130,10 +130,11 @@
       "signingHashAlgorithms": []
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
     }
   },
   "browserslist": [

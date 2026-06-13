@@ -56,8 +56,7 @@ Verify the following files are up to date:
 
 - [ ] `CHANGELOG.md` — New version entry with all changes
 - [ ] `README.md` — Feature list and test counts
-- [ ] `TESTING_MATRIX.md` — Any new test suites listed
-- [ ] `SECURITY_AND_COMPLIANCE.md` — Any new security measures documented
+- [ ] `docs/setup-guide.md` — Installation and first-run instructions
 
 ### 4. Version Bump
 

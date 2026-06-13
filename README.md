@@ -139,42 +139,39 @@ All tools execute locally as TypeScript handlers. SADIE calls whichever tool the
 
 ## Quick Start
 
-### 1. Clone the Repository
+### Option A — One-Click Installer (Recommended)
+
+Download `SADIE-Setup.exe` from the latest release (or build it yourself with `cd widget && npm run dist`). Double-click the installer — SADIE installs to your user profile and launches automatically. No admin rights required.
+
+On first launch, the setup wizard will:
+
+1. Detect your GPU and recommend a hardware profile.
+2. Install Ollama automatically if it isn't already on your machine.
+3. Download the essential AI models (`qwen2.5:7b` + `nomic-embed-text`) with a progress bar.
+4. Drop you into a ready-to-chat interface.
+
+### Option B — Developer Setup
 
 ```bash
 git clone https://github.com/kingithegreat/Sadie.git
-cd Sadie
+cd Sadie/widget
+npm install
+npm run dev
 ```
 
-### 2. Start n8n via Docker (optional)
+`npm run dev` uses the repo's Electron wrapper, which clears `ELECTRON_RUN_AS_NODE` before launching Electron so the app starts correctly from VS Code and other integrated terminals. SADIE will launch with hot-reload enabled.
+
+The first-run wizard handles Ollama and model setup — you don't need to install anything else manually.
+
+### Optional: n8n Workflows
 
 ```bash
 docker compose up -d
 ```
 
-n8n will be available at `http://localhost:5678`. Import workflows from `n8n-workflows/core/` via the n8n UI (**Settings > Import Workflow**).
+n8n will be available at `http://localhost:5678`. Import workflows from `n8n-workflows/core/` via the n8n UI (**Settings > Import Workflow**). SADIE's core AI features work without n8n.
 
-### 3. Pull AI Models
-
-```bash
-ollama pull qwen2.5:7b            # Primary chat model (4.7 GB)
-ollama pull qwen2.5-coder:7b     # Code generation model (optional, 4.4 GB)
-ollama pull moondream             # Default vision model (1.7 GB)
-ollama pull nomic-embed-text      # Semantic embeddings for RAG + memory
-ollama pull gemma4:e4b            # 16 GB+ GPU recommended (9.6 GB, optional)
-```
-
-### 4. Install and Run
-
-```bash
-cd widget
-npm install
-npm run dev
-```
-
-`npm run dev` uses the repo's Electron wrapper, which clears `ELECTRON_RUN_AS_NODE` before launching Electron so the app starts correctly from VS Code and other integrated terminals.
-
-SADIE will launch with hot-reload enabled. Press `Ctrl+Shift+Space` to toggle the window from any application.
+Press `Ctrl+Shift+Space` to toggle the SADIE window from any application.
 
 ---
 
@@ -218,7 +215,7 @@ Sadie/
 
 ## Testing
 
-SADIE maintains a comprehensive Jest and Playwright coverage suite. See `TESTING_MATRIX.md` for the current inventory and scenario coverage.
+SADIE maintains a comprehensive Jest and Playwright coverage suite with 120 test suites and 1,882 tests.
 
 ```bash
 cd widget

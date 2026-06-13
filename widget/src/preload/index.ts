@@ -375,6 +375,30 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('sadie:pull-model', modelName);
   },
 
+  pullModelStream: async (modelName: string) => {
+    return await ipcRenderer.invoke('sadie:pull-model-stream', modelName);
+  },
+
+  onPullModelProgress: (cb: (data: { model: string; status: string; percent: number | null; completedMB: number | null; totalMB: number | null }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('sadie:pull-model-progress', listener);
+    return () => ipcRenderer.removeListener('sadie:pull-model-progress', listener);
+  },
+
+  checkOllamaInstalled: async () => {
+    return await ipcRenderer.invoke('sadie:check-ollama-installed');
+  },
+
+  downloadOllama: async () => {
+    return await ipcRenderer.invoke('sadie:download-ollama');
+  },
+
+  onOllamaDownloadProgress: (cb: (data: { stage: 'downloading' | 'installing' | 'starting' | 'ready'; percent: number; downloadedMB?: number; totalMB?: number }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('sadie:ollama-download-progress', listener);
+    return () => { ipcRenderer.removeListener('sadie:ollama-download-progress', listener); };
+  },
+
   startOllama: async () => {
     return await ipcRenderer.invoke('sadie:start-ollama');
   },

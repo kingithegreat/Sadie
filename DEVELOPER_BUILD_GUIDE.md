@@ -86,8 +86,8 @@ Sadie/
 ├── widget/                     # Main Electron application
 │   ├── src/
 │   │   ├── main/               # Main process (Node.js)
-│   │   │   ├── tools/          # 20+ TypeScript tool handlers
-│   │   │   └── __tests__/      # 70+ main-process unit test suites
+│   │   │   ├── tools/          # 60+ TypeScript tool handlers
+│   │   │   └── __tests__/      # 95+ main-process unit test suites
 │   │   ├── renderer/           # React UI (Vite + HMR)
 │   │   │   ├── components/     # React components
 │   │   │   ├── styles/         # CSS (themes, animations)
@@ -96,10 +96,9 @@ Sadie/
 │   │   ├── preload/            # Context bridge (sandbox-safe IPC)
 │   │   └── shared/             # Types, constants, utilities
 │   ├── electron.vite.config.ts # Build configuration
-│   ├── electron-builder.yml    # Installer packaging
 │   ├── jest.config.ts          # Jest configuration
 │   ├── playwright.config.ts    # E2E configuration
-│   └── package.json
+│   └── package.json            # Includes electron-builder config
 ├── n8n-workflows/              # n8n workflow definitions
 ├── config/                     # JSON configuration files
 ├── scripts/                    # Build and utility scripts
@@ -132,7 +131,7 @@ npm run dist
 
 ### Unit Tests
 
-SADIE maintains broad Jest and Playwright coverage across router, tools, renderer flows, and Electron E2E scenarios. See `TESTING_MATRIX.md` for the current inventory.
+SADIE maintains broad Jest and Playwright coverage across router, tools, renderer flows, and Electron E2E scenarios (120 suites, 1,882 tests).
 
 ```bash
 cd widget
@@ -330,7 +329,5 @@ npx tsc --noEmit     # Check for type errors not shown by VS Code
 When adding features, update the relevant documentation:
 
 - `README.md` — Feature list and project overview.
-- `TESTING_MATRIX.md` — New test suites.
-- `CHANGELOG.md` — Version history.
 - `docs/api-reference.md` — New IPC channels or tool schemas.
-- `SECURITY_AND_COMPLIANCE.md` — Security-related changes.
+- `docs/setup-guide.md` — Installation and first-run instructions.

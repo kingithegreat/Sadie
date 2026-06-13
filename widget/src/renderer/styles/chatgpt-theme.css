@@ -3664,6 +3664,47 @@ body {
 /* Test connection row spacing */
 .wizard-test-row { margin-top: 8px; }
 
+/* Animated spinner for checking/loading states */
+.wizard-spinner {
+  display: inline-block; width: 14px; height: 14px; margin-right: 8px;
+  border: 2px solid var(--text-secondary, #666);
+  border-top-color: var(--accent-primary, #4a6cf7);
+  border-radius: 50%; animation: wizard-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes wizard-spin { to { transform: rotate(360deg); } }
+
+/* Progress bar */
+.wizard-progress-bar {
+  width: 100%; height: 8px; border-radius: 4px;
+  background: var(--bg-medium, #333); overflow: hidden; margin-top: 8px;
+}
+.wizard-progress-fill {
+  height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-primary, #4a6cf7), #6366f1);
+  transition: width 0.3s ease;
+}
+
+/* Model pull info section */
+.wizard-model-pull-info { margin-top: 8px; text-align: left; }
+.wizard-pull-model-name {
+  font-size: 13px; color: var(--text-secondary); margin: 0 0 4px 0;
+  font-family: var(--font-mono, monospace);
+}
+.wizard-pulled-list {
+  display: flex; flex-direction: column; gap: 4px; margin-top: 10px; text-align: left;
+}
+.wizard-pulled-check { font-size: 13px; color: #10b981; }
+
+/* Setup section wrapper */
+.wizard-setup-section { margin: 8px 0; }
+
+/* Error detail text */
+.wizard-error-detail {
+  font-size: 12px; color: var(--text-secondary); margin: 4px 0 8px 0;
+  font-family: var(--font-mono, monospace);
+}
+
 /* Suggestion chips on done step */
 .wizard-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; justify-content: center; }
 .wizard-suggestion-chip {

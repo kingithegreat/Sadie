@@ -8,6 +8,7 @@ import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as https from 'https';
 import { spawn, execFile } from 'child_process';
 
 // ── Timeout constants (ms) ─────────────────────────────────────────────────
@@ -1333,6 +1334,161 @@ try {
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || String(err) };
+    }
+  });
+
+  // ── Ollama installer download ────────────────────────────────────────────
+  // Downloads OllamaSetup.exe and runs it silently, then polls until ready.
+
+  ipcMain.handle('sadie:check-ollama-installed', async () => {
+    const candidates = process.platform === 'win32'
+      ? [
+          'ollama.exe',
+          path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+          path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Ollama', 'ollama.exe'),
+        ]
+      : ['ollama'];
+
+    for (const cmd of candidates) {
+      if (!cmd) continue;
+      try {
+        const resolved = await new Promise<string | null>((resolve) => {
+          execFile(process.platform === 'win32' ? 'where' : 'which', [cmd], { timeout: 3000 }, (err, stdout) => {
+            if (err) resolve(null);
+            else resolve(stdout.trim().split('\n')[0] || null);
+          });
+        });
+        if (resolved) return { installed: true, path: resolved };
+      } catch { /* try next */ }
+      if (path.isAbsolute(cmd) && fs.existsSync(cmd)) {
+        return { installed: true, path: cmd };
+      }
+    }
+    return { installed: false, path: null };
+  });
+
+  ipcMain.handle('sadie:download-ollama', async () => {
+    const win = mainWindow ?? getMainWindow();
+    const sendProgress = (data: any) => {
+      try { if (win && !win.isDestroyed()) win.webContents.send('sadie:ollama-download-progress', data); } catch { /* */ }
+    };
+
+    const installerUrl = 'https://ollama.com/download/OllamaSetup.exe';
+    const tmpPath = path.join(os.tmpdir(), `OllamaSetup-${Date.now()}.exe`);
+
+    try {
+      sendProgress({ stage: 'downloading', percent: 0 });
+
+      await new Promise<void>((resolve, reject) => {
+        const follow = (url: string, redirects = 0) => {
+          if (redirects > 5) { reject(new Error('Too many redirects')); return; }
+          const req = https.get(url, { headers: { 'User-Agent': 'SADIE-Installer/1.0' } }, (res) => {
+            if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              follow(res.headers.location, redirects + 1);
+              return;
+            }
+            if (!res.statusCode || res.statusCode >= 400) {
+              reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+              return;
+            }
+            const total = parseInt(res.headers['content-length'] || '0', 10);
+            let downloaded = 0;
+            const file = fs.createWriteStream(tmpPath);
+            res.on('data', (chunk: Buffer) => {
+              downloaded += chunk.length;
+              file.write(chunk);
+              if (total > 0) {
+                sendProgress({ stage: 'downloading', percent: Math.round((downloaded / total) * 100), downloadedMB: Math.round(downloaded / 1048576), totalMB: Math.round(total / 1048576) });
+              }
+            });
+            res.on('end', () => { file.end(() => resolve()); });
+            res.on('error', (e) => { file.destroy(); reject(e); });
+          });
+          req.on('error', reject);
+          req.setTimeout(120_000, () => { req.destroy(); reject(new Error('Download timed out')); });
+        };
+        follow(installerUrl);
+      });
+
+      sendProgress({ stage: 'installing', percent: 100 });
+
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(tmpPath, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true });
+        child.once('error', (e) => reject(new Error('Installer launch failed: ' + e.message)));
+        child.once('exit', (code) => {
+          if (code === 0 || code === null) resolve();
+          else reject(new Error(`Installer exited with code ${code}`));
+        });
+        child.unref();
+        setTimeout(() => resolve(), 60_000);
+      });
+
+      try { fs.unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
+
+      sendProgress({ stage: 'starting', percent: 100 });
+      await launchOllamaServe();
+
+      const ollamaBase = getConfiguredOllamaBaseUrl();
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+          await axios.get(`${ollamaBase}/api/tags`, { timeout: 2000 });
+          sendProgress({ stage: 'ready', percent: 100 });
+          return { success: true };
+        } catch { /* keep polling */ }
+      }
+      return { success: false, error: 'Ollama installed but did not start within 30s. Try restarting SADIE.' };
+    } catch (err: any) {
+      try { fs.unlinkSync(tmpPath); } catch { /* */ }
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Streaming model pull with progress ─────────────────────────────────────
+
+  ipcMain.handle('sadie:pull-model-stream', async (_event, modelName: string) => {
+    if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
+      return { success: false, error: 'Invalid model name' };
+    }
+    const ollamaBase = getConfiguredOllamaBaseUrl();
+    const win = mainWindow ?? getMainWindow();
+
+    const sendProgress = (data: any) => {
+      try { if (win && !win.isDestroyed()) win.webContents.send('sadie:pull-model-progress', data); } catch { /* */ }
+    };
+
+    try {
+      const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName, stream: true }, {
+        timeout: OLLAMA_PULL_TIMEOUT,
+        responseType: 'stream',
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        let buf = '';
+        const stream = res.data as NodeJS.ReadableStream;
+        stream.on('data', (chunk: Buffer) => {
+          buf += chunk.toString();
+          const lines = buf.split('\n');
+          buf = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const j = JSON.parse(line);
+              const percent = (j.total && j.completed) ? Math.round((j.completed / j.total) * 100) : null;
+              sendProgress({ model: modelName, status: j.status || '', percent, completedMB: j.completed ? Math.round(j.completed / 1048576) : null, totalMB: j.total ? Math.round(j.total / 1048576) : null });
+              if (j.status === 'success') resolve();
+            } catch { /* skip malformed line */ }
+          }
+        });
+        stream.on('end', () => resolve());
+        stream.on('error', (e: Error) => reject(e));
+      });
+
+      sendProgress({ model: modelName, status: 'success', percent: 100 });
+      return { success: true, model: modelName };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
     }
   });
 
