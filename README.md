@@ -20,10 +20,10 @@ It combines:
 
 - **Electron 28 + React 18** for a modern, themeable desktop UI with futuristic glass-morphism accents
 - **Ollama** for fully offline LLM inference — no API keys or internet connection required
-- **60+ TypeScript tool handlers** executed locally with structured JSON tool-calling
+- **85+ TypeScript tool handlers** executed locally with structured JSON tool-calling
 - **Agentic tool loop** — the LLM autonomously chains tools for multi-step requests ("search for X, save it, then email me")
 - **Optional cloud LLM routing** to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or any OpenAI-compatible endpoint
-- **n8n** as an optional workflow orchestration engine for scheduled tasks and external integrations
+- **n8n integration** — deploy n8n workflows directly from SADIE's Automation Center (no n8n UI required); automations run via webhook triggers with Ollama-powered AI
 
 ---
 
@@ -51,6 +51,9 @@ It combines:
 | **Word Documents** | Generate `.docx` files with headings, paragraphs, and formatting |
 | **Archive Ops** | ZIP archive creation, extraction, and inspection with size and path-traversal guards |
 | **Scheduler** | Persistent reminders and scheduled jobs that survive app restarts |
+| **Quiz Mode** | Interactive coding quizzes with 12 topics, 3 difficulty levels, persistent progress tracking, and letter grades |
+| **Automation Center** | Create, edit, and run reusable automations with optional one-click n8n deployment; manual or scheduled triggers |
+| **Mixture of Agents** | Multiple local models propose answers; an aggregator synthesises the best response (16 GB+ GPU) |
 
 ### User Experience
 
@@ -93,7 +96,7 @@ All tools execute locally as TypeScript handlers. SADIE calls whichever tool the
 │   React 18 UI  <-->  IPC Bridge  <-->  Main Proc  │
 │   (Themes, Glass UI, Animations)                  │
 ├──────────────────────────────────────────────────┤
-│   Message Router     |   60+ Tool Handlers        │
+│   Message Router     |   85+ Tool Handlers        │
 │   (intent detection, |   (TypeScript, local exec)  │
 │    agentic loop,     |                            │
 │    tool recursion    |   Web - File - System      │
@@ -169,7 +172,7 @@ The first-run wizard handles Ollama and model setup — you don't need to instal
 docker compose up -d
 ```
 
-n8n will be available at `http://localhost:5678`. Import workflows from `n8n-workflows/core/` via the n8n UI (**Settings > Import Workflow**). SADIE's core AI features work without n8n.
+n8n will be available at `http://localhost:5678`. SADIE can deploy workflows to n8n automatically from the Automation Center — check "Deploy to n8n" when creating an automation. You can also import workflows manually from `n8n-workflows/` via the n8n UI. SADIE's core AI features work without n8n.
 
 Press `Ctrl+Shift+Space` to toggle the SADIE window from any application.
 
@@ -182,12 +185,12 @@ Sadie/
 ├── widget/                       # Electron + React desktop application
 │   ├── src/
 │   │   ├── main/                 # Main process (message-router, tools, IPC)
-│   │   │   ├── tools/            # 60+ TypeScript tool handler modules
-│   │   │   └── __tests__/        # 80+ main-process unit test suites
+│   │   │   ├── tools/            # 85+ TypeScript tool handler modules
+│   │   │   └── __tests__/        # Main-process unit test suites
 │   │   ├── renderer/             # React UI (components, styles)
 │   │   │   ├── components/       # ChatInterface, Settings, Sidebar, etc.
 │   │   │   ├── e2e/              # Playwright E2E test specs
-│   │   │   └── __tests__/        # 25+ renderer unit test suites
+│   │   │   └── __tests__/        # Renderer unit test suites
 │   │   ├── preload/              # Context bridge (sandbox-safe IPC)
 │   │   └── shared/               # Types, constants, and utilities
 │   ├── electron.vite.config.ts   # electron-vite build configuration
@@ -215,7 +218,7 @@ Sadie/
 
 ## Testing
 
-SADIE maintains a comprehensive Jest and Playwright coverage suite with 120 test suites and 1,882 tests.
+SADIE maintains a comprehensive Jest and Playwright coverage suite with 120 test suites.
 
 ```bash
 cd widget

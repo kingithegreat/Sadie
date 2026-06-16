@@ -133,13 +133,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         setMode('chat');
       } else if (e.ctrlKey && e.key === '2') {
         e.preventDefault();
-        setMode('image');
+        setMode('automation');
       } else if (e.ctrlKey && e.key === '3') {
         e.preventDefault();
-        setMode('documents');
+        setMode('image');
       } else if (e.ctrlKey && e.key === '4') {
         e.preventDefault();
-        setMode('web');
+        setMode('documents');
       } else if (e.ctrlKey && e.key === '5') {
         e.preventDefault();
         setMode('quiz');
@@ -187,38 +187,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           if (mounted && r?.success && r.vramGB) setVramGB(r.vramGB);
         }).catch(() => {});
         if (mounted && convResult?.success && convResult.data) {
-          const store = convResult.data;
-          
-          // If there's an active conversation, load it
-          if (store.activeConversationId) {
-            const convData = await window.electron.getConversation?.(store.activeConversationId);
-            if (convData?.success && convData.data) {
-              setConversationId(store.activeConversationId);
-              // Hydrate the LLM's in-memory context so the first message after
-              // a restart has full conversation history (not just the UI).
-              try { await window.electron.setActiveConversation?.(store.activeConversationId); } catch (e) {}
-              // Load per-conversation system prompt (if any)
-              setConversationSystemPrompt(convData.data.systemPrompt || '');
-              // Convert stored messages to ChatMessage format
-              const loadedMsgs: ChatMessage[] = convData.data.messages.map((m: SharedMessage) => ({
-                id: m.id ?? newId(),
-                role: m.role as any,
-                content: m.content,
-                createdAt: Date.parse(m.timestamp) || Date.now(),
-                streamingState: (m.streamingState as any) || undefined,
-                error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
-              }));
-              if (!initialMessages || initialMessages.length === 0) {
-                setMessages(loadedMsgs);
-              }
-            }
-          } else {
-            // No active conversation - create a new one
-            const newConv = await window.electron.createConversation?.();
-            if (newConv?.success && newConv.data) {
-              setConversationId(newConv.data.id);
-              setConversationSystemPrompt(newConv.data.systemPrompt || '');
-            }
+          // Always start with a fresh chat — history is accessible via the sidebar
+          const newConv = await window.electron.createConversation?.();
+          if (newConv?.success && newConv.data) {
+            setConversationId(newConv.data.id);
+            setConversationSystemPrompt(newConv.data.systemPrompt || '');
+            try { await window.electron.setActiveConversation?.(newConv.data.id); } catch (e) {}
           }
         } else {
           // No conversations yet - create first one

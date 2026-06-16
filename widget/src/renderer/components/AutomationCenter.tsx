@@ -22,6 +22,9 @@ export const AutomationCenter: React.FC = () => {
   const [formInstructions, setFormInstructions] = useState('');
   const [formTrigger, setFormTrigger] = useState<'manual' | 'schedule'>('manual');
   const [formSchedule, setFormSchedule] = useState(60);
+  const [formN8nUrl, setFormN8nUrl] = useState('');
+  const [formUseN8n, setFormUseN8n] = useState(false);
+  const [deploying, setDeploying] = useState(false);
 
   const loadAutomations = useCallback(async () => {
     setLoading(true);
@@ -42,12 +45,15 @@ export const AutomationCenter: React.FC = () => {
   const handleCreate = useCallback(async () => {
     if (!formName.trim() || !formInstructions.trim()) return;
     try {
+      if (formUseN8n) setDeploying(true);
       const result = await window.electron?.createAutomation?.({
         name: formName.trim(),
         description: formDesc.trim(),
         instructions: formInstructions.trim(),
         trigger: formTrigger,
         scheduleMinutes: formTrigger === 'schedule' ? formSchedule : undefined,
+        n8nWebhookUrl: formN8nUrl.trim() || undefined,
+        deployToN8n: formUseN8n,
       });
       if (result?.automation) {
         setAutomations(prev => [...prev, result.automation]);
@@ -55,12 +61,17 @@ export const AutomationCenter: React.FC = () => {
         setFormDesc('');
         setFormInstructions('');
         setFormTrigger('manual');
+        setFormN8nUrl('');
+        setFormUseN8n(false);
         setIsCreating(false);
       }
+      if (result?.error) setError(result.error);
     } catch {
       setError('Failed to create automation');
+    } finally {
+      setDeploying(false);
     }
-  }, [formName, formDesc, formInstructions, formTrigger, formSchedule]);
+  }, [formName, formDesc, formInstructions, formTrigger, formSchedule, formUseN8n, formN8nUrl]);
 
   const handleToggle = useCallback(async (id: string) => {
     const auto = automations.find(a => a.id === id);
@@ -106,6 +117,7 @@ export const AutomationCenter: React.FC = () => {
     setFormInstructions(ex.instructions);
     setFormDesc('');
     setFormTrigger('manual');
+    setFormN8nUrl('');
   }, []);
 
   return (
@@ -207,6 +219,35 @@ export const AutomationCenter: React.FC = () => {
             </div>
           )}
 
+          <div className="form-group">
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={formUseN8n}
+                onChange={e => { setFormUseN8n(e.target.checked); if (!e.target.checked) setFormN8nUrl(''); }}
+              />
+              <span>Deploy to n8n</span>
+            </label>
+            <span className="form-hint">
+              {formUseN8n
+                ? 'SADIE will create an n8n workflow automatically and run this automation through it.'
+                : 'Runs using SADIE\'s local AI tools (no n8n required).'}
+            </span>
+          </div>
+
+          {formUseN8n && (
+            <div className="form-group">
+              <label htmlFor="auto-n8n-url">Custom Webhook URL (optional)</label>
+              <input
+                id="auto-n8n-url"
+                type="text"
+                value={formN8nUrl}
+                onChange={e => setFormN8nUrl(e.target.value)}
+                placeholder="Leave blank to auto-generate, or paste an existing n8n webhook URL"
+              />
+            </div>
+          )}
+
           {/* Example templates */}
           <div className="automation-examples">
             <span className="form-hint">Try an example:</span>
@@ -223,9 +264,9 @@ export const AutomationCenter: React.FC = () => {
             <button
               className="btn-primary"
               onClick={handleCreate}
-              disabled={!formName.trim() || !formInstructions.trim()}
+              disabled={!formName.trim() || !formInstructions.trim() || deploying}
             >
-              Create Automation
+              {deploying ? 'Deploying to n8n...' : formUseN8n ? 'Create & Deploy to n8n' : 'Create Automation'}
             </button>
             <button className="btn-secondary" onClick={() => setIsCreating(false)}>
               Cancel
@@ -252,6 +293,9 @@ export const AutomationCenter: React.FC = () => {
                     <span className="trigger-badge">{auto.trigger}</span>
                     {auto.trigger === 'schedule' && auto.scheduleMinutes && (
                       <span className="schedule-badge">every {auto.scheduleMinutes >= 60 ? `${auto.scheduleMinutes / 60}h` : `${auto.scheduleMinutes}m`}</span>
+                    )}
+                    {auto.n8nWebhookUrl && (
+                      <span className="schedule-badge" title={auto.n8nWebhookUrl}>n8n</span>
                     )}
                   </div>
                 </div>

@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased — Document-aware routing, launch hardening, and test/doc alignment
+## Unreleased — n8n automation deployment, quiz fix, fresh-chat UX
+
+### Added
+- **n8n workflow deployment from Automation Center** (`n8n-api.ts`, `ipc-handlers.ts`, `AutomationCenter.tsx`): automations can now be deployed as n8n workflows directly from SADIE — generates webhook-triggered workflows, imports them via Docker CLI, activates them in SQLite, and restarts the container. No n8n UI interaction required.
+- **"Deploy to n8n" toggle** in the Automation Center create form with auto-generated webhook URLs and an "n8n" badge on deployed automations.
+- **Agentic tool-calling loop for automations** (`ipc-handlers.ts`): automations without an n8n webhook now execute via a local multi-round Ollama tool-calling loop (max 6 rounds) instead of routing through the old message-router path.
+- **Fresh chat on startup** (`App.tsx`): SADIE always opens a new conversation on launch; chat history remains accessible via the sidebar.
+
+### Fixed
+- **Quiz score double-counting** (`QuizPanel.tsx`): `handleNext` no longer re-adds the current answer's score on top of the already-updated `totalCorrect`, which inflated scores by up to 2x.
+- **Automation Center raw JSON output**: automations no longer return raw JSON from compound pseudo-tools; the new agentic loop produces formatted markdown responses.
+
+---
+
+## Previous Unreleased — Document-aware routing, launch hardening, and test/doc alignment
 
 ### Fixed
 - **Ollama IPv6 resolution failure** (`ipc-handlers.ts`, `moa.ts`): changed hardcoded `localhost` references to `127.0.0.1` to prevent Node.js 18+ from attempting to connect to Ollama over IPv6 (`::1`), which caused false-offline errors.
@@ -35,7 +49,7 @@
 - **Multi-step request detection** (`agentic-loop.ts`): new `looksMultiStep()` heuristic detects compound requests using sequence words ("then", "after that"), "first…then" patterns, numbered steps, and multiple action domains.
 - **Agentic system prompt injection**: when a multi-step request is detected, an agentic system prompt is injected instructing the LLM to plan and execute tools step-by-step, with a safety cap of 6 agentic rounds.
 - **Streaming progress indicators**: during agentic execution, the UI shows per-step progress ("🔄 Step 1: Searching the web…" / "✅ web_search done") so users see what's happening.
-- **Full tool access in agentic mode**: bypasses the small-model 12-tool cap so the LLM can chain any of the 60+ tools.
+- **Full tool access in agentic mode**: bypasses the small-model 12-tool cap so the LLM can chain any of the 85+ tools.
 - 13 new unit tests for `looksMultiStep`, `buildAgenticSystemPrompt`, and `formatStepProgress`.
 
 ### Added — Proactive Morning Briefing

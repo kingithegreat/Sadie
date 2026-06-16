@@ -30,8 +30,9 @@ import {
 import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
-import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore, processIncomingRequest } from './message-router';
-import { getAllToolDefinitions } from './tools/index';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
+import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
+import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
 import { listJobs, addJob, removeJob, toggleJob } from './scheduler';
@@ -51,6 +52,7 @@ import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { sadieWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
+import { createAndActivateWorkflow } from './n8n-api';
 
 function normalizeOllamaBaseUrl(raw?: string): string {
   const input = (raw || DEFAULT_OLLAMA_URL).trim();
@@ -1511,9 +1513,9 @@ try {
     return { automations: readAutomations() };
   });
 
-  ipcMain.handle('sadie:create-automation', async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number }) => {
+  ipcMain.handle('sadie:create-automation', async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
     const automations = readAutomations();
-    const automation = {
+    const automation: any = {
       id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: data.name,
       description: data.description,
@@ -1523,12 +1525,33 @@ try {
       enabled: true,
       createdAt: new Date().toISOString(),
     };
+
+    let error: string | undefined;
+
+    if (data.n8nWebhookUrl?.trim()) {
+      automation.n8nWebhookUrl = data.n8nWebhookUrl.trim();
+    } else if (data.deployToN8n) {
+      try {
+        console.log('[Automation] Deploying n8n workflow for:', data.name);
+        const wf = await createAndActivateWorkflow({
+          automationName: data.name,
+          instructions: data.instructions,
+        });
+        automation.n8nWebhookUrl = wf.webhookUrl;
+        automation.n8nWorkflowId = wf.id;
+        console.log('[Automation] n8n workflow deployed:', wf.webhookUrl);
+      } catch (err: any) {
+        console.error('[Automation] n8n deploy failed:', err);
+        error = `n8n deploy failed: ${err?.message || err}. Automation created without n8n — will use local tools.`;
+      }
+    }
+
     automations.push(automation);
     writeAutomations(automations);
-    return { automation };
+    return { automation, error };
   });
 
-  ipcMain.handle('sadie:update-automation', async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => {
+  ipcMain.handle('sadie:update-automation', async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
     const automations = readAutomations();
     const idx = automations.findIndex((a: any) => a.id === data.id);
     if (idx === -1) return { success: false, error: 'Automation not found' };
@@ -1539,6 +1562,7 @@ try {
     if (data.instructions !== undefined) auto.instructions = data.instructions;
     if (data.trigger !== undefined) auto.trigger = data.trigger;
     if (data.scheduleMinutes !== undefined) auto.scheduleMinutes = data.scheduleMinutes;
+    if (data.n8nWebhookUrl !== undefined) auto.n8nWebhookUrl = data.n8nWebhookUrl || undefined;
     writeAutomations(automations);
     return { success: true };
   });
@@ -1549,72 +1573,97 @@ try {
     return { success: true };
   });
 
-  function extractResultText(result: any): string {
-    // tools route: { success, data: { assistant: { content } } }
-    if (result?.data?.assistant?.content) return result.data.assistant.content;
-    // n8n route may return nested output
-    if (result?.data?.output) return result.data.output;
-    if (result?.data?.response) return typeof result.data.response === 'string' ? result.data.response : JSON.stringify(result.data.response);
-    if (typeof result?.data === 'string' && result.data.length > 0) return result.data;
-    // error responses
-    if (result?.message && result.message !== 'OK') return result.message;
-    if (result?.details) return result.details;
-    return '';
-  }
+  const MAX_TOOL_ROUNDS = 6;
+  const TOOL_ALIASES: Record<string, string> = { nba_scores: 'nba_query' };
 
   async function executeAutomation(auto: any): Promise<{ success: boolean; result?: string; error?: string }> {
     if (!auto?.instructions) return { success: false, error: 'Automation has no instructions' };
 
     let resultText = '';
-    try {
-      const settings = getSettings();
-      const result = await processIncomingRequest({
-        user_id: 'automation',
-        conversation_id: `automation-${auto.id}`,
-        message: auto.instructions,
-        timestamp: new Date().toISOString(),
-      }, settings.n8nUrl || 'http://localhost:5678');
 
-      resultText = extractResultText(result);
-
-      // If processIncomingRequest returned nothing useful (e.g. n8n down, empty tools),
-      // fall back to direct Ollama chat
-      if (!resultText || resultText === 'Connection refused by backend.') {
-        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
-        const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
-        const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
-          model: ollamaModel,
-          messages: [
-            { role: 'system', content: 'You are SADIE, a helpful AI assistant. Carry out the user\'s automation task and respond with the result.' },
-            { role: 'user', content: auto.instructions },
-          ],
-          stream: false,
-          options: { num_predict: 2048 },
-        }, { timeout: 120_000 });
-        resultText = ollamaRes.data?.message?.content || ollamaRes.data?.response || 'No response from model';
-      }
-    } catch (err: any) {
-      // Last resort: try direct Ollama even if processIncomingRequest threw
+    // ── n8n webhook path: POST to the user's n8n workflow ──
+    if (auto.n8nWebhookUrl) {
+      console.log(`[Automation] n8n path: POST to ${auto.n8nWebhookUrl}`);
       try {
-        const settings = getSettings();
-        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
-        const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
-        const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
-          model: ollamaModel,
-          messages: [
-            { role: 'system', content: 'You are SADIE, a helpful AI assistant. Carry out the user\'s automation task and respond with the result.' },
-            { role: 'user', content: auto.instructions },
-          ],
-          stream: false,
-          options: { num_predict: 2048 },
-        }, { timeout: 120_000 });
-        resultText = ollamaRes.data?.message?.content || ollamaRes.data?.response || '';
-      } catch { /* fallback also failed */ }
+        const n8nRes = await axios.post(auto.n8nWebhookUrl, {
+          message: auto.instructions,
+          automation_id: auto.id,
+          automation_name: auto.name,
+        }, { timeout: 120_000, headers: { 'Content-Type': 'application/json' } });
 
-      if (!resultText) {
+        const data = n8nRes.data;
+        resultText = data?.output
+          || data?.data?.assistant?.content
+          || data?.message?.content
+          || data?.result
+          || (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const body = err?.response?.data;
+        resultText = `Error calling n8n workflow: ${status ? `HTTP ${status}` : err?.message || err}${body ? `\n${typeof body === 'string' ? body : JSON.stringify(body)}` : ''}`;
+      }
+    } else {
+      // ── Local agentic tool-calling loop ──
+      const settings = getSettings();
+      const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
+      const ollamaModel = process.env.OLLAMA_MODEL || settings.chatModel || 'qwen2.5:7b';
+      const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+      const tools = getFocusedOllamaTools();
+      const messages: any[] = [
+        { role: 'system', content: `You are SADIE, a desktop AI assistant with tool access. Today is ${today}. Execute the user's automation task using your tools. Be concise and well-formatted. Use markdown for the final response.` },
+        { role: 'user', content: auto.instructions },
+      ];
+
+      try {
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
+            model: ollamaModel,
+            messages,
+            tools,
+            stream: false,
+            options: { num_predict: 2048, temperature: 0.7 },
+          }, { timeout: 120_000 });
+
+          const msg = ollamaRes.data?.message;
+          if (!msg) { resultText = 'No response from model'; break; }
+
+          const toolCalls = msg.tool_calls;
+          if (!toolCalls || toolCalls.length === 0) {
+            resultText = msg.content || 'Done.';
+            break;
+          }
+
+          messages.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls });
+          const toolCtx: ToolContext = { executionId: `automation-${auto.id}-r${round}-${Date.now()}` } as any;
+
+          for (const tc of toolCalls) {
+            const toolName = TOOL_ALIASES[tc.function?.name] || tc.function?.name || tc.name;
+            let toolArgs = tc.function?.arguments || tc.arguments || {};
+            if (typeof toolArgs === 'string') {
+              try { toolArgs = JSON.parse(toolArgs); } catch { toolArgs = {}; }
+            }
+
+            console.log(`[Automation] Round ${round + 1}: calling ${toolName}`, toolArgs);
+            let toolResult: any;
+            try {
+              toolResult = await executeTool({ name: toolName, arguments: toolArgs }, toolCtx);
+            } catch (err: any) {
+              toolResult = { success: false, error: err?.message || String(err) };
+            }
+
+            const resultStr = typeof toolResult === 'string'
+              ? toolResult
+              : JSON.stringify(toolResult, null, 2).slice(0, 4000);
+            messages.push({ role: 'tool', content: resultStr });
+          }
+        }
+      } catch (err: any) {
         resultText = `Error: ${err?.message || err}`;
       }
     }
+
+    if (!resultText) resultText = 'Automation completed but produced no output.';
 
     // Persist result
     const automations = readAutomations();

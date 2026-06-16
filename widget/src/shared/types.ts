@@ -441,7 +441,7 @@ export interface ElectronAPI {
 
   // Automation Center
   loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
-  createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number }) => Promise<{ automation: SavedAutomation }>;
+  createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
   updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
   deleteAutomation?: (data: { id: string }) => Promise<{ success: boolean }>;
   runAutomation?: (data: { id: string }) => Promise<{ success: boolean; result?: string; error?: string }>;
@@ -495,6 +495,7 @@ export interface SavedAutomation {
   instructions: string;
   trigger: 'manual' | 'schedule';
   scheduleMinutes?: number;
+  n8nWebhookUrl?: string;
   enabled: boolean;
   lastRun?: string;
   lastResult?: string;

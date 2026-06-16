@@ -126,7 +126,7 @@ ollama pull gemma4:e4b           # 16 GB+ GPU recommended (9.6 GB, optional)
 
 ## Step 4 — Start n8n (Optional)
 
-n8n provides optional workflow orchestration for scheduled tasks and external integrations. SADIE's core functionality (all 20+ tool handlers) works without n8n.
+n8n provides optional workflow orchestration for scheduled tasks and external integrations. SADIE's core functionality (all 85+ tool handlers) works without n8n.
 
 ```bash
 docker compose up -d

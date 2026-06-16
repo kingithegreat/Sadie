@@ -125,16 +125,17 @@ const QuizPanel: React.FC = () => {
       setAnswered(false);
     } else {
       // Quiz complete — update progress
+      // score already includes the last answer (updated in handleSubmitAnswer), so don't add it again
       const topicKey = topic || 'unknown';
       const existing = progress.topicScores[topicKey] || { correct: 0, total: 0 };
       const updated: QuizProgress = {
         totalQuizzes: progress.totalQuizzes + 1,
-        totalCorrect: progress.totalCorrect + score + (selectedAnswer === questions[currentIndex]?.correctIndex ? 1 : 0),
+        totalCorrect: progress.totalCorrect + score,
         totalAnswered: progress.totalAnswered + questions.length,
         topicScores: {
           ...progress.topicScores,
           [topicKey]: {
-            correct: existing.correct + score + (selectedAnswer === questions[currentIndex]?.correctIndex ? 1 : 0),
+            correct: existing.correct + score,
             total: existing.total + questions.length,
           },
         },

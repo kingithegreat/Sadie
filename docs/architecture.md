@@ -119,7 +119,7 @@ The Node.js Electron main process. Key responsibilities:
 
 ### Tool Handlers (`widget/src/main/tools/`)
 
-All 70+ tools are implemented as TypeScript modules that export tool definitions and handler functions. See the [Tool System](#tool-system) section below for details.
+All 85+ tools are implemented as TypeScript modules that export tool definitions and handler functions. See the [Tool System](#tool-system) section below for details.
 
 ---
 

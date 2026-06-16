@@ -17,7 +17,7 @@ const INSTITUTION = 'Toi Ohomai Institute of Technology';
 const PROGRAMME = 'Bachelor of Computing Systems (Level 7)';
 const PROJECT = 'SADIE — Structured AI Desktop Intelligence Engine';
 const YEAR = '2026';
-const SUPERVISOR = ''; // fill in if known
+const SUPERVISOR = 'Francisco Roldao';
 
 const BLUE = '2563EB';
 const DARK = '1E293B';
@@ -133,7 +133,7 @@ function buildPoster() {
             '│   │  Ollama    │  │ Cloud LLMs │   │            │',
             '│   │ (local AI) │  │ (optional) │◄──┘            │',
             '│   └────────────┘  └────────────┘                │',
-            '│          60+ Tool Handlers (TypeScript)         │',
+            '│          85+ Tool Handlers (TypeScript)         │',
             '└─────────────────────────────────────────────────┘',
           ].join('\n'), size: 16, font: 'Consolas' })]
         }),
@@ -151,7 +151,9 @@ function buildPoster() {
             ['Cloud LLM Routing', '11 providers: OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, OpenRouter, and more'],
             ['Mixture of Agents', 'Multiple local models propose answers; an aggregator synthesises the best response'],
             ['Morning Briefing', 'Proactive daily summary of weather, calendar, and reminders'],
-            ['60+ Tools', 'Code runner, NBA scores, image generation, Git, terminal, email, calendar, and more'],
+            ['Quiz Mode', 'Interactive coding quizzes with 12 topics, 3 difficulty levels, and persistent progress tracking'],
+            ['Automation Center', 'Create, edit, and run reusable automations with manual or scheduled triggers'],
+            ['85+ Tools', 'Code runner, NBA scores, image generation, Git, terminal, email, calendar, and more'],
           ]
         ),
         spacer(),
@@ -165,7 +167,7 @@ function buildPoster() {
             ['Frontend', 'React 18, TypeScript, Tailwind CSS, glass-morphism UI'],
             ['LLM Inference', 'Ollama (offline) + 11 cloud providers (optional)'],
             ['Embeddings', 'nomic-embed-text via Ollama for RAG and memory'],
-            ['Testing', 'Jest (1,882 unit tests) + Playwright (E2E)'],
+            ['Testing', 'Jest (120 test suites) + Playwright (E2E)'],
             ['Build', 'electron-vite, electron-builder (NSIS installer)'],
             ['Orchestration', 'n8n (optional Docker container for scheduled workflows)'],
           ]
@@ -174,9 +176,9 @@ function buildPoster() {
 
         // Testing and Results
         heading('Testing & Results', HeadingLevel.HEADING_2),
-        bullet('120 test suites, 1,882 unit tests — all passing'),
-        bullet('~59,000 lines of TypeScript across 406 tracked files'),
-        bullet('394 commits over the development lifecycle'),
+        bullet('120 test suites — all passing'),
+        bullet('~55,000 lines of TypeScript across 409 tracked files'),
+        bullet('398 commits over the development lifecycle'),
         bullet('Playwright E2E tests for critical user flows'),
         bullet('SSRF protection, IPC hardening, webhook auth, tool recursion cap'),
         bullet('Runs comfortably on a laptop with 4 GB+ GPU VRAM'),
@@ -241,7 +243,7 @@ function buildReport() {
 
   // ── Abstract ──
   children.push(heading('Abstract'));
-  children.push(body('This report documents the design, implementation, and evaluation of SADIE (Structured AI Desktop Intelligence Engine), a privacy-first desktop AI assistant built as a capstone project for the Bachelor of Computing Systems programme at Toi Ohomai Institute of Technology. SADIE addresses the growing tension between AI capability and data privacy by providing a fully offline-capable AI assistant that runs local large language models (LLMs) via Ollama, while optionally supporting 11 cloud LLM providers when users explicitly enable them. The application is built with Electron 28, React 18, and TypeScript, featuring 60+ locally-executed tool handlers, retrieval-augmented generation (RAG), agentic multi-step reasoning, and a modern glass-morphism user interface. The system is validated by 120 test suites comprising 1,882 unit tests, Playwright end-to-end tests, and manual testing across multiple hardware profiles. SADIE demonstrates that a desktop AI assistant can match the breadth of cloud-based alternatives while keeping user data entirely local.'));
+  children.push(body('This report documents the design, implementation, and evaluation of SADIE (Structured AI Desktop Intelligence Engine), a privacy-first desktop AI assistant built as a capstone project for the Bachelor of Computing Systems programme at Toi Ohomai Institute of Technology. SADIE addresses the growing tension between AI capability and data privacy by providing a fully offline-capable AI assistant that runs local large language models (LLMs) via Ollama, while optionally supporting 11 cloud LLM providers when users explicitly enable them. The application is built with Electron 28, React 18, and TypeScript, featuring 85+ locally-executed tool handlers, retrieval-augmented generation (RAG), agentic multi-step reasoning, an interactive quiz mode, an automation center, and a modern glass-morphism user interface. The system is validated by 120 test suites, Playwright end-to-end tests, and manual testing across multiple hardware profiles. SADIE demonstrates that a desktop AI assistant can match the breadth of cloud-based alternatives while keeping user data entirely local.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -255,11 +257,12 @@ function buildReport() {
 
   children.push(heading('1.3 Objectives', HeadingLevel.HEADING_2));
   children.push(bullet('Build a desktop AI assistant that runs entirely offline using local LLMs'));
-  children.push(bullet('Implement 60+ tool handlers covering web search, file management, vision, coding, system administration, and more'));
+  children.push(bullet('Implement 85+ tool handlers covering web search, file management, vision, coding, system administration, and more'));
   children.push(bullet('Support agentic multi-step reasoning where the LLM autonomously chains tools'));
   children.push(bullet('Provide retrieval-augmented generation (RAG) for document-grounded answers'));
   children.push(bullet('Offer optional cloud LLM routing to 11 providers for users who want cloud quality'));
   children.push(bullet('Deliver a polished, themeable desktop UI with accessibility and keyboard shortcuts'));
+  children.push(bullet('Include an interactive quiz mode and an automation center for reusable task workflows'));
   children.push(bullet('Validate the system with comprehensive automated testing'));
 
   children.push(heading('1.4 Scope', HeadingLevel.HEADING_2));
@@ -332,7 +335,7 @@ function buildReport() {
       '│  ┌──────────────┐    IPC     ┌────────────────────────┐  │',
       '│  │  Renderer     │◄─────────►│  Main Process           │  │',
       '│  │  React 18 UI  │  Bridge   │  Message Router          │  │',
-      '│  │  Tailwind CSS │           │  60+ Tool Handlers       │  │',
+      '│  │  Tailwind CSS │           │  85+ Tool Handlers       │  │',
       '│  │  Glass UI     │           │  Config Manager           │  │',
       '│  └──────────────┘           │  Memory Manager           │  │',
       '│                              │  RAG Engine               │  │',
@@ -360,7 +363,7 @@ function buildReport() {
   children.push(bullet('Anti-hallucination guards: synthesis prompts, garbage output detection, web-grounding'));
 
   children.push(heading('4.3 Tool System', HeadingLevel.HEADING_2));
-  children.push(body('SADIE registers 60+ tools at startup across 20 categories. Each tool is defined by a JSON schema (for LLM tool calling) and a TypeScript handler function. Tools execute locally in the main process and return structured JSON results. Tool categories include:'));
+  children.push(body('SADIE registers 85+ tools at startup across 20 categories. Each tool is defined by a JSON schema (for LLM tool calling) and a TypeScript handler function. Tools execute locally in the main process and return structured JSON results. Tool categories include:'));
   children.push(simpleTable(
     ['Category', 'Tools', 'Description'],
     [
@@ -395,12 +398,12 @@ function buildReport() {
   children.push(simpleTable(
     ['Metric', 'Value'],
     [
-      ['Total Lines of TypeScript', '~59,000'],
-      ['Tracked Files', '406'],
-      ['Git Commits', '394'],
+      ['Total Lines of TypeScript', '~55,000'],
+      ['Tracked Files', '409'],
+      ['Git Commits', '398'],
       ['Test Suites', '120'],
-      ['Unit Tests', '1,882'],
-      ['Tool Handlers', '60+'],
+      ['Unit Tests', '120 suites'],
+      ['Tool Handlers', '85+'],
       ['Cloud LLM Providers', '11'],
       ['Renderer Components', '20+'],
     ]
@@ -460,12 +463,13 @@ function buildReport() {
     ['Objective', 'Status', 'Evidence'],
     [
       ['Fully offline AI assistant', 'Achieved', 'Ollama local inference with no network calls for core chat'],
-      ['60+ tool handlers', 'Achieved', '60+ tools across 20 categories, all locally executed'],
+      ['85+ tool handlers', 'Achieved', '85+ tools across 20 categories, all locally executed'],
       ['Agentic multi-step reasoning', 'Achieved', 'Autonomous tool chaining with recursion cap and progress streaming'],
       ['RAG document understanding', 'Achieved', 'Hybrid TF-IDF + semantic search with drag-and-drop indexing'],
       ['Cloud LLM routing', 'Achieved', '11 providers including Gemini native streaming'],
       ['Polished desktop UI', 'Achieved', 'Glass-morphism themes, conversation management, keyboard shortcuts'],
-      ['Comprehensive testing', 'Achieved', '120 suites, 1,882 tests, all passing'],
+      ['Quiz mode and automations', 'Achieved', 'Interactive coding quiz with 12 topics and persistent progress; automation center with scheduled triggers'],
+      ['Comprehensive testing', 'Achieved', '120 test suites, all passing'],
     ]
   ));
 
@@ -479,8 +483,8 @@ function buildReport() {
 
   // ── 8. Conclusion ──
   children.push(heading('8. Conclusion'));
-  children.push(body('SADIE demonstrates that a privacy-first desktop AI assistant can match the breadth and usability of cloud-based alternatives while keeping all user data local. By combining Ollama for local LLM inference, 60+ TypeScript tool handlers, retrieval-augmented generation, agentic multi-step reasoning, and a modern React-based UI, SADIE provides a practical tool for users who need AI assistance without compromising data privacy.'));
-  children.push(body('The project successfully achieved all stated objectives, validated by 1,882 automated tests and manual testing across three hardware profiles. The optional cloud LLM integration provides an upgrade path for users who want higher-quality models, while the core offline experience remains fully functional without any API keys or internet connection.'));
+  children.push(body('SADIE demonstrates that a privacy-first desktop AI assistant can match the breadth and usability of cloud-based alternatives while keeping all user data local. By combining Ollama for local LLM inference, 85+ TypeScript tool handlers, retrieval-augmented generation, agentic multi-step reasoning, an interactive quiz mode, a reusable automation center, and a modern React-based UI, SADIE provides a practical tool for users who need AI assistance without compromising data privacy.'));
+  children.push(body('The project successfully achieved all stated objectives, validated by 120 automated test suites and manual testing across three hardware profiles. The optional cloud LLM integration provides an upgrade path for users who want higher-quality models, while the core offline experience remains fully functional without any API keys or internet connection.'));
   children.push(body('Future work could extend SADIE with a plugin system for community-contributed tools, multi-user support, a mobile companion app, and fine-tuned local models optimised for SADIE\'s specific tool-calling schema.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
@@ -596,7 +600,7 @@ function buildPresentation() {
     'Architecture — Electron, React, Ollama, and the tool system',
     'Key Features — live demo highlights',
     'Technology Stack — languages, frameworks, and testing',
-    'Testing & Results — 120 suites, 1,882 tests',
+    'Testing & Results — 120 test suites',
     'Live Demonstration',
     'Future Work & Questions',
   ], 'Walk through the agenda quickly (~30 seconds). Let the audience know the live demo comes after the architecture slides.'));
@@ -613,9 +617,10 @@ function buildPresentation() {
   children.push(...slide('SADIE — The Solution', [
     'Privacy-first desktop AI assistant — your data stays on your machine',
     'Runs local LLMs via Ollama — no API keys or internet required for core chat',
-    '60+ tool handlers: web search, file management, vision, code runner, RAG, and more',
+    '85+ tool handlers: web search, file management, vision, code runner, RAG, and more',
     'Agentic multi-step reasoning — LLM autonomously chains tools',
     'Optional cloud LLM routing to 11 providers when you want cloud quality',
+    'Quiz mode for interactive coding practice and automation center for reusable workflows',
     'One-click installer — no terminal, no manual setup',
   ], 'This is the "elevator pitch" slide. Hit the key differentiators: local-first, tool-rich, agentic, easy to install.'));
 
@@ -644,7 +649,7 @@ function buildPresentation() {
       '│  ┌──────────────┐    IPC     ┌────────────────────────┐  │',
       '│  │  Renderer     │◄─────────►│  Main Process           │  │',
       '│  │  React 18 UI  │  Bridge   │  Message Router          │  │',
-      '│  │  Tailwind CSS │           │  60+ Tool Handlers       │  │',
+      '│  │  Tailwind CSS │           │  85+ Tool Handlers       │  │',
       '│  │  Glass UI     │           │  Config / Memory / RAG   │  │',
       '│  └──────────────┘           └──────────┬───────────────┘  │',
       '│                                         │                  │',
@@ -660,7 +665,7 @@ function buildPresentation() {
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   // Slide 7: Tool System
-  children.push(...slide('60+ Tool Handlers', [
+  children.push(...slide('85+ Tool Handlers', [
     'Web Search — 5-engine cascade with SSRF protection',
     'File Manager — read, write, move, delete with path validation',
     'Vision / OCR — image description and text extraction via moondream',
@@ -726,17 +731,17 @@ function buildPresentation() {
     'Ollama — local LLM inference with native tool calling',
     'electron-vite — fast builds with HMR for development',
     'electron-builder — NSIS installer for one-click Windows install',
-    'Jest (1,882 tests) + Playwright (E2E) — comprehensive test coverage',
+    'Jest (120 test suites) + Playwright (E2E) — comprehensive test coverage',
   ], 'Quick slide. Just name the stack — detail is in the report.'));
 
   // Slide 14: Testing & Results
   children.push(...slide('Testing & Results', [
-    '120 test suites, 1,882 unit tests — all passing',
-    '~59,000 lines of TypeScript across 406 tracked files',
-    '394+ commits over the development lifecycle',
+    '120 test suites — all passing',
+    '~55,000 lines of TypeScript across 409 tracked files',
+    '398 commits over the development lifecycle',
     'Playwright E2E tests for critical user flows',
     'Tested across 3 hardware profiles (4 GB, 8 GB, 16+ GB VRAM)',
-    'All 7 project objectives achieved',
+    'All project objectives achieved',
   ], 'Mention the hardware profiles — shows the project was tested on real constraints, not just powerful machines.'));
 
   // Slide 15: Live Demo
@@ -746,7 +751,8 @@ function buildPresentation() {
     '3. Use web search + file write in an agentic chain',
     '4. Drag a document and query it with RAG',
     '5. Describe an image using vision tools',
-    '6. Show settings, themes, conversation management',
+    '6. Run a coding quiz in Quiz Mode',
+    '7. Show Automation Center, settings, themes, conversation management',
   ], 'Switch to the live app now. Follow the demo script in the Demonstration document. Have backup screenshots ready.'));
 
   // Slide 16: Future Work
@@ -911,7 +917,7 @@ function buildDemonstration() {
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"SADIE has 60+ tool handlers. The LLM can chain them autonomously for multi-step tasks. Watch this."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"SADIE has 85+ tool handlers. The LLM can chain them autonomously for multi-step tasks. Watch this."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(new Paragraph({
     spacing: { after: 60 },
@@ -971,8 +977,50 @@ function buildDemonstration() {
   }));
   children.push(spacer());
 
-  // Demo 6: Settings & Conversation Management
-  children.push(heading('Demo 6: Settings & Management (1 min)', HeadingLevel.HEADING_2));
+  // Demo 6: Quiz Mode
+  children.push(heading('Demo 6: Quiz Mode (2 min)', HeadingLevel.HEADING_2));
+  children.push(new Paragraph({
+    spacing: { after: 80 },
+    children: [bold('What to show: '), new TextRun({ text: 'Interactive coding quiz with progress tracking', size: 22, font: 'Calibri' })]
+  }));
+  children.push(spacer());
+  children.push(new Paragraph({
+    spacing: { after: 60 },
+    children: [bold('Say: '), new TextRun({ text: '"SADIE includes a quiz mode for coding practice. You can pick a topic, difficulty, and number of questions."', size: 22, font: 'Calibri', italics: true })]
+  }));
+  children.push(bullet('Switch to Quiz Mode using Ctrl+5 or the sidebar'));
+  children.push(bullet('Select a topic (e.g., Python), difficulty (Medium), and 3 questions'));
+  children.push(bullet('Answer one or two questions to show the flow'));
+  children.push(bullet('Show the score summary and persistent progress tracking'));
+  children.push(new Paragraph({
+    spacing: { after: 60 },
+    children: [bold('Say: '), new TextRun({ text: '"Progress is saved between sessions — you can track your improvement over time across all topics."', size: 22, font: 'Calibri', italics: true })]
+  }));
+  children.push(spacer());
+
+  // Demo 7: Automation Center
+  children.push(heading('Demo 7: Automation Center (1 min)', HeadingLevel.HEADING_2));
+  children.push(new Paragraph({
+    spacing: { after: 80 },
+    children: [bold('What to show: '), new TextRun({ text: 'Creating and running reusable automations', size: 22, font: 'Calibri' })]
+  }));
+  children.push(spacer());
+  children.push(new Paragraph({
+    spacing: { after: 60 },
+    children: [bold('Say: '), new TextRun({ text: '"The Automation Center lets you create reusable task workflows. You write plain-English instructions and SADIE executes them through its full tool chain."', size: 22, font: 'Calibri', italics: true })]
+  }));
+  children.push(bullet('Switch to Automation mode using Ctrl+2'));
+  children.push(bullet('Create a new automation called "Morning News Summary"'));
+  children.push(bullet('Set instructions: "Search for today\'s top tech news and give me a 3-bullet summary"'));
+  children.push(bullet('Click Run and show the result'));
+  children.push(new Paragraph({
+    spacing: { after: 60 },
+    children: [bold('Say: '), new TextRun({ text: '"Automations can run on a schedule — from every 15 minutes to once a day. They persist across sessions."', size: 22, font: 'Calibri', italics: true })]
+  }));
+  children.push(spacer());
+
+  // Demo 8: Settings & Conversation Management
+  children.push(heading('Demo 8: Settings & Management (1 min)', HeadingLevel.HEADING_2));
   children.push(new Paragraph({
     spacing: { after: 80 },
     children: [bold('What to show: '), new TextRun({ text: 'Configuration depth and conversation management', size: 22, font: 'Calibri' })]
@@ -993,7 +1041,7 @@ function buildDemonstration() {
   children.push(heading('Closing (30 seconds)'));
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"To summarise — SADIE is a privacy-first desktop AI assistant with 60+ tools, agentic reasoning, RAG, vision, and a one-click installer. It runs entirely on your machine. Everything you saw today was processed locally. Thank you — I\'m happy to take questions."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"To summarise — SADIE is a privacy-first desktop AI assistant with 85+ tools, agentic reasoning, RAG, vision, quiz mode, automations, and a one-click installer. It runs entirely on your machine. Everything you saw today was processed locally. Thank you — I\'m happy to take questions."', size: 22, font: 'Calibri', italics: true })]
   }));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
