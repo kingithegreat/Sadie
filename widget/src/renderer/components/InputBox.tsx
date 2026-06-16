@@ -57,7 +57,7 @@ export type InputBoxProps = {
 };
 
 const PLACEHOLDER_HINTS = [
-  'Message SADIE...',
+  'Message HomeBot...',
   'Try: "What\'s the weather?"',
   'Try: "Summarize my clipboard"',
   'Try: "What\'s in the news?"',
@@ -555,7 +555,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
       )}
 
       <div className="input-top">
-        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message SADIE" maxLength={4000} />
+        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message HomeBot" maxLength={4000} />
         <div className={`char-counter${inputValue.length > 3000 ? (inputValue.length > 3800 ? ' danger' : ' warning') : ''}`}>{inputValue.length} / 4000</div>
 
         <div className="input-actions">

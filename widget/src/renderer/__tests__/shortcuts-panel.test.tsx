@@ -19,7 +19,7 @@ describe('ShortcutsPanel', () => {
 
   test('lists shortcuts from all categories', () => {
     render(<ShortcutsPanel open={true} onClose={noop} />);
-    expect(screen.getByText(/Toggle SADIE widget/)).toBeInTheDocument();
+    expect(screen.getByText(/Toggle HomeBot widget/)).toBeInTheDocument();
     expect(screen.getByText('Send message')).toBeInTheDocument();
     expect(screen.getByText('Toggle voice input')).toBeInTheDocument();
     expect(screen.getByText(/Close current panel/)).toBeInTheDocument();

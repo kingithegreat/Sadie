@@ -289,6 +289,7 @@ export interface ElectronAPI {
   // Diagnostic: get config file path
   getConfigPath?: () => Promise<string>;
   // Capture logs helper (write runtime snapshot and return path)
+  captureScreen?: () => Promise<{ success: boolean; dataUrl?: string; error?: string }>;
   captureLogs?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Test-only: invoke arbitrary IPC channels (E2E only)
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
@@ -434,6 +435,8 @@ export interface ElectronAPI {
 
   // Quiz mode: generate quiz questions via LLM
   generateQuiz?: (params: QuizRequest) => Promise<QuizResponse>;
+  // Quiz mode: generate quiz from RAG-indexed documents (Study Buddy)
+  generateQuizFromRag?: (params: { topic: string; difficulty: string; questionCount: number }) => Promise<QuizResponse>;
   // Quiz mode: save progress to disk
   saveQuizProgress?: (progress: QuizProgress) => Promise<{ success: boolean; error?: string }>;
   // Quiz mode: load saved progress

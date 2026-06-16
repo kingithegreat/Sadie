@@ -319,7 +319,7 @@ export default function FirstRunModal({
           {step === 'welcome' && (
             <div className="wizard-step">
               <div className="wizard-icon">✨</div>
-              <h1 className="first-run-title">Welcome to SADIE</h1>
+              <h1 className="first-run-title">Welcome to HomeBot</h1>
               <p className="first-run-subtitle">
                 Your private AI desktop assistant. Choose how you'd like to power the AI:
               </p>
@@ -368,7 +368,7 @@ export default function FirstRunModal({
               {localPhase === 'ollama-missing' && (
                 <div className="wizard-setup-section">
                   <div className="wizard-status error">
-                    <p>Ollama is not installed. SADIE needs it for local AI.</p>
+                    <p>Ollama is not installed. HomeBot needs it for local AI.</p>
                   </div>
                   {ollamaError && <p className="wizard-error-detail">{ollamaError}</p>}
                   <div className="wizard-btn-row">
@@ -530,7 +530,7 @@ export default function FirstRunModal({
               <div className="wizard-icon">🎉</div>
               <h2 className="wizard-step-title">You're all set!</h2>
               <p className="wizard-step-desc">
-                Try asking SADIE anything — check the weather, search the web, read files, or just chat.
+                Try asking HomeBot anything — check the weather, search the web, read files, or just chat.
               </p>
               <div className="wizard-suggestions">
                 <span className="wizard-suggestion-chip">What's the weather?</span>

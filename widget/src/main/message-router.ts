@@ -426,7 +426,7 @@ export const SMALL_MODEL_MEMORY_CHARS     = 300;  // MCP knowledge-graph recall 
 /** Compact a batch of messages into a brief prose digest line. */
 function compressTurns(turns: ConversationMessage[]): string {
   return turns.map(t => {
-    const speaker = t.role === 'user' ? 'User' : 'SADIE';
+    const speaker = t.role === 'user' ? 'User' : 'HomeBot';
     // Strip noisy artifacts (search blocks, code, images) before summarising
     const content = t.content
       .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
@@ -716,7 +716,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('n8n') || combined.includes('upstream')) {
     return {
       service: 'n8n',
-      userMessage: 'n8n workflows are unavailable — SADIE will use local Ollama instead.',
+      userMessage: 'n8n workflows are unavailable — HomeBot will use local Ollama instead.',
       action: 'retry',
       actionLabel: 'Retry with Ollama',
     };
@@ -833,7 +833,7 @@ export function getCannedResponse(message: string): string | null {
 
   // Identity
   if (/^(who are you|what are you|what('?s| is) your name|your name|are you (a |an )?(ai|bot|assistant|chatbot|robot))$/.test(m)) {
-    return "I'm SADIE — your Smart Adaptive Desktop Intelligence Engine. I can search the web, check the weather, manage files, query NBA scores, and more.";
+    return "I'm HomeBot — your desktop AI assistant. I can search the web, check the weather, manage files, query NBA scores, and more.";
   }
   if (/^(are you (real|human|alive|sentient|conscious))$/.test(m)) {
     return "I'm an AI assistant running on your desktop. Not human, but happy to help!";
@@ -870,7 +870,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   const isConversational = /^(no\b|yes\b|yep\b|nope\b|thanks\b|thank you\b|ok\b|okay\b|sure\b|right\b|wrong\b|this is(n'?t| not)\b|that'?s (not|wrong)\b|wait\b)/i.test(m.trim());
 
   // HELP / CAPABILITY CARD — must be first so "help" doesn't hit other patterns
-  if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can sadie do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(m.trim())) {
+  if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can (sadie|homebot) do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(m.trim())) {
     return { calls: [{ name: '__help', arguments: {} }] };
   }
 
@@ -1276,8 +1276,8 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   if (/\b(notify\s+me|send\s+(?:me\s+)?a\s+notification|show\s+a\s+notification|alert\s+me)\b/i.test(m)) {
     const bodyMatch = userMessage.match(/(?:saying|that|:)\s*(.+)/i);
     const body = bodyMatch ? bodyMatch[1].trim() :
-      userMessage.replace(/^(notify\s+me|send\s+(me\s+)?a\s+notification|show\s+a?\s+notification|alert\s+me)\s*/i, '').trim() || 'Notification from SADIE';
-    return { calls: [{ name: 'show_notification', arguments: { title: 'SADIE', body } }] };
+      userMessage.replace(/^(notify\s+me|send\s+(me\s+)?a\s+notification|show\s+a?\s+notification|alert\s+me)\s*/i, '').trim() || 'Notification from HomeBot';
+    return { calls: [{ name: 'show_notification', arguments: { title: 'HomeBot', body } }] };
   }
 
   // NEWS intents

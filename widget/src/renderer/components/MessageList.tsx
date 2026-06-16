@@ -52,7 +52,7 @@ export function MessageList({
     return (
       <div className="welcome-container">
         <div className="welcome-icon">✨</div>
-        <h2 className="welcome-title">Hello! I'm SADIE</h2>
+        <h2 className="welcome-title">Hello! I'm HomeBot</h2>
         <p className="welcome-subtitle">
           Your friendly local AI assistant. I can help you with questions, create folders, move files, and more. What would you like to do today?
         </p>

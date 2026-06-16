@@ -1,5 +1,5 @@
 /**
- * Shared constants for SADIE widget
+ * Shared constants for HomeBot widget
  */
 
 // API Endpoints
@@ -92,6 +92,6 @@ export const IMAGE_LIMITS = {
 } as const;
 
 // App Metadata
-export const APP_NAME = 'SADIE';
+export const APP_NAME = 'HomeBot';
 export const APP_VERSION = '1.0.0';
-export const APP_DESCRIPTION = 'Structured AI Desktop Intelligence Engine';
+export const APP_DESCRIPTION = 'Desktop AI Assistant';

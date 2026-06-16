@@ -1,16 +1,16 @@
 {
   "app": {
-    "title": "SADIE",
-    "subtitle": "Structured AI Desktop Intelligence Engine"
+    "title": "HomeBot",
+    "subtitle": "Desktop AI Assistant"
   },
   "chat": {
-    "placeholder": "Message SADIE...",
+    "placeholder": "Message HomeBot...",
     "send": "Send",
     "stopGenerating": "Stop generating",
     "retry": "Retry",
     "thinking": "Thinking...",
     "errorGeneric": "Something went wrong. Please try again.",
-    "welcomeTitle": "Welcome to SADIE",
+    "welcomeTitle": "Welcome to HomeBot",
     "welcomeSubtitle": "Your AI Desktop Assistant"
   },
   "settings": {
@@ -76,7 +76,7 @@
     "screenshot": "Screenshot"
   },
   "firstRun": {
-    "welcome": "Welcome to SADIE",
+    "welcome": "Welcome to HomeBot",
     "setupDescription": "Let's configure your preferences.",
     "telemetryLabel": "Telemetry",
     "defaultTeam": "Default NBA Team",

@@ -153,6 +153,6 @@ describe('MessageList — bookmarks filter', () => {
     render(
       <MessageList messages={[]} onCancel={noop} onRetry={noop} onBookmark={noop} />
     );
-    expect(screen.getByText("Hello! I'm SADIE")).toBeInTheDocument();
+    expect(screen.getByText("Hello! I'm HomeBot")).toBeInTheDocument();
   });
 });

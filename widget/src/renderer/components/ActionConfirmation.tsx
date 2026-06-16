@@ -19,7 +19,7 @@ const ActionConfirmation: React.FC<ActionConfirmationProps> = ({
   onConfirm,
   onReject,
   title = '⚠️ Confirm Action',
-  message = 'SADIE wants to perform an action that requires your approval.',
+  message = 'HomeBot wants to perform an action that requires your approval.',
   confirmLabel = 'Confirm',
   rejectLabel = 'Cancel'
 }) => {

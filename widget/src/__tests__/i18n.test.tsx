@@ -25,7 +25,7 @@ describe('i18n', () => {
       </I18nProvider>
     );
     expect(screen.getByTestId('locale').textContent).toBe('en');
-    expect(screen.getByTestId('translated').textContent).toBe('Message SADIE...');
+    expect(screen.getByTestId('translated').textContent).toBe('Message HomeBot...');
     expect(screen.getByTestId('nested').textContent).toBe('Settings');
   });
 
@@ -48,7 +48,7 @@ describe('i18n', () => {
       screen.getByText('switch').click();
     });
     expect(screen.getByTestId('locale').textContent).toBe('es');
-    expect(screen.getByTestId('translated').textContent).toBe('Mensaje a SADIE...');
+    expect(screen.getByTestId('translated').textContent).toBe('Mensaje a HomeBot...');
     expect(screen.getByTestId('nested').textContent).toBe('Configuración');
   });
 

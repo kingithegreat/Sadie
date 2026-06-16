@@ -149,7 +149,7 @@ const ConversationSearch: React.FC<ConversationSearchProps> = ({ onSelectConvers
                   tabIndex={0}
                   onKeyDown={e => { if (e.key === 'Enter') { onSelectConversation(convId, hit.messageId); onClose(); } }}
                 >
-                  <span className="hit-role">{hit.role === 'user' ? 'You' : 'SADIE'}</span>
+                  <span className="hit-role">{hit.role === 'user' ? 'You' : 'HomeBot'}</span>
                   <span className="hit-snippet">{highlight(hit.snippet, query)}</span>
                 </div>
               ))}

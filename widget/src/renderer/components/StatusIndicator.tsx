@@ -17,8 +17,8 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
-  mode?: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz') => void;
+  mode?: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz' | 'dashboard';
+  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz' | 'dashboard') => void;
   currentModel?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
@@ -57,8 +57,8 @@ interface HeaderModelProps {
 }
 
 interface ModeSwitcherProps {
-  mode: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz') => void;
+  mode: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz' | 'dashboard';
+  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz' | 'dashboard') => void;
 }
 
 interface HeaderActionsProps {
@@ -92,7 +92,7 @@ const BackendBadge: React.FC<BackendBadgeProps> = ({
   onRefresh,
   onToggleDetail
 }) => (
-  <div className="backend-badge" title="SADIE backend (n8n) is offline">
+  <div className="backend-badge" title="HomeBot backend (n8n) is offline">
     <span className="backend-text">Backend offline</span>
     <button
       type="button"
@@ -116,7 +116,7 @@ const BackendBadge: React.FC<BackendBadgeProps> = ({
           ⋯
         </button>
         {detailOpen && (
-          <div className="backend-popover" role="dialog" aria-label="SADIE backend diagnostic">
+          <div className="backend-popover" role="dialog" aria-label="HomeBot backend diagnostic">
             <pre className="backend-popover-text">{backendDiagnostic}</pre>
             <div className="backend-popover-actions">
               <button
@@ -205,6 +205,7 @@ const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
 
   return (
     <div className="mode-switcher">
+      <button className={`mode-btn ${mode === 'dashboard' ? 'active' : ''}`} onClick={() => onModeChange('dashboard')} title="Dashboard">📊 Home</button>
       <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => onModeChange('chat')} title="Chat Mode">💬 Chat</button>
       <button className={`mode-btn ${mode === 'automation' ? 'active' : ''}`} onClick={() => onModeChange('automation')} title="Automation Mode">🛠 Automation</button>
       <button className={`mode-btn ${mode === 'image' ? 'active' : ''}`} onClick={() => onModeChange('image')} title="Image Mode">🎨 Image</button>
@@ -304,8 +305,8 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               ☰
             </button>
           )}
-          <img src={sadieLogoUrl} alt="SADIE" className="header-logo" />
-          <h1>SADIE</h1>
+          <img src={sadieLogoUrl} alt="HomeBot" className="header-logo" />
+          <h1>HomeBot</h1>
         </div>
 
         <HeaderConnection connectionStatus={connectionStatus} />

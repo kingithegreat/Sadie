@@ -1,7 +1,7 @@
 {
-  "name": "sadie-tool-registry",
+  "name": "homebot-tool-registry",
   "version": "1.0.4",
-  "description": "Standalone ToolRegistry module for SADIE",
+  "description": "Standalone ToolRegistry module for HomeBot",
   "main": "src/toolRegistry.ts",
   "scripts": {
     "smoke": "npx ts-node src/test.ts",

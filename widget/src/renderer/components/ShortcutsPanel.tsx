@@ -14,7 +14,7 @@ const categories: ShortcutCategory[] = [
   {
     title: 'General',
     shortcuts: [
-      { keys: 'Ctrl + Shift + Space', action: 'Toggle SADIE widget (global)' },
+      { keys: 'Ctrl + Shift + Space', action: 'Toggle HomeBot widget (global)' },
       { keys: 'Ctrl + /', action: 'Show keyboard shortcuts' },
       { keys: 'Escape', action: 'Close current panel / modal' },
     ],

@@ -59,7 +59,7 @@ describe('FirstRunModal — open/closed', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.getByText('Welcome to SADIE')).toBeInTheDocument();
+    expect(screen.getByText('Welcome to HomeBot')).toBeInTheDocument();
   });
 
   test('renders path selection cards on welcome step', () => {
@@ -320,7 +320,7 @@ describe('FirstRunModal — wizard navigation', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Back'));
     });
-    expect(screen.getByText('Welcome to SADIE')).toBeInTheDocument();
+    expect(screen.getByText('Welcome to HomeBot')).toBeInTheDocument();
   });
 
   test('progress dots are rendered (3 steps)', () => {

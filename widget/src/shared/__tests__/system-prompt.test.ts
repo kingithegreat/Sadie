@@ -32,8 +32,8 @@ test('SADIE_USER_INFO has username and home properties', () => {
 
 // ─── SADIE_SYSTEM_PROMPT content ─────────────────────────────────────────────
 
-test('SADIE_SYSTEM_PROMPT identifies the assistant as SADIE', () => {
-  expect(SADIE_SYSTEM_PROMPT).toContain('SADIE');
+test('SADIE_SYSTEM_PROMPT identifies the assistant as HomeBot', () => {
+  expect(SADIE_SYSTEM_PROMPT).toContain('HomeBot');
 });
 
 test('SADIE_SYSTEM_PROMPT includes coding section', () => {
@@ -52,8 +52,8 @@ test('compact prompt is shorter than the full prompt', () => {
   expect(SADIE_SYSTEM_PROMPT_COMPACT.length).toBeLessThan(SADIE_SYSTEM_PROMPT.length);
 });
 
-test('compact prompt still mentions SADIE', () => {
-  expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('SADIE');
+test('compact prompt still mentions HomeBot', () => {
+  expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('HomeBot');
 });
 
 test('compact prompt mentions personality or conciseness', () => {

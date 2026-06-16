@@ -1,4 +1,4 @@
-// Main process for SADIE - Full implementation
+// Main process for HomeBot - Full implementation
 import { app, BrowserWindow, ipcMain, session, globalShortcut } from 'electron';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
@@ -347,7 +347,7 @@ app.whenReady().then(async () => {
     } catch (e) { console.error('[MAIN] Hardware profile detection error:', e); }
   });
 
-  // Register global hotkey to show/hide SADIE window
+  // Register global hotkey to show/hide HomeBot window
   try {
     const hotkey = settings.globalHotkey || settings.widgetHotkey || 'Ctrl+Shift+Space';
     const registered = globalShortcut.register(hotkey, () => {

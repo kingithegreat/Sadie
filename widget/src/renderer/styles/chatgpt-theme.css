@@ -6018,6 +6018,63 @@ body {
   color: oklch(62% 0.22 265);
 }
 
+/* ── Template Cards ── */
+
+.template-section {
+  margin-bottom: 16px;
+}
+
+.template-section-label {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.template-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-secondary, oklch(100% 0 0 / 0.03));
+  border: 1px solid var(--border-color, oklch(100% 0 0 / 0.1));
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  color: var(--text-primary, #e0e0e0);
+}
+
+.template-card:hover {
+  background: var(--accent-muted, oklch(62% 0.22 265 / 0.1));
+  border-color: var(--accent, oklch(62% 0.22 265 / 0.3));
+}
+
+.template-card-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.template-card-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 2px;
+}
+
+.template-card-desc {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #999);
+  line-height: 1.3;
+}
+
 /* ── Automation List ── */
 
 .automation-list {
@@ -6245,4 +6302,63 @@ body {
 
 .automation-card .toggle input:checked + .slider::before {
   transform: translateX(16px);
+}
+
+/* ── Floating Feature Buttons (Voice + Screen Capture) ── */
+.floating-feature-buttons {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.fab-btn {
+  pointer-events: auto;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  color: var(--text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md), var(--shadow-glow);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.fab-btn:hover {
+  transform: scale(1.12);
+  background: var(--accent-muted);
+  box-shadow: var(--shadow-lg), 0 0 20px oklch(72% 0.14 78 / 0.25);
+}
+
+.fab-btn:active {
+  transform: scale(0.95);
+}
+
+.fab-voice:hover {
+  box-shadow: var(--shadow-lg), 0 0 24px oklch(72% 0.14 78 / 0.35);
+}
+
+.fab-capture:hover {
+  box-shadow: var(--shadow-lg), 0 0 24px oklch(70% 0.15 250 / 0.35);
+}
+
+/* ── Mode loading state ── */
+.mode-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
 }

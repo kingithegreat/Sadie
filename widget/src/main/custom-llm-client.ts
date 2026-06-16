@@ -351,8 +351,8 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiConfig.apiKey}`,
           ...(apiConfig.provider === 'openrouter' ? {
-            'HTTP-Referer': 'https://sadie-app.local',
-            'X-Title': 'SADIE Desktop Assistant'
+            'HTTP-Referer': 'https://homebot-app.local',
+            'X-Title': 'HomeBot Desktop Assistant'
           } : {}),
           // Google AI Studio requires the API key both as Bearer and as a query param
           // when using its OpenAI-compatible endpoint; Bearer alone is sufficient.
@@ -780,8 +780,8 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   }
 
   if (provider === 'openrouter') {
-    headers['HTTP-Referer'] = 'https://sadie-desktop.local';
-    headers['X-Title'] = 'SADIE Desktop';
+    headers['HTTP-Referer'] = 'https://homebot-desktop.local';
+    headers['X-Title'] = 'HomeBot Desktop';
   }
 
   try {

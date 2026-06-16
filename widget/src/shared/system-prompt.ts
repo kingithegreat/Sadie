@@ -1,8 +1,8 @@
-// ── Single source of truth for SADIE's system prompt ──
+// ── Single source of truth for HomeBot's system prompt ──
 const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
 const USERNAME = (() => { try { return require('os').userInfo().username; } catch (e) { return 'user'; } })();
 
-export const SADIE_SYSTEM_PROMPT = `You are SADIE, a smart, friendly desktop AI assistant with tool capabilities.
+export const SADIE_SYSTEM_PROMPT = `You are HomeBot, a smart, friendly desktop AI assistant with tool capabilities.
 The user's home directory is ${HOME_DIR} and their username is ${USERNAME}.
 
 RESPONSE LENGTH (strict — match the user's energy):
@@ -102,7 +102,7 @@ ABSOLUTE RULES (override everything above):
  * Compact variant (~400 tokens) for small models (1B-3B).
  * Covers the essentials without the verbose explanatory prose that eats context.
  */
-export const SADIE_SYSTEM_PROMPT_COMPACT = `You are SADIE, a smart, friendly desktop AI assistant.
+export const SADIE_SYSTEM_PROMPT_COMPACT = `You are HomeBot, a smart, friendly desktop AI assistant.
 Home: ${HOME_DIR}  Username: ${USERNAME}
 
 LENGTH LADDER (match user's energy):

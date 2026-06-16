@@ -145,7 +145,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     {
       id: 'qwen2.5:7b',
       name: 'Qwen 2.5 (7B)',
-      description: 'Best tool-calling and reasoning; SADIE default (4.7GB)',
+      description: 'Best tool-calling and reasoning; HomeBot default (4.7GB)',
       sizeGB: 4.7,
       recommendedFor: ['4gb', '8gb', '16gb+']
     },
@@ -497,7 +497,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
 
     if (!(window as any).electron?.listCustomLLMModels) {
-      setModelFetchError('Update SADIE to fetch models automatically.');
+      setModelFetchError('Update HomeBot to fetch models automatically.');
       return;
     }
 
@@ -685,7 +685,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <option value="prompt">Prompt — suggest a better model for the task</option>
             <option value="auto">Auto — switch requests automatically</option>
           </select>
-          <small className="setting-hint">Controls whether SADIE only suggests stronger local models for a task or applies them automatically.</small>
+          <small className="setting-hint">Controls whether HomeBot only suggests stronger local models for a task or applies them automatically.</small>
         </div>
 
         <div className="setting-group">
@@ -1552,7 +1552,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <h3 className="settings-section-title sp-section-title">
           ⏰ Scheduled Jobs
           <small className="sp-section-subtitle">
-            — recurring messages and reminders while SADIE is open
+            — recurring messages and reminders while HomeBot is open
           </small>
         </h3>
 
@@ -1691,7 +1691,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <h3 className="settings-section-title sp-section-title">
           🔌 MCP Servers
           <small className="sp-section-subtitle">
-            — extend SADIE with any Model Context Protocol server
+            — extend HomeBot with any Model Context Protocol server
           </small>
         </h3>
 
@@ -1802,7 +1802,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 />
               )}
               <small className="sp-mcp-hint">
-                Changes take effect after restarting SADIE.
+                Changes take effect after restarting HomeBot.
               </small>
               <div className="sp-mcp-actions">
                 <button
@@ -1889,7 +1889,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 if (!confirm('This will overwrite your current settings. Continue?')) return;
                 const r = await (window as any).electron.importSettings?.(filePath);
                 if (r?.success) {
-                  alert('Settings restored! Restart SADIE for full effect.');
+                  alert('Settings restored! Restart HomeBot for full effect.');
                   try { await (window as any).electron.restartApp?.(); } catch {}
                 } else {
                   alert(`Import failed: ${r?.error || 'Unknown error'}`);

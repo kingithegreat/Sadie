@@ -195,7 +195,7 @@ export async function importWorkflow(workflowJson: object): Promise<string> {
 export async function activateWorkflow(workflowId: string, workflowJson: object): Promise<void> {
   const wf = workflowJson as any;
   const versionId = wf.versionId || randomUUID();
-  const wfName = wf.name || 'SADIE Automation';
+  const wfName = wf.name || 'HomeBot Automation';
 
   // Node.js script piped via stdin — reads full nodes from workflow_entity
   const script = [
@@ -292,10 +292,10 @@ export async function createAndActivateWorkflow(opts: {
 }): Promise<N8nWorkflowInfo> {
   const safeName = opts.automationName.replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 40);
   const webhookPath = `sadie/auto/${safeName.replace(/\s+/g, '-').toLowerCase()}-${Date.now().toString(36)}`;
-  const workflowName = `SADIE Auto: ${opts.automationName}`;
+  const workflowName = `HomeBot Auto: ${opts.automationName}`;
 
   const systemPrompt =
-    `You are SADIE (Structured AI Desktop Intelligence Engine), a helpful desktop AI assistant. ` +
+    `You are HomeBot, a helpful desktop AI assistant. ` +
     `You are executing an automation called "${opts.automationName}". ` +
     `Follow these instructions precisely: ${opts.instructions} ` +
     `Be concise and use markdown formatting.`;

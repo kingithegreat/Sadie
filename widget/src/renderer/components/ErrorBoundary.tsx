@@ -62,7 +62,7 @@ export class ErrorBoundary extends React.Component<
       }}>
         <h2 style={{ marginBottom: '0.5rem' }}>Something went wrong</h2>
         <p style={{ color: '#94a3b8', marginBottom: '1rem', maxWidth: '480px' }}>
-          SADIE hit an unexpected error. You can try dismissing it or reloading.
+          HomeBot hit an unexpected error. You can try dismissing it or reloading.
         </p>
         <pre style={{
           background: '#0f0f23',

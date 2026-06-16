@@ -202,6 +202,38 @@
   color: oklch(62% 0.22 265);
 }
 
+/* ── Study Buddy (source toggle) ── */
+.quiz-source-toggle {
+  width: 100%;
+}
+
+.quiz-source-note {
+  margin-top: 0.5rem;
+}
+
+.quiz-topic-input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #333);
+  background: var(--bg-secondary, #1a1a2e);
+  color: var(--text-primary, #e0e0e0);
+  font-size: 0.9rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.quiz-topic-input:focus {
+  border-color: oklch(62% 0.22 265);
+}
+
+.quiz-source-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted, #888);
+  margin-top: 0.35rem;
+  margin-bottom: 0;
+}
+
 /* ── Start Button ── */
 .quiz-start-btn {
   width: 100%;

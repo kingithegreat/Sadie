@@ -37,8 +37,10 @@ const DEFAULT_PROGRESS: QuizProgress = {
 const QuizPanel: React.FC = () => {
   // Setup state
   const [topic, setTopic] = useState<string | null>(null);
+  const [customTopic, setCustomTopic] = useState('');
   const [difficulty, setDifficulty] = useState<QuizDifficulty>('beginner');
   const [questionCount, setQuestionCount] = useState(10);
+  const [studyFromNotes, setStudyFromNotes] = useState(false);
 
   // Quiz state
   const [phase, setPhase] = useState<'setup' | 'loading' | 'quiz' | 'review' | 'results'>('setup');
@@ -72,7 +74,8 @@ const QuizPanel: React.FC = () => {
   }, []);
 
   const handleStartQuiz = useCallback(async () => {
-    if (!topic) return;
+    const effectiveTopic = studyFromNotes ? (customTopic.trim() || topic) : topic;
+    if (!effectiveTopic) return;
     setPhase('loading');
     setLoadError(null);
     setCurrentIndex(0);
@@ -82,11 +85,20 @@ const QuizPanel: React.FC = () => {
     setScore(0);
     setStreak(0);
 
-    const result = await window.electron?.generateQuiz?.({
-      topic,
-      difficulty,
-      questionCount,
-    });
+    let result;
+    if (studyFromNotes) {
+      result = await window.electron?.generateQuizFromRag?.({
+        topic: effectiveTopic,
+        difficulty,
+        questionCount,
+      });
+    } else {
+      result = await window.electron?.generateQuiz?.({
+        topic: effectiveTopic,
+        difficulty,
+        questionCount,
+      });
+    }
 
     if (result?.success && result.questions?.length) {
       setQuestions(result.questions);
@@ -96,7 +108,7 @@ const QuizPanel: React.FC = () => {
       setLoadError(result?.error || 'Failed to generate quiz. Is Ollama running?');
       setPhase('setup');
     }
-  }, [topic, difficulty, questionCount]);
+  }, [topic, customTopic, difficulty, questionCount, studyFromNotes]);
 
   const handleSelectAnswer = useCallback((index: number) => {
     if (answered) return;
@@ -247,16 +259,43 @@ const QuizPanel: React.FC = () => {
           </div>
         </div>
 
+        {/* Study from Notes toggle */}
+        <div className="quiz-section">
+          <h3 className="quiz-section-title">Source</h3>
+          <button
+            type="button"
+            className={`quiz-difficulty-btn quiz-source-toggle ${studyFromNotes ? 'selected' : ''}`}
+            onClick={() => setStudyFromNotes(prev => !prev)}
+          >
+            <span className="quiz-diff-label">{studyFromNotes ? 'Study from My Notes' : 'General Knowledge'}</span>
+            <span className="quiz-diff-desc">{studyFromNotes ? 'Questions generated from your RAG-indexed documents' : 'Click to switch to Study Buddy mode (quiz from your notes)'}</span>
+          </button>
+          {studyFromNotes && (
+            <div className="quiz-source-note">
+              <input
+                type="text"
+                className="quiz-topic-input"
+                placeholder="Enter a topic to quiz on (e.g. &quot;photosynthesis&quot;, &quot;React hooks&quot;)..."
+                value={customTopic}
+                onChange={e => setCustomTopic(e.target.value)}
+              />
+              <p className="quiz-source-hint">
+                Questions will be generated from your indexed documents. Drop study notes into the RAG panel first.
+              </p>
+            </div>
+          )}
+        </div>
+
         {loadError && (
           <div className="quiz-error">{loadError}</div>
         )}
 
         <button
           className="quiz-start-btn"
-          disabled={!topic}
+          disabled={studyFromNotes ? !(customTopic.trim() || topic) : !topic}
           onClick={handleStartQuiz}
         >
-          Start Quiz
+          {studyFromNotes ? 'Study from Notes' : 'Start Quiz'}
         </button>
       </div>
     );

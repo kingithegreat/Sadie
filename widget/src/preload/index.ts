@@ -83,7 +83,7 @@ try {
 // Create the API object
 const electronAPI: ElectronAPI = {
   /**
-   * Send a message to SADIE backend
+   * Send a message to HomeBot backend
    */
   sendMessage: async (request: SadieRequest): Promise<SadieResponse> => {
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.SEND, { messagePreview: String(request?.message).substring(0, 120) });
@@ -101,7 +101,7 @@ const electronAPI: ElectronAPI = {
   },
 
   /**
-   * Listen for messages from SADIE backend
+   * Listen for messages from HomeBot backend
    * Returns an unsubscribe function
    */
   onMessage: (callback: (data: any) => void) => {
@@ -328,6 +328,10 @@ const electronAPI: ElectronAPI = {
       throw new Error('invoke() is only available in E2E test mode');
     }
     return await ipcRenderer.invoke(channel, ...args);
+  },
+
+  captureScreen: async () => {
+    return await ipcRenderer.invoke('sadie:capture-screen');
   },
 
   captureLogs: async (): Promise<{ success: boolean; path?: string; error?: string }> => {
@@ -585,6 +589,8 @@ const electronAPI: ElectronAPI = {
   // Quiz mode
   generateQuiz: async (params: any) =>
     ipcRenderer.invoke('sadie:generate-quiz', params),
+  generateQuizFromRag: async (params: any) =>
+    ipcRenderer.invoke('sadie:generate-quiz-from-rag', params),
   saveQuizProgress: async (progress: any) =>
     ipcRenderer.invoke('sadie:save-quiz-progress', progress),
   loadQuizProgress: async () =>

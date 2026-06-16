@@ -23,6 +23,8 @@ const RagPanel = lazy(() => import("./components/RagPanel"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
 const ShortcutsPanel = lazy(() => import("./components/ShortcutsPanel"));
 const NotificationHistory = lazy(() => import("./components/NotificationHistory"));
+const DashboardPanel = lazy(() => import("./components/DashboardPanel"));
+const VoiceConversation = lazy(() => import("./components/VoiceConversation"));
 import type {
   ChatMessage,
   StreamingState
@@ -40,7 +42,7 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz';
+type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz' | 'dashboard';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -95,6 +97,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [notifHistoryOpen, setNotifHistoryOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [widgetMode, setWidgetMode] = useState(true); // Start in widget mode
   const { toasts, addToast, dismissToast, history: notifHistory, clearHistory: clearNotifHistory } = useToasts();
 
@@ -143,6 +146,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       } else if (e.ctrlKey && e.key === '5') {
         e.preventDefault();
         setMode('quiz');
+      } else if (e.ctrlKey && e.key === '0') {
+        e.preventDefault();
+        setMode('dashboard');
       }
     };
     window.addEventListener('keydown', handler);
@@ -534,7 +540,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
 
   /**
-   * Send message to SADIE orchestrator
+   * Send message to HomeBot orchestrator
    */
   const unsubscribeStream = useCallback((streamId: string) => {
     const subs = streamSubsRef.current.get(streamId);
@@ -1023,7 +1029,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         <div className="widget-titlebar">
           <div className="widget-titlebar-brand">
             <span className={`widget-status-dot${status.ollama === 'offline' ? ' disconnected' : ''}`} />
-            <h1>SADIE</h1>
+            <h1>HomeBot</h1>
           </div>
           <div className="widget-model-selector">
             <ModelSelector
@@ -1088,7 +1094,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         <div className="widget-titlebar expanded-titlebar">
           <div className="widget-titlebar-brand">
             <span className={`widget-status-dot${status.ollama === 'offline' ? ' disconnected' : ''}`} />
-            <h1>SADIE</h1>
+            <h1>HomeBot</h1>
           </div>
           <div className="widget-titlebar-controls">
             <button
@@ -1147,10 +1153,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         notificationCount={notifHistory.length}
         onMenuClick={() => setSidebarOpen(true)}
         onExportChat={async () => {
-          const lines: string[] = [`# SADIE Chat Export\n_Exported: ${new Date().toLocaleString()}_\n`];
+          const lines: string[] = [`# HomeBot Chat Export\n_Exported: ${new Date().toLocaleString()}_\n`];
           for (const m of messages) {
             if (m.role === 'system') continue;
-            const label = m.role === 'user' ? '**You**' : '**SADIE**';
+            const label = m.role === 'user' ? '**You**' : '**HomeBot**';
             const ts = new Date(m.createdAt).toLocaleTimeString();
             lines.push(`### ${label} — ${ts}\n${m.content}\n`);
           }
@@ -1210,7 +1216,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       )}
 
       {/* Main Content Area */}
-      {mode === 'chat' ? (
+      {mode === 'dashboard' ? (
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <DashboardPanel
+            onModeChange={(m: string) => setMode(m as AppMode)}
+            onNewConversation={handleNewConversation}
+          />
+        </Suspense>
+      ) : mode === 'chat' ? (
         <ErrorBoundary zone="Chat">
           <ChatInterface
             messages={messages}
@@ -1259,7 +1272,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {pendingModelSuggestion && (
         <ActionConfirmation
           title="Suggest Better Model"
-          message="SADIE found a stronger local model for this one request."
+          message="HomeBot found a stronger local model for this one request."
           actionSummary={`Use ${pendingModelSuggestion.recommendation.recommendedModel} instead of ${pendingModelSuggestion.recommendation.currentModel} for this ${pendingModelSuggestion.recommendation.task} request?`}
           warnings={[pendingModelSuggestion.recommendation.reason]}
           confirmLabel="Use suggested model"
@@ -1313,6 +1326,57 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           <NotificationHistory open={notifHistoryOpen} onClose={() => setNotifHistoryOpen(false)} history={notifHistory} onClear={clearNotifHistory} />
         </Suspense>
       )}
+
+      {/* Voice Conversation + Screen Capture floating buttons */}
+      <div className="floating-feature-buttons">
+        <button
+          type="button"
+          className="fab-btn fab-voice"
+          onClick={() => setVoiceOpen(true)}
+          title="Voice Conversation"
+          aria-label="Voice conversation"
+        >🎙</button>
+        <button
+          type="button"
+          className="fab-btn fab-capture"
+          onClick={async () => {
+            try {
+              const result = await window.electron.captureScreen?.();
+              if (result?.success && result.dataUrl) {
+                const img: import('../shared/types').ImageAttachment = {
+                  filename: 'screenshot.png',
+                  dataUrl: result.dataUrl,
+                  url: result.dataUrl,
+                  mimeType: 'image/png',
+                };
+                setMode('chat');
+                handleSendMessage('What do you see on my screen? Describe and help with anything visible.', [img]);
+              } else {
+                addToast(result?.error || 'Screen capture failed', 'warning', 5000);
+              }
+            } catch (e: any) {
+              addToast('Screen capture not available', 'warning', 5000);
+            }
+          }}
+          title="Capture Screen"
+          aria-label="Capture screen"
+        >📸</button>
+      </div>
+
+      {/* Voice Conversation Panel */}
+      <Suspense fallback={null}>
+        <VoiceConversation
+          open={voiceOpen}
+          onClose={() => setVoiceOpen(false)}
+          onSendMessage={(text: string) => {
+            setMode('chat');
+            handleSendMessage(text);
+          }}
+          lastAssistantMessage={
+            messages.filter(m => m.role === 'assistant' && m.streamingState === 'finished').slice(-1)[0]?.content
+          }
+        />
+      </Suspense>
 
       {firstRunOpen && (
         <Suspense fallback={<div className="first-run-overlay"><div className="first-run-modal first-run-loading">Loading...</div></div>}>

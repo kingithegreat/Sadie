@@ -275,7 +275,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         win.webContents.send('sadie:reply', {
           success: false,
           error: true,
-          message: 'Sadie could not reach the orchestrator.',
+          message: 'HomeBot could not reach the orchestrator.',
           details: err.message,
           response: 'I\'m having trouble connecting to my backend. Please make sure n8n is running.'
         });
@@ -1248,7 +1248,7 @@ try {
       if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
       const raw = fs.readFileSync(resolved, 'utf-8');
       const bundle = JSON.parse(raw);
-      if (!bundle._sadie_backup) return { success: false, error: 'Not a valid SADIE backup file' };
+      if (!bundle._sadie_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
 
       if (bundle.settings) {
         const current = getSettings();
@@ -1440,7 +1440,7 @@ try {
           return { success: true };
         } catch { /* keep polling */ }
       }
-      return { success: false, error: 'Ollama installed but did not start within 30s. Try restarting SADIE.' };
+      return { success: false, error: 'Ollama installed but did not start within 30s. Try restarting HomeBot.' };
     } catch (err: any) {
       try { fs.unlinkSync(tmpPath); } catch { /* */ }
       return { success: false, error: String(err?.message || err) };
@@ -1611,7 +1611,7 @@ try {
 
       const tools = getFocusedOllamaTools();
       const messages: any[] = [
-        { role: 'system', content: `You are SADIE, a desktop AI assistant with tool access. Today is ${today}. Execute the user's automation task using your tools. Be concise and well-formatted. Use markdown for the final response.` },
+        { role: 'system', content: `You are HomeBot, a desktop AI assistant with tool access. Today is ${today}. Execute the user's automation task using your tools. Be concise and well-formatted. Use markdown for the final response.` },
         { role: 'user', content: auto.instructions },
       ];
 
@@ -1803,6 +1803,101 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
       }
       const raw = fs.readFileSync(QUIZ_PROGRESS_FILE, 'utf8');
       return { success: true, data: JSON.parse(raw) };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Screen Capture ──────────────────────────────────────────────────────────
+  ipcMain.handle('sadie:capture-screen', async () => {
+    try {
+      const { desktopCapturer } = require('electron');
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 1920, height: 1080 }
+      });
+      if (!sources || sources.length === 0) {
+        return { success: false, error: 'No screen sources found' };
+      }
+      const thumbnail = sources[0].thumbnail;
+      const dataUrl = thumbnail.toDataURL();
+      return { success: true, dataUrl };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Quiz from RAG (Study Buddy) ─────────────────────────────────────────
+  ipcMain.handle('sadie:generate-quiz-from-rag', async (_event, params: { topic: string; difficulty: string; questionCount: number }) => {
+    try {
+      const { topic, difficulty, questionCount } = params;
+      const model = getSettings().chatModel || 'qwen2.5:7b';
+
+      // Query RAG for relevant chunks
+      let ragContext = '';
+      try {
+        const ragResult = await ragToolHandlers.rag_query({ query: topic, top_k: 5 }, {} as any);
+        if (ragResult?.success && ragResult?.result?.results) {
+          ragContext = ragResult.result.results.map((r: any) => r.text || r.content || '').join('\n\n');
+        }
+      } catch (e) { /* RAG not available, will use general knowledge */ }
+
+      if (!ragContext) {
+        return { success: false, error: 'No indexed documents found. Drop some study notes into the RAG panel first, then try again.' };
+      }
+
+      const BATCH_SIZE = 3;
+      const allQuestions: any[] = [];
+      const batches = Math.ceil(questionCount / BATCH_SIZE);
+
+      for (let b = 0; b < batches; b++) {
+        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
+        const prompt = `Based on ONLY the following study material, generate ${count} ${difficulty} quiz questions about "${topic}".
+
+STUDY MATERIAL:
+${ragContext.slice(0, 3000)}
+
+Return ONLY a JSON array, no other text.
+Each object: {"type":"multiple-choice","question":"...","code":"","options":["A","B","C","D"],"correctIndex":0,"explanation":"..."}
+Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausible options. Base questions strictly on the material above.`;
+
+        const response = await axios.post('http://127.0.0.1:11434/api/generate', {
+          model,
+          prompt,
+          system: `You output ONLY valid JSON arrays. No markdown. No backticks. Generate ${difficulty} difficulty quiz questions based strictly on the provided study material.`,
+          stream: false,
+          options: { temperature: 0.7, num_predict: 1500 }
+        }, { timeout: 60_000 });
+
+        const raw = response.data?.response || '';
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed)) allQuestions.push(...parsed);
+          } catch { /* skip bad batch */ }
+        }
+      }
+
+      if (allQuestions.length === 0) {
+        return { success: false, error: 'Could not generate questions from your notes. Try a different topic or add more study material.' };
+      }
+
+      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => ({
+        id: `q-${Date.now()}-${i}`,
+        type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
+        question: String(q.question || ''),
+        code: q.code || '',
+        options: Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : ['A', 'B', 'C', 'D'],
+        correctIndex: typeof q.correctIndex === 'number' ? Math.min(Math.max(q.correctIndex, 0), 3) : 0,
+        explanation: String(q.explanation || 'No explanation provided.'),
+      }));
+
+      for (const q of validated) {
+        while (q.options.length < 4) q.options.push('(no option)');
+      }
+
+      return { success: true, questions: validated };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }

@@ -8,6 +8,55 @@ const EXAMPLE_AUTOMATIONS = [
   { name: 'Weather Report', instructions: 'Search for the current weather in Tauranga, New Zealand and save the forecast to a file called weather.txt on my Desktop' },
 ];
 
+interface AutomationTemplate {
+  icon: string;
+  name: string;
+  description: string;
+  instructions: string;
+  trigger: 'manual' | 'schedule';
+  scheduleMinutes?: number;
+}
+
+const TEMPLATE_AUTOMATIONS: AutomationTemplate[] = [
+  {
+    icon: '\u{1F4CB}',
+    name: 'Summarise Clipboard',
+    description: 'Reads clipboard and summarises content',
+    instructions: 'Read my clipboard contents and provide a concise summary with key points.',
+    trigger: 'manual',
+  },
+  {
+    icon: '☀️',
+    name: 'Morning Briefing',
+    description: 'Daily weather, news, and schedule overview',
+    instructions: 'Give me a morning briefing: current weather for my location, top 3 news headlines, and any reminders I have set. Format it nicely with sections.',
+    trigger: 'schedule',
+    scheduleMinutes: 1440,
+  },
+  {
+    icon: '\u{1F50D}',
+    name: 'Code Review Helper',
+    description: 'Reviews code from clipboard for bugs and improvements',
+    instructions: 'Read the code from my clipboard. Review it for bugs, security issues, and suggest improvements. Be specific and concise.',
+    trigger: 'manual',
+  },
+  {
+    icon: '\u{1F4DA}',
+    name: 'Daily Study Notes',
+    description: 'Generates study summary from recent conversations',
+    instructions: 'Look through my recent conversations and create a study summary of the key technical topics discussed today. Format as bullet points with explanations.',
+    trigger: 'schedule',
+    scheduleMinutes: 1440,
+  },
+  {
+    icon: '\u{1F5A5}️',
+    name: 'System Health Check',
+    description: 'Checks system resources and Ollama status',
+    instructions: 'Check my system information including disk usage, memory, and running processes. Also check if Ollama is running and what models are installed. Report any issues.',
+    trigger: 'manual',
+  },
+];
+
 export const AutomationCenter: React.FC = () => {
   const [automations, setAutomations] = useState<SavedAutomation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,11 +169,21 @@ export const AutomationCenter: React.FC = () => {
     setFormN8nUrl('');
   }, []);
 
+  const applyTemplate = useCallback((tpl: AutomationTemplate) => {
+    setFormName(tpl.name);
+    setFormDesc(tpl.description);
+    setFormInstructions(tpl.instructions);
+    setFormTrigger(tpl.trigger);
+    if (tpl.scheduleMinutes) setFormSchedule(tpl.scheduleMinutes);
+    setFormN8nUrl('');
+    setFormUseN8n(false);
+  }, []);
+
   return (
     <div className="automation-center">
       <header className="automation-header">
         <h1>Automation Center</h1>
-        <p>Create reusable workflows that chain SADIE's tools together</p>
+        <p>Create reusable workflows that chain HomeBot's tools together</p>
       </header>
 
       {error && (
@@ -154,6 +213,27 @@ export const AutomationCenter: React.FC = () => {
         <div className="automation-create-form">
           <h3>Create New Automation</h3>
 
+          {/* Pre-built Templates */}
+          <div className="template-section">
+            <p className="template-section-label">Start from a template:</p>
+            <div className="template-grid">
+              {TEMPLATE_AUTOMATIONS.map(tpl => (
+                <button
+                  key={tpl.name}
+                  type="button"
+                  className="template-card"
+                  onClick={() => applyTemplate(tpl)}
+                >
+                  <span className="template-card-icon">{tpl.icon}</span>
+                  <span>
+                    <span className="template-card-name">{tpl.name}</span>
+                    <span className="template-card-desc">{tpl.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="form-group">
             <label htmlFor="auto-name">Name</label>
             <input
@@ -171,10 +251,10 @@ export const AutomationCenter: React.FC = () => {
               id="auto-instructions"
               value={formInstructions}
               onChange={e => setFormInstructions(e.target.value)}
-              placeholder="Tell SADIE what to do in plain English. It will use its tools (web search, file manager, code runner, etc.) to carry out the task."
+              placeholder="Tell HomeBot what to do in plain English. It will use its tools (web search, file manager, code runner, etc.) to carry out the task."
               rows={4}
             />
-            <span className="form-hint">This is the prompt SADIE will execute when you run this automation</span>
+            <span className="form-hint">This is the prompt HomeBot will execute when you run this automation</span>
           </div>
 
           <div className="form-group">
@@ -230,8 +310,8 @@ export const AutomationCenter: React.FC = () => {
             </label>
             <span className="form-hint">
               {formUseN8n
-                ? 'SADIE will create an n8n workflow automatically and run this automation through it.'
-                : 'Runs using SADIE\'s local AI tools (no n8n required).'}
+                ? 'HomeBot will create an n8n workflow automatically and run this automation through it.'
+                : 'Runs using HomeBot\'s local AI tools (no n8n required).'}
             </span>
           </div>
 
@@ -281,7 +361,7 @@ export const AutomationCenter: React.FC = () => {
         ) : automations.length === 0 ? (
           <div className="automation-empty">
             <p>No automations yet.</p>
-            <p>Create your first automation to chain SADIE's tools into reusable workflows.</p>
+            <p>Create your first automation to chain HomeBot's tools into reusable workflows.</p>
           </div>
         ) : (
           automations.map(auto => (

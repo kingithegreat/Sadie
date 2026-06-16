@@ -337,7 +337,7 @@ const ARCHIVE_DIR = 'archives';
 
 function compressTurnsForCompaction(messages: Message[]): string {
   return messages.map(m => {
-    const speaker = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'SADIE' : 'System';
+    const speaker = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'HomeBot' : 'System';
     const content = m.content
       .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
       .replace(/__SADIE_IMAGE__:[^\s]+/g, '[image]')
@@ -497,7 +497,7 @@ export function exportConversationAsMarkdown(conversationId: string): string | n
   ];
 
   for (const msg of conv.messages) {
-    const roleLabel = msg.role === 'user' ? '**You**' : msg.role === 'assistant' ? '**SADIE**' : `**${msg.role}**`;
+    const roleLabel = msg.role === 'user' ? '**You**' : msg.role === 'assistant' ? '**HomeBot**' : `**${msg.role}**`;
     const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2);
     lines.push(`### ${roleLabel}`);
     lines.push(``);

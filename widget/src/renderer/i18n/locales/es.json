@@ -1,16 +1,16 @@
 {
   "app": {
-    "title": "SADIE",
-    "subtitle": "Motor de Inteligencia de Escritorio con IA Estructurada"
+    "title": "HomeBot",
+    "subtitle": "Asistente de Escritorio con IA"
   },
   "chat": {
-    "placeholder": "Mensaje a SADIE...",
+    "placeholder": "Mensaje a HomeBot...",
     "send": "Enviar",
     "stopGenerating": "Dejar de generar",
     "retry": "Reintentar",
     "thinking": "Pensando...",
     "errorGeneric": "Algo salió mal. Por favor, inténtalo de nuevo.",
-    "welcomeTitle": "Bienvenido a SADIE",
+    "welcomeTitle": "Bienvenido a HomeBot",
     "welcomeSubtitle": "Tu Asistente de Escritorio con IA"
   },
   "settings": {
@@ -76,7 +76,7 @@
     "screenshot": "Captura de pantalla"
   },
   "firstRun": {
-    "welcome": "Bienvenido a SADIE",
+    "welcome": "Bienvenido a HomeBot",
     "setupDescription": "Vamos a configurar tus preferencias.",
     "telemetryLabel": "Telemetría",
     "defaultTeam": "Equipo NBA predeterminado",

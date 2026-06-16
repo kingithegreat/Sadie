@@ -1,10 +1,10 @@
 {
-  "name": "sadie-widget",
+  "name": "homebot-widget",
   "version": "1.1.0",
-  "description": "SADIE - Structured AI Desktop Intelligence Engine Widget",
+  "description": "HomeBot - Desktop AI Assistant Widget",
   "main": "out/main/index.js",
   "type": "commonjs",
-  "productName": "SADIE",
+  "productName": "HomeBot",
   "author": "kingithegreat",
   "license": "MIT",
   "repository": {
@@ -87,8 +87,8 @@
     "webpack-cli": "^5.1.4"
   },
   "build": {
-    "appId": "com.sadie.app",
-    "productName": "SADIE",
+    "appId": "com.homebot.app",
+    "productName": "HomeBot",
     "directories": {
       "output": "dist-electron",
       "buildResources": "build"

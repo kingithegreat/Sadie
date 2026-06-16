@@ -721,14 +721,14 @@ export function MessageBubble({
           </div>
 
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="SADIE" className="avatar-img" />}
+            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
           </div>
         </>
       ) : (
         <>
           {/* ASSISTANT: avatar first, content second */}
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="SADIE" className="avatar-img" />}
+            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
           </div>
 
           <div className="message-content">
