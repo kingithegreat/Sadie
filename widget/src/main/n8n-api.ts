@@ -264,7 +264,7 @@ db.serialize(() => {
 });
 db.close();
 `;
-  await dockerExecStdin(script, 'node', '-e', '-');
+  await dockerExecStdin(script, 'node', '-');
   console.log('[n8n-api] Deleted workflow', workflowId);
 }
 

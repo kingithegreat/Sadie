@@ -26,8 +26,11 @@ function collectJsonFiles(dir: string, base = dir): WorkflowFile[] {
     if (e.isDirectory()) {
       results.push(...collectJsonFiles(full, base));
     } else if (e.isFile() && e.name.endsWith('.json') && e.name !== 'test-workflow.json') {
-      const raw = fs.readFileSync(full, 'utf-8');
-      results.push({ rel: path.relative(base, full), data: JSON.parse(raw) });
+      const raw = fs.readFileSync(full, 'utf-8').replace(/^﻿/, '');
+      const parsed = JSON.parse(raw);
+      // Skip array-wrapped bulk exports (n8n CLI export format)
+      if (Array.isArray(parsed)) continue;
+      results.push({ rel: path.relative(base, full), data: parsed });
     }
   }
   return results;

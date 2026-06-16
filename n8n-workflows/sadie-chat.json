@@ -1,6 +1,6 @@
 {
   "name": "SADIE Chat Orchestrator",
-  "active": false,
+  "active": true,
   "versionId": "1",
   "nodes": [
     {
