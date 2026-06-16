@@ -46,7 +46,7 @@ test('UI -> message persistence and debug logs available', async () => {
   }, null, { timeout: 10000 });
 
   // Send a user message
-  await page.getByLabel('Message SADIE').fill('persistence-ui-test');
+  await page.getByLabel('Message HomeBot').fill('persistence-ui-test');
   await page.getByRole('button', { name: /send/i }).click();
 
   // Query conversation store via preload API

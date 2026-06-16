@@ -43,7 +43,7 @@ describe('cancel-confirmation flow', () => {
     render(<App />);
 
     // send a message to create streaming assistant
-    const textarea = screen.getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Start cancel test' } });
     const sendBtn = screen.getByText('Send');
     fireEvent.click(sendBtn);
@@ -82,7 +82,7 @@ describe('cancel-confirmation flow', () => {
 
     render(<App />);
 
-    const textarea2 = screen.getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea2 = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea2, { target: { value: 'Start cancel test 2' } });
     const sendBtn2 = screen.getByText('Send');
     fireEvent.click(sendBtn2);

@@ -37,7 +37,7 @@ describe('stream end and error handling (renderer)', () => {
     const { getByLabelText, getByText } = render(<App />);
 
     // Send a user message, creating an assistant streaming message
-    const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Testing end' } });
     const sendBtn = getByText('Send');
     fireEvent.click(sendBtn);
@@ -91,7 +91,7 @@ describe('stream end and error handling (renderer)', () => {
     const { getByLabelText, getByText } = render(<App />);
 
     // Send message to create streaming assistant
-    const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Testing error' } });
     const sendBtn = getByText('Send');
     fireEvent.click(sendBtn);

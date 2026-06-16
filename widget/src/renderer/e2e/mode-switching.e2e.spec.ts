@@ -75,7 +75,7 @@ test.describe('Mode switching', () => {
     await waitForAppReady(page);
 
     // In chat mode, the message input should be visible
-    const input = page.getByLabel('Message SADIE');
+    const input = page.getByLabel('Message HomeBot');
     await expect(input).toBeVisible();
 
     // Switch to Image mode — chat input should disappear
@@ -84,7 +84,7 @@ test.describe('Mode switching', () => {
 
     // Switch back to Chat — input should reappear
     await page.locator('button.mode-btn', { hasText: 'Chat' }).click();
-    await expect(page.getByLabel('Message SADIE')).toBeVisible();
+    await expect(page.getByLabel('Message HomeBot')).toBeVisible();
 
     await app.close();
   });

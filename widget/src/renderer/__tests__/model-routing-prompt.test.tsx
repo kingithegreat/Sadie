@@ -50,7 +50,7 @@ describe('model routing prompt mode', () => {
   test('prompt mode asks before applying a suggested model override', async () => {
     render(<App />);
 
-    const textarea = await screen.findByLabelText('Message SADIE');
+    const textarea = await screen.findByLabelText('Message HomeBot');
     fireEvent.change(textarea, { target: { value: 'compare the pros and cons of local versus cloud models for privacy' } });
     fireEvent.click(screen.getByText('Send'));
 
@@ -67,7 +67,7 @@ describe('model routing prompt mode', () => {
   test('prompt mode keeps the current model when the suggestion is declined', async () => {
     render(<App />);
 
-    const textarea = await screen.findByLabelText('Message SADIE');
+    const textarea = await screen.findByLabelText('Message HomeBot');
     fireEvent.change(textarea, { target: { value: 'compare the pros and cons of local versus cloud models for privacy' } });
     fireEvent.click(screen.getByText('Send'));
 

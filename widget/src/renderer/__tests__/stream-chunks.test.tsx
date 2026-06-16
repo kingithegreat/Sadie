@@ -43,7 +43,7 @@ describe('stream chunks (renderer)', () => {
     const { getByLabelText, getByText } = render(<App />);
 
     // Compose a user message and send to create a streaming assistant message and subscribe
-    const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Kick off stream' } });
     const sendButton = getByText('Send');
     fireEvent.click(sendButton);

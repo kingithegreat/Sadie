@@ -37,7 +37,7 @@ export async function waitForAppReady(page: Page, opts?: { timeout?: number }) {
   await page.waitForFunction(() => {
     try {
       const selectors = [
-        'textarea[aria-label="Message SADIE"]',
+        'textarea[aria-label="Message HomeBot"]',
         'textarea.input-field',
         'textarea',
         'input[type="text"]',

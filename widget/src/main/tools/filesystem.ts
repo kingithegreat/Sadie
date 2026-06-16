@@ -468,7 +468,7 @@ export const createSpreadsheetHandler: ToolHandler = async (args, _context): Pro
     await fsPromises.mkdir(path.dirname(resolvedPath), { recursive: true });
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'SADIE';
+    workbook.creator = 'HomeBot';
     workbook.created = new Date();
 
     const sheetName = (args.sheet_name as string | undefined)?.trim() || 'Sheet1';

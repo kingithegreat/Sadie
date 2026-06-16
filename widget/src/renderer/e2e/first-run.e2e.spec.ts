@@ -13,7 +13,7 @@ function makeTempProfile() {
 }
 
 async function completeFirstRunWizard(page: any) {
-  await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
   const modal = page.locator('.first-run-modal');
   // Choose Local path
   await modal.getByRole('button', { name: /Local \(Ollama\)/i }).click();
@@ -31,7 +31,7 @@ test.describe('First-run onboarding and config persistence', () => {
     await waitForAppReady(page);
 
     // FirstRun wizard should be visible
-    await expect(page.getByText('Welcome to SADIE')).toBeVisible();
+    await expect(page.getByText('Welcome to HomeBot')).toBeVisible();
 
     // Path selection cards should be visible
     await expect(page.getByText('Local (Ollama)')).toBeVisible();
@@ -70,7 +70,7 @@ test.describe('First-run onboarding and config persistence', () => {
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
     // FirstRun modal should not be visible
-    await expect(page.getByText('Welcome to SADIE')).toHaveCount(0);
+    await expect(page.getByText('Welcome to HomeBot')).toHaveCount(0);
 
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -136,11 +136,11 @@ test.describe('First-run onboarding and config persistence', () => {
     const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
-    await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: /Skip setup/i }).click();
 
     // Modal should close
-    await expect(page.getByText('Welcome to SADIE')).toHaveCount(0);
+    await expect(page.getByText('Welcome to HomeBot')).toHaveCount(0);
 
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     const start = Date.now();

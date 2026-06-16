@@ -4,7 +4,7 @@ import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
 async function completeFirstRunWizardIfVisible(page: any) {
-  const firstRunHeader = page.getByText('Welcome to SADIE');
+  const firstRunHeader = page.getByText('Welcome to HomeBot');
   if (!(await firstRunHeader.isVisible().catch(() => false))) return;
 
   const modal = page.locator('.first-run-modal');
@@ -95,7 +95,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   await page.waitForTimeout(1000); // Wait for the system prompt to be saved
 
   // Send a normal message
-  await page.getByLabel('Message SADIE').fill('Hello, how are you?');
+  await page.getByLabel('Message HomeBot').fill('Hello, how are you?');
   console.log('[E2E-TEST] About to click send button');
   const sendButton = page.getByRole('button', { name: /send/i });
   const isEnabled = await sendButton.isEnabled();

@@ -9,7 +9,7 @@
 
 // Inline mocks that must precede the module import
 jest.mock('electron', () => ({
-  app: { getPath: jest.fn(() => '/tmp/sadie-test'), getName: jest.fn(() => 'SADIE'), getVersion: jest.fn(() => '0.0.0-test') },
+  app: { getPath: jest.fn(() => '/tmp/sadie-test'), getName: jest.fn(() => 'HomeBot'), getVersion: jest.fn(() => '0.0.0-test') },
   ipcMain: { on: jest.fn(), handle: jest.fn(), removeHandler: jest.fn() },
   BrowserWindow: jest.fn(),
   dialog: { showOpenDialog: jest.fn(), showSaveDialog: jest.fn() },
@@ -140,7 +140,7 @@ describe('isSmallModel', () => {
 describe('getSystemPromptForModel', () => {
   it('uses compact prompt for small models', () => {
     const prompt = getSystemPromptForModel('llama3.2:3b');
-    expect(prompt).toContain('SADIE');
+    expect(prompt).toContain('HomeBot');
     expect(prompt).toContain('concise');
   });
 

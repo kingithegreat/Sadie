@@ -51,9 +51,9 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
     const statusDot = page.locator('.widget-status-dot');
     await expect(statusDot).not.toHaveClass(/disconnected/, { timeout: 15000 });
 
-    const input = page.locator('textarea[aria-label="Message SADIE"]');
+    const input = page.locator('textarea[aria-label="Message HomeBot"]');
     await input.waitFor({ state: 'visible' });
-    await input.fill('Hello SADIE. Reply with exactly the word "BANANA" and nothing else.');
+    await input.fill('Hello HomeBot. Reply with exactly the word "BANANA" and nothing else.');
     await input.press('Enter');
 
     const assistantBubbles = page.locator('.message-bubble.assistant');

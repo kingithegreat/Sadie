@@ -366,14 +366,14 @@ describe('preProcessIntent', () => {
       const res = await preProcessIntent('who are you?');
       expect(res).not.toBeNull();
       expect(res!.calls[0].name).toBe('__canned');
-      expect(res!.calls[0].arguments.response).toContain('SADIE');
+      expect(res!.calls[0].arguments.response).toContain('HomeBot');
     });
 
     test('returns __canned for "are you a bot"', async () => {
       const res = await preProcessIntent('are you a bot?');
       expect(res).not.toBeNull();
       expect(res!.calls[0].name).toBe('__canned');
-      expect(res!.calls[0].arguments.response).toContain('SADIE');
+      expect(res!.calls[0].arguments.response).toContain('HomeBot');
     });
 
     test('returns __canned for "are you real"', async () => {

@@ -45,7 +45,7 @@ describe('retry flow (renderer)', () => {
     render(<App />);
 
     // Send a user message
-    const textarea = screen.getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Tell me a joke' } });
     fireEvent.click(screen.getByText('Send'));
 
@@ -82,7 +82,7 @@ describe('retry flow (renderer)', () => {
   test('Retry button is NOT shown for non-error states', async () => {
     render(<App />);
 
-    const textarea = screen.getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Hello' } });
     fireEvent.click(screen.getByText('Send'));
 
@@ -102,7 +102,7 @@ describe('retry flow (renderer)', () => {
   test('retrying a document-attached turn asks for reattach instead of resending a marker-only request', async () => {
     render(<App />);
 
-    const textarea = screen.getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, {
       target: {
         value: '[Document attached: SADIE_Midpoint_Review.docx]\n\nthis was you what do i think?'

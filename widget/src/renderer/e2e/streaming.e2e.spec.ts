@@ -6,7 +6,7 @@ import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
 async function completeFirstRunWizardIfVisible(page: any) {
-  const firstRunHeader = page.getByText('Welcome to SADIE');
+  const firstRunHeader = page.getByText('Welcome to HomeBot');
   if (!(await firstRunHeader.isVisible().catch(() => false))) return;
 
   const modal = page.locator('.first-run-modal');
@@ -35,7 +35,7 @@ test('streams chunks to UI', async () => {
   await waitForAppReady(page);
 
 
-  await page.getByLabel('Message SADIE').fill('hello');
+  await page.getByLabel('Message HomeBot').fill('hello');
   await page.getByRole('button', { name: /send/i }).click();
 
   // Fetch main-process router logs for debugging (E2E-only)
@@ -118,7 +118,7 @@ test('cancel stops stream', async () => {
   await waitForAppReady(page);
 
 
-  await page.getByLabel('Message SADIE').fill('hello');
+  await page.getByLabel('Message HomeBot').fill('hello');
   await page.getByRole('button', { name: /send/i }).click();
 
   // Wait until streaming controls are visible then click cancel quickly so
@@ -208,7 +208,7 @@ test('handles upstream error', async () => {
   });
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
-  await page.getByLabel('Message SADIE').fill('hello');
+  await page.getByLabel('Message HomeBot').fill('hello');
   await page.getByRole('button', { name: /send/i }).click();
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
@@ -299,7 +299,7 @@ test('falls back to non-stream final text on stream init error', async () => {
   await completeFirstRunWizardIfVisible(page);
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
-  await page.getByLabel('Message SADIE').fill('hello');
+  await page.getByLabel('Message HomeBot').fill('hello');
   await page.getByRole('button', { name: /send/i }).click();
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);

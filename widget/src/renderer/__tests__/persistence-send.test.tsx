@@ -48,7 +48,7 @@ test('when no active conversation exists, sending a message creates conversation
 
   const { getByLabelText, getByText } = render(<App />);
 
-  const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+  const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
   fireEvent.change(textarea, { target: { value: 'Persistence test' } });
   const sendButton = getByText('Send');
   fireEvent.click(sendButton);
@@ -97,7 +97,7 @@ test('first message uses created conversation id (not "default") in stream reque
 
   const { getByLabelText, getByText } = render(<App />);
 
-  const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+  const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
   fireEvent.change(textarea, { target: { value: 'First coherence message' } });
   fireEvent.click(getByText('Send'));
 
@@ -142,7 +142,7 @@ test('sending an attached document includes document payload on the first stream
   fireEvent.change(documentInput, { target: { files: [file] } });
   await findByText('SADIE_Midpoint_Review.docx');
 
-  const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+  const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
   fireEvent.change(textarea, { target: { value: 'this was you what do i think?' } });
   fireEvent.click(getByText('Send'));
 

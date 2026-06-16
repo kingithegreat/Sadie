@@ -26,7 +26,7 @@ async function isSadieAppWindow(page: Page): Promise<boolean> {
       return true;
     }
 
-    const input = page.locator('textarea[aria-label="Message SADIE"]');
+    const input = page.locator('textarea[aria-label="Message HomeBot"]');
     return Boolean(await input.count().catch(() => 0));
   } catch {
     return false;
@@ -40,7 +40,7 @@ async function waitForSadieAppSurface(page: Page, timeout = 15000): Promise<void
         document.querySelector('[data-testid="sadie-app-root"][data-hydrated="true"]') ||
         document.querySelector('[data-testid="sadie-app-root"]') ||
         document.querySelector('button.mode-btn') ||
-        document.querySelector('textarea[aria-label="Message SADIE"]')
+        document.querySelector('textarea[aria-label="Message HomeBot"]')
       );
     } catch {
       return false;
@@ -94,7 +94,7 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
     env: mergedEnv,
   });
 
-  // Prefer the first app window that contains the visible SADIE UI
+  // Prefer the first app window that contains the visible HomeBot UI
   const startedAt = Date.now();
   const timeoutMs = 15000;
   let page: Page | null = null;

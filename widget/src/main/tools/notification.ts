@@ -83,7 +83,7 @@ export const showNotificationHandler: ToolHandler = async (args): Promise<ToolRe
         `$xml = New-Object Windows.Data.Xml.Dom.XmlDocument; ` +
         `$xml.LoadXml('<toast><visual><binding template=\\"ToastText02\\"><text id=\\"1\\">${safeTitle}</text><text id=\\"2\\">${safeBody}</text></binding></visual></toast>'); ` +
         `$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); ` +
-        `$t::CreateToastNotifier('SADIE').Show($toast)"`
+        `$t::CreateToastNotifier('HomeBot').Show($toast)"`
     );
 
     return {
