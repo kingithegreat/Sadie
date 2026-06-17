@@ -22,7 +22,7 @@ const TEMPLATE_AUTOMATIONS: AutomationTemplate[] = [
     icon: '\u{2600}',
     name: 'Daily Digest',
     description: 'Morning briefing with motivational quote and productivity tip',
-    instructions: 'Generate a morning digest: a warm greeting for the time of day, a motivational quote, a productivity tip, and a suggested focus area. Format with markdown headers.',
+    instructions: 'Respond directly in chat with a morning digest: a warm greeting for the time of day, a motivational quote, a productivity tip, and a suggested focus area. Format with markdown headers. Do NOT create or write any files — just reply with the content.',
     trigger: 'schedule',
     scheduleMinutes: 1440,
   },
@@ -58,14 +58,14 @@ const TEMPLATE_AUTOMATIONS: AutomationTemplate[] = [
     icon: '\u{1F5A5}',
     name: 'System Health Check',
     description: 'Check system resources and Ollama status',
-    instructions: 'Check my system information including disk usage, memory, and running processes. Also check if Ollama is running and what models are installed. Report any issues.',
+    instructions: 'Use the get_system_info tool to check disk usage, memory, and CPU. Use list_processes to check running processes. Check if Ollama is running and what models are installed. Report any issues directly in chat.',
     trigger: 'manual',
   },
   {
     icon: '\u{1F4CB}',
     name: 'Smart Standup',
     description: 'Daily standup with quote, focus areas, and checklist',
-    instructions: 'Generate a daily standup briefing with: a greeting for the time of day, a motivational quote, 3 specific focus areas for a developer, a standup checklist, and a pro tip. Use markdown formatting and emojis.',
+    instructions: 'Respond directly in chat with a daily standup briefing: a greeting for the time of day, a motivational quote, 3 specific focus areas for a developer, a standup checklist, and a pro tip. Use markdown formatting and emojis. Do NOT create or write any files.',
     trigger: 'schedule',
     scheduleMinutes: 1440,
   },
@@ -88,6 +88,7 @@ export const AutomationCenter: React.FC = () => {
   const [formN8nUrl, setFormN8nUrl] = useState('');
   const [formUseN8n, setFormUseN8n] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [n8nOnline, setN8nOnline] = useState(false);
 
   const loadAutomations = useCallback(async () => {
     setLoading(true);
@@ -104,6 +105,13 @@ export const AutomationCenter: React.FC = () => {
   }, []);
 
   useEffect(() => { loadAutomations(); }, [loadAutomations]);
+
+  // Check n8n availability on mount
+  useEffect(() => {
+    window.electron?.checkConnection?.().then((status: any) => {
+      setN8nOnline(status?.n8n === 'online');
+    }).catch(() => {});
+  }, []);
 
   const handleCreate = useCallback(async () => {
     if (!formName.trim() || !formInstructions.trim()) return;
@@ -189,9 +197,9 @@ export const AutomationCenter: React.FC = () => {
     setFormInstructions(tpl.instructions);
     setFormTrigger(tpl.trigger);
     if (tpl.scheduleMinutes) setFormSchedule(tpl.scheduleMinutes);
+    setFormUseN8n(n8nOnline);
     setFormN8nUrl('');
-    setFormUseN8n(false);
-  }, []);
+  }, [n8nOnline]);
 
   return (
     <div className="automation-center">
