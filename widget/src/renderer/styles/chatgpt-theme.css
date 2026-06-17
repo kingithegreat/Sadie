@@ -177,7 +177,8 @@ body {
   container-type: inline-size;
   container-name: header;
   position: relative;
-  z-index: 10;
+  z-index: 300;
+  overflow: visible;
 }
 
 /* Left group: branding + status + model selector */

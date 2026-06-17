@@ -140,46 +140,90 @@ const DEFAULT_SETTINGS: Settings = {
     get_file_info: true,
     copy_file: true,
     search_files: true,
+    find_files: true,
     parse_document_from_path: true,
     // File system — dangerous: disabled by default
     write_file: false,
     edit_file: false,
     delete_file: false,
     move_file: false,
-    // System controls
-    launch_app: false,
-    screenshot: false,
+    create_docx: false,
+    create_spreadsheet: false,
+    create_pdf: false,
+    // System — read-only safe
+    get_system_info: true,
+    get_current_time: true,
+    calculate: true,
     open_url: true,
     open_in_browser: true,
     browser_search: true,
     show_notification: true,
+    // System — dangerous
+    launch_app: false,
+    screenshot: false,
     // Read-only network or info operations
     web_search: true,
+    fetch_url: true,
+    fetch_page_content: true,
     nba_query: true,
     get_news: true,
     list_news_feeds: true,
     get_weather: true,
-    generate_sports_report: false,
     image_generate: true,
+    // Documents — read-only safe
+    parse_document: true,
+    get_document_content: true,
+    list_documents: true,
+    search_document: true,
+    // Vision — read-only safe
+    vision_describe: true,
+    vision_query: true,
+    // Voice — safe
+    speak: true,
+    stop_speaking: true,
+    get_voices: true,
+    // Memory — read safe, clear dangerous
+    remember: true,
+    recall: true,
+    list_memories: true,
+    forget: false,
+    save_conversation: true,
+    get_conversation_history: true,
+    clear_conversation_history: false,
+    // RAG — read safe, clear dangerous
+    rag_query: true,
+    rag_list: true,
+    rag_index: false,
+    rag_clear: false,
+    // Diff — pure computation, safe
+    diff_text: true,
+    diff_files: true,
     // Reminders & calendar — read-only safe
     list_reminders: true,
     set_reminder: true,
+    cancel_reminder: false,
     list_calendar_events: true,
-    add_calendar_event: false,   // modifies state — require confirmation
+    add_calendar_event: false,
+    delete_calendar_event: false,
     // Clipboard — read safe, write requires confirmation
     clipboard_read: true,
     clipboard_write: false,
+    get_clipboard: true,
+    set_clipboard: false,
     // Planning & contacts — read-only safe
     plan_task: true,
     get_plans: true,
     search_contacts: true,
-    add_contact: false,          // modifies state — require confirmation
+    add_contact: false,
     // Git — read-only operations safe
     git_status: true,
     git_log: true,
     git_diff: true,
+    git_branches: true,
+    git_commit: false,
     // Process management — read safe, kill dangerous
     list_processes: true,
+    get_process_info: true,
     kill_process: false,
     // Code execution — dangerous
     run_code: false,
@@ -190,10 +234,12 @@ const DEFAULT_SETTINGS: Settings = {
     grep_code: true,
     project_tree: true,
     analyze_file: true,
-    // Email — all require confirmation
+    // Email — send/draft require confirmation
     email_send: false,
     email_draft: false,
     email_list: true,
+    // API — network calls, dangerous
+    api_request: false,
   },
 
   // Default NBA team for new users

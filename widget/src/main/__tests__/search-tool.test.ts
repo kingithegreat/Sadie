@@ -126,7 +126,7 @@ describe('searchFilesHandler', () => {
 
 describe('searchFilesDef', () => {
   test('has correct name', () => {
-    expect(searchFilesDef.name).toBe('search_files');
+    expect(searchFilesDef.name).toBe('find_files');
   });
 
   test('requires query parameter', () => {

@@ -7,7 +7,7 @@
  * preventing path-traversal abuse.
  *
  * Tools:
- *   search_files — find files/folders by name pattern on the local system
+ *   find_files — find files/folders by name pattern on the local system
  */
 
 import { exec } from 'child_process';
@@ -57,13 +57,14 @@ function sanitizePattern(raw: string): string {
 // ----- Tool definition -----
 
 export const searchFilesDef: ToolDefinition = {
-  name: 'search_files',
+  name: 'find_files',
   description:
-    'Search for files and folders on the local filesystem by name pattern. ' +
+    'Find files and folders on the local filesystem by name pattern. ' +
     'Searches within the user home directory by default. ' +
     'Supports wildcard patterns like *.pdf or report*.docx. ' +
     'Uses Everything Search (es.exe) when available for fast results, ' +
-    'otherwise falls back to PowerShell recursive search.',
+    'otherwise falls back to PowerShell recursive search. ' +
+    'Use this for locating files by name; use search_files to search inside file contents.',
   category: 'filesystem',
   parameters: {
     type: 'object',
@@ -100,7 +101,7 @@ export const searchFilesDef: ToolDefinition = {
 export const searchFilesHandler: ToolHandler = async (args): Promise<ToolResult> => {
   const query = sanitizePattern(String(args.query ?? ''));
   if (!query) {
-    return { success: false, error: 'search_files: query is required' };
+    return { success: false, error: 'find_files: query is required' };
   }
 
   const searchRoot = sanitizeSearchRoot(args.path as string | undefined);
@@ -177,7 +178,7 @@ export const searchFilesHandler: ToolHandler = async (args): Promise<ToolResult>
       const parsed = JSON.parse(stdout.trim());
       raw = Array.isArray(parsed) ? parsed : [parsed];
     } catch {
-      return { success: false, error: 'search_files: failed to parse PowerShell output' };
+      return { success: false, error: 'find_files: failed to parse PowerShell output' };
     }
 
     const results = raw.slice(0, limit).map((item: any) => ({
@@ -199,7 +200,7 @@ export const searchFilesHandler: ToolHandler = async (args): Promise<ToolResult>
       },
     };
   } catch (err) {
-    return { success: false, error: `search_files failed: ${(err as any)?.message}` };
+    return { success: false, error: `find_files failed: ${(err as any)?.message}` };
   }
 };
 
@@ -208,5 +209,5 @@ export const searchFilesHandler: ToolHandler = async (args): Promise<ToolResult>
 export const searchToolDefs: ToolDefinition[] = [searchFilesDef];
 
 export const searchToolHandlers: Record<string, ToolHandler> = {
-  search_files: searchFilesHandler,
+  find_files: searchFilesHandler,
 };

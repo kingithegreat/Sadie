@@ -77,6 +77,11 @@ TOOL-CALLING RULES:
 - When the user asks you to create a file, use the write_file tool directly.
 - After tool results, summarize KEY facts in 2-4 sentences. Don't dump raw data.
 
+ANTI-HALLUCINATION (critical — follow strictly):
+- When a tool returns empty results, no data, or an error, tell the user exactly that. Do NOT fill in with information from your training data — it is likely outdated or wrong.
+- For sports scores, news, weather, or any time-sensitive data: ONLY report what the tool actually returned. Never supplement with "from what I know" or training-data facts.
+- If the NBA tool returns 0 games or the web search returns no results, say so and suggest the user try a different query or check back later. Do NOT invent scores, winners, or outcomes.
+
 DOCUMENT & FILE RULES:
 - When the user asks you to read, summarize, or analyze a document (PDF, Word .docx, text), use "parse_document_from_path" with the file path. Do NOT use "read_file" for PDFs or Word docs.
 - "read_file" is only for plain text files (.txt, .md, .json, .csv, code files). Use start_line/end_line params to read specific line ranges (e.g. start_line=50, end_line=80).
@@ -126,7 +131,8 @@ TOOLS — PRECISION OVER SPEED:
 - INVOKE tools directly — never write tool calls as text.
 - After a tool returns data, summarize KEY facts in 2-4 sentences.
 - Code requests: provide COMPLETE working code, never truncate.
-- For shell commands: use run_terminal_command. For code search: use grep_code.`;
+- For shell commands: use run_terminal_command. For code search: use grep_code.
+- CRITICAL: When a tool returns empty/no results, say so. NEVER fill in with training data — it is outdated. For scores, news, weather: ONLY report what the tool returned.`;
 
 export const HOMEBOT_USER_INFO = {
   username: USERNAME,

@@ -1025,6 +1025,17 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'web_search', arguments: { query: `NBA ${searchQuery}`, maxResults: 5, fetchTopResult: true } }] };
   }
 
+  // Explicit web search requests — always honour, even if the query contains NBA/weather keywords
+  if (/\b(do\s+(?:a\s+)?web\s*search|web\s*search\s+for|search\s+the\s+(web|internet)\s+for|use\s+web\s*search)\b/i.test(m) && !isConversational) {
+    const searchQuery = userMessage.replace(/^.*?\b(?:web\s*search\s*(?:for)?|search\s+the\s+(?:web|internet)\s+for)\s*/i, '').trim() || userMessage.trim();
+    return { calls: [{ name: 'web_search', arguments: { query: searchQuery, maxResults: 5, fetchTopResult: true } }] };
+  }
+
+  // NBA championship / historical questions — need web search, not today's scoreboard
+  if (/\b(who\s+won\s+(?:the\s+)?(?:nba|finals|championship)|nba\s+champion|nba\s+finals?\s+winner|won\s+(?:the\s+)?nba\s+(?:finals|championship|title|ring))\b/i.test(m) && !isConversational) {
+    return { calls: [{ name: 'web_search', arguments: { query: `NBA ${userMessage.trim()}`, maxResults: 5, fetchTopResult: true } }] };
+  }
+
   // NBA/sports prediction questions — use web_search so we get real-time expert
   // analysis instead of the LLM hallucinating outdated predictions.
   if (isOpinionQuestion && /\b(nba|basketball|finals?|playoffs?|championship)\b/i.test(m) && !hasMusicOrContentIntent && !isConversational) {
@@ -1258,7 +1269,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
       userMessage.match(/(?:find|search\s+for?|locate)\s+["']?(.+?)["']?\s*(?:on\s+my|in\s+my|file|$)/i) ||
       userMessage.match(/(?:where\s+is|find)\s+["']?(.+?)["']?/i);
     const query = queryMatch ? queryMatch[1].trim() : userMessage.replace(/^(find|search|locate)\s*/i, '').trim();
-    if (query) return { calls: [{ name: 'search_files', arguments: { query, limit: 30 } }] };
+    if (query) return { calls: [{ name: 'find_files', arguments: { query, limit: 30 } }] };
   }
 
   // PLANNING intents
@@ -3938,10 +3949,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 result.result.events !== undefined &&
                 (result.result.resultCount !== undefined || result.result.allScheduled !== undefined)
               ) {
-                synthesizeType = 'games';
                 const nbaFormat = intentResult?.calls?.[0]?.arguments?.format;
+                const nbaEvents = Array.isArray(result.result.events) ? result.result.events : [];
+                // Only route through LLM synthesis when there are actual games to interpret.
+                // Empty results + synthesis = hallucination risk.
+                if (nbaEvents.length > 0) synthesizeType = 'games';
                 try {
-                  const nbaEvents = Array.isArray(result.result.events) ? result.result.events : [];
                   const enriched = await enrichNbaGames(nbaEvents, result.result.query || '', {
                     maxWebResults: 3,
                     fetchContent: true,
@@ -3957,7 +3970,6 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   // Fallback to basic formatting if enrichment fails
                   console.error('[HomeBot] NBA enrichment failed, using basic format:', enrichErr?.message);
                   const queryLabel = result.result.query ? `NBA Games — ${result.result.query}` : undefined;
-                  const nbaEvents = Array.isArray(result.result.events) ? result.result.events : [];
                   responseText += formatNbaEventsStrict(nbaEvents, queryLabel, 10) + '\n';
                 }
               }
