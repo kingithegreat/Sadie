@@ -26,7 +26,7 @@ export function initLogging() {
   try {
     const LOG_DIR = getLogDir();
     const STARTUP_LOG = path.join(LOG_DIR, 'startup.log');
-    const header = `\n--- SADIE Startup ${new Date().toISOString()} ---\n`;
+    const header = `\n--- HomeBot Startup ${new Date().toISOString()} ---\n`;
     fs.appendFileSync(STARTUP_LOG, header);
   } catch (err) {
     console.error('Failed to initialize startup log:', err);

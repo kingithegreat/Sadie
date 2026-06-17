@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 // Ensure we force E2E mock behavior in tests
-process.env.SADIE_E2E = 'true';
+process.env.HOMEBOT_E2E = 'true';
 import { startMockUpstream } from './mockUpstream';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
@@ -10,13 +10,13 @@ test('generates a document summary via streaming', async () => {
   const upstream = await startMockUpstream({ chunkIntervalMs: 200, chunkCount: 5 });
   process.env.N8N_URL = upstream.baseUrl;
   process.env.OPENAI_ENDPOINT = upstream.openaiEndpoint || upstream.baseUrl;
-  process.env.SADIE_USE_PROXY = 'false';
+  process.env.HOMEBOT_USE_PROXY = 'false';
 
   const { app, page } = await launchElectronApp({
     N8N_URL: upstream.baseUrl,
     OPENAI_ENDPOINT: upstream.openaiEndpoint || upstream.baseUrl,
     PROXY_RETRY_ENABLED: 'false',
-    SADIE_E2E: '1',
+    HOMEBOT_E2E: '1',
     NODE_ENV: 'test',
   });
 

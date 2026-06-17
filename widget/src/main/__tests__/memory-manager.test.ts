@@ -32,7 +32,7 @@ import {
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sadie-mm-batch11-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-mm-batch11-'));
   process.env.TEST_USERDATA = tmpDir;
   // Drain any writes queued from the previous test before entering the fresh dir.
   __flushWritesSync();

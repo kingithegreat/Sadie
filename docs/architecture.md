@@ -1,6 +1,6 @@
-# SADIE Architecture
+# HomeBot Architecture
 
-This document describes the high-level architecture of SADIE: how the major components interact, how messages and tool calls flow through the system, and how safety, persistence, and theming are handled.
+This document describes the high-level architecture of HomeBot: how the major components interact, how messages and tool calls flow through the system, and how safety, persistence, and theming are handled.
 
 ---
 
@@ -25,7 +25,7 @@ This document describes the high-level architecture of SADIE: how the major comp
 │  User Desktop                                                       │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  SADIE Electron Widget  (widget/)                            │   │
+│  │  HomeBot Electron Widget  (widget/)                            │   │
 │  │                                                              │   │
 │  │  ┌────────────────────────────────┐  ┌───────────────────┐  │   │
 │  │  │  Renderer (React + TypeScript) │  │  Main Process     │  │   │
@@ -57,7 +57,7 @@ This document describes the high-level architecture of SADIE: how the major comp
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-SADIE is a multi-process Electron application. The **renderer process** (React) handles all UI interactions. The **main process** (Node.js) handles tool execution, LLM communication, file I/O, and system access. The two processes communicate exclusively through a typed **preload bridge** using Electron's `contextBridge` API.
+HomeBot is a multi-process Electron application. The **renderer process** (React) handles all UI interactions. The **main process** (Node.js) handles tool execution, LLM communication, file I/O, and system access. The two processes communicate exclusively through a typed **preload bridge** using Electron's `contextBridge` API.
 
 ---
 
@@ -69,7 +69,7 @@ The React UI running inside Chromium. Key responsibilities:
 
 - **Chat surface** — renders message history, handles user input, displays streaming token-by-token responses with cancel/retry controls, and blocks marker-only retries for document-attached turns by asking the user to reattach the file.
 - **Conversation sidebar** — lists conversations with timestamps, message count badges, pinning, archiving, tags, reactions, and full-text search.
-- **Automation Center** — create, edit, and run reusable automations. Each automation stores plain-English instructions that SADIE executes through its full tool chain. Supports manual and scheduled triggers (15 min – 24 h intervals) with background timers. Includes example templates and expandable result viewer.
+- **Automation Center** — create, edit, and run reusable automations. Each automation stores plain-English instructions that HomeBot executes through its full tool chain. Supports manual and scheduled triggers (15 min – 24 h intervals) with background timers. Includes example templates and expandable result viewer.
 - **Quiz Mode** — interactive coding quiz with 12 topics, 3 difficulty levels, and configurable question counts. Generates multiple-choice questions via batched Ollama calls. Tracks persistent progress (accuracy, streak, per-topic scores) and awards letter grades.
 - **Action confirmation** — modal dialog for approving destructive or sensitive tool calls before execution.
 - **Permission modal** — prompts the user to allow-once, always-allow, or cancel when a tool requires a permission that has not yet been granted.
@@ -115,7 +115,7 @@ The Node.js Electron main process. Key responsibilities:
 | `window-manager.ts` | Manages always-on-top behaviour, global hotkey registration (`Ctrl+Shift+Space`), tray icon, and window lifecycle. |
 | `auto-updater.ts` | Checks for updates 5 seconds after startup via electron-updater. Sends IPC progress events to the renderer. Skipped in E2E/test mode. |
 | `scheduler.ts` | Manages persistent reminders and scheduled jobs. Saves to and loads from `userData/memory/json-store/reminders.json`. |
-| `webhook-auth.ts` | Generates and persists a 256-bit shared secret per install. Attaches `X-SADIE-Auth` header to all n8n POST calls. |
+| `webhook-auth.ts` | Generates and persists a 256-bit shared secret per install. Attaches `X-HOMEBOT-Auth` header to all n8n POST calls. |
 
 ### Tool Handlers (`widget/src/main/tools/`)
 
@@ -205,7 +205,7 @@ message-router.ts → preProcessIntent() [deterministic regex routing]
 
 ### Document Attachment Preprocessing
 
-When a request includes `documents[]`, SADIE extracts document content before intent analysis and before forwarding to n8n. This prevents the router from treating the placeholder line `[Document attached: ...]` as the real user payload.
+When a request includes `documents[]`, HomeBot extracts document content before intent analysis and before forwarding to n8n. This prevents the router from treating the placeholder line `[Document attached: ...]` as the real user payload.
 
 - **Non-stream requests** use the expanded document text for both routing and upstream forwarding.
 - **Streaming requests** preserve the original upload on first send, but retries do not attempt to reconstruct missing file bytes from chat history.
@@ -247,12 +247,12 @@ On first launch, `detectGpuVram()` (via `moa.ts`) queries the GPU using PowerShe
 
 A 30-second interval (`HEARTBEAT_INTERVAL`) polls `GET /api/tags` on the configured Ollama URL. On state change:
 
-- **Online → Offline**: pushes `sadie:ollama-status { online: false, autoRestarting: true }` to the renderer, then spawns `ollama serve` in a detached process to attempt auto-recovery.
-- **Offline → Online**: pushes `sadie:ollama-status { online: true }`. The renderer shows/hides a status toast accordingly.
+- **Online → Offline**: pushes `homebot:ollama-status { online: false, autoRestarting: true }` to the renderer, then spawns `ollama serve` in a detached process to attempt auto-recovery.
+- **Offline → Online**: pushes `homebot:ollama-status { online: true }`. The renderer shows/hides a status toast accordingly.
 
 ### Model Fallback
 
-At startup, if the configured `chatModel` is not installed in Ollama, the main process selects the best available alternative (preferring larger models) and pushes `sadie:model-fallback { from, to }` to the renderer. The renderer updates its settings state and shows a warning toast.
+At startup, if the configured `chatModel` is not installed in Ollama, the main process selects the best available alternative (preferring larger models) and pushes `homebot:model-fallback { from, to }` to the renderer. The renderer updates its settings state and shows a warning toast.
 
 ### Follow-Up Context Guards
 
@@ -264,13 +264,13 @@ When a conversation has a `lastIntent` (e.g., the user just asked about weather)
 
 ### Custom Chat Avatars
 
-The chat UI uses illustrated PNG avatars instead of emoji placeholders. `SadieChatAvatar.png` (illustrated character, square-cropped) and `UserChatAvatar.png` (golden hero icon) are Vite-imported as asset URLs and rendered as `<img>` elements inside `.message-avatar` containers with `object-fit: cover` and `border-radius: 50%`.
+The chat UI uses illustrated PNG avatars instead of emoji placeholders. `HomeBotChatAvatar.png` (illustrated character, square-cropped) and `UserChatAvatar.png` (golden hero icon) are Vite-imported as asset URLs and rendered as `<img>` elements inside `.message-avatar` containers with `object-fit: cover` and `border-radius: 50%`.
 
 ---
 
 ## Safety Model
 
-SADIE runs entirely locally. No data is sent to external servers except through explicit user-configured cloud LLM integrations. Safety is enforced at multiple layers:
+HomeBot runs entirely locally. No data is sent to external servers except through explicit user-configured cloud LLM integrations. Safety is enforced at multiple layers:
 
 ### Layer 1: Tool Allowlist (`config/tool-allowlist.json`)
 
@@ -298,13 +298,13 @@ All outbound HTTP requests from web tools pass through `isUrlSafe()`, which vali
 
 - `contextIsolation: true` — renderer cannot access Node.js APIs
 - `nodeIntegration: false` — no `require()` in renderer
-- `sadie:open-file` and `sadie:show-in-folder` restrict paths to user home directory
+- `homebot:open-file` and `homebot:show-in-folder` restrict paths to user home directory
 - `webviewTag: false` — no webview elements
 - Preload `invoke()` gated behind `isE2E()` check
 
 ### Layer 6: Webhook Authentication (`webhook-auth.ts`)
 
-A 256-bit secret is generated per install and persisted to disk. All HTTP requests to n8n include `X-SADIE-Auth` header. n8n workflows validate this header via an Auth Guard Code node.
+A 256-bit secret is generated per install and persisted to disk. All HTTP requests to n8n include `X-HOMEBOT-Auth` header. n8n workflows validate this header via an Auth Guard Code node.
 
 ### Layer 7: Terminal Safety (`terminal.ts`)
 
@@ -353,7 +353,7 @@ Conversations are stored in the Electron `userData` directory and loaded via `lo
 
 ### Settings Persistence
 
-User settings are read from and written to `%APPDATA%\SADIE\config\user-settings.json` via the `loadSettings` / `saveSettings` IPC channels. The `config-manager` caches settings in memory with a 5-second TTL to avoid repeated disk reads (~20 per message). Secret fields (API keys) are encrypted at rest using Electron's `safeStorage` API and decrypted transparently on read.
+User settings are read from and written to `%APPDATA%\HomeBot\config\user-settings.json` via the `loadSettings` / `saveSettings` IPC channels. The `config-manager` caches settings in memory with a 5-second TTL to avoid repeated disk reads (~20 per message). Secret fields (API keys) are encrypted at rest using Electron's `safeStorage` API and decrypted transparently on read.
 
 ### Reminder Persistence
 
@@ -368,7 +368,7 @@ Automations are stored in `userData/automations.json`. Each automation contains:
 | `id` | `string` | UUID |
 | `name` | `string` | Display name |
 | `description` | `string` | Optional description |
-| `instructions` | `string` | Plain-English prompt executed by SADIE's tool chain |
+| `instructions` | `string` | Plain-English prompt executed by HomeBot's tool chain |
 | `trigger` | `'manual' \| 'schedule'` | How the automation is invoked |
 | `scheduleMinutes` | `number` | Interval for scheduled triggers (15–1440) |
 | `enabled` | `boolean` | Whether the automation is active |
@@ -376,7 +376,7 @@ Automations are stored in `userData/automations.json`. Each automation contains:
 | `lastResult` | `string` | Output text from the last run |
 | `createdAt` | `string` | ISO timestamp of creation |
 
-Scheduled automations use `setInterval`-based background timers. On app boot (after 5 s), `startAutomationSchedule()` reads all automations and starts timers for enabled scheduled ones. Timers re-sync every 60 s to pick up CRUD changes. When a timer fires, it calls `executeAutomation()` (which uses `processIncomingRequest` with direct Ollama fallback) and sends a `sadie:reminder-fired` event to the renderer so the result appears in chat.
+Scheduled automations use `setInterval`-based background timers. On app boot (after 5 s), `startAutomationSchedule()` reads all automations and starts timers for enabled scheduled ones. Timers re-sync every 60 s to pick up CRUD changes. When a timer fires, it calls `executeAutomation()` (which uses `processIncomingRequest` with direct Ollama fallback) and sends a `homebot:reminder-fired` event to the renderer so the result appears in chat.
 
 ### Quiz Progress Persistence
 
@@ -386,7 +386,7 @@ Quiz progress is stored in `userData/quiz-progress.json` and tracks per-topic ac
 
 ## Cloud LLM Integration
 
-SADIE supports optional cloud LLM routing for enhanced capabilities:
+HomeBot supports optional cloud LLM routing for enhanced capabilities:
 
 ### Code Cloud API
 
@@ -399,7 +399,7 @@ Coding queries (detected by `CODING_QUERY_PATTERN`) are routed to a configured c
 
 ### Embedded Web Services
 
-ChatGPT, Claude, and Gemini are accessible directly inside SADIE via sandboxed `BrowserWindow` panels rather than Electron `<webview>` elements. Login and interaction work through the dedicated window manager and service permission hardening.
+ChatGPT, Claude, and Gemini are accessible directly inside HomeBot via sandboxed `BrowserWindow` panels rather than Electron `<webview>` elements. Login and interaction work through the dedicated window manager and service permission hardening.
 
 ### Model Metadata
 
@@ -411,7 +411,7 @@ ChatGPT, Claude, and Gemini are accessible directly inside SADIE via sandboxed `
 
 ### Theme System
 
-SADIE supports three theme modes: **light**, **dark**, and **system** (follows OS preference).
+HomeBot supports three theme modes: **light**, **dark**, and **system** (follows OS preference).
 
 - Themes are implemented via CSS custom properties (`--bg-*`, `--accent-*`, `--text-*`) with `[data-theme]` selectors.
 - 15+ CSS keyframe animations: `headerScan`, `titleShimmer`, `connectedGlow`, `msgSlideIn`, `avatarRingSpin`, `voiceNeonPulse`, `welcomeFloat`, `activeCardGlow`, and more.
@@ -424,13 +424,13 @@ Chat messages are rendered with a custom Markdown renderer supporting fenced cod
 
 ### Streaming UI
 
-Responses are displayed token-by-token in real time. Users can cancel mid-stream or retry failed messages. For document-attached turns, retries intentionally require reattaching the source file so SADIE does not resend a prompt that contains only the attachment marker.
+Responses are displayed token-by-token in real time. Users can cancel mid-stream or retry failed messages. For document-attached turns, retries intentionally require reattaching the source file so HomeBot does not resend a prompt that contains only the attachment marker.
 
 ---
 
 ## Build and Packaging
 
-SADIE uses **electron-vite** as its build system (not Webpack).
+HomeBot uses **electron-vite** as its build system (not Webpack).
 
 ```
 widget/
@@ -463,7 +463,7 @@ Tests live at two levels:
 | Unit (renderer components) | `widget/src/renderer/__tests__/` | Jest + React Testing Library | Streaming UI, retry flows, onboarding, settings, sidebar |
 | E2E (full application) | `widget/src/renderer/e2e/` | Playwright | Electron launch, onboarding, persistence, streaming, permissions |
 
-Each Playwright run uses an isolated temp profile via `SADIE_E2E_USER_DATA_DIR` so tests do not share conversation or settings state.
+Each Playwright run uses an isolated temp profile via `HOMEBOT_E2E_USER_DATA_DIR` so tests do not share conversation or settings state.
 
 Run all tests:
 

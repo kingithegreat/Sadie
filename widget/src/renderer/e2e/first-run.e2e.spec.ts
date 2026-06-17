@@ -6,7 +6,7 @@ import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
 function makeTempProfile() {
-  const base = path.join(os.tmpdir(), `sadie-e2e-${Date.now()}`);
+  const base = path.join(os.tmpdir(), `homebot-e2e-${Date.now()}`);
   if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
   fs.mkdirSync(base, { recursive: true });
   return base;
@@ -27,7 +27,7 @@ async function completeFirstRunWizard(page: any) {
 test.describe('First-run onboarding and config persistence', () => {
   test('fresh profile shows first-run modal and persists after finish', async () => {
     const tmp = makeTempProfile();
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     // FirstRun wizard should be visible
@@ -67,7 +67,7 @@ test.describe('First-run onboarding and config persistence', () => {
     };
     fs.writeFileSync(confPath, JSON.stringify(initial, null, 2), 'utf-8');
 
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
     // FirstRun modal should not be visible
     await expect(page.getByText('Welcome to HomeBot')).toHaveCount(0);
@@ -83,7 +83,7 @@ test.describe('First-run onboarding and config persistence', () => {
 
   test('telemetry is required and consent is recorded on finish', async () => {
     const tmp = makeTempProfile();
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     await completeFirstRunWizard(page);
@@ -133,7 +133,7 @@ test.describe('First-run onboarding and config persistence', () => {
 
   test('skip setup still marks firstRun as false', async () => {
     const tmp = makeTempProfile();
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });

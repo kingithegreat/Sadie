@@ -40,7 +40,7 @@ jest.mock('pdfkit', () => {
 import { editFileHandler, editFileDef, readFileHandler, readFileDef } from '../tools/filesystem';
 
 const TMP = os.tmpdir();
-const TEST_DIR = path.join(TMP, `sadie-edit-test-${Date.now()}`);
+const TEST_DIR = path.join(TMP, `homebot-edit-test-${Date.now()}`);
 
 beforeAll(() => {
   fs.mkdirSync(TEST_DIR, { recursive: true });

@@ -1,5 +1,5 @@
 /**
- * SADIE Web Tools
+ * HomeBot Web Tools
  * 
  * Provides web search and URL fetching capabilities.
  * Uses DuckDuckGo for search (no API key required).
@@ -364,9 +364,9 @@ async function searchGoogle(query: string, maxResults: number): Promise<Array<{ 
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://www.google.com/search?q=${encodedQuery}&num=${maxResults + 5}&hl=en`;
   
-  console.log('[SADIE Web] Searching Google for:', query);
+  console.log('[HomeBot Web] Searching Google for:', query);
   const html = await httpGet(searchUrl);
-  console.log('[SADIE Web] Google response length:', html.length);
+  console.log('[HomeBot Web] Google response length:', html.length);
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   
@@ -419,9 +419,9 @@ async function searchDuckDuckGo(query: string, maxResults: number): Promise<Arra
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
   
-  console.log('[SADIE Web] Searching DuckDuckGo for:', query);
+  console.log('[HomeBot Web] Searching DuckDuckGo for:', query);
   const html = await httpGet(searchUrl);
-  console.log('[SADIE Web] DDG response length:', html.length);
+  console.log('[HomeBot Web] DDG response length:', html.length);
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
@@ -494,12 +494,12 @@ async function searchDDGLite(query: string, maxResults: number): Promise<Array<{
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}`;
 
-  console.log('[SADIE Web] Searching DDG Lite for:', query);
+  console.log('[HomeBot Web] Searching DDG Lite for:', query);
   const html = await httpGet(searchUrl, {
     'Accept': 'text/html',
     'Accept-Language': 'en-US,en;q=0.5',
   });
-  console.log('[SADIE Web] DDG Lite response length:', html.length);
+  console.log('[HomeBot Web] DDG Lite response length:', html.length);
 
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
@@ -540,9 +540,9 @@ async function searchBrave(query: string, maxResults: number): Promise<Array<{ t
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://search.brave.com/search?q=${encodedQuery}`;
   
-  console.log('[SADIE Web] Searching Brave for:', query);
+  console.log('[HomeBot Web] Searching Brave for:', query);
   const html = await httpGet(searchUrl);
-  console.log('[SADIE Web] Brave response length:', html.length);
+  console.log('[HomeBot Web] Brave response length:', html.length);
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   
@@ -591,7 +591,7 @@ async function searchDDGInstant(query: string): Promise<{
   const encodedQuery = encodeURIComponent(query);
   const apiUrl = `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`;
 
-  console.log('[SADIE Web] Querying DDG Instant Answer API for:', query);
+  console.log('[HomeBot Web] Querying DDG Instant Answer API for:', query);
   const raw = await httpGet(apiUrl, { 'Accept': 'application/json' });
   const json = JSON.parse(raw);
 
@@ -639,7 +639,7 @@ async function searchDDGInstant(query: string): Promise<{
   }
 
   if (results.length === 0 && !answer) return null;
-  console.log(`[SADIE Web] DDG Instant returned ${results.length} results, answer=${!!answer}`);
+  console.log(`[HomeBot Web] DDG Instant returned ${results.length} results, answer=${!!answer}`);
   return { results, sources, answer };
 }
 
@@ -676,7 +676,7 @@ async function searchTavily(query: string, maxResults: number): Promise<{
     search_depth: 'basic'
   });
 
-  console.log('[SADIE Web] Searching Tavily for:', query);
+  console.log('[HomeBot Web] Searching Tavily for:', query);
 
   const data = await new Promise<string>((resolve, reject) => {
     const req = https.request('https://api.tavily.com/search', {
@@ -711,7 +711,7 @@ async function searchTavily(query: string, maxResults: number): Promise<{
   });
 
   const json: TavilyResponse = JSON.parse(data);
-  console.log(`[SADIE Web] Tavily returned ${json.results?.length || 0} results in ${json.response_time}s`);
+  console.log(`[HomeBot Web] Tavily returned ${json.results?.length || 0} results in ${json.response_time}s`);
 
   const results = (json.results || []).map(r => ({
     title: r.title,
@@ -939,18 +939,18 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     for (const provider of SEARCH_PROVIDERS) {
       if (!provider.available()) continue;
       try {
-        console.log(`[SADIE Web] Trying ${provider.name}...`);
+        console.log(`[HomeBot Web] Trying ${provider.name}...`);
         const providerResult = await provider.search(query, maxResults, fetchResultCount);
         if (providerResult && providerResult.results.length > 0) {
           results = providerResult.results;
           tavilySources = providerResult.sources;
           if (providerResult.answer) tavilyAnswer = providerResult.answer;
           searchProvider = provider.name;
-          console.log(`[SADIE Web] ${provider.name} returned ${results.length} results`);
+          console.log(`[HomeBot Web] ${provider.name} returned ${results.length} results`);
           break;
         }
       } catch (err: any) {
-        console.log(`[SADIE Web] ${provider.name} failed: ${err.message}`);
+        console.log(`[HomeBot Web] ${provider.name} failed: ${err.message}`);
       }
     }
     
@@ -973,11 +973,11 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     if (tavilySources.length > 0) {
       // Tavily already provides clean pre-extracted text — use all of them directly
       sources = tavilySources;
-      console.log(`[SADIE Web] Using ${sources.length} Tavily pre-cleaned source(s)`);
+      console.log(`[HomeBot Web] Using ${sources.length} Tavily pre-cleaned source(s)`);
     } else if (fetchTop && results.length > 0) {
       // Fallback: fetch top N URLs in parallel
       const toFetch = results.slice(0, fetchResultCount);
-      console.log(`[SADIE Web] Parallel-fetching ${toFetch.length} result(s)...`);
+      console.log(`[HomeBot Web] Parallel-fetching ${toFetch.length} result(s)...`);
       const fetchResults = await Promise.allSettled(
         toFetch.map(async (r) => {
           const html = await httpGet(r.url);
@@ -993,10 +993,10 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
         if (res.status === 'fulfilled') {
           sources.push(res.value);
         } else {
-          console.log(`[SADIE Web] Fetch failed: ${(res as PromiseRejectedResult).reason?.message}`);
+          console.log(`[HomeBot Web] Fetch failed: ${(res as PromiseRejectedResult).reason?.message}`);
         }
       }
-      console.log(`[SADIE Web] Got content from ${sources.length}/${toFetch.length} source(s)`);
+      console.log(`[HomeBot Web] Got content from ${sources.length}/${toFetch.length} source(s)`);
     }
 
     // When page fetches all failed but we have snippets from the search results,
@@ -1008,7 +1008,7 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
         .map(r => ({ url: r.url, title: r.title, content: r.snippet }));
       if (snippetSources.length > 0) {
         sources = snippetSources;
-        console.log(`[SADIE Web] Using ${snippetSources.length} snippet(s) as fallback sources`);
+        console.log(`[HomeBot Web] Using ${snippetSources.length} snippet(s) as fallback sources`);
       }
     }
 
@@ -1041,7 +1041,7 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     setCache(cacheKey, resultPayload);
     return { success: true, result: resultPayload, fromCache: false } as any;
   } catch (err: any) {
-    console.error('[SADIE Web] Search error:', err.message);
+    console.error('[HomeBot Web] Search error:', err.message);
     return { success: false, error: `Search failed: ${err.message}` };
   }
 };
@@ -1330,7 +1330,7 @@ async function tryStableHorde(prompt: string, width: number, height: number): Pr
     const submitRes = await httpPost(
       'https://stablehorde.net/api/v2/generate/async',
       body,
-      { apikey: apiKey, 'Client-Agent': 'SADIE:1.0:local' },
+      { apikey: apiKey, 'Client-Agent': 'HomeBot:1.0:local' },
       30000
     );
 
@@ -1394,7 +1394,7 @@ async function tryComfyUI(prompt: string, width: number, height: number, steps: 
       "6": { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ["4", 1] } },
       "7": { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ["4", 1] } },
       "8": { class_type: 'VAEDecode', inputs: { samples: ["3", 0], vae: ["4", 2] } },
-      "9": { class_type: 'SaveImage', inputs: { filename_prefix: 'sadie', images: ["8", 0] } }
+      "9": { class_type: 'SaveImage', inputs: { filename_prefix: 'homebot', images: ["8", 0] } }
     };
     const promptRes = await httpPost('http://127.0.0.1:8188/prompt', JSON.stringify({ prompt: workflow }), {}, 30000);
     if (!promptRes?.prompt_id) return null;

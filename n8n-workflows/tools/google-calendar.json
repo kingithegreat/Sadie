@@ -1,5 +1,5 @@
 {
-  "name": "SADIE Google Calendar Tool",
+  "name": "HomeBot Google Calendar Tool",
   "nodes": [
     {
       "id": "webhook-trigger",
@@ -9,11 +9,11 @@
       "position": [240, 300],
       "parameters": {
         "httpMethod": "POST",
-        "path": "sadie/calendar",
+        "path": "homebot/calendar",
         "responseMode": "lastNode",
         "options": {}
       },
-      "webhookId": "sadie-calendar-v1"
+      "webhookId": "homebot-calendar-v1"
     },
     {
       "id": "parse-action",
@@ -139,7 +139,7 @@
     },
     {
       "id": "respond",
-      "name": "Respond to SADIE",
+      "name": "Respond to HomeBot",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [1440, 300],
@@ -167,21 +167,21 @@
       "main": [[{ "node": "Format Events", "type": "main", "index": 0 }]]
     },
     "Format Events": {
-      "main": [[{ "node": "Respond to SADIE", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Respond to HomeBot", "type": "main", "index": 0 }]]
     },
     "Add Google Calendar Event": {
       "main": [[{ "node": "Format Add Response", "type": "main", "index": 0 }]]
     },
     "Format Add Response": {
-      "main": [[{ "node": "Respond to SADIE", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Respond to HomeBot", "type": "main", "index": 0 }]]
     }
   },
   "active": false,
-  "versionId": "sadie-gcal-v1",
+  "versionId": "homebot-gcal-v1",
   "settings": {
     "executionOrder": "v1"
   },
   "meta": {
-    "instanceId": "sadie-local"
+    "instanceId": "homebot-local"
   }
 }

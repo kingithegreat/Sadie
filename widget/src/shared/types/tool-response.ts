@@ -1,6 +1,6 @@
-// SADIE Tool Response Envelope Types
+// HomeBot Tool Response Envelope Types
 
-export interface SadieToolResponse<T = unknown> {
+export interface HomeBotToolResponse<T = unknown> {
   success: boolean;
   tool: string;
   requestId: string;
@@ -33,6 +33,6 @@ export interface SystemInfoResult {
 }
 
 // Concrete response types for each tool
-export type SadieWebSearchResponse = SadieToolResponse<WebSearchResult[]>;
-export type SadieFileManagerResponse = SadieToolResponse<FileManagerResult>;
-export type SadieSystemInfoResponse = SadieToolResponse<SystemInfoResult>;
+export type HomeBotWebSearchResponse = HomeBotToolResponse<WebSearchResult[]>;
+export type HomeBotFileManagerResponse = HomeBotToolResponse<FileManagerResult>;
+export type HomeBotSystemInfoResponse = HomeBotToolResponse<SystemInfoResult>;

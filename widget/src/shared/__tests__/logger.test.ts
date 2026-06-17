@@ -62,24 +62,24 @@ describe('shared logger — info / warn / error always write', () => {
     jest.restoreAllMocks();
   });
 
-  test('info calls console.info with [SADIE] prefix', () => {
+  test('info calls console.info with [HomeBot] prefix', () => {
     logger.info('hello info');
-    expect(infoSpy).toHaveBeenCalledWith('[SADIE]', 'hello info');
+    expect(infoSpy).toHaveBeenCalledWith('[HomeBot]', 'hello info');
   });
 
   test('info passes multiple arguments', () => {
     logger.info('a', 'b', 'c');
-    expect(infoSpy).toHaveBeenCalledWith('[SADIE]', 'a', 'b', 'c');
+    expect(infoSpy).toHaveBeenCalledWith('[HomeBot]', 'a', 'b', 'c');
   });
 
-  test('warn calls console.warn with [SADIE] prefix', () => {
+  test('warn calls console.warn with [HomeBot] prefix', () => {
     logger.warn('something wrong');
-    expect(warnSpy).toHaveBeenCalledWith('[SADIE]', 'something wrong');
+    expect(warnSpy).toHaveBeenCalledWith('[HomeBot]', 'something wrong');
   });
 
-  test('error calls console.error with [SADIE] prefix', () => {
+  test('error calls console.error with [HomeBot] prefix', () => {
     logger.error('fatal', new Error('boom'));
-    expect(errorSpy).toHaveBeenCalledWith('[SADIE]', 'fatal', expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith('[HomeBot]', 'fatal', expect.any(Error));
   });
 });
 
@@ -92,30 +92,30 @@ describe('shared logger — debug writes when isDebug is true', () => {
     debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
     // Ensure we are in a non-production env for isDebug = true
     process.env.NODE_ENV = 'test';
-    delete process.env.SADIE_DEBUG;
+    delete process.env.HOMEBOT_DEBUG;
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  test('debug calls console.debug with [SADIE] prefix when NODE_ENV is test', () => {
+  test('debug calls console.debug with [HomeBot] prefix when NODE_ENV is test', () => {
     // Logger was loaded with NODE_ENV=test so isDebug=true
     const logger = jest.requireActual('../logger') as typeof import('../logger');
     logger.debug('test debug message');
-    expect(debugSpy).toHaveBeenCalledWith('[SADIE]', 'test debug message');
+    expect(debugSpy).toHaveBeenCalledWith('[HomeBot]', 'test debug message');
   });
 });
 
 // ── debug is suppressed in production mode ───────────────────────────────────
 
-describe('shared logger — debug suppressed when SADIE_DEBUG=false and NODE_ENV=production', () => {
+describe('shared logger — debug suppressed when HOMEBOT_DEBUG=false and NODE_ENV=production', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.resetModules();
     // restore env
     process.env.NODE_ENV = 'test';
-    delete process.env.SADIE_DEBUG;
+    delete process.env.HOMEBOT_DEBUG;
   });
 
   test('debug does not call console.debug when isDebug is false', () => {
@@ -124,7 +124,7 @@ describe('shared logger — debug suppressed when SADIE_DEBUG=false and NODE_ENV
     // Load fresh module instance with production env so isDebug=false
     jest.isolateModules(() => {
       process.env.NODE_ENV = 'production';
-      delete process.env.SADIE_DEBUG;
+      delete process.env.HOMEBOT_DEBUG;
       logger = require('../logger');
     });
 
@@ -134,18 +134,18 @@ describe('shared logger — debug suppressed when SADIE_DEBUG=false and NODE_ENV
     spy.mockRestore();
   });
 
-  test('debug calls console.debug when SADIE_DEBUG=true even in production', () => {
+  test('debug calls console.debug when HOMEBOT_DEBUG=true even in production', () => {
     let logger: typeof import('../logger') | undefined;
 
     jest.isolateModules(() => {
       process.env.NODE_ENV = 'production';
-      process.env.SADIE_DEBUG = 'true';
+      process.env.HOMEBOT_DEBUG = 'true';
       logger = require('../logger');
     });
 
     const spy = jest.spyOn(console, 'debug').mockImplementation(() => {});
     logger!.debug('explicit debug');
-    expect(spy).toHaveBeenCalledWith('[SADIE]', 'explicit debug');
+    expect(spy).toHaveBeenCalledWith('[HomeBot]', 'explicit debug');
     spy.mockRestore();
   });
 });

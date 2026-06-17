@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-    SADIE Preflight Setup & Health Check
+    HomeBot Preflight Setup & Health Check
 
 .DESCRIPTION
     Verifies all prerequisites, pulls required Ollama models, creates missing
     config files, and prints a summary of what is ready and what needs action.
 
-    Run once after cloning or on a fresh machine before starting SADIE for the
+    Run once after cloning or on a fresh machine before starting HomeBot for the
     first time.  Re-running this script is idempotent — it will not overwrite
     any files that already exist and contain valid data.
 
 .EXAMPLE
-    .\Setup-SADIE.ps1
-    .\Setup-SADIE.ps1 -SkipModelPull
-    .\Setup-SADIE.ps1 -Base "D:\projects\sadie"
+    .\Setup-HomeBot.ps1
+    .\Setup-HomeBot.ps1 -SkipModelPull
+    .\Setup-HomeBot.ps1 -Base "D:\projects\homebot"
 #>
 [CmdletBinding()]
 param(
@@ -255,12 +255,12 @@ if (Test-Path $workflowDir) {
 
 Write-Host ""
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-Write-Host "  SADIE Setup Summary" -ForegroundColor Cyan
+Write-Host "  HomeBot Setup Summary" -ForegroundColor Cyan
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
 
 if ($Script:issues.Count -eq 0) {
     Write-Host ""
-    Write-Host "  All checks passed! SADIE is ready to start." -ForegroundColor Green
+    Write-Host "  All checks passed! HomeBot is ready to start." -ForegroundColor Green
     Write-Host ""
     Write-Host "  Next steps:" -ForegroundColor Cyan
     Write-Host "    1. Start Docker, then run: docker compose up -d  (for n8n)" -ForegroundColor Gray
@@ -269,7 +269,7 @@ if ($Script:issues.Count -eq 0) {
     Write-Host "    4. Or build:     cd widget  &&  npm run build" -ForegroundColor Gray
 } else {
     Write-Host ""
-    Write-Host "  $($Script:issues.Count) issue(s) need attention before SADIE will run correctly:" -ForegroundColor Yellow
+    Write-Host "  $($Script:issues.Count) issue(s) need attention before HomeBot will run correctly:" -ForegroundColor Yellow
     foreach ($issue in $Script:issues) {
         Write-Host "    • $issue" -ForegroundColor Red
     }

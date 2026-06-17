@@ -61,7 +61,7 @@ describe('NBA intent guard — no false positives on pasted context', () => {
   });
 
   test('long message with NBA scores + "give me the links to these songs" does NOT route to nba_query', async () => {
-    // Simulate a user pasting the previous SADIE response (which includes NBA game data)
+    // Simulate a user pasting the previous HomeBot response (which includes NBA game data)
     // along with a new question about songs at the end.
     const longMsg = [
       'Give me the YouTube links to these songs',

@@ -9,6 +9,8 @@ const config: Config.InitialOptions = {
   moduleNameMapper: {
     // Stub static asset imports (PNG, JPG, SVG, etc.) so Jest doesn't choke on binary files
     '\\.(png|jpg|jpeg|gif|svg|webp|ico)$': '<rootDir>/src/__mocks__/fileMock.ts',
+    // Stub CSS/style imports
+    '\\.(css|less|scss|sass)$': '<rootDir>/src/__mocks__/styleMock.ts',
   },
   setupFilesAfterEnv: ['<rootDir>/src/renderer/setupTests.ts'],
   transform: {

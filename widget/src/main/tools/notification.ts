@@ -1,5 +1,5 @@
 /**
- * SADIE Notification Tool
+ * HomeBot Notification Tool
  *
  * Shows Windows toast notifications via Electron's Notification API.
  * Falls back to a PowerShell BurntToast / msg.exe call if not available.

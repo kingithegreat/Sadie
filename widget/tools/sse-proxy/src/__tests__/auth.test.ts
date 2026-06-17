@@ -6,7 +6,7 @@ afterAll(async () => { try { await require('../index').gracefulShutdown(); } cat
 
 describe('Auth tests', () => {
   test('Missing body returns 400', async () => {
-    const res = await request(app).post('/stream').set('x-sadie-key', 'test').send({});
+    const res = await request(app).post('/stream').set('x-homebot-key', 'test').send({});
     expect(res.status).toBe(400);
   });
 
@@ -17,7 +17,7 @@ describe('Auth tests', () => {
     expect(res.status).not.toBe(401);
   });
   test('Authorized request with key returns 200 or stream', async () => {
-    const res = await request(app).post('/stream').set('x-sadie-key', 'test').send({ provider: 'openai', model: 'gpt-4o', prompt: 'Hi' });
+    const res = await request(app).post('/stream').set('x-homebot-key', 'test').send({ provider: 'openai', model: 'gpt-4o', prompt: 'Hi' });
     expect([200, 500, 400]).toContain(res.status); // may be proxy downstream errors if not configured; at least not unauthorized
   });
 });

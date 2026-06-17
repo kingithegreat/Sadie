@@ -28,12 +28,12 @@ describe('env constants — default Jest context', () => {
     expect(env.isDevelopment).toBe(false);
   });
 
-  test('isE2E is false when SADIE_E2E is not set at module load', () => {
-    // SADIE_E2E env is cleared at test startup ($env:SADIE_E2E='')
+  test('isE2E is false when HOMEBOT_E2E is not set at module load', () => {
+    // HOMEBOT_E2E env is cleared at test startup ($env:HOMEBOT_E2E='')
     expect(env.isE2E).toBe(false);
   });
 
-  test('isDemoMode is false when no --demo arg and SADIE_DEMO_MODE not set', () => {
+  test('isDemoMode is false when no --demo arg and HOMEBOT_DEMO_MODE not set', () => {
     expect(env.isDemoMode).toBe(false);
   });
 
@@ -57,17 +57,17 @@ describe('env constants — default Jest context', () => {
 
 describe('getRuntimeMode', () => {
   afterEach(() => {
-    delete process.env.SADIE_BETA;
-    delete process.env.SADIE_DEMO_MODE;
+    delete process.env.HOMEBOT_BETA;
+    delete process.env.HOMEBOT_DEMO_MODE;
   });
 
   test('returns "prod" when no demo or beta flags are active', () => {
-    delete process.env.SADIE_BETA;
+    delete process.env.HOMEBOT_BETA;
     expect(env.getRuntimeMode()).toBe('prod');
   });
 
-  test('returns "beta" when SADIE_BETA=1', () => {
-    process.env.SADIE_BETA = '1';
+  test('returns "beta" when HOMEBOT_BETA=1', () => {
+    process.env.HOMEBOT_BETA = '1';
     expect(env.getRuntimeMode()).toBe('beta');
   });
 
@@ -91,14 +91,14 @@ describe('getRuntimeMode', () => {
     expect(isolatedEnv.getRuntimeMode()).toBe('demo');
   });
 
-  test('returns "demo" when SADIE_DEMO_MODE=1 at module load (isolateModules)', () => {
+  test('returns "demo" when HOMEBOT_DEMO_MODE=1 at module load (isolateModules)', () => {
     let isolatedEnv: any;
     jest.isolateModules(() => {
-      process.env.SADIE_DEMO_MODE = '1';
+      process.env.HOMEBOT_DEMO_MODE = '1';
       jest.doMock('electron', () => ({ app: { isPackaged: false } }));
       isolatedEnv = require('../env');
     });
-    delete process.env.SADIE_DEMO_MODE;
+    delete process.env.HOMEBOT_DEMO_MODE;
     expect(isolatedEnv.isDemoMode).toBe(true);
     expect(isolatedEnv.getRuntimeMode()).toBe('demo');
   });
@@ -108,29 +108,29 @@ describe('getRuntimeMode', () => {
 
 describe('isE2E (isolateModules)', () => {
   afterEach(() => {
-    delete process.env.SADIE_E2E;
+    delete process.env.HOMEBOT_E2E;
     jest.resetModules();
   });
 
-  test('isE2E is true when SADIE_E2E="1" at module load', () => {
+  test('isE2E is true when HOMEBOT_E2E="1" at module load', () => {
     let isolatedEnv: any;
     jest.isolateModules(() => {
-      process.env.SADIE_E2E = '1';
+      process.env.HOMEBOT_E2E = '1';
       jest.doMock('electron', () => ({ app: { isPackaged: false } }));
       isolatedEnv = require('../env');
     });
-    delete process.env.SADIE_E2E;
+    delete process.env.HOMEBOT_E2E;
     expect(isolatedEnv.isE2E).toBe(true);
   });
 
-  test('isE2E is true when SADIE_E2E="true" at module load', () => {
+  test('isE2E is true when HOMEBOT_E2E="true" at module load', () => {
     let isolatedEnv: any;
     jest.isolateModules(() => {
-      process.env.SADIE_E2E = 'true';
+      process.env.HOMEBOT_E2E = 'true';
       jest.doMock('electron', () => ({ app: { isPackaged: false } }));
       isolatedEnv = require('../env');
     });
-    delete process.env.SADIE_E2E;
+    delete process.env.HOMEBOT_E2E;
     expect(isolatedEnv.isE2E).toBe(true);
   });
 });
@@ -171,18 +171,18 @@ describe('isProduction / isDevelopment (isolateModules)', () => {
 
 describe('sanitizeEnvForPackaged', () => {
   test('is a no-op when isReleaseBuild is false (default)', () => {
-    process.env.SADIE_E2E = '1';
+    process.env.HOMEBOT_E2E = '1';
     env.sanitizeEnvForPackaged();
-    // Should NOT have removed SADIE_E2E since we are not in a release build
-    expect(process.env.SADIE_E2E).toBe('1');
-    delete process.env.SADIE_E2E;
+    // Should NOT have removed HOMEBOT_E2E since we are not in a release build
+    expect(process.env.HOMEBOT_E2E).toBe('1');
+    delete process.env.HOMEBOT_E2E;
   });
 
-  test('removes SADIE_E2E, SADIE_DIRECT_OLLAMA, SADIE_DEMO_MODE in release build (isolateModules)', () => {
+  test('removes HOMEBOT_E2E, HOMEBOT_DIRECT_OLLAMA, HOMEBOT_DEMO_MODE in release build (isolateModules)', () => {
     let isolatedEnv: any;
     jest.isolateModules(() => {
       // Simulate packaged + no E2E → isReleaseBuild=true
-      delete process.env.SADIE_E2E;
+      delete process.env.HOMEBOT_E2E;
       jest.doMock('electron', () => ({ app: { isPackaged: true } }));
       isolatedEnv = require('../env');
     });
@@ -196,12 +196,12 @@ describe('sanitizeEnvForPackaged', () => {
       return;
     }
 
-    process.env.SADIE_E2E = '1';
-    process.env.SADIE_DIRECT_OLLAMA = '1';
-    process.env.SADIE_DEMO_MODE = '1';
+    process.env.HOMEBOT_E2E = '1';
+    process.env.HOMEBOT_DIRECT_OLLAMA = '1';
+    process.env.HOMEBOT_DEMO_MODE = '1';
     isolatedEnv.sanitizeEnvForPackaged();
-    expect(process.env.SADIE_E2E).toBeUndefined();
-    expect(process.env.SADIE_DIRECT_OLLAMA).toBeUndefined();
-    expect(process.env.SADIE_DEMO_MODE).toBeUndefined();
+    expect(process.env.HOMEBOT_E2E).toBeUndefined();
+    expect(process.env.HOMEBOT_DIRECT_OLLAMA).toBeUndefined();
+    expect(process.env.HOMEBOT_DEMO_MODE).toBeUndefined();
   });
 });

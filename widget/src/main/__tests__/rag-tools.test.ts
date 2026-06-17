@@ -43,7 +43,7 @@ const origHome  = process.env.HOME;
 const origUName = process.env.USERPROFILE;
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sadie-rag-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-rag-'));
   process.env.HOME        = tmpDir;
   process.env.USERPROFILE = tmpDir;
 });

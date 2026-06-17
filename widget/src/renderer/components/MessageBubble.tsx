@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import type { ChatMessage } from "../types";
-import sadieChatAvatarUrl from '../assets/HomeBotChatAvatar.png';
+import homebotChatAvatarUrl from '../assets/HomeBotChatAvatar.png';
 import userChatAvatarUrl from '../assets/UserChatAvatar.png';
 
 // highlight.js — core + common languages (tree-shaken)
@@ -364,8 +364,8 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
   }
 
   // Split content into segments — plain text parts vs inline images
-  const IMAGE_TOKEN = '__SADIE_IMAGE__:';
-  const IMAGE_FILE_TOKEN = '__SADIE_IMAGE_FILE__:';
+  const IMAGE_TOKEN = '__HOMEBOT_IMAGE__:';
+  const IMAGE_FILE_TOKEN = '__HOMEBOT_IMAGE_FILE__:';
   const detectImageMime = (b64: string): string => {
     if (b64.startsWith('/9j/')) return 'image/jpeg';
     if (b64.startsWith('UklGR')) return 'image/webp';
@@ -375,7 +375,7 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
 
   const hasImage = !isUser && (content.includes(IMAGE_TOKEN) || content.includes(IMAGE_FILE_TOKEN));
   if (hasImage) {
-    const normalized = content.replace(/__SADIE_IMAGE_FILE__:/g, IMAGE_TOKEN);
+    const normalized = content.replace(/__HOMEBOT_IMAGE_FILE__:/g, IMAGE_TOKEN);
     const segments = normalized.split(IMAGE_TOKEN);
     return (
       <div className="message-text markdown-body">
@@ -733,14 +733,14 @@ export function MessageBubble({
           </div>
 
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
+            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={homebotChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
           </div>
         </>
       ) : (
         <>
           {/* ASSISTANT: avatar first, content second */}
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={sadieChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
+            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={homebotChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
           </div>
 
           <div className="message-content">

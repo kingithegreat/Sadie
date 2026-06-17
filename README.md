@@ -1,4 +1,4 @@
-﻿# SADIE — Structured AI Desktop Intelligence Engine
+﻿# HomeBot — Your Private Desktop AI Assistant
 
 > A secure, offline-first desktop AI assistant built with Electron, React, and TypeScript. Runs entirely on your machine with optional cloud LLM support. Your data stays local unless you explicitly enable a cloud provider.
 
@@ -12,9 +12,9 @@
 
 ---
 
-## What is SADIE?
+## What is HomeBot?
 
-SADIE is a **privacy-first desktop AI assistant** that can search the web, read and write files, inspect your system, understand images, generate images, automate browser tasks, index documents for semantic search, track NBA scores, chain multi-step tool workflows autonomously, and greet you each morning with a personalized briefing — all without sending your data to a third party.
+HomeBot is a **privacy-first desktop AI assistant** that can search the web, read and write files, inspect your system, understand images, generate images, automate browser tasks, index documents for semantic search, track NBA scores, chain multi-step tool workflows autonomously, and greet you each morning with a personalized briefing — all without sending your data to a third party.
 
 It combines:
 
@@ -23,7 +23,7 @@ It combines:
 - **85+ TypeScript tool handlers** executed locally with structured JSON tool-calling
 - **Agentic tool loop** — the LLM autonomously chains tools for multi-step requests ("search for X, save it, then email me")
 - **Optional cloud LLM routing** to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or any OpenAI-compatible endpoint
-- **n8n integration** — deploy n8n workflows directly from SADIE's Automation Center (no n8n UI required); automations run via webhook triggers with Ollama-powered AI
+- **n8n integration** — deploy n8n workflows directly from HomeBot's Automation Center (no n8n UI required); automations run via webhook triggers with Ollama-powered AI
 
 ---
 
@@ -60,10 +60,10 @@ It combines:
 | Feature | Description |
 |---|---|
 | **Themes** | Light, dark, and system-auto theme with futuristic UI accents, glass morphism, neon glows, and 15+ CSS keyframe animations |
-| **Global Hotkey** | `Ctrl+Shift+Space` toggles SADIE from any application |
+| **Global Hotkey** | `Ctrl+Shift+Space` toggles HomeBot from any application |
 | **Auto-Update** | Background updates via electron-updater with IPC progress events |
 | **Voice Input** | Offline speech recognition via Windows SAPI |
-| **Embedded Web Services** | Access ChatGPT, Claude, and Gemini directly inside SADIE via sandboxed browser panels |
+| **Embedded Web Services** | Access ChatGPT, Claude, and Gemini directly inside HomeBot via sandboxed browser panels |
 | **Conversation Management** | Sidebar with timestamps, message counts, pinning, archiving, tags, reactions, and full-text search |
 | **Markdown Export** | Export any conversation to a clean `.md` file |
 | **Keyboard Shortcuts** | Configurable shortcuts for common actions |
@@ -77,14 +77,14 @@ It combines:
 |---|---|
 | **SSRF Protection** | URL validation blocks loopback, private IPs, and DNS rebinding |
 | **IPC Hardening** | Context isolation, preload bridge, path-traversal prevention |
-| **Webhook Auth** | 256-bit shared secret (`X-SADIE-Auth`) for all n8n communication |
+| **Webhook Auth** | 256-bit shared secret (`X-HOMEBOT-Auth`) for all n8n communication |
 | **Tool Recursion Cap** | `MAX_TOOL_ROUNDS = 10` prevents infinite tool-call loops |
 | **PID Injection Guard** | Positive integer validation before `Stop-Process` |
 | **Toast XML Sanitisation** | Entity-encoding prevents injection in Windows notifications |
 | **Git Message Sanitisation** | Character whitelist prevents shell metacharacter injection |
 | **Environment Gating** | Test code, debug logs, and dev features are compile-time gated |
 
-All tools execute locally as TypeScript handlers. SADIE calls whichever tool the LLM selects, receives structured JSON, and keeps everything on your machine.
+All tools execute locally as TypeScript handlers. HomeBot calls whichever tool the LLM selects, receives structured JSON, and keeps everything on your machine.
 
 ---
 
@@ -144,7 +144,7 @@ All tools execute locally as TypeScript handlers. SADIE calls whichever tool the
 
 ### Option A — One-Click Installer (Recommended)
 
-Download `SADIE-Setup.exe` from the latest release (or build it yourself with `cd widget && npm run dist`). Double-click the installer — SADIE installs to your user profile and launches automatically. No admin rights required.
+Download `HomeBot-Setup.exe` from the latest release (or build it yourself with `cd widget && npm run dist`). Double-click the installer — HomeBot installs to your user profile and launches automatically. No admin rights required.
 
 On first launch, the setup wizard will:
 
@@ -156,13 +156,13 @@ On first launch, the setup wizard will:
 ### Option B — Developer Setup
 
 ```bash
-git clone https://github.com/kingithegreat/Sadie.git
-cd Sadie/widget
+git clone https://github.com/kingithegreat/HomeBot.git
+cd HomeBot/widget
 npm install
 npm run dev
 ```
 
-`npm run dev` uses the repo's Electron wrapper, which clears `ELECTRON_RUN_AS_NODE` before launching Electron so the app starts correctly from VS Code and other integrated terminals. SADIE will launch with hot-reload enabled.
+`npm run dev` uses the repo's Electron wrapper, which clears `ELECTRON_RUN_AS_NODE` before launching Electron so the app starts correctly from VS Code and other integrated terminals. HomeBot will launch with hot-reload enabled.
 
 The first-run wizard handles Ollama and model setup — you don't need to install anything else manually.
 
@@ -172,16 +172,16 @@ The first-run wizard handles Ollama and model setup — you don't need to instal
 docker compose up -d
 ```
 
-n8n will be available at `http://localhost:5678`. SADIE can deploy workflows to n8n automatically from the Automation Center — check "Deploy to n8n" when creating an automation. You can also import workflows manually from `n8n-workflows/` via the n8n UI. SADIE's core AI features work without n8n.
+n8n will be available at `http://localhost:5678`. HomeBot can deploy workflows to n8n automatically from the Automation Center — check "Deploy to n8n" when creating an automation. You can also import workflows manually from `n8n-workflows/` via the n8n UI. HomeBot's core AI features work without n8n.
 
-Press `Ctrl+Shift+Space` to toggle the SADIE window from any application.
+Press `Ctrl+Shift+Space` to toggle the HomeBot window from any application.
 
 ---
 
 ## Project Structure
 
 ```
-Sadie/
+HomeBot/
 ├── widget/                       # Electron + React desktop application
 │   ├── src/
 │   │   ├── main/                 # Main process (message-router, tools, IPC)
@@ -218,7 +218,7 @@ Sadie/
 
 ## Testing
 
-SADIE maintains a comprehensive Jest and Playwright coverage suite with 120 test suites.
+HomeBot maintains a comprehensive Jest and Playwright coverage suite with 120 test suites.
 
 ```bash
 cd widget
@@ -262,7 +262,7 @@ Detailed documentation is available in the `docs/` folder:
 
 ## Academic Context
 
-SADIE is developed as a capstone project at **Toi Ohomai Institute of Technology** (2026).
+HomeBot is developed as a capstone project at **Toi Ohomai Institute of Technology** (2026).
 
 | | |
 |---|---|
@@ -275,7 +275,7 @@ SADIE is developed as a capstone project at **Toi Ohomai Institute of Technology
 
 ## Roadmap
 
-SADIE's next roadmap is focused on becoming the strongest local-first AI desktop option for Windows users. That means setup, performance, reliability, privacy, and proof come before broad feature expansion.
+HomeBot's next roadmap is focused on becoming the strongest local-first AI desktop option for Windows users. That means setup, performance, reliability, privacy, and proof come before broad feature expansion.
 
 ### Next 30 Days
 

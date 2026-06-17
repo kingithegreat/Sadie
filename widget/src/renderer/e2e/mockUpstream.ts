@@ -6,19 +6,19 @@ export async function startMockUpstream(opts?: { chunkIntervalMs?: number; chunk
   const activeSessions: Map<string, { interval: NodeJS.Timer | null; res: http.ServerResponse }> = new Map();
 
   const server = http.createServer(async (req, res) => {
-    // Accept both GET /mock-sse and POST /webhook/sadie/chat/stream (n8n-style) so tests
+    // Accept both GET /mock-sse and POST /webhook/homebot/chat/stream (n8n-style) so tests
     // can run against either proxy or direct post paths.
     // Accept either the mock-sse path or the n8n-style POST path used by main
-    // (note: SADIE_WEBHOOK_PATH is /webhook/sadie/chat so main posts to /webhook/sadie/chat/stream)
+    // (note: HOMEBOT_WEBHOOK_PATH is /webhook/homebot/chat so main posts to /webhook/homebot/chat/stream)
     // Use a permissive matcher so tests can exercise different routing options
-    // Accept GET /mock-sse for direct SSE consumers and POST /webhook/sadie/chat/stream
-    // (also accept /webhook/sadie/stream for backward compatibility). Allow either
+    // Accept GET /mock-sse for direct SSE consumers and POST /webhook/homebot/chat/stream
+    // (also accept /webhook/homebot/stream for backward compatibility). Allow either
     // GET or POST for the streaming endpoints so Playwright tests can use either
     // a simple GET or a POST-based streaming URL.
     if (
       req.url === '/mock-sse' ||
-      (req.url === '/webhook/sadie/chat/stream' && (req.method === 'POST' || req.method === 'GET')) ||
-      (req.url === '/webhook/sadie/stream' && (req.method === 'POST' || req.method === 'GET'))
+      (req.url === '/webhook/homebot/chat/stream' && (req.method === 'POST' || req.method === 'GET')) ||
+      (req.url === '/webhook/homebot/stream' && (req.method === 'POST' || req.method === 'GET'))
     ) {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -69,7 +69,7 @@ export async function startMockUpstream(opts?: { chunkIntervalMs?: number; chunk
     // user-cancel it may POST to this path (only in tests) to instruct the mock
     // upstream to stop emitting for a specific streamId. This makes cancellation
     // deterministic in automated tests.
-    if (req.url === '/__sadie_e2e_cancel' && req.method === 'POST') {
+    if (req.url === '/__homebot_e2e_cancel' && req.method === 'POST') {
       try {
         let body = '';
         for await (const chunk of req) body += chunk.toString();
@@ -104,8 +104,8 @@ export async function startMockUpstream(opts?: { chunkIntervalMs?: number; chunk
     // but since we don't know which path the caller wants, provide both bases
     baseUrl: `http://127.0.0.1:${port}`,
     mockSseUrl: `http://127.0.0.1:${port}/mock-sse`,
-    n8nStreamUrl: `http://127.0.0.1:${port}/webhook/sadie/chat/stream`,
-    legacyN8nStreamUrl: `http://127.0.0.1:${port}/webhook/sadie/stream`,
+    n8nStreamUrl: `http://127.0.0.1:${port}/webhook/homebot/chat/stream`,
+    legacyN8nStreamUrl: `http://127.0.0.1:${port}/webhook/homebot/stream`,
     // Provide a generic openai-style endpoint alias used by the proxy and tests
     openaiEndpoint: `http://127.0.0.1:${port}/mock-sse`,
     close: () => new Promise<void>((r) => server.close(() => r())),

@@ -1,4 +1,6 @@
 {
+  "active": true,
+  "versionId": "1",
   "name": "HomeBot Web Research",
   "nodes": [
     {

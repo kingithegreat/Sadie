@@ -1,5 +1,5 @@
 /**
- * SADIE Voice Tools
+ * HomeBot Voice Tools
  *
  * Text-to-speech using Microsoft Edge Neural voices (free, no API key).
  * Falls back to Web Speech API if Edge TTS is unavailable.
@@ -20,7 +20,7 @@ const DEFAULT_VOICE = 'en-US-AvaNeural';
 const FALLBACK_VOICE = 'en-US-JennyNeural';
 
 // Temp directory for audio files
-const TTS_CACHE_DIR = path.join(os.tmpdir(), 'sadie-tts');
+const TTS_CACHE_DIR = path.join(os.tmpdir(), 'homebot-tts');
 
 // Singleton TTS instance (reused across calls for speed)
 let ttsInstance: MsEdgeTTS | null = null;
@@ -45,16 +45,16 @@ async function getTTS(voice?: string): Promise<MsEdgeTTS> {
       await inst.setMetadata(targetVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
       ttsInstance = inst;
       currentVoice = targetVoice;
-      console.log(`[SADIE Voice] Edge TTS initialized with ${targetVoice}`);
+      console.log(`[HomeBot Voice] Edge TTS initialized with ${targetVoice}`);
       try { logTelemetryEvent('tts_voice_init', { voice: targetVoice, outcome: 'success' }); } catch (_e) {}
     } catch (err: any) {
-      console.warn(`[SADIE Voice] Edge TTS voice ${targetVoice} failed:`, err?.message || err);
+      console.warn(`[HomeBot Voice] Edge TTS voice ${targetVoice} failed:`, err?.message || err);
       try { logTelemetryEvent('tts_voice_init', { voice: targetVoice, outcome: 'failed', error: err?.message || String(err) }); } catch (_e) {}
       if (targetVoice !== FALLBACK_VOICE) {
         await inst.setMetadata(FALLBACK_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
         ttsInstance = inst;
         currentVoice = FALLBACK_VOICE;
-        console.log(`[SADIE Voice] Edge TTS fell back to ${FALLBACK_VOICE}`);
+        console.log(`[HomeBot Voice] Edge TTS fell back to ${FALLBACK_VOICE}`);
         try { logTelemetryEvent('tts_voice_init', { voice: FALLBACK_VOICE, outcome: 'fallback_success' }); } catch (_e) {}
       } else {
         throw new Error('No Edge TTS voice available');
@@ -158,7 +158,7 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
 
     // Generate audio with Edge TTS
     const tts = await getTTS();
-    const audioFile = path.join(TTS_CACHE_DIR, `sadie-${Date.now()}.mp3`);
+    const audioFile = path.join(TTS_CACHE_DIR, `homebot-${Date.now()}.mp3`);
 
     // Build SSML rate/pitch prosody
     const rate = typeof args.rate === 'number' ? args.rate : 0;
@@ -180,17 +180,17 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
     const fileUrl = normalized.startsWith('/') ? `file://${normalized}` : `file:///${normalized}`;
     await mainWindow.webContents.executeJavaScript(`
       (function() {
-        // Stop any existing SADIE audio
-        if (window.__sadieAudio) {
-          window.__sadieAudio.pause();
-          window.__sadieAudio = null;
+        // Stop any existing HomeBot audio
+        if (window.__homebotAudio) {
+          window.__homebotAudio.pause();
+          window.__homebotAudio = null;
         }
         return new Promise((resolve) => {
           const audio = new Audio(${JSON.stringify(fileUrl)});
           audio.volume = ${volume};
-          window.__sadieAudio = audio;
-          audio.onended = () => { window.__sadieAudio = null; resolve({ success: true }); };
-          audio.onerror = (e) => { window.__sadieAudio = null; resolve({ success: false, error: 'Audio playback failed' }); };
+          window.__homebotAudio = audio;
+          audio.onended = () => { window.__homebotAudio = null; resolve({ success: true }); };
+          audio.onerror = (e) => { window.__homebotAudio = null; resolve({ success: false, error: 'Audio playback failed' }); };
           audio.play().catch(err => resolve({ success: false, error: err.message }));
         });
       })()
@@ -211,7 +211,7 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
     };
   } catch (err: any) {
     // Fallback to Web Speech API if Edge TTS fails
-    console.error('[SADIE Voice] Edge TTS failed, falling back to Web Speech API:', err.message);
+    console.error('[HomeBot Voice] Edge TTS failed, falling back to Web Speech API:', err.message);
     try { logTelemetryEvent('tts_fallback', { from: 'edge', to: 'web_speech', error: err?.message || String(err) }); } catch (_e) {}
     return speakFallback(args);
   }
@@ -295,7 +295,7 @@ export const stopSpeakingHandler: ToolHandler = async (): Promise<ToolResult> =>
     if (!mainWindow) return { success: false, error: 'No window available' };
 
     await mainWindow.webContents.executeJavaScript(`
-      if (window.__sadieAudio) { window.__sadieAudio.pause(); window.__sadieAudio = null; }
+      if (window.__homebotAudio) { window.__homebotAudio.pause(); window.__homebotAudio = null; }
       if (window.speechSynthesis) { window.speechSynthesis.cancel(); }
     `);
 

@@ -6,7 +6,7 @@
   },
   "n8n": {
     "url": "http://localhost:5678",
-    "webhook_path": "/webhook/sadie/chat",
+    "webhook_path": "/webhook/homebot/chat",
     "timeout_ms": 30000
   },
   "ollama": {

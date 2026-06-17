@@ -1,5 +1,5 @@
 /**
- * SADIE News Feed Tool
+ * HomeBot News Feed Tool
  *
  * Fetches RSS/Atom headlines from popular news sources.
  * No API key required — uses public RSS endpoints.
@@ -71,7 +71,7 @@ const MAX_FEED_SIZE = 2 * 1024 * 1024; // 2 MB cap for RSS feeds
 function httpGet(url: string, timeoutMs = 8000): Promise<string> {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
-    const req = lib.get(url, { headers: { 'User-Agent': 'SADIE-News/1.0' } }, (res) => {
+    const req = lib.get(url, { headers: { 'User-Agent': 'HomeBot-News/1.0' } }, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         resolve(httpGet(res.headers.location, timeoutMs));
         return;

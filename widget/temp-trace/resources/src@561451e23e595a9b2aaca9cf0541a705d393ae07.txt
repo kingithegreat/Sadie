@@ -5,7 +5,7 @@ import os from 'os';
 import { launchElectronApp } from './launchElectron';
 
 function makeTempProfile() {
-  const base = path.join(os.tmpdir(), `sadie-e2e-${Date.now()}`);
+  const base = path.join(os.tmpdir(), `homebot-e2e-${Date.now()}`);
   if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
   fs.mkdirSync(base, { recursive: true });
   return base;
@@ -15,7 +15,7 @@ test.describe('First-run onboarding and config persistence', () => {
   test('fresh profile shows first-run modal with safe defaults and persists after finish', async () => {
     const tmp = makeTempProfile();
     // Launch electron with a clean profile
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
 
     // FirstRun modal should be visible - check for telemetry label as a reliable indicator
     await expect(page.getByLabel(/Allow anonymous telemetry/i)).toBeVisible();
@@ -33,7 +33,7 @@ test.describe('First-run onboarding and config persistence', () => {
     await expect(teamInputValue).toBeVisible();
 
     // Ensure some dangerous tool toggles (e.g., delete file) are present and OFF within the modal
-    const modal = page.locator('div', { hasText: 'Welcome to SADIE' }).first();
+    const modal = page.locator('div', { hasText: 'Welcome to HomeBot' }).first();
     const deleteFileCheckbox = modal.getByLabel('delete file', { exact: true });
     await expect(deleteFileCheckbox).toBeVisible();
     await expect(deleteFileCheckbox).not.toBeChecked();
@@ -70,9 +70,9 @@ test.describe('First-run onboarding and config persistence', () => {
     };
     fs.writeFileSync(confPath, JSON.stringify(initial, null, 2), 'utf-8');
 
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     // FirstRun modal should not be visible
-    await expect(page.getByText('Welcome to SADIE')).toHaveCount(0);
+    await expect(page.getByText('Welcome to HomeBot')).toHaveCount(0);
 
     // The settings persisted should be accessible via menu or direct saved file - verify the values loaded
     const configPath = path.join(tmp, 'config', 'user-settings.json');
@@ -86,7 +86,7 @@ test.describe('First-run onboarding and config persistence', () => {
 
   test('enable telemetry then decline consent will not write consent', async () => {
     const tmp = makeTempProfile();
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
 
     // In fresh profile initial modal shows; open settings, toggle telemetry on
     await page.getByRole('button', { name: /Settings/i }).click();

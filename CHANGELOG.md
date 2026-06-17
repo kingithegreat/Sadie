@@ -3,10 +3,10 @@
 ## Unreleased — n8n automation deployment, quiz fix, fresh-chat UX
 
 ### Added
-- **n8n workflow deployment from Automation Center** (`n8n-api.ts`, `ipc-handlers.ts`, `AutomationCenter.tsx`): automations can now be deployed as n8n workflows directly from SADIE — generates webhook-triggered workflows, imports them via Docker CLI, activates them in SQLite, and restarts the container. No n8n UI interaction required.
+- **n8n workflow deployment from Automation Center** (`n8n-api.ts`, `ipc-handlers.ts`, `AutomationCenter.tsx`): automations can now be deployed as n8n workflows directly from HomeBot — generates webhook-triggered workflows, imports them via Docker CLI, activates them in SQLite, and restarts the container. No n8n UI interaction required.
 - **"Deploy to n8n" toggle** in the Automation Center create form with auto-generated webhook URLs and an "n8n" badge on deployed automations.
 - **Agentic tool-calling loop for automations** (`ipc-handlers.ts`): automations without an n8n webhook now execute via a local multi-round Ollama tool-calling loop (max 6 rounds) instead of routing through the old message-router path.
-- **Fresh chat on startup** (`App.tsx`): SADIE always opens a new conversation on launch; chat history remains accessible via the sidebar.
+- **Fresh chat on startup** (`App.tsx`): HomeBot always opens a new conversation on launch; chat history remains accessible via the sidebar.
 
 ### Fixed
 - **Quiz score double-counting** (`QuizPanel.tsx`): `handleNext` no longer re-adds the current answer's score on top of the already-updated `totalCorrect`, which inflated scores by up to 2x.
@@ -22,7 +22,7 @@
 - **Document forwarding on non-stream requests** (`message-router.ts`, `n8n.integration.test.ts`): requests with `documents[]` are now expanded before routing and before forwarding to n8n, so upstream logic receives extracted document context instead of only `[Document attached: ...]` markers.
 - **Document retry safety** (`App.tsx`, `MessageBubble.tsx`, `retry-flow.test.tsx`): failed turns that originally included uploaded documents now instruct the user to reattach the file instead of retrying with a marker-only replay.
 - **Small-model classification** (`small-model-optimizations.test.ts`): `gemma2:2b` remains a compact-model candidate, while `gemma2:9b` is no longer misclassified as small.
-- **Electron E2E profile isolation** (`index.ts`, `memory-manager.ts`, `launchElectron.ts`, `persistence-ui.e2e.spec.ts`, `streaming.e2e.spec.ts`): Playwright launches now pass a temp profile via `SADIE_E2E_USER_DATA_DIR`, preventing shared state leaks and avoiding broken Chromium CLI flag handling.
+- **Electron E2E profile isolation** (`index.ts`, `memory-manager.ts`, `launchElectron.ts`, `persistence-ui.e2e.spec.ts`, `streaming.e2e.spec.ts`): Playwright launches now pass a temp profile via `HOMEBOT_E2E_USER_DATA_DIR`, preventing shared state leaks and avoiding broken Chromium CLI flag handling.
 
 ### Changed
 - **Widget dev/start scripts** (`widget/package.json`, `widget/scripts/electron-dev.js`): `npm run dev` and `npm start` now clear `ELECTRON_RUN_AS_NODE` before launching Electron so integrated terminals do not boot the app in Node-only mode.
@@ -53,7 +53,7 @@
 - 13 new unit tests for `looksMultiStep`, `buildAgenticSystemPrompt`, and `formatStepProgress`.
 
 ### Added — Proactive Morning Briefing
-- **Daily briefing on first interaction** (`morning-briefing.ts`): on the first user message each calendar day, SADIE proactively generates a weather + calendar + reminders summary using parallel tool calls.
+- **Daily briefing on first interaction** (`morning-briefing.ts`): on the first user message each calendar day, HomeBot proactively generates a weather + calendar + reminders summary using parallel tool calls.
 - **Time-aware greeting**: "Good morning" / "Good afternoon" / "Good evening" with formatted date.
 - **Opt-out setting**: `settings.morningBriefing = false` disables the briefing.
 - **State persistence**: briefing state tracked in `memory/json-store/briefing-state.json` so it survives app restarts.
@@ -102,8 +102,8 @@
 ### Changed — IPC & Export
 - **Conversation export**: new `exportConversation` IPC handler supports Markdown and JSON formats.
 - **`exportConversationAsJSON`**: added to memory-manager exports.
-- **Hardware profile push event**: `sadie:hardware-profile-applied` IPC event for renderer toast.
-- **Ollama status push event**: `sadie:ollama-status` IPC event for health banner.
+- **Hardware profile push event**: `homebot:hardware-profile-applied` IPC event for renderer toast.
+- **Ollama status push event**: `homebot:ollama-status` IPC event for health banner.
 
 ### Tests
 - Test count: 1,604 → 1,716 (112 → 115 suites).
@@ -131,12 +131,12 @@
 ### Added — Smart Error Recovery UX
 - **Error classification engine** (`message-router.ts`): new `classifyError()` function categorises stream errors into `ollama` (connection), `model` (not found), `n8n` (upstream), `timeout`, and `unknown` — each with actionable `RecoveryHint`.
 - **Rich recovery banners** (`MessageBubble.tsx`): error messages now show service-specific icons (🔌 Ollama, 📦 Model, ⚙️ n8n), user-friendly guidance, and contextual action buttons instead of generic "Error" text.
-- **In-chat model pull** (`PullModelButton`): when a model is missing, users can pull it directly from the chat with a single click — wired through `sadie:pull-model` IPC handler.
-- **Recovery hints on all stream-error emissions**: ~10 error sites in message-router.ts now attach `recoveryHint` to the `sadie:stream-error` payload.
+- **In-chat model pull** (`PullModelButton`): when a model is missing, users can pull it directly from the chat with a single click — wired through `homebot:pull-model` IPC handler.
+- **Recovery hints on all stream-error emissions**: ~10 error sites in message-router.ts now attach `recoveryHint` to the `homebot:stream-error` payload.
 - 11 new unit tests for `classifyError()`. Test count: 1,593 → 1,604 (111 → 112 suites).
 
 ### Added — Hardware-Aware Model Recommendations
-- **GPU VRAM detection** (`ipc-handlers.ts`): new `sadie:detect-gpu-vram` IPC handler detects GPU via `nvidia-smi` and reports available VRAM.
+- **GPU VRAM detection** (`ipc-handlers.ts`): new `homebot:detect-gpu-vram` IPC handler detects GPU via `nvidia-smi` and reports available VRAM.
 - **Recommendation engine** (`moa.ts`): `recommendConfig(vramGB)` returns optimal setup — MoA presets for ≥ 8 GB, single-model + RAG guidance for < 8 GB, with `MOA_MIN_VRAM_GB = 8` threshold.
 - **Settings panel integration** (`SettingsPanel.tsx`): GPU detection button above MoA checkbox, VRAM display, recommendation text with one-click Apply.
 - 60 new unit tests for recommendation logic and GPU detection. Test count: 1,533 → 1,593.
@@ -232,8 +232,8 @@
 ### Added
 - **Tool recursion cap** (`message-router.ts`): `MAX_TOOL_ROUNDS = 10` constant prevents infinite tool-call loops. `processResponse()` now accepts a `round` parameter; at round ≥ 10 the LLM receives a user-facing warning and halts.
 - **Light / dark / system theme** (`chatgpt-theme.css`, `App.tsx`, `types.ts`): full `[data-theme="light"]` CSS overrides + `@media (prefers-color-scheme: light)` for system mode. Theme selector added to settings (`'light' | 'dark' | 'system'`).
-- **Global hotkey** (`index.ts`): `Ctrl+Shift+Space` toggles SADIE's window via `globalShortcut.register()`. Unregistered on `before-quit`.
-- **Auto-updater** (`auto-updater.ts`): new module using `electron-updater`. Checks 5 s after startup; sends IPC events `sadie:update-available`, `sadie:update-progress`, `sadie:update-downloaded`. Skipped in E2E/test mode.
+- **Global hotkey** (`index.ts`): `Ctrl+Shift+Space` toggles HomeBot's window via `globalShortcut.register()`. Unregistered on `before-quit`.
+- **Auto-updater** (`auto-updater.ts`): new module using `electron-updater`. Checks 5 s after startup; sends IPC events `homebot:update-available`, `homebot:update-progress`, `homebot:update-downloaded`. Skipped in E2E/test mode.
 - **Log buffer caps** (`index.ts`, `message-router.ts`): both main-process and router log buffers capped at 500 entries via `pushMainLog()` and `pushRouter()` helpers to prevent memory growth.
 
 ---
@@ -252,11 +252,11 @@
 ## v0.7.4 — Security hardening, context budget, dead workflow cleanup
 
 ### Security Fixes
-- **IPC path traversal** (`ipc-handlers.ts`): `sadie:open-file` and `sadie:show-in-folder` now restrict paths to the user's home directory using `path.resolve()` checks — previously could open/reveal arbitrary files.
+- **IPC path traversal** (`ipc-handlers.ts`): `homebot:open-file` and `homebot:show-in-folder` now restrict paths to the user's home directory using `path.resolve()` checks — previously could open/reveal arbitrary files.
 - **PID injection** (`process-manager.ts`): `kill_process` now validates PID as a positive integer before passing to `Stop-Process`, preventing PowerShell command injection.
 - **Toast XML injection** (`notification.ts`): notification title and body are now XML-entity-encoded (`<`, `>`, `&`, `"`) and PS-sanitised before insertion into toast XML template.
 - **Git commit message injection** (`git.ts`): commit messages now use a character whitelist instead of just escaping double-quotes, preventing shell metacharacter injection.
-- **Custom LLM SSRF** (`ipc-handlers.ts`): `sadie:list-custom-llm-models` now validates URL protocol (HTTP/HTTPS only) before making requests.
+- **Custom LLM SSRF** (`ipc-handlers.ts`): `homebot:list-custom-llm-models` now validates URL protocol (HTTP/HTTPS only) before making requests.
 - **Dependency vulnerabilities**: `npm audit fix` applied — 0 production vulnerabilities remaining (dev-only `tar` vuln in electron-builder noted).
 
 ### Added
@@ -265,12 +265,12 @@
 - **Context budget unit tests** (`context-budget.test.ts`): tests verifying small models get capped history, digest, and memory recall.
 
 ### Fixed
-- **Stream URL** (`message-router.ts`): corrected chat stream endpoint from `/webhook/sadie/tools/file-manager/stream` to `/webhook/sadie/chat/stream`.
+- **Stream URL** (`message-router.ts`): corrected chat stream endpoint from `/webhook/homebot/tools/file-manager/stream` to `/webhook/homebot/chat/stream`.
 - **CODING_QUERY_PATTERN** (`message-router.ts`): removed bare words like "function", "class", "api" that false-positived on normal conversation.
 - **Speech recognition tmp file** (`ipc-handlers.ts`): temp PS1 file now uses unique filename with random suffix to prevent race conditions.
 
 ### Removed
-- **Dead n8n tool workflows**: removed 13 vestigial workflow JSONs from `n8n-workflows/tools/` that were never called from SADIE (all tools execute locally via TypeScript handlers). Kept only the 3 workflows that are actually used: `core/chat-orchestrator.json`, `core/safety-validator.json`, and `tools/image-generate.json`.
+- **Dead n8n tool workflows**: removed 13 vestigial workflow JSONs from `n8n-workflows/tools/` that were never called from HomeBot (all tools execute locally via TypeScript handlers). Kept only the 3 workflows that are actually used: `core/chat-orchestrator.json`, `core/safety-validator.json`, and `tools/image-generate.json`.
 - **`tool-allowlist.json`**: annotated as documentation-only (never loaded at runtime).
 
 ---
@@ -283,7 +283,7 @@
 ### Fixed
 - **Hardcoded forward-slash paths in workflows**: `patch-workflow-paths.js` now replaces both `C:\…` (JSON-escaped) and `C:/…` (forward-slash) path variants and scans `n8n-workflows/core/` in addition to `tools/`.
 - **`validateJson` node replaced** (`file-manager-hardened.json`): swapped `n8n-nodes-base.validateJson` (community node, may not be installed) with an inline Code node that performs the same required-field + type checks.
-- **Start-node workflows converted to webhooks**: `api-tool.json` and `archive-ops.json` now use Webhook Trigger → Auth Guard → … instead of the passive `n8n-nodes-base.start` node, making them callable from SADIE and consistent with all other tool workflows.
+- **Start-node workflows converted to webhooks**: `api-tool.json` and `archive-ops.json` now use Webhook Trigger → Auth Guard → … instead of the passive `n8n-nodes-base.start` node, making them callable from HomeBot and consistent with all other tool workflows.
 - **BOM stripped** from `file-manager-hardened.json` (caused JSON parse failures in schema tests).
 
 ---
@@ -291,7 +291,7 @@
 ## v0.7.2 — n8n webhook auth enforcement (workflow side)
 
 ### Added
-- **Auth Guard injection** (`scripts/inject-auth-guard.js`): programmatic, idempotent script that inserts an Auth Guard Code node between each webhook trigger and its first downstream node in all 15 webhook-based n8n workflow JSONs. Validates `X-SADIE-Auth` header against `SADIE_WEBHOOK_SECRET` env var; skips validation when env var is unset (local dev mode).
+- **Auth Guard injection** (`scripts/inject-auth-guard.js`): programmatic, idempotent script that inserts an Auth Guard Code node between each webhook trigger and its first downstream node in all 15 webhook-based n8n workflow JSONs. Validates `X-HOMEBOT-Auth` header against `HOMEBOT_WEBHOOK_SECRET` env var; skips validation when env var is unset (local dev mode).
 - **Reference auth-guard snippet** (`n8n-workflows/_shared/auth-guard.js`): standalone reference for manual n8n Code node use.
 
 ### Fixed
@@ -306,13 +306,13 @@
 - **Preload `invoke()` locked to E2E mode** (`preload/index.ts`): arbitrary IPC invoke from renderer now gated behind `isE2E()` check.
 - **React ErrorBoundary** (`ErrorBoundary.tsx`): catches render crashes; wraps `<App />` in `index.tsx`.
 - **System prompt unified** (`system-prompt.ts`): marked as single source of truth with sync comment; eliminated dual-source drift risk.
-- **Portable workflow paths** (`scripts/patch-workflow-paths.js`): replaces hardcoded `C:\Users\adenk\Desktop\sadie` in n8n JSON files with `SADIE_ROOT` at startup.
+- **Portable workflow paths** (`scripts/patch-workflow-paths.js`): replaces hardcoded `C:\Users\adenk\Desktop\homebot` in n8n JSON files with `HOMEBOT_ROOT` at startup.
 - **`webviewTag` disabled** in Electron `webPreferences` (was enabled but unused).
 
 ### Added
-- **Webhook auth — Electron side** (`webhook-auth.ts`): generates and persists a 256-bit shared secret per install; `sadieWebhookHeaders()` helper attaches `X-SADIE-Auth` header to all n8n POST calls in `message-router.ts` (3 sites) and `ipc-handlers.ts` (2 sites).
-- **`docker-compose.yml`**: passes `SADIE_WEBHOOK_SECRET` env var to n8n container.
-- **`start-sadie.ps1`**: reads persisted secret and exports as `$env:SADIE_WEBHOOK_SECRET`.
+- **Webhook auth — Electron side** (`webhook-auth.ts`): generates and persists a 256-bit shared secret per install; `homebotWebhookHeaders()` helper attaches `X-HOMEBOT-Auth` header to all n8n POST calls in `message-router.ts` (3 sites) and `ipc-handlers.ts` (2 sites).
+- **`docker-compose.yml`**: passes `HOMEBOT_WEBHOOK_SECRET` env var to n8n container.
+- **`start-homebot.ps1`**: reads persisted secret and exports as `$env:HOMEBOT_WEBHOOK_SECRET`.
 - **Message-router unit tests** (`message-router-coverage.test.ts`): 20 tests covering `clearHistory`, `ensureHydrated`, `setUncensoredMode`/`getUncensoredMode`, `analyzeAndRouteMessage` (7 scenarios), and `isSmallModel` edge cases.
 
 ---
@@ -320,7 +320,7 @@
 ## v1.0.4 — Embedded web services, test coverage 1293, context & routing fixes, quality improvements
 
 ### Added
-- **Embedded web services panel**: access ChatGPT, Claude, and Gemini directly inside SADIE via subscription — each service opens in a sandboxed `BrowserWindow` with correct Chrome UA, `allowpopups`, and a pre-injected preload that clears `navigator.webdriver` before page scripts run, defeating Cloudflare bot-detection.
+- **Embedded web services panel**: access ChatGPT, Claude, and Gemini directly inside HomeBot via subscription — each service opens in a sandboxed `BrowserWindow` with correct Chrome UA, `allowpopups`, and a pre-injected preload that clears `navigator.webdriver` before page scripts run, defeating Cloudflare bot-detection.
 - **Conversation full-text search**: search across all conversation history with incremental results as you type.
 - **Per-conversation Markdown export**: export any conversation to a clean `.md` file from the sidebar.
 - **Test suite 522 → 1293** (+771 tests across 15 batches): system-tools, custom-llm-client, scheduler, enrichment, document-tools, calendar-tools, voice-tools, ActionConfirmation, TelemetryConsentModal, stream-proxy-client, FirstRunModal, imageUtils, window-manager, TelemetryDashboard, ImageGenerator, ModelSelector, AutomationCenter, ToolsPanel, ConversationSidebar, RagPanel, PermissionModal, NBA utils, logger, contacts, system-prompt, sports-report, TokenCounter, memory-manager, code-runner, shared logger, mcp-client, env, scheduler, NBA HTTP paths, vision edge-cases, filesystem, process-manager.
@@ -355,7 +355,7 @@
 ## v1.0.2 — Auto-generate conversation titles
 
 ### Added
-- **Automatic conversation titles**: after the first exchange SADIE generates a short descriptive title for the conversation using the configured chat model. Titles appear immediately in the sidebar without requiring manual rename.
+- **Automatic conversation titles**: after the first exchange HomeBot generates a short descriptive title for the conversation using the configured chat model. Titles appear immediately in the sidebar without requiring manual rename.
 
 ---
 
@@ -381,7 +381,7 @@
 ## v1.0.0 — Vision: image analysis & in-chat image thumbnails
 
 ### Added
-- **`vision_describe` tool**: SADIE can now read a local image file and describe its contents in detail (colours, objects, text, layout) using the configured Ollama multimodal model (`llava` by default).
+- **`vision_describe` tool**: HomeBot can now read a local image file and describe its contents in detail (colours, objects, text, layout) using the configured Ollama multimodal model (`llava` by default).
 - **`vision_query` tool**: ask any specific question about a local image — extract text from a screenshot, count objects, identify colours, etc. Sends the image as base64 to Ollama `/api/generate`.
 - **Image thumbnails in user message bubble**: when a user attaches image(s) and sends a message, the image previews now render inline in the user's chat bubble (max 220 × 160 px, rounded corners).
 - **`ChatMessage.images`** field on the renderer type — stores preview URLs (objectURL / dataURL) alongside the message so thumbnails survive re-renders.
@@ -392,7 +392,7 @@
 ### Added
 - **RAG index button (📎)** in the chat input toolbar: click to pick any file (PDF, Word, code, text) and index it into the RAG engine. Shows a live "⏳ indexing…" spinner on the button while work is in progress, then a green "✅ Indexed …" status banner (auto-dismisses after 6 s).
 - **Drag-and-drop to RAG**: files dropped onto the input area that aren't images or chat-attachable documents are automatically forwarded to `rag_index` so users can drag a `.ts`, `.py`, `.log`, or similar file straight onto the chat window.
-- **`sadie:rag-index` IPC channel**: direct bridge from renderer → main process `ragToolHandlers.rag_index` so the UI never needs to go through the full message router.
+- **`homebot:rag-index` IPC channel**: direct bridge from renderer → main process `ragToolHandlers.rag_index` so the UI never needs to go through the full message router.
 - **`ElectronAPI.ragIndex`** type and preload exposure so the call is fully typed and sandbox-safe.
 
 ## v0.9.8 — RAG: local document semantic search
@@ -408,7 +408,7 @@
 
 ### Added
 - **NBA NZ/AU timezone edge-case tests** (`__tests__/nba-nz-timezone.test.ts`): 5 tests covering the `wantsResults` previous-day fallback — fires when today's games are all pre-game, skips when `wantsResults=false`, falls back gracefully when yesterday also has no finished games or network fails, and does not fire when live games are in progress.
-- **Windows NSIS installer** (`dist-electron/SADIE Setup 0.9.6.exe`, 148 MB): `npm run dist` now correctly passes `--config ../electron-builder.yml`; per-user install, custom directory chooser, desktop + start menu shortcuts.
+- **Windows NSIS installer** (`dist-electron/HomeBot Setup 0.9.6.exe`, 148 MB): `npm run dist` now correctly passes `--config ../electron-builder.yml`; per-user install, custom directory chooser, desktop + start menu shortcuts.
 
 ### Fixed
 - `widget/package.json` and root `package.json` version bumped to `0.9.6` (were `0.8.1`).
@@ -425,17 +425,17 @@
 ## v0.9.5 — Model-aware prompts and memory path fix
 
 ### Fixed
-- **Memory path hardcoding** (`tools/memory.ts`): JSON fallback stores (`memories.json`, `conversation-history.json`) were written to `~/Desktop/sadie/memory/json-store` unconditionally. Now uses the same dev/prod split as `memory-manager.ts`: dev → project root `memory/json-store`; packaged → Electron `userData` folder. Uses lazy `require('electron')` (with `catch` fallback) so Jest tests continue to work without the Electron binary.
+- **Memory path hardcoding** (`tools/memory.ts`): JSON fallback stores (`memories.json`, `conversation-history.json`) were written to `~/Desktop/homebot/memory/json-store` unconditionally. Now uses the same dev/prod split as `memory-manager.ts`: dev → project root `memory/json-store`; packaged → Electron `userData` folder. Uses lazy `require('electron')` (with `catch` fallback) so Jest tests continue to work without the Electron binary.
 
 ### Added
-- **Model-aware system prompt** (`shared/system-prompt.ts`, `message-router.ts`): `SADIE_SYSTEM_PROMPT_COMPACT` (~400 tokens) added alongside the full ~1500-token prompt. `isSmallModel()` detects <=3B models by name pattern (`:1b`, `:3b`, `phi-3`, `gemma:2b`, `tinyllama`, etc.). `getSystemPromptForModel()` selects the appropriate variant and appends user guidelines. Both `streamFromLLM` and `streamFromOllamaWithTools` now use it, giving `llama3.2:3b` ~1100 extra tokens of usable context per turn.
+- **Model-aware system prompt** (`shared/system-prompt.ts`, `message-router.ts`): `HOMEBOT_SYSTEM_PROMPT_COMPACT` (~400 tokens) added alongside the full ~1500-token prompt. `isSmallModel()` detects <=3B models by name pattern (`:1b`, `:3b`, `phi-3`, `gemma:2b`, `tinyllama`, etc.). `getSystemPromptForModel()` selects the appropriate variant and appends user guidelines. Both `streamFromLLM` and `streamFromOllamaWithTools` now use it, giving `llama3.2:3b` ~1100 extra tokens of usable context per turn.
 
 ---
 
 ## v0.9.4 — Image UX polish and Pollinations availability cache
 
 ### Fixed
-- **Progress line persists after image arrives**: `MessageBubble.tsx` now strips any line starting with `⏳ Generating image` from the text segment before the `__SADIE_IMAGE__:` token, so the finished message shows only the image (and any real caption text).
+- **Progress line persists after image arrives**: `MessageBubble.tsx` now strips any line starting with `⏳ Generating image` from the text segment before the `__HOMEBOT_IMAGE__:` token, so the finished message shows only the image (and any real caption text).
 
 ### Changed
 - **Pollinations.ai availability cache** (`web.ts`): After any HTTP failure from Pollinations.ai, the result is cached for 5 minutes (`POLLINATIONS_BACKOFF_MS`). Subsequent `image_generate` calls skip the HTTPS round-trip entirely and go straight to Stable Horde. The cache clears on success so the service is transparently retried when it recovers.
@@ -485,7 +485,7 @@
   typed `SearchProvider` interface + `SEARCH_PROVIDERS` registry (Tavily → Serper → DDG Instant →
   DuckDuckGo → Google → Brave). Single `for` loop replaces ~80 lines of duplicated `if` blocks.
 - **`isE2E` isolation fix** (`env.ts`): removed `NODE_ENV === 'test'` from the `isE2E` constant.
-  The flag now only activates when `SADIE_E2E=1|true` is explicitly set (all Playwright specs
+  The flag now only activates when `HOMEBOT_E2E=1|true` is explicitly set (all Playwright specs
   already do this). Unit tests no longer see `isE2E=true`, so the n8n probe fires correctly →
   418/418 unit tests now pass (was 417/418 pre-existing failure).
 - **Permission toggles** (`SettingsPanel.tsx`): dangerous tools (`delete_file`, `move_file`,
@@ -513,7 +513,7 @@
 
 ### Added
 - **`search_files` tool**: Find files and folders on the local filesystem by name pattern. Uses Everything Search (`es.exe`) when available for instant results, falls back to PowerShell `Get-ChildItem -Recurse`. Supports wildcards (`*.pdf`, `report*`). Searches within the user home directory tree; path-traversal is blocked.
-- **`plan_task` tool**: Break a complex goal into a numbered list of ordered steps and save the plan locally (`~/sadie-plans.json`). Call this when the user asks to "make a plan" or "what steps do I need to…". Plans survive across sessions.
+- **`plan_task` tool**: Break a complex goal into a numbered list of ordered steps and save the plan locally (`~/homebot-plans.json`). Call this when the user asks to "make a plan" or "what steps do I need to…". Plans survive across sessions.
 - **`get_plans` tool**: Retrieve recently saved plans by ID, goal, and step count.
 - **`api_request` tool**: Make HTTPS GET or POST requests to an approved allowlist of public API hosts (weather, finance, sports, GitHub, etc.). Full SSRF protection — private IPs, loopback, `.local`/`.internal` domains, non-https URLs, and non-allowlisted hosts are all blocked. The allowlist can be extended via `config/api-allowlist.json`.
 - **42 new tests** covering all three tools (50 total suites / 418 tests).
@@ -540,7 +540,7 @@
 ## v0.8.0 — Word Documents, Code Cloud API & UI Polish
 
 ### Added
-- **`create_docx` tool**: SADIE can now generate real Microsoft Word (`.docx`) files using the `docx` package. Supports `# Heading`, `## Subheading`, `### Sub-subheading`, paragraphs, and an optional document title. Files go anywhere under the home directory. Requires confirmation before writing.
+- **`create_docx` tool**: HomeBot can now generate real Microsoft Word (`.docx`) files using the `docx` package. Supports `# Heading`, `## Subheading`, `### Sub-subheading`, paragraphs, and an optional document title. Files go anywhere under the home directory. Requires confirmation before writing.
 - **Code cloud API routing**: Settings panel now has a "Code model — Cloud API" section. Set a provider (OpenAI / Anthropic / OpenRouter / Custom), an API key, and an optional base URL. Coding queries are automatically routed to the cloud model instead of Ollama when the key is present.
 - **`qwen2.5-coder:3b` added to model picker** with "Best for your GPU" label and set as the default code model.
 - **Uncensored mode amber border**: The input box gets an amber glow when uncensored mode is active (cross-component sync via `CustomEvent` bus — no prop-drilling).
@@ -566,7 +566,7 @@
 
 ### Fixed
 - Prevent crashes from duplicate `ipcMain.handle` registrations during dev/hot-reload cycles by making handler registration idempotent.
-- Improved `sadie:stream-error` payloads with richer diagnostics (url, httpStatus, n8nResponded, errorText) and recorded local telemetry events for stream failures.
+- Improved `homebot:stream-error` payloads with richer diagnostics (url, httpStatus, n8nResponded, errorText) and recorded local telemetry events for stream failures.
 
 ---
 
@@ -577,14 +577,14 @@
 - **Copy full response** button: finished assistant messages show a "📋 Copy" button that copies the entire response to clipboard with visual feedback.
 - **Auto-title conversations**: the first user message automatically sets the conversation title (truncated to 40 characters) instead of "New Conversation".
 - **Custom markdown renderer** in MessageBubble: fenced code blocks with copy button, inline code, bold, italic, links, headings, lists — zero external dependencies.
-- **`sadie:get-env` IPC handler**: new IPC channel for retrieving environment info from the main process.
+- **`homebot:get-env` IPC handler**: new IPC channel for retrieving environment info from the main process.
 
 ### Fixed
 - **Vite dev server loading**: `window-manager.ts` now correctly loads from `ELECTRON_RENDERER_URL` in dev mode, enabling HMR and live code changes.
 - **Duplicate CSS removed**: deleted ~55 lines of conflicting message-bubble overrides in `chatgpt-theme.css` that silently shrank bubbles, stripped borders/shadows, and broke text colors.
 
 ### Removed
-- Dead code cleanup: removed `_appendAssistantIfMissing`, `_handleSadieReply`, `_cancelStream` (~100 lines) and all `@ts-expect-error` suppressions from `App.tsx`.
+- Dead code cleanup: removed `_appendAssistantIfMissing`, `_handleHomeBotReply`, `_cancelStream` (~100 lines) and all `@ts-expect-error` suppressions from `App.tsx`.
 
 ## v0.6.1 — Tool Routing Hardening and NBA Query Robustness
 

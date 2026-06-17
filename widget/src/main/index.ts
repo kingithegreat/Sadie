@@ -2,7 +2,7 @@
 import { app, BrowserWindow, ipcMain, session, globalShortcut, protocol } from 'electron';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
-function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
 import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
@@ -113,9 +113,9 @@ process.on('unhandledRejection', (reason) => {
 
 // Diagnostic log buffer for main process (capped at 500 entries)
 const MAX_MAIN_LOG_BUFFER = 500;
-(global as any).__SADIE_MAIN_LOG_BUFFER ??= [];
+(global as any).__HOMEBOT_MAIN_LOG_BUFFER ??= [];
 function pushMainLog(line: string) {
-  const buf = (global as any).__SADIE_MAIN_LOG_BUFFER;
+  const buf = (global as any).__HOMEBOT_MAIN_LOG_BUFFER;
   buf.push(line);
   if (buf.length > MAX_MAIN_LOG_BUFFER) buf.splice(0, buf.length - MAX_MAIN_LOG_BUFFER);
 }
@@ -127,13 +127,13 @@ applyIpcHandlePatch();
 
 // E2E tests pass a custom userData directory via env var so Playwright doesn't
 // need to use Chromium CLI flags that conflict with Node's option parser.
-if (process.env.SADIE_E2E_USER_DATA_DIR) {
-  app.setPath('userData', process.env.SADIE_E2E_USER_DATA_DIR);
+if (process.env.HOMEBOT_E2E_USER_DATA_DIR) {
+  app.setPath('userData', process.env.HOMEBOT_E2E_USER_DATA_DIR);
 }
 
-// Register sadie-img scheme as privileged so it can load in <img> tags
+// Register homebot-img scheme as privileged so it can load in <img> tags
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'sadie-img', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  { scheme: 'homebot-img', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ]);
 
 // Remove the Chrome automation flag that Cloudflare and anti-bot systems
@@ -143,15 +143,15 @@ app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 
 app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
-  console.log('[MAIN] Env check: SADIE_DIRECT_OLLAMA=', process.env.SADIE_DIRECT_OLLAMA, 'isE2E=', isE2E);
+  console.log('[MAIN] Env check: HOMEBOT_DIRECT_OLLAMA=', process.env.HOMEBOT_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
 
   // Register custom protocol to serve generated images securely from sandbox
   const imgPath = require('path');
   const imgFs = require('fs');
   const imgDir = imgPath.join(app.getPath('userData'), 'generated-images');
-  protocol.registerFileProtocol('sadie-img', (request, callback) => {
-    const url = request.url.replace('sadie-img:///', '').replace('sadie-img://', '');
+  protocol.registerFileProtocol('homebot-img', (request, callback) => {
+    const url = request.url.replace('homebot-img:///', '').replace('homebot-img://', '');
     const filename = decodeURIComponent(url);
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       callback({ statusCode: 403 } as any);
@@ -211,7 +211,7 @@ app.whenReady().then(async () => {
   ensureN8nRunning((status) => {
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('sadie:n8n-status', { status });
+        mainWindow.webContents.send('homebot:n8n-status', { status });
       }
     } catch (e) { safeCatch(e); }
   }).catch((e) => console.error('[MAIN] n8n lifecycle error:', e));
@@ -229,10 +229,10 @@ app.whenReady().then(async () => {
   // into the renderer for E2E tracing and diagnostics. This is idempotent
   // and only used for tests/troubleshooting.
   try {
-    (global as any).__SADIE_PUSH_MAIN_LOG = (line: string) => {
+    (global as any).__HOMEBOT_PUSH_MAIN_LOG = (line: string) => {
       try {
         if (mainWindow && mainWindow.webContents) {
-          mainWindow.webContents.send('sadie:router-log', String(line));
+          mainWindow.webContents.send('homebot:router-log', String(line));
         }
       } catch (e) { safeCatch(e); }
     };
@@ -278,7 +278,7 @@ app.whenReady().then(async () => {
             ollamaOnline = true;
             // Notify renderer as soon as Ollama comes online mid-poll.
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('sadie:ollama-status', { online: true, url: ollamaUrl });
+              mainWindow.webContents.send('homebot:ollama-status', { online: true, url: ollamaUrl });
             }
             break;
           } catch { /* still starting */ }
@@ -286,7 +286,7 @@ app.whenReady().then(async () => {
       }
       console.log(`[MAIN] Ollama health: ${ollamaOnline ? 'online' : 'offline'} (${ollamaUrl})`);
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('sadie:ollama-status', { online: ollamaOnline, url: ollamaUrl });
+        mainWindow.webContents.send('homebot:ollama-status', { online: ollamaOnline, url: ollamaUrl });
       }
 
       // Validate configured chatModel is actually installed — auto-switch if not
@@ -303,7 +303,7 @@ app.whenReady().then(async () => {
               console.warn(`[MAIN] chatModel "${configuredModel}" not installed — switching to "${fallback}"`);
               saveSettings({ ...currentSettings, chatModel: fallback });
               if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('sadie:model-fallback', { from: configuredModel, to: fallback });
+                mainWindow.webContents.send('homebot:model-fallback', { from: configuredModel, to: fallback });
               }
             }
           }
@@ -324,7 +324,7 @@ app.whenReady().then(async () => {
         if (!lastOllamaOnline) {
           lastOllamaOnline = true;
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sadie:ollama-status', { online: true, url: ollamaUrl });
+            mainWindow.webContents.send('homebot:ollama-status', { online: true, url: ollamaUrl });
           }
         }
       } catch {
@@ -332,7 +332,7 @@ app.whenReady().then(async () => {
           console.log('[MAIN] Ollama heartbeat: offline — attempting auto-restart');
           lastOllamaOnline = false;
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sadie:ollama-status', { online: false, autoRestarting: true });
+            mainWindow.webContents.send('homebot:ollama-status', { online: false, autoRestarting: true });
           }
         }
         if (!restartInFlight) {
@@ -360,7 +360,7 @@ app.whenReady().then(async () => {
           console.log(`[MAIN] Hardware profile auto-set: ${profile} (${gpu.vramGB} GB VRAM, ${gpu.gpuName ?? 'unknown GPU'})`);
           // Let the renderer know so it can show a one-time toast
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sadie:hardware-profile-applied', {
+            mainWindow.webContents.send('homebot:hardware-profile-applied', {
               profile,
               vramGB: gpu.vramGB,
               gpuName: gpu.gpuName,
@@ -398,8 +398,8 @@ app.whenReady().then(async () => {
   if (!isE2E && process.env.NODE_ENV !== 'test') {
     try {
       initAutoUpdater(mainWindow);
-      ipcMain.on('sadie:download-update', () => downloadUpdate());
-      ipcMain.on('sadie:install-update', () => installUpdate());
+      ipcMain.on('homebot:download-update', () => downloadUpdate());
+      ipcMain.on('homebot:install-update', () => installUpdate());
       console.log('[MAIN] Auto-updater initialized');
     } catch (e) {
       console.error('[MAIN] Auto-updater init error:', e);

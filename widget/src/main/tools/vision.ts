@@ -1,7 +1,7 @@
 /**
- * SADIE Vision Tools
+ * HomeBot Vision Tools
  *
- * Allows SADIE to analyse local image files using an Ollama multimodal model
+ * Allows HomeBot to analyse local image files using an Ollama multimodal model
  * (llava, moondream, bakllava, etc.).  Works offline — no network call beyond
  * the local Ollama instance.
  *

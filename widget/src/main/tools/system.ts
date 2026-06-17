@@ -1,5 +1,5 @@
 /**
- * SADIE System Tools
+ * HomeBot System Tools
  * 
  * Provides system information and utilities.
  */
@@ -555,7 +555,7 @@ export const screenshotHandler: ToolHandler = async (args): Promise<ToolResult> 
     const filename = args.filename || `screenshot-${timestamp}`;
     
     // Save to Pictures folder
-    const picturesDir = path.join(require('os').homedir(), 'Pictures', 'SADIE Screenshots');
+    const picturesDir = path.join(require('os').homedir(), 'Pictures', 'HomeBot Screenshots');
     
     // Create directory if it doesn't exist
     if (!fs.existsSync(picturesDir)) {

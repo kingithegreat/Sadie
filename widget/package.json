@@ -9,7 +9,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kingithegreat/Sadie.git"
+    "url": "https://github.com/kingithegreat/HomeBot.git"
   },
   "scripts": {
     "start": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; require('child_process').execSync('electron .', {stdio:'inherit',env:process.env})\"",
@@ -22,8 +22,8 @@
     "dist": "npm run build && electron-builder",
     "postinstall": "electron-builder install-app-deps",
     "e2e:install": "playwright install --with-deps",
-    "e2e": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test",
-    "e2e:headed": "cross-env NODE_ENV=test SADIE_E2E=1 playwright test --headed",
+    "e2e": "cross-env NODE_ENV=test HOMEBOT_E2E=1 playwright test",
+    "e2e:headed": "cross-env NODE_ENV=test HOMEBOT_E2E=1 playwright test --headed",
     "e2e:live": "cross-env NODE_ENV=test playwright test live-sanity.e2e.spec.ts",
     "capture-logs": "node ./scripts/capture-diagnostics.js",
     "stream-metrics": "node ./scripts/stream-metrics.js",

@@ -1,5 +1,5 @@
 /**
- * SADIE Codebase Tools
+ * HomeBot Codebase Tools
  *
  * Developer-focused tools for exploring and understanding codebases:
  *  - grep_code:      Search file contents by regex pattern across a directory tree

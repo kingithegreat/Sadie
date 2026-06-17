@@ -2,12 +2,12 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-process.env.SADIE_E2E = 'true';
+process.env.HOMEBOT_E2E = 'true';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
 function makeTempProfile() {
-  const base = path.join(os.tmpdir(), `sadie-e2e-persistence-${Date.now()}`);
+  const base = path.join(os.tmpdir(), `homebot-e2e-persistence-${Date.now()}`);
   if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
   fs.mkdirSync(base, { recursive: true });
   return base;
@@ -36,7 +36,7 @@ function seedConfig(dir: string) {
 test('UI -> message persistence and debug logs available', async () => {
   const tmp = makeTempProfile();
   seedConfig(tmp);
-  const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+  const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
   await waitForAppReady(page);
 
   await page.waitForFunction(async () => {

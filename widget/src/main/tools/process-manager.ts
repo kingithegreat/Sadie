@@ -1,5 +1,5 @@
 /**
- * SADIE Process Manager Tool
+ * HomeBot Process Manager Tool
  *
  * Lists running processes, gets info on a specific process,
  * and (with confirmation) kills a process by name or PID.
@@ -15,7 +15,7 @@ const execAsync = promisify(exec);
 // ---- Protected processes that must never be killed ----
 const PROTECTED_PROCESSES = new Set([
   'system', 'smss', 'csrss', 'wininit', 'winlogon', 'lsass',
-  'services', 'svchost', 'electron', 'node', 'sadie'
+  'services', 'svchost', 'electron', 'node', 'homebot'
 ]);
 
 // ============= TOOL DEFINITIONS =============
@@ -75,7 +75,7 @@ export const killProcessDef: ToolDefinition = {
   name: 'kill_process',
   description:
     'Terminate a process by name or PID. ' +
-    'System, SADIE, and Node processes are protected and cannot be killed. ' +
+    'System, HomeBot, and Node processes are protected and cannot be killed. ' +
     'Requires user confirmation.',
   category: 'system',
   requiresConfirmation: true,

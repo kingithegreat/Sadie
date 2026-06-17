@@ -1,5 +1,5 @@
 /**
- * Unit tests for the SADIE Vision tools (vision_describe, vision_query)
+ * Unit tests for the HomeBot Vision tools (vision_describe, vision_query)
  */
 
 import * as fs from 'fs';

@@ -67,7 +67,7 @@ import {
 let tmpDir: string;
 
 beforeAll(() => {
-  tmpDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'sadie-fs-test-'));
+  tmpDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'homebot-fs-test-'));
 });
 
 afterAll(() => {

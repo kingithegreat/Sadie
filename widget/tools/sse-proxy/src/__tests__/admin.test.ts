@@ -3,7 +3,7 @@ process.env.PROXY_API_KEYS = '';
 process.env.PROXY_REQUIRE_API_KEY = 'false';
 const app = require('../index').default;
 afterAll(async () => { try { await require('../index').gracefulShutdown(); } catch (e) { /* ignore */ } });
-const adminHeader = { 'x-sadie-admin-key': 'adminchangeme' };
+const adminHeader = { 'x-homebot-admin-key': 'adminchangeme' };
 
 describe('Admin endpoints', () => {
   test('Get keys requires admin header', async () => {

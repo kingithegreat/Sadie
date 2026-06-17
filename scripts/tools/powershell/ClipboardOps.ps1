@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    SADIE Clipboard Operations PowerShell Tool
+    HomeBot Clipboard Operations PowerShell Tool
 .DESCRIPTION
     Reads from and writes to the Windows clipboard securely.
     Actions: read, write, clear

@@ -3,7 +3,7 @@
  */
 
 jest.mock('electron', () => ({
-  app: { getPath: jest.fn(() => '/tmp/sadie-test') },
+  app: { getPath: jest.fn(() => '/tmp/homebot-test') },
 }));
 
 describe('skills-loader', () => {

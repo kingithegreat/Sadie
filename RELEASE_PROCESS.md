@@ -1,12 +1,12 @@
-# SADIE — Release Process
+# HomeBot — Release Process
 
-Step-by-step process for building, validating, and publishing a SADIE release.
+Step-by-step process for building, validating, and publishing a HomeBot release.
 
 ---
 
 ## Version Numbering
 
-SADIE uses semantic versioning: `MAJOR.MINOR.PATCH`
+HomeBot uses semantic versioning: `MAJOR.MINOR.PATCH`
 
 | Component | When to Increment |
 |---|---|
@@ -151,7 +151,7 @@ git push origin v<X.Y.Z>
 
 ### 5. GitHub Release
 
-1. Go to [Releases](https://github.com/kingithegreat/Sadie/releases).
+1. Go to [Releases](https://github.com/kingithegreat/HomeBot/releases).
 2. Click **Draft a new release**.
 3. Select the tag `v<X.Y.Z>`.
 4. Title: `v<X.Y.Z> — <summary>`.
@@ -163,7 +163,7 @@ git push origin v<X.Y.Z>
 
 ## Auto-Update
 
-SADIE uses Electron's built-in auto-update mechanism:
+HomeBot uses Electron's built-in auto-update mechanism:
 
 - The app checks for updates on launch.
 - Update metadata is fetched from the GitHub Releases API.

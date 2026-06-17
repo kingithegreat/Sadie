@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-process.env.SADIE_E2E = 'true';
+process.env.HOMEBOT_E2E = 'true';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
@@ -41,7 +41,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
             return;
           }
         }
-        if (req.url === '/webhook/sadie/chat' && req.method === 'POST') {
+        if (req.url === '/webhook/homebot/chat' && req.method === 'POST') {
           // Handle n8n webhook path as well
           try {
             let body = '';
@@ -78,9 +78,9 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   const { app, page } = await launchElectronApp({
     OLLAMA_URL: base,
     N8N_URL: base,
-    SADIE_E2E: '1',
-    SADIE_E2E_BYPASS_MOCK: '1',
-    SADIE_DIRECT_OLLAMA: '1',
+    HOMEBOT_E2E: '1',
+    HOMEBOT_E2E_BYPASS_MOCK: '1',
+    HOMEBOT_DIRECT_OLLAMA: '1',
     NODE_ENV: 'test'
   });
   await waitForAppReady(page);
@@ -107,7 +107,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
     // eslint-disable-next-line no-console
     console.log('[E2E-DEBUG] requesting main router logs');
     // @ts-ignore - test helper exposed by preload/main
-    const routerLogs = await page.evaluate(async () => await (window as any).electron.invoke('sadie:__e2e_get_router_logs'));
+    const routerLogs = await page.evaluate(async () => await (window as any).electron.invoke('homebot:__e2e_get_router_logs'));
     // eslint-disable-next-line no-console
     console.log('[E2E-ROUTER-LOGS]', JSON.stringify(Array.isArray(routerLogs) ? routerLogs.slice(-200) : routerLogs, null, 2));
   } catch (e) {
@@ -119,7 +119,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   try {
     await page.waitForTimeout(2000);
     // @ts-ignore
-    const routerLogs2 = await page.evaluate(async () => await (window as any).electron.invoke('sadie:__e2e_get_router_logs'));
+    const routerLogs2 = await page.evaluate(async () => await (window as any).electron.invoke('homebot:__e2e_get_router_logs'));
     // eslint-disable-next-line no-console
     console.log('[E2E-ROUTER-LOGS-2]', JSON.stringify(Array.isArray(routerLogs2) ? routerLogs2.slice(-200) : routerLogs2, null, 2));
   } catch (e) {
@@ -130,7 +130,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   // Also fetch main/renderer debug buffers for additional context
   try {
     // @ts-ignore
-    const debug = await page.evaluate(async () => await (window as any).electron.invoke('sadie:read-debug-logs'));
+    const debug = await page.evaluate(async () => await (window as any).electron.invoke('homebot:read-debug-logs'));
     // eslint-disable-next-line no-console
     console.log('[E2E-DEBUG-LOGS]', JSON.stringify(debug, null, 2));
   } catch (e) {
@@ -149,7 +149,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   expect(recorded.messages.length).toBeGreaterThan(0);
   const firstSystem = recorded.messages.find((m: any) => m.role === 'system');
   expect(firstSystem).toBeDefined();
-  // Since conversation prompt is prepended, it should appear before the global SADIE prompt
+  // Since conversation prompt is prepended, it should appear before the global HomeBot prompt
   expect(firstSystem.content).toContain('terse assistant');
 
   await app.close();

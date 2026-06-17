@@ -73,8 +73,8 @@ describe('diffFilesHandler', () => {
 
   beforeEach(async () => {
     const home = os.homedir();
-    tmpA = path.join(home, `sadie-test-a-${Date.now()}.txt`);
-    tmpB = path.join(home, `sadie-test-b-${Date.now()}.txt`);
+    tmpA = path.join(home, `homebot-test-a-${Date.now()}.txt`);
+    tmpB = path.join(home, `homebot-test-b-${Date.now()}.txt`);
     await fs.promises.writeFile(tmpA, 'line1\nline2\nline3', 'utf8');
     await fs.promises.writeFile(tmpB, 'line1\nline2 changed\nline3\nline4', 'utf8');
   });

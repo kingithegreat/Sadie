@@ -3,8 +3,8 @@ const { _electron: electron } = require('playwright');
 
 (async () => {
   const env = { ...process.env };
-  env.SADIE_E2E = env.SADIE_E2E || '1';
-  env.SADIE_DIRECT_OLLAMA = env.SADIE_DIRECT_OLLAMA || '1';
+  env.HOMEBOT_E2E = env.HOMEBOT_E2E || '1';
+  env.HOMEBOT_DIRECT_OLLAMA = env.HOMEBOT_DIRECT_OLLAMA || '1';
   env.NODE_ENV = 'test';
 
   const args = [path.join(__dirname, '../dist/main/index.js')];
@@ -20,7 +20,7 @@ const { _electron: electron } = require('playwright');
       console.log(`--- WINDOW ${i} TITLE: ${title} ---`);
       console.log(content.substring(0, 800));
       console.log('--- END WINDOW ---');
-      const hasInput = await w.$('label:has-text("Message SADIE")');
+      const hasInput = await w.$('label:has-text("Message HomeBot")');
       console.log('Has Message input label:', !!hasInput);
       const hasFirstRun = await w.$('label:has-text("Telemetry")');
       console.log('Has first-run telemetry label:', !!hasFirstRun);

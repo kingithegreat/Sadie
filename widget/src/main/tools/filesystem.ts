@@ -1,7 +1,7 @@
 /**
- * SADIE File System Tools
+ * HomeBot File System Tools
  * 
- * Provides safe file system operations that SADIE can execute.
+ * Provides safe file system operations that HomeBot can execute.
  * Includes safeguards like path validation and confirmation for destructive ops.
  */
 

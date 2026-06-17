@@ -8,16 +8,16 @@ function findTelemetryFile() {
     if (fs.existsSync(p)) return p;
   }
   const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-  const p1 = path.join(appData, 'SADIE', 'logs', 'telemetry-events.log');
+  const p1 = path.join(appData, 'HomeBot', 'logs', 'telemetry-events.log');
   if (fs.existsSync(p1)) return p1;
-  const p2 = path.join(os.homedir(), 'SADIE_DIAG', 'telemetry-events.log');
+  const p2 = path.join(os.homedir(), 'HOMEBOT_DIAG', 'telemetry-events.log');
   if (fs.existsSync(p2)) return p2;
   return null;
 }
 
 const file = findTelemetryFile();
 if (!file) {
-  console.error('No telemetry-events.log found (checked TEST_USERDATA, %APPDATA% and ~/SADIE_DIAG)');
+  console.error('No telemetry-events.log found (checked TEST_USERDATA, %APPDATA% and ~/HOMEBOT_DIAG)');
   process.exit(2);
 }
 

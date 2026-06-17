@@ -37,7 +37,7 @@ Tool definition (concept):
 ```
 
 Execution flow:
-  1. `sadie:__e2e_invoke_tool_batch` calls `executeToolBatch(calls)`.
+  1. `homebot:__e2e_invoke_tool_batch` calls `executeToolBatch(calls)`.
   2. `executeToolBatch()` inspects `requiredPermissions` and returns `needs_confirmation` if any
      permission is missing.
   3. The message router displays the permission modal; user chooses `allow_once` or `always_allow`.

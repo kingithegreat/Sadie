@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    SADIE Calendar Operations PowerShell Tool
+    HomeBot Calendar Operations PowerShell Tool
 .DESCRIPTION
     Reads and creates Windows calendar events via COM/Shell objects.
     Actions: list_events | add_event | get_today

@@ -31,7 +31,7 @@ describe('CI smoke - permissions', () => {
   test('permission-allowed batch executes end-to-end', async () => {
     // Make a temp HOME so writes do not affect runner home and ensure module-level
     // constants are initialized with this temp during module load.
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sadie-smoke-'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-smoke-'));
     process.env.HOME = tmp;
     process.env.USERPROFILE = tmp;
 
@@ -59,7 +59,7 @@ describe('CI smoke - permissions', () => {
       expect(r.success).toBe(true);
     }
 
-    // Verify file exists by resolving via SADIE's path resolver
+    // Verify file exists by resolving via HomeBot's path resolver
     const { resolveUserPath } = require('../tools/filesystem');
     const reportPath = resolveUserPath('Desktop/SmokeTest/report.txt');
     expect(fs.existsSync(reportPath)).toBe(true);

@@ -1,5 +1,5 @@
 /**
- * SADIE Memory Tools
+ * HomeBot Memory Tools
  *
  * Primary storage: Qdrant vector database (semantic search via nomic-embed-text).
  * Fallback storage: flat JSON file at memory/json-store/memories.json
@@ -16,12 +16,12 @@ import * as path from 'path';
 
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-const COLLECTION_NAME = 'sadie_memories';
+const COLLECTION_NAME = 'homebot_memories';
 const EMBEDDING_MODEL = 'nomic-embed-text';
 
 // Resolve the JSON fallback store directory the same way memory-manager.ts does:
 // dev  → project-root/memory/json-store  (4 levels up from widget/out/main/tools)
-// prod → %APPDATA%/sadie/memory/json-store  (Electron userData)
+// prod → %APPDATA%/homebot/memory/json-store  (Electron userData)
 // Uses require() lazily so Jest’s electron mock is active before the call.
 function getJsonStoreDir(): string {
   try {

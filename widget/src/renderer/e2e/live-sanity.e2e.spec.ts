@@ -9,7 +9,7 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
   let tmpDataDir: string;
 
   test.beforeAll(async () => {
-    // 1. Strip SADIE_E2E so the backend routes to the real Ollama instance
+    // 1. Strip HOMEBOT_E2E so the backend routes to the real Ollama instance
     const mergedEnv: Record<string, string> = { NODE_ENV: 'test' };
     for (const [key, value] of Object.entries(process.env)) {
       if (typeof value === 'string') {
@@ -17,10 +17,10 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
       }
     }
     delete mergedEnv.ELECTRON_RUN_AS_NODE;
-    delete mergedEnv.SADIE_E2E; 
+    delete mergedEnv.HOMEBOT_E2E; 
 
     // 2. Create an isolated user data directory to prevent touching real user settings
-    tmpDataDir = path.join(os.tmpdir(), `sadie-live-sanity-${Date.now()}`);
+    tmpDataDir = path.join(os.tmpdir(), `homebot-live-sanity-${Date.now()}`);
     fs.mkdirSync(path.join(tmpDataDir, 'config'), { recursive: true });
     
     // Force firstRun off and select the default standard model
@@ -31,7 +31,7 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
       chatModel: 'qwen2.5:7b'
     }, null, 2));
 
-    mergedEnv.SADIE_E2E_USER_DATA_DIR = tmpDataDir;
+    mergedEnv.HOMEBOT_E2E_USER_DATA_DIR = tmpDataDir;
 
     const outEntry = path.join(process.cwd(), 'out', 'main', 'index.js');
 

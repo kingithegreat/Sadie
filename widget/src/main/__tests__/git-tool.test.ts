@@ -39,7 +39,7 @@ import {
 } from '../tools/git';
 
 const HOME = os.homedir();
-const SAFE_REPO = path.join(HOME, 'Desktop', 'sadie');
+const SAFE_REPO = path.join(HOME, 'Desktop', 'homebot');
 
 beforeEach(() => jest.clearAllMocks());
 

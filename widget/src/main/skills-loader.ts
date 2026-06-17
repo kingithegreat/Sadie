@@ -1,5 +1,5 @@
 /**
- * SADIE Skills Loader
+ * HomeBot Skills Loader
  *
  * Reads SKILL.md files from the skills/ directory and provides trigger-based
  * injection of domain-specific context into the system prompt.

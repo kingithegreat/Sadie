@@ -262,7 +262,7 @@ export function getSettings(): Settings {
       ...(savedSettings.permissions || {})
     } as Record<string, boolean>;
     merged.permissions = mergedPermissions;
-    const demoMode = process.argv?.includes('--demo') || process.env.SADIE_DEMO_MODE === '1' || process.env.SADIE_DEMO_MODE === 'true';
+    const demoMode = process.argv?.includes('--demo') || process.env.HOMEBOT_DEMO_MODE === '1' || process.env.HOMEBOT_DEMO_MODE === 'true';
     if (demoMode) {
       merged.telemetryEnabled = false;
       merged.telemetryConsentTimestamp = undefined;

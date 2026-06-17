@@ -12,7 +12,7 @@ import { join } from 'path';
 let tmpDir: string;
 
 beforeAll(() => {
-  tmpDir = mkdtempSync(join(os.tmpdir(), 'sadie-persist-test-'));
+  tmpDir = mkdtempSync(join(os.tmpdir(), 'homebot-persist-test-'));
   process.env.TEST_USERDATA = tmpDir;
 });
 

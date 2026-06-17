@@ -1,6 +1,6 @@
 # Custom LLM API Support
 
-SADIE supports bringing your own LLM API from 11 named providers or any custom OpenAI-compatible endpoint.
+HomeBot supports bringing your own LLM API from 11 named providers or any custom OpenAI-compatible endpoint.
 
 ## Supported Providers
 
@@ -72,7 +72,7 @@ The built-in provider list currently exposes the curated Gemini 2.0 and 1.5 set 
 
 ### Auto-Configured API URLs
 
-When you select a named provider, SADIE auto-fills the correct API base URL:
+When you select a named provider, HomeBot auto-fills the correct API base URL:
 
 | Provider | API Base URL |
 |----------|-------------|
@@ -89,7 +89,7 @@ When you select a named provider, SADIE auto-fills the correct API base URL:
 
 ## Configuration
 
-1. Open SADIE Settings
+1. Open HomeBot Settings
 2. Navigate to "Custom LLM API" section
 3. Click "Configure" to expand options
 4. Fill in the following fields:
@@ -150,7 +150,7 @@ API Key: (not required)
 
 1. Enable "Use custom LLM API instead of Ollama" checkbox
 2. Save settings
-3. Start chatting - SADIE will now use your configured API
+3. Start chatting - HomeBot will now use your configured API
 
 ## Features & Limitations
 
@@ -159,10 +159,10 @@ API Key: (not required)
 - ✅ Conversation history maintained
 - ✅ System prompts preserved
 - ✅ Streaming responses
-- ✅ API key stored locally (never sent to SADIE servers)
+- ✅ API key stored locally (never sent to HomeBot servers)
 
 ### Current Limitations
-- ⚠️ **Tool calling not yet supported** - Custom APIs cannot execute SADIE tools (file operations, web search, etc.)
+- ⚠️ **Tool calling not yet supported** - Custom APIs cannot execute HomeBot tools (file operations, web search, etc.)
 - ⚠️ **Image attachments not supported** - Falls back to Ollama's vision model when images are attached
 - ⚠️ **Document parsing falls back to Ollama** - Document summarization requires Ollama
 
@@ -170,7 +170,7 @@ API Key: (not required)
 
 ## Fallback Behavior
 
-SADIE automatically falls back to Ollama in the following scenarios:
+HomeBot automatically falls back to Ollama in the following scenarios:
 - Image attachments are present
 - Custom LLM configuration is invalid or incomplete
 - Custom API connection fails
@@ -179,9 +179,9 @@ SADIE automatically falls back to Ollama in the following scenarios:
 ## Security
 
 - API keys are stored locally in your user settings file
-- Keys are never transmitted to SADIE servers or third parties
+- Keys are never transmitted to HomeBot servers or third parties
 - Keys are only sent to your configured API endpoint
-- Stored at: `%APPDATA%\SADIE\config\user-settings.json` (Windows)
+- Stored at: `%APPDATA%\HomeBot\config\user-settings.json` (Windows)
 
 ## Pricing Considerations
 

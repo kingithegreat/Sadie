@@ -5,7 +5,7 @@ type PermissionResponse = { requestId: string; decision: 'allow_once'|'always_al
 const pending = new Map<string, (resp: PermissionResponse) => void>();
 
 if (ipcMain && typeof ipcMain.on === 'function') {
-  ipcMain.on('sadie:permission-response', (_ev: IpcMainEvent, data: PermissionResponse) => {
+  ipcMain.on('homebot:permission-response', (_ev: IpcMainEvent, data: PermissionResponse) => {
     try {
       const resolver = pending.get(data.requestId);
       if (resolver) {
@@ -33,7 +33,7 @@ export const permissionRequester = {
       });
 
       try {
-        sender.send('sadie:permission-request', { requestId, missingPermissions, reason, streamId });
+        sender.send('homebot:permission-request', { requestId, missingPermissions, reason, streamId });
       } catch (e) {
         // If sending fails, resolve as cancel
         clearTimeout(timeout);

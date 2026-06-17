@@ -1,5 +1,5 @@
 /**
- * SADIE Search Tool
+ * HomeBot Search Tool
  *
  * Local file search using Everything Search (es.exe) when available,
  * falling back to PowerShell Get-ChildItem.  Only paths inside the

@@ -37,9 +37,9 @@ describe('message-router telemetry on upstream failures', () => {
   });
 
   it('records a telemetry event when probe detects n8n unavailable', async () => {
-    // Register router which should attach the sadie:stream-message handler
+    // Register router which should attach the homebot:stream-message handler
     registerMessageRouter({} as any, 'http://localhost:5678');
-    const h = handlers['sadie:stream-message'];
+    const h = handlers['homebot:stream-message'];
     expect(typeof h).toBe('function');
 
     // Fake IPC event with sender.send stub

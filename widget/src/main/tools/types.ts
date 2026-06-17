@@ -1,7 +1,7 @@
 /**
- * SADIE Tool System - Type Definitions
+ * HomeBot Tool System - Type Definitions
  * 
- * Defines the schema for tools that SADIE can execute locally.
+ * Defines the schema for tools that HomeBot can execute locally.
  * Compatible with Ollama's tool calling format.
  */
 

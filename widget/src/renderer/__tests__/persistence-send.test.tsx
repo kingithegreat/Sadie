@@ -135,12 +135,12 @@ test('sending an attached document includes document payload on the first stream
   const { getByLabelText, getByText, findByText } = render(<App />);
 
   const documentInput = getByLabelText('Attach documents') as HTMLInputElement;
-  const file = new File(['Quarterly review body'], 'SADIE_Midpoint_Review.docx', {
+  const file = new File(['Quarterly review body'], 'HOMEBOT_Midpoint_Review.docx', {
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   });
 
   fireEvent.change(documentInput, { target: { files: [file] } });
-  await findByText('SADIE_Midpoint_Review.docx');
+  await findByText('HOMEBOT_Midpoint_Review.docx');
 
   const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
   fireEvent.change(textarea, { target: { value: 'this was you what do i think?' } });
@@ -149,11 +149,11 @@ test('sending an attached document includes document payload on the first stream
   await waitFor(() => expect(capturedStreamRequests.length).toBeGreaterThan(0));
 
   const payload = capturedStreamRequests[0];
-  expect(payload.message).toContain('[Document attached: SADIE_Midpoint_Review.docx]');
+  expect(payload.message).toContain('[Document attached: HOMEBOT_Midpoint_Review.docx]');
   expect(payload.message).toContain('this was you what do i think?');
   expect(payload.documents).toHaveLength(1);
   expect(payload.documents[0]).toMatchObject({
-    filename: 'SADIE_Midpoint_Review.docx',
+    filename: 'HOMEBOT_Midpoint_Review.docx',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     size: file.size,
   });

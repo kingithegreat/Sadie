@@ -6,7 +6,7 @@ import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
 function makeTempProfile() {
-  const base = path.join(os.tmpdir(), `sadie-e2e-status-${Date.now()}`);
+  const base = path.join(os.tmpdir(), `homebot-e2e-status-${Date.now()}`);
   if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
   fs.mkdirSync(base, { recursive: true });
   return base;
@@ -36,7 +36,7 @@ test.describe('Connection status and theme', () => {
   test('shows connection status indicators', async () => {
     const tmp = makeTempProfile();
     seedConfig(tmp);
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     // The status bar should show Ollama and/or n8n connection indicators
@@ -50,11 +50,11 @@ test.describe('Connection status and theme', () => {
   test('app root has data-theme attribute', async () => {
     const tmp = makeTempProfile();
     seedConfig(tmp, { theme: 'dark' });
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     // The app root should have the theme attribute
-    const root = page.locator('[data-testid="sadie-app-root"]');
+    const root = page.locator('[data-testid="homebot-app-root"]');
     await expect(root).toHaveAttribute('data-theme', /(dark|light|system)/);
 
     await app.close();
@@ -63,7 +63,7 @@ test.describe('Connection status and theme', () => {
   test('token counter is visible during chat', async () => {
     const tmp = makeTempProfile();
     seedConfig(tmp);
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     // Token counter is rendered somewhere in the chat interface

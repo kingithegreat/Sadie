@@ -1,4 +1,4 @@
-# SADIE SSE Proxy
+# HomeBot SSE Proxy
 
 This microservice forwards streaming responses from vision/text models (OpenAI / Ollama) to clients via Server-Sent Events (SSE).
 
@@ -10,11 +10,11 @@ Features
 - Handles client disconnects (AbortController)
 - Timeout handling
 - CORS, body-size limits, basic validation and logging
- - Optional API key authentication via `x-sadie-key` header
+ - Optional API key authentication via `x-homebot-key` header
 
 Requirements
 - Node 18+ (or Node with `undici` compatibility)
-- n8n or SADIE configured to call this proxy for streaming
+- n8n or HomeBot configured to call this proxy for streaming
 
 Quick start
 
@@ -86,7 +86,7 @@ npm run dev
 ```
 
 Authentication
-- The proxy supports API keys for request authentication. When enabled (via `requireApiKey` in `proxy.config.json` or `PROXY_REQUIRE_API_KEY=true` env), every POST `/stream` must include the header `x-sadie-key: <key>` where `<key>` is one of the configured keys (via `proxyApiKeys` in config or `PROXY_API_KEYS` comma-separated env var or `PROXY_API_KEY` single key). If missing or invalid, the proxy returns a 401 with an SSE error frame:
+- The proxy supports API keys for request authentication. When enabled (via `requireApiKey` in `proxy.config.json` or `PROXY_REQUIRE_API_KEY=true` env), every POST `/stream` must include the header `x-homebot-key: <key>` where `<key>` is one of the configured keys (via `proxyApiKeys` in config or `PROXY_API_KEYS` comma-separated env var or `PROXY_API_KEY` single key). If missing or invalid, the proxy returns a 401 with an SSE error frame:
 
 ```
 data: { "error": true, "code": "AUTH_FAILED", "message": "Invalid or missing API key" }
@@ -98,18 +98,18 @@ Admin endpoints
   - GET `/admin/keys` — list keys (masked)
   - POST `/admin/keys` — add a new key (body: `{ key: '...' }`)
   - DELETE `/admin/keys` — delete a key (body: `{ key: '...' }`)
-- Admin endpoints require `x-sadie-admin-key: <adminKey>` header where adminKey is configured via `ADMIN_API_KEY` env var or `admin.adminApiKey` in `proxy.config.json`.
+- Admin endpoints require `x-homebot-admin-key: <adminKey>` header where adminKey is configured via `ADMIN_API_KEY` env var or `admin.adminApiKey` in `proxy.config.json`.
 
 Note: If `persistKeys` is enabled, keys managed via admin endpoints are written into `proxy.config.json` in plaintext. For production, prefer environment variables or a secure secret store and set `persistKeys` to false.
 
 Example cURL — list keys:
 ```powershell
-curl -X GET "http://localhost:5050/admin/keys" -H "x-sadie-admin-key: adminchangeme"
+curl -X GET "http://localhost:5050/admin/keys" -H "x-homebot-admin-key: adminchangeme"
 ```
 
 Example cURL — add key:
 ```powershell
-curl -X POST "http://localhost:5050/admin/keys" -H "Content-Type: application/json" -H "x-sadie-admin-key: adminchangeme" -d "{ \"key\": \"newkey\" }"
+curl -X POST "http://localhost:5050/admin/keys" -H "Content-Type: application/json" -H "x-homebot-admin-key: adminchangeme" -d "{ \"key\": \"newkey\" }"
 ```
 
 
@@ -140,7 +140,7 @@ data: [DONE]
 Example cURL (OpenAI streaming)
 
 ```powershell
-curl -N -X POST "http://localhost:5050/stream" -H "Content-Type: application/json" -H "x-sadie-key: changeme" -d "{
+curl -N -X POST "http://localhost:5050/stream" -H "Content-Type: application/json" -H "x-homebot-key: changeme" -d "{
   \"provider\": \"openai\",
   \"model\": \"gpt-4o-mini-vision\",
   \"prompt\": \"Describe the following image\",
@@ -152,7 +152,7 @@ curl -N -X POST "http://localhost:5050/stream" -H "Content-Type: application/jso
 Example cURL (Ollama streaming)
 
 ```powershell
-curl -N -X POST "http://localhost:5050/stream" -H "Content-Type: application/json" -H "x-sadie-key: changeme" -d "{
+curl -N -X POST "http://localhost:5050/stream" -H "Content-Type: application/json" -H "x-homebot-key: changeme" -d "{
   \"provider\": \"ollama\",
   \"model\": \"phi3-vision\",
   \"prompt\": \"Describe this image\",
@@ -160,13 +160,13 @@ curl -N -X POST "http://localhost:5050/stream" -H "Content-Type: application/jso
 }"
 ```
 
-SADIE (Electron main process) call example (fetch with streaming)
+HomeBot (Electron main process) call example (fetch with streaming)
 
 ```ts
 // In the main process or preload, make a fetch to the proxy and handle SSE chunks
 const resp = await fetch('http://localhost:5050/stream', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'x-sadie-key': 'changeme' },
+  headers: { 'Content-Type': 'application/json', 'x-homebot-key': 'changeme' },
   body: JSON.stringify({ provider: 'openai', model: 'gpt-4o-mini-vision', prompt: 'Describe image', images })
 });
 
@@ -197,7 +197,7 @@ while (true) {
 n8n workflows - call SSE Proxy instead of direct model endpoints
 
 - Replace `Call Vision Model` HTTP Request nodes with a POST to `http://<proxy-host>:5050/stream`. Provide the `provider` (`openai` or `ollama`), `model`, `prompt/messages`, and pass `headers` with `Authorization` if needed.
- - Replace `Call Vision Model` HTTP Request nodes with a POST to `http://<proxy-host>:5050/stream`. Provide the `provider` (`openai` or `ollama`), `model`, `prompt/messages`, and pass `headers` with `Authorization` if needed. If proxy authentication is enabled, add a header `x-sadie-key` with the configured key.
+ - Replace `Call Vision Model` HTTP Request nodes with a POST to `http://<proxy-host>:5050/stream`. Provide the `provider` (`openai` or `ollama`), `model`, `prompt/messages`, and pass `headers` with `Authorization` if needed. If proxy authentication is enabled, add a header `x-homebot-key` with the configured key.
  - If `ENFORCE_SERVER_AUTH` is enabled, you can omit the `Authorization` header; the proxy will use `OPENAI_API_KEY` or `OLLAMA_API_KEY` from the server environment.
 - Responses will be streamed back. If you need streaming inside the workflow, add a proxy or integration to capture SSE; n8n's HTTP Request node does not currently expose streaming chunks as workflow items.
 
@@ -212,16 +212,16 @@ Security & notes
 Deployment (Docker)
 - `docker-compose.yml` - development compose, `docker-compose.prod.yml` - production-ready compose with nginx reverse proxy, Redis, mock upstream and sse-proxy
 - `Dockerfile.prod` - multi-stage build for production
-- For prod deploy (one-liner): `./deploy-sadie-proxy.sh` (bash) or `./deploy-sadie-proxy.ps1` (PowerShell). These run `docker compose -f docker-compose.prod.yml up --build -d`.
+- For prod deploy (one-liner): `./deploy-homebot-proxy.sh` (bash) or `./deploy-homebot-proxy.ps1` (PowerShell). These run `docker compose -f docker-compose.prod.yml up --build -d`.
 
 Rotating keys and admin UI
-- CLI: `node cli/rotate-keys.js add <key>` / `remove` / `list` — or use the admin endpoints with `x-sadie-admin-key`.
+- CLI: `node cli/rotate-keys.js add <key>` / `remove` / `list` — or use the admin endpoints with `x-homebot-admin-key`.
 - GUI: `GET /admin/ui` (requires admin header) shows a simple UI that lets you add/delete keys interactively.
 
-Mapping to SADIE
-- If SADIE runs locally (outside Docker), call `http://localhost:5050/stream` directly.
-- If SADIE runs inside Docker, use docker networking or `host.docker.internal` to reach the proxy.
-- For Linux here is a simple `docker run` mapping to host network: `docker run --rm --network host -e PROXY_API_KEYS=changeme sadie/sse-proxy`
+Mapping to HomeBot
+- If HomeBot runs locally (outside Docker), call `http://localhost:5050/stream` directly.
+- If HomeBot runs inside Docker, use docker networking or `host.docker.internal` to reach the proxy.
+- For Linux here is a simple `docker run` mapping to host network: `docker run --rm --network host -e PROXY_API_KEYS=changeme homebot/sse-proxy`
 
 Testing
 - Run TypeScript build: `npm run build`. If the build complains about Node types, install dependencies via `npm i` and re-run.
@@ -232,7 +232,7 @@ Testing
 
 Key concepts and behavior
 - The proxy exposes `/stream` (POST) for SSE streaming and `/ws` for WebSocket streaming. Requests should include `provider` (openai|ollama), `model`, and one of `prompt`, `messages`, or `images`.
-- Authentication: `x-sadie-key: <key>` for proxy API keys. Admin operations require `x-sadie-admin-key`.
+- Authentication: `x-homebot-key: <key>` for proxy API keys. Admin operations require `x-homebot-admin-key`.
 - Server-side auth enforcement: set `ENFORCE_SERVER_AUTH=true` to force upstream API calls to use server environment keys (`OPENAI_API_KEY` / `OLLAMA_API_KEY`) rather than any client-provided Authorization header.
 - Rate limiting: per-key or per-IP rate limiting governed by Redis when `REDIS_URL` is set, otherwise in-memory fallback.
 - Persistent keys (optional): `persistKeys=true` will store keys in `proxy.config.json`. If `KEY_ENCRYPTION_SECRET` is set, keys will be stored encrypted.

@@ -1,5 +1,5 @@
 /**
- * SADIE Git Tool
+ * HomeBot Git Tool
  *
  * Provides safe, read-mostly git operations (status, log, diff, branch, stash).
  * Write operations (commit, push) require user confirmation and are gated
@@ -41,7 +41,7 @@ export const gitStatusDef: ToolDefinition = {
     properties: {
       repo_path: {
         type: 'string',
-        description: 'Absolute path to the git repository (defaults to the SADIE project root)'
+        description: 'Absolute path to the git repository (defaults to the HomeBot project root)'
       }
     },
     required: []
@@ -149,7 +149,7 @@ export const gitCommitDef: ToolDefinition = {
 
 // ============= TOOL HANDLERS =============
 
-const DEFAULT_REPO = path.join(HOME_DIR, 'Desktop', 'sadie');
+const DEFAULT_REPO = path.join(HOME_DIR, 'Desktop', 'homebot');
 
 export const gitStatusHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {

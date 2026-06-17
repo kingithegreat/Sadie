@@ -1,5 +1,5 @@
 {
-  "name": "SADIE Browser Automation Tool (Phase 6)",
+  "name": "HomeBot Browser Automation Tool (Phase 6)",
   "active": true,
   "nodes": [
     {
@@ -13,7 +13,7 @@
       ],
       "parameters": {
         "httpMethod": "POST",
-        "path": "sadie/tools/browser",
+        "path": "homebot/tools/browser",
         "responseMode": "onReceived",
         "options": {}
       },
@@ -34,7 +34,7 @@
     },
     {
       "parameters": {
-        "command": "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"browser\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\sadie\\config\\safety-rules.json\""
+        "command": "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"browser\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\homebot\\config\\safety-rules.json\""
       },
       "id": "safety-validation",
       "name": "Safety Validation",
@@ -60,7 +60,7 @@
     },
     {
       "parameters": {
-        "command": "=powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\BrowserOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.url ? ` -Url \"${String($json.url).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}"
+        "command": "=powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\BrowserOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.url ? ` -Url \"${String($json.url).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}"
       },
       "id": "execute-browser",
       "name": "Execute Browser Action",
@@ -85,7 +85,7 @@
       ]
     },
     {
-      "id": "sadie-auth-guard",
+      "id": "homebot-auth-guard",
       "name": "Auth Guard",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -94,7 +94,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
       }
     }
   ],
@@ -171,7 +171,7 @@
   },
   "tags": [
     {
-      "name": "sadie"
+      "name": "homebot"
     },
     {
       "name": "tools"

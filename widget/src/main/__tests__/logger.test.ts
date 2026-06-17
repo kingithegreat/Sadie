@@ -10,7 +10,7 @@ import {
   readToolCallAggregates,
 } from '../../main/utils/logger';
 
-const tmp = join(os.tmpdir(), 'sadie-logger-test-' + Date.now());
+const tmp = join(os.tmpdir(), 'homebot-logger-test-' + Date.now());
 
 beforeAll(() => {
   process.env.TEST_USERDATA = tmp;
@@ -77,10 +77,10 @@ describe('initLogging', () => {
     expect(existsSync(join(tmp, 'logs', 'startup.log'))).toBe(true);
   });
 
-  test('startup.log contains SADIE Startup header', () => {
+  test('startup.log contains HomeBot Startup header', () => {
     initLogging();
     const content = readLog('startup.log');
-    expect(content).toContain('SADIE Startup');
+    expect(content).toContain('HomeBot Startup');
   });
 });
 
@@ -165,7 +165,7 @@ describe('logTelemetryConsent', () => {
 
 describe('readToolCallAggregates', () => {
   // Each test uses its own isolated log dir so prior events don't leak in.
-  const localTmp = join(os.tmpdir(), 'sadie-aggregates-test-' + Date.now());
+  const localTmp = join(os.tmpdir(), 'homebot-aggregates-test-' + Date.now());
 
   beforeEach(() => {
     process.env.TEST_USERDATA = localTmp;

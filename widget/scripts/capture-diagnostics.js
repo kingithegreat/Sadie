@@ -2,15 +2,15 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const OUTPUT_DIR = path.join(os.homedir(), "SADIE_DIAG");
+const OUTPUT_DIR = path.join(os.homedir(), "HOMEBOT_DIAG");
 const TS = new Date().toISOString().replace(/[:.]/g, "-");
-const OUTFILE = path.join(OUTPUT_DIR, `sadie-diagnostics-${TS}.log`);
+const OUTFILE = path.join(OUTPUT_DIR, `homebot-diagnostics-${TS}.log`);
 
-global.__SADIE_MAIN_LOG_BUFFER = global.__SADIE_MAIN_LOG_BUFFER || [];
-global.__SADIE_RENDERER_LOG_BUFFER = global.__SADIE_RENDERER_LOG_BUFFER || [];
-global.__SADIE_ROUTER_LOG_BUFFER = global.__SADIE_ROUTER_LOG_BUFFER || [];
+global.__HOMEBOT_MAIN_LOG_BUFFER = global.__HOMEBOT_MAIN_LOG_BUFFER || [];
+global.__HOMEBOT_RENDERER_LOG_BUFFER = global.__HOMEBOT_RENDERER_LOG_BUFFER || [];
+global.__HOMEBOT_ROUTER_LOG_BUFFER = global.__HOMEBOT_ROUTER_LOG_BUFFER || [];
 // Runtime log path
-const RUNTIME_LOG = path.join(os.homedir(), 'SADIE_DIAG', 'sadie-runtime.log');
+const RUNTIME_LOG = path.join(os.homedir(), 'HOMEBOT_DIAG', 'homebot-runtime.log');
 
 function ensureDir() {
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -46,7 +46,7 @@ function writeOut() {
     fs.writeFileSync(OUTFILE, content, "utf8");
 
     console.log(`\n-------------------------------------------`);
-    console.log(`SADIE diagnostics written to:`);
+    console.log(`HomeBot diagnostics written to:`);
     console.log(OUTFILE);
     console.log(`-------------------------------------------\n`);
 }

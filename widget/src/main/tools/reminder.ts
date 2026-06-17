@@ -1,5 +1,5 @@
 /**
- * SADIE Reminder Tool
+ * HomeBot Reminder Tool
  *
  * In-process time-based reminders. When a reminder fires it shows a desktop
  * notification via Electron. Reminders are persisted to <userData>/reminders.json
@@ -18,7 +18,7 @@ function remindersFilePath(): string {
     return path.join(app.getPath('userData'), 'reminders.json');
   } catch {
     // In test environments app.getPath may not exist
-    return path.join(process.env.TEMP || '/tmp', 'sadie-reminders.json');
+    return path.join(process.env.TEMP || '/tmp', 'homebot-reminders.json');
   }
 }
 
@@ -82,7 +82,7 @@ function fireReminder(id: string) {
   try {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send('sadie:reminder-fired', { message: r.message, label: r.label });
+        win.webContents.send('homebot:reminder-fired', { message: r.message, label: r.label });
       }
     }
   } catch {

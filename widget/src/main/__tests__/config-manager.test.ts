@@ -23,7 +23,7 @@ jest.mock('electron', () => ({
 import { getSettings, saveSettings, assertPermission } from '../../main/config-manager';
 
 describe('config-manager integration tests', () => {
-  const temp = join(os.tmpdir(), 'sadie-test-' + Date.now());
+  const temp = join(os.tmpdir(), 'homebot-test-' + Date.now());
 
   beforeAll(() => {
     process.env.TEST_USERDATA = temp;

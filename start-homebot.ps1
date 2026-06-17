@@ -1,18 +1,18 @@
-# SADIE Start Script
-# This script checks all dependencies and starts SADIE
+# HomeBot Start Script
+# This script checks all dependencies and starts HomeBot
 #
 # DEV-ONLY: This script is intended for local development only.
 # Do NOT include this in release artifacts or CI release jobs.
 # If you are preparing a release, ensure environment flags like
-# SADIE_E2E and SADIE_DIRECT_OLLAMA are NOT set and run the
+# HOMEBOT_E2E and HOMEBOT_DIRECT_OLLAMA are NOT set and run the
 # `scripts/preflight-env-check.js` before building.
 
 $ErrorActionPreference = "Continue"
-$Host.UI.RawUI.WindowTitle = "SADIE Launcher"
+$Host.UI.RawUI.WindowTitle = "HomeBot Launcher"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "        SADIE Startup Script           " -ForegroundColor Cyan
+Write-Host "        HomeBot Startup Script           " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -285,19 +285,19 @@ if ($issues.Count -eq 0) {
     Write-Host "All critical checks passed!" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Starting SADIE..." -ForegroundColor Cyan
+    Write-Host "Starting HomeBot..." -ForegroundColor Cyan
     Write-Host ""
     
     # Set environment variables
-    $env:SADIE_DIRECT_OLLAMA = "true"
+    $env:HOMEBOT_DIRECT_OLLAMA = "true"
     $env:OLLAMA_URL = "http://127.0.0.1:11434"
-    $env:SADIE_ROOT = $ScriptDir
+    $env:HOMEBOT_ROOT = $ScriptDir
     
     # Read or generate the shared webhook secret and export it so
     # docker-compose passes it to the n8n container.
-    $secretFile = Join-Path $env:APPDATA "sadie-widget\config\webhook-secret"
+    $secretFile = Join-Path $env:APPDATA "homebot-widget\config\webhook-secret"
     if (Test-Path $secretFile) {
-        $env:SADIE_WEBHOOK_SECRET = (Get-Content $secretFile -Raw).Trim()
+        $env:HOMEBOT_WEBHOOK_SECRET = (Get-Content $secretFile -Raw).Trim()
     } else {
         Write-Host "  [!] Webhook secret not yet generated (will be created on first run)" -ForegroundColor Yellow
     }
@@ -314,7 +314,7 @@ if ($issues.Count -eq 0) {
 else {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Please fix the critical issues above before starting SADIE." -ForegroundColor Red
+    Write-Host "Please fix the critical issues above before starting HomeBot." -ForegroundColor Red
     Write-Host ""
     Read-Host "Press Enter to exit"
 }

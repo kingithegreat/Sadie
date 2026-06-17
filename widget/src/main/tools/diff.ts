@@ -1,5 +1,5 @@
 /**
- * SADIE Diff Tool
+ * HomeBot Diff Tool
  *
  * Compares two text strings or two file contents line-by-line.
  * Returns a unified-diff-style result with added/removed lines.

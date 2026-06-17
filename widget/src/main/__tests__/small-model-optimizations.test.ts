@@ -9,7 +9,7 @@
 
 // Inline mocks that must precede the module import
 jest.mock('electron', () => ({
-  app: { getPath: jest.fn(() => '/tmp/sadie-test'), getName: jest.fn(() => 'HomeBot'), getVersion: jest.fn(() => '0.0.0-test') },
+  app: { getPath: jest.fn(() => '/tmp/homebot-test'), getName: jest.fn(() => 'HomeBot'), getVersion: jest.fn(() => '0.0.0-test') },
   ipcMain: { on: jest.fn(), handle: jest.fn(), removeHandler: jest.fn() },
   BrowserWindow: jest.fn(),
   dialog: { showOpenDialog: jest.fn(), showSaveDialog: jest.fn() },
@@ -41,7 +41,7 @@ jest.mock('../tools/web', () => ({
   setOpenaiApiKey: jest.fn(),
 }));
 jest.mock('../webhook-auth', () => ({
-  sadieWebhookHeaders: jest.fn(() => ({})),
+  homebotWebhookHeaders: jest.fn(() => ({})),
 }));
 jest.mock('../custom-llm-client', () => ({
   streamFromCustomLLM: jest.fn(),
@@ -86,7 +86,7 @@ import {
   handleSlashCommand,
 } from '../message-router';
 import { ragSearch, tokenize, cosineSim } from '../tools/rag';
-import { SADIE_SYSTEM_PROMPT_COMPACT } from '../../shared/system-prompt';
+import { HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../../shared/system-prompt';
 
 // ── isSmallModel ────────────────────────────────────────────────────────────
 
@@ -218,13 +218,13 @@ describe('handleSlashCommand', () => {
 
 describe('compact prompt enhancements', () => {
   it('includes personality and conciseness rules', () => {
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('concise');
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toMatch(/LENGTH|under 10 words/);
+    expect(HOMEBOT_SYSTEM_PROMPT_COMPACT).toContain('concise');
+    expect(HOMEBOT_SYSTEM_PROMPT_COMPACT).toMatch(/LENGTH|under 10 words/);
   });
 
   it('includes tool invocation rules', () => {
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('INVOKE tools');
-    expect(SADIE_SYSTEM_PROMPT_COMPACT).toContain('live data');
+    expect(HOMEBOT_SYSTEM_PROMPT_COMPACT).toContain('INVOKE tools');
+    expect(HOMEBOT_SYSTEM_PROMPT_COMPACT).toContain('live data');
   });
 });
 

@@ -1,6 +1,6 @@
-# SADIE Developer Build Guide
+# HomeBot Developer Build Guide
 
-A comprehensive guide for developers setting up SADIE for local development, testing, and contribution.
+A comprehensive guide for developers setting up HomeBot for local development, testing, and contribution.
 
 ---
 
@@ -46,8 +46,8 @@ A comprehensive guide for developers setting up SADIE for local development, tes
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/kingithegreat/Sadie.git
-cd Sadie
+git clone https://github.com/kingithegreat/HomeBot.git
+cd HomeBot
 ```
 
 ### 2. Install Dependencies
@@ -73,7 +73,7 @@ Verify models are available:
 ollama list
 ```
 
-> **Note:** SADIE defaults to `qwen2.5:7b` for chat, `moondream` for vision, and `qwen2.5-coder:7b` for code. Models can be changed in Settings.
+> **Note:** HomeBot defaults to `qwen2.5:7b` for chat, `moondream` for vision, and `qwen2.5-coder:7b` for code. Models can be changed in Settings.
 
 ---
 
@@ -82,17 +82,17 @@ ollama list
 ### Project Structure
 
 ```
-Sadie/
+HomeBot/
 ├── widget/                     # Main Electron application
 │   ├── src/
 │   │   ├── main/               # Main process (Node.js)
-│   │   │   ├── tools/          # 60+ TypeScript tool handlers
-│   │   │   └── __tests__/      # 95+ main-process unit test suites
+│   │   │   ├── tools/          # 85+ TypeScript tool handlers
+│   │   │   └── __tests__/      # Main-process unit test suites
 │   │   ├── renderer/           # React UI (Vite + HMR)
 │   │   │   ├── components/     # React components
 │   │   │   ├── styles/         # CSS (themes, animations)
 │   │   │   ├── e2e/            # Playwright E2E specs
-│   │   │   └── __tests__/      # 25+ renderer unit test suites
+│   │   │   └── __tests__/      # Renderer unit test suites
 │   │   ├── preload/            # Context bridge (sandbox-safe IPC)
 │   │   └── shared/             # Types, constants, utilities
 │   ├── electron.vite.config.ts # Build configuration
@@ -123,7 +123,7 @@ npm run build
 npm run dist
 ```
 
-> **Important:** SADIE uses **electron-vite** (not Webpack). The `npm run dev` command starts the Vite dev server for the renderer with HMR and builds the main process. The wrapper script also clears `ELECTRON_RUN_AS_NODE`, which VS Code terminals often inherit and which would otherwise make Electron start in Node-only mode. There are no separate `build:main` / `build:renderer` scripts — `npm run build` handles everything.
+> **Important:** HomeBot uses **electron-vite** (not Webpack). The `npm run dev` command starts the Vite dev server for the renderer with HMR and builds the main process. The wrapper script also clears `ELECTRON_RUN_AS_NODE`, which VS Code terminals often inherit and which would otherwise make Electron start in Node-only mode. There are no separate `build:main` / `build:renderer` scripts — `npm run build` handles everything.
 
 ---
 
@@ -131,7 +131,7 @@ npm run dist
 
 ### Unit Tests
 
-SADIE maintains broad Jest and Playwright coverage across router, tools, renderer flows, and Electron E2E scenarios (120 suites, 1,882 tests).
+HomeBot maintains broad Jest and Playwright coverage across router, tools, renderer flows, and Electron E2E scenarios.
 
 ```bash
 cd widget
@@ -170,8 +170,8 @@ npx playwright test --headed
 ### Test Prerequisites
 
 - Ollama must be running for E2E tests.
-- Set `SADIE_E2E=true` for test mode.
-- E2E tests use an isolated `userData` directory for each run via `SADIE_E2E_USER_DATA_DIR` instead of Chromium CLI flags.
+- Set `HOMEBOT_E2E=true` for test mode.
+- E2E tests use an isolated `userData` directory for each run via `HOMEBOT_E2E_USER_DATA_DIR` instead of Chromium CLI flags.
 
 ---
 
@@ -201,12 +201,12 @@ When modifying `src/preload/` files:
 
 ## Safe Development Practices
 
-SADIE has three runtime modes. Always know which you are working in:
+HomeBot has three runtime modes. Always know which you are working in:
 
 | Mode | When Used | Gating Variable |
 |---|---|---|
 | Development | Local coding | `NODE_ENV=development` |
-| Test | Running tests | `SADIE_E2E=true` |
+| Test | Running tests | `HOMEBOT_E2E=true` |
 | Production | User releases | `NODE_ENV=production` |
 
 ### Rules
@@ -215,7 +215,7 @@ SADIE has three runtime modes. Always know which you are working in:
 
 ```typescript
 // CORRECT: Gated with environment check
-if (process.env.SADIE_E2E === 'true') {
+if (process.env.HOMEBOT_E2E === 'true') {
   // Test-only code here
 }
 

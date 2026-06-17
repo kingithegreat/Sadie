@@ -2,15 +2,15 @@ import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electro
 import { debug as logDebug } from '../shared/logger';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
-function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
 // Renderer diagnostics buffer
-(global as any).__SADIE_RENDERER_LOG_BUFFER ??= [];
+(global as any).__HOMEBOT_RENDERER_LOG_BUFFER ??= [];
 const MAX_RENDERER_LOG_BUFFER = 500;
 
 function appendRendererBuffer(entry: string) {
   try {
-    const buffer = ((global as any).__SADIE_RENDERER_LOG_BUFFER = (global as any).__SADIE_RENDERER_LOG_BUFFER || []);
+    const buffer = ((global as any).__HOMEBOT_RENDERER_LOG_BUFFER = (global as any).__HOMEBOT_RENDERER_LOG_BUFFER || []);
     buffer.push(entry);
     if (buffer.length > MAX_RENDERER_LOG_BUFFER) {
       buffer.splice(0, buffer.length - MAX_RENDERER_LOG_BUFFER);
@@ -20,14 +20,14 @@ function appendRendererBuffer(entry: string) {
 
 function pushRendererLog(line: string) {
   appendRendererBuffer(`[RENDERER] ${String(line)}`);
-  try { ipcRenderer.send('sadie:append-renderer-log', String(line)); } catch (e) { safeCatch(e); }
+  try { ipcRenderer.send('homebot:append-renderer-log', String(line)); } catch (e) { safeCatch(e); }
 }
 
 // Use canonical shared types for the preload API
 import {
-  SadieRequest,
-  SadieRequestWithImages,
-  SadieResponse,
+  HomeBotRequest,
+  HomeBotRequestWithImages,
+  HomeBotResponse,
   ConnectionStatus,
   ElectronAPI,
   Settings,
@@ -43,37 +43,37 @@ import { IPC_SEND_MESSAGE } from '../shared/constants';
 // Whitelist of allowed IPC channels
 const ALLOWED_CHANNELS = {
   SEND: IPC_SEND_MESSAGE,
-  RECEIVE: 'sadie:reply',
-  GET_SETTINGS: 'sadie:get-settings',
-  GET_MODE: 'sadie:get-mode',
-  SAVE_SETTINGS: 'sadie:save-settings',
-  HAS_PERMISSION: 'sadie:has-permission',
-  RESET_PERMISSIONS: 'sadie:reset-permissions',
-  EXPORT_CONSENT: 'sadie:export-consent',
-  LIST_CUSTOM_MODELS: 'sadie:list-custom-llm-models',
-  READ_CONSENT_LOG: 'sadie:read-consent-log',
-  READ_TELEMETRY_EVENTS: 'sadie:read-telemetry-events',
-  SHOW_WINDOW: 'sadie:show-window',
-  HIDE_WINDOW: 'sadie:hide-window',
-  STREAM_SEND: 'sadie:stream-message',
-  AUTOMATION_IMAGE_GENERATE: 'sadie:automation:image:generate',
-  STREAM_CHUNK: 'sadie:stream-chunk',
-  STREAM_END: 'sadie:stream-end',
-  STREAM_ERROR: 'sadie:stream-error',
-  CONFIRMATION_REQUEST: 'sadie:confirmation-request',
-  CONFIRMATION_RESPONSE: 'sadie:confirmation-response',
-  PERMISSION_REQUEST: 'sadie:permission-request',
-  PERMISSION_RESPONSE: 'sadie:permission-response',
-  GET_ENV: 'sadie:get-env',
-  GET_CONFIG_PATH: 'sadie:get-config-path',
-  GET_GENERATED_IMAGE: 'sadie:get-generated-image'
+  RECEIVE: 'homebot:reply',
+  GET_SETTINGS: 'homebot:get-settings',
+  GET_MODE: 'homebot:get-mode',
+  SAVE_SETTINGS: 'homebot:save-settings',
+  HAS_PERMISSION: 'homebot:has-permission',
+  RESET_PERMISSIONS: 'homebot:reset-permissions',
+  EXPORT_CONSENT: 'homebot:export-consent',
+  LIST_CUSTOM_MODELS: 'homebot:list-custom-llm-models',
+  READ_CONSENT_LOG: 'homebot:read-consent-log',
+  READ_TELEMETRY_EVENTS: 'homebot:read-telemetry-events',
+  SHOW_WINDOW: 'homebot:show-window',
+  HIDE_WINDOW: 'homebot:hide-window',
+  STREAM_SEND: 'homebot:stream-message',
+  AUTOMATION_IMAGE_GENERATE: 'homebot:automation:image:generate',
+  STREAM_CHUNK: 'homebot:stream-chunk',
+  STREAM_END: 'homebot:stream-end',
+  STREAM_ERROR: 'homebot:stream-error',
+  CONFIRMATION_REQUEST: 'homebot:confirmation-request',
+  CONFIRMATION_RESPONSE: 'homebot:confirmation-response',
+  PERMISSION_REQUEST: 'homebot:permission-request',
+  PERMISSION_RESPONSE: 'homebot:permission-response',
+  GET_ENV: 'homebot:get-env',
+  GET_CONFIG_PATH: 'homebot:get-config-path',
+  GET_GENERATED_IMAGE: 'homebot:get-generated-image'
 };
 
 // Listen for router logs forwarded from main so tests and Playwright traces
 // can capture them in renderer console output. This is intentionally lightweight
 // and will not affect production behaviour.
 try {
-  ipcRenderer.on('sadie:router-log', (_ev, line) => {
+  ipcRenderer.on('homebot:router-log', (_ev, line) => {
     try {
       console.log('[ROUTER-LOG]', line);
       appendRendererBuffer(`[ROUTER] ${String(line)}`);
@@ -86,14 +86,14 @@ const electronAPI: ElectronAPI = {
   /**
    * Send a message to HomeBot backend
    */
-  sendMessage: async (request: SadieRequest): Promise<SadieResponse> => {
+  sendMessage: async (request: HomeBotRequest): Promise<HomeBotResponse> => {
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.SEND, { messagePreview: String(request?.message).substring(0, 120) });
     try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.SEND} preview=${String(request?.message).substring(0,120)}`); } catch (e) { safeCatch(e); }
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.SEND, request);
   },
 
   // Start a streaming request. Non-blocking; return a Promise<void> to match shared types
-  sendStreamMessage: async (request: SadieRequestWithImages): Promise<void> => {
+  sendStreamMessage: async (request: HomeBotRequestWithImages): Promise<void> => {
     logDebug('[Preload] IPC send', ALLOWED_CHANNELS.STREAM_SEND, { streamId: (request as any)?.streamId, messagePreview: String(request?.message).substring(0,120) });
     try { pushRendererLog(`IPC send ${ALLOWED_CHANNELS.STREAM_SEND} streamId=${(request as any)?.streamId}`); } catch (e) { safeCatch(e); }
     ipcRenderer.send(ALLOWED_CHANNELS.STREAM_SEND, request);
@@ -204,9 +204,9 @@ const electronAPI: ElectronAPI = {
 
   // Cancel a running stream by id. If no id is provided, cancels all.
   cancelStream: (streamId?: string) => {
-    logDebug('[Preload] IPC send', 'sadie:stream-cancel', { streamId });
-    try { pushRendererLog(`IPC send sadie:stream-cancel streamId=${streamId}`); } catch (e) { safeCatch(e); }
-    ipcRenderer.send('sadie:stream-cancel', { streamId });
+    logDebug('[Preload] IPC send', 'homebot:stream-cancel', { streamId });
+    try { pushRendererLog(`IPC send homebot:stream-cancel streamId=${streamId}`); } catch (e) { safeCatch(e); }
+    ipcRenderer.send('homebot:stream-cancel', { streamId });
   },
 
   // Window show/hide event helpers
@@ -224,32 +224,32 @@ const electronAPI: ElectronAPI = {
 
   onReminderFired: (cb: (data: { message: string; label: string }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: { message: string; label: string }) => cb(data);
-    ipcRenderer.on('sadie:reminder-fired', listener);
-    return () => ipcRenderer.removeListener('sadie:reminder-fired', listener);
+    ipcRenderer.on('homebot:reminder-fired', listener);
+    return () => ipcRenderer.removeListener('homebot:reminder-fired', listener);
   },
 
   onHardwareProfileApplied: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
-    ipcRenderer.on('sadie:hardware-profile-applied', listener);
-    return () => ipcRenderer.removeListener('sadie:hardware-profile-applied', listener);
+    ipcRenderer.on('homebot:hardware-profile-applied', listener);
+    return () => ipcRenderer.removeListener('homebot:hardware-profile-applied', listener);
   },
 
   onOllamaStatus: (cb: (data: { online: boolean; url: string }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
-    ipcRenderer.on('sadie:ollama-status', listener);
-    return () => ipcRenderer.removeListener('sadie:ollama-status', listener);
+    ipcRenderer.on('homebot:ollama-status', listener);
+    return () => ipcRenderer.removeListener('homebot:ollama-status', listener);
   },
 
   onModelFallback: (cb: (data: { from: string; to: string }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
-    ipcRenderer.on('sadie:model-fallback', listener);
-    return () => ipcRenderer.removeListener('sadie:model-fallback', listener);
+    ipcRenderer.on('homebot:model-fallback', listener);
+    return () => ipcRenderer.removeListener('homebot:model-fallback', listener);
   },
 
   onConversationCompacted: (cb: (data: { conversationId: string; originalCount: number; compactedCount: number }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
-    ipcRenderer.on('sadie:conversation-compacted', listener);
-    return () => ipcRenderer.removeListener('sadie:conversation-compacted', listener);
+    ipcRenderer.on('homebot:conversation-compacted', listener);
+    return () => ipcRenderer.removeListener('homebot:conversation-compacted', listener);
   },
 
   removeShowWindowListener: () => {
@@ -299,7 +299,7 @@ const electronAPI: ElectronAPI = {
   },
 
   readDebugLogs: async (): Promise<{ success: boolean; rendererLogs?: string[]; mainLogs?: string[]; conversationStore?: any; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:read-debug-logs');
+    return await ipcRenderer.invoke('homebot:read-debug-logs');
   },
 
   getMode: async (): Promise<{ demo: boolean }> => {
@@ -328,7 +328,7 @@ const electronAPI: ElectronAPI = {
   // SECURITY: gated to E2E mode only — in production this throws to prevent
   // the renderer from invoking arbitrary IPC channels.
   invoke: async (channel: string, ...args: any[]) => {
-    const e2e = process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true';
+    const e2e = process.env.HOMEBOT_E2E === '1' || process.env.HOMEBOT_E2E === 'true';
     if (!e2e) {
       throw new Error('invoke() is only available in E2E test mode');
     }
@@ -336,12 +336,12 @@ const electronAPI: ElectronAPI = {
   },
 
   captureScreen: async () => {
-    return await ipcRenderer.invoke('sadie:capture-screen');
+    return await ipcRenderer.invoke('homebot:capture-screen');
   },
 
   captureLogs: async (): Promise<{ success: boolean; path?: string; error?: string }> => {
     try {
-      const r = await ipcRenderer.invoke('sadie:capture-logs');
+      const r = await ipcRenderer.invoke('homebot:capture-logs');
       return r;
     } catch (e) {
       return { success: false, error: String(e) };
@@ -357,67 +357,67 @@ const electronAPI: ElectronAPI = {
   },
 
   getAnalyticsSummary: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:get-analytics-summary');
+    return await ipcRenderer.invoke('homebot:get-analytics-summary');
   },
 
   detectGpuVram: async () => {
-    return await ipcRenderer.invoke('sadie:detect-gpu-vram');
+    return await ipcRenderer.invoke('homebot:detect-gpu-vram');
   },
 
   exportSettings: async () => {
-    return await ipcRenderer.invoke('sadie:export-settings');
+    return await ipcRenderer.invoke('homebot:export-settings');
   },
 
   importSettings: async (filePath: string) => {
-    return await ipcRenderer.invoke('sadie:import-settings', filePath);
+    return await ipcRenderer.invoke('homebot:import-settings', filePath);
   },
 
   parseDocument: async (filePath: string) => {
-    return await ipcRenderer.invoke('sadie:parse-document', filePath);
+    return await ipcRenderer.invoke('homebot:parse-document', filePath);
   },
 
   writeDocument: async (filePath: string, content: string) => {
-    return await ipcRenderer.invoke('sadie:write-document', filePath, content);
+    return await ipcRenderer.invoke('homebot:write-document', filePath, content);
   },
 
   pullModel: async (modelName: string) => {
-    return await ipcRenderer.invoke('sadie:pull-model', modelName);
+    return await ipcRenderer.invoke('homebot:pull-model', modelName);
   },
 
   pullModelStream: async (modelName: string) => {
-    return await ipcRenderer.invoke('sadie:pull-model-stream', modelName);
+    return await ipcRenderer.invoke('homebot:pull-model-stream', modelName);
   },
 
   onPullModelProgress: (cb: (data: { model: string; status: string; percent: number | null; completedMB: number | null; totalMB: number | null }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
-    ipcRenderer.on('sadie:pull-model-progress', listener);
-    return () => ipcRenderer.removeListener('sadie:pull-model-progress', listener);
+    ipcRenderer.on('homebot:pull-model-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:pull-model-progress', listener);
   },
 
   checkOllamaInstalled: async () => {
-    return await ipcRenderer.invoke('sadie:check-ollama-installed');
+    return await ipcRenderer.invoke('homebot:check-ollama-installed');
   },
 
   downloadOllama: async () => {
-    return await ipcRenderer.invoke('sadie:download-ollama');
+    return await ipcRenderer.invoke('homebot:download-ollama');
   },
 
   onOllamaDownloadProgress: (cb: (data: { stage: 'downloading' | 'installing' | 'starting' | 'ready'; percent: number; downloadedMB?: number; totalMB?: number }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
-    ipcRenderer.on('sadie:ollama-download-progress', listener);
-    return () => { ipcRenderer.removeListener('sadie:ollama-download-progress', listener); };
+    ipcRenderer.on('homebot:ollama-download-progress', listener);
+    return () => { ipcRenderer.removeListener('homebot:ollama-download-progress', listener); };
   },
 
   startOllama: async () => {
-    return await ipcRenderer.invoke('sadie:start-ollama');
+    return await ipcRenderer.invoke('homebot:start-ollama');
   },
 
   listOllamaModels: async () => {
-    return await ipcRenderer.invoke('sadie:list-ollama-models');
+    return await ipcRenderer.invoke('homebot:list-ollama-models');
   },
 
   deleteOllamaModel: async (modelName: string) => {
-    return await ipcRenderer.invoke('sadie:delete-ollama-model', modelName);
+    return await ipcRenderer.invoke('homebot:delete-ollama-model', modelName);
   },
 
   hasPermission: async (toolName: string): Promise<{ success: boolean; allowed?: boolean; error?: string }> => {
@@ -425,92 +425,92 @@ const electronAPI: ElectronAPI = {
   },
 
   checkConnection: async (): Promise<ConnectionStatus> => {
-    logDebug('[Preload] IPC invoke', 'sadie:check-connection');
-    try { pushRendererLog('IPC invoke sadie:check-connection'); } catch (e) { safeCatch(e); }
-    return await ipcRenderer.invoke('sadie:check-connection');
+    logDebug('[Preload] IPC invoke', 'homebot:check-connection');
+    try { pushRendererLog('IPC invoke homebot:check-connection'); } catch (e) { safeCatch(e); }
+    return await ipcRenderer.invoke('homebot:check-connection');
   },
 
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close'),
-  toggleWidgetMode: () => ipcRenderer.invoke('sadie:toggle-widget-mode') as Promise<boolean>,
-  getWidgetMode: () => ipcRenderer.invoke('sadie:get-widget-mode') as Promise<boolean>,
-  setAlwaysOnTop: (value: boolean) => ipcRenderer.send('sadie:set-always-on-top', value),
+  toggleWidgetMode: () => ipcRenderer.invoke('homebot:toggle-widget-mode') as Promise<boolean>,
+  getWidgetMode: () => ipcRenderer.invoke('homebot:get-widget-mode') as Promise<boolean>,
+  setAlwaysOnTop: (value: boolean) => ipcRenderer.send('homebot:set-always-on-top', value),
   onWidgetModeChanged: (callback: (isWidget: boolean) => void) => {
     const handler = (_event: any, isWidget: boolean) => callback(isWidget);
-    ipcRenderer.on('sadie:widget-mode-changed', handler);
-    return () => ipcRenderer.removeListener('sadie:widget-mode-changed', handler);
+    ipcRenderer.on('homebot:widget-mode-changed', handler);
+    return () => ipcRenderer.removeListener('homebot:widget-mode-changed', handler);
   },
 
   // ============= Memory/Conversation APIs =============
 
   loadConversations: async (): Promise<MemoryResult<ConversationStore>> => {
-    return await ipcRenderer.invoke('sadie:load-conversations');
+    return await ipcRenderer.invoke('homebot:load-conversations');
   },
 
   getConversation: async (conversationId: string): Promise<MemoryResult<StoredConversation | null>> => {
-    return await ipcRenderer.invoke('sadie:get-conversation', conversationId);
+    return await ipcRenderer.invoke('homebot:get-conversation', conversationId);
   },
 
   createConversation: async (title?: string): Promise<MemoryResult<StoredConversation>> => {
-    return await ipcRenderer.invoke('sadie:create-conversation', title);
+    return await ipcRenderer.invoke('homebot:create-conversation', title);
   },
 
   saveConversation: async (conversation: StoredConversation): Promise<MemoryResult> => {
-    return await ipcRenderer.invoke('sadie:save-conversation', conversation);
+    return await ipcRenderer.invoke('homebot:save-conversation', conversation);
   },
 
   deleteConversation: async (conversationId: string): Promise<MemoryResult> => {
-    return await ipcRenderer.invoke('sadie:delete-conversation', conversationId);
+    return await ipcRenderer.invoke('homebot:delete-conversation', conversationId);
   },
 
   compactConversation: async (conversationId: string, keepRecent?: number) => {
-    return await ipcRenderer.invoke('sadie:compact-conversation', conversationId, keepRecent);
+    return await ipcRenderer.invoke('homebot:compact-conversation', conversationId, keepRecent);
   },
 
   setActiveConversation: async (conversationId: string | null): Promise<MemoryResult> => {
-    return await ipcRenderer.invoke('sadie:set-active-conversation', conversationId);
+    return await ipcRenderer.invoke('homebot:set-active-conversation', conversationId);
   },
 
   addMessage: async (conversationId: string, message: Message): Promise<MemoryResult> => {
-    return await ipcRenderer.invoke('sadie:add-message', { conversationId, message });
+    return await ipcRenderer.invoke('homebot:add-message', { conversationId, message });
   },
 
   updateMessage: async (conversationId: string, messageId: string, updates: Partial<Message>): Promise<MemoryResult> => {
-    return await ipcRenderer.invoke('sadie:update-message', { conversationId, messageId, updates });
+    return await ipcRenderer.invoke('homebot:update-message', { conversationId, messageId, updates });
   },
 
   // Speech recognition using Windows SAPI (offline capable)
   startSpeechRecognition: async (): Promise<{ success: boolean; text: string; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:start-speech-recognition');
+    return await ipcRenderer.invoke('homebot:start-speech-recognition');
   },
 
   // TTS (text-to-speech) — uses Web Speech API in renderer via main process
   ttsSpeak: async (text: string, rate?: number): Promise<{ success: boolean; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:tts-speak', text, rate);
+    return await ipcRenderer.invoke('homebot:tts-speak', text, rate);
   },
   ttsStop: async (): Promise<{ success: boolean; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:tts-stop');
+    return await ipcRenderer.invoke('homebot:tts-stop');
   },
 
   // Scheduler — recurring / daily jobs
-  schedulerList: async () => ipcRenderer.invoke('sadie:scheduler-list'),
-  schedulerAdd: async (input: any) => ipcRenderer.invoke('sadie:scheduler-add', input),
-  schedulerRemove: async (id: string) => ipcRenderer.invoke('sadie:scheduler-remove', id),
-  schedulerToggle: async (id: string, enabled: boolean) => ipcRenderer.invoke('sadie:scheduler-toggle', id, enabled),
+  schedulerList: async () => ipcRenderer.invoke('homebot:scheduler-list'),
+  schedulerAdd: async (input: any) => ipcRenderer.invoke('homebot:scheduler-add', input),
+  schedulerRemove: async (id: string) => ipcRenderer.invoke('homebot:scheduler-remove', id),
+  schedulerToggle: async (id: string, enabled: boolean) => ipcRenderer.invoke('homebot:scheduler-toggle', id, enabled),
 
   // Uncensored mode toggle
   setUncensoredMode: async (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> => {
-    return await ipcRenderer.invoke('sadie:set-uncensored-mode', enabled);
+    return await ipcRenderer.invoke('homebot:set-uncensored-mode', enabled);
   },
 
   getUncensoredMode: async (): Promise<{ enabled: boolean }> => {
-    return await ipcRenderer.invoke('sadie:get-uncensored-mode');
+    return await ipcRenderer.invoke('homebot:get-uncensored-mode');
   },
 
   // Restart the app (for settings that require restart)
   restartApp: async (): Promise<void> => {
-    return await ipcRenderer.invoke('sadie:restart-app');
+    return await ipcRenderer.invoke('homebot:restart-app');
   },
 
   // Clipboard helper — uses Electron native clipboard (works with contextIsolation)
@@ -520,92 +520,92 @@ const electronAPI: ElectronAPI = {
 
   // Open a file or folder in the system default application
   openFile: async (filePath: string): Promise<{ success: boolean; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:open-file', filePath);
+    return await ipcRenderer.invoke('homebot:open-file', filePath);
   },
 
   // Open a folder in the system file explorer and select the file
   showInFolder: async (filePath: string): Promise<{ success: boolean; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:show-in-folder', filePath);
+    return await ipcRenderer.invoke('homebot:show-in-folder', filePath);
   },
 
   // Export chat history as a markdown file to the Desktop
   exportChat: async (markdown: string): Promise<{ success: boolean; path?: string; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:export-chat', markdown);
+    return await ipcRenderer.invoke('homebot:export-chat', markdown);
   },
 
   // List all registered tool definitions
   listTools: async (): Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }> => {
-    return await ipcRenderer.invoke('sadie:list-tools');
+    return await ipcRenderer.invoke('homebot:list-tools');
   },
 
   // RAG: index a local file by its OS path
   ragIndex: async (filePath: string) => {
-    return await ipcRenderer.invoke('sadie:rag-index', filePath);
+    return await ipcRenderer.invoke('homebot:rag-index', filePath);
   },
 
   // RAG: list all indexed documents
   ragList: async () => {
-    return await ipcRenderer.invoke('sadie:rag-list');
+    return await ipcRenderer.invoke('homebot:rag-list');
   },
 
   // RAG: remove a document from the index by doc_id
   ragClear: async (docId: string) => {
-    return await ipcRenderer.invoke('sadie:rag-clear', docId);
+    return await ipcRenderer.invoke('homebot:rag-clear', docId);
   },
 
   // ── MCP Server Management ──────────────────────────────────────────────────
-  mcpListServers: async () => ipcRenderer.invoke('sadie:mcp-list-servers'),
-  mcpGetStatus: async () => ipcRenderer.invoke('sadie:mcp-get-status'),
-  mcpAddServer: async (config: any) => ipcRenderer.invoke('sadie:mcp-add-server', config),
-  mcpRemoveServer: async (name: string) => ipcRenderer.invoke('sadie:mcp-remove-server', name),
-  mcpToggleServer: async (name: string, enabled: boolean) => ipcRenderer.invoke('sadie:mcp-toggle-server', name, enabled),
+  mcpListServers: async () => ipcRenderer.invoke('homebot:mcp-list-servers'),
+  mcpGetStatus: async () => ipcRenderer.invoke('homebot:mcp-get-status'),
+  mcpAddServer: async (config: any) => ipcRenderer.invoke('homebot:mcp-add-server', config),
+  mcpRemoveServer: async (name: string) => ipcRenderer.invoke('homebot:mcp-remove-server', name),
+  mcpToggleServer: async (name: string, enabled: boolean) => ipcRenderer.invoke('homebot:mcp-toggle-server', name, enabled),
 
   // Full-text search across all stored conversations
   searchConversations: async (query: string, maxResults?: number) =>
-    ipcRenderer.invoke('sadie:search-conversations', query, maxResults),
+    ipcRenderer.invoke('homebot:search-conversations', query, maxResults),
 
   // Export a single conversation as Markdown or JSON to Desktop
   exportConversation: async (conversationId: string, format?: string) =>
-    ipcRenderer.invoke('sadie:export-conversation', conversationId, format),
+    ipcRenderer.invoke('homebot:export-conversation', conversationId, format),
 
   // Auto-generate a conversation title from the first user+assistant exchange
   generateTitle: async (args: { conversationId: string; userMessage: string; assistantReply: string }) =>
-    ipcRenderer.invoke('sadie:generate-title', args),
+    ipcRenderer.invoke('homebot:generate-title', args),
 
   // Subscribe to title-updated push events from main process
   onTitleUpdated: (cb: (data: { conversationId: string; title: string }) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { conversationId: string; title: string }) => cb(data);
-    ipcRenderer.on('sadie:title-updated', handler);
-    return () => ipcRenderer.removeListener('sadie:title-updated', handler);
+    ipcRenderer.on('homebot:title-updated', handler);
+    return () => ipcRenderer.removeListener('homebot:title-updated', handler);
   },
 
   // Automation Center
   loadAutomations: async () =>
-    ipcRenderer.invoke('sadie:load-automations'),
+    ipcRenderer.invoke('homebot:load-automations'),
   createAutomation: async (data: any) =>
-    ipcRenderer.invoke('sadie:create-automation', data),
+    ipcRenderer.invoke('homebot:create-automation', data),
   updateAutomation: async (data: any) =>
-    ipcRenderer.invoke('sadie:update-automation', data),
+    ipcRenderer.invoke('homebot:update-automation', data),
   deleteAutomation: async (data: any) =>
-    ipcRenderer.invoke('sadie:delete-automation', data),
+    ipcRenderer.invoke('homebot:delete-automation', data),
   runAutomation: async (data: any) =>
-    ipcRenderer.invoke('sadie:run-automation', data),
+    ipcRenderer.invoke('homebot:run-automation', data),
 
   // Quiz mode
   generateQuiz: async (params: any) =>
-    ipcRenderer.invoke('sadie:generate-quiz', params),
+    ipcRenderer.invoke('homebot:generate-quiz', params),
   generateQuizFromRag: async (params: any) =>
-    ipcRenderer.invoke('sadie:generate-quiz-from-rag', params),
+    ipcRenderer.invoke('homebot:generate-quiz-from-rag', params),
   saveQuizProgress: async (progress: any) =>
-    ipcRenderer.invoke('sadie:save-quiz-progress', progress),
+    ipcRenderer.invoke('homebot:save-quiz-progress', progress),
   loadQuizProgress: async () =>
-    ipcRenderer.invoke('sadie:load-quiz-progress'),
+    ipcRenderer.invoke('homebot:load-quiz-progress'),
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.
 contextBridge.exposeInMainWorld('electron', electronAPI as unknown as ElectronAPI);
 // Expose a simple capture API for renderer to forward logs into the main global buffer
-contextBridge.exposeInMainWorld('sadieCapture', {
+contextBridge.exposeInMainWorld('homebotCapture', {
   log: (msg: string) => { try { pushRendererLog(msg); } catch (e) { safeCatch(e); } }
 });
 // Legacy compatibility stub: the current WebServicesPanel uses dedicated
@@ -614,8 +614,8 @@ contextBridge.exposeInMainWorld('sadieCapture', {
 contextBridge.exposeInMainWorld('_webviewPreload', null);
 // Expose web service controls for the launcher panel
 contextBridge.exposeInMainWorld('_webServices', {
-  open:   (id: string) => ipcRenderer.invoke('sadie:open-web-service', id),
-  status: ()           => ipcRenderer.invoke('sadie:web-service-status'),
+  open:   (id: string) => ipcRenderer.invoke('homebot:open-web-service', id),
+  status: ()           => ipcRenderer.invoke('homebot:web-service-status'),
 });
 
 // Export types for TypeScript consumers

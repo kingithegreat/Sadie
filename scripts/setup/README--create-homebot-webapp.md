@@ -1,23 +1,23 @@
-# create-sadie-webapp helper scripts ✅
+# create-homebot-webapp helper scripts ✅
 
 These helper scripts create the Phase 1 directory structure for the standalone web app.
 
 Files added:
-- `create-sadie-webapp.ps1` — PowerShell script (preferred on Windows)
-- `create-sadie-webapp.bat` — Batch file for Command Prompt
+- `create-homebot-webapp.ps1` — PowerShell script (preferred on Windows)
+- `create-homebot-webapp.bat` — Batch file for Command Prompt
 
 How to run
 
 PowerShell (recommended):
 ```powershell
-cd C:\Users\adenk\Desktop\sadie\scripts\setup
-powershell -ExecutionPolicy Bypass -File .\create-sadie-webapp.ps1
+cd C:\Users\adenk\Desktop\homebot\scripts\setup
+powershell -ExecutionPolicy Bypass -File .\create-homebot-webapp.ps1
 ```
 
 Command Prompt:
 ```bat
-cd C:\Users\adenk\Desktop\sadie\scripts\setup
-create-sadie-webapp.bat
+cd C:\Users\adenk\Desktop\homebot\scripts\setup
+create-homebot-webapp.bat
 ```
 
 What to report back
@@ -26,9 +26,9 @@ What to report back
 
 If you prefer, run the individual commands manually (same results):
 ```bat
-cd C:\Users\adenk\Desktop\sadie
-mkdir sadie-webapp
-cd sadie-webapp
+cd C:\Users\adenk\Desktop\homebot
+mkdir homebot-webapp
+cd homebot-webapp
 mkdir src
 mkdir src\components
 mkdir public

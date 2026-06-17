@@ -1,5 +1,5 @@
 /**
- * SADIE Contacts Manager Tool
+ * HomeBot Contacts Manager Tool
  *
  * Searches for contacts in Microsoft Outlook (via PowerShell COM) and the local
  * Windows address book. Falls back to a simple local JSON contacts store
@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 const LOCAL_CONTACTS_PATH = path.join(
   process.env.USERPROFILE || process.env.HOME || '',
   'Desktop',
-  'sadie',
+  'homebot',
   'memory',
   'json-store',
   'contacts.json'

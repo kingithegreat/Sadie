@@ -1,8 +1,8 @@
 /**
- * SADIE MCP (Model Context Protocol) Client
+ * HomeBot MCP (Model Context Protocol) Client
  *
  * Connects to MCP servers, fetches their tool lists, and bridges them into
- * SADIE's native tool registry so the LLM can call them transparently.
+ * HomeBot's native tool registry so the LLM can call them transparently.
  *
  * Supports:
  *   - stdio servers  (local processes)
@@ -93,9 +93,9 @@ export function saveMcpConfig(config: McpServersFile): void {
 
 /**
  * Connect to all enabled MCP servers from config and bridge their tools into
- * SADIE's tool registry.
+ * HomeBot's tool registry.
  *
- * @param registerTool  SADIE's registerTool function
+ * @param registerTool  HomeBot's registerTool function
  */
 export async function initializeMcpServers(
   registerTool: (name: string, definition: any, handler: any) => void
@@ -135,7 +135,7 @@ async function connectServer(
   registerTool: (name: string, definition: any, handler: any) => void
 ): Promise<void> {
   const client = new Client(
-    { name: 'sadie', version: '1.0.0' },
+    { name: 'homebot', version: '1.0.0' },
     { capabilities: {} }
   );
 
@@ -168,7 +168,7 @@ async function connectServer(
     const prefixedName = `mcp_${config.name}_${mcpTool.name}`;
     toolNames.push(prefixedName);
 
-    // Build a SADIE-compatible ToolDefinition
+    // Build a HomeBot-compatible ToolDefinition
     const definition = {
       name: prefixedName,
       description: `[MCP: ${config.name}] ${mcpTool.description ?? mcpTool.name}`,
@@ -180,12 +180,12 @@ async function connectServer(
       }
     };
 
-    // Build a SADIE-compatible ToolHandler
+    // Build a HomeBot-compatible ToolHandler
     const handler = async (args: Record<string, any>) => {
       try {
         const result = await client.callTool({ name: mcpTool.name, arguments: args });
 
-        // MCP returns content[] — flatten to a single string result for SADIE
+        // MCP returns content[] — flatten to a single string result for HomeBot
         const content = (result as any).content as any[];
         const text = content
           .map((c: any) => {
@@ -282,7 +282,7 @@ export function seedMcpDefaults(): void {
 
 /**
  * Scan well-known external MCP config files (Cursor, Claude Desktop, VS Code Insiders)
- * and merge any servers not already known into SADIE's own config.
+ * and merge any servers not already known into HomeBot's own config.
  *
  * Only adds new entries — never removes or modifies existing ones, so manual
  * customisations are always preserved.
@@ -317,7 +317,7 @@ export function discoverExternalMcpServers(): void {
       // Different tools use different shapes — normalise to McpServerConfig[]
       const entries: McpServerConfig[] = [];
 
-      // Shape 1: { servers: [...] } — SADIE / generic
+      // Shape 1: { servers: [...] } — HomeBot / generic
       if (Array.isArray(raw?.servers)) {
         entries.push(...(raw.servers as any[]));
       }

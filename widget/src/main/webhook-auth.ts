@@ -2,12 +2,12 @@
  * webhook-auth.ts
  *
  * Generates and persists a per-install shared secret used to authenticate
- * all SADIE → n8n webhook requests.  The secret is stored alongside
+ * all HomeBot → n8n webhook requests.  The secret is stored alongside
  * user-settings.json so it survives app restarts.
  *
- * n8n workflows should validate the X-SADIE-Auth header against the
- * SADIE_WEBHOOK_SECRET environment variable (set automatically by
- * docker-compose / start-sadie.ps1).
+ * n8n workflows should validate the X-HOMEBOT-Auth header against the
+ * HOMEBOT_WEBHOOK_SECRET environment variable (set automatically by
+ * docker-compose / start-homebot.ps1).
  */
 
 import { app } from 'electron';
@@ -55,22 +55,22 @@ export function getWebhookSecret(): string {
     const dir = join(p, '..');
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(p, cachedSecret, 'utf-8');
-    console.log('[SADIE] Generated new webhook auth secret');
+    console.log('[HomeBot] Generated new webhook auth secret');
   } catch (err) {
-    console.warn('[SADIE] Could not persist webhook secret:', err);
+    console.warn('[HomeBot] Could not persist webhook secret:', err);
   }
 
   return cachedSecret;
 }
 
 /**
- * Returns headers that should be included on every SADIE → n8n request.
+ * Returns headers that should be included on every HomeBot → n8n request.
  * Merges with any additional headers the caller provides.
  */
-export function sadieWebhookHeaders(extra?: Record<string, string>): Record<string, string> {
+export function homebotWebhookHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    'X-SADIE-Auth': getWebhookSecret(),
+    'X-HOMEBOT-Auth': getWebhookSecret(),
     ...extra,
   };
 }

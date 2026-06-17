@@ -1,12 +1,12 @@
 /**
- * SADIE Scheduler
+ * HomeBot Scheduler
  *
  * Manages named recurring jobs that fire while the app is open.
  * Two trigger modes:
  *   - intervalMinutes: fires every N minutes
  *   - dailyTime ("HH:MM"): fires once per day at that wall-clock time
  *
- * When a job fires it sends 'sadie:reminder-fired' to the renderer, which
+ * When a job fires it sends 'homebot:reminder-fired' to the renderer, which
  * injects it into the chat as a system message (reuses existing reminder infra).
  *
  * Jobs are persisted to <userData>/scheduled-jobs.json so they survive restarts.
@@ -60,7 +60,7 @@ function fireJob(id: string): void {
   const win = windows[0];
   if (win.isDestroyed()) return;
 
-  win.webContents.send('sadie:reminder-fired', { message: job.message, label: job.name });
+  win.webContents.send('homebot:reminder-fired', { message: job.message, label: job.name });
   job.lastFiredAt = Date.now();
   saveJobs();
   console.log(`[Scheduler] Fired job "${job.name}"`);

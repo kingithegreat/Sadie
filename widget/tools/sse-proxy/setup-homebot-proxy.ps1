@@ -1,6 +1,6 @@
 <#
-PowerShell setup script for SADIE SSE Proxy
-Usage: .\setup-sadie-proxy.ps1 [-Mode dev|prod]
+PowerShell setup script for HomeBot SSE Proxy
+Usage: .\setup-homebot-proxy.ps1 [-Mode dev|prod]
 #>
 param(
   [ValidateSet('dev','prod')][string]$Mode = 'dev'
@@ -11,7 +11,7 @@ function Read-Secret([string]$prompt) {
   return Read-Host -AsSecureString | ConvertFrom-SecureString -AsPlainText
 }
 
-Write-Host "Setting up SADIE SSE Proxy in '$Mode' mode"
+Write-Host "Setting up HomeBot SSE Proxy in '$Mode' mode"
 
 if (-not (Test-Path .\node_modules)) {
   Write-Host "Installing dependencies..."
@@ -49,7 +49,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "node dist/test/mo
 
 Write-Host "Testing SSE proxy with mock upstream..."
 Start-Sleep 2
-$testCmd = "curl -N -X POST 'http://localhost:$port/stream' -H 'Content-Type: application/json' -H 'x-sadie-key: $proxyKey' -d '{\"provider\":\"openai\",\"model\":\"test\",\"prompt\":\"test\" }'"
+$testCmd = "curl -N -X POST 'http://localhost:$port/stream' -H 'Content-Type: application/json' -H 'x-homebot-key: $proxyKey' -d '{\"provider\":\"openai\",\"model\":\"test\",\"prompt\":\"test\" }'"
 Write-Host "Run this curl to test streaming:"
 Write-Host $testCmd
 

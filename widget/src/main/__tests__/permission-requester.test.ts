@@ -26,7 +26,7 @@ let ipcPermissionListener: Function | null = null;
 beforeAll(() => {
   const { ipcMain } = require('electron') as any;
   const call = (ipcMain.on as jest.Mock).mock.calls.find(
-    ([ch]: [string]) => ch === 'sadie:permission-response'
+    ([ch]: [string]) => ch === 'homebot:permission-response'
   );
   ipcPermissionListener = call ? call[1] : null;
 });
@@ -89,7 +89,7 @@ describe('permissionRequester.request()', () => {
     await promise;
 
     expect(sender.send).toHaveBeenCalledWith(
-      'sadie:permission-request',
+      'homebot:permission-request',
       expect.objectContaining({
         requestId: expect.stringMatching(/^perm-/),
         missingPermissions: ['read_file', 'write_file'],

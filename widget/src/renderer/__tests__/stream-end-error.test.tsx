@@ -120,7 +120,7 @@ describe('stream end and error handling (renderer)', () => {
 
     // Also ensure renderer logs diagnostic fields if provided by main
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const diag = { url: 'http://127.0.0.1:5678/webhook/sadie/chat/stream', errorText: 'ECONNREFUSED', n8nResponded: false, httpStatus: 502 };
+    const diag = { url: 'http://127.0.0.1:5678/webhook/homebot/chat/stream', errorText: 'ECONNREFUSED', n8nResponded: false, httpStatus: 502 };
     act(() => { errorHandler?.({ streamId, error: 'diagnostic error', diagnostic: diag }); });
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining(`url=${diag.url}`));
     consoleSpy.mockRestore();

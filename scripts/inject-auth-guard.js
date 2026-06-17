@@ -3,8 +3,8 @@
  *
  * Injects an "Auth Guard" Code node into every n8n workflow JSON that uses
  * a webhook trigger. The node is placed between the Webhook Trigger and its
- * first downstream node, validating X-SADIE-Auth against the
- * SADIE_WEBHOOK_SECRET env var.
+ * first downstream node, validating X-HOMEBOT-Auth against the
+ * HOMEBOT_WEBHOOK_SECRET env var.
  *
  * Run: node scripts/inject-auth-guard.js
  */
@@ -19,18 +19,18 @@ const WORKFLOW_DIRS = [
 
 // The JS code that goes inside the Auth Guard Code node
 const AUTH_GUARD_CODE = [
-  "const secret = process.env.SADIE_WEBHOOK_SECRET;",
+  "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;",
   "if (secret) {",
   "  const hdrs = $input.first()?.json?.headers || {};",
-  "  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';",
+  "  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';",
   "  if (incoming !== secret) {",
-  "    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');",
+  "    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');",
   "  }",
   "}",
   "return $input.all();"
 ].join('\n');
 
-const AUTH_GUARD_NODE_ID = 'sadie-auth-guard';
+const AUTH_GUARD_NODE_ID = 'homebot-auth-guard';
 const AUTH_GUARD_NODE_NAME = 'Auth Guard';
 
 function isWebhookNode(node) {

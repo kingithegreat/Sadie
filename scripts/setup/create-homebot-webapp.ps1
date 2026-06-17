@@ -1,16 +1,16 @@
 <#
-Create the `sadie-webapp` directory layout for Phase 1.
+Create the `homebot-webapp` directory layout for Phase 1.
 Usage (PowerShell):
   - Open PowerShell as the user who owns the project and run:
-    .\create-sadie-webapp.ps1
+    .\create-homebot-webapp.ps1
   - Optionally provide a different base path:
-    .\create-sadie-webapp.ps1 -Base "C:\Path\To\sadie"
+    .\create-homebot-webapp.ps1 -Base "C:\Path\To\homebot"
 #>
 param(
-    [string]$Base = "C:\Users\adenk\Desktop\sadie"
+    [string]$Base = "C:\Users\adenk\Desktop\homebot"
 )
 
-$target = Join-Path $Base "sadie-webapp"
+$target = Join-Path $Base "homebot-webapp"
 $dirs = @(
     $target,
     Join-Path $target "src",

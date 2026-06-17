@@ -259,7 +259,7 @@
     <strong>Institution:</strong> Toi Ohomai Institute of Technology<br>
     <strong>Submission:</strong> Capstone Project Report &mdash; 2026<br>
     <strong>Supervisor:</strong> [Supervisor Name]<br>
-    <strong>Repository:</strong> github.com/kingithegreat/Sadie
+    <strong>Repository:</strong> github.com/kingithegreat/HomeBot
   </div>
 </div>
 
@@ -549,7 +549,7 @@ User Desktop
   <tr><td>3. API Allowlist</td><td><code>config/api-allowlist.json</code></td><td>Outbound HTTP restricted to listed hosts</td></tr>
   <tr><td>4. SSRF Protection</td><td><code>isUrlSafe()</code> in web.ts</td><td>Blocks localhost, private IPs, non-HTTP schemes, DNS rebind</td></tr>
   <tr><td>5. IPC Hardening</td><td>Electron config</td><td>contextIsolation: true, nodeIntegration: false, webviewTag: false</td></tr>
-  <tr><td>6. Webhook Auth</td><td>256-bit per-install secret</td><td>X-SADIE-Auth header on all n8n communication</td></tr>
+  <tr><td>6. Webhook Auth</td><td>256-bit per-install secret</td><td>X-HOMEBOT-Auth header on all n8n communication</td></tr>
   <tr><td>7. Terminal Safety</td><td>Blocklist + confirmation gate</td><td>Catastrophic commands blocked; all others require user approval</td></tr>
   <tr><td>8. Codebase Guards</td><td>Read-only tools</td><td>grep_code, project_tree, analyze_file cannot modify files; binary/large file exclusion</td></tr>
   <tr><td>9. Recursion Cap</td><td>MAX_TOOL_ROUNDS = 10</td><td>Prevents infinite tool-call loops from LLM hallucination</td></tr>

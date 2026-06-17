@@ -31,7 +31,7 @@ describe('n8n integration (mock endpoints)', () => {
 
   test('processIncomingRequest - successful LLM response from n8n', async () => {
     const { server, port } = await startMockServer((req, _body, res) => {
-      if (req.method === 'POST' && req.url === '/webhook/sadie/chat') {
+      if (req.method === 'POST' && req.url === '/webhook/homebot/chat') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ assistant: { role: 'assistant', content: 'Hello from n8n' } }));
         return;
@@ -60,13 +60,13 @@ describe('n8n integration (mock endpoints)', () => {
 
     const resp = await processIncomingRequest({ user_id: 'u2', conversation_id: 'c2', message: 'Are you there?' }, n8nUrl);
     expect(resp).toBeDefined();
-    // mapErrorToSadieResponse maps ECONNREFUSED to NETWORK_ERROR
+    // mapErrorToHomeBotResponse maps ECONNREFUSED to NETWORK_ERROR
     expect((resp as any).response).toBe('NETWORK_ERROR');
   });
 
   test('processIncomingRequest - image payload forwarded to n8n', async () => {
     const { server, port } = await startMockServer((req, body, res) => {
-      if (req.method === 'POST' && req.url === '/webhook/sadie/chat') {
+      if (req.method === 'POST' && req.url === '/webhook/homebot/chat') {
         // Ensure the images array was forwarded
         const hasImages = Array.isArray(body.images) && body.images.length > 0;
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -101,7 +101,7 @@ describe('n8n integration (mock endpoints)', () => {
 
     let receivedBody: any = null;
     const { server, port } = await startMockServer((req, body, res) => {
-      if (req.method === 'POST' && req.url === '/webhook/sadie/chat') {
+      if (req.method === 'POST' && req.url === '/webhook/homebot/chat') {
         receivedBody = body;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ assistant: { role: 'assistant', content: 'Received document' } }));
@@ -115,10 +115,10 @@ describe('n8n integration (mock endpoints)', () => {
     const resp = await processIncomingRequest({
       user_id: 'u4',
       conversation_id: 'c4',
-      message: '[Document attached: SADIE_Midpoint_Review.docx]\n\nthis was you what do i think?',
+      message: '[Document attached: HOMEBOT_Midpoint_Review.docx]\n\nthis was you what do i think?',
       documents: [{
         id: 'doc-1',
-        filename: 'SADIE_Midpoint_Review.docx',
+        filename: 'HOMEBOT_Midpoint_Review.docx',
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         size: 123,
         data: 'ZmFrZQ=='
@@ -129,7 +129,7 @@ describe('n8n integration (mock endpoints)', () => {
     expect((resp as any).success).toBe(true);
     expect(parseSpy).toHaveBeenCalledTimes(1);
     expect(contentSpy).toHaveBeenCalledTimes(1);
-    expect(receivedBody.message).toContain('=== Document: SADIE_Midpoint_Review.docx ===');
+    expect(receivedBody.message).toContain('=== Document: HOMEBOT_Midpoint_Review.docx ===');
     expect(receivedBody.message).toContain('Midpoint review content here.');
     expect(receivedBody.message).toContain('this was you what do i think?');
 

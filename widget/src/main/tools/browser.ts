@@ -1,5 +1,5 @@
 /**
- * SADIE Browser Automation Tools
+ * HomeBot Browser Automation Tools
  *
  * Open URLs and web searches in the system's default browser via
  * PowerShell's Start-Process.  Only http/https URLs to public hosts
@@ -222,7 +222,7 @@ function fetchHtml(url: string, redirectsLeft = 3): Promise<string> {
     const lib = url.startsWith('https') ? https : http;
     const req = lib.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SADIE/1.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) HomeBot/1.0',
         'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
         'Accept-Encoding': 'gzip, deflate',
       },

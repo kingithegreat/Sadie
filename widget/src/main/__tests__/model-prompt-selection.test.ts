@@ -1,5 +1,5 @@
 import { isSmallModel, getSystemPromptForModel } from '../message-router';
-import { SADIE_SYSTEM_PROMPT, SADIE_SYSTEM_PROMPT_COMPACT } from '../../shared/system-prompt';
+import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../../shared/system-prompt';
 
 // ── isSmallModel ─────────────────────────────────────────────────────────────
 
@@ -70,46 +70,46 @@ describe('isSmallModel', () => {
 describe('getSystemPromptForModel', () => {
   test('small model returns compact prompt', () => {
     const result = getSystemPromptForModel('llama3.2:3b');
-    expect(result).toBe(SADIE_SYSTEM_PROMPT_COMPACT);
+    expect(result).toBe(HOMEBOT_SYSTEM_PROMPT_COMPACT);
   });
 
   test('large model returns full prompt', () => {
     const result = getSystemPromptForModel('llama3.1:8b');
-    expect(result).toBe(SADIE_SYSTEM_PROMPT);
+    expect(result).toBe(HOMEBOT_SYSTEM_PROMPT);
   });
 
   test('compact prompt is shorter than full prompt', () => {
-    expect(SADIE_SYSTEM_PROMPT_COMPACT.length).toBeLessThan(SADIE_SYSTEM_PROMPT.length);
+    expect(HOMEBOT_SYSTEM_PROMPT_COMPACT.length).toBeLessThan(HOMEBOT_SYSTEM_PROMPT.length);
   });
 
   test('guidelines appended for small model', () => {
     const result = getSystemPromptForModel('llama3.2:3b', 'Always respond in French.');
-    expect(result).toContain(SADIE_SYSTEM_PROMPT_COMPACT);
+    expect(result).toContain(HOMEBOT_SYSTEM_PROMPT_COMPACT);
     expect(result).toContain('## User Guidelines');
     expect(result).toContain('Always respond in French.');
   });
 
   test('guidelines appended for large model', () => {
     const result = getSystemPromptForModel('llama3.1:8b', 'Be concise.');
-    expect(result).toContain(SADIE_SYSTEM_PROMPT);
+    expect(result).toContain(HOMEBOT_SYSTEM_PROMPT);
     expect(result).toContain('## User Guidelines');
     expect(result).toContain('Be concise.');
   });
 
   test('empty guidelines string is ignored', () => {
     const result = getSystemPromptForModel('llama3.2:3b', '');
-    expect(result).toBe(SADIE_SYSTEM_PROMPT_COMPACT);
+    expect(result).toBe(HOMEBOT_SYSTEM_PROMPT_COMPACT);
     expect(result).not.toContain('## User Guidelines');
   });
 
   test('whitespace-only guidelines string is ignored', () => {
     const result = getSystemPromptForModel('llama3.1:8b', '   \n  ');
-    expect(result).toBe(SADIE_SYSTEM_PROMPT);
+    expect(result).toBe(HOMEBOT_SYSTEM_PROMPT);
     expect(result).not.toContain('## User Guidelines');
   });
 
   test('undefined guidelines returns base prompt unchanged', () => {
-    expect(getSystemPromptForModel('llama3.2:3b', undefined)).toBe(SADIE_SYSTEM_PROMPT_COMPACT);
-    expect(getSystemPromptForModel('mistral:7b', undefined)).toBe(SADIE_SYSTEM_PROMPT);
+    expect(getSystemPromptForModel('llama3.2:3b', undefined)).toBe(HOMEBOT_SYSTEM_PROMPT_COMPACT);
+    expect(getSystemPromptForModel('mistral:7b', undefined)).toBe(HOMEBOT_SYSTEM_PROMPT);
   });
 });

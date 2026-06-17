@@ -35,7 +35,7 @@ import {
 } from '../tools/terminal';
 
 const HOME = os.homedir();
-const SAFE_DIR = path.join(HOME, 'Desktop', 'sadie');
+const SAFE_DIR = path.join(HOME, 'Desktop', 'homebot');
 
 // Helper to mock exec success
 function mockExecResolve(stdout: string, stderr = '') {

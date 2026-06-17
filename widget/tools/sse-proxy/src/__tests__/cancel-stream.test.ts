@@ -72,7 +72,7 @@ test('Canceling an SSE stream stops data flow', async () => {
 
   const fetchPromise = fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-sadie-key': 'test' },
+    headers: { 'Content-Type': 'application/json', 'x-homebot-key': 'test' },
     body: JSON.stringify({ provider: 'openai', model: 'mock', prompt: 'x' }),
     signal: controller.signal,
   });

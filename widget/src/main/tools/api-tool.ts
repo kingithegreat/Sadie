@@ -1,5 +1,5 @@
 /**
- * SADIE API Tool
+ * HomeBot API Tool
  *
  * Makes outbound HTTP/HTTPS requests to an allowlisted set of public API hosts.
  * Strict SSRF protection: all private IPs, loopback, and non-https URLs are blocked.
@@ -165,7 +165,7 @@ function httpsRequest(
     const parsed = new URL(url);
     const bodyBuf = body ? Buffer.from(body, 'utf8') : undefined;
     const reqHeaders: Record<string, string> = {
-      'User-Agent': 'SADIE/1.0 (local AI assistant)',
+      'User-Agent': 'HomeBot/1.0 (local AI assistant)',
       Accept: 'application/json, text/plain, */*',
       ...headers,
     };

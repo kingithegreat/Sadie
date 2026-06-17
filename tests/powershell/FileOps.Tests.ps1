@@ -1,7 +1,7 @@
 $ScriptPath = Resolve-Path "$PSScriptRoot\..\..\scripts\tools\powershell\FileOps.ps1"
-$TestSandbox = "C:\Users\adenk\Desktop\sadie\tests\sandbox"
+$TestSandbox = "C:\Users\adenk\Desktop\homebot\tests\sandbox"
 
-Describe "SADIE FileOps.ps1 Tests" {
+Describe "HomeBot FileOps.ps1 Tests" {
 
     BeforeAll {
         if (-not (Test-Path $TestSandbox)) {
@@ -43,7 +43,7 @@ Describe "SADIE FileOps.ps1 Tests" {
     Context "File Operations" {
         It "Should allow writing a text file in a safe path" {
             $path = Join-Path $TestSandbox "test_write.txt"
-            $content = "Hello SADIE"
+            $content = "Hello HomeBot"
             
             $result = & $ScriptPath -Action write -Path $path -Content $content
             $json = $result | ConvertFrom-Json
@@ -56,7 +56,7 @@ Describe "SADIE FileOps.ps1 Tests" {
 
         It "Should read the written file" {
             $path = Join-Path $TestSandbox "test_write.txt"
-            $content = "Hello SADIE" # Matches previous test
+            $content = "Hello HomeBot" # Matches previous test
             
             $result = & $ScriptPath -Action read -Path $path
             $json = $result | ConvertFrom-Json

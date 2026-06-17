@@ -1,5 +1,5 @@
 /**
- * SADIE Terminal Tool
+ * HomeBot Terminal Tool
  *
  * Executes shell commands in a specified working directory.
  * Designed for developer workflows: build tools, package managers,

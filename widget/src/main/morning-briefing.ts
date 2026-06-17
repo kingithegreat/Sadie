@@ -1,5 +1,5 @@
 /**
- * SADIE Morning Briefing
+ * HomeBot Morning Briefing
  *
  * On the first user interaction each day, proactively offers a brief
  * summary of weather, upcoming calendar events, and pending reminders.

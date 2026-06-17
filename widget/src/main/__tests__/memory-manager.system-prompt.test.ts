@@ -12,7 +12,7 @@ import { createNewConversation, getConversation, saveConversation, __flushWrites
 let tmpDir: string;
 
 beforeAll(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sadie-mm-test-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-mm-test-'));
   process.env.TEST_USERDATA = tmpDir;
 });
 

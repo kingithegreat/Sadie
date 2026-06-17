@@ -1,5 +1,5 @@
 {
-  "name": "SADIE Archive Operations Tool (Phase 6.1)",
+  "name": "HomeBot Archive Operations Tool (Phase 6.1)",
   "nodes": [
     {
       "id": "webhook-trigger",
@@ -12,13 +12,13 @@
       ],
       "parameters": {
         "httpMethod": "POST",
-        "path": "sadie/tools/archive-ops",
+        "path": "homebot/tools/archive-ops",
         "responseMode": "onReceived",
         "options": {}
       }
     },
     {
-      "id": "sadie-auth-guard",
+      "id": "homebot-auth-guard",
       "name": "Auth Guard",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -27,7 +27,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
       }
     },
     {
@@ -45,8 +45,8 @@
     },
     {
       "parameters": {
-        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"archive_ops\" -Action \"{{ $json.action }}\" -Parameters @{{ $json.params | ConvertTo-Json -Compress }} -UserConfirmed ${{ $json.params.user_confirmed || false }}",
-        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"archive_ops\" -Action \"{{ $json.action }}\" -Parameters @{{ $json.params | ConvertTo-Json -Compress }} -UserConfirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
       },
       "id": "safety-validation",
       "name": "Safety Validation",
@@ -72,8 +72,8 @@
     },
     {
       "parameters": {
-        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\ArchiveOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.params.archive_path ? ` -ArchivePath \"${String($json.params.archive_path).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.destination ? ` -Destination \"${String($json.params.destination).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.files ? ` -Files @(${($json.params.files || []).map(f => `\"${String(f).replace(/[\\'\\\"`$;&|<>]/g, '')}\"`).join(',')})` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
-        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\ArchiveOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.params.archive_path ? ` -ArchivePath \"${String($json.params.archive_path).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.destination ? ` -Destination \"${String($json.params.destination).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.files ? ` -Files @(${($json.params.files || []).map(f => `\"${String(f).replace(/[\\'\\\"`$;&|<>]/g, '')}\"`).join(',')})` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
       },
       "id": "execute-archiveops",
       "name": "Execute ArchiveOps",

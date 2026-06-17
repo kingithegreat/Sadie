@@ -1,5 +1,5 @@
 # ============================================================================
-# SADIE Archive Operations Script
+# HomeBot Archive Operations Script
 # ============================================================================
 # Purpose: Safe ZIP extraction and archiving operations
 # Safety: Validates extraction paths and prevents zip bombs

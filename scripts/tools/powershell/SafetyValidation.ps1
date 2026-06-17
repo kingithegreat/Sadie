@@ -1,5 +1,5 @@
 # ============================================================================
-# SADIE Safety Validation Script
+# HomeBot Safety Validation Script
 # ============================================================================
 # Purpose: Pre-execution validation for all tool operations
 # Safety: Enforces whitelist/blacklist rules before any action

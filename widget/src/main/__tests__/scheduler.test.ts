@@ -32,7 +32,7 @@ beforeEach(() => {
 
   jest.doMock('electron', () => ({
     app: {
-      getPath: jest.fn().mockReturnValue('/tmp/sadie-test-scheduler'),
+      getPath: jest.fn().mockReturnValue('/tmp/homebot-test-scheduler'),
       isPackaged: false,
     },
     BrowserWindow: {
@@ -237,7 +237,7 @@ describe('initScheduler', () => {
 
     // Advance 5+ minutes → job should fire
     jest.advanceTimersByTime(5 * 60_000 + 1000);
-    expect(win.webContents.send).toHaveBeenCalledWith('sadie:reminder-fired', expect.objectContaining({ message: 'tick', label: 'Interval Job' }));
+    expect(win.webContents.send).toHaveBeenCalledWith('homebot:reminder-fired', expect.objectContaining({ message: 'tick', label: 'Interval Job' }));
   });
 });
 
@@ -262,7 +262,7 @@ describe('initScheduler', () => {
       readFileSync: jest.fn().mockReturnValue(JSON.stringify(persisted)),
     }));
     jest.doMock('electron', () => ({
-      app: { getPath: jest.fn().mockReturnValue('/tmp/sadie-test-scheduler'), isPackaged: false },
+      app: { getPath: jest.fn().mockReturnValue('/tmp/homebot-test-scheduler'), isPackaged: false },
       BrowserWindow: { getAllWindows: jest.fn().mockReturnValue([]) },
     }));
     const freshScheduler: SchedulerModule = require('../scheduler');

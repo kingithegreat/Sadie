@@ -4,15 +4,15 @@ import { autoUpdater } from 'electron-updater';
 import { app, BrowserWindow } from 'electron';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
-function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
 function isAutoUpdateEnabled(): boolean {
-  return app.isPackaged && process.env.SADIE_ENABLE_AUTO_UPDATE === '1';
+  return app.isPackaged && process.env.HOMEBOT_ENABLE_AUTO_UPDATE === '1';
 }
 
 export function initAutoUpdater(mainWindow: BrowserWindow): void {
   if (!isAutoUpdateEnabled()) {
-    console.log('[UPDATER] Disabled: set SADIE_ENABLE_AUTO_UPDATE=1 for signed packaged releases');
+    console.log('[UPDATER] Disabled: set HOMEBOT_ENABLE_AUTO_UPDATE=1 for signed packaged releases');
     return;
   }
 
@@ -24,7 +24,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     console.log(`[UPDATER] Update available: v${info.version}`);
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('sadie:update-available', {
+        mainWindow.webContents.send('homebot:update-available', {
           version: info.version,
           releaseDate: info.releaseDate,
         });
@@ -45,7 +45,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   autoUpdater.on('download-progress', (progress) => {
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('sadie:update-progress', {
+        mainWindow.webContents.send('homebot:update-progress', {
           percent: Math.round(progress.percent),
         });
       }
@@ -56,7 +56,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     console.log('[UPDATER] Update downloaded, will install on quit');
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('sadie:update-downloaded');
+        mainWindow.webContents.send('homebot:update-downloaded');
       }
     } catch (e) { safeCatch(e); }
   });

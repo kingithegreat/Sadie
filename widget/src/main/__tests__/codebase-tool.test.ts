@@ -25,7 +25,7 @@ import {
 const TMP = os.tmpdir();
 
 // Create a temp project structure for testing
-const TEST_DIR = path.join(TMP, `sadie-codebase-test-${Date.now()}`);
+const TEST_DIR = path.join(TMP, `homebot-codebase-test-${Date.now()}`);
 const SRC_DIR = path.join(TEST_DIR, 'src');
 const SUB_DIR = path.join(SRC_DIR, 'utils');
 

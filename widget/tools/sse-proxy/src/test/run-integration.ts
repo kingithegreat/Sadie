@@ -32,7 +32,7 @@ async function run() {
   };
 
   const resp = await fetch('http://localhost:5050/stream', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-sadie-key': 'changeme' }, body: JSON.stringify(body)
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-homebot-key': 'changeme' }, body: JSON.stringify(body)
   });
 
   if (!resp.body) throw new Error('No response body');

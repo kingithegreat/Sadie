@@ -1,5 +1,5 @@
 /**
- * SADIE Email Tools
+ * HomeBot Email Tools
  *
  * Send, draft, and list emails via Microsoft Outlook COM automation.
  * Falls back to a local draft store (memory/json-store/email-drafts.json)
@@ -23,7 +23,7 @@ const execAsync = promisify(exec);
 
 const LOCAL_DRAFTS_PATH = path.join(
   process.env.USERPROFILE || process.env.HOME || '',
-  'Desktop', 'sadie', 'memory', 'json-store', 'email-drafts.json'
+  'Desktop', 'homebot', 'memory', 'json-store', 'email-drafts.json'
 );
 
 interface EmailDraft {

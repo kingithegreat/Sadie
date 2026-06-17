@@ -1,11 +1,11 @@
 /**
- * SADIE Planning Agent Tool
+ * HomeBot Planning Agent Tool
  *
  * Helps break complex goals into ordered, actionable steps.
  * The LLM generates the plan and calls plan_task to persist it;
  * get_plans retrieves previously saved plans for reference.
  *
- * Plans are saved to $USERPROFILE/sadie-plans.json (local, zero config).
+ * Plans are saved to $USERPROFILE/homebot-plans.json (local, zero config).
  *
  * Tools:
  *   plan_task  — save a step-by-step plan for a goal
@@ -17,7 +17,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
-const PLANS_FILE = path.join(os.homedir(), 'sadie-plans.json');
+const PLANS_FILE = path.join(os.homedir(), 'homebot-plans.json');
 
 // ----- Persistence helpers -----
 

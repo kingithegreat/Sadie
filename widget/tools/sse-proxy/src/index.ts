@@ -337,8 +337,8 @@ app.post('/stream', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid request body: missing provider/model or content' });
   }
 
-  // API key validation - use header `x-sadie-key` and do constant-time comparison
-  const headerKeyRaw = ((req.headers['x-sadie-key'] || req.headers['X-Sadie-Key']) as string) || undefined;
+  // API key validation - use header `x-homebot-key` and do constant-time comparison
+  const headerKeyRaw = ((req.headers['x-homebot-key'] || req.headers['X-HomeBot-Key']) as string) || undefined;
   if (!isValidApiKey(headerKeyRaw)) {
     // Return SSE error frame + 401 status
     res.setHeader('Content-Type', 'text/event-stream');
@@ -487,7 +487,7 @@ app.post('/stream', async (req: Request, res: Response) => {
 // --- Admin endpoints (key rotation) ---
 if (adminEnabled) {
   const adminAuth = (req: Request): boolean => {
-    const adminKey = (req.headers['x-sadie-admin-key'] || req.headers['X-Sadie-Admin-Key']) as string | undefined;
+    const adminKey = (req.headers['x-homebot-admin-key'] || req.headers['X-HomeBot-Admin-Key']) as string | undefined;
     if (!adminKey) return false;
     try {
       return crypto.timingSafeEqual(sha256(adminKey), adminHashed);

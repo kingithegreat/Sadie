@@ -1,5 +1,5 @@
 /**
- * Generate SADIE Poster and Project Report as .docx files
+ * Generate HomeBot Poster and Project Report as .docx files
  * Run: node scripts/generate-docs.js
  */
 const {
@@ -15,7 +15,7 @@ const path = require('path');
 const STUDENT = 'Aden Kingi';
 const INSTITUTION = 'Toi Ohomai Institute of Technology';
 const PROGRAMME = 'Bachelor of Computing Systems (Level 7)';
-const PROJECT = 'SADIE — Structured AI Desktop Intelligence Engine';
+const PROJECT = 'HomeBot — Your Private Desktop AI Assistant';
 const YEAR = '2026';
 const SUPERVISOR = 'Francisco Roldao';
 
@@ -96,12 +96,12 @@ function buildPoster() {
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 80 },
-          children: [new TextRun({ text: 'SADIE', size: 56, bold: true, font: 'Calibri', color: BLUE })]
+          children: [new TextRun({ text: 'HomeBot', size: 56, bold: true, font: 'Calibri', color: BLUE })]
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 40 },
-          children: [new TextRun({ text: 'Structured AI Desktop Intelligence Engine', size: 28, font: 'Calibri', color: DARK })]
+          children: [new TextRun({ text: 'Your Private Desktop AI Assistant', size: 28, font: 'Calibri', color: DARK })]
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -114,8 +114,8 @@ function buildPoster() {
         body('Cloud-based AI assistants require an internet connection and send every conversation to a remote server. Users who need AI assistance for sensitive work — personal documents, business data, local system administration — are forced to choose between capability and privacy. No existing desktop tool offers a fully offline AI assistant with broad tool integration and agentic multi-step reasoning.'),
 
         // Solution
-        heading('SADIE — The Solution', HeadingLevel.HEADING_2),
-        body('SADIE is a privacy-first desktop AI assistant built with Electron 28, React 18, and TypeScript. It runs entirely on the user\'s machine using Ollama for local LLM inference, with optional cloud provider support when the user explicitly enables it. SADIE combines a rich chat interface with 60+ local tool handlers, agentic multi-step reasoning, retrieval-augmented generation (RAG), and a modern glass-morphism UI — all without requiring an API key or internet connection for core functionality.'),
+        heading('HomeBot — The Solution', HeadingLevel.HEADING_2),
+        body('HomeBot is a privacy-first desktop AI assistant built with Electron 28, React 18, and TypeScript. It runs entirely on the user\'s machine using Ollama for local LLM inference, with optional cloud provider support when the user explicitly enables it. HomeBot combines a rich chat interface with 60+ local tool handlers, agentic multi-step reasoning, retrieval-augmented generation (RAG), and a modern glass-morphism UI — all without requiring an API key or internet connection for core functionality.'),
 
         // Architecture
         heading('System Architecture', HeadingLevel.HEADING_2),
@@ -187,8 +187,8 @@ function buildPoster() {
         heading('Future Work', HeadingLevel.HEADING_2),
         bullet('Plugin system for community-contributed tool handlers'),
         bullet('Multi-user support with per-user encrypted memory stores'),
-        bullet('Mobile companion app for remote access to the local SADIE instance'),
-        bullet('Fine-tuned local models optimised for SADIE\'s tool-calling schema'),
+        bullet('Mobile companion app for remote access to the local HomeBot instance'),
+        bullet('Fine-tuned local models optimised for HomeBot\'s tool-calling schema'),
       ]
     }]
   });
@@ -204,12 +204,12 @@ function buildReport() {
   for (let i = 0; i < 6; i++) children.push(spacer());
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: 'SADIE', size: 72, bold: true, font: 'Calibri', color: BLUE })]
+    children: [new TextRun({ text: 'HomeBot', size: 72, bold: true, font: 'Calibri', color: BLUE })]
   }));
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: 200 },
-    children: [new TextRun({ text: 'Structured AI Desktop Intelligence Engine', size: 32, font: 'Calibri', color: DARK })]
+    children: [new TextRun({ text: 'Your Private Desktop AI Assistant', size: 32, font: 'Calibri', color: DARK })]
   }));
   children.push(spacer());
   children.push(new Paragraph({
@@ -243,7 +243,7 @@ function buildReport() {
 
   // ── Abstract ──
   children.push(heading('Abstract'));
-  children.push(body('This report documents the design, implementation, and evaluation of SADIE (Structured AI Desktop Intelligence Engine), a privacy-first desktop AI assistant built as a capstone project for the Bachelor of Computing Systems programme at Toi Ohomai Institute of Technology. SADIE addresses the growing tension between AI capability and data privacy by providing a fully offline-capable AI assistant that runs local large language models (LLMs) via Ollama, while optionally supporting 11 cloud LLM providers when users explicitly enable them. The application is built with Electron 28, React 18, and TypeScript, featuring 85+ locally-executed tool handlers, retrieval-augmented generation (RAG), agentic multi-step reasoning, an interactive quiz mode, an automation center, and a modern glass-morphism user interface. The system is validated by 120 test suites, Playwright end-to-end tests, and manual testing across multiple hardware profiles. SADIE demonstrates that a desktop AI assistant can match the breadth of cloud-based alternatives while keeping user data entirely local.'));
+  children.push(body('This report documents the design, implementation, and evaluation of HomeBot (Your Private Desktop AI Assistant), a privacy-first desktop AI assistant built as a capstone project for the Bachelor of Computing Systems programme at Toi Ohomai Institute of Technology. HomeBot addresses the growing tension between AI capability and data privacy by providing a fully offline-capable AI assistant that runs local large language models (LLMs) via Ollama, while optionally supporting 11 cloud LLM providers when users explicitly enable them. The application is built with Electron 28, React 18, and TypeScript, featuring 85+ locally-executed tool handlers, retrieval-augmented generation (RAG), agentic multi-step reasoning, an interactive quiz mode, an automation center, and a modern glass-morphism user interface. The system is validated by 120 test suites, Playwright end-to-end tests, and manual testing across multiple hardware profiles. HomeBot demonstrates that a desktop AI assistant can match the breadth of cloud-based alternatives while keeping user data entirely local.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -266,7 +266,7 @@ function buildReport() {
   children.push(bullet('Validate the system with comprehensive automated testing'));
 
   children.push(heading('1.4 Scope', HeadingLevel.HEADING_2));
-  children.push(body('SADIE targets Windows 10/11 desktop users with at least 4 GB of GPU VRAM. The project covers the full stack from UI to LLM integration, tool execution, and deployment packaging. It does not cover training custom models, mobile platforms, or multi-user server deployment.'));
+  children.push(body('HomeBot targets Windows 10/11 desktop users with at least 4 GB of GPU VRAM. The project covers the full stack from UI to LLM integration, tool execution, and deployment packaging. It does not cover training custom models, mobile platforms, or multi-user server deployment.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -279,20 +279,20 @@ function buildReport() {
   children.push(body('Tool use (also called function calling) allows LLMs to invoke external functions by generating structured JSON tool calls. This pattern, popularised by OpenAI\'s function calling API and adopted by Ollama\'s native tool calling support, enables LLMs to perform actions beyond text generation — searching the web, reading files, executing code, and controlling system resources. Schick et al. (2023) demonstrated that tool-augmented LLMs significantly outperform base models on tasks requiring external information or computation.'));
 
   children.push(heading('2.3 Retrieval-Augmented Generation', HeadingLevel.HEADING_2));
-  children.push(body('RAG combines LLM generation with document retrieval to ground responses in specific source material. Lewis et al. (2020) showed that RAG significantly reduces hallucination by providing the model with relevant context at inference time. SADIE implements RAG using a hybrid TF-IDF and semantic embedding approach with Ollama\'s nomic-embed-text model, supporting PDF, Word, code, CSV, and Markdown documents.'));
+  children.push(body('RAG combines LLM generation with document retrieval to ground responses in specific source material. Lewis et al. (2020) showed that RAG significantly reduces hallucination by providing the model with relevant context at inference time. HomeBot implements RAG using a hybrid TF-IDF and semantic embedding approach with Ollama\'s nomic-embed-text model, supporting PDF, Word, code, CSV, and Markdown documents.'));
 
   children.push(heading('2.4 Agentic Reasoning', HeadingLevel.HEADING_2));
-  children.push(body('Agentic LLM systems allow models to autonomously plan and execute multi-step tasks by iteratively calling tools and observing results. This approach, explored by frameworks like LangChain and AutoGPT, enables complex workflows such as "search for X, save the results to a file, then email me a summary." SADIE implements agentic reasoning with a configurable tool recursion cap (MAX_TOOL_ROUNDS = 10) to prevent infinite loops.'));
+  children.push(body('Agentic LLM systems allow models to autonomously plan and execute multi-step tasks by iteratively calling tools and observing results. This approach, explored by frameworks like LangChain and AutoGPT, enables complex workflows such as "search for X, save the results to a file, then email me a summary." HomeBot implements agentic reasoning with a configurable tool recursion cap (MAX_TOOL_ROUNDS = 10) to prevent infinite loops.'));
 
   children.push(heading('2.5 Existing Solutions', HeadingLevel.HEADING_2));
-  children.push(body('Existing desktop AI tools fall into two categories: (1) cloud-only wrappers like the ChatGPT desktop app, which offer a polished UI but require an internet connection and send all data to remote servers; and (2) local-only tools like LM Studio or GPT4All, which provide offline inference but lack tool integration, agentic reasoning, and document understanding. SADIE bridges this gap by combining the tool richness of cloud assistants with the privacy of local inference.'));
+  children.push(body('Existing desktop AI tools fall into two categories: (1) cloud-only wrappers like the ChatGPT desktop app, which offer a polished UI but require an internet connection and send all data to remote servers; and (2) local-only tools like LM Studio or GPT4All, which provide offline inference but lack tool integration, agentic reasoning, and document understanding. HomeBot bridges this gap by combining the tool richness of cloud assistants with the privacy of local inference.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   // ── 3. Methodology ──
   children.push(heading('3. Methodology'));
   children.push(heading('3.1 Development Approach', HeadingLevel.HEADING_2));
-  children.push(body('SADIE was developed using an iterative agile methodology over approximately six months. Development was organised into phases: core architecture and chat functionality, tool handler implementation, RAG and agentic reasoning, cloud LLM integration, UI polish, and testing/deployment. Each phase produced a working increment that was tested and refined before the next phase began.'));
+  children.push(body('HomeBot was developed using an iterative agile methodology over approximately six months. Development was organised into phases: core architecture and chat functionality, tool handler implementation, RAG and agentic reasoning, cloud LLM integration, UI polish, and testing/deployment. Each phase produced a working increment that was tested and refined before the next phase began.'));
 
   children.push(heading('3.2 Technology Selection', HeadingLevel.HEADING_2));
   children.push(simpleTable(
@@ -309,7 +309,7 @@ function buildReport() {
   ));
 
   children.push(heading('3.3 Hardware Testing Profiles', HeadingLevel.HEADING_2));
-  children.push(body('SADIE was tested across three hardware profiles to ensure broad compatibility:'));
+  children.push(body('HomeBot was tested across three hardware profiles to ensure broad compatibility:'));
   children.push(simpleTable(
     ['Profile', 'GPU VRAM', 'Default Chat Model', 'Default Vision Model'],
     [
@@ -324,7 +324,7 @@ function buildReport() {
   // ── 4. System Design ──
   children.push(heading('4. System Design'));
   children.push(heading('4.1 Architecture Overview', HeadingLevel.HEADING_2));
-  children.push(body('SADIE follows a multi-process Electron architecture with strict separation between the renderer (UI) and main (backend) processes. All LLM communication, tool execution, file I/O, and system access occurs in the main process. The renderer communicates exclusively through a typed preload bridge using Electron\'s contextBridge API, ensuring context isolation.'));
+  children.push(body('HomeBot follows a multi-process Electron architecture with strict separation between the renderer (UI) and main (backend) processes. All LLM communication, tool execution, file I/O, and system access occurs in the main process. The renderer communicates exclusively through a typed preload bridge using Electron\'s contextBridge API, ensuring context isolation.'));
 
   children.push(new Paragraph({
     spacing: { after: 200 },
@@ -363,7 +363,7 @@ function buildReport() {
   children.push(bullet('Anti-hallucination guards: synthesis prompts, garbage output detection, web-grounding'));
 
   children.push(heading('4.3 Tool System', HeadingLevel.HEADING_2));
-  children.push(body('SADIE registers 85+ tools at startup across 20 categories. Each tool is defined by a JSON schema (for LLM tool calling) and a TypeScript handler function. Tools execute locally in the main process and return structured JSON results. Tool categories include:'));
+  children.push(body('HomeBot registers 85+ tools at startup across 20 categories. Each tool is defined by a JSON schema (for LLM tool calling) and a TypeScript handler function. Tools execute locally in the main process and return structured JSON results. Tool categories include:'));
   children.push(simpleTable(
     ['Category', 'Tools', 'Description'],
     [
@@ -382,10 +382,10 @@ function buildReport() {
   ));
 
   children.push(heading('4.4 Security Design', HeadingLevel.HEADING_2));
-  children.push(body('SADIE implements defence-in-depth security:'));
+  children.push(body('HomeBot implements defence-in-depth security:'));
   children.push(bullet('SSRF Protection: URL validation blocks loopback, private IPs, and DNS rebinding'));
   children.push(bullet('IPC Hardening: Context isolation, typed preload bridge, path-traversal prevention'));
-  children.push(bullet('Webhook Authentication: 256-bit shared secret (X-SADIE-Auth) for all n8n communication'));
+  children.push(bullet('Webhook Authentication: 256-bit shared secret (X-HOMEBOT-Auth) for all n8n communication'));
   children.push(bullet('Tool Recursion Cap: MAX_TOOL_ROUNDS = 10 prevents infinite tool-call loops'));
   children.push(bullet('API Key Encryption: All API keys encrypted at rest using machine-specific DPAPI'));
   children.push(bullet('Input Sanitisation: Toast XML entity-encoding, Git message character whitelisting, PID injection guard'));
@@ -412,29 +412,29 @@ function buildReport() {
   children.push(heading('5.2 Key Implementation Details', HeadingLevel.HEADING_2));
 
   children.push(heading('5.2.1 Local LLM Integration', HeadingLevel.HEADING_3));
-  children.push(body('SADIE communicates with Ollama via its HTTP API at 127.0.0.1:11434. The message router streams responses using Server-Sent Events, providing real-time token-by-token output in the chat UI. Ollama\'s native tool calling support allows the LLM to emit structured JSON tool calls, which SADIE parses, executes, and feeds back as tool results for multi-turn tool use. Model parameters are tuned per hardware profile: mirostat 2 for dynamic perplexity control, configurable context windows (4K–8K), and num_gpu: 99 to maximise GPU offloading.'));
+  children.push(body('HomeBot communicates with Ollama via its HTTP API at 127.0.0.1:11434. The message router streams responses using Server-Sent Events, providing real-time token-by-token output in the chat UI. Ollama\'s native tool calling support allows the LLM to emit structured JSON tool calls, which HomeBot parses, executes, and feeds back as tool results for multi-turn tool use. Model parameters are tuned per hardware profile: mirostat 2 for dynamic perplexity control, configurable context windows (4K–8K), and num_gpu: 99 to maximise GPU offloading.'));
 
   children.push(heading('5.2.2 Cloud LLM Routing', HeadingLevel.HEADING_3));
-  children.push(body('SADIE supports 11 cloud providers through a unified custom LLM client: OpenAI, Anthropic, Google AI Studio, Google Gemini (native), OpenRouter, Groq, DeepSeek, Hugging Face, Cerebras, SambaNova, and Together AI. Each provider uses the appropriate API format — OpenAI-compatible chat/completions for most, Anthropic\'s messages API, and Google Gemini\'s native streamGenerateContent SSE endpoint. The UI auto-fills API URLs and default models when a provider is selected.'));
+  children.push(body('HomeBot supports 11 cloud providers through a unified custom LLM client: OpenAI, Anthropic, Google AI Studio, Google Gemini (native), OpenRouter, Groq, DeepSeek, Hugging Face, Cerebras, SambaNova, and Together AI. Each provider uses the appropriate API format — OpenAI-compatible chat/completions for most, Anthropic\'s messages API, and Google Gemini\'s native streamGenerateContent SSE endpoint. The UI auto-fills API URLs and default models when a provider is selected.'));
 
   children.push(heading('5.2.3 Retrieval-Augmented Generation', HeadingLevel.HEADING_3));
-  children.push(body('The RAG engine supports drag-and-drop document indexing for PDF, Word, code, CSV, and Markdown files. Documents are chunked, embedded using Ollama\'s nomic-embed-text model, and indexed locally. At query time, SADIE performs hybrid retrieval combining TF-IDF keyword matching with semantic embedding similarity, returning the most relevant chunks as context for the LLM.'));
+  children.push(body('The RAG engine supports drag-and-drop document indexing for PDF, Word, code, CSV, and Markdown files. Documents are chunked, embedded using Ollama\'s nomic-embed-text model, and indexed locally. At query time, HomeBot performs hybrid retrieval combining TF-IDF keyword matching with semantic embedding similarity, returning the most relevant chunks as context for the LLM.'));
 
   children.push(heading('5.2.4 Agentic Multi-Step Reasoning', HeadingLevel.HEADING_3));
-  children.push(body('When SADIE detects a multi-step request (e.g., "search for the weather in Auckland, then save it to a file"), the agentic loop activates. The system prompt is augmented with step-tracking instructions, and the LLM is given the full tool catalogue. After each tool call, results are fed back and the LLM decides whether to call another tool or produce a final answer. A recursion cap of 10 rounds prevents runaway loops, and streaming progress indicators keep the user informed.'));
+  children.push(body('When HomeBot detects a multi-step request (e.g., "search for the weather in Auckland, then save it to a file"), the agentic loop activates. The system prompt is augmented with step-tracking instructions, and the LLM is given the full tool catalogue. After each tool call, results are fed back and the LLM decides whether to call another tool or produce a final answer. A recursion cap of 10 rounds prevents runaway loops, and streaming progress indicators keep the user informed.'));
 
   children.push(heading('5.2.5 Mixture of Agents (MoA)', HeadingLevel.HEADING_3));
-  children.push(body('For users with 16+ GB GPUs, SADIE offers Mixture of Agents — multiple local models (proposers) independently answer the user\'s question, then a stronger model (aggregator) synthesises the best response. Three presets are available: Balanced (qwen2.5:7b + qwen2.5-coder:7b → gemma4:e4b), Code-focused, and Lightweight. This improves answer quality by leveraging the complementary strengths of different model architectures.'));
+  children.push(body('For users with 16+ GB GPUs, HomeBot offers Mixture of Agents — multiple local models (proposers) independently answer the user\'s question, then a stronger model (aggregator) synthesises the best response. Three presets are available: Balanced (qwen2.5:7b + qwen2.5-coder:7b → gemma4:e4b), Code-focused, and Lightweight. This improves answer quality by leveraging the complementary strengths of different model architectures.'));
 
   children.push(heading('5.2.6 User Interface', HeadingLevel.HEADING_3));
-  children.push(body('The React 18 frontend features a glass-morphism design system with light, dark, and system-auto themes. Key UI features include: conversation sidebar with search, pinning, archiving, and tags; markdown rendering with syntax highlighting; inline image and document previews; a model selector showing installed models and VRAM usage; settings panel with hardware auto-detection; first-run onboarding modal; token counter; analytics dashboard; and keyboard shortcuts. The global hotkey Ctrl+Shift+Space toggles SADIE from any application.'));
+  children.push(body('The React 18 frontend features a glass-morphism design system with light, dark, and system-auto themes. Key UI features include: conversation sidebar with search, pinning, archiving, and tags; markdown rendering with syntax highlighting; inline image and document previews; a model selector showing installed models and VRAM usage; settings panel with hardware auto-detection; first-run onboarding modal; token counter; analytics dashboard; and keyboard shortcuts. The global hotkey Ctrl+Shift+Space toggles HomeBot from any application.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   // ── 6. Testing ──
   children.push(heading('6. Testing & Validation'));
   children.push(heading('6.1 Unit Testing', HeadingLevel.HEADING_2));
-  children.push(body('SADIE uses Jest for unit testing with ts-jest for TypeScript support. The test suite covers:'));
+  children.push(body('HomeBot uses Jest for unit testing with ts-jest for TypeScript support. The test suite covers:'));
   children.push(simpleTable(
     ['Test Area', 'Suites', 'Focus'],
     [
@@ -483,9 +483,9 @@ function buildReport() {
 
   // ── 8. Conclusion ──
   children.push(heading('8. Conclusion'));
-  children.push(body('SADIE demonstrates that a privacy-first desktop AI assistant can match the breadth and usability of cloud-based alternatives while keeping all user data local. By combining Ollama for local LLM inference, 85+ TypeScript tool handlers, retrieval-augmented generation, agentic multi-step reasoning, an interactive quiz mode, a reusable automation center, and a modern React-based UI, SADIE provides a practical tool for users who need AI assistance without compromising data privacy.'));
+  children.push(body('HomeBot demonstrates that a privacy-first desktop AI assistant can match the breadth and usability of cloud-based alternatives while keeping all user data local. By combining Ollama for local LLM inference, 85+ TypeScript tool handlers, retrieval-augmented generation, agentic multi-step reasoning, an interactive quiz mode, a reusable automation center, and a modern React-based UI, HomeBot provides a practical tool for users who need AI assistance without compromising data privacy.'));
   children.push(body('The project successfully achieved all stated objectives, validated by 120 automated test suites and manual testing across three hardware profiles. The optional cloud LLM integration provides an upgrade path for users who want higher-quality models, while the core offline experience remains fully functional without any API keys or internet connection.'));
-  children.push(body('Future work could extend SADIE with a plugin system for community-contributed tools, multi-user support, a mobile companion app, and fine-tuned local models optimised for SADIE\'s specific tool-calling schema.'));
+  children.push(body('Future work could extend HomeBot with a plugin system for community-contributed tools, multi-user support, a mobile companion app, and fine-tuned local models optimised for HomeBot\'s specific tool-calling schema.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -564,12 +564,12 @@ function buildPresentation() {
   for (let i = 0; i < 4; i++) children.push(spacer());
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: 'SADIE', size: 80, bold: true, font: 'Calibri', color: BLUE })]
+    children: [new TextRun({ text: 'HomeBot', size: 80, bold: true, font: 'Calibri', color: BLUE })]
   }));
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: 200 },
-    children: [new TextRun({ text: 'Structured AI Desktop Intelligence Engine', size: 36, font: 'Calibri', color: DARK })]
+    children: [new TextRun({ text: 'Your Private Desktop AI Assistant', size: 36, font: 'Calibri', color: DARK })]
   }));
   children.push(spacer());
   children.push(new Paragraph({
@@ -596,7 +596,7 @@ function buildPresentation() {
   // Slide 2: Agenda
   children.push(...slide('Agenda', [
     'The Problem — why this project exists',
-    'SADIE — what it does and how it works',
+    'HomeBot — what it does and how it works',
     'Architecture — Electron, React, Ollama, and the tool system',
     'Key Features — live demo highlights',
     'Technology Stack — languages, frameworks, and testing',
@@ -614,7 +614,7 @@ function buildPresentation() {
   ], 'Emphasise the privacy angle — this is the core motivation. Mention real scenarios: personal documents, business data, local system admin tasks.'));
 
   // Slide 4: The Solution
-  children.push(...slide('SADIE — The Solution', [
+  children.push(...slide('HomeBot — The Solution', [
     'Privacy-first desktop AI assistant — your data stays on your machine',
     'Runs local LLMs via Ollama — no API keys or internet required for core chat',
     '85+ tool handlers: web search, file management, vision, code runner, RAG, and more',
@@ -678,7 +678,7 @@ function buildPresentation() {
   // Slide 8: Agentic Reasoning
   children.push(...slide('Agentic Multi-Step Reasoning', [
     'User: "Search for the weather in Auckland, save it to a file, then summarise it"',
-    'SADIE detects multi-step intent and activates the agentic loop',
+    'HomeBot detects multi-step intent and activates the agentic loop',
     'LLM calls web_search → receives results → calls write_file → calls summarise',
     'Each tool result is fed back; LLM decides the next step autonomously',
     'Recursion cap (MAX_TOOL_ROUNDS = 10) prevents runaway loops',
@@ -687,7 +687,7 @@ function buildPresentation() {
 
   // Slide 9: RAG
   children.push(...slide('Retrieval-Augmented Generation (RAG)', [
-    'Drag and drop documents (PDF, Word, code, CSV, Markdown) into SADIE',
+    'Drag and drop documents (PDF, Word, code, CSV, Markdown) into HomeBot',
     'Documents are chunked and embedded using nomic-embed-text via Ollama',
     'At query time: hybrid TF-IDF keyword + semantic embedding retrieval',
     'Most relevant chunks injected as context for grounded, accurate answers',
@@ -699,7 +699,7 @@ function buildPresentation() {
     '11 providers: OpenAI, Anthropic, Google AI Studio, Gemini (native), OpenRouter, Groq, DeepSeek, Hugging Face, Cerebras, SambaNova, Together AI',
     'Unified client handles different API formats (OpenAI-compatible, Anthropic messages, Gemini SSE)',
     'UI auto-fills API URLs and default models when a provider is selected',
-    'Users explicitly opt in — SADIE never sends data to the cloud without consent',
+    'Users explicitly opt in — HomeBot never sends data to the cloud without consent',
     'Free-tier providers (Groq, Cerebras, SambaNova) marked in the UI',
   ], 'Emphasise that cloud is optional. The privacy-first story is about local being the default.'));
 
@@ -709,7 +709,7 @@ function buildPresentation() {
     'Conversation sidebar with search, pinning, archiving, and tags',
     'Markdown rendering with syntax highlighting',
     'First-run wizard: one-click Ollama install + model pull with progress bars',
-    'Global hotkey (Ctrl+Shift+Space) toggles SADIE from any application',
+    'Global hotkey (Ctrl+Shift+Space) toggles HomeBot from any application',
     'Analytics dashboard, focus mode, keyboard shortcuts',
   ], 'Show screenshots or switch to the live app here. The glass-morphism UI is visually distinctive.'));
 
@@ -746,7 +746,7 @@ function buildPresentation() {
 
   // Slide 15: Live Demo
   children.push(...slide('Live Demonstration', [
-    '1. Launch SADIE and show the first-run wizard',
+    '1. Launch HomeBot and show the first-run wizard',
     '2. Send a chat message using local Ollama (offline)',
     '3. Use web search + file write in an agentic chain',
     '4. Drag a document and query it with RAG',
@@ -759,8 +759,8 @@ function buildPresentation() {
   children.push(...slide('Future Work', [
     'Plugin system for community-contributed tool handlers',
     'Multi-user support with per-user encrypted memory stores',
-    'Mobile companion app for remote access to local SADIE',
-    'Fine-tuned local models optimised for SADIE\'s tool-calling schema',
+    'Mobile companion app for remote access to local HomeBot',
+    'Fine-tuned local models optimised for HomeBot\'s tool-calling schema',
     'Cross-platform packaging (macOS, Linux)',
   ], 'Keep this brief (~30 seconds). These are genuine next steps, not hand-waving.'));
 
@@ -784,7 +784,7 @@ function buildPresentation() {
   }));
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: 'github.com/kingithegreat/Sadie', size: 22, font: 'Calibri', color: BLUE })]
+    children: [new TextRun({ text: 'github.com/kingithegreat/HomeBot', size: 22, font: 'Calibri', color: BLUE })]
   }));
 
   return new Document({
@@ -815,7 +815,7 @@ function buildDemonstration() {
   for (let i = 0; i < 4; i++) children.push(spacer());
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: 'SADIE', size: 72, bold: true, font: 'Calibri', color: BLUE })]
+    children: [new TextRun({ text: 'HomeBot', size: 72, bold: true, font: 'Calibri', color: BLUE })]
   }));
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
@@ -844,7 +844,7 @@ function buildDemonstration() {
     ['Laptop plugged in', 'Battery can drain fast under GPU load — always use mains power'],
     ['Ollama running', 'Run "ollama serve" or verify the system tray icon. Check: curl http://127.0.0.1:11434/api/tags'],
     ['Models pulled', 'Verify: qwen2.5:7b, nomic-embed-text, moondream are listed in "ollama list"'],
-    ['SADIE launched', 'Start via npm run dev (developer) or the installed app. Confirm the chat window loads'],
+    ['HomeBot launched', 'Start via npm run dev (developer) or the installed app. Confirm the chat window loads'],
     ['Internet available', 'Needed for web search demo. Have a mobile hotspot as backup'],
     ['Demo files ready', 'Place a sample PDF and an image file on the Desktop for the RAG and vision demos'],
     ['Screen resolution', 'Set to 1920×1080 or higher. Increase font size in settings if projecting'],
@@ -868,18 +868,18 @@ function buildDemonstration() {
   children.push(heading('Demo 1: First Impressions (2 min)', HeadingLevel.HEADING_2));
   children.push(new Paragraph({
     spacing: { after: 80 },
-    children: [bold('What to show: '), new TextRun({ text: 'SADIE\'s UI, global hotkey, and theme switching', size: 22, font: 'Calibri' })]
+    children: [bold('What to show: '), new TextRun({ text: 'HomeBot\'s UI, global hotkey, and theme switching', size: 22, font: 'Calibri' })]
   }));
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"This is SADIE — a desktop AI assistant that runs entirely on your machine. Let me show you the interface."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"This is HomeBot — a desktop AI assistant that runs entirely on your machine. Let me show you the interface."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(bullet('Show the chat interface — point out the sidebar, model selector, and settings gear'));
-  children.push(bullet('Press Ctrl+Shift+Space to hide SADIE, then press it again to bring it back'));
+  children.push(bullet('Press Ctrl+Shift+Space to hide HomeBot, then press it again to bring it back'));
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"The global hotkey lets you summon SADIE from any application — like Spotlight for AI."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"The global hotkey lets you summon HomeBot from any application — like Spotlight for AI."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(bullet('Open Settings and switch between light and dark themes'));
   children.push(bullet('Point out the glass-morphism styling and animations'));
@@ -894,7 +894,7 @@ function buildDemonstration() {
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"SADIE uses Ollama to run a 7-billion-parameter language model right here on this laptop. No API keys, no cloud, no data leaving the machine."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"HomeBot uses Ollama to run a 7-billion-parameter language model right here on this laptop. No API keys, no cloud, no data leaving the machine."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(new Paragraph({
     spacing: { after: 60 },
@@ -917,7 +917,7 @@ function buildDemonstration() {
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"SADIE has 85+ tool handlers. The LLM can chain them autonomously for multi-step tasks. Watch this."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"HomeBot has 85+ tool handlers. The LLM can chain them autonomously for multi-step tasks. Watch this."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(new Paragraph({
     spacing: { after: 60 },
@@ -940,15 +940,15 @@ function buildDemonstration() {
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"SADIE can index your documents and answer questions grounded in their content — no hallucination, because it references the actual text."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"HomeBot can index your documents and answer questions grounded in their content — no hallucination, because it references the actual text."', size: 22, font: 'Calibri', italics: true })]
   }));
-  children.push(bullet('Drag a sample PDF from the Desktop into the SADIE chat window'));
+  children.push(bullet('Drag a sample PDF from the Desktop into the HomeBot chat window'));
   children.push(bullet('Wait for the indexing progress indicator to complete'));
   children.push(new Paragraph({
     spacing: { after: 60 },
     children: [bold('Type: '), new TextRun({ text: '"What are the main points in the document I just uploaded?"', size: 22, font: 'Calibri', color: BLUE })]
   }));
-  children.push(bullet('Show that SADIE\'s response references specific content from the document'));
+  children.push(bullet('Show that HomeBot\'s response references specific content from the document'));
   children.push(new Paragraph({
     spacing: { after: 60 },
     children: [bold('Say: '), new TextRun({ text: '"The document was indexed locally using nomic-embed-text embeddings. The search uses a hybrid TF-IDF plus semantic approach. Nothing was sent to the cloud."', size: 22, font: 'Calibri', italics: true })]
@@ -964,7 +964,7 @@ function buildDemonstration() {
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"SADIE can also understand images using a local vision model."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"HomeBot can also understand images using a local vision model."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(new Paragraph({
     spacing: { after: 60 },
@@ -986,7 +986,7 @@ function buildDemonstration() {
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"SADIE includes a quiz mode for coding practice. You can pick a topic, difficulty, and number of questions."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"HomeBot includes a quiz mode for coding practice. You can pick a topic, difficulty, and number of questions."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(bullet('Switch to Quiz Mode using Ctrl+5 or the sidebar'));
   children.push(bullet('Select a topic (e.g., Python), difficulty (Medium), and 3 questions'));
@@ -1007,7 +1007,7 @@ function buildDemonstration() {
   children.push(spacer());
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"The Automation Center lets you create reusable task workflows. You write plain-English instructions and SADIE executes them through its full tool chain."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"The Automation Center lets you create reusable task workflows. You write plain-English instructions and HomeBot executes them through its full tool chain."', size: 22, font: 'Calibri', italics: true })]
   }));
   children.push(bullet('Switch to Automation mode using Ctrl+2'));
   children.push(bullet('Create a new automation called "Morning News Summary"'));
@@ -1041,7 +1041,7 @@ function buildDemonstration() {
   children.push(heading('Closing (30 seconds)'));
   children.push(new Paragraph({
     spacing: { after: 60 },
-    children: [bold('Say: '), new TextRun({ text: '"To summarise — SADIE is a privacy-first desktop AI assistant with 85+ tools, agentic reasoning, RAG, vision, quiz mode, automations, and a one-click installer. It runs entirely on your machine. Everything you saw today was processed locally. Thank you — I\'m happy to take questions."', size: 22, font: 'Calibri', italics: true })]
+    children: [bold('Say: '), new TextRun({ text: '"To summarise — HomeBot is a privacy-first desktop AI assistant with 85+ tools, agentic reasoning, RAG, vision, quiz mode, automations, and a one-click installer. It runs entirely on your machine. Everything you saw today was processed locally. Thank you — I\'m happy to take questions."', size: 22, font: 'Calibri', italics: true })]
   }));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
@@ -1070,12 +1070,12 @@ function buildDemonstration() {
   children.push(spacer());
 
   const qaItems = [
-    ['How does SADIE compare to ChatGPT?', 'ChatGPT requires internet and sends everything to OpenAI servers. SADIE runs locally — your data never leaves your machine. The trade-off is that local 7B models are less capable than GPT-4, but SADIE also supports cloud providers when you want that quality.'],
-    ['What happens without a GPU?', 'SADIE works in CPU-only mode, but inference is significantly slower (10-30x). A 4 GB GPU is recommended for a practical experience. The first-run wizard detects your hardware and sets appropriate defaults.'],
-    ['Is this secure?', 'Yes. SADIE implements SSRF protection, IPC hardening with context isolation, API key encryption at rest, tool recursion caps, webhook authentication, and input sanitisation. The renderer process never has direct access to Node.js APIs.'],
+    ['How does HomeBot compare to ChatGPT?', 'ChatGPT requires internet and sends everything to OpenAI servers. HomeBot runs locally — your data never leaves your machine. The trade-off is that local 7B models are less capable than GPT-4, but HomeBot also supports cloud providers when you want that quality.'],
+    ['What happens without a GPU?', 'HomeBot works in CPU-only mode, but inference is significantly slower (10-30x). A 4 GB GPU is recommended for a practical experience. The first-run wizard detects your hardware and sets appropriate defaults.'],
+    ['Is this secure?', 'Yes. HomeBot implements SSRF protection, IPC hardening with context isolation, API key encryption at rest, tool recursion caps, webhook authentication, and input sanitisation. The renderer process never has direct access to Node.js APIs.'],
     ['Why Electron instead of a native app?', 'Electron provides a mature cross-platform framework with strong security primitives (context isolation, sandboxed preload). The React ecosystem offers component libraries, styling tools, and a large developer community. The trade-off is higher memory usage compared to native, but it is acceptable for a desktop AI assistant.'],
     ['How many models can it run?', 'Any model that Ollama supports — hundreds of open-source models. The default is qwen2.5:7b (4.7 GB VRAM) but users can switch to larger models like gemma4:e4b (9.6 GB) if they have the hardware.'],
-    ['What about multi-user or mobile?', 'These are future work items. Currently SADIE is single-user, Windows desktop. The architecture could support a companion mobile app that connects to the local SADIE instance over the network.'],
+    ['What about multi-user or mobile?', 'These are future work items. Currently HomeBot is single-user, Windows desktop. The architecture could support a companion mobile app that connects to the local HomeBot instance over the network.'],
   ];
 
   qaItems.forEach(([q, a]) => {
@@ -1105,10 +1105,10 @@ async function main() {
   const outDir = path.resolve(__dirname, '..');
 
   const docs = [
-    { name: 'SADIE_Poster.docx', builder: buildPoster },
-    { name: 'SADIE_Project_Report.docx', builder: buildReport },
-    { name: 'SADIE_Presentation.docx', builder: buildPresentation },
-    { name: 'SADIE_Demonstration.docx', builder: buildDemonstration },
+    { name: 'HOMEBOT_Poster.docx', builder: buildPoster },
+    { name: 'HOMEBOT_Project_Report.docx', builder: buildReport },
+    { name: 'HOMEBOT_Presentation.docx', builder: buildPresentation },
+    { name: 'HOMEBOT_Demonstration.docx', builder: buildDemonstration },
   ];
 
   for (const { name, builder } of docs) {

@@ -1,5 +1,5 @@
 /**
- * SADIE Clipboard Tools
+ * HomeBot Clipboard Tools
  *
  * Read from and write to the Windows clipboard via PowerShell.
  *

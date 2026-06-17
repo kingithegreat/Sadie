@@ -1,5 +1,5 @@
 /**
- * SADIE Code Runner Tool
+ * HomeBot Code Runner Tool
  *
  * Executes sandboxed code snippets in Python or PowerShell.
  * Enforces a 10-second timeout and blocks dangerous commands.
@@ -99,7 +99,7 @@ export const runCodeHandler: ToolHandler = async (args): Promise<ToolResult> => 
     // Write code to a temp file
     const tmpDir = os.tmpdir();
     const ext = language === 'python' ? '.py' : '.ps1';
-    const tmpFile = path.join(tmpDir, `sadie_run_${Date.now()}${ext}`);
+    const tmpFile = path.join(tmpDir, `homebot_run_${Date.now()}${ext}`);
     await fs.promises.writeFile(tmpFile, code, 'utf8');
 
     try {

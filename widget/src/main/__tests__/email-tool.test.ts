@@ -18,7 +18,7 @@ function mockPS(stdout: string, err?: Error) {
 }
 
 // Redirect local draft store to a temp path
-const TEMP_DIR = path.join(os.tmpdir(), `sadie-email-test-${Date.now()}`);
+const TEMP_DIR = path.join(os.tmpdir(), `homebot-email-test-${Date.now()}`);
 jest.mock('../tools/email', () => {
   const actual = jest.requireActual('../tools/email');
   return actual;

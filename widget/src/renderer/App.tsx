@@ -34,7 +34,7 @@ import type {
   ConnectionStatus,
   ImageAttachment,
   DocumentAttachment,
-  SadieRequestWithImages,
+  HomeBotRequestWithImages,
   Settings as SharedSettings
 } from '../shared/types';
 import { recommendLocalModelForTask } from '../shared/model-advisor';
@@ -67,7 +67,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       window.electron?.getEnv?.().then(env => console.log('[DIAG] Env from main:', env)).catch(console.error);
     }
     // Capture: renderer started
-    try { (window as any).sadieCapture?.log('[Renderer] started'); } catch (e) {}
+    try { (window as any).homebotCapture?.log('[Renderer] started'); } catch (e) {}
   }, []);
 
   // State
@@ -224,11 +224,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   useEffect(() => {
     if (isHydrated && settings?.firstRun) {
       logDebug('[Renderer] Opening first-run modal - isHydrated:', isHydrated, 'firstRun:', settings?.firstRun);
-      try { (window as any).sadieCapture?.log('[Renderer] Opening first-run modal'); } catch (e) {}
+      try { (window as any).homebotCapture?.log('[Renderer] Opening first-run modal'); } catch (e) {}
       setFirstRunOpen(true);
     } else {
       logDebug('[Renderer] Not opening first-run modal - isHydrated:', isHydrated, 'firstRun:', settings?.firstRun);
-      try { (window as any).sadieCapture?.log('[Renderer] Not opening first-run modal'); } catch (e) {}
+      try { (window as any).homebotCapture?.log('[Renderer] Not opening first-run modal'); } catch (e) {}
     }
   }, [isHydrated, settings?.firstRun]);
 
@@ -283,7 +283,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Subscribe to title updates pushed from main (keeps sidebar title in sync)
     const titleUnsub = window.electron.onTitleUpdated?.((data) => {
       // Dispatch a custom DOM event so ConversationSidebar can patch its local list
-      window.dispatchEvent(new CustomEvent('sadie:title-updated', { detail: data }));
+      window.dispatchEvent(new CustomEvent('homebot:title-updated', { detail: data }));
     });
 
     // Ollama health — show a warning banner if Ollama isn't reachable on startup
@@ -340,8 +340,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         setMessages(prev => [...prev, { id: newId(), role: 'system', content: `Saved capture: ${detail.path}`, createdAt: Date.now(), error: null }]);
       }
     };
-    window.addEventListener('sadie:capture-saved', onSaved as EventListener);
-    return () => window.removeEventListener('sadie:capture-saved', onSaved as EventListener);
+    window.addEventListener('homebot:capture-saved', onSaved as EventListener);
+    return () => window.removeEventListener('homebot:capture-saved', onSaved as EventListener);
   }, [newId]);
 
   // Auto-generate conversation title after the first assistant reply finishes
@@ -394,12 +394,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         error: !!msg.error,
       };
       // Debug: log persistence attempt and result
-      try { (window as any).__SADIE_RENDERER_LOGS = (window as any).__SADIE_RENDERER_LOGS || []; (window as any).__SADIE_RENDERER_LOGS.push(`[Renderer] addMessage conv=${convId} id=${msg.id} len=${String(msg.content).length}`); } catch (e) {}
+      try { (window as any).__HOMEBOT_RENDERER_LOGS = (window as any).__HOMEBOT_RENDERER_LOGS || []; (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage conv=${convId} id=${msg.id} len=${String(msg.content).length}`); } catch (e) {}
       const res = await window.electron.addMessage?.(convId, sharedMsg);
-      try { (window as any).__SADIE_RENDERER_LOGS.push(`[Renderer] addMessage result=${JSON.stringify(res)}`); } catch (e) {}
+      try { (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage result=${JSON.stringify(res)}`); } catch (e) {}
     } catch (err) {
       console.error('Failed to persist message:', err);
-      try { (window as any).__SADIE_RENDERER_LOGS.push(`[Renderer] addMessage error=${String(err)}`); } catch (e) {}
+      try { (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage error=${String(err)}`); } catch (e) {}
     }
   }, [conversationId]);
 
@@ -469,7 +469,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         setConversationSystemPrompt(result.data.systemPrompt || '');
         setMessages([]);
         await window.electron.setActiveConversation?.(result.data.id);
-        window.dispatchEvent(new CustomEvent('sadie:conversation-created', {
+        window.dispatchEvent(new CustomEvent('homebot:conversation-created', {
           detail: {
             ...result.data,
             messageCount: result.data.messages?.length || 0,
@@ -616,8 +616,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // E2E: record that stream-end was received
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
-          (window as any).__e2eEvents.push('sadie:stream-end');
-          if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received sadie:stream-end', payload);
+          (window as any).__e2eEvents.push('homebot:stream-end');
+          if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-end', payload);
         } catch (e) {}
       },
       onStreamError: (payload: { streamId?: string; error?: string; message?: string; recoveryHint?: any }) => {
@@ -631,7 +631,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           const diag = (payload as any)?.diagnostic;
           if (diag) {
             console.error(`[STREAM ERROR] url=${diag.url} error=${diag.errorText} n8nResponded=${diag.n8nResponded} httpStatus=${diag.httpStatus}`);
-            try { (window as any).sadieCapture?.log(`[Renderer] STREAM ERROR url=${diag.url} status=${diag.httpStatus} n8nResponded=${diag.n8nResponded}`); } catch (e) {}
+            try { (window as any).homebotCapture?.log(`[Renderer] STREAM ERROR url=${diag.url} status=${diag.httpStatus} n8nResponded=${diag.n8nResponded}`); } catch (e) {}
             try {
               setBackendDiagnostic(typeof diag === 'string' ? diag : JSON.stringify(diag, null, 2));
             } catch (e) { setBackendDiagnostic(String(diag)); }
@@ -670,8 +670,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // E2E: record that stream-error was received
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
-          (window as any).__e2eEvents.push('sadie:stream-error');
-          if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received sadie:stream-error', payload);
+          (window as any).__e2eEvents.push('homebot:stream-error');
+          if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-error', payload);
         } catch (e) {}
       },
     });
@@ -754,7 +754,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     persistMessage(assistantPlaceholder, activeConvId ?? undefined);
     subscribeToStream(assistantId, assistantId);
 
-    const streamRequest: (SadieRequestWithImages & { streamId?: string }) = {
+    const streamRequest: (HomeBotRequestWithImages & { streamId?: string }) = {
       user_id: 'desktop_user',
       conversation_id: activeConvId || conversationId || 'default',
       message: messageText,
@@ -772,13 +772,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
     try {
       logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
-      try { (window as any).sadieCapture?.log(`[Renderer] Sending stream request streamId=${assistantId}`); } catch (e) {}
+      try { (window as any).homebotCapture?.log(`[Renderer] Sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ ...streamRequest, streamId: assistantId });
       if (process.env.NODE_ENV === 'test') {
-        const timeoutMs = Number(process.env.SADIE_E2E_PROBE_TIMEOUT_MS) || 6000;
+        const timeoutMs = Number(process.env.HOMEBOT_E2E_PROBE_TIMEOUT_MS) || 6000;
         try {
           const t = setTimeout(() => {
-            try { (window as any).__sadie_error_received = true; (window as any).__sadie_error_event = { error: 'probe_timeout', streamId: assistantId }; } catch (e) {}
+            try { (window as any).__homebot_error_received = true; (window as any).__homebot_error_event = { error: 'probe_timeout', streamId: assistantId }; } catch (e) {}
             updateMessage(assistantId, m => ({ ...m, streamingState: 'error' as StreamingState, error: 'Upstream error (probe timeout)' }));
             unsubscribeStream(assistantId);
           }, timeoutMs);
@@ -793,7 +793,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         error: err?.message ?? 'Failed to send',
       }));
       if (process.env.NODE_ENV === 'test') {
-        try { (window as any).__sadie_error_received = true; (window as any).__sadie_error_event = err; } catch (e) {}
+        try { (window as any).__homebot_error_received = true; (window as any).__homebot_error_event = err; } catch (e) {}
       }
       unsubscribeStream(assistantId);
     }
@@ -923,7 +923,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
     try {
       logDebug('[Renderer] Retry sending stream request', { streamId: assistantId, message: prevUser.content });
-      try { (window as any).sadieCapture?.log(`[Renderer] Retry sending stream request streamId=${assistantId}`); } catch (e) {}
+      try { (window as any).homebotCapture?.log(`[Renderer] Retry sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId || 'default', message: prevUser.content, timestamp: new Date().toISOString(), images: undefined, retry: true });
     } catch (err: any) {
       updateMessage(assistantId, m => ({
@@ -1020,7 +1020,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={modeClasses} data-testid="sadie-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'} data-density={settings.messageDensity || 'comfortable'}>
+    <div className={modeClasses} data-testid="homebot-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'} data-density={settings.messageDensity || 'comfortable'}>
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 

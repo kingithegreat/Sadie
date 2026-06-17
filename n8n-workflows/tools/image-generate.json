@@ -1,5 +1,5 @@
 {
-  "name": "SADIE Image Generate (Hybrid)",
+  "name": "HomeBot Image Generate (Hybrid)",
   "nodes": [
     {
       "parameters": {
@@ -16,7 +16,7 @@
         250,
         300
       ],
-      "webhookId": "sadie-image-generate"
+      "webhookId": "homebot-image-generate"
     },
     {
       "parameters": {
@@ -46,7 +46,7 @@
       ]
     },
     {
-      "id": "sadie-auth-guard",
+      "id": "homebot-auth-guard",
       "name": "Auth Guard",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -55,7 +55,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
       }
     }
   ],

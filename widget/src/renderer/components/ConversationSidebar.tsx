@@ -111,11 +111,11 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         return updated;
       });
     };
-    window.addEventListener('sadie:title-updated', onTitleUpdated);
-    window.addEventListener('sadie:conversation-created', onConversationCreated);
+    window.addEventListener('homebot:title-updated', onTitleUpdated);
+    window.addEventListener('homebot:conversation-created', onConversationCreated);
     return () => {
-      window.removeEventListener('sadie:title-updated', onTitleUpdated);
-      window.removeEventListener('sadie:conversation-created', onConversationCreated);
+      window.removeEventListener('homebot:title-updated', onTitleUpdated);
+      window.removeEventListener('homebot:conversation-created', onConversationCreated);
     };
   }, []);
 

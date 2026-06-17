@@ -42,7 +42,7 @@ import {
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sadie-mcp-test-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-mcp-test-'));
   process.env.TEST_USERDATA = tmpDir;
   jest.clearAllMocks();
   // Reset electron mock to use new tmpDir
@@ -197,8 +197,8 @@ describe('discoverExternalMcpServers', () => {
     expect(cfg.servers.length).toBe(0);
   });
 
-  test('merges a server from a SADIE-format external file', () => {
-    // Write a fake external config in SADIE shape: { servers: [...] }
+  test('merges a server from a HomeBot-format external file', () => {
+    // Write a fake external config in HomeBot shape: { servers: [...] }
     const fakeExternal = path.join(tmpDir, 'mcp-external.json');
     const externalData = {
       servers: [{ type: 'sse', name: 'external-server', url: 'http://ext:8080', enabled: true }],
@@ -211,7 +211,7 @@ describe('discoverExternalMcpServers', () => {
     expect(() => discoverExternalMcpServers()).not.toThrow();
   });
 
-  test('merges servers from Cursor/Claude mcpServers shape into SADIE config', () => {
+  test('merges servers from Cursor/Claude mcpServers shape into HomeBot config', () => {
     // We'll write a file to a path that discoverExternalMcpServers actually checks.
     // On Windows it checks: path.join(home, '.cursor', 'mcp.json')
     const home = os.homedir();

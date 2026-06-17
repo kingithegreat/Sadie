@@ -10,8 +10,8 @@
 jest.mock('electron', () => ({
   app: {
     isPackaged: false,
-    getPath: jest.fn().mockReturnValue('/tmp/sadie-test'),
-    getAppPath: jest.fn().mockReturnValue('/tmp/sadie-app'),
+    getPath: jest.fn().mockReturnValue('/tmp/homebot-test'),
+    getAppPath: jest.fn().mockReturnValue('/tmp/homebot-app'),
   },
   BrowserWindow: {
     getAllWindows: jest.fn(),
@@ -109,7 +109,7 @@ describe('speakHandler', () => {
     mockGetAllWindows.mockReturnValue([fakeWindow({ success: true })]);
     await speakHandler({ text: 'Test speech' }, {} as any);
     expect(mockToFile).toHaveBeenCalledWith(
-      expect.stringContaining('sadie-'),
+      expect.stringContaining('homebot-'),
       'Test speech',
       expect.any(Object)
     );

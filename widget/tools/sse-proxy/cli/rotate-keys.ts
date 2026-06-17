@@ -14,16 +14,16 @@ async function run() {
     process.exit(1);
   }
   if (op === 'list') {
-    const r = await fetch(`${base}/admin/keys`, { headers: { 'x-sadie-admin-key': adminKey } });
+    const r = await fetch(`${base}/admin/keys`, { headers: { 'x-homebot-admin-key': adminKey } });
     console.log(await r.text());
     process.exit(0);
   }
   const key = process.argv[3] || await question('Key: ');
   if (op === 'add') {
-    const r = await fetch(`${base}/admin/keys`, { method: 'POST', headers: { 'x-sadie-admin-key': adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) });
+    const r = await fetch(`${base}/admin/keys`, { method: 'POST', headers: { 'x-homebot-admin-key': adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) });
     console.log(await r.text());
   } else {
-    const r = await fetch(`${base}/admin/keys`, { method: 'DELETE', headers: { 'x-sadie-admin-key': adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) });
+    const r = await fetch(`${base}/admin/keys`, { method: 'DELETE', headers: { 'x-homebot-admin-key': adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) });
     console.log(await r.text());
   }
   process.exit(0);

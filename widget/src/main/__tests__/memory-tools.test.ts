@@ -356,11 +356,11 @@ describe('saveConversationHandler', () => {
   });
 
   test('saves a user turn', async () => {
-    const result = await saveConversationHandler({ role: 'user', content: 'Hello SADIE' }, {} as any);
+    const result = await saveConversationHandler({ role: 'user', content: 'Hello HomeBot' }, {} as any);
     expect(result.success).toBe(true);
     expect(written.conversations.length).toBe(1);
     expect(written.conversations[0].role).toBe('user');
-    expect(written.conversations[0].content).toBe('Hello SADIE');
+    expect(written.conversations[0].content).toBe('Hello HomeBot');
   });
 
   test('saves an assistant turn', async () => {

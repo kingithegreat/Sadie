@@ -3811,10 +3811,10 @@ body {
   border-radius: 50%;
   background: var(--homebot-blue-500);
   box-shadow: 0 6px 12px rgba(218, 165, 32, 0.12);
-  animation: sadie-bounce 1.2s infinite ease-in-out;
+  animation: homebot-bounce 1.2s infinite ease-in-out;
 }
 
-@keyframes sadie-bounce {
+@keyframes homebot-bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.45; }
   40% { transform: scale(1); opacity: 1; }
 }

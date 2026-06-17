@@ -3,7 +3,7 @@
 echo ================================================================
 echo                        DEPRECATION WARNING
 echo ================================================================
-echo This script (Start-SADIE.bat) is DEPRECATED and will be removed soon.
+echo This script (Start-HomeBot.bat) is DEPRECATED and will be removed soon.
 echo 
 echo Please use: powershell -ExecutionPolicy Bypass -File start.ps1
 echo 

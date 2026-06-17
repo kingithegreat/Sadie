@@ -13,7 +13,7 @@ function getMemoryStorePath(): string {
   // E2E launches point userData at a temp directory. Respect that path so
   // Playwright profiles do not leak conversation state through the shared
   // workspace-level memory store.
-  if (process.env.SADIE_E2E_USER_DATA_DIR || process.env.SADIE_E2E === '1') {
+  if (process.env.HOMEBOT_E2E_USER_DATA_DIR || process.env.HOMEBOT_E2E === '1') {
     return path.join(app.getPath('userData'), 'memory', 'json-store');
   }
 
@@ -21,7 +21,7 @@ function getMemoryStorePath(): string {
   // In production, this would be relative to the app installation
   const isDev = !app.isPackaged;
   if (isDev) {
-    // Go up from widget/out/main (3 levels) to reach the sadie project root
+    // Go up from widget/out/main (3 levels) to reach the homebot project root
     return path.resolve(__dirname, '..', '..', '..', 'memory', 'json-store');
   }
   // In production, use userData folder for persistence
@@ -340,7 +340,7 @@ function compressTurnsForCompaction(messages: Message[]): string {
     const speaker = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'HomeBot' : 'System';
     const content = m.content
       .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
-      .replace(/__SADIE_IMAGE(?:_FILE)?__:[^\s]+/g, '[image]')
+      .replace(/__HOMEBOT_IMAGE(?:_FILE)?__:[^\s]+/g, '[image]')
       .replace(/```[\s\S]*?```/g, '[code block]')
       .replace(/\s+/g, ' ')
       .trim();

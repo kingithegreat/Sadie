@@ -15,7 +15,7 @@ jest.mock('axios', () => ({
 }));
 
 import axios from 'axios';
-import { streamFromSadieProxy } from '../stream-proxy-client';
+import { streamFromHomeBotProxy } from '../stream-proxy-client';
 
 const mockPost = (axios as any).post as jest.Mock;
 const mockIsCancel = (axios as any).isCancel as jest.Mock;
@@ -34,7 +34,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockIsCancel.mockReturnValue(false);
   // restore default env vars
-  delete process.env.SADIE_PROXY_URL;
+  delete process.env.HOMEBOT_PROXY_URL;
   delete process.env.PROXY_API_KEYS;
   delete process.env.PROXY_API_KEY;
 });
@@ -44,10 +44,10 @@ function flushPromises() {
   return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-describe('streamFromSadieProxy — URL resolution', () => {
+describe('streamFromHomeBotProxy — URL resolution', () => {
   test('uses default URL when no env or opts provided', async () => {
     resolveWith(makeStream());
-    streamFromSadieProxy({ model: 'gpt-4' }, jest.fn());
+    streamFromHomeBotProxy({ model: 'gpt-4' }, jest.fn());
     await flushPromises();
     expect(mockPost).toHaveBeenCalledWith(
       'http://localhost:5050/stream',
@@ -56,10 +56,10 @@ describe('streamFromSadieProxy — URL resolution', () => {
     );
   });
 
-  test('uses SADIE_PROXY_URL env var when set', async () => {
-    process.env.SADIE_PROXY_URL = 'http://myproxy:9000/stream';
+  test('uses HOMEBOT_PROXY_URL env var when set', async () => {
+    process.env.HOMEBOT_PROXY_URL = 'http://myproxy:9000/stream';
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn());
+    streamFromHomeBotProxy({}, jest.fn());
     await flushPromises();
     expect(mockPost).toHaveBeenCalledWith(
       'http://myproxy:9000/stream',
@@ -69,9 +69,9 @@ describe('streamFromSadieProxy — URL resolution', () => {
   });
 
   test('opts.proxyUrl takes precedence over env var', async () => {
-    process.env.SADIE_PROXY_URL = 'http://envproxy/stream';
+    process.env.HOMEBOT_PROXY_URL = 'http://envproxy/stream';
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn(), undefined, undefined, { proxyUrl: 'http://opts-proxy/stream' });
+    streamFromHomeBotProxy({}, jest.fn(), undefined, undefined, { proxyUrl: 'http://opts-proxy/stream' });
     await flushPromises();
     expect(mockPost).toHaveBeenCalledWith(
       'http://opts-proxy/stream',
@@ -81,64 +81,64 @@ describe('streamFromSadieProxy — URL resolution', () => {
   });
 });
 
-describe('streamFromSadieProxy — apiKey / x-sadie-key header', () => {
-  test('sets x-sadie-key header when apiKey is a plain string', async () => {
+describe('streamFromHomeBotProxy — apiKey / x-homebot-key header', () => {
+  test('sets x-homebot-key header when apiKey is a plain string', async () => {
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn(), undefined, undefined, { apiKey: 'my-secret-key' });
+    streamFromHomeBotProxy({}, jest.fn(), undefined, undefined, { apiKey: 'my-secret-key' });
     await flushPromises();
     const config = mockPost.mock.calls[0][2];
-    expect(config.headers['x-sadie-key']).toBe('my-secret-key');
+    expect(config.headers['x-homebot-key']).toBe('my-secret-key');
   });
 
-  test('does NOT set x-sadie-key when apiKey is empty string', async () => {
+  test('does NOT set x-homebot-key when apiKey is empty string', async () => {
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn(), undefined, undefined, { apiKey: '' });
+    streamFromHomeBotProxy({}, jest.fn(), undefined, undefined, { apiKey: '' });
     await flushPromises();
     const config = mockPost.mock.calls[0][2];
-    expect(config.headers['x-sadie-key']).toBeUndefined();
+    expect(config.headers['x-homebot-key']).toBeUndefined();
   });
 
   test('takes first element when apiKey is an array', async () => {
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn(), undefined, undefined, { apiKey: ['key-one', 'key-two'] as any });
+    streamFromHomeBotProxy({}, jest.fn(), undefined, undefined, { apiKey: ['key-one', 'key-two'] as any });
     await flushPromises();
     const config = mockPost.mock.calls[0][2];
-    expect(config.headers['x-sadie-key']).toBe('key-one');
+    expect(config.headers['x-homebot-key']).toBe('key-one');
   });
 
   test('takes first segment when apiKey is comma-separated', async () => {
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn(), undefined, undefined, { apiKey: 'key-a,key-b,key-c' });
+    streamFromHomeBotProxy({}, jest.fn(), undefined, undefined, { apiKey: 'key-a,key-b,key-c' });
     await flushPromises();
     const config = mockPost.mock.calls[0][2];
-    expect(config.headers['x-sadie-key']).toBe('key-a');
+    expect(config.headers['x-homebot-key']).toBe('key-a');
   });
 
   test('uses PROXY_API_KEYS env var when opts.apiKey not set', async () => {
     process.env.PROXY_API_KEYS = 'env-key-1,env-key-2';
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn());
+    streamFromHomeBotProxy({}, jest.fn());
     await flushPromises();
     const config = mockPost.mock.calls[0][2];
-    expect(config.headers['x-sadie-key']).toBe('env-key-1');
+    expect(config.headers['x-homebot-key']).toBe('env-key-1');
   });
 
   test('PROXY_API_KEY env var used as fallback', async () => {
     process.env.PROXY_API_KEY = 'fallback-key';
     resolveWith(makeStream());
-    streamFromSadieProxy({}, jest.fn());
+    streamFromHomeBotProxy({}, jest.fn());
     await flushPromises();
     const config = mockPost.mock.calls[0][2];
-    expect(config.headers['x-sadie-key']).toBe('fallback-key');
+    expect(config.headers['x-homebot-key']).toBe('fallback-key');
   });
 });
 
-describe('streamFromSadieProxy — stream events', () => {
+describe('streamFromHomeBotProxy — stream events', () => {
   test('calls onChunk with string data from stream', async () => {
     const stream = makeStream();
     resolveWith(stream);
     const onChunk = jest.fn();
-    streamFromSadieProxy({}, onChunk);
+    streamFromHomeBotProxy({}, onChunk);
     await flushPromises();
     stream.emit('data', Buffer.from('hello world'));
     expect(onChunk).toHaveBeenCalledWith('hello world');
@@ -148,7 +148,7 @@ describe('streamFromSadieProxy — stream events', () => {
     const stream = makeStream();
     resolveWith(stream);
     const onEnd = jest.fn();
-    streamFromSadieProxy({}, jest.fn(), onEnd);
+    streamFromHomeBotProxy({}, jest.fn(), onEnd);
     await flushPromises();
     stream.emit('end');
     expect(onEnd).toHaveBeenCalledTimes(1);
@@ -158,7 +158,7 @@ describe('streamFromSadieProxy — stream events', () => {
     const stream = makeStream();
     resolveWith(stream);
     const onError = jest.fn();
-    streamFromSadieProxy({}, jest.fn(), undefined, onError);
+    streamFromHomeBotProxy({}, jest.fn(), undefined, onError);
     await flushPromises();
     const err = new Error('stream broken');
     stream.emit('error', err);
@@ -169,7 +169,7 @@ describe('streamFromSadieProxy — stream events', () => {
     const stream = makeStream();
     resolveWith(stream);
     const onChunk = jest.fn();
-    const handle = streamFromSadieProxy({}, onChunk);
+    const handle = streamFromHomeBotProxy({}, onChunk);
     await flushPromises();
     handle.cancel();
     stream.emit('data', Buffer.from('late data'));
@@ -177,13 +177,13 @@ describe('streamFromSadieProxy — stream events', () => {
   });
 });
 
-describe('streamFromSadieProxy — axios error handling', () => {
+describe('streamFromHomeBotProxy — axios error handling', () => {
   test('silently ignores canceled requests (axios.isCancel === true)', async () => {
     const cancelError = new Error('canceled');
     mockPost.mockRejectedValueOnce(cancelError);
     mockIsCancel.mockReturnValue(true);
     const onError = jest.fn();
-    streamFromSadieProxy({}, jest.fn(), undefined, onError);
+    streamFromHomeBotProxy({}, jest.fn(), undefined, onError);
     await flushPromises();
     expect(onError).not.toHaveBeenCalled();
   });
@@ -193,7 +193,7 @@ describe('streamFromSadieProxy — axios error handling', () => {
     mockPost.mockRejectedValueOnce(netError);
     mockIsCancel.mockReturnValue(false);
     const onError = jest.fn();
-    streamFromSadieProxy({}, jest.fn(), undefined, onError);
+    streamFromHomeBotProxy({}, jest.fn(), undefined, onError);
     await flushPromises();
     expect(onError).toHaveBeenCalledWith(netError);
   });
@@ -202,21 +202,21 @@ describe('streamFromSadieProxy — axios error handling', () => {
     const netError = new Error('Network Error');
     mockPost.mockRejectedValueOnce(netError);
     mockIsCancel.mockReturnValue(false);
-    expect(() => streamFromSadieProxy({}, jest.fn())).not.toThrow();
+    expect(() => streamFromHomeBotProxy({}, jest.fn())).not.toThrow();
     await flushPromises();
   });
 });
 
-describe('streamFromSadieProxy — cancel()', () => {
+describe('streamFromHomeBotProxy — cancel()', () => {
   test('returns an object with a cancel function', () => {
     mockPost.mockReturnValue(new Promise(() => {})); // never resolves
-    const handle = streamFromSadieProxy({}, jest.fn());
+    const handle = streamFromHomeBotProxy({}, jest.fn());
     expect(typeof handle.cancel).toBe('function');
   });
 
   test('cancel() does not throw', async () => {
     resolveWith(makeStream());
-    const handle = streamFromSadieProxy({}, jest.fn());
+    const handle = streamFromHomeBotProxy({}, jest.fn());
     await flushPromises();
     expect(() => handle.cancel()).not.toThrow();
   });

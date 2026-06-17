@@ -44,7 +44,7 @@ declare global {
   interface Window {
     SpeechRecognition: new () => SpeechRecognition;
     webkitSpeechRecognition: new () => SpeechRecognition;
-    sadieWhisperPipeline: any;
+    homebotWhisperPipeline: any;
   }
 }
 
@@ -98,8 +98,8 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
       setUncensoredMode(result?.enabled || false);
     });
     const handler = (e: Event) => setUncensoredMode((e as CustomEvent<boolean>).detail);
-    window.addEventListener('sadie:uncensored-mode-changed', handler);
-    return () => window.removeEventListener('sadie:uncensored-mode-changed', handler);
+    window.addEventListener('homebot:uncensored-mode-changed', handler);
+    return () => window.removeEventListener('homebot:uncensored-mode-changed', handler);
   }, []);
 
   // Check for speech recognition support

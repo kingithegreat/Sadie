@@ -13,7 +13,7 @@ $bmp = New-Object System.Drawing.Bitmap $Size, $Size
 $gfx = [System.Drawing.Graphics]::FromImage($bmp)
 $gfx.Clear([System.Drawing.Color]::FromArgb(255, 34, 34, 34))
 
-# Draw a simple white 'S' for SADIE
+# Draw a simple white 'S' for HomeBot
 $font = New-Object System.Drawing.Font('Arial', 140, [System.Drawing.FontStyle]::Bold)
 $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
 $sf = New-Object System.Drawing.StringFormat

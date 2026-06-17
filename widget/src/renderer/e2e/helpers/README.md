@@ -19,7 +19,7 @@ Migration guidance
 ------------------
 - Replace common `page.waitForTimeout(...)` freeloaders with `await waitForAppReady(page)`.
 - If a test previously awaited a visible selector, keep that fine-grained check after `waitForAppReady` if you need to validate a specific element.
-- Consider adding a stable `data-testid="sadie-app-root"` or a `data-app-ready` attribute in the renderer for the most deterministic signal.
+- Consider adding a stable `data-testid="homebot-app-root"` or a `data-app-ready` attribute in the renderer for the most deterministic signal.
 
 Notes
 -----

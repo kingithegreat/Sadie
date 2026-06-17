@@ -1,11 +1,11 @@
 /**
- * SADIE Tool Registry & Executor
+ * HomeBot Tool Registry & Executor
  * 
  * Central registry for all tools and execution engine.
  */
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
-function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
 import { 
   ToolDefinition, 
@@ -87,7 +87,7 @@ const pendingConfirmations = new Map<string, {
  */
 export function registerTool(name: string, definition: ToolDefinition, handler: ToolHandler): void {
   toolRegistry.set(name, { definition, handler });
-  console.log(`[SADIE Tools] Registered tool: ${name}`);
+  console.log(`[HomeBot Tools] Registered tool: ${name}`);
 }
 
 /**
@@ -232,44 +232,44 @@ export async function executeTool(
     };
   }
   
-  console.log(`[SADIE Tools] Executing: ${call.name}`, call.arguments);
+  console.log(`[HomeBot Tools] Executing: ${call.name}`, call.arguments);
   
   // Check permission first
   try {
     const allowed = assertPermission(call.name);
     if (!allowed) {
-      console.warn(`[SADIE Tools] Permission denied for tool: ${call.name}`);
+      console.warn(`[HomeBot Tools] Permission denied for tool: ${call.name}`);
       return { success: false, error: `Permission denied: ${call.name}` };
     }
   } catch (e) {
     // Fail closed if any error occurs while checking permission
-    console.error(`[SADIE Tools] Permission check failed: ${e}`);
+    console.error(`[HomeBot Tools] Permission check failed: ${e}`);
     return { success: false, error: 'Permission check failed' };
   }
 
   // Check if confirmation is required
-  console.log(`[SADIE Tools] requiresConfirmation=${tool.definition.requiresConfirmation}, hasCallback=${!!context.requestConfirmation}`);
+  console.log(`[HomeBot Tools] requiresConfirmation=${tool.definition.requiresConfirmation}, hasCallback=${!!context.requestConfirmation}`);
   if (tool.definition.requiresConfirmation && context.requestConfirmation) {
     const confirmMessage = formatConfirmationMessage(call.name, call.arguments);
-    console.log(`[SADIE Tools] Requesting confirmation: ${confirmMessage}`);
+    console.log(`[HomeBot Tools] Requesting confirmation: ${confirmMessage}`);
     const confirmed = await context.requestConfirmation(confirmMessage);
 
     if (!confirmed) {
-      console.log(`[SADIE Tools] User cancelled operation`);
+      console.log(`[HomeBot Tools] User cancelled operation`);
       try { logTelemetryEvent('tool_call', { tool: call.name, outcome: 'cancelled', duration_ms: 0 }); } catch (_e) {}
       return {
         success: false,
         error: 'Operation cancelled by user'
       };
     }
-    console.log(`[SADIE Tools] User confirmed operation`);
+    console.log(`[HomeBot Tools] User confirmed operation`);
   }
 
   const startedAt = Date.now();
   try {
     const result = await tool.handler(call.arguments, context);
     const duration_ms = Date.now() - startedAt;
-    console.log(`[SADIE Tools] Result:`, result.success ? 'success' : result.error);
+    console.log(`[HomeBot Tools] Result:`, result.success ? 'success' : result.error);
     try {
       logTelemetryEvent('tool_call', {
         tool: call.name,
@@ -281,7 +281,7 @@ export async function executeTool(
     return result;
   } catch (err: any) {
     const duration_ms = Date.now() - startedAt;
-    console.error(`[SADIE Tools] Error executing ${call.name}:`, err);
+    console.error(`[HomeBot Tools] Error executing ${call.name}:`, err);
     try {
       logTelemetryEvent('tool_call', {
         tool: call.name,
@@ -312,7 +312,7 @@ export async function executeToolCalls(
     
     // If a tool fails, continue but note it
     if (!result.success) {
-      console.warn(`[SADIE Tools] Tool ${call.name} failed, continuing...`);
+      console.warn(`[HomeBot Tools] Tool ${call.name} failed, continuing...`);
     }
   }
   
@@ -329,9 +329,9 @@ export async function executeToolBatch(
   context: ToolContext,
   options?: { overrideAllowed?: string[] }
 ): Promise<ToolResult[]> {
-  try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; } catch (e) { safeCatch(e); }
+  try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER = (global as any).__HOMEBOT_ROUTER_LOG_BUFFER || []; } catch (e) { safeCatch(e); }
   console.log('[BATCH] executeToolBatch called', { toolCount: calls.length, toolNames: calls.map(c => c.name) });
-  try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) { safeCatch(e); }
+  try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) { safeCatch(e); }
   // Pre-check permissions for all unique tools
   const denied: string[] = [];
   const seen = new Set<string>();
@@ -343,8 +343,8 @@ export async function executeToolBatch(
     try {
       if (overrides.has(name)) continue;
       const allowed = assertPermission(name);
-      console.log(`[SADIE Tools] Permission check for ${name}: allowed=${allowed}`);
-      try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) { safeCatch(e); }
+      console.log(`[HomeBot Tools] Permission check for ${name}: allowed=${allowed}`);
+      try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) { safeCatch(e); }
       if (!allowed) denied.push(name);
 
       // Also check any permissions declared by the tool (e.g., write_file)
@@ -354,8 +354,8 @@ export async function executeToolBatch(
           for (const perm of (tool.definition as any).requiredPermissions as string[]) {
             if (overrides.has(perm)) continue;
             const pAllowed = assertPermission(perm);
-            console.log(`[SADIE Tools] Permission check for declared permission ${perm}: allowed=${pAllowed}`);
-            try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${perm}=${pAllowed}`); } catch (e) { safeCatch(e); }
+            console.log(`[HomeBot Tools] Permission check for declared permission ${perm}: allowed=${pAllowed}`);
+            try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${perm}=${pAllowed}`); } catch (e) { safeCatch(e); }
             if (!pAllowed) denied.push(perm);
           }
         }
@@ -371,7 +371,7 @@ export async function executeToolBatch(
     // caller (message router) can prompt the user for confirmation and
     // optionally enable or allow once.
     console.log('[BATCH] executeToolBatch missing permissions', { denied });
-    try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) { safeCatch(e); }
+    try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) { safeCatch(e); }
     return [{ success: false, status: 'needs_confirmation', missingPermissions: denied, reason: `Requires permissions: ${denied.join(', ')}` } as any];
   }
 
@@ -640,7 +640,7 @@ export function initializeTools(): void {
     if (handler) registerTool(def.name, def, handler);
   }
 
-  console.log(`[SADIE Tools] Initialized ${toolRegistry.size} tools`);
+  console.log(`[HomeBot Tools] Initialized ${toolRegistry.size} tools`);
 
   // Auto-discover servers from Cursor / Claude Desktop / VS Code, then seed defaults
   discoverExternalMcpServers();

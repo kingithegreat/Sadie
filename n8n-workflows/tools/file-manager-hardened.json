@@ -1,5 +1,5 @@
 {
-  "name": "SADIE File Manager Tool (Phase 6.1, Hardened)",
+  "name": "HomeBot File Manager Tool (Phase 6.1, Hardened)",
   "nodes": [
     {
       "id": "d6a2ba1c-520d-44f8-8f46-5c26f552d48e",
@@ -12,7 +12,7 @@
       ],
       "parameters": {
         "httpMethod": "POST",
-        "path": "sadie/tools/file-manager/stream",
+        "path": "homebot/tools/file-manager/stream",
         "responseMode": "onCompleted"
       }
     },
@@ -73,8 +73,8 @@
         200
       ],
       "parameters": {
-        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"{{$json.operation.replace(/[^a-z_]/gi, '')}}\" -LiteralPath \"{{$json.path.replace(/['\\\"`$;&|<>]/g, '')}}\" {{$json.content ? `-Content \"${$json.content.replace(/['\\\"`$;&|<>]/g, '')}\"` : ''}}",
-        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"{{$json.operation.replace(/[^a-z_]/gi, '')}}\" -LiteralPath \"{{$json.path.replace(/['\\\"`$;&|<>]/g, '')}}\" {{$json.content ? `-Content \"${$json.content.replace(/['\\\"`$;&|<>]/g, '')}\"` : ''}}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
       }
     },
     {
@@ -168,7 +168,7 @@
       }
     },
     {
-      "id": "sadie-auth-guard",
+      "id": "homebot-auth-guard",
       "name": "Auth Guard",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -177,7 +177,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const secret = process.env.SADIE_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-sadie-auth'] || hdrs['X-SADIE-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-SADIE-Auth header');\n  }\n}\nreturn $input.all();"
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
       }
     }
   ],

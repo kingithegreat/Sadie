@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    SADIE Email Operations PowerShell Tool
+    HomeBot Email Operations PowerShell Tool
 .DESCRIPTION
     Draft and send emails via Windows Outlook COM or SMTP.
     Actions: draft | send | list_inbox

@@ -1,8 +1,8 @@
 /**
- * SADIE Calendar Tool
+ * HomeBot Calendar Tool
  *
  * Priority order for listing events:
- *   1. Google Calendar via n8n webhook  (POST /webhook/sadie/calendar)
+ *   1. Google Calendar via n8n webhook  (POST /webhook/homebot/calendar)
  *   2. Microsoft Outlook COM automation (Windows only, Outlook must be installed)
  *   3. Local JSON fallback store        (memory/json-store/calendar.json)
  *
@@ -28,7 +28,7 @@ const execAsync = promisify(exec);
 // ----- Local JSON fallback store -----
 const LOCAL_CALENDAR_PATH = path.join(
   process.env.USERPROFILE || process.env.HOME || '',
-  'Desktop', 'sadie', 'memory', 'json-store', 'calendar.json'
+  'Desktop', 'homebot', 'memory', 'json-store', 'calendar.json'
 );
 
 interface CalEvent {
@@ -235,12 +235,12 @@ function decodeIcsText(val: string): string {
 
 /**
  * Call the n8n Google Calendar webhook.
- * The workflow at /webhook/sadie/calendar must be imported and active in n8n.
+ * The workflow at /webhook/homebot/calendar must be imported and active in n8n.
  * Returns [] if n8n is offline or the workflow isn't installed.
  */
 async function listGoogleCalendarEvents(daysAhead: number, limit: number): Promise<CalEvent[]> {
   const { n8nUrl } = getSettings();
-  const url = `${n8nUrl}/webhook/sadie/calendar`;
+  const url = `${n8nUrl}/webhook/homebot/calendar`;
   const response = await axios.post(
     url,
     { action: 'list', days_ahead: daysAhead, limit },
@@ -262,7 +262,7 @@ async function listGoogleCalendarEvents(daysAhead: number, limit: number): Promi
 
 async function addGoogleCalendarEvent(title: string, start: string, end: string, location: string, notes: string): Promise<string | null> {
   const { n8nUrl } = getSettings();
-  const url = `${n8nUrl}/webhook/sadie/calendar`;
+  const url = `${n8nUrl}/webhook/homebot/calendar`;
   const response = await axios.post(
     url,
     { action: 'add', title, start, end, location, notes },
@@ -428,7 +428,7 @@ export const listCalendarEventsHandler: ToolHandler = async (args): Promise<Tool
         count: 0,
         days_ahead: daysAhead,
         source,
-        setup_hint: 'No calendar connected. To see real events: import n8n-workflows/tools/google-calendar.json into n8n and connect a Google Calendar credential. Or add events directly by asking SADIE to "add a calendar event".',
+        setup_hint: 'No calendar connected. To see real events: import n8n-workflows/tools/google-calendar.json into n8n and connect a Google Calendar credential. Or add events directly by asking HomeBot to "add a calendar event".',
       },
     };
   }

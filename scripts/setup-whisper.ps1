@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    SADIE Whisper Model Setup Script
+    HomeBot Whisper Model Setup Script
 .DESCRIPTION
     Downloads the Whisper base.en model for offline speech-to-text via whisper-node.
     Requirements: Node.js + npm (already present), make utility (installed if missing).
@@ -8,14 +8,14 @@
     whisper-node uses a precompiled whisper.cpp binary. The only download step is
     the GGML model file (~140 MB for base.en).
 .NOTES
-    Run once before using the voice input feature in SADIE.
+    Run once before using the voice input feature in HomeBot.
     The model is stored in: widget/node_modules/whisper-node/lib/whisper.cpp/models/
 #>
 
 $ErrorActionPreference = "Stop"
-$script:sadieRoot = $PSScriptRoot | Split-Path -Parent   # scripts/ → project root
+$script:homebotRoot = $PSScriptRoot | Split-Path -Parent   # scripts/ → project root
 
-Write-Host "=== SADIE Whisper Setup ===" -ForegroundColor Cyan
+Write-Host "=== HomeBot Whisper Setup ===" -ForegroundColor Cyan
 
 # ── Step 1: Verify Node/npm ───────────────────────────────────────────────────
 Write-Host "`n[1/4] Checking Node.js..." -ForegroundColor Yellow
@@ -52,7 +52,7 @@ if (-not $makeCmd) {
 
 # ── Step 3: Ensure whisper-node is installed ──────────────────────────────────
 Write-Host "`n[3/4] Checking whisper-node package..." -ForegroundColor Yellow
-$widgetDir = Join-Path $script:sadieRoot "widget"
+$widgetDir = Join-Path $script:homebotRoot "widget"
 $whisperDir = Join-Path $widgetDir "node_modules\whisper-node"
 
 if (-not (Test-Path $whisperDir)) {
@@ -125,5 +125,5 @@ if (Test-Path $modelFile) {
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 Write-Host "`n=== Whisper setup complete ===" -ForegroundColor Cyan
-Write-Host "Voice input is now available in SADIE." -ForegroundColor Green
-Write-Host "To use: enable the microphone button in the SADIE chat interface." -ForegroundColor Gray
+Write-Host "Voice input is now available in HomeBot." -ForegroundColor Green
+Write-Host "To use: enable the microphone button in the HomeBot chat interface." -ForegroundColor Gray

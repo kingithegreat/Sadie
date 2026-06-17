@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow, app, shell } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
-function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
 import axios from 'axios';
 import * as path from 'path';
@@ -50,7 +50,7 @@ import {
 import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
-import { sadieWebhookHeaders } from './webhook-auth';
+import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow } from './n8n-api';
 
@@ -131,11 +131,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     // early renderer invokes during startup without races.
     // Note: we store a flag on the global to persist across reloads in dev.
     const g = global as any;
-    if (g.__sadie_ipc_registered) {
+    if (g.__homebot_ipc_registered) {
       // Only log idempotent registration warnings in development
       if (isDevelopment) {
         console.log('[IPC] registerIpcHandlers already executed — skipping');
-        try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) { safeCatch(e); }
+        try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) { safeCatch(e); }
       }
       return;
     }
@@ -148,7 +148,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
 
     // Health check: verify n8n and Ollama statuses
-    ipcMain.handle('sadie:check-connection', async () => {
+    ipcMain.handle('homebot:check-connection', async () => {
       const settings = getSettings();
       const n8nBase = settings.n8nUrl || 'http://localhost:5678';
       const n8nHealth = `${n8nBase.replace(/\/$/, '')}/healthz`;
@@ -175,7 +175,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     });
 
     // Uncensored Mode Handlers
-    ipcMain.handle('sadie:get-uncensored-mode', async () => {
+    ipcMain.handle('homebot:get-uncensored-mode', async () => {
       try {
         return { enabled: routerGetUncensoredMode() };
       } catch (e) {
@@ -184,7 +184,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
     });
 
-    ipcMain.handle('sadie:set-uncensored-mode', async (_event, enabled: boolean) => {
+    ipcMain.handle('homebot:set-uncensored-mode', async (_event, enabled: boolean) => {
       const settings = getSettings();
       settings.uncensoredMode = enabled;
       saveSettings(settings); // This function is already imported from config-manager
@@ -217,15 +217,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
     });
 
-    ipcMain.handle('sadie:toggle-widget-mode', () => {
+    ipcMain.handle('homebot:toggle-widget-mode', () => {
       return toggleWidgetMode();
     });
 
-    ipcMain.handle('sadie:get-widget-mode', () => {
+    ipcMain.handle('homebot:get-widget-mode', () => {
       return getWidgetMode();
     });
 
-    ipcMain.on('sadie:set-always-on-top', (_event, value: boolean) => {
+    ipcMain.on('homebot:set-always-on-top', (_event, value: boolean) => {
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {
         win.setAlwaysOnTop(value);
@@ -235,36 +235,36 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Handle message from renderer → forward to n8n orchestrator
    */
-  ipcMain.on('sadie:message', async (_event, { message, conversationId }) => {
+  ipcMain.on('homebot:message', async (_event, { message, conversationId }) => {
     try {
       console.log('[Main] Received sendMessage', { conversationId, preview: String(message).substring(0,120) });
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] Received sendMessage conv=${conversationId} preview=${String(message).substring(0,120)}`); } catch (e) { safeCatch(e); }
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(`[MAIN] Received sendMessage conv=${conversationId} preview=${String(message).substring(0,120)}`); } catch (e) { safeCatch(e); }
           // Load settings to get n8n URL
           const settings = getSettings();
       console.log('[Main] Calling messageRouter.sendStreamRequest (via axios post)');
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] Calling messageRouter.sendStreamRequest (via axios post)'); } catch (e) { safeCatch(e); }
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] Calling messageRouter.sendStreamRequest (via axios post)'); } catch (e) { safeCatch(e); }
 
       // Send message to n8n orchestrator
-      const response = await axios.post(`${settings.n8nUrl}/webhook/sadie/chat`, {
+      const response = await axios.post(`${settings.n8nUrl}/webhook/homebot/chat`, {
         user_id: 'desktop-user',
         conversation_id: conversationId || 'default',
         message: message,
         timestamp: new Date().toISOString()
       }, {
         timeout: OLLAMA_OP_TIMEOUT,
-        headers: sadieWebhookHeaders()
+        headers: homebotWebhookHeaders()
       });
 
       // Send response back to renderer
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send('sadie:reply', {
+        win.webContents.send('homebot:reply', {
         success: true,
         data: response.data
         });
       }
       console.log('[Main] sendStreamRequest returned', { status: response.status });
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] sendStreamRequest returned status=${response.status}`); } catch (e) { safeCatch(e); }
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(`[MAIN] sendStreamRequest returned status=${response.status}`); } catch (e) { safeCatch(e); }
 
     } catch (err: any) {
       console.error('Error communicating with n8n orchestrator:', err.message);
@@ -272,7 +272,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // Send error response back to renderer
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send('sadie:reply', {
+        win.webContents.send('homebot:reply', {
           success: false,
           error: true,
           message: 'HomeBot could not reach the orchestrator.',
@@ -284,7 +284,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Image generation panel: delegates to the same tool handler used in chat
-  ipcMain.handle('sadie:automation:image:generate', async (_event, { payload }) => {
+  ipcMain.handle('homebot:automation:image:generate', async (_event, { payload }) => {
     const prompt = String(payload?.prompt || '').trim();
     const width = Number(payload?.width) || 512;
     const height = Number(payload?.height) || 512;
@@ -347,7 +347,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Get user settings from file
    */
-  ipcMain.handle('sadie:get-settings', async () => {
+  ipcMain.handle('homebot:get-settings', async () => {
     try {
       return getSettings();
     } catch (err: any) {
@@ -356,7 +356,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle('sadie:list-custom-llm-models', async (_event, payload) => {
+  ipcMain.handle('homebot:list-custom-llm-models', async (_event, payload) => {
     try {
       console.log('[IPC] Fetching custom LLM models with config:', {
         apiUrl: payload?.apiUrl,
@@ -388,7 +388,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Check a single permission for a given tool (used by renderer to hide/disable UI)
-  ipcMain.handle('sadie:has-permission', async (_event, toolName: string) => {
+  ipcMain.handle('homebot:has-permission', async (_event, toolName: string) => {
     try {
       const allowed = assertPermission(toolName);
       return { success: true, allowed };
@@ -401,7 +401,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Save user settings to file
    */
-  ipcMain.handle('sadie:save-settings', async (_event, settings) => {
+  ipcMain.handle('homebot:save-settings', async (_event, settings) => {
     try {
       const prev = getSettings();
       const merged = { ...prev, ...settings };
@@ -427,11 +427,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Get the absolute path to the config file (for E2E testing)
    */
-  ipcMain.handle('sadie:get-config-path', async () => {
+  ipcMain.handle('homebot:get-config-path', async () => {
     return getSettingsPath();
   });
 
-  ipcMain.handle('sadie:get-generated-image', async (_event, filename: string) => {
+  ipcMain.handle('homebot:get-generated-image', async (_event, filename: string) => {
     try {
       const path = require('path');
       const fs = require('fs');
@@ -445,16 +445,16 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     } catch { return null; }
   });
 
-  ipcMain.handle('sadie:get-env', async () => {
+  ipcMain.handle('homebot:get-env', async () => {
     return {
-      isE2E: !!process.env.SADIE_E2E,
+      isE2E: !!process.env.HOMEBOT_E2E,
       isPackagedBuild: app.isPackaged,
       isReleaseBuild: app.isPackaged,
       userDataPath: app.getPath('userData')
     };
   });
 
-  ipcMain.handle('sadie:reset-permissions', async () => {
+  ipcMain.handle('homebot:reset-permissions', async () => {
     try {
       const updated = resetPermissions();
       return { success: true, data: updated };
@@ -464,7 +464,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle('sadie:export-consent', async () => {
+  ipcMain.handle('homebot:export-consent', async () => {
     try {
       const result = exportTelemetryConsent();
       return result;
@@ -476,7 +476,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   // List all registered tools
   // ── RAG: index a local file (called from the renderer drag-and-drop UI) ──
-  ipcMain.handle('sadie:rag-index', async (_event, filePath: string) => {
+  ipcMain.handle('homebot:rag-index', async (_event, filePath: string) => {
     try {
       if (!filePath || typeof filePath !== 'string') {
         return { success: false, error: 'filePath is required' };
@@ -489,7 +489,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // ── RAG: list all indexed documents ──
-  ipcMain.handle('sadie:rag-list', async () => {
+  ipcMain.handle('homebot:rag-list', async () => {
     try {
       return await ragToolHandlers.rag_list({}, {} as any);
     } catch (err: any) {
@@ -498,7 +498,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // ── RAG: remove a document from the index ──
-  ipcMain.handle('sadie:rag-clear', async (_event, docId: string) => {
+  ipcMain.handle('homebot:rag-clear', async (_event, docId: string) => {
     try {
       if (!docId || typeof docId !== 'string') {
         return { success: false, error: 'doc_id is required' };
@@ -509,7 +509,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle('sadie:list-tools', async () => {
+  ipcMain.handle('homebot:list-tools', async () => {
     try {
       const tools = getAllToolDefinitions().map(t => ({
         name: t.name,
@@ -523,11 +523,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Export chat history as markdown
-  ipcMain.handle('sadie:export-chat', async (_event, markdown: string) => {
+  ipcMain.handle('homebot:export-chat', async (_event, markdown: string) => {
     try {
       const desktop = app.getPath('desktop');
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const filePath = path.join(desktop, `sadie-chat-${ts}.md`);
+      const filePath = path.join(desktop, `homebot-chat-${ts}.md`);
       fs.writeFileSync(filePath, markdown, 'utf-8');
       return { success: true, path: filePath };
     } catch (err: any) {
@@ -536,18 +536,18 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // E2E ping helper - used by tests to ensure main is responsive
-  ipcMain.handle('sadie:__e2e_ping', async () => {
-    try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; (global as any).__SADIE_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) { safeCatch(e); }
+  ipcMain.handle('homebot:__e2e_ping', async () => {
+    try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER = (global as any).__HOMEBOT_ROUTER_LOG_BUFFER || []; (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) { safeCatch(e); }
     return { ok: true };
   });
 
   // Expose current app mode (demo or normal)
-  ipcMain.handle('sadie:get-mode', async () => {
+  ipcMain.handle('homebot:get-mode', async () => {
     return { demo: !!isDemoMode };
   });
 
   // GPU VRAM detection and hardware-aware model recommendations
-  ipcMain.handle('sadie:detect-gpu-vram', async () => {
+  ipcMain.handle('homebot:detect-gpu-vram', async () => {
     try {
       const gpu = await detectGpuVram();
       const config = gpu.vramGB ? recommendConfig(gpu.vramGB) : null;
@@ -569,7 +569,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // List installed Ollama models via /api/tags
-  ipcMain.handle('sadie:list-ollama-models', async () => {
+  ipcMain.handle('homebot:list-ollama-models', async () => {
     const ollamaBase = getConfiguredOllamaBaseUrl();
     try {
       const res = await axios.get(`${ollamaBase}/api/tags`, { timeout: OLLAMA_OP_TIMEOUT });
@@ -586,7 +586,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Delete an Ollama model
-  ipcMain.handle('sadie:delete-ollama-model', async (_event, modelName: string) => {
+  ipcMain.handle('homebot:delete-ollama-model', async (_event, modelName: string) => {
     if (!modelName || typeof modelName !== 'string') {
       return { success: false, error: 'Invalid model name' };
     }
@@ -600,7 +600,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Pull an Ollama model with progress reporting
-  ipcMain.handle('sadie:pull-model', async (_event, modelName: string) => {
+  ipcMain.handle('homebot:pull-model', async (_event, modelName: string) => {
     if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
       return { success: false, error: 'Invalid model name' };
     }
@@ -616,7 +616,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // Start Ollama (`ollama serve`) detached. Best-effort: succeeds if already
   // running, or if `ollama` is on PATH; returns a clear error otherwise so the
   // UI can tell the user to install/run it manually.
-  ipcMain.handle('sadie:start-ollama', async () => {
+  ipcMain.handle('homebot:start-ollama', async () => {
     const ollamaBase = getConfiguredOllamaBaseUrl();
 
     // Already running? Don't spawn a duplicate.
@@ -649,7 +649,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Read telemetry consent log (JSONL) for UI display
-  ipcMain.handle('sadie:read-consent-log', async () => {
+  ipcMain.handle('homebot:read-consent-log', async () => {
     try {
       const userData = app.getPath('userData');
       const logPath = path.join(userData, 'logs', 'telemetry-consent.log');
@@ -663,12 +663,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Read telemetry events (JSONL) for the Telemetry dashboard UI
-  ipcMain.handle('sadie:read-telemetry-events', async () => {
+  ipcMain.handle('homebot:read-telemetry-events', async () => {
     try {
       const userData = app.getPath('userData');
       const pathsToCheck = [
         path.join(userData, 'logs', 'telemetry-events.log'),
-        path.join(os.homedir(), 'SADIE_DIAG', 'telemetry-events.log')
+        path.join(os.homedir(), 'HOMEBOT_DIAG', 'telemetry-events.log')
       ];
       const found = pathsToCheck.find(p => fs.existsSync(p));
       if (!found) return { success: true, events: [] };
@@ -686,7 +686,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Analytics summary — aggregated conversation stats for the dashboard
-  ipcMain.handle('sadie:get-analytics-summary', async () => {
+  ipcMain.handle('homebot:get-analytics-summary', async () => {
     try {
       const store = MemoryManager.loadConversationStore();
       const conversations = store?.conversations || [];
@@ -717,10 +717,10 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Dev/E2E debug: return main/renderer in-memory buffers and conversation store snapshot
-  ipcMain.handle('sadie:read-debug-logs', async () => {
+  ipcMain.handle('homebot:read-debug-logs', async () => {
     try {
-      const rendererLogs = (global as any).__SADIE_RENDERER_LOGS || [];
-      const mainLogs = (global as any).__SADIE_MAIN_LOG_BUFFER || [];
+      const rendererLogs = (global as any).__HOMEBOT_RENDERER_LOGS || [];
+      const mainLogs = (global as any).__HOMEBOT_MAIN_LOG_BUFFER || [];
       const store = MemoryManager.loadConversationStore();
       return { success: true, rendererLogs, mainLogs, conversationStore: store };
     } catch (err: any) {
@@ -730,23 +730,23 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Append renderer log to in-memory buffer for diagnostics
-  ipcMain.on('sadie:append-renderer-log', (_event, line: string) => {
+  ipcMain.on('homebot:append-renderer-log', (_event, line: string) => {
     try {
-      if (!(global as any).__SADIE_RENDERER_LOGS) (global as any).__SADIE_RENDERER_LOGS = [];
-      (global as any).__SADIE_RENDERER_LOGS.push(line);
-      if ((global as any).__SADIE_RENDERER_LOGS.length > 500) {
-        (global as any).__SADIE_RENDERER_LOGS.shift();
+      if (!(global as any).__HOMEBOT_RENDERER_LOGS) (global as any).__HOMEBOT_RENDERER_LOGS = [];
+      (global as any).__HOMEBOT_RENDERER_LOGS.push(line);
+      if ((global as any).__HOMEBOT_RENDERER_LOGS.length > 500) {
+        (global as any).__HOMEBOT_RENDERER_LOGS.shift();
       }
     } catch (e) { safeCatch(e); }
   });
 
   // Capture logs: write runtime snapshot to temp file and return path
-  ipcMain.handle('sadie:capture-logs', async () => {
+  ipcMain.handle('homebot:capture-logs', async () => {
     try {
-      const rendererLogs = (global as any).__SADIE_RENDERER_LOGS || [];
-      const mainLogs = (global as any).__SADIE_MAIN_LOG_BUFFER || [];
+      const rendererLogs = (global as any).__HOMEBOT_RENDERER_LOGS || [];
+      const mainLogs = (global as any).__HOMEBOT_MAIN_LOG_BUFFER || [];
       const logContent = [
-        '=== SADIE Log Capture ===',
+        '=== HomeBot Log Capture ===',
         `Timestamp: ${new Date().toISOString()}`,
         '',
         '--- Main Process Logs ---',
@@ -755,7 +755,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         '--- Renderer Logs ---',
         ...rendererLogs,
       ].join('\n');
-      const logPath = path.join(os.tmpdir(), `sadie-logs-${Date.now()}.txt`);
+      const logPath = path.join(os.tmpdir(), `homebot-logs-${Date.now()}.txt`);
       fs.writeFileSync(logPath, logContent, 'utf-8');
       return { success: true, path: logPath };
     } catch (err: any) {
@@ -764,7 +764,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Restart the application
-  ipcMain.handle('sadie:restart-app', async () => {
+  ipcMain.handle('homebot:restart-app', async () => {
     app.relaunch();
     app.quit();
   });
@@ -774,7 +774,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Load all conversations (list view)
    */
-  ipcMain.handle('sadie:load-conversations', async () => {
+  ipcMain.handle('homebot:load-conversations', async () => {
     try {
       const store = MemoryManager.loadConversationStore();
       return { success: true, data: store };
@@ -787,7 +787,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Get a single conversation by ID
    */
-  ipcMain.handle('sadie:get-conversation', async (_event, conversationId: string) => {
+  ipcMain.handle('homebot:get-conversation', async (_event, conversationId: string) => {
     try {
       const conversation = MemoryManager.getConversation(conversationId);
       return { success: true, data: conversation };
@@ -800,7 +800,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Create a new conversation
    */
-  ipcMain.handle('sadie:create-conversation', async (_event, title?: string) => {
+  ipcMain.handle('homebot:create-conversation', async (_event, title?: string) => {
     try {
       const conversation = MemoryManager.createNewConversation(title);
       return { success: true, data: conversation };
@@ -813,7 +813,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Save/update a conversation
    */
-  ipcMain.handle('sadie:save-conversation', async (_event, conversation: StoredConversation) => {
+  ipcMain.handle('homebot:save-conversation', async (_event, conversation: StoredConversation) => {
     try {
       const success = MemoryManager.saveConversation(conversation);
       return { success };
@@ -826,7 +826,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Delete a conversation
    */
-  ipcMain.handle('sadie:delete-conversation', async (_event, conversationId: string) => {
+  ipcMain.handle('homebot:delete-conversation', async (_event, conversationId: string) => {
     try {
       const success = MemoryManager.deleteConversation(conversationId);
       clearHistory(conversationId);
@@ -840,7 +840,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Compact a conversation — archive older messages, replace with summary
    */
-  ipcMain.handle('sadie:compact-conversation', async (_event, conversationId: string, keepRecent?: number) => {
+  ipcMain.handle('homebot:compact-conversation', async (_event, conversationId: string, keepRecent?: number) => {
     try {
       const result = MemoryManager.compactConversation(conversationId, keepRecent);
       if (result.success) {
@@ -856,7 +856,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Set active conversation
    */
-  ipcMain.handle('sadie:set-active-conversation', async (_event, conversationId: string | null) => {
+  ipcMain.handle('homebot:set-active-conversation', async (_event, conversationId: string | null) => {
     try {
       const success = MemoryManager.setActiveConversation(conversationId);
       // Pre-warm LLM context so first message in this conversation has full history
@@ -871,10 +871,10 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Add a message to a conversation
    */
-  ipcMain.handle('sadie:add-message', async (_event, { conversationId, message }: { conversationId: string; message: Message }) => {
+  ipcMain.handle('homebot:add-message', async (_event, { conversationId, message }: { conversationId: string; message: Message }) => {
     try {
-      console.log(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id} len=${String(message.content || '').length}`);
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER = (global as any).__SADIE_MAIN_LOG_BUFFER || []; (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] sadie:add-message conv=${conversationId} msgId=${message.id}`); } catch (e) { safeCatch(e); }
+      console.log(`[IPC] homebot:add-message conv=${conversationId} msgId=${message.id} len=${String(message.content || '').length}`);
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER = (global as any).__HOMEBOT_MAIN_LOG_BUFFER || []; (global as any).__HOMEBOT_MAIN_LOG_BUFFER.push(`[IPC] homebot:add-message conv=${conversationId} msgId=${message.id}`); } catch (e) { safeCatch(e); }
       const success = MemoryManager.addMessageToConversation(conversationId, message);
       console.log(`[IPC] addMessage -> success=${success}`);
 
@@ -889,7 +889,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
             if (result.success && !result.error) {
               clearHistory(conversationId);
               const win = mainWindow ?? getMainWindow();
-              win?.webContents.send('sadie:conversation-compacted', {
+              win?.webContents.send('homebot:conversation-compacted', {
                 conversationId,
                 originalCount: result.originalCount,
                 compactedCount: result.compactedCount,
@@ -903,7 +903,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { success };
     } catch (err: any) {
       console.error('Error adding message:', err.message);
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER.push(`[IPC] addMessage error=${String(err)}`); } catch (e) { safeCatch(e); }
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER.push(`[IPC] addMessage error=${String(err)}`); } catch (e) { safeCatch(e); }
       return { success: false, error: err.message };
     }
   });
@@ -911,7 +911,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Update a message in a conversation
    */
-  ipcMain.handle('sadie:update-message', async (_event, { conversationId, messageId, updates }: { conversationId: string; messageId: string; updates: Partial<Message> }) => {
+  ipcMain.handle('homebot:update-message', async (_event, { conversationId, messageId, updates }: { conversationId: string; messageId: string; updates: Partial<Message> }) => {
     try {
       const success = MemoryManager.updateMessageInConversation(conversationId, messageId, updates);
       if (success) {
@@ -927,9 +927,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Auto-generate a short conversation title from the first exchange.
    * Calls Ollama non-streaming with a minimal prompt, saves to memory,
-   * and pushes the result back to the renderer via sadie:title-updated.
+   * and pushes the result back to the renderer via homebot:title-updated.
    */
-  ipcMain.handle('sadie:generate-title', async (_event, {
+  ipcMain.handle('homebot:generate-title', async (_event, {
     conversationId,
     userMessage,
     assistantReply,
@@ -996,7 +996,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
 
       const win = mainWindow ?? getMainWindow();
-      win?.webContents.send('sadie:title-updated', { conversationId, title });
+      win?.webContents.send('homebot:title-updated', { conversationId, title });
 
       return { success: true, title };
     } catch (err: any) {
@@ -1008,7 +1008,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Open a file in the system default application
    */
-  ipcMain.handle('sadie:open-file', async (_event, filePath: string) => {
+  ipcMain.handle('homebot:open-file', async (_event, filePath: string) => {
     try {
       if (!filePath) {
         return { success: false, error: 'No file path provided' };
@@ -1034,7 +1034,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Show a file in the system file explorer (and select it)
    */
-  ipcMain.handle('sadie:show-in-folder', async (_event, filePath: string) => {
+  ipcMain.handle('homebot:show-in-folder', async (_event, filePath: string) => {
     try {
       if (!filePath) {
         return { success: false, error: 'No file path provided' };
@@ -1061,7 +1061,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    * Start Windows speech recognition (offline capable)
    * Uses Windows SAPI through PowerShell
    */
-  ipcMain.handle('sadie:start-speech-recognition', async () => {
+  ipcMain.handle('homebot:start-speech-recognition', async () => {
 
     return new Promise((resolve) => {
       // PowerShell script to use Windows Speech Recognition (SAPI — fully offline)
@@ -1091,7 +1091,7 @@ try {
 }
 `;
       // Write to a unique temp file so concurrent calls don't race
-      const tmpFile = path.join(os.tmpdir(), `sadie-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
+      const tmpFile = path.join(os.tmpdir(), `homebot-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
       try {
         fs.writeFileSync(tmpFile, psScript, 'utf8');
       } catch (writeErr: any) {
@@ -1116,9 +1116,9 @@ try {
   });
 
   // ── Scheduler ──────────────────────────────────────────────────────────────────
-  ipcMain.handle('sadie:scheduler-list', () => listJobs());
+  ipcMain.handle('homebot:scheduler-list', () => listJobs());
 
-  ipcMain.handle('sadie:scheduler-add', (_event, input: any) => {
+  ipcMain.handle('homebot:scheduler-add', (_event, input: any) => {
     const { name, message, intervalMinutes, dailyTime, enabled } = input || {};
     if (!name || !message) return { success: false, error: 'name and message are required' };
     const job = addJob({
@@ -1131,36 +1131,36 @@ try {
     return { success: true, job };
   });
 
-  ipcMain.handle('sadie:scheduler-remove', (_event, id: string) => {
+  ipcMain.handle('homebot:scheduler-remove', (_event, id: string) => {
     return { success: removeJob(id) };
   });
 
-  ipcMain.handle('sadie:scheduler-toggle', (_event, id: string, enabled: boolean) => {
+  ipcMain.handle('homebot:scheduler-toggle', (_event, id: string, enabled: boolean) => {
     const job = toggleJob(id, enabled);
     return job ? { success: true, job } : { success: false, error: 'Job not found' };
   });
 
   // ── TTS (text-to-speech) ────────────────────────────────────────────────────
   // Uses Edge TTS neural voices (msedge-tts), falls back to Web Speech API
-  ipcMain.handle('sadie:tts-speak', async (_event, text: string, rate?: number) => {
+  ipcMain.handle('homebot:tts-speak', async (_event, text: string, rate?: number) => {
     return speakHandler({ text, rate: rate ?? 0 }, {} as any);
   });
 
-  ipcMain.handle('sadie:tts-stop', async () => {
+  ipcMain.handle('homebot:tts-stop', async () => {
     return stopSpeakingHandler({}, {} as any);
   });
 
   // ── MCP Server Management ───────────────────────────────────────────────────
 
-  ipcMain.handle('sadie:mcp-get-status', async () => {
+  ipcMain.handle('homebot:mcp-get-status', async () => {
     return getMcpStatus();
   });
 
-  ipcMain.handle('sadie:mcp-list-servers', async () => {
+  ipcMain.handle('homebot:mcp-list-servers', async () => {
     return loadMcpConfig().servers;
   });
 
-  ipcMain.handle('sadie:mcp-add-server', async (_event, config: McpServerConfig) => {
+  ipcMain.handle('homebot:mcp-add-server', async (_event, config: McpServerConfig) => {
     const current = loadMcpConfig();
     // Replace if same name already exists, otherwise append
     const idx = current.servers.findIndex(s => s.name === config.name);
@@ -1173,14 +1173,14 @@ try {
     return { success: true };
   });
 
-  ipcMain.handle('sadie:mcp-remove-server', async (_event, name: string) => {
+  ipcMain.handle('homebot:mcp-remove-server', async (_event, name: string) => {
     const current = loadMcpConfig();
     current.servers = current.servers.filter(s => s.name !== name);
     saveMcpConfig(current);
     return { success: true };
   });
 
-  ipcMain.handle('sadie:mcp-toggle-server', async (_event, name: string, enabled: boolean) => {
+  ipcMain.handle('homebot:mcp-toggle-server', async (_event, name: string, enabled: boolean) => {
     const current = loadMcpConfig();
     const server = current.servers.find(s => s.name === name);
     if (server) server.enabled = enabled;
@@ -1194,12 +1194,12 @@ try {
    * Full-text search across all stored conversations.
    * Returns matching messages with title, role and a surrounding snippet.
    */
-  ipcMain.handle('sadie:search-conversations', async (_event, query: string, maxResults?: number) => {
+  ipcMain.handle('homebot:search-conversations', async (_event, query: string, maxResults?: number) => {
     try {
       const results: ConversationSearchResult[] = MemoryManager.searchConversations(query, maxResults ?? 50);
       return { success: true, data: results };
     } catch (err: any) {
-      console.error('[IPC] sadie:search-conversations error:', err.message);
+      console.error('[IPC] homebot:search-conversations error:', err.message);
       return { success: false, error: err.message, data: [] };
     }
   });
@@ -1208,7 +1208,7 @@ try {
    * Export a single conversation as Markdown or JSON.
    * Accepts an optional format: 'markdown' (default) | 'json'.
    */
-  ipcMain.handle('sadie:export-conversation', async (_event, conversationId: string, format?: string) => {
+  ipcMain.handle('homebot:export-conversation', async (_event, conversationId: string, format?: string) => {
     try {
       const isJson = format === 'json';
       const content = isJson
@@ -1219,25 +1219,25 @@ try {
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeId = conversationId.replace(/[^a-z0-9_-]/gi, '').slice(0, 12);
       const ext = isJson ? 'json' : 'md';
-      const filePath = path.join(desktop, `sadie-export-${safeId}-${ts}.${ext}`);
+      const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.${ext}`);
       fs.writeFileSync(filePath, content, 'utf-8');
       return { success: true, content, path: filePath };
     } catch (err: any) {
-      console.error('[IPC] sadie:export-conversation error:', err.message);
+      console.error('[IPC] homebot:export-conversation error:', err.message);
       return { success: false, error: err.message };
     }
   });
 
   // ── Settings Export/Import ──────────────────────────────────────────────────
 
-  ipcMain.handle('sadie:export-settings', async () => {
+  ipcMain.handle('homebot:export-settings', async () => {
     try {
       const settings = getSettings();
       const convStore = MemoryManager.loadConversationStore();
       const prefs = MemoryManager.loadPreferences();
       const toolStats = MemoryManager.loadToolStats();
       const bundle = {
-        _sadie_backup: true,
+        _homebot_backup: true,
         exportedAt: new Date().toISOString(),
         version: app.getVersion(),
         settings,
@@ -1246,23 +1246,23 @@ try {
         toolStats,
       };
       const desktop = path.join(os.homedir(), 'Desktop');
-      const filename = `sadie-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const filename = `homebot-backup-${new Date().toISOString().slice(0, 10)}.json`;
       const filePath = path.join(desktop, filename);
       fs.writeFileSync(filePath, JSON.stringify(bundle, null, 2), 'utf-8');
       return { success: true, path: filePath };
     } catch (err: any) {
-      console.error('[IPC] sadie:export-settings error:', err.message);
+      console.error('[IPC] homebot:export-settings error:', err.message);
       return { success: false, error: err.message };
     }
   });
 
-  ipcMain.handle('sadie:import-settings', async (_event, filePath: string) => {
+  ipcMain.handle('homebot:import-settings', async (_event, filePath: string) => {
     try {
       const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
       if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
       const raw = fs.readFileSync(resolved, 'utf-8');
       const bundle = JSON.parse(raw);
-      if (!bundle._sadie_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
+      if (!bundle._homebot_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
 
       if (bundle.settings) {
         const current = getSettings();
@@ -1276,13 +1276,13 @@ try {
       }
       return { success: true, restoredAt: new Date().toISOString() };
     } catch (err: any) {
-      console.error('[IPC] sadie:import-settings error:', err.message);
+      console.error('[IPC] homebot:import-settings error:', err.message);
       return { success: false, error: err.message };
     }
   });
 
   // ── Document Viewer ────────────────────────────────────────────────────────
-  ipcMain.handle('sadie:parse-document', async (_event, filePath: string) => {
+  ipcMain.handle('homebot:parse-document', async (_event, filePath: string) => {
     try {
       const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
       if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
@@ -1338,7 +1338,7 @@ try {
     }
   });
 
-  ipcMain.handle('sadie:write-document', async (_event, filePath: string, content: string) => {
+  ipcMain.handle('homebot:write-document', async (_event, filePath: string, content: string) => {
     try {
       const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
       const homeDir = os.homedir();
@@ -1356,7 +1356,7 @@ try {
   // ── Ollama installer download ────────────────────────────────────────────
   // Downloads OllamaSetup.exe and runs it silently, then polls until ready.
 
-  ipcMain.handle('sadie:check-ollama-installed', async () => {
+  ipcMain.handle('homebot:check-ollama-installed', async () => {
     const candidates = process.platform === 'win32'
       ? [
           'ollama.exe',
@@ -1383,10 +1383,10 @@ try {
     return { installed: false, path: null };
   });
 
-  ipcMain.handle('sadie:download-ollama', async () => {
+  ipcMain.handle('homebot:download-ollama', async () => {
     const win = mainWindow ?? getMainWindow();
     const sendProgress = (data: any) => {
-      try { if (win && !win.isDestroyed()) win.webContents.send('sadie:ollama-download-progress', data); } catch { /* */ }
+      try { if (win && !win.isDestroyed()) win.webContents.send('homebot:ollama-download-progress', data); } catch { /* */ }
     };
 
     const installerUrl = 'https://ollama.com/download/OllamaSetup.exe';
@@ -1398,7 +1398,7 @@ try {
       await new Promise<void>((resolve, reject) => {
         const follow = (url: string, redirects = 0) => {
           if (redirects > 5) { reject(new Error('Too many redirects')); return; }
-          const req = https.get(url, { headers: { 'User-Agent': 'SADIE-Installer/1.0' } }, (res) => {
+          const req = https.get(url, { headers: { 'User-Agent': 'HomeBot-Installer/1.0' } }, (res) => {
             if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
               follow(res.headers.location, redirects + 1);
               return;
@@ -1463,7 +1463,7 @@ try {
 
   // ── Streaming model pull with progress ─────────────────────────────────────
 
-  ipcMain.handle('sadie:pull-model-stream', async (_event, modelName: string) => {
+  ipcMain.handle('homebot:pull-model-stream', async (_event, modelName: string) => {
     if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
       return { success: false, error: 'Invalid model name' };
     }
@@ -1471,7 +1471,7 @@ try {
     const win = mainWindow ?? getMainWindow();
 
     const sendProgress = (data: any) => {
-      try { if (win && !win.isDestroyed()) win.webContents.send('sadie:pull-model-progress', data); } catch { /* */ }
+      try { if (win && !win.isDestroyed()) win.webContents.send('homebot:pull-model-progress', data); } catch { /* */ }
     };
 
     try {
@@ -1523,11 +1523,11 @@ try {
     fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify(automations, null, 2), 'utf8');
   }
 
-  ipcMain.handle('sadie:load-automations', async () => {
+  ipcMain.handle('homebot:load-automations', async () => {
     return { automations: readAutomations() };
   });
 
-  ipcMain.handle('sadie:create-automation', async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
+  ipcMain.handle('homebot:create-automation', async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
     const automations = readAutomations();
     const automation: any = {
       id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1565,7 +1565,7 @@ try {
     return { automation, error };
   });
 
-  ipcMain.handle('sadie:update-automation', async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
+  ipcMain.handle('homebot:update-automation', async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
     const automations = readAutomations();
     const idx = automations.findIndex((a: any) => a.id === data.id);
     if (idx === -1) return { success: false, error: 'Automation not found' };
@@ -1581,7 +1581,7 @@ try {
     return { success: true };
   });
 
-  ipcMain.handle('sadie:delete-automation', async (_event, data: { id: string }) => {
+  ipcMain.handle('homebot:delete-automation', async (_event, data: { id: string }) => {
     const automations = readAutomations().filter((a: any) => a.id !== data.id);
     writeAutomations(automations);
     return { success: true };
@@ -1693,7 +1693,7 @@ try {
       : { success: true, result: resultText };
   }
 
-  ipcMain.handle('sadie:run-automation', async (_event, data: { id: string }) => {
+  ipcMain.handle('homebot:run-automation', async (_event, data: { id: string }) => {
     const automations = readAutomations();
     const auto = automations.find((a: any) => a.id === data.id);
     if (!auto) return { success: false, error: 'Automation not found' };
@@ -1721,7 +1721,7 @@ try {
           try {
             const win = BrowserWindow.getAllWindows()[0];
             if (win && !win.isDestroyed()) {
-              win.webContents.send('sadie:reminder-fired', {
+              win.webContents.send('homebot:reminder-fired', {
                 message: `Automation "${fresh.name}" completed: ${result.result || result.error || 'done'}`,
                 label: fresh.name,
               });
@@ -1743,7 +1743,7 @@ try {
 
   const QUIZ_PROGRESS_FILE = path.join(app.getPath('userData'), 'quiz-progress.json');
 
-  ipcMain.handle('sadie:generate-quiz', async (_event, params: { topic: string; difficulty: string; questionCount: number; questionTypes?: string[]; language?: string }) => {
+  ipcMain.handle('homebot:generate-quiz', async (_event, params: { topic: string; difficulty: string; questionCount: number; questionTypes?: string[]; language?: string }) => {
     try {
       const { topic, difficulty, questionCount } = params;
       const model = getSettings().chatModel || 'qwen2.5:7b';
@@ -1801,7 +1801,7 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
     }
   });
 
-  ipcMain.handle('sadie:save-quiz-progress', async (_event, progress: any) => {
+  ipcMain.handle('homebot:save-quiz-progress', async (_event, progress: any) => {
     try {
       fs.writeFileSync(QUIZ_PROGRESS_FILE, JSON.stringify(progress, null, 2), 'utf8');
       return { success: true };
@@ -1810,7 +1810,7 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
     }
   });
 
-  ipcMain.handle('sadie:load-quiz-progress', async () => {
+  ipcMain.handle('homebot:load-quiz-progress', async () => {
     try {
       if (!fs.existsSync(QUIZ_PROGRESS_FILE)) {
         return { success: true, data: null };
@@ -1823,7 +1823,7 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
   });
 
   // ── Screen Capture ──────────────────────────────────────────────────────────
-  ipcMain.handle('sadie:capture-screen', async () => {
+  ipcMain.handle('homebot:capture-screen', async () => {
     try {
       const { desktopCapturer } = require('electron');
       const sources = await desktopCapturer.getSources({
@@ -1842,7 +1842,7 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
   });
 
   // ── Quiz from RAG (Study Buddy) ─────────────────────────────────────────
-  ipcMain.handle('sadie:generate-quiz-from-rag', async (_event, params: { topic: string; difficulty: string; questionCount: number }) => {
+  ipcMain.handle('homebot:generate-quiz-from-rag', async (_event, params: { topic: string; difficulty: string; questionCount: number }) => {
     try {
       const { topic, difficulty, questionCount } = params;
       const model = getSettings().chatModel || 'qwen2.5:7b';
@@ -1918,7 +1918,7 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
   });
 
   // Mark registration complete
-  (global as any).__sadie_ipc_registered = true;
+  (global as any).__homebot_ipc_registered = true;
   if (isDevelopment) {
     console.log('[IPC] Handlers registered');
   }

@@ -128,11 +128,11 @@ function openOrFocus(id: ServiceId): void {
 
 /** Register the IPC handler called from the renderer via window.electron.openWebService */
 export function registerWebServicesHandlers(): void {
-  ipcMain.handle('sadie:open-web-service', (_event, id: string) => {
+  ipcMain.handle('homebot:open-web-service', (_event, id: string) => {
     if (id in SERVICES) openOrFocus(id as ServiceId);
   });
 
-  ipcMain.handle('sadie:web-service-status', () => {
+  ipcMain.handle('homebot:web-service-status', () => {
     return Object.fromEntries(
       (Object.keys(SERVICES) as ServiceId[]).map(id => [
         id,

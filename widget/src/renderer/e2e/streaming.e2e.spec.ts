@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 // Ensure we force E2E mock behavior in tests
-process.env.SADIE_E2E = 'true';
+process.env.HOMEBOT_E2E = 'true';
 import { startMockUpstream } from './mockUpstream';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
@@ -20,16 +20,16 @@ test('streams chunks to UI', async () => {
   // the server emits more chunks; this makes the cancellation assertion deterministic.
   const upstream = await startMockUpstream({ chunkIntervalMs: 300 });
   // Configure main to post directly to the mock upstream as an n8n-style streaming endpoint
-  process.env.N8N_URL = upstream.baseUrl; // main builds POST url as `${N8N_URL}/webhook/sadie/chat/stream`
+  process.env.N8N_URL = upstream.baseUrl; // main builds POST url as `${N8N_URL}/webhook/homebot/chat/stream`
   // Some parts of the pipeline (proxy tooling) expect OPENAI_ENDPOINT; point it to the mock upstream as well
   process.env.OPENAI_ENDPOINT = upstream.openaiEndpoint || upstream.baseUrl;
-  process.env.SADIE_USE_PROXY = 'false';
+  process.env.HOMEBOT_USE_PROXY = 'false';
 
   const { app, page } = await launchElectronApp({
     N8N_URL: upstream.baseUrl,
     PROXY_RETRY_ENABLED: 'false',
-    SADIE_E2E: '1',
-    SADIE_E2E_BYPASS_MOCK: '0',
+    HOMEBOT_E2E: '1',
+    HOMEBOT_E2E_BYPASS_MOCK: '0',
     NODE_ENV: 'test',
   });
   await waitForAppReady(page);
@@ -43,7 +43,7 @@ test('streams chunks to UI', async () => {
     // eslint-disable-next-line no-console
     console.log('[E2E-DEBUG] requesting main router logs');
     // @ts-ignore - test helper exposed by preload/main
-    const routerLogs = await page.evaluate(async () => await (window as any).electron.invoke('sadie:__e2e_get_router_logs'));
+    const routerLogs = await page.evaluate(async () => await (window as any).electron.invoke('homebot:__e2e_get_router_logs'));
     // eslint-disable-next-line no-console
     console.log('[E2E-ROUTER-LOGS]', JSON.stringify(Array.isArray(routerLogs) ? routerLogs.slice(-200) : routerLogs, null, 2));
   } catch (e) {
@@ -55,7 +55,7 @@ test('streams chunks to UI', async () => {
   try {
     await page.waitForTimeout(2000);
     // @ts-ignore
-    const routerLogs2 = await page.evaluate(async () => await (window as any).electron.invoke('sadie:__e2e_get_router_logs'));
+    const routerLogs2 = await page.evaluate(async () => await (window as any).electron.invoke('homebot:__e2e_get_router_logs'));
     // eslint-disable-next-line no-console
     console.log('[E2E-ROUTER-LOGS-2]', JSON.stringify(Array.isArray(routerLogs2) ? routerLogs2.slice(-200) : routerLogs2, null, 2));
   } catch (e) {
@@ -66,7 +66,7 @@ test('streams chunks to UI', async () => {
   // Also fetch main/renderer debug buffers for additional context
   try {
     // @ts-ignore
-    const debug = await page.evaluate(async () => await (window as any).electron.invoke('sadie:read-debug-logs'));
+    const debug = await page.evaluate(async () => await (window as any).electron.invoke('homebot:read-debug-logs'));
     // eslint-disable-next-line no-console
     console.log('[E2E-DEBUG-LOGS]', JSON.stringify(debug, null, 2));
   } catch (e) {
@@ -105,14 +105,14 @@ test('cancel stops stream', async () => {
   const upstream = await startMockUpstream({ chunkIntervalMs: 200, chunkCount: 10 });
   process.env.N8N_URL = upstream.baseUrl;
   process.env.OPENAI_ENDPOINT = upstream.openaiEndpoint || upstream.baseUrl;
-  process.env.SADIE_USE_PROXY = 'false';
+  process.env.HOMEBOT_USE_PROXY = 'false';
 
   const { app, page } = await launchElectronApp({
     N8N_URL: upstream.baseUrl,
     OPENAI_ENDPOINT: upstream.openaiEndpoint || upstream.baseUrl,
     PROXY_RETRY_ENABLED: 'false',
-    SADIE_E2E: '1',
-    SADIE_E2E_BYPASS_MOCK: '0',
+    HOMEBOT_E2E: '1',
+    HOMEBOT_E2E_BYPASS_MOCK: '0',
     NODE_ENV: 'test',
   });
   await waitForAppReady(page);
@@ -151,7 +151,7 @@ test('handles upstream error', async () => {
     const http = await import('http');
     return new Promise<any>((resolve) => {
       const s = http.createServer((req, res) => {
-        if (req.url === '/mock-sse' || req.url === '/webhook/sadie/chat/stream' || req.url === '/webhook/sadie/stream') {
+        if (req.url === '/mock-sse' || req.url === '/webhook/homebot/chat/stream' || req.url === '/webhook/homebot/stream') {
           // immediate error response to simulate upstream failure
           res.writeHead(500, {
             'Content-Type': 'application/json'
@@ -168,17 +168,17 @@ test('handles upstream error', async () => {
   })();
 
   const { port } = server.address() as any;
-  // main builds URL as `${N8N_URL}/webhook/sadie/chat/stream` so set N8N_URL to the server base
+  // main builds URL as `${N8N_URL}/webhook/homebot/chat/stream` so set N8N_URL to the server base
   const base = `http://127.0.0.1:${port}`;
 
   process.env.N8N_URL = base;
-  process.env.SADIE_USE_PROXY = 'false';
+  process.env.HOMEBOT_USE_PROXY = 'false';
 
   // Prepare a temp profile with firstRun:false so the wizard doesn't block the UI
   const fs = await import('fs');
   const os = await import('os');
   const path = await import('path');
-  const tmpDir = path.join(os.tmpdir(), `sadie-e2e-err-${Date.now()}`);
+  const tmpDir = path.join(os.tmpdir(), `homebot-e2e-err-${Date.now()}`);
   fs.mkdirSync(path.join(tmpDir, 'config'), { recursive: true });
   fs.writeFileSync(path.join(tmpDir, 'config', 'user-settings.json'), JSON.stringify({ firstRun: false, n8nUrl: base }));
 
@@ -186,22 +186,22 @@ test('handles upstream error', async () => {
     N8N_URL: base,
     OPENAI_ENDPOINT: `${base}/mock-sse`,
     PROXY_RETRY_ENABLED: 'false',
-    SADIE_E2E: '1',
-    SADIE_E2E_BYPASS_MOCK: '0',
-    SADIE_DIRECT_OLLAMA: '0',
+    HOMEBOT_E2E: '1',
+    HOMEBOT_E2E_BYPASS_MOCK: '0',
+    HOMEBOT_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
   }, tmpDir);
   await waitForAppReady(page);
 
   // Attach a listener to the renderer so we can assert the error event actually arrived
   await page.evaluate(() => {
-    (window as any).__sadie_error_received = false;
-    (window as any).__sadie_error_event = null;
+    (window as any).__homebot_error_received = false;
+    (window as any).__homebot_error_event = null;
     const electron = (window as any).electron;
     if (electron && typeof electron.onStreamError === 'function') {
       electron.onStreamError((d: any) => {
-        (window as any).__sadie_error_received = true;
-        (window as any).__sadie_error_event = d;
+        (window as any).__homebot_error_received = true;
+        (window as any).__homebot_error_event = d;
         try { console.log('[E2E-TRACE]', 'renderer stream error event', d); } catch (e) {}
       });
     }
@@ -218,17 +218,17 @@ test('handles upstream error', async () => {
   await page.evaluate(async (id) => {
     try {
       // @ts-ignore - test hook
-      await (window as any).electron.invoke('sadie:__e2e_trigger_upstream_error', { streamId: id, message: 'Upstream error (simulated)' });
+      await (window as any).electron.invoke('homebot:__e2e_trigger_upstream_error', { streamId: id, message: 'Upstream error (simulated)' });
     } catch (e) {
       // ignore invocation errors
     }
   }, msgId);
 
   // Wait for the renderer to observe the stream-error IPC event (E2E global tracker)
-  await page.waitForFunction(() => Array.isArray((window as any).__e2eEvents) && (window as any).__e2eEvents.includes('sadie:stream-error'), null, { timeout: 20000 });
+  await page.waitForFunction(() => Array.isArray((window as any).__e2eEvents) && (window as any).__e2eEvents.includes('homebot:stream-error'), null, { timeout: 20000 });
   // Verify the event was observed
   const events = await page.evaluate(() => (window as any).__e2eEvents || []);
-  expect(events.includes('sadie:stream-error')).toBe(true);
+  expect(events.includes('homebot:stream-error')).toBe(true);
 
   // After the error event the UI should transition to the 'error' state and show the error indicator
   await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 10000 });
@@ -282,15 +282,15 @@ test('falls back to non-stream final text on stream init error', async () => {
   // Point the app's Ollama URL to our server
   process.env.OLLAMA_URL = base;
   process.env.N8N_URL = base; // not used but keep consistent
-  process.env.SADIE_USE_PROXY = 'false';
+  process.env.HOMEBOT_USE_PROXY = 'false';
 
   const { app, page } = await launchElectronApp({
     N8N_URL: base,
     OPENAI_ENDPOINT: `${base}/mock-sse`,
     PROXY_RETRY_ENABLED: 'false',
-    SADIE_E2E: '1',
-    SADIE_E2E_BYPASS_MOCK: '1',
-    SADIE_DIRECT_OLLAMA: '1',
+    HOMEBOT_E2E: '1',
+    HOMEBOT_E2E_BYPASS_MOCK: '1',
+    HOMEBOT_DIRECT_OLLAMA: '1',
     NODE_ENV: 'test',
   });
   await waitForAppReady(page);
@@ -315,7 +315,7 @@ test('falls back to non-stream final text on stream init error', async () => {
     for (let i = 0; i < 5; i++) {
       try {
         // @ts-ignore - test hook
-        const r = await (window as any).electron.invoke('sadie:__e2e_trigger_fallback', { streamId: id, finalText: 'final-fallback' });
+        const r = await (window as any).electron.invoke('homebot:__e2e_trigger_fallback', { streamId: id, finalText: 'final-fallback' });
         return r;
       } catch (e) {
         const s = String(e || '');

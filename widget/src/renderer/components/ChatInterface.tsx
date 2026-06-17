@@ -27,7 +27,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';
     logDebug('[Renderer] sendMessage invoked', { text, documents: documents?.length || 0 });
-    try { (window as any).sadieCapture?.log(`[Renderer] sendMessage invoked msg=${text.substring(0,120)}`); } catch (e) {}
+    try { (window as any).homebotCapture?.log(`[Renderer] sendMessage invoked msg=${text.substring(0,120)}`); } catch (e) {}
     onSendMessage(content, images, documents);
   };
 

@@ -2,21 +2,21 @@ import path from 'path';
 import * as fs from 'fs';
 import { _electron as electron, ElectronApplication, Page } from 'playwright';
 
-async function isSadieAppWindow(page: Page): Promise<boolean> {
+async function isHomeBotAppWindow(page: Page): Promise<boolean> {
   try {
     await page.waitForLoadState('domcontentloaded', { timeout: 1000 }).catch(() => {});
 
     const title = await page.title().catch(() => '');
-    if (title && title.toLowerCase().includes('sadie')) {
+    if (title && title.toLowerCase().includes('homebot')) {
       return true;
     }
 
-    const appRoot = page.locator('[data-testid="sadie-app-root"]');
+    const appRoot = page.locator('[data-testid="homebot-app-root"]');
     if (await appRoot.count().catch(() => 0)) {
       return true;
     }
 
-    const hydratedRoot = page.locator('[data-testid="sadie-app-root"][data-hydrated="true"]');
+    const hydratedRoot = page.locator('[data-testid="homebot-app-root"][data-hydrated="true"]');
     if (await hydratedRoot.count().catch(() => 0)) {
       return true;
     }
@@ -33,12 +33,12 @@ async function isSadieAppWindow(page: Page): Promise<boolean> {
   }
 }
 
-async function waitForSadieAppSurface(page: Page, timeout = 15000): Promise<void> {
+async function waitForHomeBotAppSurface(page: Page, timeout = 15000): Promise<void> {
   await page.waitForFunction(() => {
     try {
       return Boolean(
-        document.querySelector('[data-testid="sadie-app-root"][data-hydrated="true"]') ||
-        document.querySelector('[data-testid="sadie-app-root"]') ||
+        document.querySelector('[data-testid="homebot-app-root"][data-hydrated="true"]') ||
+        document.querySelector('[data-testid="homebot-app-root"]') ||
         document.querySelector('button.mode-btn') ||
         document.querySelector('textarea[aria-label="Message HomeBot"]')
       );
@@ -62,14 +62,14 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
   // passing --user-data-dir as a CLI flag, which Electron's Node.js option
   // parser rejects when Playwright also injects -r loader.js.
   if (userDataDir) {
-    mergedEnv.SADIE_E2E_USER_DATA_DIR = userDataDir;
+    mergedEnv.HOMEBOT_E2E_USER_DATA_DIR = userDataDir;
   }
 
   try {
     console.log('[E2E-LAUNCH] Merged env:', {
-      SADIE_E2E: mergedEnv.SADIE_E2E,
-      SADIE_DIRECT_OLLAMA: mergedEnv.SADIE_DIRECT_OLLAMA,
-      SADIE_E2E_USER_DATA_DIR: mergedEnv.SADIE_E2E_USER_DATA_DIR,
+      HOMEBOT_E2E: mergedEnv.HOMEBOT_E2E,
+      HOMEBOT_DIRECT_OLLAMA: mergedEnv.HOMEBOT_DIRECT_OLLAMA,
+      HOMEBOT_E2E_USER_DATA_DIR: mergedEnv.HOMEBOT_E2E_USER_DATA_DIR,
       NODE_ENV: mergedEnv.NODE_ENV,
     });
   } catch (e) {}
@@ -78,7 +78,7 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
   // the dev build output `out/main/index.js` which `electron-vite` produces.
   const distEntry = path.join(__dirname, '../../../dist/main/index.js');
   const outEntry = path.join(__dirname, '../../../out/main/index.js');
-  const needsDevBuild = mergedEnv.SADIE_DIRECT_OLLAMA === '1' || mergedEnv.SADIE_DIRECT_OLLAMA === 'true';
+  const needsDevBuild = mergedEnv.HOMEBOT_DIRECT_OLLAMA === '1' || mergedEnv.HOMEBOT_DIRECT_OLLAMA === 'true';
   const entry = (needsDevBuild && fs.existsSync(outEntry)) ? outEntry : (fs.existsSync(distEntry) ? distEntry : outEntry);
   console.log('[E2E-LAUNCH] Using entrypoint:', entry, needsDevBuild ? '(dev build for env vars)' : '(packaged build)');
 
@@ -102,7 +102,7 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
   while (Date.now() - startedAt < timeoutMs) {
     const windows = await app.windows();
     for (const w of windows) {
-      if (await isSadieAppWindow(w as Page)) {
+      if (await isHomeBotAppWindow(w as Page)) {
         page = w as Page;
         break;
       }
@@ -116,7 +116,7 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
     await page.waitForLoadState('domcontentloaded');
   }
 
-  await waitForSadieAppSurface(page);
+  await waitForHomeBotAppSurface(page);
 
   return { app, page } as { app: ElectronApplication; page: Page };
 }

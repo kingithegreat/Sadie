@@ -16,7 +16,7 @@ $bytes = New-Object byte[] 32
 $key = [System.Convert]::ToBase64String($bytes)
 
 $content = @"
-# SADIE Environment Variables — auto-generated $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+# HomeBot Environment Variables — auto-generated $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 # Do NOT commit this file to source control.
 
 N8N_ENCRYPTION_KEY=$key

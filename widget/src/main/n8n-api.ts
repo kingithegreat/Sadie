@@ -1,6 +1,6 @@
 /**
  * n8n-api.ts
- * Manages n8n workflows from SADIE via docker exec CLI commands.
+ * Manages n8n workflows from HomeBot via docker exec CLI commands.
  * Creates, activates, lists, and deletes workflows without requiring
  * an API key — uses the n8n CLI and Node.js SQLite inside the container.
  */
@@ -8,7 +8,7 @@
 import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
 
-const CONTAINER = 'sadie-n8n';
+const CONTAINER = 'homebot-n8n';
 const N8N_BASE = 'http://localhost:5678';
 const SQLITE3_REQUIRE = '/usr/local/lib/node_modules/n8n/node_modules/sqlite3';
 
@@ -80,7 +80,7 @@ export function buildWorkflowJson(opts: {
         type: 'n8n-nodes-base.webhook',
         typeVersion: 1.1,
         position: [250, 300],
-        webhookId: `sadie-auto-${Date.now()}`,
+        webhookId: `homebot-auto-${Date.now()}`,
       },
       {
         parameters: {
@@ -168,10 +168,10 @@ export async function importWorkflow(workflowJson: object): Promise<string> {
   const jsonStr = JSON.stringify(workflowJson);
 
   // Write JSON into container via stdin to avoid Windows path encoding issues
-  await dockerExecStdin(jsonStr, 'sh', '-c', 'cat > /tmp/sadie-import.json');
+  await dockerExecStdin(jsonStr, 'sh', '-c', 'cat > /tmp/homebot-import.json');
 
   // Import via n8n CLI
-  const importOut = await dockerExec('n8n', 'import:workflow', '--input=/tmp/sadie-import.json');
+  const importOut = await dockerExec('n8n', 'import:workflow', '--input=/tmp/homebot-import.json');
   console.log('[n8n-api] import output:', importOut);
 
   // List workflows to find the new one by name
@@ -210,7 +210,7 @@ export async function activateWorkflow(workflowId: string, workflowJson: object)
     `  db.serialize(() => {`,
     `    db.run('PRAGMA foreign_keys = OFF');`,
     `    db.run('INSERT OR REPLACE INTO workflow_history (versionId, workflowId, authors, createdAt, updatedAt, nodes, connections, name, autosaved, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',`,
-    `      [vId, wfId, 'sadie', now, now, row.nodes, row.connections, name, 0, null],`,
+    `      [vId, wfId, 'homebot', now, now, row.nodes, row.connections, name, 0, null],`,
     `      function(e) { console.log(e ? 'history err: ' + e.message : 'history OK'); });`,
     `    db.run('UPDATE workflow_entity SET active = 1, versionId = ?, "activeVersionId" = ? WHERE id = ?',`,
     `      [vId, vId, wfId],`,
@@ -291,7 +291,7 @@ export async function createAndActivateWorkflow(opts: {
   instructions: string;
 }): Promise<N8nWorkflowInfo> {
   const safeName = opts.automationName.replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 40);
-  const webhookPath = `sadie/auto/${safeName.replace(/\s+/g, '-').toLowerCase()}-${Date.now().toString(36)}`;
+  const webhookPath = `homebot/auto/${safeName.replace(/\s+/g, '-').toLowerCase()}-${Date.now().toString(36)}`;
   const workflowName = `HomeBot Auto: ${opts.automationName}`;
 
   const systemPrompt =

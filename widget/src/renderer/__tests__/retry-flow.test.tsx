@@ -105,7 +105,7 @@ describe('retry flow (renderer)', () => {
     const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, {
       target: {
-        value: '[Document attached: SADIE_Midpoint_Review.docx]\n\nthis was you what do i think?'
+        value: '[Document attached: HOMEBOT_Midpoint_Review.docx]\n\nthis was you what do i think?'
       }
     });
     fireEvent.click(screen.getByText('Send'));

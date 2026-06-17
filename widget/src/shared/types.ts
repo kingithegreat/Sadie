@@ -1,4 +1,4 @@
-export interface SadieRequest {
+export interface HomeBotRequest {
   user_id: string;
   conversation_id: string;
   message: string;
@@ -29,10 +29,10 @@ export interface DocumentAttachment {
 }
 
 /**
- * SadieRequest supports multiple images via `images`.
+ * HomeBotRequest supports multiple images via `images`.
  * The single `image` field is kept for backward compatibility but is deprecated.
  */
-export interface SadieRequestWithImages extends SadieRequest {
+export interface HomeBotRequestWithImages extends HomeBotRequest {
   /** @deprecated Prefer `images` for multiple attachments */
   image?: ImageAttachment;
   images?: ImageAttachment[];
@@ -43,7 +43,7 @@ export interface SadieRequestWithImages extends SadieRequest {
   retry?: boolean;
 }
 
-export interface SadieResponse {
+export interface HomeBotResponse {
   success: boolean;
   data?: any;
   error?: boolean;
@@ -206,7 +206,7 @@ export interface ScheduledJob {
 }
 
 export interface ElectronAPI {
-  sendMessage: (request: SadieRequest) => Promise<SadieResponse>;
+  sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
   saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
   getMode?: () => Promise<{ demo: boolean }>;
@@ -226,7 +226,7 @@ export interface ElectronAPI {
   onWidgetModeChanged?: (callback: (isWidget: boolean) => void) => () => void;
   // SSE/stream helpers
   cancelStream?: (streamId?: string) => void;
-  sendStreamMessage?: (request: SadieRequestWithImages & { streamId?: string }) => Promise<void>;
+  sendStreamMessage?: (request: HomeBotRequestWithImages & { streamId?: string }) => Promise<void>;
   onStreamChunk?: (callback: (data: { streamId?: string; chunk: string }) => void) => (() => void) | void;
   onStreamEnd?: (callback: (data: { streamId?: string; cancelled?: boolean }) => void) => (() => void) | void;
   onStreamError?: (callback: (err: { streamId?: string; error?: string }) => void) => (() => void) | void;
@@ -298,6 +298,7 @@ export interface ElectronAPI {
 
   // Image generation helper
   executeImageGenerate?: (params: { action: string; payload?: any }) => Promise<any>;
+  getGeneratedImage?: (filename: string) => Promise<string | null>;
 
   // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
   writeClipboard?: (text: string) => void;

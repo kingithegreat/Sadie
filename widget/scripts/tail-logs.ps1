@@ -1,10 +1,10 @@
 Param()
 
-$appStart = Join-Path $env:APPDATA 'SADIE\logs\startup.log'
-$appConsent = Join-Path $env:APPDATA 'SADIE\logs\telemetry-consent.log'
+$appStart = Join-Path $env:APPDATA 'HomeBot\logs\startup.log'
+$appConsent = Join-Path $env:APPDATA 'HomeBot\logs\telemetry-consent.log'
 
-$tempStartup = Get-ChildItem -Path "$env:TEMP\sadie-test-*\logs\startup.log" -ErrorAction SilentlyContinue | Select-Object -First 1
-$tempConsent = Get-ChildItem -Path "$env:TEMP\sadie-test-*\logs\telemetry-consent.log" -ErrorAction SilentlyContinue | Select-Object -First 1
+$tempStartup = Get-ChildItem -Path "$env:TEMP\homebot-test-*\logs\startup.log" -ErrorAction SilentlyContinue | Select-Object -First 1
+$tempConsent = Get-ChildItem -Path "$env:TEMP\homebot-test-*\logs\telemetry-consent.log" -ErrorAction SilentlyContinue | Select-Object -First 1
 
 $toTail = @()
 

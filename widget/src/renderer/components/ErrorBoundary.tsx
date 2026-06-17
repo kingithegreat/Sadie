@@ -24,7 +24,7 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error(`[SADIE] Error Boundary${this.props.zone ? ` (${this.props.zone})` : ''} caught:`, error, info.componentStack);
+    console.error(`[HomeBot] Error Boundary${this.props.zone ? ` (${this.props.zone})` : ''} caught:`, error, info.componentStack);
   }
 
   handleReload = () => {

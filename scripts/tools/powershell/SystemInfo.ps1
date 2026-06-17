@@ -1,5 +1,5 @@
 # ============================================================================
-# SADIE System Information Script
+# HomeBot System Information Script
 # ============================================================================
 # Purpose: Retrieve safe system information (disk, memory, processes, OS)
 # Safety: No system modifications, read-only operations

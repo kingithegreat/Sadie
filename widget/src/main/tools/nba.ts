@@ -1,5 +1,5 @@
 /**
- * SADIE NBA Tools (balldontlie API)
+ * HomeBot NBA Tools (balldontlie API)
  * Free NBA data: games, teams, players, stats
  * Docs: https://www.balldontlie.io/#get-all-games
  */
@@ -43,7 +43,7 @@ export const nbaQueryDef: ToolDefinition = {
 function httpsGet(url: string, headers: Record<string, string> = {}): Promise<any> {
   return new Promise((resolve, reject) => {
     const options = { headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SADIE/1.0',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) HomeBot/1.0',
       'Accept': 'application/json,text/html;q=0.9,*/*;q=0.8',
       'Accept-Encoding': 'gzip, deflate, br',
       ...headers

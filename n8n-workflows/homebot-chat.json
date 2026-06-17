@@ -1,46 +1,46 @@
 {
-  "name": "SADIE Chat Orchestrator",
+  "name": "HomeBot Chat Orchestrator",
   "active": true,
   "versionId": "1",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "sadie/chat",
+        "path": "homebot/chat",
         "responseMode": "responseNode",
         "options": {
           "rawBody": false
         }
       },
       "id": "webhook-trigger",
-      "name": "SADIE Webhook",
+      "name": "HomeBot Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [200, 300],
-      "webhookId": "sadie-chat-main"
+      "webhookId": "homebot-chat-main"
     },
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "sadie/chat/stream",
+        "path": "homebot/chat/stream",
         "responseMode": "responseNode",
         "options": {
           "rawBody": false
         }
       },
       "id": "webhook-stream",
-      "name": "SADIE Stream Webhook",
+      "name": "HomeBot Stream Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [200, 520],
-      "webhookId": "sadie-chat-stream"
+      "webhookId": "homebot-chat-stream"
     },
     {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.body.message }}",
         "options": {
-          "systemMessage": "You are SADIE (Structured AI Desktop Intelligence Engine), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
+          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
           "maxIterations": 6
         }
       },
@@ -190,7 +190,7 @@
         "promptType": "define",
         "text": "={{ $json.body.message }}",
         "options": {
-          "systemMessage": "You are SADIE (Structured AI Desktop Intelligence Engine), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
+          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
           "maxIterations": 6
         }
       },
@@ -202,12 +202,12 @@
     }
   ],
   "connections": {
-    "SADIE Webhook": {
+    "HomeBot Webhook": {
       "main": [
         [{ "node": "AI Agent", "type": "main", "index": 0 }]
       ]
     },
-    "SADIE Stream Webhook": {
+    "HomeBot Stream Webhook": {
       "main": [
         [{ "node": "AI Agent Stream", "type": "main", "index": 0 }]
       ]
@@ -284,6 +284,6 @@
   },
   "staticData": null,
   "tags": [
-    { "name": "SADIE" }
+    { "name": "HomeBot" }
   ]
 }

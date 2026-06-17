@@ -1,5 +1,5 @@
 /**
- * SADIE Offline Speech Recognition
+ * HomeBot Offline Speech Recognition
  * 
  * Uses @xenova/transformers to run Whisper locally for offline speech-to-text.
  * The model runs entirely in JavaScript - no native dependencies needed.
@@ -43,34 +43,34 @@ class OfflineSpeechRecognition {
         (async function() {
           try {
             // Check if already initialized
-            if (window.sadieWhisperPipeline) {
+            if (window.homebotWhisperPipeline) {
               return { success: true, message: 'Already initialized' };
             }
 
-            console.log('[SADIE] Loading Whisper model for offline speech recognition...');
+            console.log('[HomeBot] Loading Whisper model for offline speech recognition...');
             
             // Dynamic import of transformers
             const { pipeline } = await import('@xenova/transformers');
             
             // Create speech recognition pipeline
             // This will download the model on first use
-            window.sadieWhisperPipeline = await pipeline(
+            window.homebotWhisperPipeline = await pipeline(
               'automatic-speech-recognition',
               'Xenova/whisper-tiny.en',
               { 
                 progress_callback: (progress) => {
                   if (progress.status === 'progress') {
-                    window.sadieWhisperProgress = Math.round(progress.progress);
-                    console.log('[SADIE] Model loading:', Math.round(progress.progress) + '%');
+                    window.homebotWhisperProgress = Math.round(progress.progress);
+                    console.log('[HomeBot] Model loading:', Math.round(progress.progress) + '%');
                   }
                 }
               }
             );
             
-            console.log('[SADIE] Whisper model loaded successfully');
+            console.log('[HomeBot] Whisper model loaded successfully');
             return { success: true, message: 'Model loaded' };
           } catch (err) {
-            console.error('[SADIE] Failed to load Whisper model:', err);
+            console.error('[HomeBot] Failed to load Whisper model:', err);
             return { success: false, error: err.message };
           }
         })()
@@ -79,7 +79,7 @@ class OfflineSpeechRecognition {
       if (result.success) {
         this.status.ready = true;
         this.status.loading = false;
-        console.log('[SADIE Speech] Offline recognition ready');
+        console.log('[HomeBot Speech] Offline recognition ready');
         return true;
       } else {
         this.status.loading = false;
@@ -89,7 +89,7 @@ class OfflineSpeechRecognition {
     } catch (err: any) {
       this.status.loading = false;
       this.status.error = err.message;
-      console.error('[SADIE Speech] Init error:', err);
+      console.error('[HomeBot Speech] Init error:', err);
       return false;
     }
   }
@@ -106,14 +106,14 @@ class OfflineSpeechRecognition {
     const result = await window.webContents.executeJavaScript(`
       (async function() {
         try {
-          if (!window.sadieWhisperPipeline) {
+          if (!window.homebotWhisperPipeline) {
             return { success: false, error: 'Model not loaded' };
           }
 
           const audioInput = ${JSON.stringify(audioData)};
           
           // Transcribe
-          const output = await window.sadieWhisperPipeline(audioInput, {
+          const output = await window.homebotWhisperPipeline(audioInput, {
             chunk_length_s: 30,
             stride_length_s: 5,
             return_timestamps: false

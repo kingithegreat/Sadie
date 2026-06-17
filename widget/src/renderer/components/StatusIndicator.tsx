@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
-import sadieLogoUrl from '../assets/HomeBotLogo.png';
+import homebotLogoUrl from '../assets/HomeBotLogo.png';
 
 interface StatusIndicatorProps {
   connectionStatus: ConnectionStatus;
@@ -98,7 +98,7 @@ const BackendBadge: React.FC<BackendBadgeProps> = ({
       type="button"
       className="backend-retry"
       onClick={() => {
-        try { (window as any).sadieCapture?.log('[Renderer] Retry connection (backend badge)'); } catch (e) {}
+        try { (window as any).homebotCapture?.log('[Renderer] Retry connection (backend badge)'); } catch (e) {}
         onRefresh();
       }}
       aria-label="Retry connection"
@@ -228,7 +228,7 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
   <div className="header-actions">
     <button
       onClick={() => {
-        try { (window as any).sadieCapture?.log('[Renderer] Retry connection (header)'); } catch (e) {}
+        try { (window as any).homebotCapture?.log('[Renderer] Retry connection (header)'); } catch (e) {}
         onRefresh();
       }}
       className="header-btn"
@@ -287,7 +287,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     const newValue = !uncensoredMode;
     setUncensoredMode(newValue);
     await (window as any).electron?.setUncensoredMode?.(newValue);
-    window.dispatchEvent(new CustomEvent('sadie:uncensored-mode-changed', { detail: newValue }));
+    window.dispatchEvent(new CustomEvent('homebot:uncensored-mode-changed', { detail: newValue }));
   };
 
   return (
@@ -305,7 +305,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               ☰
             </button>
           )}
-          <img src={sadieLogoUrl} alt="HomeBot" className="header-logo" />
+          <img src={homebotLogoUrl} alt="HomeBot" className="header-logo" />
           <h1>HomeBot</h1>
         </div>
 

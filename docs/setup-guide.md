@@ -1,6 +1,6 @@
-# SADIE Setup Guide
+# HomeBot Setup Guide
 
-This guide walks you through installing and running SADIE on a fresh machine, from prerequisites to your first conversation.
+This guide walks you through installing and running HomeBot on a fresh machine, from prerequisites to your first conversation.
 
 ---
 
@@ -12,26 +12,26 @@ This guide walks you through installing and running SADIE on a fresh machine, fr
 4. [Automated Setup Script](#step-2--run-the-automated-setup-script)
 5. [Start Ollama](#step-3--start-ollama)
 6. [Start n8n (Optional)](#step-4--start-n8n-optional)
-7. [Launch SADIE](#step-5--launch-sadie)
+7. [Launch HomeBot](#step-5--launch-homebot)
 8. [First-Run Onboarding](#step-6--first-run-onboarding)
 9. [Verify Tools](#step-7--verify-tools-are-working)
 10. [Troubleshooting](#troubleshooting)
-11. [Updating SADIE](#updating-sadie)
+11. [Updating HomeBot](#updating-homebot)
 12. [File and Directory Reference](#file-and-directory-reference)
 
 ---
 
 ## One-Click Install (Recommended)
 
-The simplest way to get SADIE running:
+The simplest way to get HomeBot running:
 
-1. **Download** `SADIE-Setup.exe` from the latest release, or build it yourself:
+1. **Download** `HomeBot-Setup.exe` from the latest release, or build it yourself:
    ```bash
    cd widget
    npm run dist    # Outputs to widget/dist-electron/
    ```
-2. **Double-click** the installer. It installs to your user profile (no admin rights needed) and launches SADIE automatically.
-3. **Follow the setup wizard.** On first launch, SADIE will:
+2. **Double-click** the installer. It installs to your user profile (no admin rights needed) and launches HomeBot automatically.
+3. **Follow the setup wizard.** On first launch, HomeBot will:
    - Detect your GPU and set a hardware profile.
    - Download and install Ollama if it's not already on your machine.
    - Pull the essential AI models (`qwen2.5:7b` for chat, `nomic-embed-text` for embeddings) with a progress bar.
@@ -66,8 +66,8 @@ That's it — no terminal, no manual model pulls, no Docker. Everything below is
 ## Step 1 — Clone the Repository
 
 ```bash
-git clone https://github.com/kingithegreat/Sadie.git
-cd Sadie
+git clone https://github.com/kingithegreat/HomeBot.git
+cd HomeBot
 ```
 
 ---
@@ -75,7 +75,7 @@ cd Sadie
 ## Step 2 — Run the Automated Setup Script
 
 ```powershell
-.\scripts\setup\Setup-SADIE.ps1
+.\scripts\setup\Setup-HomeBot.ps1
 ```
 
 This script will:
@@ -91,7 +91,7 @@ This script will:
 To skip the model pull step (for example, on a CI machine):
 
 ```powershell
-.\scripts\setup\Setup-SADIE.ps1 -SkipModelPull
+.\scripts\setup\Setup-HomeBot.ps1 -SkipModelPull
 ```
 
 ---
@@ -102,7 +102,7 @@ To skip the model pull step (for example, on a CI machine):
 ollama serve
 ```
 
-Ollama must be running before you start SADIE. If it is already running as a background service (the default after installation), you can skip this step.
+Ollama must be running before you start HomeBot. If it is already running as a background service (the default after installation), you can skip this step.
 
 Verify it is reachable:
 
@@ -126,7 +126,7 @@ ollama pull gemma4:e4b           # 16 GB+ GPU recommended (9.6 GB, optional)
 
 ## Step 4 — Start n8n (Optional)
 
-n8n provides optional workflow orchestration for scheduled tasks and external integrations. SADIE's core functionality (all 85+ tool handlers) works without n8n.
+n8n provides optional workflow orchestration for scheduled tasks and external integrations. HomeBot's core functionality (all 85+ tool handlers) works without n8n.
 
 ```bash
 docker compose up -d
@@ -138,7 +138,7 @@ This starts n8n at `http://localhost:5678` using the credentials in `docker-comp
 
 ---
 
-## Step 5 — Launch SADIE
+## Step 5 — Launch HomeBot
 
 ### Development Mode (with hot-reload)
 
@@ -168,7 +168,7 @@ npm run dist    # Uses electron-builder; output in widget/dist-electron/
 
 ## Step 6 — First-Run Onboarding
 
-When SADIE opens for the first time, a setup wizard guides you through configuration:
+When HomeBot opens for the first time, a setup wizard guides you through configuration:
 
 1. **Welcome screen** — Choose between **Local (Ollama)** for fully offline AI or **Cloud API** for hosted inference (GPT-4o, Claude, Gemini, and free-tier providers).
 2. **Local path** — The wizard automatically:
@@ -203,7 +203,7 @@ What tools do you have?
 
 ### Try the Other Modes
 
-SADIE has six modes, accessible from the sidebar or via keyboard shortcuts:
+HomeBot has six modes, accessible from the sidebar or via keyboard shortcuts:
 
 | Mode | Shortcut | What to Try |
 |---|---|---|
@@ -222,7 +222,7 @@ SADIE has six modes, accessible from the sidebar or via keyboard shortcuts:
 - Confirm `ollama serve` is running.
 - Run `ollama list` to see installed models.
 - Manually pull a model: `ollama pull qwen2.5:7b`
-- SADIE includes an Ollama heartbeat that auto-restarts Ollama if it goes down. Check the status indicator in the UI.
+- HomeBot includes an Ollama heartbeat that auto-restarts Ollama if it goes down. Check the status indicator in the UI.
 - Verify the API is reachable: `curl http://127.0.0.1:11434/api/tags`
 
 ### Widget Does Not Start / Blank Screen
@@ -262,7 +262,7 @@ Restart the widget after editing (the list is read at startup).
 
 ---
 
-## Updating SADIE
+## Updating HomeBot
 
 ```bash
 git pull origin main
@@ -274,7 +274,7 @@ npm run dev
 Or re-run the setup script:
 
 ```powershell
-.\scripts\setup\Setup-SADIE.ps1 -SkipModelPull
+.\scripts\setup\Setup-HomeBot.ps1 -SkipModelPull
 ```
 
 ---
@@ -299,7 +299,7 @@ Or re-run the setup script:
 | `memory/rag-index.json` | RAG document index |
 | `logs/` | Runtime log files |
 | `scripts/` | Setup, build, and utility scripts |
-| `scripts/setup/Setup-SADIE.ps1` | Automated setup and preflight script |
+| `scripts/setup/Setup-HomeBot.ps1` | Automated setup and preflight script |
 | `scripts/generate-docs.js` | Generates capstone .docx files (poster, report, presentation, demo) |
 | `prompts/` | System prompts and intent detection templates |
 | `schemas/` | JSON schemas for tool call validation |

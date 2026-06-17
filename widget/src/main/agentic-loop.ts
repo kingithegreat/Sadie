@@ -1,5 +1,5 @@
 /**
- * SADIE Agentic Loop Engine
+ * HomeBot Agentic Loop Engine
  *
  * Detects multi-step user requests and enables the LLM to autonomously
  * chain tool calls.  Instead of the deterministic regex router picking a

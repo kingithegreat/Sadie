@@ -1,6 +1,6 @@
-# n8n Workflows for SADIE
+# n8n Workflows for HomeBot
 
-This directory contains all n8n workflow JSON files for SADIE's automation layer.
+This directory contains all n8n workflow JSON files for HomeBot's automation layer.
 
 ## Structure
 
@@ -26,7 +26,7 @@ Individual tool execution workflows:
 
 1. Start your n8n instance:
    ```powershell
-   cd C:\Users\adenk\Desktop\sadie
+   cd C:\Users\adenk\Desktop\homebot
    docker-compose up -d
    ```
 
@@ -43,7 +43,7 @@ Individual tool execution workflows:
 
 ## Configuration Notes
 
-- All workflows use absolute paths: `C:/Users/adenk/Desktop/sadie`
+- All workflows use absolute paths: `C:/Users/adenk/Desktop/homebot`
 - Ollama endpoint: `http://127.0.0.1:11434`
 - Primary model: `qwen2.5:7b`
 - Vision model: `moondream`
@@ -76,14 +76,14 @@ To modify workflows:
 
 Test the main webhook:
 ```powershell
-curl -X POST http://localhost:5678/webhook/sadie/chat `
+curl -X POST http://localhost:5678/webhook/homebot/chat `
   -H "Content-Type: application/json" `
-  -d '{"message": "Hello Sadie!"}'
+  -d '{"message": "Hello HomeBot!"}'
 ```
 
 To test the streaming endpoint (replace the default orchestrator):
 ```powershell
-curl -X POST http://localhost:5678/webhook/sadie/chat/stream `
+curl -X POST http://localhost:5678/webhook/homebot/chat/stream `
    -H "Content-Type: application/json" `
    -d '{"message": "Stream test"}'
 ```

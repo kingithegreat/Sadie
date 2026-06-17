@@ -6,7 +6,7 @@ import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
 function makeTempProfile() {
-  const base = path.join(os.tmpdir(), `sadie-e2e-settings-${Date.now()}`);
+  const base = path.join(os.tmpdir(), `homebot-e2e-settings-${Date.now()}`);
   if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
   fs.mkdirSync(base, { recursive: true });
   return base;
@@ -33,7 +33,7 @@ test.describe('Settings panel', () => {
   test('opens and closes settings dialog', async () => {
     const tmp = makeTempProfile();
     seedConfig(tmp);
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     // Settings should not be visible initially
@@ -56,7 +56,7 @@ test.describe('Settings panel', () => {
   test('model grid shows selectable model cards', async () => {
     const tmp = makeTempProfile();
     seedConfig(tmp);
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     await page.locator('button[aria-label="Settings"]').click();
@@ -78,7 +78,7 @@ test.describe('Settings panel', () => {
   test('closes settings on Escape key', async () => {
     const tmp = makeTempProfile();
     seedConfig(tmp);
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
     await page.locator('button[aria-label="Settings"]').click();

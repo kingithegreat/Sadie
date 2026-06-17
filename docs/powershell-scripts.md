@@ -2,7 +2,7 @@
 
 ## Overview
 
-SADIE's PowerShell scripts provide safe, validated tool operations with strict safety enforcement. All scripts return JSON output compatible with n8n workflows.
+HomeBot's PowerShell scripts provide safe, validated tool operations with strict safety enforcement. All scripts return JSON output compatible with n8n workflows.
 
 ---
 
@@ -218,8 +218,8 @@ Use n8n's **Execute Command** node with PowerShell:
 
 ```json
 {
-  "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"{{ $json.action }}\" -Path \"{{ $json.path }}\"",
-  "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+  "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"{{ $json.action }}\" -Path \"{{ $json.path }}\"",
+  "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
 }
 ```
 
@@ -246,24 +246,24 @@ return { json: result };
 
 ## Windows PowerShell: POST to streaming endpoint (examples)
 
-Below are Windows-safe PowerShell examples to POST JSON payloads to the streaming endpoint at `http://localhost:5678/webhook/sadie/chat/stream`.
+Below are Windows-safe PowerShell examples to POST JSON payloads to the streaming endpoint at `http://localhost:5678/webhook/homebot/chat/stream`.
 
 Simple JSON message (application/json):
 ```powershell
 $body = @{ user_id = "test-user"; conversation_id = "conv-1"; message = "hello" } | ConvertTo-Json -Depth 5
-Invoke-RestMethod -Uri 'http://localhost:5678/webhook/sadie/chat/stream' -Method Post -ContentType 'application/json' -Body $body
+Invoke-RestMethod -Uri 'http://localhost:5678/webhook/homebot/chat/stream' -Method Post -ContentType 'application/json' -Body $body
 ```
 
 Tool call payload (application/json):
 ```powershell
 $payload = @{ user_id = "tool-user"; conversation_id = "conv-tools"; message = "run tool"; tool_call = @{ name = "calc"; arguments = @{ expression = "2+2" } } } | ConvertTo-Json -Depth 8
-Invoke-RestMethod -Uri 'http://localhost:5678/webhook/sadie/chat/stream' -Method Post -ContentType 'application/json' -Body $payload
+Invoke-RestMethod -Uri 'http://localhost:5678/webhook/homebot/chat/stream' -Method Post -ContentType 'application/json' -Body $payload
 ```
 
 Form-encoded (if your endpoint accepts form data):
 ```powershell
 $form = @{ user_id = 'form-user'; conversation_id = 'conv-form'; message = 'hello form' }
-Invoke-RestMethod -Uri 'http://localhost:5678/webhook/sadie/chat/stream' -Method Post -ContentType 'application/x-www-form-urlencoded' -Body $form
+Invoke-RestMethod -Uri 'http://localhost:5678/webhook/homebot/chat/stream' -Method Post -ContentType 'application/x-www-form-urlencoded' -Body $form
 ```
 
 Notes:

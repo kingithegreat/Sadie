@@ -1,5 +1,5 @@
 /**
- * SADIE RAG (Retrieval-Augmented Generation) Tools
+ * HomeBot RAG (Retrieval-Augmented Generation) Tools
  *
  * Indexes local documents into overlapping text chunks and enables fast
  * semantic search using TF-IDF cosine similarity.  No model download, no

@@ -4,10 +4,10 @@ import { permissionRequester } from './permission-requester';
 import { looksLikeToolJson, extractToolCallsFromText, extractProseToolCalls } from './tool-helpers';
 import axios from 'axios';
 import { debug as logDebug, error as logError } from '../shared/logger';
-import streamFromSadieProxy from './stream-proxy-client';
-import { SadieRequest, SadieResponse, SadieRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
-import { IPC_SEND_MESSAGE, SADIE_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
-import { SADIE_SYSTEM_PROMPT, SADIE_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
+import streamFromHomeBotProxy from './stream-proxy-client';
+import { HomeBotRequest, HomeBotResponse, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
+import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
+import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
 import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, ToolCall, ToolContext } from './tools';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
@@ -17,7 +17,7 @@ import { streamFromCustomLLM, validateCustomLLMConfig, PROVIDER_API_URLS } from 
 import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
-import { sadieWebhookHeaders } from './webhook-auth';
+import { homebotWebhookHeaders } from './webhook-auth';
 import { ragSearch, ragSearchWarmup } from './tools/rag';
 import { matchSkills } from './skills-loader';
 import { shouldUseMoA, runMoAPipeline } from './moa';
@@ -41,7 +41,7 @@ function autoExecuteToolsEnabled(): boolean {
     if (s && (s.allowAutoTools === false || s.autoToolExecution === false || s.allowAutomaticToolExecution === false || s.autoExecuteTools === false)) return false;
     return true;
   } catch (e) {
-    console.warn('[SADIE] Failed to read auto-tool-execute setting, defaulting to enabled', e);
+    console.warn('[HomeBot] Failed to read auto-tool-execute setting, defaulting to enabled', e);
     return true;
   }
 }
@@ -136,16 +136,16 @@ let customLLMWarningShown = false;
 // Router diagnostics buffer for capture tool
 const MAX_LOG_BUFFER = 500;
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
-function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
-(global as any).__SADIE_ROUTER_LOG_BUFFER ??= [];
+(global as any).__HOMEBOT_ROUTER_LOG_BUFFER ??= [];
 function pushRouter(line: string) {
   try {
-    const buf = (global as any).__SADIE_ROUTER_LOG_BUFFER;
+    const buf = (global as any).__HOMEBOT_ROUTER_LOG_BUFFER;
     buf.push(`[ROUTER] ${String(line)}`);
     if (buf.length > MAX_LOG_BUFFER) buf.splice(0, buf.length - MAX_LOG_BUFFER);
   } catch (e) { safeCatch(e); }
-  try { (global as any).__SADIE_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) { safeCatch(e); }
+  try { (global as any).__HOMEBOT_PUSH_MAIN_LOG?.(`[ROUTER] ${String(line)}`); } catch (e) { safeCatch(e); }
 }
 
 /**
@@ -156,7 +156,7 @@ function safeSend(sender: Electron.WebContents | undefined, channel: string, dat
   try {
     sender?.send(channel, data);
   } catch (err) {
-    console.warn(`[SADIE] IPC send failed (window destroyed?) channel=${channel}`, err);
+    console.warn(`[HomeBot] IPC send failed (window destroyed?) channel=${channel}`, err);
   }
 }
 
@@ -215,11 +215,11 @@ async function parseDocuments(documents: DocumentAttachment[]): Promise<string[]
           parsedTexts.push(`=== Document: ${doc.filename} ===\n${contentResult.result.content}\n=== End of ${doc.filename} ===`);
         }
       } else {
-        console.error(`[SADIE] Failed to parse document ${doc.filename}:`, result.error);
+        console.error(`[HomeBot] Failed to parse document ${doc.filename}:`, result.error);
         parsedTexts.push(`[Failed to parse document: ${doc.filename} - ${result.error}]`);
       }
     } catch (err: any) {
-      console.error(`[SADIE] Error parsing document ${doc.filename}:`, err);
+      console.error(`[HomeBot] Error parsing document ${doc.filename}:`, err);
       parsedTexts.push(`[Error parsing document: ${doc.filename} - ${err.message}]`);
     }
   }
@@ -285,7 +285,7 @@ function buildDocumentReviewPrompt(userMessage: string): string {
 }
 
 export function shouldInjectMorningBriefingForRequest(
-  request: Pick<SadieRequestWithImages, 'message' | 'documents' | 'images'>,
+  request: Pick<HomeBotRequestWithImages, 'message' | 'documents' | 'images'>,
   shouldOffer: boolean = shouldOfferBriefing()
 ): boolean {
   if (!shouldOffer) return false;
@@ -430,7 +430,7 @@ function compressTurns(turns: ConversationMessage[]): string {
     // Strip noisy artifacts (search blocks, code, images) before summarising
     const content = t.content
       .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
-      .replace(/__SADIE_IMAGE(?:_FILE)?__:[^\s]+/g, '[image]')
+      .replace(/__HOMEBOT_IMAGE(?:_FILE)?__:[^\s]+/g, '[image]')
       .replace(/```[\s\S]*?```/g, '[code block]')
       .replace(/\s+/g, ' ')
       .trim();
@@ -553,15 +553,15 @@ export function ensureHydrated(conversationId: string): void {
     } else {
       conversationHistory.set(conversationId, msgs);
     }
-    console.log(`[SADIE] Hydrated ${conversationId}: ${msgs.length} messages from persistent store`);
+    console.log(`[HomeBot] Hydrated ${conversationId}: ${msgs.length} messages from persistent store`);
   } catch (err) {
     // Non-fatal — worst case the LLM just has no prior context
-    console.warn(`[SADIE] ensureHydrated failed for ${conversationId}:`, err);
+    console.warn(`[HomeBot] ensureHydrated failed for ${conversationId}:`, err);
   }
 }
 
 // ─── MCP Memory helpers ───────────────────────────────────────────────────────
-// These use the `memory` MCP server (registered as mcp_memory_*) to give SADIE
+// These use the `memory` MCP server (registered as mcp_memory_*) to give HomeBot
 // a persistent knowledge graph that survives process restarts.
 // All calls are best-effort — failures are silently swallowed so they never
 // break the chat flow.
@@ -631,7 +631,7 @@ async function memorizeIfUseful(userMsg: string): Promise<void> {
   }
 }
 
-function mapErrorToSadieResponse(error: any): SadieResponse {
+function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
   if (error.code === 'ECONNREFUSED') {
     return {
       success: false,
@@ -671,7 +671,7 @@ export interface RecoveryHint {
 
 /**
  * Classify a stream error and produce an actionable hint for the renderer.
- * Attach the result as `recoveryHint` on the `sadie:stream-error` payload.
+ * Attach the result as `recoveryHint` on the `homebot:stream-error` payload.
  */
 export function classifyError(message: string, details?: string): RecoveryHint {
   const combined = `${message} ${details ?? ''}`.toLowerCase();
@@ -870,7 +870,7 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
   const isConversational = /^(no\b|yes\b|yep\b|nope\b|thanks\b|thank you\b|ok\b|okay\b|sure\b|right\b|wrong\b|this is(n'?t| not)\b|that'?s (not|wrong)\b|wait\b)/i.test(m.trim());
 
   // HELP / CAPABILITY CARD — must be first so "help" doesn't hit other patterns
-  if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can (sadie|homebot) do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(m.trim())) {
+  if (/^\s*(help|\?|commands|what can you do|what do you do|capabilities|show capabilities|show commands|what tools|show tools|what can (homebot|homebot) do|what are your (skills|abilities|features))\s*[?!.]?\s*$/i.test(m.trim())) {
     return { calls: [{ name: '__help', arguments: {} }] };
   }
 
@@ -1916,7 +1916,7 @@ function summarizeToolResults(results: any[]): string {
 // Process an incoming request at the router boundary. This enforces the
 // tool-gating policy: when routing decision is `tools`, the LLM/webhook must
 // NOT be called. Returns structured assistant payloads for the renderer.
-export async function processIncomingRequest(request: SadieRequestWithImages | SadieRequest, n8nUrl: string, decisionOverride?: RoutingDecision) {
+export async function processIncomingRequest(request: HomeBotRequestWithImages | HomeBotRequest, n8nUrl: string, decisionOverride?: RoutingDecision) {
   try {
     let enhancedMessage = request.message as string;
     if ('documents' in request && request.documents && request.documents.length > 0) {
@@ -2007,12 +2007,12 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 
     // Only if decision.type === 'llm' do we call the upstream orchestrator/webhook.
     if (decision.type === 'llm') {
-      const targetUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
+      const targetUrl = `${n8nUrl}${HOMEBOT_WEBHOOK_PATH}`;
       try {
         try { pushRouter(`POSTing to n8n webhook = ${targetUrl}`); } catch (e) { safeCatch(e); }
         const response = await axios.post(targetUrl, requestForRouting, {
           timeout: DEFAULT_TIMEOUT,
-          headers: sadieWebhookHeaders()
+          headers: homebotWebhookHeaders()
         });
         try { pushRouter(`n8n webhook POST succeeded, status=${response?.status}`); } catch (e) { safeCatch(e); }
         return { success: true, data: response.data };
@@ -2024,7 +2024,7 @@ export async function processIncomingRequest(request: SadieRequestWithImages | S
 
     return { success: false, error: true, message: 'Unhandled routing decision' };
   } catch (err: any) {
-    return mapErrorToSadieResponse(err);
+    return mapErrorToHomeBotResponse(err);
   }
 }
 
@@ -2058,7 +2058,7 @@ export function isSmallModel(modelName: string): boolean {
 
 /** Select the appropriate system prompt based on model size. */
 export function getSystemPromptForModel(modelName: string, guidelines?: string): string {
-  const base = isSmallModel(modelName) ? SADIE_SYSTEM_PROMPT_COMPACT : SADIE_SYSTEM_PROMPT;
+  const base = isSmallModel(modelName) ? HOMEBOT_SYSTEM_PROMPT_COMPACT : HOMEBOT_SYSTEM_PROMPT;
   return guidelines?.trim() ? `${base}\n\n## User Guidelines\n${guidelines.trim()}` : base;
 }
 
@@ -2152,7 +2152,7 @@ let uncensoredModeEnabled = false;
 
 export function setUncensoredMode(enabled: boolean) {
   uncensoredModeEnabled = enabled;
-  console.log(`[SADIE] Uncensored mode: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`[HomeBot] Uncensored mode: ${enabled ? 'ENABLED' : 'DISABLED'}`);
 }
 
 export function getUncensoredMode(): boolean {
@@ -2215,7 +2215,7 @@ export async function streamFromLLM(
   if (settings.useCustomLLM && settings.customLLM) {
     const validation = validateCustomLLMConfig(settings.customLLM);
     if (validation.valid) {
-      console.log(`[SADIE] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
+      console.log(`[HomeBot] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
 
       // Extract base64 images for cloud vision
       let cloudImageData: Array<{ base64: string; mimeType?: string }> | undefined;
@@ -2289,7 +2289,7 @@ export async function streamFromLLM(
       // Handle tool call round-trip: execute tool, then feed result back to LLM
       const handleToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
         toolCallReceived = true;
-        console.log(`[SADIE] Custom LLM tool call: ${tc.name}`, tc.arguments);
+        console.log(`[HomeBot] Custom LLM tool call: ${tc.name}`, tc.arguments);
         onToolCall(tc.name, tc.arguments);
         
         try {
@@ -2304,7 +2304,7 @@ export async function streamFromLLM(
           
           const toolResult = results?.[0]?.result ?? results?.[0]?.error ?? 'No result';
           onToolResult(toolResult);
-          console.log('[SADIE] Custom LLM tool result, sending follow-up...');
+          console.log('[HomeBot] Custom LLM tool result, sending follow-up...');
           
           // Send the tool result back to the LLM for a follow-up response
           const updatedHistory = [
@@ -2330,7 +2330,7 @@ export async function streamFromLLM(
             controller.signal
           );
         } catch (err: any) {
-          console.error('[SADIE] Custom LLM tool execution failed:', err.message);
+          console.error('[HomeBot] Custom LLM tool execution failed:', err.message);
           onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
           onEnd();
         }
@@ -2352,12 +2352,12 @@ export async function streamFromLLM(
         const cloudTarget = describeCloudTarget(customConfig);
         if (shouldSurfaceCloudErrorWithoutFallback(errMsg)) {
           const surfacedError = new Error(`Cloud API error (${cloudTarget}): ${errMsg}`);
-          console.warn(`[SADIE] ${surfacedError.message} — not falling back to local Ollama`);
+          console.warn(`[HomeBot] ${surfacedError.message} — not falling back to local Ollama`);
           onError(surfacedError);
           return;
         }
 
-        console.warn(`[SADIE] Cloud LLM unavailable (${cloudTarget}): ${errMsg} — falling back to local Ollama`);
+        console.warn(`[HomeBot] Cloud LLM unavailable (${cloudTarget}): ${errMsg} — falling back to local Ollama`);
         onChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
         // Fall through to Ollama
         streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options)
@@ -2385,7 +2385,7 @@ export async function streamFromLLM(
       // Silently fall back to Ollama if custom LLM isn't fully configured
       // Only log once per session to avoid spamming
       if (!customLLMWarningShown) {
-        console.log(`[SADIE] Custom LLM not ready: ${validation.error}. Using Ollama.`);
+        console.log(`[HomeBot] Custom LLM not ready: ${validation.error}. Using Ollama.`);
         customLLMWarningShown = true;
       }
     }
@@ -2412,7 +2412,7 @@ export async function streamFromLLM(
     };
     const codeValidation = validateCustomLLMConfig(codeApiConfig);
     if (codeValidation.valid) {
-      console.log(`[SADIE] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
+      console.log(`[HomeBot] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
       const controller = new AbortController();
       const history = getHistory(conversationId);
       // Build system prompt for the actual code model (may differ in size from chatModel)
@@ -2430,7 +2430,7 @@ export async function streamFromLLM(
       let codeToolCallReceived = false;
       const handleCodeToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
         codeToolCallReceived = true;
-        console.log(`[SADIE] Code API tool call: ${tc.name}`, tc.arguments);
+        console.log(`[HomeBot] Code API tool call: ${tc.name}`, tc.arguments);
         onToolCall(tc.name, tc.arguments);
         try {
           const results = await executeToolBatch(
@@ -2447,7 +2447,7 @@ export async function streamFromLLM(
           ];
           await streamFromCustomLLM('', updatedHistory, codeApiConfig, codeSystemPrompt, onChunk, onEnd, onError, controller.signal);
         } catch (err: any) {
-          console.error('[SADIE] Code API tool execution failed:', err.message);
+          console.error('[HomeBot] Code API tool execution failed:', err.message);
           onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
           onEnd();
         }
@@ -2469,7 +2469,7 @@ export async function streamFromLLM(
       );
       return { cancel: () => controller.abort() };
     } else {
-      console.log(`[SADIE] Code API not ready: ${codeValidation.error}. Falling back to Ollama.`);
+      console.log(`[HomeBot] Code API not ready: ${codeValidation.error}. Falling back to Ollama.`);
     }
   }
 
@@ -2483,7 +2483,7 @@ export async function streamFromLLM(
     !images?.length &&           // bypass MoA for vision queries
     shouldUseMoA(message)
   ) {
-    console.log(`[SADIE] MoA activated — ${settings.moaProposers.length} proposers → ${settings.moaAggregator}`);
+    console.log(`[HomeBot] MoA activated — ${settings.moaProposers.length} proposers → ${settings.moaAggregator}`);
     const history = getHistory(conversationId);
     const moaSystemPrompt = getSystemPromptForModel(settings.moaAggregator, settings.chatGuidelines);
 
@@ -2559,7 +2559,7 @@ export async function streamFromOllamaWithTools(
   let chunkCount = 0;
   
   const safeEnd = (reason: string) => {
-    console.log(`[SADIE] safeEnd called: reason=${reason}, ended=${ended}, chunks=${chunkCount}`);
+    console.log(`[HomeBot] safeEnd called: reason=${reason}, ended=${ended}, chunks=${chunkCount}`);
     if (!ended) {
       ended = true;
       onEnd();
@@ -2567,7 +2567,7 @@ export async function streamFromOllamaWithTools(
   };
   
   const safeError = (err: any, source: string) => {
-    console.error(`[SADIE] safeError called: source=${source}, ended=${ended}, chunks=${chunkCount}, error=`, err?.message || err);
+    console.error(`[HomeBot] safeError called: source=${source}, ended=${ended}, chunks=${chunkCount}, error=`, err?.message || err);
     if (!ended) {
       ended = true;
       onError(err);
@@ -2581,7 +2581,7 @@ export async function streamFromOllamaWithTools(
     : (isCodingQuery ? preferredCodeModel : preferredChatModel);
   const chatModel = baseChatModel || preferredChatModel;
   const model = hasImages ? preferredVisionModel : chatModel;
-  if (isCodingQuery) console.log(`[SADIE] Coding query detected — using code model: ${model}`);
+  if (isCodingQuery) console.log(`[HomeBot] Coding query detected — using code model: ${model}`);
   
   // Extract base64 image data for Ollama
   const imageData: string[] = [];
@@ -2747,7 +2747,7 @@ export async function streamFromOllamaWithTools(
       : getFocusedOllamaTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories }))
     : undefined;
   
-  console.log(`[SADIE] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, hasDocuments=${hasDocuments}, isGreeting=${skipToolsForGreeting}, message="${message.substring(0, 30)}..."`);
+  console.log(`[HomeBot] streamFromOllamaWithTools: model=${model}, images=${imageData.length}, tools=${tools?.length || 0}, history=${history.length}, uncensored=${uncensoredModeEnabled}, hasDocuments=${hasDocuments}, isGreeting=${skipToolsForGreeting}, message="${message.substring(0, 30)}..."`);
   const ollamaBase = getConfiguredOllamaBaseUrl();
   
   // Tool execution context
@@ -2759,7 +2759,7 @@ export async function streamFromOllamaWithTools(
   // Recursive function to handle tool calls
   async function processResponse(round: number = 0): Promise<void> {
     if (round >= MAX_TOOL_ROUNDS) {
-      console.error(`[SADIE] Tool-call recursion limit reached (${MAX_TOOL_ROUNDS} rounds)`);
+      console.error(`[HomeBot] Tool-call recursion limit reached (${MAX_TOOL_ROUNDS} rounds)`);
       onChunk(`\n⚠️ I've reached the maximum number of tool-call rounds (${MAX_TOOL_ROUNDS}). Please try rephrasing your request.`);
       safeEnd('tool-recursion-limit');
       return;
@@ -2802,7 +2802,7 @@ export async function streamFromOllamaWithTools(
           const fallbacks = [OLLAMA_CHAT_MODEL, 'gemma4:e4b', 'qwen2.5-coder:7b'].filter(m => m !== requestBody.model);
           const fallbackModel = fallbacks[0];
           if (fallbackModel) {
-            console.warn(`[SADIE] Primary model "${requestBody.model}" failed (${code || status}), failing over to "${fallbackModel}"`);
+            console.warn(`[HomeBot] Primary model "${requestBody.model}" failed (${code || status}), failing over to "${fallbackModel}"`);
             onChunk(`⚠️ Model "${requestBody.model}" unavailable — switching to ${fallbackModel}\n\n`);
             requestBody.model = fallbackModel;
             requestBody._failedOver = true;
@@ -2826,7 +2826,7 @@ export async function streamFromOllamaWithTools(
         }
       }
 
-      console.log('[SADIE] Ollama chat stream connected...');
+      console.log('[HomeBot] Ollama chat stream connected...');
       const stream = response.data as NodeJS.ReadableStream;
       
       let assistantContent = '';
@@ -2876,7 +2876,7 @@ export async function streamFromOllamaWithTools(
               
               if (parsed.done) {
                 if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-                console.log(`[SADIE] Response done, chunks=${chunkCount}, toolCalls=${pendingToolCalls.length}`);
+                console.log(`[HomeBot] Response done, chunks=${chunkCount}, toolCalls=${pendingToolCalls.length}`);
                 resolve();
               }
             }
@@ -2933,7 +2933,7 @@ export async function streamFromOllamaWithTools(
       if (pendingToolCalls.length === 0 && smallModel && round === 0) {
         const garbageReason = isGarbageOutput(assistantContent);
         if (garbageReason) {
-          console.warn(`[SADIE] Garbage output detected (${garbageReason}), retrying with simplified prompt`);
+          console.warn(`[HomeBot] Garbage output detected (${garbageReason}), retrying with simplified prompt`);
           pushRouter(`Garbage output (${garbageReason}); retrying round ${round + 1}`);
           // If we already flushed partial garbage to the UI, send a replacement
           // signal so the renderer can clear it before the retry output arrives.
@@ -3046,7 +3046,7 @@ export async function streamFromOllamaWithTools(
                   s.permissions = s.permissions || {};
                   for (const p of missing) s.permissions[p] = true;
                   saveSettings(s);
-                } catch (e) { console.error('[SADIE] Failed to persist permission changes:', e); }
+                } catch (e) { console.error('[HomeBot] Failed to persist permission changes:', e); }
 
                 const rerun = await executeToolBatch(calls, toolContext);
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
@@ -3064,7 +3064,7 @@ export async function streamFromOllamaWithTools(
 
         // Otherwise, emit each tool result and continue the conversation
         for (const result of batchResults) {
-          console.log(`[SADIE] Tool result:`, result);
+          console.log(`[HomeBot] Tool result:`, result);
           onToolResult(result);
           // Format structured results so the LLM gets human-readable context
           // instead of raw JSON which it often regurgitates verbatim
@@ -3096,7 +3096,7 @@ export async function streamFromOllamaWithTools(
       if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
         safeEnd('cancelled');
       } else {
-        console.error('[SADIE] Chat error:', err?.message || err);
+        console.error('[HomeBot] Chat error:', err?.message || err);
         safeError(err, 'chat-error');
       }
     }
@@ -3110,7 +3110,7 @@ export async function streamFromOllamaWithTools(
   
   return {
     cancel: () => {
-      console.log('[SADIE] Stream cancel requested');
+      console.log('[HomeBot] Stream cancel requested');
       controller.abort();
     }
   };
@@ -3151,18 +3151,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       const settings = getSettings();
       if (settings.tavilyApiKey) {
         setTavilyApiKey(settings.tavilyApiKey);
-        console.log('[SADIE] Tavily API key loaded from settings');
+        console.log('[HomeBot] Tavily API key loaded from settings');
       }
       if (settings.serperApiKey) {
         setSerperApiKey(settings.serperApiKey);
-        console.log('[SADIE] Serper API key loaded from settings');
+        console.log('[HomeBot] Serper API key loaded from settings');
       }
       if (settings.openaiApiKey) {
         setOpenaiApiKey(settings.openaiApiKey);
-        console.log('[SADIE] OpenAI API key loaded from settings');
+        console.log('[HomeBot] OpenAI API key loaded from settings');
       }
     } catch (e) {
-      console.log('[SADIE] Could not load search API keys from settings');
+      console.log('[HomeBot] Could not load search API keys from settings');
     }
 
     if (E2E) {
@@ -3177,7 +3177,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     // Permission escalation is handled by the centralized `permissionRequester` module
     
     // Handle confirmation responses from renderer
-    ipcMain.on('sadie:confirmation-response', (_event: IpcMainEvent, data: { confirmationId: string; confirmed: boolean }) => {
+    ipcMain.on('homebot:confirmation-response', (_event: IpcMainEvent, data: { confirmationId: string; confirmed: boolean }) => {
       const pending = pendingConfirmations.get(data.confirmationId);
       if (pending) {
         pending.resolve(data.confirmed);
@@ -3207,22 +3207,22 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           });
           
           // Send confirmation request to renderer
-          sender.send('sadie:confirmation-request', { confirmationId, message, streamId });
+          sender.send('homebot:confirmation-request', { confirmationId, message, streamId });
         });
       };
     }
 
     
     // Streaming responses via HTTP chunked response (POST -> stream)
-    ipcMain.on('sadie:stream-message', async (event: IpcMainEvent, request: SadieRequestWithImages & { streamId?: string }) => {
+    ipcMain.on('homebot:stream-message', async (event: IpcMainEvent, request: HomeBotRequestWithImages & { streamId?: string }) => {
       const streamStartMs = Date.now();
-      console.log('[DIAG] Received sadie:stream-message', { request, env: { SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, isE2E, NODE_ENV: process.env.NODE_ENV } });
-      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received sadie:stream-message', { request });
-      try { pushRouter(`Received sadie:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
+      console.log('[DIAG] Received homebot:stream-message', { request, env: { HOMEBOT_DIRECT_OLLAMA: process.env.HOMEBOT_DIRECT_OLLAMA, isE2E, NODE_ENV: process.env.NODE_ENV } });
+      if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received homebot:stream-message', { request });
+      try { pushRouter(`Received homebot:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 
       if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
-        event.sender.send('sadie:stream-error', { error: true, message: 'Invalid request format.', streamId });
+        event.sender.send('homebot:stream-error', { error: true, message: 'Invalid request format.', streamId });
         return;
       }
 
@@ -3236,7 +3236,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       // Validate images (if provided) to guard the backend from oversized payloads
       const validation = validateImages((request as any).images);
       if (!validation.ok) {
-        event.sender.send('sadie:stream-error', { error: true, code: validation.code, message: validation.message, streamId });
+        event.sender.send('homebot:stream-error', { error: true, code: validation.code, message: validation.message, streamId });
         return;
       }
 
@@ -3253,19 +3253,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       // release builds protected via `isReleaseBuild` in the env helper.
       const useDirectOllama = isE2E;
       if (process.env.NODE_ENV !== 'production') {
-        console.log('[DIAG] useDirectOllama calculation:', { isE2E, SADIE_DIRECT_OLLAMA: process.env.SADIE_DIRECT_OLLAMA, useDirectOllama });
-        try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.SADIE_DIRECT_OLLAMA}`); } catch (e) { safeCatch(e); }
+        console.log('[DIAG] useDirectOllama calculation:', { isE2E, HOMEBOT_DIRECT_OLLAMA: process.env.HOMEBOT_DIRECT_OLLAMA, useDirectOllama });
+        try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.HOMEBOT_DIRECT_OLLAMA}`); } catch (e) { safeCatch(e); }
       }
 
       try {
           // Use the correct /stream path for the main orchestrator
-          const CHAT_STREAM_PATH = '/webhook/sadie/chat/stream';
+          const CHAT_STREAM_PATH = '/webhook/homebot/chat/stream';
           const N8N_STREAM_URL = process.env.N8N_STREAM_URL || `${n8nUrl}${CHAT_STREAM_PATH}`;
           const streamUrl = N8N_STREAM_URL;
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Router] Final streamUrl built =', streamUrl, ' (N8N_STREAM_URL override present=', Boolean(process.env.N8N_STREAM_URL), ')');
             try { pushRouter(`Final streamUrl built = ${streamUrl}`); } catch (e) { safeCatch(e); }
-            if (streamUrl === 'http://localhost:5678/webhook/sadie/chat/stream') {
+            if (streamUrl === 'http://localhost:5678/webhook/homebot/chat/stream') {
               console.log('[Router] Verified streamUrl equals expected default');
               try { pushRouter('Verified streamUrl equals expected default'); } catch (e) { safeCatch(e); }
             }
@@ -3288,24 +3288,24 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (probe && probe.status >= 400) {
                 try { console.log('[E2E-TRACE] stream POST target probe returned error', { streamId, status: probe.status }); } catch (e) { safeCatch(e); }
                 { const hint = classifyError('Upstream error (n8n unavailable)', `probe:${probe.status}`);
-                try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId, diagnostic: { url: streamUrl, httpStatus: probe.status, n8nResponded: true }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+                try { event.sender.send('homebot:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: `probe:${probe.status}`, streamId, diagnostic: { url: streamUrl, httpStatus: probe.status, n8nResponded: true }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
                 try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_error', httpStatus: probe.status, url: streamUrl }); } catch (e) { safeCatch(e); }
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 try { activeStreams.delete(streamId); } catch (e) { safeCatch(e); }
                 return;
               }
             } catch (e: any) {
               try { console.log('[E2E-TRACE] stream POST target probe failed', { streamId, error: e?.message || e }); } catch (e) { safeCatch(e); }
               { const hint = classifyError('Upstream error (n8n unavailable)', e?.message || String(e));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId, diagnostic: { url: streamUrl, errorText: e?.message || String(e), n8nResponded: false }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+              try { event.sender.send('homebot:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: e?.message || String(e), streamId, diagnostic: { url: streamUrl, errorText: e?.message || String(e), n8nResponded: false }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
               try { logTelemetryEvent('stream_failure', { streamId, reason: 'n8n_probe_failed', error: e?.message || String(e), url: streamUrl }); } catch (e) { safeCatch(e); }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               try { activeStreams.delete(streamId); } catch (e) { safeCatch(e); }
               return;
             }
           }
           // notify renderer that stream is starting
-                    event.sender.send('sadie:stream-start', { streamId });
+                    event.sender.send('homebot:stream-start', { streamId });
 
         // ── SLASH COMMANDS — instant local actions, no LLM round-trip ──
         const trimmedMsg = request.message.trim();
@@ -3313,17 +3313,17 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           const activeModel = (getSettings()).chatModel || OLLAMA_CHAT_MODEL;
           const slashHandled = handleSlashCommand(trimmedMsg, convId, activeModel);
           if (slashHandled) {
-            safeSend(event.sender, 'sadie:stream-chunk', { chunk: slashHandled, streamId });
-            safeSend(event.sender, 'sadie:stream-end', { streamId });
+            safeSend(event.sender, 'homebot:stream-chunk', { chunk: slashHandled, streamId });
+            safeSend(event.sender, 'homebot:stream-end', { streamId });
             activeStreams.delete(streamId);
             return;
           }
         }
 
         // E2E MOCK MODE: Replace all real streaming with deterministic chunks
-        // Allow opt-out of the deterministic mock via `SADIE_E2E_BYPASS_MOCK=1` when we want
+        // Allow opt-out of the deterministic mock via `HOMEBOT_E2E_BYPASS_MOCK=1` when we want
         // to exercise the real streaming/fallback paths in tests.
-        if (E2E && process.env.SADIE_E2E_BYPASS_MOCK !== '1') {
+        if (E2E && process.env.HOMEBOT_E2E_BYPASS_MOCK !== '1') {
           if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Starting deterministic streaming mock for streamId:', streamId);
           try { pushRouter(`E2E-MOCK starting streamId=${streamId}`); } catch (e) { safeCatch(e); }
           
@@ -3333,24 +3333,24 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           // Track assistant response for history
           let assistantResponse = '';
           
-          // Emit deterministic chunks with configurable delay (SADIE_E2E_MOCK_INTERVAL)
+          // Emit deterministic chunks with configurable delay (HOMEBOT_E2E_MOCK_INTERVAL)
           const chunks = ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4', 'chunk-5'];
           let chunkIndex = 0;
-          const chunkInterval = Number(process.env.SADIE_E2E_MOCK_INTERVAL) || 200;
+          const chunkInterval = Number(process.env.HOMEBOT_E2E_MOCK_INTERVAL) || 200;
           
           const emitNextChunk = () => {
             // Check if stream was cancelled
             if (!activeStreams.has(streamId)) {
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled during emission, streamId:', streamId);
               try { pushRouter(`E2E-MOCK stream cancelled streamId=${streamId}`); } catch (e) { safeCatch(e); }
-              try { event.sender.send('sadie:stream-end', { streamId, cancelled: true }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId, cancelled: true }); } catch (e) { safeCatch(e); }
               return;
             }
             
             if (chunkIndex < chunks.length) {
               const chunk = chunks[chunkIndex];
               assistantResponse += chunk;
-              try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Emitted chunk:', chunk, 'for streamId:', streamId);
               try { pushRouter(`E2E-MOCK emitted chunk ${chunk} for streamId=${streamId}`); } catch (e) { safeCatch(e); }
               chunkIndex++;
@@ -3362,7 +3362,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (assistantResponse.trim()) {
                 addToHistory(convId, 'assistant', assistantResponse);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream completed for streamId:', streamId);
               try { pushRouter(`E2E-MOCK stream completed streamId=${streamId}`); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
@@ -3392,7 +3392,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // Parse any attached documents and build enhanced message
         let enhancedMessage = request.message;
         if (request.documents && request.documents.length > 0) {
-          console.log(`[SADIE] Parsing ${request.documents.length} document(s)...`);
+          console.log(`[HomeBot] Parsing ${request.documents.length} document(s)...`);
           const documentContents = await parseDocuments(request.documents);
           if (documentContents.length > 0) {
             const docContext = documentContents.join('\n\n');
@@ -3421,18 +3421,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           generateBriefing(requestConfirmation).then((briefing) => {
             if (briefing && activeStreams.has(streamId)) {
               addToHistory(convId, 'assistant', briefing);
-              safeSend(event.sender, 'sadie:stream-chunk', { chunk: briefing + '\n\n', streamId });
-              console.log('[SADIE] Morning briefing delivered');
+              safeSend(event.sender, 'homebot:stream-chunk', { chunk: briefing + '\n\n', streamId });
+              console.log('[HomeBot] Morning briefing delivered');
             }
           }).catch((e) => {
-            console.error('[SADIE] Morning briefing error:', (e as any)?.message);
+            console.error('[HomeBot] Morning briefing error:', (e as any)?.message);
           });
         }
 
-        console.log('[SADIE] Stream request:', {
+        console.log('[HomeBot] Stream request:', {
           streamId,
           useDirectOllama,
-          env: process.env.SADIE_DIRECT_OLLAMA,
+          env: process.env.HOMEBOT_DIRECT_OLLAMA,
           streamUrl,
           conversationId: convId,
           historyLength: getHistory(convId).length,
@@ -3451,14 +3451,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           const intentInput = enhancedMessage;
           const intentResult = await preProcessIntent(intentInput, convId);
           if (intentResult && convId) setLastIntent(convId, intentResult, intentInput);
-          console.log('[SADIE] preProcessIntent called with:', intentInput.substring(0, 60));
-          console.log('[SADIE] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
+          console.log('[HomeBot] preProcessIntent called with:', intentInput.substring(0, 60));
+          console.log('[HomeBot] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
 
           if (intentResult && intentResult.calls && intentResult.calls.length > 0) {
             if (!autoExecuteToolsEnabled()) {
-              console.log('[SADIE] Intent detected but automatic tool execution is disabled; proceeding with LLM path');
+              console.log('[HomeBot] Intent detected but automatic tool execution is disabled; proceeding with LLM path');
             } else {
-              console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
+              console.log('[HomeBot] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
               
               // Ensure stream is tracked
               if (!activeStreams.has(streamId)) {
@@ -3481,7 +3481,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const firstToolName = intentResult.calls[0]?.name;
               const activityLabel = toolActivityLabels[firstToolName];
               if (activityLabel && !firstToolName.startsWith('__')) {
-                safeSend(event.sender, 'sadie:stream-chunk', { chunk: `*${activityLabel}...*\n\n`, streamId });
+                safeSend(event.sender, 'homebot:stream-chunk', { chunk: `*${activityLabel}...*\n\n`, streamId });
               }
 
               let toolResults: any[] | null = null;
@@ -3491,8 +3491,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const { songs } = intentResult.calls[0].arguments;
               const response = buildMusicLinksResponse(songs);
               addToHistory(convId, 'assistant', response);
-              safeSend(event.sender, 'sadie:stream-chunk', { chunk: response, streamId });
-              safeSend(event.sender, 'sadie:stream-end', { streamId });
+              safeSend(event.sender, 'homebot:stream-chunk', { chunk: response, streamId });
+              safeSend(event.sender, 'homebot:stream-end', { streamId });
               activeStreams.delete(streamId);
               return;
             }
@@ -3502,7 +3502,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
             if (isCompound) {
               const { location } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound intent (enriched): get weather for', location, 'then write file');
+              console.log('[HomeBot] Compound intent (enriched): get weather for', location, 'then write file');
 
               // Step 1: Get structured weather from API
               const weatherResults = await executeToolBatch(
@@ -3537,10 +3537,10 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               try {
                 require('fs').writeFileSync(desktopPath, fileContent, 'utf-8');
                 writeSuccess = true;
-                console.log('[SADIE] Compound: file written to', desktopPath);
+                console.log('[HomeBot] Compound: file written to', desktopPath);
               } catch (writeErr: any) {
                 writeError = writeErr.message || String(writeErr);
-                console.error('[SADIE] Compound: file write FAILED:', writeError);
+                console.error('[HomeBot] Compound: file write FAILED:', writeError);
               }
 
               if (writeSuccess) {
@@ -3554,7 +3554,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             else if (intentResult.calls[0]?.name === '__compound_nba_file') {
               const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
               const isSeason = dateRange === 'season';
-              console.log('[SADIE] Compound NBA+file intent (enriched):', { teamQuery, dateRange, perPage, isSeason });
+              console.log('[HomeBot] Compound NBA+file intent (enriched):', { teamQuery, dateRange, perPage, isSeason });
 
               const nbaResults = await executeToolBatch(
                 [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
@@ -3582,9 +3582,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               try {
                 require('fs').writeFileSync(nbaDesktopPath, nbaContent, 'utf-8');
                 nbaWriteOk = true;
-                console.log('[SADIE] Compound NBA: file written to', nbaDesktopPath);
+                console.log('[HomeBot] Compound NBA: file written to', nbaDesktopPath);
               } catch (e: any) {
-                console.error('[SADIE] Compound NBA: file write FAILED:', e.message);
+                console.error('[HomeBot] Compound NBA: file write FAILED:', e.message);
               }
 
               const gameCount = events?.length || 0;
@@ -3598,7 +3598,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // COMPOUND INTENT: web_search → write_file chain
             else if (intentResult.calls[0]?.name === '__compound_search_file') {
               const { topic, filename } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound search+file intent (enriched):', topic, filename ? `filename=${filename}` : '');
+              console.log('[HomeBot] Compound search+file intent (enriched):', topic, filename ? `filename=${filename}` : '');
 
               // Use enrichment for comprehensive results
               const enriched = await enrichGenericQuery(topic, null, {
@@ -3627,7 +3627,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   );
                 });
               } catch (e: any) {
-                console.error('[SADIE] Compound search: synthesis failed, using raw enrichment:', e.message);
+                console.error('[HomeBot] Compound search: synthesis failed, using raw enrichment:', e.message);
               }
               const fileBody = synthesizedContent.trim() || enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '');
               const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
@@ -3642,9 +3642,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               try {
                 require('fs').writeFileSync(searchFilePath, searchContent, 'utf-8');
                 searchWriteOk = true;
-                console.log('[SADIE] Compound search: file written to', searchFilePath);
+                console.log('[HomeBot] Compound search: file written to', searchFilePath);
               } catch (e: any) {
-                console.error('[SADIE] Compound search: file write FAILED:', e.message);
+                console.error('[HomeBot] Compound search: file write FAILED:', e.message);
               }
 
               if (searchWriteOk) {
@@ -3657,7 +3657,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // STANDALONE SURF INTENT: enriched surf conditions
             else if (intentResult.calls[0]?.name === '__surf_conditions') {
               const { location } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Surf conditions intent (enriched):', location);
+              console.log('[HomeBot] Surf conditions intent (enriched):', location);
 
               // Fetch web search results for surf data
               const surfSearchResult = await executeToolBatch(
@@ -3677,9 +3677,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
                 const handler = await synthesisStream(
                   augmentedMessage, convId,
-                  (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); } },
-                  () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
-                  (err) => { console.error('[SADIE] Surf synthesis failed, falling back:', err?.message || err); const fb = searchContext || 'Could not load surf data.'; try { event.sender.send('sadie:stream-chunk', { chunk: fb, streamId }); } catch (e) { safeCatch(e); } addToHistory(convId, 'assistant', fb); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
+                  (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); } },
+                  () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
+                  (err) => { console.error('[HomeBot] Surf synthesis failed, falling back:', err?.message || err); const fb = searchContext || 'Could not load surf data.'; try { event.sender.send('homebot:stream-chunk', { chunk: fb, streamId }); } catch (e) { safeCatch(e); } addToHistory(convId, 'assistant', fb); try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
                   undefined, requestConfirmation,
                   (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 );
@@ -3693,7 +3693,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // COMPOUND SURF + FILE INTENT
             else if (intentResult.calls[0]?.name === '__compound_surf_file') {
               const { location } = intentResult.calls[0].arguments;
-              console.log('[SADIE] Compound surf+file intent (enriched):', location);
+              console.log('[HomeBot] Compound surf+file intent (enriched):', location);
 
               // Fetch surf data via web search
               const surfResults = await executeToolBatch(
@@ -3718,9 +3718,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               try {
                 require('fs').writeFileSync(surfFilePath, surfContent, 'utf-8');
                 surfWriteOk = true;
-                console.log('[SADIE] Compound surf: file written to', surfFilePath);
+                console.log('[HomeBot] Compound surf: file written to', surfFilePath);
               } catch (e: any) {
-                console.error('[SADIE] Compound surf: file write FAILED:', e.message);
+                console.error('[HomeBot] Compound surf: file write FAILED:', e.message);
               }
 
               const fileLink = formatFileLink(surfFilePath, surfFileName);
@@ -3730,7 +3730,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               // For image generation, send a progress indicator immediately so the UI
               // doesn't appear frozen while waiting for Stable Horde (~60-120 s)
               if (intentResult.calls[0]?.name === 'image_generate') {
-                try { event.sender.send('sadie:stream-chunk', { chunk: '⏳ Generating image, please wait…', streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: '⏳ Generating image, please wait…', streamId }); } catch (e) { safeCatch(e); }
               }
               toolResults = await executeToolBatch(intentResult.calls as ToolCall[], {
                 executionId: `intent-${Date.now()}`,
@@ -3763,8 +3763,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   : '';
                 const noResultMsg = `I searched the web but couldn't retrieve enough content to give you a reliable answer.${linkList}\n\nTry rephrasing your question, or I can open one of these links in your browser.`;
                 addToHistory(convId, 'assistant', noResultMsg);
-                try { event.sender.send('sadie:stream-chunk', { chunk: noResultMsg, streamId }); } catch (e) { safeCatch(e); }
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: noResultMsg, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
                 return;
               }
@@ -3776,25 +3776,25 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 (chunk) => {
                   if (synthDone || !activeStreams.has(streamId)) return;
                   assistantResponse += chunk;
-                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                 },
                 () => {
                   if (synthDone) return; synthDone = true;
                   if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                 },
                 (err) => {
                   if (synthDone) return; synthDone = true;
                   // Fallback: show raw search results + any partial response already streamed
-                  console.error('[SADIE] LLM synthesis failed, falling back to raw results:', err?.message || err);
+                  console.error('[HomeBot] LLM synthesis failed, falling back to raw results:', err?.message || err);
                   const fallback = searchContext || 'Sorry, I couldn\'t process the search results.';
                   const finalResponse = assistantResponse.trim() ? assistantResponse : fallback;
                   if (!assistantResponse.trim()) {
-                    try { event.sender.send('sadie:stream-chunk', { chunk: fallback, streamId }); } catch (e) { safeCatch(e); }
+                    try { event.sender.send('homebot:stream-chunk', { chunk: fallback, streamId }); } catch (e) { safeCatch(e); }
                   }
                   addToHistory(convId, 'assistant', finalResponse);
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                 },
                 undefined, requestConfirmation,
@@ -3808,9 +3808,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // ── CANNED RESPONSES — instant reply, no LLM needed ──
             if (intentResult.calls[0]?.name === '__canned') {
               const response = intentResult.calls[0].arguments.response;
-              try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
               addToHistory(convId, 'assistant', response);
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               return;
             }
@@ -3819,7 +3819,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // ── HELP / CAPABILITY CARD ──
             if (intentResult.calls[0]?.name === '__help') {
               const helpCard = [
-                '# ✨ What can SADIE do?',
+                '# ✨ What can HomeBot do?',
                 '',
                 '## 🌐 Web & Search',
                 '- **Search the web** — _"search for…"_ / _"look up…"_',
@@ -3860,9 +3860,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 '- Use `🎤` in the input box for voice input',
                 '- Shift+Enter for a new line in the input box',
               ].join('\n');
-              try { event.sender.send('sadie:stream-chunk', { chunk: helpCard, streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-chunk', { chunk: helpCard, streamId }); } catch (e) { safeCatch(e); }
               addToHistory(convId, 'assistant', helpCard);
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               return;
             }
@@ -3888,23 +3888,23 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const imgId = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                   const imgPath = path.join(imgDir, `${imgId}.png`);
                   fs.writeFileSync(imgPath, Buffer.from(b64, 'base64'));
-                  imgChunk = `__SADIE_IMAGE_FILE__:${imgId}.png`;
+                  imgChunk = `__HOMEBOT_IMAGE_FILE__:${imgId}.png`;
                 } catch (saveErr) {
                   safeCatch(saveErr);
-                  imgChunk = `__SADIE_IMAGE__:${b64}`;
+                  imgChunk = `__HOMEBOT_IMAGE__:${b64}`;
                 }
-                try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) { safeCatch(e); }
-                try { event.sender.send('sadie:stream-chunk', { chunk: imgChunk, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: caption, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: imgChunk, streamId }); } catch (e) { safeCatch(e); }
                 addToHistory(convId, 'assistant', caption + imgChunk);
               } else {
                 // Tool failed — give a clear error instead of falling through to LLM
                 const failedResult = (toolResults || []).find((r: any) => r?.error || r?.reason || r?.success === false);
                 const errDetail = failedResult?.error || failedResult?.reason || 'Image generation failed — check your internet connection (Pollinations.ai is used as a free backend)';
                 const errMsg = `❌ Image generation failed.\n\nError: \`${errDetail}\``;
-                try { event.sender.send('sadie:stream-chunk', { chunk: errMsg, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: errMsg, streamId }); } catch (e) { safeCatch(e); }
                 addToHistory(convId, 'assistant', errMsg);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               return;
             }
@@ -3955,7 +3955,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   responseText += enriched.summary + '\n';
                 } catch (enrichErr: any) {
                   // Fallback to basic formatting if enrichment fails
-                  console.error('[SADIE] NBA enrichment failed, using basic format:', enrichErr?.message);
+                  console.error('[HomeBot] NBA enrichment failed, using basic format:', enrichErr?.message);
                   const queryLabel = result.result.query ? `NBA Games — ${result.result.query}` : undefined;
                   const nbaEvents = Array.isArray(result.result.events) ? result.result.events : [];
                   responseText += formatNbaEventsStrict(nbaEvents, queryLabel, 10) + '\n';
@@ -4030,9 +4030,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     const augmentedMessage = buildSynthesisPrompt(searchContext, originalQuery);
                     const handler = await synthesisStream(
                       augmentedMessage, convId,
-                      (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); } },
-                      () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
-                      (err) => { console.error('[SADIE] News synthesis failed, falling back:', err?.message || err); const fb = searchContext || 'Could not summarize news results.'; try { event.sender.send('sadie:stream-chunk', { chunk: fb, streamId }); } catch (e) { safeCatch(e); } addToHistory(convId, 'assistant', fb); try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
+                      (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); } },
+                      () => { if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse); try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
+                      (err) => { console.error('[HomeBot] News synthesis failed, falling back:', err?.message || err); const fb = searchContext || 'Could not summarize news results.'; try { event.sender.send('homebot:stream-chunk', { chunk: fb, streamId }); } catch (e) { safeCatch(e); } addToHistory(convId, 'assistant', fb); try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
                       undefined, requestConfirmation,
                       (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                     );
@@ -4284,7 +4284,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (synthesizeType) {
                 const synthPrompt = buildToolSynthesisPrompt(responseText, enhancedMessage, synthesizeType);
                 // Send the raw data first so the user sees something immediately
-                try { event.sender.send('sadie:stream-chunk', { chunk: responseText + '\n\n', streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: responseText + '\n\n', streamId }); } catch (e) { safeCatch(e); }
 
                 let synthDone = false;
                 let synthResponse = '';
@@ -4293,21 +4293,21 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   (chunk) => {
                     if (synthDone || !activeStreams.has(streamId)) return;
                     synthResponse += chunk;
-                    try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
+                    try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                   },
                   () => {
                     if (synthDone) return; synthDone = true;
                     const fullResponse = responseText + '\n\n' + synthResponse;
                     addToHistory(convId, 'assistant', fullResponse.trim());
-                    try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                    try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                     activeStreams.delete(streamId);
                   },
                   (err) => {
                     if (synthDone) return; synthDone = true;
-                    console.error('[SADIE] Tool synthesis failed, using raw data:', err?.message || err);
+                    console.error('[HomeBot] Tool synthesis failed, using raw data:', err?.message || err);
                     // Raw data already sent — just close the stream
                     addToHistory(convId, 'assistant', responseText);
-                    try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                    try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                     activeStreams.delete(streamId);
                   },
                   undefined, requestConfirmation,
@@ -4318,8 +4318,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
 
               addToHistory(convId, 'assistant', responseText);
-              try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               return;
             }
@@ -4333,7 +4333,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // inject an agentic system prompt so the LLM chains tools autonomously.
         const isAgenticRequest = looksMultiStep(enhancedMessage);
         if (isAgenticRequest) {
-          console.log('[SADIE] Agentic mode activated — multi-step request detected');
+          console.log('[HomeBot] Agentic mode activated — multi-step request detected');
           try { pushRouter('Agentic mode: multi-step request detected'); } catch (e) { safeCatch(e); }
         }
 
@@ -4355,11 +4355,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 ttfbLogged = true;
                 const ttfb = Date.now() - streamStartMs;
                 console.log(`[PERF] TTFB streamId=${streamId} ${ttfb}ms`);
-                try { event.sender.send('sadie:stream-ttfb', { streamId, ttfbMs: ttfb }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-ttfb', { streamId, ttfbMs: ttfb }); } catch (e) { safeCatch(e); }
               }
               assistantResponse += chunk;
               try { pushRouter(`OLLAMA emitted chunk streamId=${streamId} len=${String(chunk?.length ?? 0)}`); } catch (e) { safeCatch(e); }
-              event.sender.send('sadie:stream-chunk', { chunk, streamId });
+              event.sender.send('homebot:stream-chunk', { chunk, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (ollama)', { streamId, chunkLen: chunk?.length ?? 0, snippet: String(chunk).substring(0, 120) });
                           }
@@ -4369,7 +4369,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (assistantResponse.trim()) {
                 addToHistory(convId, 'assistant', assistantResponse);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-end (ollama)', { streamId });
                           }
@@ -4377,7 +4377,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             },
             (err) => {
               const hint = classifyError('Ollama error', err?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-error (ollama)', { streamId, error: err?.message || err });
                           }
@@ -4396,15 +4396,15 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         }
 
         // POST the request and expect a streaming (chunked) response
-        const useProxy = !!(process.env.SADIE_PROXY_URL || process.env.SADIE_USE_PROXY === 'true');
+        const useProxy = !!(process.env.HOMEBOT_PROXY_URL || process.env.HOMEBOT_USE_PROXY === 'true');
         if (useProxy) {
           const proxyOpts = {
-            proxyUrl: process.env.SADIE_PROXY_URL,
+            proxyUrl: process.env.HOMEBOT_PROXY_URL,
             apiKey: process.env.PROXY_API_KEYS || process.env.PROXY_API_KEY
           };
 
           let proxyAssistantResponse = '';
-          const handler = streamFromSadieProxy(request, (chunk) => {
+          const handler = streamFromHomeBotProxy(request, (chunk) => {
             try {
               // Only forward chunks while the stream is still active
               if (!activeStreams.has(streamId)) return;
@@ -4412,18 +4412,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               proxyAssistantResponse += text;
               // forward raw chunk to renderer
               try { pushRouter(`PROXY emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) { safeCatch(e); }
-              event.sender.send('sadie:stream-chunk', { chunk: text, streamId });
+              event.sender.send('homebot:stream-chunk', { chunk: text, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
                           }
             } catch (err) {
-              console.warn('[SADIE] proxy stream chunk forward failed', err);
+              console.warn('[HomeBot] proxy stream chunk forward failed', err);
             }
           }, () => {
             if (proxyAssistantResponse.trim()) {
               addToHistory(convId, 'assistant', proxyAssistantResponse);
             }
-            try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+            try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                         if (E2E) {
                           console.log('[E2E-TRACE] stream-end (proxy)', { streamId });
                         }
@@ -4432,15 +4432,15 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // Attempt a non-streaming fallback via n8n webhook before emitting an error
             (async () => {
               try {
-                const fallbackUrl = `${n8nUrl}${SADIE_WEBHOOK_PATH}`;
+                const fallbackUrl = `${n8nUrl}${HOMEBOT_WEBHOOK_PATH}`;
                 if (process.env.NODE_ENV !== 'production') console.log('[Router] Attempting non-stream fallback to', fallbackUrl, 'for streamId', streamId);
-                const fallbackRes = await axios.post(fallbackUrl, request, { timeout: DEFAULT_TIMEOUT, headers: sadieWebhookHeaders() });
+                const fallbackRes = await axios.post(fallbackUrl, request, { timeout: DEFAULT_TIMEOUT, headers: homebotWebhookHeaders() });
                 const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
                 const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                 if (finalText) {
                   addToHistory(convId, 'assistant', finalText);
-                  try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   if (process.env.NODE_ENV !== 'production') console.log('[Router] Non-stream fallback succeeded for streamId', streamId);
                   activeStreams.delete(streamId);
                   return;
@@ -4450,7 +4450,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
 
               { const hint = classifyError('Streaming error', (err as any)?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming error', details: (err as any)?.message || String(err), streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+              try { event.sender.send('homebot:stream-error', { error: true, message: 'Streaming error', details: (err as any)?.message || String(err), streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-error (proxy)', { streamId, error: err });
                           }
@@ -4469,12 +4469,12 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           // If a tool_call is present, run a safety check first via n8n safety webhook (if available)
           if (reqAny.tool_call) {
             try {
-              const safetyUrl = `${n8nUrl}/webhook/sadie/validate`;
+              const safetyUrl = `${n8nUrl}/webhook/homebot/validate`;
               if (process.env.NODE_ENV !== 'production') logDebug('[Router] Running safety check', { safetyUrl });
-              const safetyRes = await axios.post(safetyUrl, { tool_call: reqAny.tool_call }, { timeout: DEFAULT_TIMEOUT, headers: sadieWebhookHeaders() });
+              const safetyRes = await axios.post(safetyUrl, { tool_call: reqAny.tool_call }, { timeout: DEFAULT_TIMEOUT, headers: homebotWebhookHeaders() });
               if (safetyRes?.data?.status === 'blocked') {
                 // Safety blocked - return an error to the renderer and stop
-                try { event.sender.send('sadie:stream-error', { error: true, message: 'Safety blocked', details: safetyRes.data, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-error', { error: true, message: 'Safety blocked', details: safetyRes.data, streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
                 return;
               }
@@ -4482,7 +4482,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 // Ask user for confirmation via renderer
                 const confirmed = await requestConfirmation(safetyRes.data.message || 'Confirm action');
                 if (!confirmed) {
-                  try { event.sender.send('sadie:stream-error', { error: true, message: 'User declined confirmation', details: safetyRes.data, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-error', { error: true, message: 'User declined confirmation', details: safetyRes.data, streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                   return;
                 }
@@ -4497,16 +4497,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // SMART ROUTING: Use intent detection first to handle known patterns reliably
             const intentResult = await preProcessIntent(enhancedMessage, convId);
             if (intentResult && convId) setLastIntent(convId, intentResult, enhancedMessage);
-            console.log('[SADIE] Intent result:', intentResult);
+            console.log('[HomeBot] Intent result:', intentResult);
             let shouldUseDirectTools = false;
             let toolResults: any[] | null = null;
             
             if (intentResult && intentResult.calls && intentResult.calls.length > 0 && !autoExecuteToolsEnabled()) {
-              console.log('[SADIE] Intent detected but automatic tool execution is disabled; proceeding with LLM/webhook path');
+              console.log('[HomeBot] Intent detected but automatic tool execution is disabled; proceeding with LLM/webhook path');
             }
 
             if (intentResult && intentResult.calls && intentResult.calls.length > 0 && autoExecuteToolsEnabled()) {
-              console.log('[SADIE] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
+              console.log('[HomeBot] Intent detected, executing tools directly:', intentResult.calls.map((c: any) => c.name));
               
               // Execute tools directly without involving the LLM
               try {
@@ -4514,8 +4514,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 if (intentResult.calls[0]?.name === '__canned') {
                   const response = intentResult.calls[0].arguments.response;
                   addToHistory(convId, 'assistant', response);
-                  try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                   return;
                 }
@@ -4526,8 +4526,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const { songs } = intentResult.calls[0].arguments;
                   const response = buildMusicLinksResponse(songs);
                   addToHistory(convId, 'assistant', response);
-                  try { event.sender.send('sadie:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
-                  try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-chunk', { chunk: response, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
                   return;
                 }
@@ -4537,7 +4537,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 const isCompound = intentResult.calls[0]?.name === '__compound_weather_file';
                 if (isCompound) {
                   const { location, query } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound intent (n8n path, enriched): get weather for', location, 'then write file');
+                  console.log('[HomeBot] Compound intent (n8n path, enriched): get weather for', location, 'then write file');
                   
                   // Step 1: Get weather
                   const weatherResults = await executeToolBatch(
@@ -4569,10 +4569,10 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   try {
                     require('fs').writeFileSync(desktopPath, fileContent, 'utf-8');
                     writeSuccess = true;
-                    console.log('[SADIE] Compound: file written successfully to', desktopPath);
+                    console.log('[HomeBot] Compound: file written successfully to', desktopPath);
                   } catch (writeErr: any) {
                     writeError = writeErr.message || String(writeErr);
-                    console.error('[SADIE] Compound: file write FAILED:', writeError);
+                    console.error('[HomeBot] Compound: file write FAILED:', writeError);
                   }
                   
                   // Build combined result
@@ -4591,7 +4591,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 else if (intentResult.calls[0]?.name === '__compound_nba_file') {
                   const { teamQuery, dateRange, perPage } = intentResult.calls[0].arguments;
                   const isSeason = dateRange === 'season';
-                  console.log('[SADIE] Compound NBA+file intent (n8n path, enriched):', { teamQuery, dateRange, perPage, isSeason });
+                  console.log('[HomeBot] Compound NBA+file intent (n8n path, enriched):', { teamQuery, dateRange, perPage, isSeason });
 
                   const nbaResults = await executeToolBatch(
                     [{ name: 'nba_query', arguments: { type: 'games', date: dateRange, perPage: perPage || 50, query: teamQuery } }] as ToolCall[],
@@ -4618,7 +4618,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     require('fs').writeFileSync(nbaDesktopPath, nbaContent, 'utf-8');
                     nbaWriteOk = true;
                   } catch (e: any) {
-                    console.error('[SADIE] Compound NBA file write FAILED:', e.message);
+                    console.error('[HomeBot] Compound NBA file write FAILED:', e.message);
                   }
 
                   const gameCount = events?.length || 0;
@@ -4632,7 +4632,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 // COMPOUND INTENT: web_search → write_file chain (enriched, n8n path)
                 else if (intentResult.calls[0]?.name === '__compound_search_file') {
                   const { topic, filename } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound search+file intent (n8n path, enriched):', topic, filename ? `filename=${filename}` : '');
+                  console.log('[HomeBot] Compound search+file intent (n8n path, enriched):', topic, filename ? `filename=${filename}` : '');
 
                   // Use enrichment for comprehensive results
                   const enriched = await enrichGenericQuery(topic, null, {
@@ -4661,7 +4661,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       );
                     });
                   } catch (e: any) {
-                    console.error('[SADIE] Compound search (n8n): synthesis failed, using raw enrichment:', e.message);
+                    console.error('[HomeBot] Compound search (n8n): synthesis failed, using raw enrichment:', e.message);
                   }
                   const fileBody = synthesizedContent.trim() || enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '');
                   const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
@@ -4676,7 +4676,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     require('fs').writeFileSync(searchFilePath, searchContent, 'utf-8');
                     searchWriteOk = true;
                   } catch (e: any) {
-                    console.error('[SADIE] Compound search file write FAILED:', e.message);
+                    console.error('[HomeBot] Compound search file write FAILED:', e.message);
                   }
 
                   if (searchWriteOk) {
@@ -4689,7 +4689,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 // STANDALONE SURF INTENT (n8n path, enriched): web_search for surf conditions
                 else if (intentResult.calls[0]?.name === '__surf_conditions') {
                   const { location } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Surf conditions intent (n8n path, enriched):', location);
+                  console.log('[HomeBot] Surf conditions intent (n8n path, enriched):', location);
 
                   // Use enrichment for comprehensive surf data
                   const enriched = await enrichWeather(null, location, {
@@ -4703,7 +4703,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 // COMPOUND SURF + FILE INTENT (n8n path, enriched)
                 else if (intentResult.calls[0]?.name === '__compound_surf_file') {
                   const { location } = intentResult.calls[0].arguments;
-                  console.log('[SADIE] Compound surf+file intent (n8n path, enriched):', location);
+                  console.log('[HomeBot] Compound surf+file intent (n8n path, enriched):', location);
 
                   // Use enrichment for comprehensive surf data
                   const enriched = await enrichWeather(null, location, {
@@ -4722,7 +4722,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     require('fs').writeFileSync(surfFilePath, surfContent, 'utf-8');
                     surfWriteOk = true;
                   } catch (e: any) {
-                    console.error('[SADIE] Compound surf file write FAILED:', e.message);
+                    console.error('[HomeBot] Compound surf file write FAILED:', e.message);
                   }
 
                   const fileLink = formatFileLink(surfFilePath, surfFileName);
@@ -4737,7 +4737,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   } as ToolContext);
                 }
                 
-                console.log('[SADIE] Intent tool results:', toolResults);
+                console.log('[HomeBot] Intent tool results:', toolResults);
                 
                 // Check if results are empty/useless (0 items returned) OR failed
                 const hasUsefulResults = toolResults.some((r: any) => {
@@ -4755,7 +4755,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 });
                 
                 if (!hasUsefulResults) {
-                  console.log('[SADIE] Tool results empty or failed, falling back to web search');
+                  console.log('[HomeBot] Tool results empty or failed, falling back to web search');
                   // Fall back to web search - add context based on original intent
                   let searchQuery = enhancedMessage;
                   // If original call was NBA-related, add context to avoid wrong results
@@ -4778,15 +4778,15 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                   } as ToolContext);
                   
-                  console.log('[SADIE] Web search results:', toolResults);
+                  console.log('[HomeBot] Web search results:', toolResults);
                 }
                 
                 shouldUseDirectTools = true;
               } catch (toolErr: any) {
-                console.error('[SADIE] Intent tool execution failed:', toolErr);
+                console.error('[HomeBot] Intent tool execution failed:', toolErr);
                 // Try web search as ultimate fallback - add context based on original intent
                 try {
-                  console.log('[SADIE] Trying web search as fallback after error');
+                  console.log('[HomeBot] Trying web search as fallback after error');
                   let fallbackQuery = enhancedMessage;
                   const wasNbaQuery = intentResult.calls.some((c: any) => c.name === 'nba_query');
                   if (wasNbaQuery && !/\b(nba|basketball|golden state)\b/i.test(fallbackQuery)) {
@@ -4807,7 +4807,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   } as ToolContext);
                   shouldUseDirectTools = true;
                 } catch (webErr) {
-                  console.error('[SADIE] Web search fallback also failed:', webErr);
+                  console.error('[HomeBot] Web search fallback also failed:', webErr);
                   // Continue to LLM fallback
                 }
               }
@@ -4866,19 +4866,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                         (chunk) => {
                           if (!activeStreams.has(streamId)) return;
                           synthResponse += chunk;
-                          try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
+                          try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                         },
                         () => {
                           if (synthResponse.trim()) addToHistory(convId, 'assistant', synthResponse);
-                          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                          try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                           activeStreams.delete(streamId);
                         },
                         (err) => {
-                          console.error('[SADIE] Search synthesis failed, falling back to raw results:', err?.message || err);
+                          console.error('[HomeBot] Search synthesis failed, falling back to raw results:', err?.message || err);
                           const fallback = searchContext || 'Sorry, I couldn\'t process the search results.';
-                          try { event.sender.send('sadie:stream-chunk', { chunk: fallback, streamId }); } catch (e) { safeCatch(e); }
+                          try { event.sender.send('homebot:stream-chunk', { chunk: fallback, streamId }); } catch (e) { safeCatch(e); }
                           addToHistory(convId, 'assistant', fallback);
-                          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                          try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                           activeStreams.delete(streamId);
                         },
                         undefined, requestConfirmation,
@@ -4936,8 +4936,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 addToHistory(convId, 'assistant', responseText);
                 
                 // Send as a single chunk to avoid silent failures
-                try { event.sender.send('sadie:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
                 return;
               }
@@ -4954,28 +4954,28 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   if (!activeStreams.has(streamId)) return;
                   llmAssistantResponse += chunk;
                   try { pushRouter(`LLM emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) { safeCatch(e); }
-                  try { event.sender.send('sadie:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
+                  try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                   if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
                 },
               (toolName, args) => {
                 // notify renderer of tool call that will be executed
-                try { event.sender.send('sadie:tool-call', { toolName, args, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:tool-call', { toolName, args, streamId }); } catch (e) { safeCatch(e); }
               },
               (result) => {
                 // send tool execution result back to renderer (optional)
-                try { event.sender.send('sadie:tool-result', { result, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:tool-result', { result, streamId }); } catch (e) { safeCatch(e); }
               },
               () => {
                 if (llmAssistantResponse.trim()) {
                   addToHistory(convId, 'assistant', llmAssistantResponse);
                 }
-                try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
               },
               (err) => {
                 // Try a non-streaming fallback when the streaming connection errors mid-flight
                 (async () => {
-                  console.log('[SADIE] direct stream onError: attempting non-stream fallback...');
+                  console.log('[HomeBot] direct stream onError: attempting non-stream fallback...');
                   try {
                     const fbHistory = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
                     const fbModel = (typeof reqAny.modelOverride === 'string' && reqAny.modelOverride.trim())
@@ -4985,7 +4985,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       model: fbModel,
                       messages: uncensoredModeEnabled
                         ? [ ...fbHistory, { role: 'user', content: reqAny.message } ]
-                        : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory, { role: 'user', content: reqAny.message } ],
+                        : [ { role: 'system', content: HOMEBOT_SYSTEM_PROMPT }, ...fbHistory, { role: 'user', content: reqAny.message } ],
                       stream: false,
                       options: fbSmall
                         ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
@@ -4995,16 +4995,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
                     const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                     if (finalText) {
-                      try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
+                      try { event.sender.send('homebot:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
                     }
-                    try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                    try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                     activeStreams.delete(streamId);
-                    console.log('[SADIE] direct stream fallback: succeeded');
+                    console.log('[HomeBot] direct stream fallback: succeeded');
                     return;
                   } catch (fallbackErr: any) {
-                    console.log('[SADIE] direct stream fallback: failed', fallbackErr?.message || fallbackErr);
+                    console.log('[HomeBot] direct stream fallback: failed', fallbackErr?.message || fallbackErr);
                     { const hint = classifyError('Ollama streaming error', err?.message || String(err));
-                    try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+                    try { event.sender.send('homebot:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
                     activeStreams.delete(streamId);
                   }
                 })();
@@ -5022,7 +5022,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // Attempt a non-streaming fallback to Ollama to retrieve a final message
             try {
               // Patch: prepend conversation system prompt if provided by renderer
-              let systemPrompt = SADIE_SYSTEM_PROMPT;
+              let systemPrompt = HOMEBOT_SYSTEM_PROMPT;
               if (reqAny.conversationPrompt && typeof reqAny.conversationPrompt === 'string') {
                 systemPrompt = reqAny.conversationPrompt;
               }
@@ -5043,16 +5043,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
               const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
               if (finalText) {
-                try { event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
               try { pushRouter(`direct stream fallback succeeded for streamId=${streamId}`); } catch (e) { safeCatch(e); }
               return;
             } catch (fallbackErr: any) {
               // If fallback also fails, emit stream-error and clean up
               { const hint = classifyError('Streaming initialization error', err?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId, diagnostic: { url: streamUrl, errorText: err?.message || String(err) }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+              try { event.sender.send('homebot:stream-error', { error: true, message: 'Streaming initialization error', details: err?.message || err, streamId, diagnostic: { url: streamUrl, errorText: err?.message || String(err) }, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
               try { logTelemetryEvent('stream_failure', { streamId, reason: 'stream_init_failed', error: err?.message || String(err), url: streamUrl }); } catch (e) { safeCatch(e); }
               try { pushRouter(`direct stream fallback failed for streamId=${streamId} error=${fallbackErr?.message || fallbackErr}`); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
@@ -5073,7 +5073,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 model: fbModel3,
                 messages: uncensoredModeEnabled
                   ? [ ...fbHistory3, { role: 'user', content: reqAny.message } ]
-                  : [ { role: 'system', content: SADIE_SYSTEM_PROMPT }, ...fbHistory3, { role: 'user', content: reqAny.message } ],
+                  : [ { role: 'system', content: HOMEBOT_SYSTEM_PROMPT }, ...fbHistory3, { role: 'user', content: reqAny.message } ],
                 stream: false,
                 options: fbSmall3
                   ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
@@ -5085,24 +5085,24 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
                 const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
                 if (finalText) {
-                  event.sender.send('sadie:stream-chunk', { chunk: finalText, streamId });
+                  event.sender.send('homebot:stream-chunk', { chunk: finalText, streamId });
                 }
               } catch (parseErr) {
-                console.warn('[SADIE] Failed to parse/send fallback Ollama response', parseErr);
+                console.warn('[HomeBot] Failed to parse/send fallback Ollama response', parseErr);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             } catch (fallbackErr: any) {
               // If fallback also fails, emit stream-error and clean up
               { const hint = classifyError('Streaming fallback failed', fallbackErr?.message || String(fallbackErr));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Streaming fallback failed', details: fallbackErr?.message || fallbackErr, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
+              try { event.sender.send('homebot:stream-error', { error: true, message: 'Streaming fallback failed', details: fallbackErr?.message || fallbackErr, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
               activeStreams.delete(streamId);
             }
-        console.log('[SADIE] n8n failed:', error?.message || error);
+        console.log('[HomeBot] n8n failed:', error?.message || error);
         try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) { safeCatch(e); }
           const fallbackCloudActive = (() => { const s = getSettings(); return !!(s.useCustomLLM && s.customLLM && (s.customLLM as any).apiKey && (s.customLLM as any).model); })();
           if (useDirectOllama || fallbackCloudActive) {
-          console.log('[SADIE] Falling back to', fallbackCloudActive ? 'cloud LLM...' : 'direct Ollama...');
+          console.log('[HomeBot] Falling back to', fallbackCloudActive ? 'cloud LLM...' : 'direct Ollama...');
           try {
           let fallbackResponse = '';
           const handler = await streamFromOllama(
@@ -5112,25 +5112,25 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             (chunk: string) => {
               if (!activeStreams.has(streamId)) return;
               fallbackResponse += chunk;
-              event.sender.send('sadie:stream-chunk', { chunk, streamId });
+              event.sender.send('homebot:stream-chunk', { chunk, streamId });
             },
             () => {
               if (fallbackResponse.trim()) {
                 addToHistory(convId, 'assistant', fallbackResponse);
               }
-              try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             },
             (err: any) => {
               const hint = classifyError('Ollama error', err?.message || String(err));
-              try { event.sender.send('sadie:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           } catch (ollamaError: any) {
             const hint = classifyError('Both n8n and Ollama unavailable', ollamaError?.message || String(ollamaError));
-            event.sender.send('sadie:stream-error', { error: true, message: 'Both n8n and Ollama unavailable', details: ollamaError?.message || ollamaError, streamId, recoveryHint: hint });
+            event.sender.send('homebot:stream-error', { error: true, message: 'Both n8n and Ollama unavailable', details: ollamaError?.message || ollamaError, streamId, recoveryHint: hint });
           }
         } else {
           // If we are not allowed to fallback to Ollama, propagate the error to frontend.
@@ -5141,8 +5141,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             console.log('[E2E-TRACE] sending deterministic stream-error Upstream error', { streamId, details: error?.message || error });
           } catch (e) { safeCatch(e); }
           try { const hint = classifyError('Upstream error (n8n unavailable)', error?.message || String(error));
-          event.sender.send('sadie:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
-          try { event.sender.send('sadie:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+          event.sender.send('homebot:stream-error', { error: true, message: 'Upstream error (n8n unavailable)', details: error?.message || error, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
+          try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
           try { activeStreams.delete(streamId); } catch (e) { safeCatch(e); }
           if (E2E) {
             console.log('[E2E-TRACE] n8n error, fallback disabled (deterministic emit sent)', { streamId, error: error?.message || error, fallbackEnabled: useDirectOllama });
@@ -5152,7 +5152,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     });
 
     // Cancel a running stream by id (or all if no id provided)
-    ipcMain.on('sadie:stream-cancel', (_event: IpcMainEvent, payload: { streamId?: string }) => {
+    ipcMain.on('homebot:stream-cancel', (_event: IpcMainEvent, payload: { streamId?: string }) => {
       const { streamId } = payload || {};
       if (!streamId) {
           // cancel all
@@ -5172,7 +5172,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         try {
           if (E2E) {
             // Don't await ΓÇö fire and forget
-            axios.post(`${n8nUrl}/__sadie_e2e_cancel`, { streamId }).catch(() => {});
+            axios.post(`${n8nUrl}/__homebot_e2e_cancel`, { streamId }).catch(() => {});
           }
         } catch (e) { safeCatch(e); }
         // Remove from the active map immediately so any in-flight data handlers
@@ -5182,7 +5182,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   console.log('[E2E-TRACE] stream-cancel-received', { streamId });
                 }
         // notify renderer the stream ended due to cancel
-        _event?.sender?.send('sadie:stream-end', { streamId, cancelled: true });
+        _event?.sender?.send('homebot:stream-end', { streamId, cancelled: true });
         // then attempt to abort/destroy the underlying stream/request
         try { entry.destroy?.(); } catch (e) { safeCatch(e); }
         try { (entry.stream as any)?.destroy?.(); } catch (e) { safeCatch(e); }
@@ -5190,20 +5190,20 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     });
 
     // Test helper: trigger a simulated non-stream fallback for a given streamId (E2E only)
-    ipcMain.handle('sadie:__e2e_trigger_fallback', async (event: IpcMainInvokeEvent, payload: { streamId: string; finalText?: string }) => {
+    ipcMain.handle('homebot:__e2e_trigger_fallback', async (event: IpcMainInvokeEvent, payload: { streamId: string; finalText?: string }) => {
       const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
       if (!e2eEnabled) return { ok: false, error: 'E2E_ONLY' };
-      console.log('[E2E-TRACE] __e2e_trigger_fallback invoked, SADIE_E2E=', process.env.SADIE_E2E, 'NODE_ENV=', process.env.NODE_ENV);
+      console.log('[E2E-TRACE] __e2e_trigger_fallback invoked, HOMEBOT_E2E=', process.env.HOMEBOT_E2E, 'NODE_ENV=', process.env.NODE_ENV);
       try {
         const { streamId, finalText } = payload || {} as any;
         if (!streamId) return { ok: false, error: 'MISSING_STREAM_ID' };
-        event.sender.send('sadie:stream-chunk', { chunk: finalText || 'final-fallback', streamId });
-        event.sender.send('sadie:stream-end', { streamId });
+        event.sender.send('homebot:stream-chunk', { chunk: finalText || 'final-fallback', streamId });
+        event.sender.send('homebot:stream-end', { streamId });
         return { ok: true };
       } catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
     });
     // Test helper: invoke a tool batch via main and exercise the permission escalation flow (E2E only)
-    ipcMain.handle('sadie:__e2e_invoke_tool_batch', async (event: IpcMainInvokeEvent, payload: { calls: any[]; streamId?: string }) => {
+    ipcMain.handle('homebot:__e2e_invoke_tool_batch', async (event: IpcMainInvokeEvent, payload: { calls: any[]; streamId?: string }) => {
       try {
         // Allow E2E helper when the centralized env module reports E2E mode
         // (this is more robust in packaged/release builds where raw env vars
@@ -5238,25 +5238,25 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       }
     });
     // Test helper: retrieve router diagnostics buffer (E2E only)
-    ipcMain.handle('sadie:__e2e_get_router_logs', async () => {
+    ipcMain.handle('homebot:__e2e_get_router_logs', async () => {
       const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
       if (!e2eEnabled) return [];
-      return (global as any).__SADIE_ROUTER_LOG_BUFFER || [];
+      return (global as any).__HOMEBOT_ROUTER_LOG_BUFFER || [];
     });
     // Test helper: trigger a simulated upstream error for a given streamId (E2E only)
-    ipcMain.handle('sadie:__e2e_trigger_upstream_error', async (event: IpcMainInvokeEvent, payload: { streamId: string; message?: string }) => {
+    ipcMain.handle('homebot:__e2e_trigger_upstream_error', async (event: IpcMainInvokeEvent, payload: { streamId: string; message?: string }) => {
       const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
       if (!e2eEnabled) return { ok: false, error: 'E2E_ONLY' };
       try {
         const { streamId, message } = payload || {} as any;
         if (!streamId) return { ok: false, error: 'MISSING_STREAM_ID' };
         console.log('[E2E-TRACE] __e2e_trigger_upstream_error invoked', { streamId });
-        event.sender.send('sadie:stream-error', { error: true, message: message || 'Upstream error (simulated)', streamId, diagnostic: { simulated: true } });
-        event.sender.send('sadie:stream-end', { streamId });
+        event.sender.send('homebot:stream-error', { error: true, message: message || 'Upstream error (simulated)', streamId, diagnostic: { simulated: true } });
+        event.sender.send('homebot:stream-end', { streamId });
         return { ok: true };
       } catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
     });
-  ipcMain.handle(IPC_SEND_MESSAGE, async (_event, request: SadieRequestWithImages | SadieRequest) => {
+  ipcMain.handle(IPC_SEND_MESSAGE, async (_event, request: HomeBotRequestWithImages | HomeBotRequest) => {
     if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
       return {
         success: false,

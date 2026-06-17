@@ -1,6 +1,6 @@
-# SADIE Sports and NBA Integration
+# HomeBot Sports and NBA Integration
 
-SADIE integrates with ESPN's public API to provide live NBA scores, standings, full-season results, and player statistics. This document covers the sports tool capabilities, configuration, permissions, and usage.
+HomeBot integrates with ESPN's public API to provide live NBA scores, standings, full-season results, and player statistics. This document covers the sports tool capabilities, configuration, permissions, and usage.
 
 ---
 
@@ -50,14 +50,14 @@ The `generate_sports_report` tool writes files to the user's Desktop and require
 
 | Permission | Description | Default |
 |---|---|---|
-| `write_file` | Allows SADIE to write files to your system | Disabled |
+| `write_file` | Allows HomeBot to write files to your system | Disabled |
 | `generate_sports_report` | Tool-level permission for the report generator | Disabled |
 
-When either permission is missing, SADIE will display a permission modal with the options: **Allow once**, **Always allow**, or **Cancel**.
+When either permission is missing, HomeBot will display a permission modal with the options: **Allow once**, **Always allow**, or **Cancel**.
 
 ### Permission Escalation Flow
 
-If a requested action requires permissions that are currently disabled, SADIE returns a structured response:
+If a requested action requires permissions that are currently disabled, HomeBot returns a structured response:
 
 ```json
 {
@@ -88,7 +88,7 @@ Give me all this season's NBA results
 Show me this season's NBA results in a table
 ```
 
-SADIE detects full-season intent via regex matching (`wantsSeason`) and fetches all games using ESPN's date-range API rather than single-day endpoints.
+HomeBot detects full-season intent via regex matching (`wantsSeason`) and fetches all games using ESPN's date-range API rather than single-day endpoints.
 
 ### Formatted Output
 
@@ -104,7 +104,7 @@ Adding "in a table" triggers `format='table'` detection, which returns a structu
 Create a folder on my Desktop and fill it with this week's NBA results as an HTML report
 ```
 
-SADIE will:
+HomeBot will:
 1. Check `write_file` and `generate_sports_report` permissions.
 2. Prompt the user if permissions are missing.
 3. Fetch NBA data from ESPN.
@@ -120,7 +120,7 @@ The `generate_sports_report` tool accepts the following parameters:
 |---|---|---|---|---|
 | `league` | string | Yes | — | League identifier (currently only `nba` is supported) |
 | `date` | string | No | Current date | Date for the report (ISO format: `YYYY-MM-DD`) |
-| `directory` | string | No | `Desktop/NBA Results` | Output directory (SADIE normalises `Desktop/...` to the correct absolute path) |
+| `directory` | string | No | `Desktop/NBA Results` | Output directory (HomeBot normalises `Desktop/...` to the correct absolute path) |
 | `format` | string | No | `html` | Output format: `html` or `txt` |
 | `includeSummary` | boolean | No | `true` | Include a narrative summary paragraph |
 
@@ -162,7 +162,7 @@ The message router detects sports intent using pattern matching:
 
 ### Previous-Day Fallback
 
-When the user asks for "today's results" but all games are in pre-game status (none have started yet), SADIE automatically checks yesterday's games for completed results. This handles the common scenario where a user asks for results in the morning before any games have been played.
+When the user asks for "today's results" but all games are in pre-game status (none have started yet), HomeBot automatically checks yesterday's games for completed results. This handles the common scenario where a user asks for results in the morning before any games have been played.
 
 ---
 

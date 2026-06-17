@@ -1,5 +1,5 @@
 {
-  "_comment": "This file documents the default MCP servers seeded to userData on first run. Edit the live config at %APPDATA%/sadie/config/mcp-servers.json via Settings > MCP Servers.",
+  "_comment": "This file documents the default MCP servers seeded to userData on first run. Edit the live config at %APPDATA%/homebot/config/mcp-servers.json via Settings > MCP Servers.",
   "servers": [
     {
       "type": "stdio",

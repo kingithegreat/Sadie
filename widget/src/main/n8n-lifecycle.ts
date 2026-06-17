@@ -1,7 +1,7 @@
 /**
  * n8n-lifecycle.ts
  * Checks whether the n8n container is reachable on startup and attempts to
- * start it automatically via `docker start sadie-n8n` if it is not.
+ * start it automatically via `docker start homebot-n8n` if it is not.
  *
  * This runs in the Electron main process. It is intentionally lightweight:
  * - No external npm deps (uses Node built-ins only)
@@ -17,7 +17,7 @@ import * as fs from 'fs';
 export type N8nStatus = 'already_running' | 'started' | 'start_failed' | 'timeout' | 'skipped';
 
 const N8N_HEALTH_URL = 'http://localhost:5678';
-const CONTAINER_NAME = 'sadie-n8n';
+const CONTAINER_NAME = 'homebot-n8n';
 const POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = 45_000;
 
@@ -58,7 +58,7 @@ async function waitForN8n(): Promise<boolean> {
   return false;
 }
 
-/** Runs `docker start sadie-n8n` or `docker-compose up -d` as a fallback. */
+/** Runs `docker start homebot-n8n` or `docker-compose up -d` as a fallback. */
 function startContainer(composeFile: string | null): Promise<void> {
   return new Promise((resolve) => {
     // First try: start the named container directly (fastest, works if already created)
@@ -87,7 +87,7 @@ export async function ensureN8nRunning(
   onStatusUpdate?: (status: 'checking' | 'starting' | N8nStatus) => void
 ): Promise<N8nStatus> {
   // Skip entirely in E2E tests so mock upstreams aren't disturbed
-  if (process.env.SADIE_E2E === '1' || process.env.SADIE_E2E === 'true') {
+  if (process.env.HOMEBOT_E2E === '1' || process.env.HOMEBOT_E2E === 'true') {
     console.log('[n8n-lifecycle] E2E mode — skipping n8n startup check');
     return 'skipped';
   }

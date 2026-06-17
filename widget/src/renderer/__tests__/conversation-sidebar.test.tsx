@@ -233,12 +233,12 @@ describe('ConversationSidebar — rename (edit title)', () => {
   });
 });
 
-describe('ConversationSidebar — sadie:title-updated event', () => {
-  test('patches title when sadie:title-updated event fires', async () => {
+describe('ConversationSidebar — homebot:title-updated event', () => {
+  test('patches title when homebot:title-updated event fires', async () => {
     setupElectron({ c1: CONV_A });
     await act(async () => { render(<ConversationSidebar {...defaultProps} />); });
     await act(async () => {
-      window.dispatchEvent(new CustomEvent('sadie:title-updated', {
+      window.dispatchEvent(new CustomEvent('homebot:title-updated', {
         detail: { conversationId: 'c1', title: 'Auto-Generated Title' },
       }));
     });

@@ -1,6 +1,6 @@
-# SADIE API Reference
+# HomeBot API Reference
 
-This document describes the full public surface of SADIE: the IPC channels exposed through the preload bridge, the tool schemas the LLM may call, and the permission model that gates tool execution.
+This document describes the full public surface of HomeBot: the IPC channels exposed through the preload bridge, the tool schemas the LLM may call, and the permission model that gates tool execution.
 
 ---
 
@@ -23,17 +23,17 @@ The renderer process communicates with the main process exclusively through the 
 
 | Method | Description |
 |---|---|
-| `sendMessage(request: SadieRequest): Promise<SadieResponse>` | Send a single non-streaming message and receive a complete response. |
-| `sendStreamMessage(request: SadieRequestWithImages & { streamId?: string }): Promise<void>` | Start a streaming conversation turn. The request may include `images[]`, `documents[]`, `modelOverride`, and `retry`. Chunks arrive via `onStreamChunk`. |
+| `sendMessage(request: HomeBotRequest): Promise<HomeBotResponse>` | Send a single non-streaming message and receive a complete response. |
+| `sendStreamMessage(request: HomeBotRequestWithImages & { streamId?: string }): Promise<void>` | Start a streaming conversation turn. The request may include `images[]`, `documents[]`, `modelOverride`, and `retry`. Chunks arrive via `onStreamChunk`. |
 | `cancelStream(streamId?: string): void` | Cancel an in-progress stream. Omitting `streamId` cancels all active streams. |
 
 ### Stream Events
 
 | Method | Event fired | Payload |
 |---|---|---|
-| `onStreamChunk(cb)` | `sadie:stream-chunk` | `{ streamId?: string; chunk: string }` |
-| `onStreamEnd(cb)` | `sadie:stream-end` | `{ streamId?: string; cancelled?: boolean }` |
-| `onStreamError(cb)` | `sadie:stream-error` | `{ streamId?: string; error?: string; message?: string; details?: string; diagnostic?: any; recoveryHint?: any }` |
+| `onStreamChunk(cb)` | `homebot:stream-chunk` | `{ streamId?: string; chunk: string }` |
+| `onStreamEnd(cb)` | `homebot:stream-end` | `{ streamId?: string; cancelled?: boolean }` |
+| `onStreamError(cb)` | `homebot:stream-error` | `{ streamId?: string; error?: string; message?: string; details?: string; diagnostic?: any; recoveryHint?: any }` |
 | `subscribeToStream(streamId, handlers)` | all three above | filtered by `streamId` |
 
 ### Confirmation & Permission Modals
@@ -144,59 +144,59 @@ The table below lists every named IPC channel. Direction: **R→M** = renderer s
 
 | Channel | Dir | Description |
 |---|---|---|
-| `sadie:send-message` | R→M | Non-streaming chat message. |
-| `sadie:get-settings` | R→M | Read current settings. |
-| `sadie:save-settings` | R→M | Merge-save settings. Returns `{ success, data }`. |
-| `sadie:reset-permissions` | R→M | Reset all tool permissions. |
-| `sadie:has-permission` | R→M | Check a named permission. |
-| `sadie:export-consent` | R→M | Export consent snapshot. |
-| `sadie:read-consent-log` | R→M | Read consent log file. |
-| `sadie:read-telemetry-events` | R→M | Read telemetry events. |
-| `sadie:list-custom-llm-models` | R→M | Probe a custom LLM endpoint for available models. |
-| `sadie:check-connection` | R→M | Probe n8n + Ollama health. |
-| `sadie:get-mode` | R→M | Returns `{ demo }`. |
-| `sadie:get-env` | R→M | Returns runtime env flags. |
-| `sadie:get-config-path` | R→M | Returns config file path. |
-| `sadie:list-tools` | R→M | Returns registered tool list. |
-| `sadie:get-uncensored-mode` | R→M | Returns `{ enabled }`. |
-| `sadie:set-uncensored-mode` | R→M | Toggle uncensored mode. |
-| `sadie:read-debug-logs` | R→M | Read renderer + main log buffers (dev only). |
-| `sadie:capture-logs` | R→M | Write log snapshot to disk. |
-| `sadie:open-file` | R→M | Open file with OS default app. |
-| `sadie:show-in-folder` | R→M | Reveal file in explorer. |
-| `sadie:export-chat` | R→M | Export markdown chat to Desktop. |
-| `sadie:restart-app` | R→M | Restart the process. |
-| `sadie:tts-speak` | R→M | TTS speak. |
-| `sadie:tts-stop` | R→M | TTS stop. |
-| `sadie:start-speech-recognition` | R→M | Windows SAPI recognition. |
-| `sadie:scheduler-list` | R→M | List jobs. |
-| `sadie:scheduler-add` | R→M | Add job. |
-| `sadie:scheduler-remove` | R→M | Remove job. |
-| `sadie:scheduler-toggle` | R→M | Toggle job. |
-| `sadie:load-conversations` | R→M | Load conversation store. |
-| `sadie:get-conversation` | R→M | Get single conversation. |
-| `sadie:create-conversation` | R→M | Create conversation. |
-| `sadie:save-conversation` | R→M | Save conversation. |
-| `sadie:delete-conversation` | R→M | Delete conversation. |
-| `sadie:set-active-conversation` | R→M | Set active conversation. |
-| `sadie:add-message` | R→M | Append message. |
-| `sadie:update-message` | R→M | Patch message. |
-| `sadie:mcp-list-servers` | R→M | List MCP servers. |
-| `sadie:mcp-get-status` | R→M | MCP connection status. |
-| `sadie:mcp-add-server` | R→M | Add MCP server. |
-| `sadie:mcp-remove-server` | R→M | Remove MCP server. |
-| `sadie:mcp-toggle-server` | R→M | Toggle MCP server. |
-| `sadie:detect-gpu-vram` | R→M | Detect GPU VRAM (PowerShell). Returns `{ vramGB, gpuName }`. |
-| `sadie:automation:image:generate` | R→M | Generate image via SD/cloud. |
+| `homebot:send-message` | R→M | Non-streaming chat message. |
+| `homebot:get-settings` | R→M | Read current settings. |
+| `homebot:save-settings` | R→M | Merge-save settings. Returns `{ success, data }`. |
+| `homebot:reset-permissions` | R→M | Reset all tool permissions. |
+| `homebot:has-permission` | R→M | Check a named permission. |
+| `homebot:export-consent` | R→M | Export consent snapshot. |
+| `homebot:read-consent-log` | R→M | Read consent log file. |
+| `homebot:read-telemetry-events` | R→M | Read telemetry events. |
+| `homebot:list-custom-llm-models` | R→M | Probe a custom LLM endpoint for available models. |
+| `homebot:check-connection` | R→M | Probe n8n + Ollama health. |
+| `homebot:get-mode` | R→M | Returns `{ demo }`. |
+| `homebot:get-env` | R→M | Returns runtime env flags. |
+| `homebot:get-config-path` | R→M | Returns config file path. |
+| `homebot:list-tools` | R→M | Returns registered tool list. |
+| `homebot:get-uncensored-mode` | R→M | Returns `{ enabled }`. |
+| `homebot:set-uncensored-mode` | R→M | Toggle uncensored mode. |
+| `homebot:read-debug-logs` | R→M | Read renderer + main log buffers (dev only). |
+| `homebot:capture-logs` | R→M | Write log snapshot to disk. |
+| `homebot:open-file` | R→M | Open file with OS default app. |
+| `homebot:show-in-folder` | R→M | Reveal file in explorer. |
+| `homebot:export-chat` | R→M | Export markdown chat to Desktop. |
+| `homebot:restart-app` | R→M | Restart the process. |
+| `homebot:tts-speak` | R→M | TTS speak. |
+| `homebot:tts-stop` | R→M | TTS stop. |
+| `homebot:start-speech-recognition` | R→M | Windows SAPI recognition. |
+| `homebot:scheduler-list` | R→M | List jobs. |
+| `homebot:scheduler-add` | R→M | Add job. |
+| `homebot:scheduler-remove` | R→M | Remove job. |
+| `homebot:scheduler-toggle` | R→M | Toggle job. |
+| `homebot:load-conversations` | R→M | Load conversation store. |
+| `homebot:get-conversation` | R→M | Get single conversation. |
+| `homebot:create-conversation` | R→M | Create conversation. |
+| `homebot:save-conversation` | R→M | Save conversation. |
+| `homebot:delete-conversation` | R→M | Delete conversation. |
+| `homebot:set-active-conversation` | R→M | Set active conversation. |
+| `homebot:add-message` | R→M | Append message. |
+| `homebot:update-message` | R→M | Patch message. |
+| `homebot:mcp-list-servers` | R→M | List MCP servers. |
+| `homebot:mcp-get-status` | R→M | MCP connection status. |
+| `homebot:mcp-add-server` | R→M | Add MCP server. |
+| `homebot:mcp-remove-server` | R→M | Remove MCP server. |
+| `homebot:mcp-toggle-server` | R→M | Toggle MCP server. |
+| `homebot:detect-gpu-vram` | R→M | Detect GPU VRAM (PowerShell). Returns `{ vramGB, gpuName }`. |
+| `homebot:automation:image:generate` | R→M | Generate image via SD/cloud. |
 
 ### Fire-and-forget (send)
 
 | Channel | Dir | Payload | Description |
 |---|---|---|---|
-| `sadie:stream-message` | R→M | `SadieRequestWithImages & { streamId?: string }` | Start streaming turn with optional image/document attachments, model override, and retry metadata. |
-| `sadie:stream-cancel` | R→M | `{ streamId? }` | Cancel stream. |
-| `sadie:confirmation-response` | R→M | `{ confirmationId, confirmed }` | User confirmation reply. |
-| `sadie:permission-response` | R→M | `{ requestId, decision, missingPermissions? }` | User permission reply. |
+| `homebot:stream-message` | R→M | `HomeBotRequestWithImages & { streamId?: string }` | Start streaming turn with optional image/document attachments, model override, and retry metadata. |
+| `homebot:stream-cancel` | R→M | `{ streamId? }` | Cancel stream. |
+| `homebot:confirmation-response` | R→M | `{ confirmationId, confirmed }` | User confirmation reply. |
+| `homebot:permission-response` | R→M | `{ requestId, decision, missingPermissions? }` | User permission reply. |
 | `window-minimize` | R→M | — | Minimize window. |
 | `window-close` | R→M | — | Close window. |
 
@@ -204,19 +204,19 @@ The table below lists every named IPC channel. Direction: **R→M** = renderer s
 
 | Channel | Payload | Description |
 |---|---|---|
-| `sadie:reply` | `SadieResponse` | Non-streaming reply. |
-| `sadie:stream-chunk` | `{ streamId, chunk }` | One streaming token chunk. |
-| `sadie:stream-end` | `{ streamId, cancelled? }` | Stream completed or cancelled. |
-| `sadie:stream-error` | `{ streamId, error, message?, details?, diagnostic?, recoveryHint? }` | Stream error. `recoveryHint` may instruct the renderer to start Ollama, pull a missing model, retry, or reattach a document. |
-| `sadie:confirmation-request` | `{ confirmationId, message, streamId }` | Dangerous tool needs approval. |
-| `sadie:permission-request` | `{ requestId, missingPermissions, reason, streamId? }` | Tool needs a permission grant. |
-| `sadie:show-window` | — | Show / focus widget. |
-| `sadie:hide-window` | — | Hide widget. |
-| `sadie:reminder-fired` | `{ message, label }` | A scheduled reminder fired. |
-| `sadie:ollama-status` | `{ online, url, autoRestarting? }` | Ollama heartbeat state change (every 30s check). |
-| `sadie:model-fallback` | `{ from, to }` | Configured model not installed; auto-switched to fallback. |
-| `sadie:router-log` | `string` | Diagnostic log line from message router (dev / E2E only). |
-| `sadie:append-renderer-log` | `string` | Renderer log forwarded to main for persistence. |
+| `homebot:reply` | `HomeBotResponse` | Non-streaming reply. |
+| `homebot:stream-chunk` | `{ streamId, chunk }` | One streaming token chunk. |
+| `homebot:stream-end` | `{ streamId, cancelled? }` | Stream completed or cancelled. |
+| `homebot:stream-error` | `{ streamId, error, message?, details?, diagnostic?, recoveryHint? }` | Stream error. `recoveryHint` may instruct the renderer to start Ollama, pull a missing model, retry, or reattach a document. |
+| `homebot:confirmation-request` | `{ confirmationId, message, streamId }` | Dangerous tool needs approval. |
+| `homebot:permission-request` | `{ requestId, missingPermissions, reason, streamId? }` | Tool needs a permission grant. |
+| `homebot:show-window` | — | Show / focus widget. |
+| `homebot:hide-window` | — | Hide widget. |
+| `homebot:reminder-fired` | `{ message, label }` | A scheduled reminder fired. |
+| `homebot:ollama-status` | `{ online, url, autoRestarting? }` | Ollama heartbeat state change (every 30s check). |
+| `homebot:model-fallback` | `{ from, to }` | Configured model not installed; auto-switched to fallback. |
+| `homebot:router-log` | `string` | Diagnostic log line from message router (dev / E2E only). |
+| `homebot:append-renderer-log` | `string` | Renderer log forwarded to main for persistence. |
 
 ---
 
@@ -751,7 +751,7 @@ Show the working tree status of a git repository.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `repo_path` | string | | SADIE project root | Absolute path to the git repository. |
+| `repo_path` | string | | HomeBot project root | Absolute path to the git repository. |
 
 **Returns:** `{ branch, staged, unstaged, untracked, clean }`
 
@@ -762,7 +762,7 @@ Show recent commit history for a repository.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `repo_path` | string | | HomeBot project root | Absolute path to the repository. |
 | `limit` | number | | `10` | Number of commits to return (max 50). |
 | `branch` | string | | `HEAD` | Branch to inspect. |
 
@@ -775,7 +775,7 @@ Show the diff between the working tree and HEAD (or between two commits/branches
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `repo_path` | string | | HomeBot project root | Absolute path to the repository. |
 | `target` | string | | `"unstaged"` | `"staged"`, `"unstaged"`, a file path, or a ref like `"HEAD~1"`. |
 
 **Returns:** `{ diff, truncated, total_chars }`
@@ -787,7 +787,7 @@ List local (and optionally remote) branches.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `repo_path` | string | | HomeBot project root | Absolute path to the repository. |
 | `include_remote` | boolean | | `false` | Include remote tracking branches. |
 
 **Returns:** `{ current, branches: [{name, hash, upstream, current}] }`
@@ -799,7 +799,7 @@ Stage all changes and create a git commit.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `repo_path` | string | | SADIE project root | Absolute path to the repository. |
+| `repo_path` | string | | HomeBot project root | Absolute path to the repository. |
 | `message` | string | ✓ | — | Commit message (max 200 chars). |
 | `stage_all` | boolean | | `true` | Stage all tracked changes before committing. |
 
@@ -831,7 +831,7 @@ _(No parameters.)_
 
 ## 4. Permission System
 
-SADIE uses a two-layer permission model at tool execution time.
+HomeBot uses a two-layer permission model at tool execution time.
 
 ### 4.1 Settings Permissions (persistent)
 
@@ -931,19 +931,19 @@ Only an explicit allowlist of read-only PowerShell commands may be used without 
 Key TypeScript types from `widget/src/shared/types.ts`:
 
 ```typescript
-interface SadieRequest {
+interface HomeBotRequest {
   message: string;
   conversation_id?: string;
   user_id?: string;
   streamId?: string;
 }
 
-interface SadieRequestWithImages extends SadieRequest {
+interface HomeBotRequestWithImages extends HomeBotRequest {
   images?: string[];          // base64-encoded image strings
   attachments?: Attachment[]; // file attachments
 }
 
-interface SadieResponse {
+interface HomeBotResponse {
   success: boolean;
   data?: any;
   error?: boolean;

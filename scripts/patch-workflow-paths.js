@@ -1,7 +1,7 @@
 /**
  * patch-workflow-paths.js
  *
- * Replaces the hardcoded SADIE project root in all n8n workflow JSON files
+ * Replaces the hardcoded HomeBot project root in all n8n workflow JSON files
  * with the actual project root at startup time.  This makes the repo
  * portable — cloning to a different directory "just works".
  *
@@ -11,21 +11,21 @@
 const fs = require('fs');
 const path = require('path');
 
-const SADIE_ROOT = process.env.SADIE_ROOT || path.resolve(__dirname, '..');
+const HOMEBOT_ROOT = process.env.HOMEBOT_ROOT || path.resolve(__dirname, '..');
 const WORKFLOW_DIRS = [
-  path.join(SADIE_ROOT, 'n8n-workflows', 'tools'),
-  path.join(SADIE_ROOT, 'n8n-workflows', 'core'),
+  path.join(HOMEBOT_ROOT, 'n8n-workflows', 'tools'),
+  path.join(HOMEBOT_ROOT, 'n8n-workflows', 'core'),
 ];
 
 // Hardcoded paths that appear in committed JSON files:
 //   1. Double-backslash (JSON-escaped Windows paths in "command" / "cwd" fields)
 //   2. Forward-slash (used inside jsCode strings in memory-manager, vision-tool, etc.)
-const HARDCODED_BACKSLASH = 'C:\\\\Users\\\\adenk\\\\Desktop\\\\sadie';
-const HARDCODED_FORWARD  = 'C:/Users/adenk/Desktop/sadie';
+const HARDCODED_BACKSLASH = 'C:\\\\Users\\\\adenk\\\\Desktop\\\\homebot';
+const HARDCODED_FORWARD  = 'C:/Users/adenk/Desktop/homebot';
 
 // Normalise the current root to both representations.
-const ESCAPED_ROOT_BS = SADIE_ROOT.replace(/\\/g, '\\\\');   // double-backslash for JSON
-const ESCAPED_ROOT_FS = SADIE_ROOT.replace(/\\/g, '/');       // forward-slash
+const ESCAPED_ROOT_BS = HOMEBOT_ROOT.replace(/\\/g, '\\\\');   // double-backslash for JSON
+const ESCAPED_ROOT_FS = HOMEBOT_ROOT.replace(/\\/g, '/');       // forward-slash
 
 const alreadyCorrectBS = (ESCAPED_ROOT_BS === HARDCODED_BACKSLASH);
 const alreadyCorrectFS = (ESCAPED_ROOT_FS === HARDCODED_FORWARD);
@@ -64,7 +64,7 @@ for (const dir of WORKFLOW_DIRS) {
 }
 
 if (patched > 0) {
-  console.log(`[patch-workflow-paths] updated ${patched} workflow file(s) to root: ${SADIE_ROOT}`);
+  console.log(`[patch-workflow-paths] updated ${patched} workflow file(s) to root: ${HOMEBOT_ROOT}`);
 } else {
   console.log('[patch-workflow-paths] all workflow paths already correct');
 }

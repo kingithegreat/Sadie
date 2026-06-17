@@ -2,8 +2,8 @@
 module.exports = {
   app: {
     isPackaged: false,
-    getPath: jest.fn().mockReturnValue('/tmp/sadie-test-path'), // Mock valid path
-    getAppPath: jest.fn().mockReturnValue('/tmp/sadie-app-path'),
+    getPath: jest.fn().mockReturnValue('/tmp/homebot-test-path'), // Mock valid path
+    getAppPath: jest.fn().mockReturnValue('/tmp/homebot-app-path'),
   },
   ipcRenderer: {
     on: jest.fn(),

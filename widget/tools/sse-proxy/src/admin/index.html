@@ -2,11 +2,11 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>SADIE SSE Proxy Admin UI</title>
+  <title>HomeBot SSE Proxy Admin UI</title>
   <style>body { font-family: system-ui, Arial; padding: 20px; } label, input, button { margin: 6px 0; } </style>
 </head>
 <body>
-  <h1>SADIE SSE Proxy — Admin UI</h1>
+  <h1>HomeBot SSE Proxy — Admin UI</h1>
   <div>
     <label>Admin Key: <input id="adminKey" type="password" value="adminchangeme" /></label>
     <button id="authBtn">Authenticate</button>
@@ -20,7 +20,7 @@
   </div>
   <script>
     let adminKey = 'adminchangeme';
-    function authHeaders() { return { 'x-sadie-admin-key': adminKey, 'Content-Type': 'application/json'} }
+    function authHeaders() { return { 'x-homebot-admin-key': adminKey, 'Content-Type': 'application/json'} }
     async function loadKeys() {
       const res = await fetch('/admin/keys', { headers: authHeaders() });
       if (!res.ok) { alert('Unauthorized: Admin key invalid'); return; }

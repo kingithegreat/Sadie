@@ -1,5 +1,5 @@
 /**
- * SADIE Document Tools
+ * HomeBot Document Tools
  * 
  * Tools for parsing and processing uploaded documents (PDF, Word, text files).
  */
