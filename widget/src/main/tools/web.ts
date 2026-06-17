@@ -1286,14 +1286,20 @@ async function tryPollinations(prompt: string, width: number, height: number): P
   try {
     const seed = Math.floor(Math.random() * 1e9);
     const encodedPrompt = encodeURIComponent(prompt);
-    const url = `https://pollinations.ai/p/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true`;
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true`;
     const buf = await httpGetBuffer(url, 60000);
-    // A valid image should be at least a few KB; reject obviously invalid responses
     if (!buf || buf.length < 1024) {
       _pollinationsLastFailAt = Date.now();
       return null;
     }
-    _pollinationsLastFailAt = 0; // successful — clear any cached failure
+    const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+    const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+    const isWebp = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
+    if (!isPng && !isJpeg && !isWebp) {
+      _pollinationsLastFailAt = Date.now();
+      return null;
+    }
+    _pollinationsLastFailAt = 0;
     return buf.toString('base64');
   } catch {
     _pollinationsLastFailAt = Date.now();

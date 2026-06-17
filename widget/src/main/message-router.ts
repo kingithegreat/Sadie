@@ -430,7 +430,7 @@ function compressTurns(turns: ConversationMessage[]): string {
     // Strip noisy artifacts (search blocks, code, images) before summarising
     const content = t.content
       .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
-      .replace(/__SADIE_IMAGE__:[^\s]+/g, '[image]')
+      .replace(/__SADIE_IMAGE(?:_FILE)?__:[^\s]+/g, '[image]')
       .replace(/```[\s\S]*?```/g, '[code block]')
       .replace(/\s+/g, ' ')
       .trim();
@@ -3868,7 +3868,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
             // ── END HELP CARD ──
 
-            // ── IMAGE GENERATION: send base64 to renderer as special chunk ──
+            // ── IMAGE GENERATION: save to file, send file path ref ──
             const isImageIntent = intentResult.calls[0]?.name === 'image_generate';
             if (isImageIntent) {
               const imageResult = (toolResults || []).find(
@@ -3877,7 +3877,22 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               if (imageResult) {
                 const b64 = imageResult.result.image_base64 as string;
                 const caption = `🎨 Generated: *${intentResult.calls[0]?.arguments?.prompt || request.message}*\n`;
-                const imgChunk = `__SADIE_IMAGE__:${b64}`;
+                // Save image to file to avoid sending 500KB+ through IPC stream chunks
+                let imgChunk: string;
+                try {
+                  const fs = require('fs');
+                  const path = require('path');
+                  const { app } = require('electron');
+                  const imgDir = path.join(app.getPath('userData'), 'generated-images');
+                  if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+                  const imgId = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                  const imgPath = path.join(imgDir, `${imgId}.png`);
+                  fs.writeFileSync(imgPath, Buffer.from(b64, 'base64'));
+                  imgChunk = `__SADIE_IMAGE_FILE__:${imgId}.png`;
+                } catch (saveErr) {
+                  safeCatch(saveErr);
+                  imgChunk = `__SADIE_IMAGE__:${b64}`;
+                }
                 try { event.sender.send('sadie:stream-chunk', { chunk: caption, streamId }); } catch (e) { safeCatch(e); }
                 try { event.sender.send('sadie:stream-chunk', { chunk: imgChunk, streamId }); } catch (e) { safeCatch(e); }
                 addToHistory(convId, 'assistant', caption + imgChunk);

@@ -65,7 +65,8 @@ const ALLOWED_CHANNELS = {
   PERMISSION_REQUEST: 'sadie:permission-request',
   PERMISSION_RESPONSE: 'sadie:permission-response',
   GET_ENV: 'sadie:get-env',
-  GET_CONFIG_PATH: 'sadie:get-config-path'
+  GET_CONFIG_PATH: 'sadie:get-config-path',
+  GET_GENERATED_IMAGE: 'sadie:get-generated-image'
 };
 
 // Listen for router logs forwarded from main so tests and Playwright traces
@@ -317,6 +318,10 @@ const electronAPI: ElectronAPI = {
 
   getConfigPath: async (): Promise<string> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_CONFIG_PATH);
+  },
+
+  getGeneratedImage: async (filename: string): Promise<string | null> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_GENERATED_IMAGE, filename);
   },
 
   // Test-only: allow invoking arbitrary channels from the renderer (only in E2E)

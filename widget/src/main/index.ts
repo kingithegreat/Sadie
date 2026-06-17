@@ -1,5 +1,5 @@
 // Main process for HomeBot - Full implementation
-import { app, BrowserWindow, ipcMain, session, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, session, globalShortcut, protocol } from 'electron';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[SADIE-CATCH]', e); }
@@ -131,6 +131,11 @@ if (process.env.SADIE_E2E_USER_DATA_DIR) {
   app.setPath('userData', process.env.SADIE_E2E_USER_DATA_DIR);
 }
 
+// Register sadie-img scheme as privileged so it can load in <img> tags
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'sadie-img', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+]);
+
 // Remove the Chrome automation flag that Cloudflare and anti-bot systems
 // (used by Claude, ChatGPT, Gemini) use as their primary detection signal.
 // MUST be called before app.whenReady().
@@ -140,6 +145,25 @@ app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: SADIE_DIRECT_OLLAMA=', process.env.SADIE_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
+
+  // Register custom protocol to serve generated images securely from sandbox
+  const imgPath = require('path');
+  const imgFs = require('fs');
+  const imgDir = imgPath.join(app.getPath('userData'), 'generated-images');
+  protocol.registerFileProtocol('sadie-img', (request, callback) => {
+    const url = request.url.replace('sadie-img:///', '').replace('sadie-img://', '');
+    const filename = decodeURIComponent(url);
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      callback({ statusCode: 403 } as any);
+      return;
+    }
+    const filePath = imgPath.join(imgDir, filename);
+    if (imgFs.existsSync(filePath)) {
+      callback({ path: filePath });
+    } else {
+      callback({ statusCode: 404 } as any);
+    }
+  });
 
   // Register IPC handlers BEFORE creating window
   registerIpcHandlers();

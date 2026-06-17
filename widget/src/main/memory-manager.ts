@@ -340,7 +340,7 @@ function compressTurnsForCompaction(messages: Message[]): string {
     const speaker = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'HomeBot' : 'System';
     const content = m.content
       .replace(/\[SEARCH RESULTS\][\s\S]*?\[\/SEARCH RESULTS\]/g, '[web search results]')
-      .replace(/__SADIE_IMAGE__:[^\s]+/g, '[image]')
+      .replace(/__SADIE_IMAGE(?:_FILE)?__:[^\s]+/g, '[image]')
       .replace(/```[\s\S]*?```/g, '[code block]')
       .replace(/\s+/g, ' ')
       .trim();

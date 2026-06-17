@@ -1,0 +1,83 @@
+{
+  "name": "HomeBot Smart Standup",
+  "active": true,
+  "versionId": "standup-demo-v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/smart-standup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "homebot-smart-standup"
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';\nconst day = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });\nconst time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });\n\nconst systemPrompt = `You are HomeBot, a smart productivity assistant. Generate a daily standup briefing.\\n\\nCurrent date: ${day}\\nCurrent time: ${time}\\n\\nGenerate a standup report with these sections, using markdown:\\n\\n1. A greeting with an emoji for the time of day\\n2. **Quote of the Day** - one motivational quote relevant to coding/productivity\\n3. **Today's Focus Areas** - 3 specific, actionable focus areas for a software developer\\n4. **Standup Checklist** - a markdown checklist with common standup items\\n5. **Pro Tip** - one practical developer productivity tip\\n\\nKeep it concise and energetic. Use emojis sparingly.`;\n\nreturn {\n  json: {\n    model: 'qwen2.5:7b',\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: `${greeting}! Generate my daily standup briefing.` }\n    ],\n    stream: false\n  }\n};"
+      },
+      "id": "prepare-request",
+      "name": "Prepare Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": $json.model, \"messages\": $json.messages, \"stream\": false, \"options\": { \"num_predict\": 1024, \"temperature\": 0.8 } } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "call-ollama",
+      "name": "Call Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ollamaRes = $input.item.json;\nconst content = ollamaRes.message?.content || ollamaRes.response || 'Unable to generate standup report';\nreturn {\n  json: {\n    output: content,\n    data: { assistant: { role: 'assistant', content } }\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1140, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Prepare Request", "type": "main", "index": 0 }]] },
+    "Prepare Request": { "main": [[{ "node": "Call Ollama", "type": "main", "index": 0 }]] },
+    "Call Ollama": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
+    "Format Response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

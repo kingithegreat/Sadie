@@ -1,0 +1,80 @@
+{
+  "name": "HomeBot Web Research",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/research",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "homebot-research"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json || {};\nconst topic = body.topic || body.message || 'general technology trends';\nconst depth = body.depth || 'summary';\n\nconst systemPrompt = `You are HomeBot Research Assistant. Your job is to provide thorough, well-structured research on any topic the user asks about.\\n\\nFormat your response as:\\n## Research: [Topic]\\n### Key Points\\n- Bullet points of main findings\\n### Detailed Analysis\\nParagraph-form analysis with specifics\\n### Sources & Further Reading\\nSuggest where to find more info\\n\\nBe factual, cite specifics where possible, and note any limitations in your knowledge. Depth level: ${depth}.`;\n\nreturn {\n  json: {\n    model: 'qwen2.5:7b',\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: `Research the following topic thoroughly: ${topic}` }\n    ],\n    stream: false\n  }\n};"
+      },
+      "id": "prepare-request",
+      "name": "Prepare Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": $json.model, \"messages\": $json.messages, \"stream\": false, \"options\": { \"num_predict\": 2048, \"temperature\": 0.5 } } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "call-ollama",
+      "name": "Call Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ollamaRes = $input.item.json;\nconst content = ollamaRes.message?.content || ollamaRes.response || 'Research unavailable';\nreturn {\n  json: {\n    output: content,\n    data: { assistant: { role: 'assistant', content } }\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1140, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Prepare Request", "type": "main", "index": 0 }]] },
+    "Prepare Request": { "main": [[{ "node": "Call Ollama", "type": "main", "index": 0 }]] },
+    "Call Ollama": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
+    "Format Response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

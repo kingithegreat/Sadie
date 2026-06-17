@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
-import sadieLogoUrl from '../assets/SadieLogoNerd.png';
+import sadieLogoUrl from '../assets/HomeBotLogo.png';
 
 interface StatusIndicatorProps {
   connectionStatus: ConnectionStatus;

@@ -431,6 +431,20 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     return getSettingsPath();
   });
 
+  ipcMain.handle('sadie:get-generated-image', async (_event, filename: string) => {
+    try {
+      const path = require('path');
+      const fs = require('fs');
+      if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) return null;
+      const filePath = path.join(app.getPath('userData'), 'generated-images', filename);
+      if (!fs.existsSync(filePath)) return null;
+      const buf = fs.readFileSync(filePath);
+      const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+      const mime = isJpeg ? 'image/jpeg' : 'image/png';
+      return `data:${mime};base64,${buf.toString('base64')}`;
+    } catch { return null; }
+  });
+
   ipcMain.handle('sadie:get-env', async () => {
     return {
       isE2E: !!process.env.SADIE_E2E,

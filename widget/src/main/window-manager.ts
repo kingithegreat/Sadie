@@ -92,7 +92,7 @@ export function createMainWindow(): BrowserWindow {
     mainWindow.loadFile(htmlPath);
   }
 
-  // Show window when ready — position in bottom-right of screen
+  // Show window when ready — position on screen, clamped to fit
   mainWindow.once('ready-to-show', () => {
     console.log('[WINDOW] Window ready to show, showing...');
     try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Window ready to show'); } catch (e) { safeCatch(e); }
@@ -100,6 +100,7 @@ export function createMainWindow(): BrowserWindow {
       if (isWidgetMode) {
         positionWidget(mainWindow);
       } else {
+        clampToWorkArea(mainWindow);
         mainWindow.center();
       }
       mainWindow.show();
@@ -136,18 +137,46 @@ export function createMainWindow(): BrowserWindow {
   return mainWindow;
 }
 
-/** Position the widget in the bottom-right corner of the display the window is currently on */
+/** Shrink a window if it exceeds the work area of its current display */
+function clampToWorkArea(win: BrowserWindow) {
+  try {
+    const bounds = win.getBounds();
+    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
+    const workArea = display.workArea;
+    const padding = 20;
+    const maxW = workArea.width - padding * 2;
+    const maxH = workArea.height - padding * 2;
+    let [w, h] = win.getSize();
+    if (w > maxW || h > maxH) {
+      win.setSize(Math.min(w, maxW), Math.min(h, maxH), true);
+    }
+  } catch (e) {
+    safeCatch(e);
+  }
+}
+
+/** Position the widget in the bottom-right corner, clamped to fit on screen */
 function positionWidget(win: BrowserWindow) {
   try {
     const bounds = win.getBounds();
     const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
     const workArea = display.workArea;
-    const [winW, winH] = win.getSize();
+    let [winW, winH] = win.getSize();
     const padding = 20;
-    win.setPosition(
-      workArea.x + workArea.width - winW - padding,
-      workArea.y + workArea.height - winH - padding
-    );
+
+    // Shrink the window if it doesn't fit the work area
+    const maxW = workArea.width - padding * 2;
+    const maxH = workArea.height - padding * 2;
+    if (winW > maxW || winH > maxH) {
+      winW = Math.min(winW, maxW);
+      winH = Math.min(winH, maxH);
+      win.setSize(winW, winH, true);
+    }
+
+    // Place at bottom-right, clamped so the top-left stays on screen
+    const x = Math.max(workArea.x + padding, workArea.x + workArea.width - winW - padding);
+    const y = Math.max(workArea.y + padding, workArea.y + workArea.height - winH - padding);
+    win.setPosition(x, y);
   } catch (e) {
     safeCatch(e);
   }
@@ -169,6 +198,7 @@ export function toggleWidgetMode(): boolean {
     // Switch to expanded/full mode
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height, true);
+    clampToWorkArea(mainWindow);
     mainWindow.center();
     console.log('[WINDOW] Switched to expanded mode');
   }

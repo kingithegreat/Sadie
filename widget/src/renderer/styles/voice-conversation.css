@@ -174,7 +174,7 @@
 .voice-mic-btn[data-state="listening"] {
   background: var(--accent-primary);
   color: var(--text-inverse);
-  box-shadow: 0 0 0 4px oklch(72% 0.14 78 / 0.20), var(--shadow-glow), var(--shadow-md);
+  box-shadow: 0 0 0 4px oklch(65% 0.18 250 / 0.20), var(--shadow-glow), var(--shadow-md);
 }
 
 /* Thinking state — subtle pulse */

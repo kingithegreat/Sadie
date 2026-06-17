@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import type { ChatMessage } from "../types";
-import sadieChatAvatarUrl from '../assets/SadieChatAvatar.png';
+import sadieChatAvatarUrl from '../assets/HomeBotChatAvatar.png';
 import userChatAvatarUrl from '../assets/UserChatAvatar.png';
 
 // highlight.js — core + common languages (tree-shaken)
@@ -60,6 +60,19 @@ hljs.registerLanguage('rb', ruby);
 hljs.registerLanguage('php', php);
 hljs.registerLanguage('powershell', powershell);
 hljs.registerLanguage('ps1', powershell);
+
+function GeneratedImage({ filename }: { filename: string }) {
+  const [src, setSrc] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (window as any).electron?.getGeneratedImage?.(filename).then((dataUri: string | null) => {
+      if (!cancelled && dataUri) setSrc(dataUri);
+    });
+    return () => { cancelled = true; };
+  }, [filename]);
+  if (!src) return <div className="md-generated-img-loading">Loading image...</div>;
+  return <img src={src} alt="Generated image" className="md-generated-img" />;
+}
 
 /* ================================================================== */
 /*  Self-contained Markdown renderer — zero external dependencies      */
@@ -352,38 +365,37 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
 
   // Split content into segments — plain text parts vs inline images
   const IMAGE_TOKEN = '__SADIE_IMAGE__:';
-  // Detect image MIME type from base64 magic bytes prefix
+  const IMAGE_FILE_TOKEN = '__SADIE_IMAGE_FILE__:';
   const detectImageMime = (b64: string): string => {
     if (b64.startsWith('/9j/')) return 'image/jpeg';
     if (b64.startsWith('UklGR')) return 'image/webp';
     if (b64.startsWith('R0lGOD')) return 'image/gif';
-    return 'image/png'; // default (covers iVBOR... PNG prefix)
+    return 'image/png';
   };
-  if (!isUser && content.includes(IMAGE_TOKEN)) {
-    const segments = content.split(IMAGE_TOKEN);
+
+  const hasImage = !isUser && (content.includes(IMAGE_TOKEN) || content.includes(IMAGE_FILE_TOKEN));
+  if (hasImage) {
+    const normalized = content.replace(/__SADIE_IMAGE_FILE__:/g, IMAGE_TOKEN);
+    const segments = normalized.split(IMAGE_TOKEN);
     return (
       <div className="message-text markdown-body">
         {segments.map((seg, idx) => {
           if (idx === 0) {
-            // Text before the first image token — strip the ⏳ progress line if present
             const cleaned = seg
               .split('\n')
               .filter(line => !line.trimStart().startsWith('⏳ Generating image'))
               .join('\n');
             return cleaned.trim() ? <React.Fragment key={idx}>{renderMarkdown(cleaned)}</React.Fragment> : null;
           }
-          // Each subsequent segment starts with the raw base64 data; the rest is text
           const newline = seg.indexOf('\n');
-          const b64 = newline === -1 ? seg.trim() : seg.slice(0, newline).trim();
+          const imgRef = newline === -1 ? seg.trim() : seg.slice(0, newline).trim();
           const rest = newline === -1 ? '' : seg.slice(newline + 1);
+          const isFilename = imgRef.match(/\.(png|jpg|jpeg|webp|gif)$/i) && !imgRef.includes('/') && !imgRef.includes('\\');
           return (
             <React.Fragment key={idx}>
-              {b64 && (
-                <img
-                  src={`data:${detectImageMime(b64)};base64,${b64}`}
-                  alt="Generated image"
-                  className="md-generated-img"
-                />
+              {imgRef && (isFilename
+                ? <GeneratedImage filename={imgRef} />
+                : <img src={`data:${detectImageMime(imgRef)};base64,${imgRef}`} alt="Generated image" className="md-generated-img" />
               )}
               {rest.trim() && renderMarkdown(rest)}
             </React.Fragment>
