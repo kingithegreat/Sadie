@@ -188,6 +188,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           window.electron.loadConversations?.(),
         ]);
         if (mounted && loaded) setSettings(prev => ({ ...prev, ...loaded }));
+        // Check connection status on boot
+        window.electron.checkConnection?.().then(c => {
+          if (mounted && c) setStatus(c);
+        }).catch(() => {});
         // Detect GPU VRAM for model size warnings
         window.electron.detectGpuVram?.().then(r => {
           if (mounted && r?.success && r.vramGB) setVramGB(r.vramGB);

@@ -300,9 +300,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           type="button"
           onClick={() => {
             if (locked) return;
-            if (!isOpen && buttonRef.current) {
-              const rect = buttonRef.current.getBoundingClientRect();
-              setDropdownPos({ top: rect.bottom + 8, left: rect.left, width: Math.max(rect.width, 300) });
+            if (!isOpen) {
+              setDropdownPos({ top: 100, left: Math.max(20, (window.innerWidth - 380) / 2), width: 380 });
             }
             setIsOpen(!isOpen);
           }}
