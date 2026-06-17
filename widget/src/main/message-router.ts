@@ -1721,6 +1721,21 @@ function buildSearchContext(sr: any, charBudget = 3000): string {
 }
 
 /**
+ * Build a compact source-cards token from web search results.
+ * The renderer detects __HOMEBOT_SOURCES__: and renders clickable cards.
+ */
+function buildSourceCardsToken(sr: any): string {
+  if (!sr || !Array.isArray(sr.results) || sr.results.length === 0) return '';
+  const cards = sr.results.slice(0, 6).map((r: any) => ({
+    t: (r.title || '').slice(0, 120),
+    u: r.url || '',
+    s: (r.snippet || '').slice(0, 200),
+  })).filter((c: any) => c.u);
+  if (cards.length === 0) return '';
+  return `\n\n__HOMEBOT_SOURCES__:${JSON.stringify(cards)}`;
+}
+
+/**
  * Wrap search context in a synthesis prompt that forces the model to answer
  * directly from evidence — suppressing the "check YouTube/CFR" padding pattern
  * and prohibiting the "I'm unable to fetch" false disclaimer.
@@ -3791,6 +3806,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 },
                 () => {
                   if (synthDone) return; synthDone = true;
+                  const sourcesToken = buildSourceCardsToken(sr);
+                  if (sourcesToken) {
+                    assistantResponse += sourcesToken;
+                    try { event.sender.send('homebot:stream-chunk', { chunk: sourcesToken, streamId }); } catch (e) { safeCatch(e); }
+                  }
                   if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
                   try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                   activeStreams.delete(streamId);
@@ -4881,6 +4901,11 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                           try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                         },
                         () => {
+                          const sourcesToken = buildSourceCardsToken(sr);
+                          if (sourcesToken) {
+                            synthResponse += sourcesToken;
+                            try { event.sender.send('homebot:stream-chunk', { chunk: sourcesToken, streamId }); } catch (e) { safeCatch(e); }
+                          }
                           if (synthResponse.trim()) addToHistory(convId, 'assistant', synthResponse);
                           try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                           activeStreams.delete(streamId);

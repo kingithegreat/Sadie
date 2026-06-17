@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 
 interface OllamaModel {
@@ -87,7 +88,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [pulling, setPulling] = useState<string | null>(null);
   const [pullError, setPullError] = useState<string | null>(null);
   const [vramWarning, setVramWarning] = useState<string | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   // Fetch installed Ollama models
   const fetchModels = useCallback(async () => {
@@ -265,11 +268,14 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
   };
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click (portal-aware)
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inDropdown = dropdownRef.current?.contains(target);
+      const inButton = buttonRef.current?.contains(target);
+      if (!inDropdown && !inButton) {
         setIsOpen(false);
       }
     };
@@ -289,9 +295,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         <button className="model-nav-btn" onClick={handlePrevModel} disabled={locked} title="Previous model" aria-label="Previous model">◀</button>
 
         <button
+          ref={buttonRef}
           className="model-selector-button"
           type="button"
-          onClick={() => { if (!locked) setIsOpen(!isOpen); }}
+          onClick={() => {
+            if (locked) return;
+            if (!isOpen && buttonRef.current) {
+              const rect = buttonRef.current.getBoundingClientRect();
+              setDropdownPos({ top: rect.bottom + 8, left: rect.left, width: Math.max(rect.width, 300) });
+            }
+            setIsOpen(!isOpen);
+          }}
           title={locked ? (lockReason || 'Turn off Uncensored Mode to switch models') : `Using ${currentModelInfo?.name} — click to see all models`}
           aria-haspopup="menu"
           aria-controls={dropdownId}
@@ -316,8 +330,13 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         <div className="model-vram-warning">{vramWarning}</div>
       )}
 
-      {isOpen && (
-        <div id={dropdownId} className="model-dropdown">
+      {isOpen && dropdownPos && createPortal(
+        <div
+          id={dropdownId}
+          className="model-dropdown model-dropdown--portal"
+          ref={dropdownRef}
+          style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+        >
           <div className="model-dropdown-header">
             <span>Models</span>
             <button
@@ -423,7 +442,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
               <div className="model-pull-error">⚠️ {pullError}</div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

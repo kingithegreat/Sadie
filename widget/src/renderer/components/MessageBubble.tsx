@@ -75,6 +75,62 @@ function GeneratedImage({ filename }: { filename: string }) {
 }
 
 /* ================================================================== */
+/*  Search result cards — rendered from __HOMEBOT_SOURCES__: token     */
+/* ================================================================== */
+
+interface SourceCard {
+  t: string; // title
+  u: string; // url
+  s: string; // snippet
+}
+
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function getDomain(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
+
+function SearchResultCards({ cards }: { cards: SourceCard[] }) {
+  return (
+    <div className="search-result-cards">
+      {cards.map((card, i) => {
+        const domain = getDomain(card.u);
+        const ytId = extractYouTubeId(card.u);
+        return (
+          <a
+            key={i}
+            href={card.u}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`search-card${ytId ? ' search-card--video' : ''}`}
+          >
+            {ytId && (
+              <div className="search-card-thumb">
+                <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt="" loading="lazy" />
+                <div className="search-card-play">&#9654;</div>
+              </div>
+            )}
+            <div className="search-card-body">
+              <div className="search-card-title">{card.t}</div>
+              {card.s && <div className="search-card-snippet">{card.s}</div>}
+              <div className="search-card-domain">
+                <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`} alt="" className="search-card-favicon" />
+                {domain}
+              </div>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+const SOURCES_TOKEN = '__HOMEBOT_SOURCES__:';
+
+/* ================================================================== */
 /*  Self-contained Markdown renderer — zero external dependencies      */
 /* ================================================================== */
 
@@ -401,6 +457,21 @@ function renderContent(content: string, isUser: boolean): React.ReactNode {
             </React.Fragment>
           );
         })}
+      </div>
+    );
+  }
+
+  // Extract source cards if present
+  const sourcesIdx = content.indexOf(SOURCES_TOKEN);
+  if (sourcesIdx !== -1) {
+    const textPart = content.slice(0, sourcesIdx);
+    const jsonPart = content.slice(sourcesIdx + SOURCES_TOKEN.length);
+    let cards: SourceCard[] = [];
+    try { cards = JSON.parse(jsonPart); } catch { /* malformed — skip cards */ }
+    return (
+      <div className="message-text markdown-body">
+        {textPart.trim() && renderMarkdown(textPart)}
+        {cards.length > 0 && <SearchResultCards cards={cards} />}
       </div>
     );
   }

@@ -196,25 +196,117 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, []);
 
   const PERMISSION_DESCRIPTIONS: Record<string, string> = {
-    read_file: 'Read the contents of a file (safe).',
-    list_directory: 'List files/folders within a directory (safe).',
-    create_directory: 'Create a directory/folder in your home folder.',
-    get_file_info: 'Get details about a file or folder (size, dates).',
-    copy_file: 'Copy files and folders.',
-    parse_document_from_path: 'Parse PDF/Word/text files from a local path (read-only).',
-    write_file: 'Write or modify files. Dangerous: could overwrite or leak sensitive data.',
-    delete_file: 'Delete files or folders permanently. Dangerous: irreversible.',
-    move_file: 'Move or rename files or folders. Dangerous: may overwrite.',
-    launch_app: 'Launch external applications on your system (e.g., notepad, chrome).',
-    screenshot: 'Take screenshots of your display and save them to disk.',
-    open_url: 'Open URLs in your default browser (safe), but could lead to external content.',
-    web_search: 'Perform web searches to retrieve results.',
-    nba_query: 'Query NBA stats and team information from trusted sources (ESPN).'
-    ,
-    generate_sports_report: 'Generate a formatted sports results report and save it to your Desktop (requires Write permission).'
+    // Filesystem
+    read_file: 'Read the contents of a file (safe, read-only).',
+    list_directory: 'List files and folders within a directory (safe).',
+    create_directory: 'Create a new folder in your home directory.',
+    get_file_info: 'Get file details like size, type, and dates (safe).',
+    copy_file: 'Copy files and folders to a new location.',
+    search_files: 'Search inside file contents for matching text (safe).',
+    find_files: 'Find files by name using system search (safe).',
+    parse_document_from_path: 'Parse PDF, Word, or text files (read-only).',
+    write_file: 'Create or overwrite files. Could modify important data.',
+    edit_file: 'Make targeted edits to existing files.',
+    delete_file: 'Permanently delete files or folders. Irreversible.',
+    move_file: 'Move or rename files. May overwrite existing files.',
+    create_docx: 'Create Word documents on your Desktop.',
+    create_spreadsheet: 'Create Excel spreadsheets on your Desktop.',
+    create_pdf: 'Create PDF documents on your Desktop.',
+    // System
+    get_system_info: 'Read system info like OS, CPU, and memory (safe).',
+    get_current_time: 'Get the current date and time (safe).',
+    calculate: 'Perform math calculations (safe).',
+    open_url: 'Open a URL in your default browser.',
+    open_in_browser: 'Open a link in your default browser.',
+    browser_search: 'Search in your default browser.',
+    show_notification: 'Show desktop notifications.',
+    launch_app: 'Launch applications on your system (e.g. Notepad, Chrome).',
+    screenshot: 'Take a screenshot of your display.',
+    // Web & search
+    web_search: 'Search the web and fetch results from multiple sources.',
+    fetch_url: 'Fetch content from a specific URL.',
+    fetch_page_content: 'Download and extract text from a web page.',
+    nba_query: 'Query live NBA scores and stats from ESPN.',
+    get_news: 'Fetch news articles from configured RSS feeds.',
+    list_news_feeds: 'List available news feed sources (safe).',
+    get_weather: 'Get current weather and forecast for a location.',
+    image_generate: 'Generate images using AI (Stable Horde or DALL-E).',
+    // Documents
+    parse_document: 'Parse uploaded documents (PDF, Word, text).',
+    get_document_content: 'Read parsed document content (safe).',
+    list_documents: 'List previously parsed documents (safe).',
+    search_document: 'Search within a parsed document (safe).',
+    // Vision
+    vision_describe: 'Describe an image using the vision model (safe).',
+    vision_query: 'Answer questions about an image (safe).',
+    // Voice
+    speak: 'Read text aloud using text-to-speech.',
+    stop_speaking: 'Stop the current text-to-speech playback.',
+    get_voices: 'List available text-to-speech voices (safe).',
+    // Memory
+    remember: 'Save information to long-term memory.',
+    recall: 'Retrieve saved memories (safe).',
+    list_memories: 'List all saved memories (safe).',
+    forget: 'Delete a saved memory. Irreversible.',
+    save_conversation: 'Save the current conversation to history.',
+    get_conversation_history: 'Load past conversations (safe).',
+    clear_conversation_history: 'Delete all conversation history. Irreversible.',
+    // RAG
+    rag_query: 'Search indexed documents semantically (safe).',
+    rag_list: 'List documents in the RAG index (safe).',
+    rag_index: 'Add a document to the semantic search index.',
+    rag_clear: 'Remove a document from the RAG index.',
+    // Diff
+    diff_text: 'Compare two text strings and show differences (safe).',
+    diff_files: 'Compare two files and show differences (safe).',
+    // Reminders & calendar
+    list_reminders: 'List active reminders (safe).',
+    set_reminder: 'Create a new reminder.',
+    cancel_reminder: 'Cancel an active reminder.',
+    list_calendar_events: 'View upcoming calendar events (safe).',
+    add_calendar_event: 'Add a new calendar event.',
+    delete_calendar_event: 'Delete a calendar event.',
+    // Clipboard
+    clipboard_read: 'Read text from your clipboard (safe).',
+    clipboard_write: 'Write text to your clipboard.',
+    get_clipboard: 'Read clipboard contents (safe).',
+    set_clipboard: 'Replace clipboard contents.',
+    // Planning & contacts
+    plan_task: 'Create a step-by-step plan for a task.',
+    get_plans: 'View saved plans (safe).',
+    search_contacts: 'Search your contacts list (safe).',
+    add_contact: 'Add a new contact.',
+    // Git
+    git_status: 'View git repository status (safe).',
+    git_log: 'View git commit history (safe).',
+    git_diff: 'View file changes in git (safe).',
+    git_branches: 'List git branches (safe).',
+    git_commit: 'Create a git commit. Modifies your repository.',
+    // Process management
+    list_processes: 'List running processes (safe).',
+    get_process_info: 'Get details about a running process (safe).',
+    kill_process: 'Terminate a running process. Could cause data loss.',
+    // Code & terminal
+    run_code: 'Execute code snippets. Could modify your system.',
+    run_terminal_command: 'Run shell commands. A confirmation dialog appears before execution.',
+    get_terminal_history: 'View recent terminal command history (safe).',
+    grep_code: 'Search file contents by regex across a project (safe).',
+    project_tree: 'Show directory structure of a project (safe).',
+    analyze_file: 'Get a quick overview of a source file (safe).',
+    // Email
+    email_send: 'Send an email on your behalf.',
+    email_draft: 'Create an email draft.',
+    email_list: 'List recent emails (safe).',
+    // API
+    api_request: 'Make HTTP requests to external APIs.',
   };
 
-  const DANGEROUS_PERMISSIONS = new Set(['delete_file', 'move_file', 'launch_app', 'screenshot']);
+  const DANGEROUS_PERMISSIONS = new Set([
+    'delete_file', 'move_file', 'write_file', 'edit_file', 'launch_app', 'screenshot',
+    'kill_process', 'run_code', 'git_commit', 'forget', 'clear_conversation_history',
+    'rag_clear', 'cancel_reminder', 'delete_calendar_event', 'email_send', 'api_request',
+    'create_docx', 'create_spreadsheet', 'create_pdf', 'set_clipboard', 'clipboard_write',
+  ]);
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
   const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
@@ -579,6 +671,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             />
             <span>Always on top</span>
           </label>
+          <small className="setting-hint">Keep the HomeBot window above all other windows.</small>
         </div>
 
         <div className="setting-group">
@@ -595,6 +688,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </button>
             ))}
           </div>
+          <small className="setting-hint">Choose a colour scheme. System matches your OS preference.</small>
         </div>
 
         <div className="setting-group">
@@ -611,6 +705,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }
             placeholder="http://localhost:5678"
           />
+          <small className="setting-hint">URL of your local n8n instance for workflow automation. Requires Docker Desktop running n8n.</small>
         </div>
         </>}
 
