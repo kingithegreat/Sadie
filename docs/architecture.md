@@ -47,10 +47,10 @@ This document describes the high-level architecture of HomeBot: how the major co
 │      │  Ollama (local)   │   │  n8n (optional)  │|                  │
 │      │  127.0.0.1:11434 │   │  localhost:5678   │|                  │
 │      │                   │   │                   │|                  │
-│      │  qwen2.5:7b       │<──│  Workflow triggers│|                  │
-│      │  moondream        │   │  HTTP webhooks   │|                  │
-│      │  nomic-embed-text │   │                   │|                  │
-│      │  qwen2.5-coder:7b │   └───────────────────┘|                  │
+│      │  qwen2.5:7b        │<──│  Workflow triggers│|                  │
+│      │  dolphin-mistral:7b│   │  HTTP webhooks   │|                  │
+│      │  moondream         │   │                   │|                  │
+│      │  nomic-embed-text  │   └───────────────────┘|                  │
 │      └───────────────────┘                        |                  │
 │                                                   |                  │
 │      Local disk: config/ , memory/ , logs/  <─────┘                  │
@@ -69,7 +69,7 @@ The React UI running inside Chromium. Key responsibilities:
 
 - **Chat surface** — renders message history, handles user input, displays streaming token-by-token responses with cancel/retry controls, and blocks marker-only retries for document-attached turns by asking the user to reattach the file.
 - **Conversation sidebar** — lists conversations with timestamps, message count badges, pinning, archiving, tags, reactions, and full-text search.
-- **Automation Center** — create, edit, and run reusable automations. Each automation stores plain-English instructions that HomeBot executes through its full tool chain. Supports manual and scheduled triggers (15 min – 24 h intervals) with background timers. Includes example templates and expandable result viewer.
+- **Automation Center** — create, edit, and run reusable automations. Each automation stores plain-English instructions that HomeBot executes through its full tool chain. Supports manual and scheduled triggers (15 min – 24 h intervals) with background timers. Includes example templates, expandable result viewer, status indicators (success/error), and n8n credential management buttons (opens `localhost:5678/credentials` for API keys and OAuth tokens).
 - **Quiz Mode** — interactive coding quiz with 12 topics, 3 difficulty levels, and configurable question counts. Generates multiple-choice questions via batched Ollama calls. Tracks persistent progress (accuracy, streak, per-topic scores) and awards letter grades.
 - **Action confirmation** — modal dialog for approving destructive or sensitive tool calls before execution.
 - **Permission modal** — prompts the user to allow-once, always-allow, or cancel when a tool requires a permission that has not yet been granted.
@@ -90,7 +90,7 @@ The renderer supports six modes, switchable via the sidebar or keyboard shortcut
 |---|---|---|---|
 | `chat` | Ctrl+1 | `App.tsx` (inline) | Main conversational interface |
 | `automation` | Ctrl+2 | `AutomationCenter.tsx` | Create and run reusable automations |
-| `image` | Ctrl+3 | `ImagePanel` | AI image generation via Pollinations.ai |
+| `image` | Ctrl+3 | `ImagePanel` | AI image generation via SD WebUI / ComfyUI / DALL-E 3 / Pollinations / Stable Horde |
 | `documents` | Ctrl+4 | `DocumentPanel` | Document viewer/editor |
 | `web` | — | `WebPanel` | Embedded web browser |
 | `quiz` | Ctrl+5 | `QuizPanel.tsx` | Interactive coding quiz |
@@ -328,7 +328,16 @@ The `grep_code`, `project_tree`, and `analyze_file` tools are read-only and cann
 - **Regex safety** — invalid regex patterns from the LLM fall back to literal string matching instead of crashing.
 - **Result caps** — grep: max 200 matches; tree: max 500 items; traversal depth: max 8 levels.
 
-### Layer 9: Tool Recursion Cap
+### Layer 9: Input Size Guards
+
+- **Document parsing**: 50 MB file size limit on `homebot:parse-document` prevents memory exhaustion.
+- **Vision input**: 20 MB file size check in `vision.ts` before `readFileSync`.
+- **HTTP redirects**: `httpGet` in `web.ts` caps redirect chains at 5 hops to prevent loops.
+- **NBA requests**: 15-second timeout on `httpsGet` prevents indefinite hangs.
+- **Conversation digest**: Rolling digest in `message-router.ts` capped at 4,000 characters with smart truncation.
+- **Contact queries**: `contacts.ts` strips PowerShell metacharacters (`'"$\`();|{}&`) from search input.
+
+### Layer 10: Tool Recursion Cap
 
 `MAX_TOOL_ROUNDS = 10` in `message-router.ts`. If the LLM attempts more than 10 consecutive tool calls in a single turn, the router halts and sends a user-facing warning.
 
@@ -374,6 +383,7 @@ Automations are stored in `userData/automations.json`. Each automation contains:
 | `enabled` | `boolean` | Whether the automation is active |
 | `lastRun` | `string` | ISO timestamp of the last execution |
 | `lastResult` | `string` | Output text from the last run |
+| `lastStatus` | `'success' \| 'error'` | Outcome of the last execution |
 | `createdAt` | `string` | ISO timestamp of creation |
 
 Scheduled automations use `setInterval`-based background timers. On app boot (after 5 s), `startAutomationSchedule()` reads all automations and starts timers for enabled scheduled ones. Timers re-sync every 60 s to pick up CRUD changes. When a timer fires, it calls `executeAutomation()` (which uses `processIncomingRequest` with direct Ollama fallback) and sends a `homebot:reminder-fired` event to the renderer so the result appears in chat.

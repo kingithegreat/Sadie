@@ -90,6 +90,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [vramWarning, setVramWarning] = useState<string | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const portalRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   // Fetch installed Ollama models
@@ -273,7 +274,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as Node;
-      const inDropdown = dropdownRef.current?.contains(target);
+      const inDropdown = portalRef.current?.contains(target);
       const inButton = buttonRef.current?.contains(target);
       if (!inDropdown && !inButton) {
         setIsOpen(false);
@@ -333,7 +334,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         <div
           id={dropdownId}
           className="model-dropdown model-dropdown--portal"
-          ref={dropdownRef}
+          ref={portalRef}
           style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
         >
           <div className="model-dropdown-header">

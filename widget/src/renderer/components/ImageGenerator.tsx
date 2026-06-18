@@ -124,8 +124,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
         <div className="image-display">
           <img src={generatedImage} alt="Generated" className="img-gen-result" />
           <div className="image-actions">
-            <button onClick={() => setGeneratedImage(null)}>Clear</button>
-            <a href={generatedImage} download={`homebot-image-${Date.now()}.png`}><button>Download</button></a>
+            <button type="button" onClick={() => setGeneratedImage(null)} aria-label="Clear image">Clear</button>
+            <a href={generatedImage} download={`homebot-image-${Date.now()}.png`} className="btn-download">Download</a>
           </div>
           {metadata && (
             <pre className="image-metadata">{JSON.stringify(metadata, null, 2)}</pre>

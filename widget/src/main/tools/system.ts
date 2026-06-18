@@ -323,13 +323,17 @@ export const openUrlHandler: ToolHandler = async (args): Promise<ToolResult> => 
     // Open in browser and fetch content in parallel
     const { shell } = require('electron');
     const { fetchHtml, htmlToText } = require('./browser');
-    const [, pageContent] = await Promise.allSettled([
+    const [openResult, pageContent] = await Promise.allSettled([
       shell.openExternal(url),
       (async () => {
         const html = await fetchHtml(url);
         return htmlToText(html);
       })(),
     ]);
+
+    if (openResult.status === 'rejected') {
+      return { success: false, error: `Failed to open URL: ${openResult.reason?.message || 'unknown error'}` };
+    }
 
     const content = pageContent.status === 'fulfilled' ? pageContent.value : null;
     const truncated = content && content.length > 6000;

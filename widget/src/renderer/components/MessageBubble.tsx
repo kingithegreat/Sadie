@@ -625,10 +625,22 @@ export function MessageBubble({
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const reactionPickerRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState('');
   const editRef = useRef<HTMLTextAreaElement>(null);
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
+
+  useEffect(() => {
+    if (!showReactionPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (reactionPickerRef.current && !reactionPickerRef.current.contains(e.target as Node)) {
+        setShowReactionPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showReactionPicker]);
 
   const timestamp = message.createdAt
     ? new Date(message.createdAt).toLocaleString(undefined, {
@@ -656,7 +668,7 @@ export function MessageBubble({
     if (isAssistant && message.content) {
       items.push({ label: speaking ? 'Stop speaking' : 'Speak', icon: '🔊', action: () => {
         if (speaking) { window.electron?.ttsStop?.(); setSpeaking(false); }
-        else { setSpeaking(true); window.electron?.ttsSpeak?.(message.content!).then(() => setSpeaking(false)); }
+        else { setSpeaking(true); window.electron?.ttsSpeak?.(message.content!).then(() => setSpeaking(false)).catch(() => setSpeaking(false)); }
       }});
     }
     if (isAssistant && state === 'finished' && message.id) {
@@ -988,12 +1000,12 @@ export function MessageBubble({
               +
             </button>
             {showReactionPicker && (
-              <div className="reaction-picker" role="listbox" aria-label="Choose a reaction">
+              <div className="reaction-picker" ref={reactionPickerRef} role="menu" aria-label="Choose a reaction">
                 {['👍', '👎', '❤️', '😂', '🎉', '🤔'].map(emoji => (
                   <button
                     key={emoji}
                     className="reaction-option"
-                    role="option"
+                    role="menuitem"
                     onClick={() => { onReact(message.id!, emoji); setShowReactionPicker(false); }}
                     aria-label={emoji}
                   >

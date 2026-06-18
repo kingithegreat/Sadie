@@ -125,6 +125,11 @@ async function analyseImage(rawPath: string, prompt: string): Promise<ToolResult
     };
   }
 
+  const stat = fs.statSync(resolved);
+  if (stat.size > 20 * 1024 * 1024) {
+    return { success: false, error: 'Image file too large (max 20 MB)' };
+  }
+
   const { ollamaUrl, visionModel } = getVisionConfig();
   const base64 = fs.readFileSync(resolved).toString('base64');
 

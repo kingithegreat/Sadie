@@ -30,12 +30,14 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
   // Track the last assistant message we've already spoken so we don't repeat.
   const lastSpokenRef = useRef<string | undefined>(undefined);
 
-  // Track whether the component is mounted (for async safety).
+  // Track whether the component is mounted and open (for async safety).
   const mountedRef = useRef(true);
+  const openRef = useRef(open);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+  useEffect(() => { openRef.current = open; }, [open]);
 
   // Reset state when the panel opens/closes.
   useEffect(() => {
@@ -95,9 +97,8 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
 
     window.electron?.ttsSpeak?.(lastAssistantMessage)
       .then(() => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || !openRef.current) return;
         setState('idle');
-        // In continuous mode, automatically start listening again.
         if (continuousMode) {
           startListening();
         }

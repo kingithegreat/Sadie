@@ -48,7 +48,7 @@ function httpsGet(url: string, headers: Record<string, string> = {}): Promise<an
       'Accept-Encoding': 'gzip, deflate, br',
       ...headers
     }};
-    https.get(url, options as any, res => {
+    const req = https.get(url, options as any, res => {
       const chunks: Buffer[] = [];
       const encoding = (res.headers['content-encoding'] || '').toLowerCase();
 
@@ -70,7 +70,9 @@ function httpsGet(url: string, headers: Record<string, string> = {}): Promise<an
           reject(e);
         }
       });
-    }).on('error', reject);
+    });
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.on('error', reject);
   });
 }
 

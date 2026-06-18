@@ -480,10 +480,13 @@ export function addToHistory(conversationId: string, role: 'user' | 'assistant',
     const batch = history.splice(0, COMPRESS_BATCH);
     const compressed = compressTurns(batch);
     const existing = conversationDigest.get(conversationId);
-    conversationDigest.set(
-      conversationId,
-      existing ? `${existing} | ${compressed}` : compressed
-    );
+    let newDigest = existing ? `${existing} | ${compressed}` : compressed;
+    if (newDigest.length > 4000) {
+      newDigest = newDigest.slice(newDigest.length - 4000);
+      const pipeIdx = newDigest.indexOf(' | ');
+      if (pipeIdx > 0) newDigest = newDigest.slice(pipeIdx + 3);
+    }
+    conversationDigest.set(conversationId, newDigest);
   }
 
   // Evict oldest conversations when the map grows too large (LRU by last write)

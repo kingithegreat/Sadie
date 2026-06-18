@@ -276,11 +276,16 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
 
-  // Load uncensored mode state on mount
+  // Load uncensored mode state on mount + listen for external changes
   useEffect(() => {
     (window as any).electron?.getUncensoredMode?.().then((result: { enabled: boolean }) => {
       setUncensoredMode(result?.enabled || false);
     });
+    const onExternalChange = (e: Event) => {
+      setUncensoredMode((e as CustomEvent).detail);
+    };
+    window.addEventListener('homebot:uncensored-mode-changed', onExternalChange);
+    return () => window.removeEventListener('homebot:uncensored-mode-changed', onExternalChange);
   }, []);
 
   const handleUncensoredToggle = async () => {

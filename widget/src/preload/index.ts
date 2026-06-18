@@ -189,7 +189,10 @@ const electronAPI: ElectronAPI = {
       try { (global as any).__lastPermissionRequest = data; } catch (e) { safeCatch(e); }
     };
     ipcRenderer.on(ALLOWED_CHANNELS.PERMISSION_REQUEST, debugListener);
-    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
+    return () => {
+      ipcRenderer.removeListener(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
+      ipcRenderer.removeListener(ALLOWED_CHANNELS.PERMISSION_REQUEST, debugListener);
+    };
   },
 
   sendPermissionResponse: (requestId: string, decision: 'allow_once'|'always_allow'|'cancel', missingPermissions?: string[]) => {
@@ -526,6 +529,10 @@ const electronAPI: ElectronAPI = {
   // Open a folder in the system file explorer and select the file
   showInFolder: async (filePath: string): Promise<{ success: boolean; error?: string }> => {
     return await ipcRenderer.invoke('homebot:show-in-folder', filePath);
+  },
+
+  openExternalUrl: async (url: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('homebot:open-external-url', url);
   },
 
   // Export chat history as a markdown file to the Desktop

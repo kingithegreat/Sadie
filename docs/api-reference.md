@@ -88,6 +88,7 @@ The renderer process communicates with the main process exclusively through the 
 | `showInFolder(path)` | Reveal a file in the system file explorer. |
 | `exportChat(markdown)` | Write chat history markdown to the Desktop; returns `{ success, path? }`. |
 | `writeClipboard(text)` | Write text to the system clipboard. |
+| `openExternalUrl(url)` | Open a URL in the system default browser. Protocol-validated (http/https only). |
 | `minimizeWindow()` | Minimize the widget window. |
 | `closeWindow()` | Close the widget window. |
 | `restartApp()` | Restart the Electron process. |
@@ -187,6 +188,7 @@ The table below lists every named IPC channel. Direction: **R→M** = renderer s
 | `homebot:mcp-remove-server` | R→M | Remove MCP server. |
 | `homebot:mcp-toggle-server` | R→M | Toggle MCP server. |
 | `homebot:detect-gpu-vram` | R→M | Detect GPU VRAM (PowerShell). Returns `{ vramGB, gpuName }`. |
+| `homebot:open-external-url` | R→M | Open URL in system browser (http/https only). |
 | `homebot:automation:image:generate` | R→M | Generate image via SD/cloud. |
 
 ### Fire-and-forget (send)
@@ -405,7 +407,7 @@ Get current weather using wttr.in (no API key required).
 ---
 
 #### `image_generate`
-Generate an image from a text prompt. Routes to local Stable Diffusion (`localhost:7860`), ComfyUI (`localhost:8188`), or DALL-E 3 (requires `OPENAI_API_KEY`).
+Generate an image from a text prompt. Auto-detects available backends: local Stable Diffusion WebUI (`localhost:7860`), ComfyUI (`localhost:8188`), DALL-E 3 (requires `OPENAI_API_KEY`), Pollinations.ai, or Stable Horde fallback.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

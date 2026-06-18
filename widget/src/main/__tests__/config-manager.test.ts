@@ -152,7 +152,7 @@ describe('applyHardwareProfile', () => {
     ollamaUrl: 'http://127.0.0.1:11434',
     chatModel: 'qwen2.5:7b',
     visionModel: 'moondream',
-    uncensoredModel: 'qwen2.5:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
     theme: 'system',
     alwaysOnTop: true,
     globalHotkey: 'Ctrl+Shift+Space',
@@ -171,21 +171,21 @@ describe('applyHardwareProfile', () => {
     const result = applyHardwareProfile({ ...base, hardwareProfile: '4gb' });
     expect(result.chatModel).toBe('qwen2.5:7b');
     expect(result.visionModel).toBe('moondream');
-    expect(result.uncensoredModel).toBe('qwen2.5:7b');
+    expect(result.uncensoredModel).toBe('dolphin-mistral:7b');
   });
 
   test('applies 8gb profile', () => {
     const result = applyHardwareProfile({ ...base, hardwareProfile: '8gb' });
     expect(result.chatModel).toBe('qwen2.5:7b');
     expect(result.visionModel).toBe('moondream');
-    expect(result.uncensoredModel).toBe('qwen2.5:7b');
+    expect(result.uncensoredModel).toBe('dolphin-mistral:7b');
   });
 
   test('applies 16gb+ profile — full-size models', () => {
     const result = applyHardwareProfile({ ...base, hardwareProfile: '16gb+' });
     expect(result.chatModel).toBe('gemma4:e4b');
     expect(result.visionModel).toBe('moondream');
-    expect(result.uncensoredModel).toBe('qwen2.5:7b');
+    expect(result.uncensoredModel).toBe('dolphin-mistral:7b');
   });
 
   test('preserves all non-model settings when applying a profile', () => {

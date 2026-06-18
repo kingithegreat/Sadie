@@ -89,6 +89,11 @@ export const AutomationCenter: React.FC = () => {
   const [formUseN8n, setFormUseN8n] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [n8nOnline, setN8nOnline] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editInstructions, setEditInstructions] = useState('');
+  const [editTrigger, setEditTrigger] = useState<'manual' | 'schedule'>('manual');
+  const [editSchedule, setEditSchedule] = useState(60);
 
   const loadAutomations = useCallback(async () => {
     setLoading(true);
@@ -160,14 +165,21 @@ export const AutomationCenter: React.FC = () => {
     setError(null);
     try {
       const result = await window.electron?.runAutomation?.({ id });
-      // Update local state with result
+      const failed = !result?.result || result?.error;
       setAutomations(prev => prev.map(a => a.id === id ? {
         ...a,
         lastRun: new Date().toISOString(),
         lastResult: result?.result || result?.error || 'Done',
+        lastStatus: failed ? 'error' : 'success',
       } : a));
       setExpandedId(id);
     } catch {
+      setAutomations(prev => prev.map(a => a.id === id ? {
+        ...a,
+        lastRun: new Date().toISOString(),
+        lastResult: 'Failed to run automation',
+        lastStatus: 'error',
+      } : a));
       setError('Failed to run automation');
     } finally {
       setRunningId(null);
@@ -182,6 +194,41 @@ export const AutomationCenter: React.FC = () => {
       setError('Failed to delete automation');
     }
   }, []);
+
+  const startEdit = useCallback((auto: SavedAutomation) => {
+    setEditingId(auto.id);
+    setEditName(auto.name);
+    setEditInstructions(auto.instructions);
+    setEditTrigger(auto.trigger);
+    setEditSchedule(auto.scheduleMinutes || 60);
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!editingId || !editName.trim() || !editInstructions.trim()) return;
+    try {
+      await window.electron?.updateAutomation?.({
+        id: editingId,
+        name: editName.trim(),
+        instructions: editInstructions.trim(),
+        trigger: editTrigger,
+        scheduleMinutes: editTrigger === 'schedule' ? editSchedule : undefined,
+      });
+      setAutomations(prev => prev.map(a => a.id === editingId ? {
+        ...a,
+        name: editName.trim(),
+        instructions: editInstructions.trim(),
+        trigger: editTrigger,
+        scheduleMinutes: editTrigger === 'schedule' ? editSchedule : a.scheduleMinutes,
+      } : a));
+      setEditingId(null);
+    } catch {
+      setError('Failed to save changes');
+    }
+  }, [editingId, editName, editInstructions, editTrigger, editSchedule]);
 
   const applyExample = useCallback((ex: typeof EXAMPLE_AUTOMATIONS[0]) => {
     setFormName(ex.name);
@@ -229,6 +276,26 @@ export const AutomationCenter: React.FC = () => {
         >
           ↻ Refresh
         </button>
+        {n8nOnline && (
+          <>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => window.electron?.openExternalUrl?.('http://localhost:5678/credentials')}
+              title="Manage API keys, OAuth tokens, and service credentials in n8n"
+            >
+              🔑 Credentials
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => window.electron?.openExternalUrl?.('http://localhost:5678')}
+              title="Open n8n workflow editor"
+            >
+              ⚙ n8n Dashboard
+            </button>
+          </>
+        )}
       </div>
 
       {isCreating && (
@@ -388,6 +455,29 @@ export const AutomationCenter: React.FC = () => {
         ) : (
           automations.map(auto => (
             <div key={auto.id} className={`automation-card ${auto.enabled ? 'enabled' : 'disabled'} ${runningId === auto.id ? 'running' : ''}`}>
+              {editingId === auto.id ? (
+                <div className="automation-edit-form">
+                  <label className="form-label" htmlFor="edit-name">Name</label>
+                  <input id="edit-name" className="setting-input" placeholder="Automation name" value={editName} onChange={e => setEditName(e.target.value)} />
+                  <label className="form-label" htmlFor="edit-instructions">Instructions</label>
+                  <textarea id="edit-instructions" className="setting-input setting-textarea" placeholder="What should this automation do?" value={editInstructions} onChange={e => setEditInstructions(e.target.value)} rows={4} />
+                  <label className="form-label" htmlFor="edit-trigger">Trigger</label>
+                  <select id="edit-trigger" className="setting-input" title="Trigger type" value={editTrigger} onChange={e => setEditTrigger(e.target.value as 'manual' | 'schedule')}>
+                    <option value="manual">Manual</option>
+                    <option value="schedule">Schedule</option>
+                  </select>
+                  {editTrigger === 'schedule' && (
+                    <>
+                      <label className="form-label" htmlFor="edit-schedule">Interval (minutes)</label>
+                      <input id="edit-schedule" className="setting-input" type="number" min={1} placeholder="60" value={editSchedule} onChange={e => setEditSchedule(Number(e.target.value))} />
+                    </>
+                  )}
+                  <div className="form-actions automation-edit-actions">
+                    <button type="button" className="btn-primary" onClick={saveEdit} disabled={!editName.trim() || !editInstructions.trim()}>Save</button>
+                    <button type="button" className="btn-secondary" onClick={cancelEdit}>Cancel</button>
+                  </div>
+                </div>
+              ) : (<>
               <div className="automation-info">
                 <div className="automation-title-row">
                   <h3>{auto.name}</h3>
@@ -405,12 +495,20 @@ export const AutomationCenter: React.FC = () => {
                 <p className="automation-instructions">{auto.instructions}</p>
                 {auto.lastRun && (
                   <div className="automation-meta">
-                    <span className="last-run">Last run: {new Date(auto.lastRun).toLocaleString()}</span>
+                    <span className={`automation-status-dot ${auto.lastStatus === 'error' ? 'status-error' : auto.lastStatus === 'success' ? 'status-success' : ''}`} />
+                    <span className="last-run">
+                      {auto.lastStatus === 'error' ? 'Failed' : 'Completed'} — {new Date(auto.lastRun).toLocaleString()}
+                    </span>
                   </div>
                 )}
-                {/* Expandable last result */}
+                {runningId === auto.id && (
+                  <div className="automation-meta automation-running-status">
+                    <span className="automation-status-dot status-running" />
+                    <span className="last-run">Running...</span>
+                  </div>
+                )}
                 {auto.lastResult && (
-                  <div className="automation-result-section">
+                  <div className={`automation-result-section ${auto.lastStatus === 'error' ? 'result-error' : ''}`}>
                     <button
                       className="result-toggle"
                       onClick={() => setExpandedId(expandedId === auto.id ? null : auto.id)}
@@ -419,7 +517,7 @@ export const AutomationCenter: React.FC = () => {
                       {expandedId === auto.id ? '▾ Hide result' : '▸ Show last result'}
                     </button>
                     {expandedId === auto.id && (
-                      <pre className="automation-result">{auto.lastResult}</pre>
+                      <pre className={`automation-result ${auto.lastStatus === 'error' ? 'automation-result-error' : ''}`}>{auto.lastResult}</pre>
                     )}
                   </div>
                 )}
@@ -435,6 +533,16 @@ export const AutomationCenter: React.FC = () => {
                   <span className="slider"></span>
                 </label>
                 <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => startEdit(auto)}
+                  title="Edit"
+                  aria-label={`Edit ${auto.name}`}
+                >
+                  ✏️
+                </button>
+                <button
+                  type="button"
                   className="btn-icon"
                   onClick={() => handleRun(auto.id)}
                   title="Run now"
@@ -444,6 +552,7 @@ export const AutomationCenter: React.FC = () => {
                   {runningId === auto.id ? '⏳' : '▶'}
                 </button>
                 <button
+                  type="button"
                   className="btn-icon btn-danger"
                   onClick={() => handleDelete(auto.id)}
                   title="Delete"
@@ -453,6 +562,7 @@ export const AutomationCenter: React.FC = () => {
                   🗑
                 </button>
               </div>
+              </>)}
             </div>
           ))
         )}

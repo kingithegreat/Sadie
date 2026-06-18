@@ -116,7 +116,7 @@ const DEFAULT_SETTINGS: Settings = {
   ollamaUrl: 'http://127.0.0.1:11434',
   modelRoutingMode: 'prompt',
   chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
-  uncensoredModel: 'qwen2.5:7b',       // no dedicated uncensored model installed
+  uncensoredModel: 'dolphin-mistral:7b',
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
   codeModel: '',
   theme: 'system',
@@ -410,17 +410,17 @@ export const HARDWARE_PROFILE_DEFAULTS: Record<string, Partial<Settings>> = {
   '4gb': {
     chatModel: 'qwen2.5:7b',
     visionModel: 'moondream',
-    uncensoredModel: 'qwen2.5:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
   },
   '8gb': {
     chatModel: 'qwen2.5:7b',
     visionModel: 'moondream',
-    uncensoredModel: 'qwen2.5:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
   },
   '16gb+': {
     chatModel: 'gemma4:e4b',
     visionModel: 'moondream',
-    uncensoredModel: 'qwen2.5:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
   },
 };
 

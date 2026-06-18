@@ -127,8 +127,9 @@ export const getWeatherDef: ToolDefinition = {
 
 // ============= HELPER FUNCTIONS =============
 
-function httpGet(url: string, headers: Record<string, string> = {}): Promise<string> {
+function httpGet(url: string, headers: Record<string, string> = {}, redirectsLeft = 5): Promise<string> {
   return new Promise(async (resolve, reject) => {
+    if (redirectsLeft <= 0) return reject(new Error('Too many redirects'));
     // Validate the URL before attempting any network request to mitigate SSRF/local access
     try {
       const safe = await isUrlSafe(url);
@@ -156,7 +157,7 @@ function httpGet(url: string, headers: Record<string, string> = {}): Promise<str
         const redirectUrl = res.headers.location.startsWith('http')
           ? res.headers.location
           : new URL(res.headers.location, url).href;
-        return httpGet(redirectUrl, headers).then(resolve).catch(reject);
+        return httpGet(redirectUrl, headers, redirectsLeft - 1).then(resolve).catch(reject);
       }
 
       if (res.statusCode && res.statusCode >= 400) {

@@ -1,6 +1,51 @@
 # Changelog
 
-## Unreleased — n8n automation deployment, quiz fix, fresh-chat UX
+## Unreleased — Full codebase sweep, credential management, dolphin-mistral, docs refresh
+
+### Added
+- **n8n credential management** (`AutomationCenter.tsx`): "Credentials" and "n8n Dashboard" buttons open the n8n credential manager and workflow editor in the system browser via `openExternalUrl` IPC bridge.
+- **`homebot:open-external-url` IPC channel** (`ipc-handlers.ts`, `preload/index.ts`, `types.ts`): protocol-validated (http/https) external URL opener exposed through the preload bridge.
+
+### Fixed — Full Codebase Sweep (32 issues across 20 files)
+- **CSS light theme** (`chatgpt-theme.css`): fixed dangling selector, double `.widget-mode` nesting, undefined CSS variables, gold-to-blue accent migration, dead pseudo-element selectors, duplicate keyframes, and vendor prefix ordering.
+- **Stale keyboard handler** (`App.tsx`): `Ctrl+N` new conversation used stale closure; fixed with ref pattern.
+- **Ollama toast accumulation** (`App.tsx`): repeated online/offline toggles stacked unlimited toasts; now tracks and dismisses the previous toast.
+- **Model selector dropdown** (`ModelSelector.tsx`): portal click-outside detection used the wrong ref, causing immediate close on open.
+- **Garbled emoji** (`SettingsPanel.tsx`): `🔑 LLM API Keys` rendered as `�`; fixed with Unicode escape.
+- **Settings API URL overwrite** (`SettingsPanel.tsx`): `buildLocalSettings` overwrote custom API URLs with provider defaults.
+- **Reaction picker leak** (`MessageBubble.tsx`): no click-outside handler; picker stayed open.
+- **ARIA role mismatch** (`MessageBubble.tsx`): `listbox`/`option` → `menu`/`menuitem` for reaction picker.
+- **TTS error swallowed** (`MessageBubble.tsx`): unhandled rejection on TTS failure; added `.catch()`.
+- **Quiz "about undefined"** (`QuizPanel.tsx`): missing topic fallback in quiz header.
+- **Invalid HTML nesting** (`ImageGenerator.tsx`): `<a><button>` → styled `<a>` for download link.
+- **Toast double-dismiss** (`ToastContainer.tsx`): close button click propagated to container `onClick`.
+- **Voice auto-send stale** (`InputBox.tsx`): `voiceAutoSend` not in `startListening` deps.
+- **Voice panel restart** (`VoiceConversation.tsx`): continuous mode restarted after panel was closed.
+- **Preload listener leak** (`preload/index.ts`): `onPermissionRequest` cleanup didn't remove debug listener.
+- **openUrl false success** (`tools/system.ts`): `Promise.allSettled` swallowed `shell.openExternal` rejections.
+- **Hardcoded Ollama URL** (`ipc-handlers.ts`): quiz generation used `localhost` instead of configured URL (2 instances).
+- **Scheduler interval leak** (`ipc-handlers.ts`): outer interval not stored for cleanup; added `app.on('before-quit')` cleanup.
+- **50 MB document parse limit** (`ipc-handlers.ts`): added file size guard to `homebot:parse-document`.
+- **Conversation digest unbounded** (`message-router.ts`): rolling digest capped at 4000 chars with smart truncation.
+- **PowerShell injection** (`tools/contacts.ts`): contact search queries now strip shell metacharacters.
+- **Vision file size DoS** (`tools/vision.ts`): added 20 MB file size check before `readFileSync`.
+- **HTTP redirect loop** (`tools/web.ts`): redirect chain capped at 5 hops.
+- **NBA timeout hang** (`tools/nba.ts`): added 15 s timeout to `httpsGet` requests.
+- **StatusIndicator sync** (`StatusIndicator.tsx`): listens for `homebot:uncensored-mode-changed` custom event.
+
+### Changed
+- **Default uncensored model** (`config-manager.ts`): changed from `qwen2.5:7b` to `dolphin-mistral:7b` across all hardware profiles — a genuinely uncensored Mistral 7B fine-tune with alignment removal.
+
+### Tests
+- All 120 test suites / 1,883 tests pass.
+- Updated `config-manager.test.ts` assertions for `dolphin-mistral:7b`.
+
+### Documentation
+- Updated README, architecture, setup guide, API reference, and changelog to reflect credential management, dolphin-mistral default, image generation backends, and security additions.
+
+---
+
+## Previous Unreleased — n8n automation deployment, quiz fix, fresh-chat UX
 
 ### Added
 - **n8n workflow deployment from Automation Center** (`n8n-api.ts`, `ipc-handlers.ts`, `AutomationCenter.tsx`): automations can now be deployed as n8n workflows directly from HomeBot — generates webhook-triggered workflows, imports them via Docker CLI, activates them in SQLite, and restarts the container. No n8n UI interaction required.

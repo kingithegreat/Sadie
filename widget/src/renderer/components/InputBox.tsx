@@ -224,7 +224,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, []);
+  }, [voiceAutoSend]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {

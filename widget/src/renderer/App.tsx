@@ -100,6 +100,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [widgetMode, setWidgetMode] = useState(true); // Start in widget mode
   const { toasts, addToast, dismissToast, history: notifHistory, clearHistory: clearNotifHistory } = useToasts();
+  const ollamaToastRef = useRef<string | null>(null);
 
   // Initialise widget mode from main process and listen for changes
   useEffect(() => {
@@ -113,6 +114,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     if (typeof newMode === 'boolean') setWidgetMode(newMode);
   }, []);
 
+  const newConversationRef = useRef<() => void>(() => {});
+
   // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -121,7 +124,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         setShortcutsOpen(prev => !prev);
       } else if (e.ctrlKey && e.key === 'n') {
         e.preventDefault();
-        handleNewConversation();
+        newConversationRef.current();
       } else if (e.ctrlKey && e.key === 'b') {
         e.preventDefault();
         setSidebarOpen(prev => !prev);
@@ -293,11 +296,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Ollama health — show a warning banner if Ollama isn't reachable on startup
     const ollamaUnsub = window.electron.onOllamaStatus?.((data) => {
       if (!data.online) {
-        addToast(
+        if (ollamaToastRef.current) dismissToast(ollamaToastRef.current);
+        ollamaToastRef.current = addToast(
           `Ollama not running — start Ollama to use local models. (${data.url})`,
           'warning',
-          0  // persistent until dismissed
+          0
         );
+      } else if (ollamaToastRef.current) {
+        dismissToast(ollamaToastRef.current);
+        ollamaToastRef.current = null;
       }
       setStatus(prev => ({ ...prev, ollama: data.online ? 'online' : 'offline' }));
     });
@@ -484,6 +491,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       console.error('Failed to create conversation:', err);
     }
   };
+  newConversationRef.current = handleNewConversation;
 
   /**
    * Handle selecting a different conversation

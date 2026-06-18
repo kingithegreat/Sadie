@@ -52,7 +52,7 @@ const ToastItem: React.FC<{ toast: Toast; onDismiss: (id: string) => void }> = (
     >
       <span className="toast-icon">{icon}</span>
       <span className="toast-message">{toast.message}</span>
-      <button className="toast-close" onClick={dismiss} aria-label="Dismiss">×</button>
+      <button className="toast-close" onClick={e => { e.stopPropagation(); dismiss(); }} aria-label="Dismiss">×</button>
     </div>
   );
 };

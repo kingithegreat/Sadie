@@ -326,6 +326,7 @@ export interface ElectronAPI {
   // Shell file helpers
   showInFolder?: (filePath: string) => void;
   openFile?: (filePath: string) => void;
+  openExternalUrl?: (url: string) => Promise<{ success: boolean; error?: string }>;
   // MCP server management
   mcpListServers?: () => Promise<any>;
   mcpGetStatus?: () => Promise<any>;
@@ -503,5 +504,6 @@ export interface SavedAutomation {
   enabled: boolean;
   lastRun?: string;
   lastResult?: string;
+  lastStatus?: 'success' | 'error';
   createdAt: string;
 }

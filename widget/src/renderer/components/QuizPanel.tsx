@@ -308,7 +308,7 @@ const QuizPanel: React.FC = () => {
         <div className="quiz-loading">
           <div className="quiz-spinner" />
           <p className="quiz-loading-text">Generating your quiz...</p>
-          <p className="quiz-loading-sub">AI is crafting {questionCount} {difficulty} questions about {TOPICS.find(t => t.id === topic)?.label}</p>
+          <p className="quiz-loading-sub">AI is crafting {questionCount} {difficulty} questions about {TOPICS.find(t => t.id === topic)?.label || topic || 'your topic'}</p>
           <p className="quiz-loading-hint">This may take 15–30 seconds depending on your GPU</p>
         </div>
       </div>

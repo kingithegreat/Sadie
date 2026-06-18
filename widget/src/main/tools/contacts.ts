@@ -109,7 +109,7 @@ async function saveLocalContacts(contacts: Contact[]): Promise<void> {
 }
 
 async function searchOutlook(query: string, limit: number): Promise<Contact[]> {
-  const safe = query.replace(/['"]/g, '').slice(0, 128);
+  const safe = query.replace(/['"$`();|{}&]/g, '').slice(0, 128);
   const cmd =
     `powershell -NoProfile -NonInteractive -Command "` +
     `try { ` +

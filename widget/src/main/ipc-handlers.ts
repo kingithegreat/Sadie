@@ -1031,6 +1031,22 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  ipcMain.handle('homebot:open-external-url', async (_event, url: string) => {
+    try {
+      if (!url || typeof url !== 'string') {
+        return { success: false, error: 'No URL provided' };
+      }
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return { success: false, error: 'Only http/https URLs are allowed' };
+      }
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   /**
    * Show a file in the system file explorer (and select it)
    */
@@ -1286,6 +1302,11 @@ try {
     try {
       const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
       if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+
+      const stat = fs.statSync(resolved);
+      if (stat.size > 50 * 1024 * 1024) {
+        return { success: false, error: 'File too large (max 50 MB)' };
+      }
 
       const ext = path.extname(resolved).toLowerCase();
       const buffer = fs.readFileSync(resolved);
@@ -1595,6 +1616,25 @@ try {
 
     let resultText = '';
 
+    // Auto-deploy to n8n if no webhook URL yet and n8n is reachable
+    if (!auto.n8nWebhookUrl) {
+      try {
+        const settings = getSettings();
+        const n8nBase = settings.n8nUrl || 'http://localhost:5678';
+        const healthRes = await axios.get(`${n8nBase.replace(/\/$/, '')}/healthz`, { timeout: 3000 });
+        if (healthRes.status >= 200 && healthRes.status < 300) {
+          console.log(`[Automation] n8n online — auto-deploying workflow for "${auto.name}"`);
+          const wf = await createAndActivateWorkflow({ automationName: auto.name, instructions: auto.instructions });
+          auto.n8nWebhookUrl = wf.webhookUrl;
+          auto.n8nWorkflowId = wf.id;
+          const automations = readAutomations();
+          const idx = automations.findIndex((a: any) => a.id === auto.id);
+          if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+          console.log(`[Automation] Auto-deployed n8n workflow: ${wf.webhookUrl}`);
+        }
+      } catch { /* n8n not available, fall through to local */ }
+    }
+
     // ── n8n webhook path: POST to the user's n8n workflow ──
     if (auto.n8nWebhookUrl) {
       console.log(`[Automation] n8n path: POST to ${auto.n8nWebhookUrl}`);
@@ -1737,7 +1777,13 @@ try {
   setTimeout(startAutomationSchedule, 5000);
 
   // Re-sync schedules every 60s to pick up CRUD changes
-  setInterval(startAutomationSchedule, 60_000);
+  const scheduleResyncTimer = setInterval(startAutomationSchedule, 60_000);
+
+  app.on?.('before-quit', () => {
+    clearInterval(scheduleResyncTimer);
+    for (const t of automationTimers.values()) clearInterval(t);
+    automationTimers.clear();
+  });
 
   // ── Quiz Mode ──────────────────────────────────────────────────────────────
 
@@ -1759,7 +1805,7 @@ try {
 Each object: {"type":"multiple-choice","question":"...","code":"","options":["A","B","C","D"],"correctIndex":0,"explanation":"..."}
 Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausible options. Use short code if relevant.`;
 
-        const response = await axios.post('http://127.0.0.1:11434/api/generate', {
+        const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
           model,
           prompt,
           system: `You output ONLY valid JSON arrays. No markdown. No backticks. No explanation. ${difficulty} difficulty ${topic} coding quiz.`,
@@ -1875,7 +1921,7 @@ Return ONLY a JSON array, no other text.
 Each object: {"type":"multiple-choice","question":"...","code":"","options":["A","B","C","D"],"correctIndex":0,"explanation":"..."}
 Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausible options. Base questions strictly on the material above.`;
 
-        const response = await axios.post('http://127.0.0.1:11434/api/generate', {
+        const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
           model,
           prompt,
           system: `You output ONLY valid JSON arrays. No markdown. No backticks. Generate ${difficulty} difficulty quiz questions based strictly on the provided study material.`,

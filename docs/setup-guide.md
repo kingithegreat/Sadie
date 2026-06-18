@@ -47,7 +47,7 @@ That's it — no terminal, no manual model pulls, no Docker. Everything below is
 |---|---|---|
 | [Node.js](https://nodejs.org) | 18 LTS or higher | Required to build and run the Electron application |
 | [npm](https://nodejs.org) | 9 or higher | Ships with Node.js |
-| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models. Current runtime defaults are `qwen2.5:7b` for chat and `moondream` for vision. |
+| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models. Defaults: `qwen2.5:7b` (chat), `dolphin-mistral:7b` (uncensored), `moondream` (vision). |
 | [Docker Desktop](https://docs.docker.com/get-docker/) | Latest | Required for n8n workflow orchestration (optional) |
 | [Git](https://git-scm.com) | Latest | Version control |
 
@@ -116,7 +116,7 @@ curl http://127.0.0.1:11434/api/tags
 
 ```bash
 ollama pull qwen2.5:7b           # Primary chat model (4.7 GB)
-ollama pull qwen2.5-coder:7b    # Code generation model (optional, 4.4 GB)
+ollama pull dolphin-mistral:7b   # Uncensored mode model (4.1 GB)
 ollama pull moondream            # Default vision model (1.7 GB)
 ollama pull nomic-embed-text     # Embeddings for RAG and memory enrichment
 ollama pull gemma4:e4b           # 16 GB+ GPU recommended (9.6 GB, optional)
@@ -208,8 +208,8 @@ HomeBot has six modes, accessible from the sidebar or via keyboard shortcuts:
 | Mode | Shortcut | What to Try |
 |---|---|---|
 | **Chat** | Ctrl+1 | Ask a question, run a tool, attach a document |
-| **Automation** | Ctrl+2 | Create a "Morning News Summary" automation and click ▶ Run |
-| **Image** | Ctrl+3 | Type a prompt to generate an image via Pollinations.ai |
+| **Automation** | Ctrl+2 | Create a "Morning News Summary" automation and click ▶ Run. Use 🔑 Credentials to manage n8n API keys. |
+| **Image** | Ctrl+3 | Type a prompt to generate an image (auto-detects SD WebUI, ComfyUI, DALL-E 3, Pollinations, or Stable Horde) |
 | **Documents** | Ctrl+4 | View and manage documents |
 | **Quiz** | Ctrl+5 | Pick a coding topic (Python, JS, etc.), difficulty, and take a quiz |
 

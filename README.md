@@ -46,13 +46,13 @@ It combines:
 | **Browser Automation** | Automated browser interactions and content extraction |
 | **API Tool** | External HTTPS requests restricted to an approved host allowlist |
 | **Code Cloud API** | Route coding queries to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or a custom endpoint |
-| **Image Generation** | Text-to-image via Pollinations.ai with automatic Stable Horde fallback and progress indicator |
+| **Image Generation** | Text-to-image via local Stable Diffusion WebUI, ComfyUI, DALL-E 3, Pollinations.ai, or Stable Horde — auto-detected with progress indicator |
 | **Sports / NBA** | Live scores, full-season results, standings, and player stats via ESPN integration |
 | **Word Documents** | Generate `.docx` files with headings, paragraphs, and formatting |
 | **Archive Ops** | ZIP archive creation, extraction, and inspection with size and path-traversal guards |
 | **Scheduler** | Persistent reminders and scheduled jobs that survive app restarts |
 | **Quiz Mode** | Interactive coding quizzes with 12 topics, 3 difficulty levels, persistent progress tracking, and letter grades |
-| **Automation Center** | Create, edit, and run reusable automations with optional one-click n8n deployment; manual or scheduled triggers |
+| **Automation Center** | Create, edit, and run reusable automations with optional one-click n8n deployment; manual or scheduled triggers; status indicators and credential management via n8n dashboard |
 | **Mixture of Agents** | Multiple local models propose answers; an aggregator synthesises the best response (16 GB+ GPU) |
 
 ### User Experience
@@ -80,8 +80,11 @@ It combines:
 | **Webhook Auth** | 256-bit shared secret (`X-HOMEBOT-Auth`) for all n8n communication |
 | **Tool Recursion Cap** | `MAX_TOOL_ROUNDS = 10` prevents infinite tool-call loops |
 | **PID Injection Guard** | Positive integer validation before `Stop-Process` |
+| **Contact Injection Guard** | PowerShell metacharacter stripping in contact search queries |
 | **Toast XML Sanitisation** | Entity-encoding prevents injection in Windows notifications |
 | **Git Message Sanitisation** | Character whitelist prevents shell metacharacter injection |
+| **Redirect Depth Limit** | HTTP redirect chains capped at 5 hops to prevent loops |
+| **File Size Guards** | 50 MB cap on document parsing, 20 MB on vision input |
 | **Environment Gating** | Test code, debug logs, and dev features are compile-time gated |
 
 All tools execute locally as TypeScript handlers. HomeBot calls whichever tool the LLM selects, receives structured JSON, and keeps everything on your machine.
@@ -114,7 +117,7 @@ All tools execute locally as TypeScript handlers. HomeBot calls whichever tool t
             | HTTP (localhost)
 ┌───────────v────────────────────────────────────────┐
 │                 Ollama (local)                      │
-│   qwen2.5:7b - qwen2.5-coder:7b - moondream       │
+│   qwen2.5:7b - dolphin-mistral:7b - moondream      │
 │   gemma4:e4b - nomic-embed-text                    │
 │   127.0.0.1:11434                                   │
 └────────────────────────────────────────────────────┘

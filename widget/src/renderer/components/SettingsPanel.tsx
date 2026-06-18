@@ -89,9 +89,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const buildLocalSettings = (source: SharedSettings): Settings => {
     const llm = source.customLLM ? { ...defaultCustomLLM, ...source.customLLM } : { ...defaultCustomLLM };
-    // Ensure known providers always have their canonical URL
+    // Fill canonical URL only if the user hasn't set a custom one
     const providerDefault = getDefaultApiUrl(llm.provider);
-    if (providerDefault) llm.apiUrl = providerDefault;
+    if (providerDefault && !llm.apiUrl) llm.apiUrl = providerDefault;
     // Auto-fill API key from saved provider keys if not already set
     if (!llm.apiKey) {
       if (llm.provider === 'anthropic' && source.anthropicApiKey) {
@@ -1398,7 +1398,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="setting-group">
-          <label className="setting-label">� LLM API Keys (optional)</label>
+          <label className="setting-label">{'\u{1F511}'} LLM API Keys (optional)</label>
           <small className="setting-hint sp-hint-mb">
             Save your API keys here. They will auto-fill when you select the provider above.
           </small>
