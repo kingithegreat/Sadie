@@ -3,6 +3,7 @@
 ## Unreleased — Full codebase sweep, credential management, dolphin-mistral, docs refresh
 
 ### Added
+- **Document Viewer RAG and Chat integration** (`DocumentViewer.tsx`, `App.tsx`): "Add to RAG" button indexes the open document for semantic search; "Send to Chat" button switches to chat mode with the document attached as context for immediate Q&A.
 - **n8n credential management** (`AutomationCenter.tsx`): "Credentials" and "n8n Dashboard" buttons open the n8n credential manager and workflow editor in the system browser via `openExternalUrl` IPC bridge.
 - **`homebot:open-external-url` IPC channel** (`ipc-handlers.ts`, `preload/index.ts`, `types.ts`): protocol-validated (http/https) external URL opener exposed through the preload bridge.
 

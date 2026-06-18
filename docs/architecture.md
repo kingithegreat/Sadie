@@ -91,7 +91,7 @@ The renderer supports six modes, switchable via the sidebar or keyboard shortcut
 | `chat` | Ctrl+1 | `App.tsx` (inline) | Main conversational interface |
 | `automation` | Ctrl+2 | `AutomationCenter.tsx` | Create and run reusable automations |
 | `image` | Ctrl+3 | `ImagePanel` | AI image generation via SD WebUI / ComfyUI / DALL-E 3 / Pollinations / Stable Horde |
-| `documents` | Ctrl+4 | `DocumentPanel` | Document viewer/editor |
+| `documents` | Ctrl+4 | `DocumentViewer.tsx` | Document viewer/editor with Add to RAG and Send to Chat |
 | `web` | — | `WebPanel` | Embedded web browser |
 | `quiz` | Ctrl+5 | `QuizPanel.tsx` | Interactive coding quiz |
 

@@ -1,5 +1,9 @@
 import React, { useState, useRef } from 'react';
 
+export interface DocViewerProps {
+  onSendToChat?: (filePath: string, content: string) => void;
+}
+
 interface DocumentState {
   filePath: string;
   fileName: string;
@@ -16,12 +20,13 @@ const SUPPORTED_EXTENSIONS = [
   '.sh', '.bash', '.ps1', '.bat', '.sql', '.html', '.css',
 ];
 
-const DocumentViewer: React.FC = () => {
+const DocumentViewer: React.FC<DocViewerProps> = ({ onSendToChat }) => {
   const [doc, setDoc] = useState<DocumentState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [ragStatus, setRagStatus] = useState<'idle' | 'indexing' | 'done' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -156,6 +161,35 @@ const DocumentViewer: React.FC = () => {
     }
   };
 
+  const handleAddToRag = async () => {
+    if (!doc) return;
+    setRagStatus('indexing');
+    try {
+      const result = await (window as any).electron?.ragIndex?.(doc.filePath);
+      if (result?.success) {
+        const chunks = result.result?.chunks_indexed ?? 0;
+        setRagStatus('done');
+        setSaveMsg(`Indexed into RAG (${chunks} chunks)`);
+        setTimeout(() => { setSaveMsg(null); setRagStatus('idle'); }, 3000);
+      } else {
+        setRagStatus('error');
+        setError(result?.error || 'Failed to index document');
+        setTimeout(() => setRagStatus('idle'), 3000);
+      }
+    } catch (err: any) {
+      setRagStatus('error');
+      setError(err.message || 'RAG indexing failed');
+      setTimeout(() => setRagStatus('idle'), 3000);
+    }
+  };
+
+  const handleSendToChat = () => {
+    if (!doc) return;
+    if (onSendToChat) {
+      onSendToChat(doc.filePath, doc.content);
+    }
+  };
+
   const renderSpreadsheet = (content: string) => {
     const sections = content.split(/^## Sheet: /m).filter(Boolean);
     return sections.map((section, si) => {
@@ -213,10 +247,27 @@ const DocumentViewer: React.FC = () => {
               <button className="doc-btn" onClick={() => handleSaveAs('txt')} disabled={saving}>
                 Export TXT
               </button>
+              <button
+                className="doc-btn doc-btn-rag"
+                onClick={handleAddToRag}
+                disabled={ragStatus === 'indexing'}
+                title="Index this document for semantic search (RAG)"
+              >
+                {ragStatus === 'indexing' ? 'Indexing...' : ragStatus === 'done' ? 'Indexed' : 'Add to RAG'}
+              </button>
+              {onSendToChat && (
+                <button
+                  className="doc-btn doc-btn-chat"
+                  onClick={handleSendToChat}
+                  title="Send this document to chat as context"
+                >
+                  Send to Chat
+                </button>
+              )}
             </>
           )}
           {doc && (
-            <button className="doc-btn doc-btn-close" onClick={() => { setDoc(null); setError(null); setSaveMsg(null); }}>
+            <button className="doc-btn doc-btn-close" onClick={() => { setDoc(null); setError(null); setSaveMsg(null); setRagStatus('idle'); }}>
               Close
             </button>
           )}
@@ -313,6 +364,18 @@ const DocumentViewer: React.FC = () => {
         }
         .doc-btn-primary:hover { background: var(--accent-hover, #3b5de7); }
         .doc-btn-close { color: #f87171; border-color: #f8717140; }
+        .doc-btn-rag {
+          background: #7c3aed20;
+          color: #a78bfa;
+          border-color: #a78bfa40;
+        }
+        .doc-btn-rag:hover { background: #7c3aed40; }
+        .doc-btn-chat {
+          background: #2563eb20;
+          color: #60a5fa;
+          border-color: #60a5fa40;
+        }
+        .doc-btn-chat:hover { background: #2563eb40; }
         .doc-error {
           padding: 8px 16px;
           background: #f8717120;

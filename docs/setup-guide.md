@@ -210,7 +210,7 @@ HomeBot has six modes, accessible from the sidebar or via keyboard shortcuts:
 | **Chat** | Ctrl+1 | Ask a question, run a tool, attach a document |
 | **Automation** | Ctrl+2 | Create a "Morning News Summary" automation and click ▶ Run. Use 🔑 Credentials to manage n8n API keys. |
 | **Image** | Ctrl+3 | Type a prompt to generate an image (auto-detects SD WebUI, ComfyUI, DALL-E 3, Pollinations, or Stable Horde) |
-| **Documents** | Ctrl+4 | View and manage documents |
+| **Documents** | Ctrl+4 | Open a file, then use **Add to RAG** to index it for semantic search or **Send to Chat** to discuss it with HomeBot |
 | **Quiz** | Ctrl+5 | Pick a coding topic (Python, JS, etc.), difficulty, and take a quiz |
 
 ---
