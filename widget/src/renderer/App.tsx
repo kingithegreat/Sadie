@@ -1280,7 +1280,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         </Suspense>
       ) : (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <WebServicesPanel />
+          <WebServicesPanel onSendToChat={(url: string, content: string) => {
+            const doc: DocumentAttachment = {
+              id: `web-${Date.now()}`,
+              filename: url,
+              mimeType: 'text/plain',
+              size: new Blob([content]).size,
+              data: btoa(new TextEncoder().encode(content).reduce((s, b) => s + String.fromCharCode(b), '')),
+            };
+            setMode('chat');
+            handleSendMessage(`I've fetched the web page "${url}". Please summarize this content.`, undefined, [doc]);
+          }} />
         </Suspense>
       )}
 

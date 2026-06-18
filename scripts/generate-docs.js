@@ -6,10 +6,12 @@ const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType,
   PageBreak, TabStopPosition, TabStopType, Header, Footer,
-  TableOfContents, StyleLevel
+  TableOfContents, StyleLevel, ImageRun
 } = require(require('path').resolve(__dirname, '..', 'widget', 'node_modules', 'docx'));
 const fs = require('fs');
 const path = require('path');
+
+const SCREENSHOTS_DIR = path.resolve(__dirname, '..', '..', 'HOMEBOTPICS');
 
 // ── Shared constants ──────────────────────────────────────────────────────
 const STUDENT = 'Aden Kingi';
@@ -77,10 +79,36 @@ function spacer() {
   return new Paragraph({ spacing: { after: 200 }, children: [] });
 }
 
+function screenshot(filename, caption, widthPx, heightPx, maxWidthEmu) {
+  maxWidthEmu = maxWidthEmu || 5800000; // ~6 inches
+  const ratio = heightPx / widthPx;
+  const w = maxWidthEmu;
+  const h = Math.round(w * ratio);
+  const imgPath = path.join(SCREENSHOTS_DIR, filename);
+  const children = [];
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 120, after: 60 },
+    children: [
+      new ImageRun({ data: fs.readFileSync(imgPath), transformation: { width: w / 9525, height: h / 9525 }, type: 'png' })
+    ]
+  }));
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 160 },
+    children: [new TextRun({ text: caption, size: 18, font: 'Calibri', italics: true, color: GRAY })]
+  }));
+  return children;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // POSTER
 // ══════════════════════════════════════════════════════════════════════════
 function buildPoster() {
+  const PURPLE = '7C3AED';
+  const GREEN = '059669';
+  const GOLD = 'D97706';
+
   return new Document({
     styles: {
       default: {
@@ -89,106 +117,160 @@ function buildPoster() {
     },
     sections: [{
       properties: {
-        page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } }
+        page: { margin: { top: 600, bottom: 600, left: 600, right: 600 } }
       },
       children: [
-        // Title
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 80 },
-          children: [new TextRun({ text: 'HomeBot', size: 56, bold: true, font: 'Calibri', color: BLUE })]
-        }),
+        // ── Header band ──
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 40 },
-          children: [new TextRun({ text: 'Your Private Desktop AI Assistant', size: 28, font: 'Calibri', color: DARK })]
+          children: [new TextRun({ text: 'HomeBot', size: 64, bold: true, font: 'Calibri', color: BLUE })]
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 200 },
-          children: [new TextRun({ text: `${STUDENT}  •  ${INSTITUTION}  •  ${PROGRAMME}`, size: 20, font: 'Calibri', color: GRAY })]
+          spacing: { after: 20 },
+          children: [new TextRun({ text: 'A Privacy-First Offline AI Desktop Assistant', size: 28, font: 'Calibri', color: DARK })]
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 20 },
+          children: [new TextRun({ text: `${STUDENT}  (9821836)  •  Supervisor: ${SUPERVISOR}`, size: 20, font: 'Calibri', color: GRAY })]
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 160 },
+          children: [new TextRun({ text: `${INSTITUTION}  •  ${PROGRAMME}  •  ${YEAR}`, size: 20, font: 'Calibri', color: GRAY })]
         }),
 
-        // Problem
+        // ── Problem ──
         heading('The Problem', HeadingLevel.HEADING_2),
-        body('Cloud-based AI assistants require an internet connection and send every conversation to a remote server. Users who need AI assistance for sensitive work — personal documents, business data, local system administration — are forced to choose between capability and privacy. No existing desktop tool offers a fully offline AI assistant with broad tool integration and agentic multi-step reasoning.'),
+        body('Cloud AI assistants (ChatGPT, Claude, Gemini) transmit every message to remote servers. Users with sensitive documents, codebases, or restricted networks are forced to choose between capability and privacy. Existing local tools like LM Studio or Jan.ai offer chat but lack desktop tool integration, agentic reasoning, and workflow automation. No desktop application combines offline LLM inference with 85+ tool handlers, RAG document retrieval, and a production-quality UI.'),
 
-        // Solution
+        // ── Solution ──
         heading('HomeBot — The Solution', HeadingLevel.HEADING_2),
-        body('HomeBot is a privacy-first desktop AI assistant built with Electron 28, React 18, and TypeScript. It runs entirely on the user\'s machine using Ollama for local LLM inference, with optional cloud provider support when the user explicitly enables it. HomeBot combines a rich chat interface with 60+ local tool handlers, agentic multi-step reasoning, retrieval-augmented generation (RAG), and a modern glass-morphism UI — all without requiring an API key or internet connection for core functionality.'),
+        body('HomeBot is a privacy-first desktop AI assistant built with Electron 28, React 18, and TypeScript. It runs local LLMs via Ollama for fully offline chat, with 85+ tool handlers for real desktop agency — file management, web search, vision, code execution, system administration, and more. All data stays on the user\'s machine. Optional cloud provider routing (OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Google AI Studio) is available when the user explicitly enables it.'),
 
-        // Architecture
+        // ── Architecture ──
         heading('System Architecture', HeadingLevel.HEADING_2),
         new Paragraph({
-          spacing: { after: 120 },
+          spacing: { after: 100 },
           children: [new TextRun({ text: [
-            '┌─────────────────────────────────────────────────┐',
-            '│           Electron 28 + React 18 UI             │',
-            '│   ┌──────────┐  IPC Bridge  ┌───────────────┐   │',
-            '│   │ Renderer │◄────────────►│  Main Process  │   │',
-            '│   │ (React)  │              │  (Node.js)     │   │',
-            '│   └──────────┘              └──────┬────────┘   │',
-            '│                                    │            │',
-            '│   ┌────────────┐  ┌────────────┐   │            │',
-            '│   │  Ollama    │  │ Cloud LLMs │   │            │',
-            '│   │ (local AI) │  │ (optional) │◄──┘            │',
-            '│   └────────────┘  └────────────┘                │',
-            '│          85+ Tool Handlers (TypeScript)         │',
-            '└─────────────────────────────────────────────────┘',
-          ].join('\n'), size: 16, font: 'Consolas' })]
+            '┌──────────────────────────────────────────────────────┐',
+            '│                  Electron 28 Shell                    │',
+            '│                                                      │',
+            '│   React 18 UI  ◄──  IPC Bridge  ──►  Main Process   │',
+            '│   (31 components,    (116 channels,   (message       │',
+            '│    light/dark/auto    context          router,       │',
+            '│    themes)            isolation)       85+ tools)    │',
+            '├──────────────────────────────────────────────────────┤',
+            '│   Ollama (local)        │  6 Cloud LLM Providers    │',
+            '│   qwen2.5:7b            │  (optional, user opt-in)  │',
+            '│   dolphin-mistral:7b    │                           │',
+            '│   moondream (vision)    │  n8n Workflow Automation   │',
+            '│   nomic-embed-text      │  (Docker, webhook auth)   │',
+            '│   127.0.0.1:11434       │  localhost:5678           │',
+            '└──────────────────────────────────────────────────────┘',
+          ].join('\n'), size: 15, font: 'Consolas' })]
         }),
 
-        // Key Features (two-column via table)
+        // ── UI Modes ──
+        heading('Seven Application Modes', HeadingLevel.HEADING_2),
+        simpleTable(
+          ['Mode', 'What It Does'],
+          [
+            ['Home', 'Welcome dashboard with quote of the day, joke, and quick-start suggestions'],
+            ['Chat', 'AI conversation with streaming, tool calling, document attachments, and agentic loops'],
+            ['Automation', 'Create reusable workflows with manual or scheduled triggers; one-click n8n deployment'],
+            ['Image', 'Text-to-image generation across 5 backends (SD WebUI, ComfyUI, DALL-E 3, Pollinations, Stable Horde)'],
+            ['Documents', 'Open files, Add to RAG for semantic search, or Send to Chat for AI-assisted review'],
+            ['Web', 'Embedded web browsing with content extraction'],
+            ['Quiz', 'Interactive coding quizzes — 12 topics, 3 difficulty levels, persistent progress tracking'],
+          ]
+        ),
+        spacer(),
+
+        // ── Screenshots ──
+        heading('Application Screenshots', HeadingLevel.HEADING_2),
+        ...screenshot('FullScreenChat.png', 'Figure 1 — Chat Mode: Welcome dashboard with Ollama status, model selector, quote/joke of the day, and quick-start suggestions', 1507, 967),
+        ...screenshot('AutomationPagePic.png', 'Figure 2 — Automation Center: Reusable workflows with schedule/manual triggers, n8n deployment, and credential management', 1888, 997),
+        ...screenshot('ImagePagePic.png', 'Figure 3 — Image Generation: Text-to-image with style, resolution, and backend selection across 5 providers', 1876, 1007),
+
+        // ── Key Features ──
         heading('Key Features', HeadingLevel.HEADING_2),
         simpleTable(
           ['Capability', 'Description'],
           [
-            ['Web Search', 'Multi-engine cascade (Tavily, Serper, DuckDuckGo, Google, Brave) with content fetching and SSRF protection'],
-            ['File Manager', 'Read, write, move, delete files with path validation and directory whitelisting'],
-            ['Vision / OCR', 'Describe images and extract text via Ollama moondream model'],
-            ['RAG Engine', 'Drag-and-drop document indexing with hybrid TF-IDF + semantic embedding search'],
-            ['Agentic Loops', 'LLM autonomously chains tools for multi-step requests with streaming progress'],
-            ['Cloud LLM Routing', '11 providers: OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, OpenRouter, and more'],
+            ['85+ Tool Handlers', '27 modules: filesystem, web search, vision, RAG, memory, Git, terminal, calendar, contacts, NBA, news, email, and more'],
+            ['Agentic Loops', 'LLM autonomously chains tools for multi-step requests (max 6 rounds) with streaming progress'],
+            ['Hybrid RAG', 'TF-IDF + semantic embeddings (nomic-embed-text) fused with Reciprocal Rank Fusion (k=60)'],
+            ['Document Viewer', 'Open any document → Add to RAG for indexing or Send to Chat for AI-assisted review'],
+            ['6 Cloud Providers', 'OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio — user opt-in only'],
             ['Mixture of Agents', 'Multiple local models propose answers; an aggregator synthesises the best response'],
-            ['Morning Briefing', 'Proactive daily summary of weather, calendar, and reminders'],
-            ['Quiz Mode', 'Interactive coding quizzes with 12 topics, 3 difficulty levels, and persistent progress tracking'],
-            ['Automation Center', 'Create, edit, and run reusable automations with manual or scheduled triggers'],
-            ['85+ Tools', 'Code runner, NBA scores, image generation, Git, terminal, email, calendar, and more'],
+            ['Morning Briefing', 'Proactive daily summary of weather, calendar events, and pending reminders'],
+            ['One-Click Installer', 'NSIS installer (152 MB) — no admin rights, auto-launches, first-run wizard handles everything'],
           ]
         ),
         spacer(),
 
-        // Technology Stack
+        // ── Security ──
+        heading('11-Layer Security Model', HeadingLevel.HEADING_2),
+        bullet('IPC channel allowlist (116 whitelisted channels) with context isolation'),
+        bullet('SSRF protection — blocks loopback, private IPs, and DNS rebinding'),
+        bullet('Permission gating — Allow Once / Always Allow / Cancel for destructive operations'),
+        bullet('Webhook auth (256-bit shared secret), PowerShell injection guard, PID injection guard'),
+        bullet('Tool recursion cap (MAX_TOOL_ROUNDS = 10), file size guards, redirect depth limit'),
+        bullet('API key encryption at rest via Electron safeStorage (DPAPI on Windows)'),
+
+        // ── Technology Stack ──
         heading('Technology Stack', HeadingLevel.HEADING_2),
         simpleTable(
           ['Layer', 'Technology'],
           [
-            ['Desktop Shell', 'Electron 28 with context isolation and preload bridge'],
-            ['Frontend', 'React 18, TypeScript, Tailwind CSS, glass-morphism UI'],
-            ['LLM Inference', 'Ollama (offline) + 11 cloud providers (optional)'],
-            ['Embeddings', 'nomic-embed-text via Ollama for RAG and memory'],
-            ['Testing', 'Jest (120 test suites) + Playwright (E2E)'],
-            ['Build', 'electron-vite, electron-builder (NSIS installer)'],
-            ['Orchestration', 'n8n (optional Docker container for scheduled workflows)'],
+            ['Desktop Shell', 'Electron 28.3.3 with context isolation and preload bridge'],
+            ['Frontend', 'React 18.3.1, TypeScript 5.9.3, light/dark/system-auto themes'],
+            ['LLM Inference', 'Ollama (offline) + 6 cloud providers (optional)'],
+            ['RAG & Embeddings', 'nomic-embed-text via Ollama — hybrid TF-IDF + semantic with RRF'],
+            ['Automation', 'n8n via Docker with one-click deployment and webhook authentication'],
+            ['Testing', 'Jest (121 suites, 1,907 tests) + Playwright E2E'],
+            ['Build & Deploy', 'electron-vite, electron-builder, NSIS one-click installer (152 MB)'],
           ]
         ),
         spacer(),
 
-        // Testing and Results
-        heading('Testing & Results', HeadingLevel.HEADING_2),
-        bullet('120 test suites — all passing'),
-        bullet('~55,000 lines of TypeScript across 409 tracked files'),
-        bullet('398 commits over the development lifecycle'),
-        bullet('Playwright E2E tests for critical user flows'),
-        bullet('SSRF protection, IPC hardening, webhook auth, tool recursion cap'),
-        bullet('Runs comfortably on a laptop with 4 GB+ GPU VRAM'),
+        // ── Metrics ──
+        heading('Project Metrics', HeadingLevel.HEADING_2),
+        simpleTable(
+          ['Metric', 'Value'],
+          [
+            ['Development period', '17 Nov 2025 – 18 Jun 2026 (7 months)'],
+            ['Total commits', '410'],
+            ['Lines of TypeScript', '62,640'],
+            ['Source files (.ts/.tsx)', '243'],
+            ['Tool handler modules', '27'],
+            ['React components', '31'],
+            ['Test suites', '121 (all passing)'],
+            ['Automated tests', '1,907'],
+            ['Statement coverage', '56.57%'],
+            ['Line coverage', '59.66%'],
+            ['IPC channels', '116'],
+            ['Installer size', '152 MB'],
+          ]
+        ),
+        spacer(),
 
-        // Future Work
+        // ── Research Questions ──
+        heading('Research Questions & Findings', HeadingLevel.HEADING_2),
+        bullet('RQ1: Can local LLMs provide task-appropriate responses? — Yes. qwen2.5:7b handles chat, coding, and tool-calling tasks offline.'),
+        bullet('RQ2: What security architecture safely exposes tools? — 11-layer defence-in-depth with permission gating and input sanitisation.'),
+        bullet('RQ3: How are agentic loops made reliable? — Bounded execution, schema validation, and streaming progress indicators.'),
+        bullet('RQ4: Is offline-first AI viable on consumer hardware? — Yes, with 8 GB+ RAM and 4 GB+ VRAM.'),
+
+        // ── Future Work ──
         heading('Future Work', HeadingLevel.HEADING_2),
-        bullet('Plugin system for community-contributed tool handlers'),
-        bullet('Multi-user support with per-user encrypted memory stores'),
-        bullet('Mobile companion app for remote access to the local HomeBot instance'),
-        bullet('Fine-tuned local models optimised for HomeBot\'s tool-calling schema'),
+        bullet('Cross-platform packaging — macOS and Linux installers with platform-appropriate tool equivalents'),
+        bullet('Formal user study — structured usability testing with external participants'),
+        bullet('MCP integration — Model Context Protocol for a broader tool/plugin ecosystem'),
+        bullet('Advanced RAG — stronger embedding retrieval with document source attribution'),
       ]
     }]
   });
@@ -243,7 +325,7 @@ function buildReport() {
 
   // ── Abstract ──
   children.push(heading('Abstract'));
-  children.push(body('This report documents the design, implementation, and evaluation of HomeBot (Your Private Desktop AI Assistant), a privacy-first desktop AI assistant built as a capstone project for the Bachelor of Computing Systems programme at Toi Ohomai Institute of Technology. HomeBot addresses the growing tension between AI capability and data privacy by providing a fully offline-capable AI assistant that runs local large language models (LLMs) via Ollama, while optionally supporting 11 cloud LLM providers when users explicitly enable them. The application is built with Electron 28, React 18, and TypeScript, featuring 85+ locally-executed tool handlers, retrieval-augmented generation (RAG), agentic multi-step reasoning, an interactive quiz mode, an automation center, and a modern glass-morphism user interface. The system is validated by 120 test suites, Playwright end-to-end tests, and manual testing across multiple hardware profiles. HomeBot demonstrates that a desktop AI assistant can match the breadth of cloud-based alternatives while keeping user data entirely local.'));
+  children.push(body('This report documents the design, implementation, and evaluation of HomeBot (Your Private Desktop AI Assistant), a privacy-first desktop AI assistant built as a capstone project for the Bachelor of Computing Systems programme at Toi Ohomai Institute of Technology. HomeBot addresses the growing tension between AI capability and data privacy by providing a fully offline-capable AI assistant that runs local large language models (LLMs) via Ollama, while optionally supporting 11 cloud LLM providers when users explicitly enable them. The application is built with Electron 28, React 18, and TypeScript, featuring 85+ locally-executed tool handlers, retrieval-augmented generation (RAG), agentic multi-step reasoning, an interactive quiz mode, an automation center, and a modern glass-morphism user interface. The system is validated by 121 test suites containing 1,907 automated tests, Playwright end-to-end tests, and manual testing across multiple hardware profiles. HomeBot demonstrates that a desktop AI assistant can match the breadth of cloud-based alternatives while keeping user data entirely local.'));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -398,14 +480,16 @@ function buildReport() {
   children.push(simpleTable(
     ['Metric', 'Value'],
     [
-      ['Total Lines of TypeScript', '~55,000'],
-      ['Tracked Files', '409'],
-      ['Git Commits', '398'],
-      ['Test Suites', '120'],
-      ['Unit Tests', '120 suites'],
-      ['Tool Handlers', '85+'],
-      ['Cloud LLM Providers', '11'],
-      ['Renderer Components', '20+'],
+      ['Total Lines of TypeScript', '62,640'],
+      ['Source Files (.ts/.tsx)', '243'],
+      ['Git Commits', '410'],
+      ['Test Suites', '121'],
+      ['Automated Tests', '1,907'],
+      ['Tool Handlers', '85+ across 27 modules'],
+      ['Cloud LLM Providers', '6'],
+      ['React Components', '31'],
+      ['IPC Channels', '116'],
+      ['Installer Size', '152 MB (one-click NSIS)'],
     ]
   ));
 
@@ -469,7 +553,7 @@ function buildReport() {
       ['Cloud LLM routing', 'Achieved', '11 providers including Gemini native streaming'],
       ['Polished desktop UI', 'Achieved', 'Glass-morphism themes, conversation management, keyboard shortcuts'],
       ['Quiz mode and automations', 'Achieved', 'Interactive coding quiz with 12 topics and persistent progress; automation center with scheduled triggers'],
-      ['Comprehensive testing', 'Achieved', '120 test suites, all passing'],
+      ['Comprehensive testing', 'Achieved', '121 suites, 1,907 tests, all passing'],
     ]
   ));
 
@@ -600,7 +684,7 @@ function buildPresentation() {
     'Architecture — Electron, React, Ollama, and the tool system',
     'Key Features — live demo highlights',
     'Technology Stack — languages, frameworks, and testing',
-    'Testing & Results — 120 test suites',
+    'Testing & Results — 1,907 tests',
     'Live Demonstration',
     'Future Work & Questions',
   ], 'Walk through the agenda quickly (~30 seconds). Let the audience know the live demo comes after the architecture slides.'));
@@ -731,14 +815,14 @@ function buildPresentation() {
     'Ollama — local LLM inference with native tool calling',
     'electron-vite — fast builds with HMR for development',
     'electron-builder — NSIS installer for one-click Windows install',
-    'Jest (120 test suites) + Playwright (E2E) — comprehensive test coverage',
+    'Jest (121 suites, 1,907 tests) + Playwright E2E',
   ], 'Quick slide. Just name the stack — detail is in the report.'));
 
   // Slide 14: Testing & Results
   children.push(...slide('Testing & Results', [
-    '120 test suites — all passing',
-    '~55,000 lines of TypeScript across 409 tracked files',
-    '398 commits over the development lifecycle',
+    '121 test suites, 1,907 tests — all passing',
+    '62,640 lines of TypeScript across 243 source files',
+    '410 commits over 7 months of development',
     'Playwright E2E tests for critical user flows',
     'Tested across 3 hardware profiles (4 GB, 8 GB, 16+ GB VRAM)',
     'All project objectives achieved',

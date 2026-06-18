@@ -24,12 +24,25 @@
 4. Literature Review
 5. Project Objectives and Scope
 6. Methodology
+   - 6.1 Development Approach
+   - 6.2 Development Phases
+   - 6.3 Methodology Effectiveness
+   - 6.4 Tools and Technologies
+   - 6.5 AI-Assisted Development Workflow
+   - 6.6 Structured AI Handoff Methodology
+   - 6.7 Why the Handoff Method Worked
 7. System Architecture
 8. Implementation
 9. Safety and Security Model
 10. Testing and Quality Assurance
 11. Results and Evaluation
 12. Discussion
+   - 12.1 Strengths
+   - 12.2 Limitations
+   - 12.3 Problems Encountered and Solutions
+   - 12.4 Approaches That Did Not Work
+   - 12.5 Reflection on AI-Assisted Development
+   - 12.6 AI-Portability as a Development Practice
 13. Conclusion and Future Work
 14. References
 15. Appendices
@@ -42,7 +55,7 @@ This report presents the design, implementation, and evaluation of SADIE (Struct
 
 SADIE combines a local Ollama model runtime with a TypeScript tool system containing 85+ handlers across filesystem, web/data, memory, developer, vision/media, and desktop-system categories. A permission-gated execution model prevents tools from acting without explicit user approval. The application also includes optional cloud provider routing (OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio), workflow automation through n8n with one-click deployment, long-term local memory, hybrid RAG-based document retrieval using Reciprocal Rank Fusion, agentic multi-step tool loops, image generation across five backends, quiz mode, morning briefings, voice features, analytics, and a modern desktop user interface with light, dark, and system-auto themes.
 
-The final codebase comprises 62,500+ lines of TypeScript across 265 source files, with 409 commits over seven months of development. Evaluation indicates that the system met all core capstone objectives: offline AI chat, secure tool execution, desktop integration, local memory, vision support, automation, and test coverage. The current test suite contains 1,907 unit tests across 121 suites with 60% line coverage, supported by Playwright end-to-end testing. A one-click Windows installer (HomeBot Setup 1.1.0.exe) packages the complete application for end-user deployment.
+The final codebase comprises 63,081 lines of TypeScript across 244 source files, with 520 commits over seven months of development. Evaluation indicates that the system met all core capstone objectives: offline AI chat, secure tool execution, desktop integration, local memory, vision support, automation, and test coverage. The current test suite contains 1,932 unit tests across 122 suites with 59.76% line coverage, supported by Playwright end-to-end testing. A one-click Windows installer (HomeBot Setup 1.1.0.exe, 152 MB) packages the complete application for end-user deployment.
 
 The project demonstrates that privacy-first desktop AI is technically viable on consumer hardware when paired with a layered security architecture and disciplined iterative development.
 
@@ -62,11 +75,11 @@ The convergence of capable local models, the Electron desktop framework (Electro
 
 SADIE was developed as a Level 7 capstone project for the Bachelor of Computing Systems at Toi Ohomai Institute of Technology. The project investigates whether a local-first AI desktop assistant can provide practical capability while retaining user control over data and tool execution. The project is not merely a chat interface. It is an agentic desktop application that can perform real actions through registered tools — reading files, searching the web, managing processes, generating images, automating workflows — all subject to safety validation and user permissions.
 
-The application was rebranded from SADIE to HomeBot during development to better communicate its purpose as a home desktop assistant, though the SADIE acronym is retained for academic documentation.
+The application was rebranded from SADIE to HomeBot in May 2026 to improve market positioning. The original acronym — Structured AI Desktop Intelligence Engine — was technically descriptive but lacked consumer appeal. "HomeBot" was chosen because it immediately communicates the product's purpose as a home desktop assistant, is memorable and approachable, and avoids the clinical connotation of an acronym-based name. This mirrors a common industry pattern: products often launch under internal or technical names and rebrand for release (e.g., "Electron" was originally "Atom Shell," and "VS Code" was internally "Monaco"). The SADIE acronym is retained for academic documentation to maintain traceability with the project proposal and midpoint review.
 
 ### 2.3 Report Structure
 
-This report follows a standard academic structure. Sections 3–4 establish the problem and objectives. Section 5 covers methodology. Sections 6–8 detail architecture, implementation, and security. Sections 9–10 present testing and evaluation. Sections 11–12 provide discussion and conclusions. References and appendices follow.
+This report follows a standard academic structure. Sections 3–5 establish the problem, review related work, and define objectives. Section 6 covers methodology. Sections 7–9 detail system architecture, implementation, and security. Sections 10–11 present testing, results, and evaluation. Sections 12–13 provide discussion and conclusions. References and appendices follow.
 
 ---
 
@@ -109,9 +122,22 @@ Lewis et al. (2020) introduced RAG as a method for grounding LLM responses in ex
 
 Electron's multi-process architecture (Electron, 2024) separates the renderer (web page) from the main process (Node.js). The security documentation recommends context isolation, a strict preload bridge, and disabling Node.js integration in the renderer to prevent cross-site scripting and privilege escalation attacks. SADIE follows all of these recommendations and adds additional layers including IPC channel allowlisting, tool permission gating, and SSRF protection.
 
-### 4.5 Existing Desktop AI Tools
+### 4.5 Existing Desktop and Local AI Tools
 
-Several existing tools occupy adjacent spaces. Open Interpreter (2024) enables LLMs to execute code locally but lacks a desktop GUI and runs entirely in the terminal. LM Studio (LM Studio, 2024) provides a GUI for local model inference but focuses on chat rather than tool execution. Jan.ai (Jan, 2024) offers a local-first chat interface with extensions. None of these provide the combination of agentic tool execution, permission gating, n8n workflow automation, vision support, and a full desktop UI that SADIE delivers.
+The local AI tool landscape grew rapidly during SADIE's development period (November 2025 – June 2026). Several existing tools occupy adjacent spaces, each addressing a subset of the capabilities SADIE targets:
+
+| Tool | First Release | Type | Key Capability | SADIE Differentiator |
+|---|---|---|---|---|
+| Open WebUI | Feb 2024 | Self-hosted web app | Full-featured web UI for Ollama with RAG, multi-model chat, and user management | Web-based, not a desktop app — no system tray, global hotkey, native installer, or desktop tool execution. Requires browser access and Docker setup. |
+| LM Studio | Late 2023 | Desktop app | GUI for downloading and running local models with chat interface | Focused on model management and chat — no tool execution, no agentic loops, no automation, no permission gating. |
+| Jan.ai | Late 2023 | Desktop app | Local-first chat interface with extension system | Extension system is nascent — lacks SADIE's 85+ tool handlers, n8n automation, vision, image generation, and security model. |
+| Open Interpreter | Mid 2024 | CLI tool | LLMs execute code locally with full system access | Terminal-only — no desktop GUI, no permission gating (runs code with full access), no IPC isolation. Higher security risk by design. |
+| GPT4All | 2023 | Desktop app | Offline chat with local models, document Q&A | Chat-focused with basic RAG — no tool execution, no agentic loops, no automation, no cloud provider routing. |
+| AnythingLLM | 2024 | Desktop/web app | Local LLM chat with document embedding and RAG | Strong RAG but limited tool execution — no filesystem, terminal, process management, or agentic multi-step tool chains. |
+
+SADIE's development began on 17 November 2025, after the initial releases of LM Studio, Jan.ai, and GPT4All but contemporaneous with the maturation of Open WebUI and Open Interpreter. The key gap that SADIE addresses is the combination of **agentic desktop tool execution** with **permission gating** — most existing tools either provide chat without agency (LM Studio, GPT4All, Jan) or provide agency without safety controls (Open Interpreter). Open WebUI is the closest in feature breadth but operates as a web application rather than a native desktop assistant, meaning it cannot provide system tray integration, global hotkeys, native toast notifications, or direct desktop tool execution.
+
+None of the existing tools provide SADIE's combination of: (1) agentic tool execution with an 85+ handler registry, (2) an 11-layer permission-gated security model, (3) n8n workflow automation with one-click deployment, (4) hybrid RAG with Reciprocal Rank Fusion, (5) five-backend image generation, and (6) a native desktop application with a one-click installer.
 
 ### 4.6 Workflow Automation
 
@@ -150,7 +176,7 @@ The following items were identified as out of scope for the capstone submission:
 
 ### 6.1 Development Approach
 
-The project used an **iterative, test-driven, security-first** development methodology. Work was organised into feature phases, with each phase closing only after build and test gates had passed. Documentation was updated alongside implementation to preserve traceability between requirements, architecture decisions, and delivered functionality.
+The project used an **Agile iterative, test-driven, security-first** development methodology organised into sprint-based phases, with each phase closing only after build and test gates had passed. Documentation was updated alongside implementation to preserve traceability between requirements, architecture decisions, and delivered functionality.
 
 This approach was chosen over a traditional waterfall model for several reasons:
 
@@ -160,8 +186,8 @@ This approach was chosen over a traditional waterfall model for several reasons:
 
 | Principle | Application in SADIE |
 |---|---|
-| Iterative development | Features were delivered in phases, allowing architecture, UI, and tools to mature incrementally. Each of the 409 commits represents a testable increment. |
-| Test-driven practice | Tests were written alongside features and used as regression protection during refactoring. The suite grew from 0 to 1,907 tests over the project lifetime. |
+| Iterative development | Features were delivered in phases, allowing architecture, UI, and tools to mature incrementally. Each of the 520 commits represents a testable increment. |
+| Test-driven practice | Tests were written alongside features and used as regression protection during refactoring. The suite grew from 0 to 1,932 tests over the project lifetime. |
 | Security-first design | Tool access, IPC boundaries, and permission gates were designed before exposing system-level capabilities. The security model was not retrofitted. |
 | Docs-first discipline | Architecture notes, API reference, setup guide, and changelog were maintained continuously to support evaluation and handover. |
 
@@ -170,10 +196,11 @@ This approach was chosen over a traditional waterfall model for several reasons:
 | Phase | Period | Focus | Key Deliverables |
 |---|---|---|---|
 | Foundation | Nov – Dec 2025 | Application scaffold and local model integration | Electron shell, React renderer, Ollama connection, streaming chat |
-| Tool system | Dec 2025 – Feb 2026 | Desktop agency and tool routing | Filesystem, web/data, developer, memory, vision, and system handlers |
+| Architecture review | Jan 2026 | Research pause and design consolidation | Config Manager pattern, JSONL persistence design, intent classifier architecture |
+| Tool system | Jan – Feb 2026 | Desktop agency and tool routing | Filesystem, web/data, developer, memory, vision, and system handlers |
 | Security | Jan – Feb 2026 | Permission and safety controls | IPC allowlist, context isolation, prompt-injection guard, audit logging, recursion cap |
-| Cloud integration | Feb – Mar 2026 | Cloud LLM providers | OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio routing |
-| Advanced features | Mar – May 2026 | Automation and multimodal capability | n8n workflows, RAG, agentic loops, morning briefing, image generation, quiz mode |
+| Feature push | Mar 2026 | Rapid feature delivery (125 commits) | Cloud providers (initially Cerebras, OpenAI, Anthropic, OpenRouter), live data, voice |
+| Cloud expansion | Apr – May 2026 | Additional providers and multimodal capability | Groq, DeepSeek, Google AI Studio added (replacing Cerebras); n8n, RAG, agentic loops, image generation, quiz mode |
 | Polish and evaluation | May – Jun 2026 | Quality, testing, deployment | Themes, 32-issue codebase sweep, test expansion, installer build, documentation refresh |
 
 ### 6.3 Methodology Effectiveness
@@ -203,6 +230,55 @@ This approach was chosen over a traditional waterfall model for several reasons:
 | electron-vite | 5.0.0 | Build toolchain |
 | electron-builder | 24.13.3 | Installer packaging |
 | Vite | 7.3.1 | Frontend build tool |
+
+### 6.5 AI-Assisted Development Workflow
+
+Visual Studio Code was used as the primary development environment throughout the project. Early implementation was supported by GitHub Copilot inside VS Code, particularly for boilerplate generation, TypeScript refactoring, React component scaffolding, and unit-test creation. As the project expanded from a basic Electron assistant into a large multi-process application with 63,081 lines of TypeScript across 244 source files, the AI development workflow evolved.
+
+The project used four AI coding assistants across different phases: GitHub Copilot, OpenAI Codex, Google Code Assist, and Claude Code. GitHub Copilot was effective in the early and middle stages because it provided fast inline suggestions for localised coding tasks. However, once the codebase reached significant scale — 117 IPC channels, 85+ tool handlers, 122 test suites — context retention across files became a critical requirement.
+
+Later development shifted toward Claude Code (Opus 4.5 and Sonnet 4), which handled larger repository context more reliably, maintained awareness across multiple files, and was more effective for system-wide refactoring, test repair, architecture review, and consistency checks. Codex and Google Code Assist were trialled for specific tasks, but Claude Code became the primary late-stage assistant because it was better suited to the scale and interconnected architecture of HomeBot.
+
+AI tools were used as development accelerators rather than replacements for engineering judgement. All generated or suggested code was reviewed, integrated manually, and validated through TypeScript compilation, Jest tests, Playwright end-to-end tests, manual UI testing, and Git history. Final responsibility for architecture, security decisions, debugging, feature selection, and quality assurance remained with the developer.
+
+### 6.6 Structured AI Handoff Methodology
+
+A significant methodological outcome of the project was the creation of an AI-portable development workflow. AI coding assistants are stateless by default: a new assistant session does not understand the repository history, current priorities, unresolved bugs, or architectural constraints. To address this, the project used structured handoff artifacts that treated each AI assistant like a new developer joining mid-sprint.
+
+The handoff pattern was based on real-world engineering practices such as runbooks, sprint boards, on-call handoff notes, and incident postmortems. Instead of relying on conversational memory, the project externalised state into repository files that any coding assistant could parse mechanically.
+
+| Date | Event | AI Tool | Artifact |
+|---|---|---|---|
+| 2025-11-17 | Project created; initial phases 1–6 | GitHub Copilot | Git commits |
+| 2025-11 to 2026-03 | Core feature development, tests, CI | GitHub Copilot | Code, tests, CI workflows |
+| 2026-03-06 | v0.9.1 audit documented | GitHub Copilot | `AUDIT_SUMMARY.md`, `COPILOT_CONTEXT.md` |
+| 2026-05-01 | Copilot → Codex/Claude handoff | Claude Code | `COPILOT_HANDOFF.md` (289 lines) |
+| 2026-05-01 to 2026-06-05 | TS error elimination, UI redesign, features | Claude Code | 20+ commits |
+| 2026-06-05 | Codex environment fix and handoff update | Codex → Claude Code | `CLAUDE_CODE_NEXT_STEPS.md`; ledger update |
+| 2026-06-05 to 2026-06-12 | Gemini provider, model stack, streaming | Claude Code | 8 commits |
+| 2026-06-12 | Handoff docs retired — all issues resolved | Claude Code | 20 stale docs deleted |
+| 2026-06-12 to 2026-06-19 | Features, rebrand, testing, capstone | Claude Code | 30+ commits |
+
+The five handoff artifacts served different lifecycle purposes:
+
+| Artifact | Purpose | Lifecycle |
+|---|---|---|
+| `COPILOT_CONTEXT.md` | Stable facts: repository structure, design constraints, conventions | Durable: retained while facts remained true |
+| `COPILOT_HANDOFF.md` | Current work state: issues, priorities, file references, active risks | Ephemeral: updated during transition, removed when resolved |
+| `CLAUDE_CODE_NEXT_STEPS.md` | One-time transition notes for Claude Code after Codex work | Self-retiring: deleted when no longer required |
+| Agent board / ledger | Ownership protocol preventing multiple assistants from editing the same files | Updated during active multi-agent phases |
+| Automated tests + TypeScript build | Backstop for validating AI-assisted changes | Permanent quality gate |
+
+### 6.7 Why the Handoff Method Worked
+
+- **Structured over conversational**: Handoff documents used tables, prioritised lists, file paths, line references, and fix instructions rather than prose chat logs. This made them easier for any AI tool to parse mechanically.
+- **Durable and ephemeral state were separated**: `COPILOT_CONTEXT.md` held stable project facts, `COPILOT_HANDOFF.md` recorded current work state, and `CLAUDE_CODE_NEXT_STEPS.md` captured one-time transition notes.
+- **Items were actionable**: Each issue was documented with a file path, line number, root cause, and fix instruction so the next assistant could begin work without reconstructing the entire project history.
+- **Ownership was explicit**: The agent board prevented multiple AI assistants from editing the same files simultaneously, reducing merge conflicts and duplicated work.
+- **The process was self-retiring**: After all issues were resolved and the project stabilised, stale handoff documents were deleted rather than allowed to accumulate as misleading documentation.
+- **Code was the final backstop**: Even if handoff information became outdated, `tsc --noEmit`, Jest, and Playwright surfaced real regressions immediately.
+
+This method became one of the project's practical contributions: a repeatable pattern for making a large software project portable across stateless AI coding assistants. The pattern mirrors professional engineering handover practices while adapting them to AI agents that require explicit external context.
 
 ---
 
@@ -248,8 +324,8 @@ SADIE follows Electron's multi-process architecture. The renderer process is res
 | Layer | Role | Key Controls |
 |---|---|---|
 | Renderer Process (React 18) | Chat UI, settings, analytics, conversation sidebar, quiz panel, image generator, automation center, error boundaries | No direct Node.js access; renderer remains isolated from filesystem and terminal APIs |
-| Preload Script (IPC Bridge) | Typed bridge between renderer and main process; 60+ whitelisted IPC channels | Channel allowlist, schema validation, context isolation |
-| Main Process (Node.js) | Message routing, tool execution, safety pipeline, memory, model calls, n8n integration | Permission checks, safety validation, audit logging, recursion cap (MAX_TOOL_ROUNDS = 10) |
+| Preload Script (IPC Bridge) | Typed bridge between renderer and main process; 117 whitelisted IPC channels | Channel allowlist, schema validation, context isolation |
+| Main Process (Node.js) | Message routing, tool execution, safety pipeline, memory, model calls, n8n integration | Permission checks, safety validation, audit logging, dual recursion caps: MAX_TOOL_ROUNDS = 10 (single-tool), MAX_AGENTIC_ROUNDS = 6 (multi-step) |
 | Local/External Services | Ollama, optional cloud LLMs, n8n, ESPN API, web search engines, image generation backends | Local-first defaults; optional network tools are controlled and validated |
 
 ### 7.3 Message Routing Pipeline
@@ -331,7 +407,7 @@ The tool registry (`tools/index.ts`) imports handlers from 27 specialised module
 | `reminder.ts` | System | Create, list, delete persistent reminders | 3 |
 | `contacts.ts` | System | Search Windows contacts (with PowerShell injection guard) | 1 |
 | `clipboard.ts` | System | Read/write system clipboard | 2 |
-| `browser.ts` | System | Automated browser interactions and content extraction | 2 |
+| `browser.ts` | System | Open URLs, web search, fetch page content with SSRF protection and HTML-to-text extraction | 3 |
 | `email.ts` | System | Email drafting and sending | 1 |
 | `notification.ts` | System | Windows toast notifications (with XML sanitisation) | 2 |
 | `process-manager.ts` | System | List processes, kill process (with PID injection guard) | 2 |
@@ -395,7 +471,7 @@ On first launch, SADIE detects the user's GPU VRAM via `nvidia-smi` and applies 
 
 ### 8.4 Cloud LLM Integration
 
-SADIE supports six cloud providers as optional alternatives to local inference:
+SADIE supports six cloud providers as optional alternatives to local inference. The initial cloud integration (March 2026) included Cerebras, OpenAI, Anthropic, and OpenRouter. Cerebras was later replaced by Groq, DeepSeek, and Google AI Studio during the cloud expansion phase (April–May 2026) to provide broader model access and free-tier options:
 
 | Provider | Models | Cost Tier |
 |---|---|---|
@@ -420,9 +496,32 @@ The memory subsystem operates at three levels:
 
 Supported document types: `.txt`, `.md`, `.json`, `.csv`, `.log`, `.xml`, `.pdf` (via pdf-parse), `.docx` (via mammoth), and all common code file extensions.
 
-### 8.6 Automation and n8n
+**Document Viewer integration**: The Document Viewer (`DocumentViewer.tsx`) provides two direct actions for any opened document:
 
-n8n is integrated as an optional local workflow automation engine. SADIE's Automation Center provides:
+- **Add to RAG**: Indexes the document into the hybrid RAG store via the `ragIndex` IPC bridge. The UI tracks indexing state (`idle` → `indexing` → `done`/`error`) and reports the number of chunks indexed.
+- **Send to Chat**: Converts the document content into a `DocumentAttachment` (base64-encoded) and injects it into the chat mode with a review prompt, reusing the same attachment contract as the `InputBox` file upload. This enables users to seamlessly transition from browsing documents to discussing their content with the AI.
+
+### 8.6 Web Browser Mode
+
+The Web Services panel (`WebServicesPanel.tsx`) provides two capabilities:
+
+**URL Browser**: Users can paste any URL, fetch its content via the `fetch_page_content` tool handler, and then either summarise it in chat or add it to the RAG index for semantic search. The fetch pipeline includes:
+
+- **URL normalisation**: Bare domains (e.g., `example.com`) are auto-prepended with `https://`.
+- **SSRF protection**: Requests to `localhost`, `127.0.0.1`, private IP ranges (`10.x`, `172.16–31.x`, `192.168.x`), and `file://` protocol are blocked before any HTTP request is made.
+- **HTML-to-text extraction**: The `htmlToText()` utility strips `<script>` and `<style>` blocks, decodes HTML entities, collapses whitespace, and adds newlines for block elements.
+- **Redirect depth limit**: HTTP redirects are followed up to 3 hops to prevent redirect loops.
+- **Content preview**: The first 1,500 characters of extracted text are shown with a character count.
+- **Summarize in Chat**: Converts the fetched content into a `DocumentAttachment` (base64-encoded), switches to chat mode, and sends it to the AI with a summarisation prompt — reusing the same attachment contract as the Document Viewer.
+- **Add to RAG**: Indexes the web content into the hybrid RAG store for later semantic retrieval.
+
+**Service Launchers**: ChatGPT, Claude, and Gemini open in dedicated Electron `BrowserWindow` instances with persisted sessions (cookies survive restarts), allowing users to access their existing subscriptions without API keys.
+
+The web browser feature adds a new IPC channel (`homebot:fetch-page-content`) to the preload bridge, bringing the total to 117 whitelisted channels.
+
+### 8.7 Automation and n8n
+
+n8n is integrated as an optional local workflow automation engine. The Automation Center provides:
 
 - **Create automations**: Name, description, instructions, trigger type (manual/schedule), and optional n8n deployment.
 - **One-click n8n deployment**: Generates a webhook-triggered n8n workflow, imports it via `docker exec` into the n8n container, activates it in n8n's SQLite database, and restarts the container — all without requiring the user to touch the n8n UI.
@@ -431,7 +530,7 @@ n8n is integrated as an optional local workflow automation engine. SADIE's Autom
 - **Credential management**: Direct links to the n8n credential manager for API key configuration.
 - **Webhook authentication**: All HomeBot-to-n8n communication is authenticated with a 256-bit shared secret (`X-HOMEBOT-Auth` header) generated per installation via `crypto.randomBytes()`.
 
-### 8.7 Image Generation
+### 8.8 Image Generation
 
 SADIE supports text-to-image generation across five backends with automatic detection:
 
@@ -445,7 +544,7 @@ SADIE supports text-to-image generation across five backends with automatic dete
 
 The image generation panel auto-detects which backends are available and uses the first responding backend. Users can override the selection in settings.
 
-### 8.8 Quiz Mode
+### 8.9 Quiz Mode
 
 The quiz mode provides interactive coding quizzes with:
 
@@ -455,7 +554,7 @@ The quiz mode provides interactive coding quizzes with:
 - Persistent progress tracking and letter grades
 - Score calculation with double-counting bug fix (discovered and resolved during testing)
 
-### 8.9 Morning Briefing
+### 8.10 Morning Briefing
 
 On the first user interaction each calendar day, SADIE proactively generates a personalised summary:
 
@@ -465,7 +564,7 @@ On the first user interaction each calendar day, SADIE proactively generates a p
 
 Tool calls run in parallel via `Promise.allSettled` — if any tool fails, that section is silently omitted rather than blocking the entire briefing. The briefing state is persisted to `memory/json-store/briefing-state.json` to survive app restarts.
 
-### 8.10 Mixture of Agents (MoA)
+### 8.11 Mixture of Agents (MoA)
 
 For users with 16 GB+ VRAM, SADIE supports a Mixture of Agents mode where multiple local models generate independent responses in parallel:
 
@@ -473,7 +572,7 @@ For users with 16 GB+ VRAM, SADIE supports a Mixture of Agents mode where multip
 - **Aggregator model** (e.g., gemma4:e4b) synthesises the proposals into a single high-quality response
 - Simple queries (greetings, single-word answers) bypass MoA for speed
 
-### 8.11 User Interface
+### 8.12 User Interface
 
 The UI is built with React 18 and comprises 31 components:
 
@@ -488,6 +587,8 @@ The UI is built with React 18 and comprises 31 components:
 | `AutomationCenter.tsx` | Automation management, n8n deployment, status tracking |
 | `QuizPanel.tsx` | Interactive quiz interface |
 | `ImageGenerator.tsx` | Image generation with backend selection |
+| `DocumentViewer.tsx` | Document viewer with Add to RAG indexing and Send to Chat attachment |
+| `WebServicesPanel.tsx` | Web Browser (URL fetch, summarize, RAG) and AI service launchers (ChatGPT, Claude, Gemini) |
 | `FirstRunModal.tsx` | Setup wizard (GPU detection, Ollama install, model pull) |
 | `ModelSelector.tsx` | Model picker with portal-based dropdown |
 | `StatusIndicator.tsx` | Ollama/n8n connection status dot |
@@ -508,17 +609,17 @@ SADIE requires a defence-in-depth model because it exposes real system capabilit
 
 | Layer | Purpose | Implementation |
 |---|---|---|
-| 1. IPC Channel Allowlist | Restricts renderer-to-main communication | `ALLOWED_CHANNELS` whitelist in `preload/index.ts`; 60+ explicitly named channels |
+| 1. IPC Channel Allowlist | Restricts renderer-to-main communication | `ALLOWED_CHANNELS` whitelist in `preload/index.ts`; 117 explicitly named channels |
 | 2. Context Isolation | Prevents renderer code from accessing Node.js APIs | Electron `contextIsolation: true`, `nodeIntegration: false` |
 | 3. SSRF Protection | Blocks requests to loopback, private IPs, and DNS rebinding | DNS resolution check before HTTP requests in `web.ts` |
 | 4. Webhook Authentication | Protects n8n webhook communication | 256-bit shared secret via `crypto.randomBytes()`; `X-HOMEBOT-Auth` header |
-| 5. Tool Recursion Cap | Prevents infinite tool-call loops | `MAX_TOOL_ROUNDS = 10` in message router |
+| 5. Tool Recursion Cap | Prevents infinite tool-call loops | `MAX_TOOL_ROUNDS = 10` for single-tool recursion in message router; `MAX_AGENTIC_ROUNDS = 6` for multi-step agentic chains |
 | 6. Permission Gating | Requires explicit user consent for sensitive operations | Allow Once / Always Allow / Cancel modal for destructive tools |
 | 7. PowerShell Injection Guard | Prevents shell metacharacter injection in contact queries | Strips `$();\|` `` ` `` `&{}` characters; 128-char truncation |
 | 8. PID Injection Guard | Prevents process kill with arbitrary PIDs | Positive integer validation before `Stop-Process` |
 | 9. Toast XML Sanitisation | Prevents injection in Windows notifications | Entity-encoding of all user-supplied text in toast XML |
 | 10. File Size Guards | Prevents memory exhaustion from large files | 50 MB cap on document parsing, 20 MB on vision input |
-| 11. Redirect Depth Limit | Prevents HTTP redirect loops | Redirect chain capped at 5 hops |
+| 11. Redirect Depth Limit | Prevents HTTP redirect loops | Redirect chain capped at 3 hops (browser tool) and 5 hops (web search tool) |
 
 ### 9.2 Additional Controls
 
@@ -549,12 +650,12 @@ Testing was used as both a quality gate and an architectural safety net. Jest va
 
 | Metric | Result |
 |---|---|
-| Unit tests | 1,907 |
-| Test suites | 121 |
-| Statement coverage | 56.6% |
-| Branch coverage | 44.6% |
-| Function coverage | 54.7% |
-| Line coverage | 59.7% |
+| Unit tests | 1,932 |
+| Test suites | 122 |
+| Statement coverage | 56.67% |
+| Branch coverage | 44.65% |
+| Function coverage | 54.79% |
+| Line coverage | 59.76% |
 | End-to-end coverage | Playwright tests for core UI journeys |
 | Build discipline | No phase closes with known test failures |
 
@@ -580,8 +681,10 @@ Testing was used as both a quality gate and an architectural safety net. Jest va
 | Tool system (Feb 2026) | ~60 | ~800 |
 | Advanced features (Apr 2026) | 112 | 1,604 |
 | Agentic + cloud (Apr 2026) | 115 | 1,716 |
+| Midpoint review (May 2026) | 119 | 1,860 |
 | Codebase sweep (Jun 2026) | 120 | 1,883 |
-| Final (Jun 2026) | 121 | 1,907 |
+| Sweep tests + automation (Jun 2026) | 121 | 1,907 |
+| Final — web browser + coverage (Jun 2026) | 122 | 1,932 |
 
 ### 10.4 Notable Bugs Found by Tests
 
@@ -605,7 +708,7 @@ Testing was used as both a quality gate and an architectural safety net. Jest va
 | 85+ tool handlers | Delivered | 85+ handlers across 27 modules; exceeds original 15+ target by 5.7x |
 | Permission-gated execution | Delivered | Sensitive operations require Allow Once, Always Allow, or Cancel; 11-layer security model |
 | Desktop integration | Delivered | System tray, global hotkey, toast notifications, auto-update support, one-click installer |
-| Memory and RAG | Delivered | Short-term context, long-term local memory, hybrid TF-IDF + semantic RAG with RRF |
+| Memory and RAG | Delivered | Short-term context, long-term local memory, hybrid TF-IDF + semantic RAG with RRF, Document Viewer and Web Browser with Add to RAG and Send to Chat |
 | Automation | Delivered | n8n workflow support with one-click deployment, webhook auth, status tracking, credential management |
 | Vision and voice | Delivered | Local vision via moondream, STT via Windows SAPI, TTS via msedge-tts |
 | Image generation | Delivered | 5 backends (SD WebUI, ComfyUI, DALL-E 3, Pollinations, Stable Horde) with auto-detection |
@@ -613,7 +716,7 @@ Testing was used as both a quality gate and an architectural safety net. Jest va
 | Morning briefing | Delivered | Proactive daily summary of weather, calendar, and reminders |
 | Agentic tool loops | Delivered | Multi-step request detection and autonomous tool chaining (max 6 rounds) |
 | Cloud LLM routing | Delivered | 6 providers (OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio) |
-| Testing | Delivered | 1,907 tests, 121 suites, Playwright E2E, 60% line coverage |
+| Testing | Delivered | 1,932 tests, 122 suites, Playwright E2E, 59.76% line coverage |
 | One-click installer | Delivered | HomeBot Setup 1.1.0.exe (152 MB), NSIS one-click, no admin required |
 
 ### 11.2 Research Question Evaluation
@@ -638,19 +741,19 @@ Yes, with caveats. Hardware with 8 GB+ RAM and a GPU with 4 GB+ VRAM provides a 
 
 | Metric | Value |
 |---|---|
-| Development period | 17 Nov 2025 – 18 Jun 2026 (7 months) |
-| Total commits | 409 |
-| Lines of TypeScript | 62,500+ |
-| Source files | 265 |
+| Development period | 17 Nov 2025 – 19 Jun 2026 (7 months) |
+| Total commits | 520 |
+| Lines of TypeScript | 63,081 |
+| Source files (.ts/.tsx) | 244 |
 | Tool handler modules | 27 |
 | Tool handlers | 85+ |
 | React components | 31 |
-| Test suites | 121 |
-| Automated tests | 1,907 |
+| Test suites | 122 |
+| Automated tests | 1,932 |
 | Cloud LLM providers | 6 |
 | Image generation backends | 5 |
 | Security layers | 11 |
-| IPC channels | 60+ |
+| IPC channels | 117 |
 | Current version | v1.1.0 |
 | Installer size | 152 MB |
 | Target platform | Windows 10/11 |
@@ -665,7 +768,7 @@ Yes, with caveats. Hardware with 8 GB+ RAM and a GPU with 4 GB+ VRAM provides a 
 - **Desktop agency**: SADIE can perform real tasks — reading files, running terminal commands, managing processes, generating images, deploying workflows — rather than only describing what the user should do. The 85+ tool handlers provide functionality comparable to cloud-hosted assistants.
 - **Security discipline**: The 11-layer security model demonstrates that exposing powerful system tools to an LLM agent is achievable when security is designed in from the start rather than bolted on. The permission gating system provides a clear user-facing safety guarantee.
 - **Extensibility**: Optional cloud providers and n8n workflows allow the system to grow without weakening local-first defaults. New tool handlers can be added by implementing the `RegisteredTool` interface.
-- **Evidence of implementation**: 1,907 tests, 409 commits, comprehensive documentation, and a working installer support the project's claims with concrete evidence.
+- **Evidence of implementation**: 1,932 tests, 520 commits, comprehensive documentation, and a working installer support the project's claims with concrete evidence.
 - **Scope achievement**: The project significantly exceeded its original scope (15+ tool handlers → 85+; basic chat → agentic loops, image generation, quiz mode, morning briefings) while maintaining quality and test discipline.
 
 ### 12.2 Limitations
@@ -674,13 +777,18 @@ Yes, with caveats. Hardware with 8 GB+ RAM and a GPU with 4 GB+ VRAM provides a 
 - **CPU-only inference**: While functional, CPU-only inference is significantly slower than GPU-supported inference, making the experience less responsive for users without discrete GPUs.
 - **Windows-only**: The primary target is Windows 10/11. macOS and Linux packaging would require platform-specific tool equivalents (PowerShell → bash for contacts, SAPI → alternative for speech) and separate testing.
 - **Formal user testing**: The project was evaluated by the developer and supervisor but not through a structured usability study with external participants. This limits the evidence for UX claims.
-- **Code coverage**: At 60% line coverage, there are untested paths — particularly in the Settings panel (42% coverage) and Voice conversation (47% coverage). Higher coverage in these areas would increase confidence.
+- **Code coverage**: At 59.76% line coverage, there are untested paths — particularly in the Settings panel and Voice conversation modules. Coverage decreased from 62.28% at the midpoint review because the final development phases added substantial new code (Web Browser mode, cloud provider expansion, n8n one-click deployment, image generation backends, agentic loop engine) faster than corresponding tests could be written. The absolute test count grew from 1,860 to 1,932, but the denominator (total lines of code) grew proportionally faster. Higher coverage in these areas would increase confidence.
 
 ### 12.3 Problems Encountered and Solutions
 
 | Problem | Impact | Solution |
 |---|---|---|
 | Ollama IPv6 resolution failure | False "offline" errors on Node.js 18+ | Changed all URLs from `localhost` to `127.0.0.1` |
+| Weather location regex false match | Regex matched "wh at" inside "What is the weather?" and sent nonsense to API | Added `\b` word boundary before alternation group across all four pattern instances |
+| Conversation data corruption | `history.json` became empty/truncated, causing JSON.parse to throw and messages to be silently dropped | Made `addMessageToConversation` self-healing: auto-creates record if missing |
+| Command injection via speech `exec()` | OWASP A03 shell injection vulnerability through string interpolation | Replaced `exec()` with `execFile()`, which never invokes a shell and passes arguments as an array |
+| Fork bomb risk in terminal tool | No guard on recursive process spawning | Added process count limit and blocked known dangerous shell patterns |
+| Model selector hidden in widget mode | CSS `display:none` rule prevented model switching in widget mode | Removed the rule; embedded compact ModelSelector in widget titlebar |
 | Document content triggering false tool intents | LLM invoking wrong tools based on document text | Strip document markers before intent regex evaluation |
 | PowerShell injection via contact search | Potential command execution | Metacharacter stripping + 128-char truncation |
 | Unbounded conversation digest | Context window overflow on long conversations | 4,000-char cap with smart truncation |
@@ -697,6 +805,24 @@ Yes, with caveats. Hardware with 8 GB+ RAM and a GPU with 4 GB+ VRAM provides a 
 2. **Single model for all VRAM tiers**: A single 7B default failed for users with limited VRAM. Solved by the hardware profile system.
 3. **Manual n8n workflow import**: Required users to understand the n8n UI. Replaced with one-click deployment via Docker CLI.
 4. **Using `localhost` for Ollama**: Node.js 18+ IPv6 preference caused intermittent failures. Hardcoded `127.0.0.1`.
+5. **`exec()` for terminal commands**: String interpolation created a shell injection surface (OWASP A03). Replaced with `execFile()` after OWASP security review — a process change driven by research, not originally planned.
+6. **Small (3B) models as default**: Produced verbose, repetitive responses regardless of prompt engineering. Resolved by switching the default to 7B models and adding a length ladder to the system prompt.
+7. **LLM-based intent classification as primary path**: Prototyped as an alternative to regex routing — handled edge cases better but added 200–800ms latency per message. Retained only as a fallback for the ~5% of inputs that defeat regex patterns.
+8. **Cerebras as cloud provider**: Initially integrated but replaced by Groq, DeepSeek, and Google AI Studio to provide broader model access and free-tier availability.
+
+### 12.5 Reflection on AI-Assisted Development
+
+One of the most important lessons from the project was that AI coding tools are most effective when matched to the scale of the task. Inline assistants such as GitHub Copilot were useful for localised implementation, repetitive TypeScript patterns, and early component development. However, once the project became a large Electron codebase with shared types, IPC contracts, tool registration, security layers, and tests spread across many files, larger-context tools became more valuable.
+
+Claude Code was ultimately the most effective late-stage tool because it could reason across more of the repository and support multi-file refactoring. This was particularly useful during the final codebase sweep, security hardening, test repair, UI polish, HomeBot rebrand, and capstone documentation phase.
+
+The experience showed that AI-assisted development does not remove the need for software engineering discipline. It increases the need for clear architecture, version control, structured handoff documents, automated tests, and careful review because generated suggestions can introduce subtle inconsistencies if applied without validation.
+
+### 12.6 AI-Portability as a Development Practice
+
+The AI handoff method is worth distinguishing from ordinary prompt engineering. Rather than writing one-off prompts, the project created durable repository artifacts that allowed different assistants to inherit the project state. This made the repository more "AI-portable": any assistant could read the stable context, current issue ledger, and next-step list, then continue work in a controlled way.
+
+For a capstone project of this scale, the benefit was continuity. The codebase could move between Copilot, Codex, Google Code Assist, and Claude Code without losing the thread of architectural decisions. For professional practice, the same pattern could support teams that use multiple AI coding tools or need to hand over work between developers and assistants across long-running projects.
 
 ---
 
@@ -715,7 +841,9 @@ All four research questions received affirmative answers supported by implementa
 - **RQ3**: Agentic loops are reliable when bounded by schemas, intent classification, and recursion limits.
 - **RQ4**: Offline-first AI is viable on consumer hardware with 8 GB+ RAM and a mid-range GPU.
 
-The project exceeded its original scope significantly — from 15 planned tool handlers to 85+ delivered, with additional features (agentic loops, image generation, quiz mode, morning briefings, one-click installer) that were not in the initial proposal. The 1,907-test suite and 409-commit history provide concrete evidence of disciplined, iterative development.
+The project exceeded its original scope significantly — from 15 planned tool handlers to 85+ delivered, with additional features (agentic loops, image generation, quiz mode, morning briefings, Document Viewer with RAG/Chat integration, Web Browser with content extraction and summarisation, one-click installer) that were not in the initial proposal. The 1,932-test suite and 520-commit history provide concrete evidence of disciplined, iterative development.
+
+A secondary contribution was the structured AI handoff methodology, which demonstrated a repeatable pattern for making a large software project portable across stateless AI coding assistants. The handoff artifacts — durable context files, ephemeral work ledgers, ownership protocols, and automated test backstops — enabled the project to transition between GitHub Copilot, Codex, and Claude Code without losing project continuity.
 
 ### 13.2 Future Work
 
@@ -730,6 +858,8 @@ The project exceeded its original scope significantly — from 15 planned tool h
 
 ## 14. References
 
+AnythingLLM. (2024). AnythingLLM: The all-in-one AI application. https://anythingllm.com
+
 Anthropic. (2023). Claude: An AI assistant by Anthropic. https://www.anthropic.com/claude
 
 Cognitive Computations. (2024). Dolphin: Uncensored models. https://huggingface.co/cognitivecomputations
@@ -739,6 +869,8 @@ Cormack, G. V., Clarke, C. L. A., & Buettcher, S. (2009). Reciprocal rank fusion
 Electron. (2024). Security, native capabilities, and your responsibility. Electron Documentation. https://www.electronjs.org/docs/latest/tutorial/security
 
 Google. (2024). Gemini: A family of highly capable multimodal models. https://deepmind.google/technologies/gemini
+
+GPT4All. (2023). GPT4All: Run large language models locally. https://gpt4all.io
 
 Jan. (2024). Jan: Open-source ChatGPT alternative that runs offline. https://jan.ai
 
@@ -753,6 +885,8 @@ n8n. (2024). Workflow automation for technical people. https://n8n.io
 Ollama. (2024). Ollama: Get up and running with large language models locally. https://ollama.com
 
 Open Interpreter. (2024). Open Interpreter: Let language models run code. https://openinterpreter.com
+
+Open WebUI. (2024). Open WebUI: User-friendly AI interface. https://openwebui.com
 
 OpenAI. (2022). Introducing ChatGPT. https://openai.com/blog/chatgpt
 
@@ -802,7 +936,7 @@ SADIE/
 │   │   │   ├── components/          # 31 React components
 │   │   │   ├── e2e/                 # Playwright E2E test specs
 │   │   │   └── __tests__/           # Renderer unit test suites
-│   │   ├── preload/                 # Context bridge (60+ whitelisted IPC channels)
+│   │   ├── preload/                 # Context bridge (117 whitelisted IPC channels)
 │   │   └── shared/                  # Types, constants, system prompt, utilities
 │   ├── build/                       # Installer resources (icon.ico)
 │   ├── dist-electron/               # Built installer output
@@ -918,5 +1052,7 @@ function encryptSecret(value: string): string {
 | `morning-briefing.test.ts` | 4 | Briefing state, generation |
 | `nba.test.ts` | 15 | Sports data, timeout handling |
 | `quiz-panel.test.tsx` | 22 | Quiz flow, scoring, persistence |
+| `browser-tool.test.ts` | 25 | URL open, search, fetch content, SSRF, htmlToText |
+| `web-services-panel.test.tsx` | 13 | URL browser UI, fetch, summarize, RAG, service launchers |
 | *(108 more suites)* | ... | Various tool, UI, and integration tests |
-| **Total** | **1,907** | **121 suites** |
+| **Total** | **1,932** | **122 suites** |

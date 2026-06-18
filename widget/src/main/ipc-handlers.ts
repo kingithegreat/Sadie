@@ -474,7 +474,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  // List all registered tools
+  // ── Fetch web page content (called from Web Browser panel) ──
+  ipcMain.handle('homebot:fetch-page-content', async (_event, url: string) => {
+    try {
+      if (!url || typeof url !== 'string') {
+        return { success: false, error: 'url is required' };
+      }
+      const { fetchPageContentHandler } = require('./tools/browser');
+      return await fetchPageContentHandler({ url, max_length: 12000 });
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   // ── RAG: index a local file (called from the renderer drag-and-drop UI) ──
   ipcMain.handle('homebot:rag-index', async (_event, filePath: string) => {
     try {

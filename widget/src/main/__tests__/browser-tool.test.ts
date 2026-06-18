@@ -16,8 +16,11 @@ function mockPS(stdout: string, err?: Error) {
 import {
   openInBrowserHandler,
   browserSearchHandler,
+  fetchPageContentHandler,
   openInBrowserDef,
   browserSearchDef,
+  fetchPageContentDef,
+  htmlToText,
 } from '../tools/browser';
 
 beforeEach(() => {
@@ -96,6 +99,77 @@ describe('browserSearchHandler', () => {
     const res = await browserSearchHandler({ query: '' }, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/query/i);
+  });
+});
+
+describe('htmlToText', () => {
+  test('strips HTML tags', () => {
+    expect(htmlToText('<p>Hello <b>world</b></p>')).toBe('Hello world');
+  });
+
+  test('removes script and style blocks', () => {
+    const html = '<p>visible</p><script>alert("xss")</script><style>.x{color:red}</style><p>also visible</p>';
+    const text = htmlToText(html);
+    expect(text).toContain('visible');
+    expect(text).toContain('also visible');
+    expect(text).not.toContain('alert');
+    expect(text).not.toContain('color:red');
+  });
+
+  test('decodes HTML entities', () => {
+    expect(htmlToText('&amp; &lt; &gt; &quot; &#39;')).toBe('& < > " \'');
+  });
+
+  test('collapses excessive whitespace', () => {
+    expect(htmlToText('  hello   world  ')).toBe('hello world');
+  });
+
+  test('adds newlines for block elements', () => {
+    const text = htmlToText('<p>first</p><p>second</p>');
+    expect(text).toContain('\n');
+  });
+
+  test('handles empty input', () => {
+    expect(htmlToText('')).toBe('');
+  });
+});
+
+describe('fetchPageContentHandler', () => {
+  test('rejects empty url', async () => {
+    const res = await fetchPageContentHandler({ url: '' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/url/i);
+  });
+
+  test('blocks localhost URLs', async () => {
+    const res = await fetchPageContentHandler({ url: 'http://localhost:3000' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/blocked/i);
+  });
+
+  test('blocks private IP URLs', async () => {
+    const res = await fetchPageContentHandler({ url: 'http://192.168.1.1' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/blocked/i);
+  });
+
+  test('blocks 127.0.0.1', async () => {
+    const res = await fetchPageContentHandler({ url: 'http://127.0.0.1:8080' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/blocked/i);
+  });
+
+  test('blocks file:// protocol', async () => {
+    const res = await fetchPageContentHandler({ url: 'file:///etc/passwd' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/blocked/i);
+  });
+});
+
+describe('fetchPageContentDef', () => {
+  test('has correct shape', () => {
+    expect(fetchPageContentDef.name).toBe('fetch_page_content');
+    expect(fetchPageContentDef.parameters.required).toContain('url');
   });
 });
 

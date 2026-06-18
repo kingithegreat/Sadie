@@ -5540,6 +5540,168 @@ body {
   line-height: 1.5;
 }
 
+/* ── Web Browser Section ── */
+
+.web-services-panel {
+  justify-content: flex-start;
+  overflow-y: auto;
+}
+
+.web-browser-section {
+  width: 100%;
+  max-width: 720px;
+  text-align: center;
+}
+
+.web-url-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.web-url-input {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-medium);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.web-url-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.web-fetch-btn {
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.12s;
+  white-space: nowrap;
+}
+
+.web-fetch-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.web-fetch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.web-status-msg {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 8px 0 0;
+  text-align: left;
+}
+
+.web-status-msg.error {
+  color: var(--error, #ef4444);
+}
+
+.web-content-preview {
+  margin-top: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-medium);
+  overflow: hidden;
+  text-align: left;
+}
+
+.web-content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary);
+}
+
+.web-content-url {
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--accent-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 75%;
+}
+
+.web-content-length {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.web-content-text {
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.web-content-fade {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.web-content-actions {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-light);
+}
+
+.web-action-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+
+.web-action-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.web-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.web-action-btn.summarize {
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.web-action-btn.rag {
+  background: #7c3aed;
+  color: #fff;
+}
+
+.web-divider {
+  width: 100%;
+  max-width: 720px;
+  border: none;
+  border-top: 1px solid var(--border-light);
+  margin: 8px 0;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    FUTURISTIC ACCENTS — subtle sci-fi polish without changing the core theme
    ══════════════════════════════════════════════════════════════════════════════ */

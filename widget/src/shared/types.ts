@@ -307,6 +307,8 @@ export interface ElectronAPI {
   onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
 
+  // Fetch a web page and extract its text content
+  fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;
   // RAG: index a local file path from main process
   ragIndex?: (filePath: string) => Promise<{ success: boolean; result?: { doc_id: string; filename: string; chunks_indexed: number; message: string }; error?: string }>;
   // RAG: list all indexed documents
