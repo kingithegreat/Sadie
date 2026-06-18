@@ -114,8 +114,7 @@ const WebServicesPanel: React.FC<WebServicesPanelProps> = ({ onSendToChat }) => 
     if (!pageContent || !pageUrl) return;
     setRagStatus('indexing');
     try {
-      const tmpPath = `web-content://${pageUrl}`;
-      const result = await getElectron()?.ragIndex?.(tmpPath);
+      const result = await getElectron()?.ragIndex?.(pageUrl, pageContent);
       if (result?.success) {
         const chunks = result.result?.chunks_indexed ?? 0;
         setRagStatus('done');

@@ -550,9 +550,9 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:fetch-page-content', url);
   },
 
-  // RAG: index a local file by its OS path
-  ragIndex: async (filePath: string) => {
-    return await ipcRenderer.invoke('homebot:rag-index', filePath);
+  // RAG: index a local file (or web content when content is provided)
+  ragIndex: async (filePath: string, content?: string) => {
+    return await ipcRenderer.invoke('homebot:rag-index', filePath, content);
   },
 
   // RAG: list all indexed documents

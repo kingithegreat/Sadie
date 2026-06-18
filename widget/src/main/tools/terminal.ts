@@ -40,7 +40,28 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /reg\s+delete\s+hk/i,                                    // registry delete
 ];
 
+// Natural language phrases that are not shell commands — catches LLM misrouting
+const NATURAL_LANGUAGE_PATTERN = /^(how|what|why|who|when|where|can|could|would|should|do|does|did|is|are|was|were|tell|explain|describe|please|help|hey|hi|hello|thanks|thank)\b/i;
+
+function looksLikeNaturalLanguage(cmd: string): boolean {
+  if (NATURAL_LANGUAGE_PATTERN.test(cmd.trim())) return true;
+  // If first token isn't a plausible binary/builtin, it's probably natural language
+  const firstToken = cmd.trim().split(/\s+/)[0]?.toLowerCase() || '';
+  if (firstToken.length > 20) return true; // no real command is this long
+  // Check for sentence-like structure: 3+ words with no special shell chars
+  const words = cmd.trim().split(/\s+/);
+  if (words.length >= 4 && !/[|>&;$`\\{}()\[\]]/.test(cmd) && !/^(for|if|while|until|case)\b/.test(cmd)) {
+    const commonWords = ['the', 'a', 'an', 'to', 'in', 'of', 'you', 'i', 'my', 'me', 'it', 'this', 'that', 'with'];
+    const hasCommonWords = words.some(w => commonWords.includes(w.toLowerCase()));
+    if (hasCommonWords) return true;
+  }
+  return false;
+}
+
 function isSafe(cmd: string): { safe: boolean; reason?: string } {
+  if (looksLikeNaturalLanguage(cmd)) {
+    return { safe: false, reason: 'This looks like a question, not a shell command. Answer it directly instead of executing it.' };
+  }
   for (const pattern of BLOCKED_PATTERNS) {
     if (pattern.test(cmd)) {
       return { safe: false, reason: `Blocked dangerous pattern: ${pattern.source}` };

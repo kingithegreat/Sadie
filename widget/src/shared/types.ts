@@ -309,8 +309,8 @@ export interface ElectronAPI {
 
   // Fetch a web page and extract its text content
   fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;
-  // RAG: index a local file path from main process
-  ragIndex?: (filePath: string) => Promise<{ success: boolean; result?: { doc_id: string; filename: string; chunks_indexed: number; message: string }; error?: string }>;
+  // RAG: index a local file path (or web content when content is provided)
+  ragIndex?: (filePath: string, content?: string) => Promise<{ success: boolean; result?: { doc_id: string; filename: string; chunks_indexed: number; message: string }; error?: string }>;
   // RAG: list all indexed documents
   ragList?: () => Promise<{ success: boolean; result?: { total_documents: number; total_chunks: number; documents: Array<{ doc_id: string; filename: string; chunk_count: number }> }; error?: string }>;
   // RAG: remove a document from the index by doc_id

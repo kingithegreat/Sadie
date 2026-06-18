@@ -487,11 +487,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  // ── RAG: index a local file (called from the renderer drag-and-drop UI) ──
-  ipcMain.handle('homebot:rag-index', async (_event, filePath: string) => {
+  // ── RAG: index a local file or web content ──
+  ipcMain.handle('homebot:rag-index', async (_event, filePath: string, content?: string) => {
     try {
       if (!filePath || typeof filePath !== 'string') {
         return { success: false, error: 'filePath is required' };
+      }
+      if (content && typeof content === 'string') {
+        const result = await ragToolHandlers.rag_index({ path: filePath, web_content: content }, {} as any);
+        return result;
       }
       const result = await ragToolHandlers.rag_index({ path: filePath }, {} as any);
       return result;

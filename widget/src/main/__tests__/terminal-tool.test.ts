@@ -131,6 +131,21 @@ describe('runTerminalCommandHandler', () => {
     expect(result.error).toContain('safety filter');
   });
 
+  test('blocks natural language mistakenly sent as command', async () => {
+    const nlInputs = [
+      'how do you make bullets',
+      'what is the weather today',
+      'can you help me with my project',
+      'please explain how docker works',
+      'tell me about javascript promises',
+    ];
+    for (const cmd of nlInputs) {
+      const result = await runTerminalCommandHandler({ command: cmd, cwd: SAFE_DIR }, {} as any);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('question');
+    }
+  });
+
   test('allows safe commands like npm test', async () => {
     mockExecResolve('All tests passed\n');
     const result = await runTerminalCommandHandler({ command: 'npm test', cwd: SAFE_DIR }, {} as any);

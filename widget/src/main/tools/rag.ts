@@ -331,32 +331,44 @@ export const ragToolHandlers: Record<string, ToolHandler> = {
     const rawPath = (args.path as string)?.trim();
     if (!rawPath) return { success: false, error: 'path is required' };
 
-    const resolved = path.resolve(resolveUserPath(rawPath));
-    const HOME = process.env.HOME ?? process.env.USERPROFILE ?? '';
-    if (HOME && !resolved.toLowerCase().startsWith(HOME.toLowerCase())) {
-      return { success: false, error: `Access denied: file must be within your home directory (${HOME})` };
-    }
-    if (!fs.existsSync(resolved)) {
-      return { success: false, error: `File not found: ${resolved}` };
-    }
-    if (fs.statSync(resolved).isDirectory()) {
-      return { success: false, error: 'Path points to a directory — please specify a file' };
-    }
-
-    const filename = path.basename(resolved);
-    // Deterministic ID based on the absolute path
-    const docId = `rag:${resolved.replace(/\\/g, '/').replace(/[^a-zA-Z0-9/._-]/g, '_')}`;
-
-    // Remove any stale chunks for this document before re-indexing
-    ragStore.chunks = ragStore.chunks.filter(c => c.docId !== docId);
-    ragStore.docIds = ragStore.docIds.filter(id => id !== docId);
+    const webContent = (args.web_content as string) || '';
 
     let text: string;
-    try {
-      text = await extractText(resolved);
-    } catch (err: any) {
-      return { success: false, error: `Could not read file: ${err.message}` };
+    let filename: string;
+    let docId: string;
+
+    if (webContent) {
+      // Web content mode — content provided directly, no filesystem access needed
+      filename = rawPath.replace(/^https?:\/\//, '').split(/[?#]/)[0] || 'web-page';
+      docId = `rag:web:${rawPath.replace(/[^a-zA-Z0-9/._-]/g, '_')}`;
+      text = webContent;
+    } else {
+      // File mode — read from filesystem
+      const resolved = path.resolve(resolveUserPath(rawPath));
+      const HOME = process.env.HOME ?? process.env.USERPROFILE ?? '';
+      if (HOME && !resolved.toLowerCase().startsWith(HOME.toLowerCase())) {
+        return { success: false, error: `Access denied: file must be within your home directory (${HOME})` };
+      }
+      if (!fs.existsSync(resolved)) {
+        return { success: false, error: `File not found: ${resolved}` };
+      }
+      if (fs.statSync(resolved).isDirectory()) {
+        return { success: false, error: 'Path points to a directory — please specify a file' };
+      }
+
+      filename = path.basename(resolved);
+      docId = `rag:${resolved.replace(/\\/g, '/').replace(/[^a-zA-Z0-9/._-]/g, '_')}`;
+
+      try {
+        text = await extractText(resolved);
+      } catch (err: any) {
+        return { success: false, error: `Could not read file: ${err.message}` };
+      }
     }
+
+    // Remove stale chunks for this document before re-indexing
+    ragStore.chunks = ragStore.chunks.filter(c => c.docId !== docId);
+    ragStore.docIds = ragStore.docIds.filter(id => id !== docId);
 
     const rawChunks = chunkText(text);
     if (rawChunks.length === 0) {
