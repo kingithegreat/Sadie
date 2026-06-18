@@ -1489,14 +1489,21 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
       if (image_base64) { source = 'dall-e-3'; }
     }
 
+    if (!image_base64 && backend !== 'local') {
+      // Retry Pollinations once more with backoff reset in case it was a transient failure
+      _pollinationsLastFailAt = 0;
+      image_base64 = await tryPollinations(prompt, width, height);
+      if (image_base64) { source = 'pollinations'; }
+    }
+
     if (!image_base64) {
-      return {
-        success: false,
-        error: 'All image backends failed. ' +
+      const msg = backend === 'local'
+        ? 'No local image backends found. Run Stable Diffusion (port 7860) or ComfyUI (port 8188), or switch to "Hybrid" or "Cloud" to use free online generation.'
+        : 'All image backends failed. ' +
           'Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
           'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
-          'For DALL-E 3, add an OpenAI API key in Settings.'
-      };
+          'For DALL-E 3, add an OpenAI API key in Settings.';
+      return { success: false, error: msg };
     }
 
     return { success: true, result: { image_base64, source, metadata: { prompt, width, height } } };

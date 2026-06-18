@@ -193,7 +193,7 @@ export const fetchPageContentDef: ToolDefinition = {
 };
 
 /** Minimal HTML-to-text: strip tags, decode common entities, collapse whitespace */
-function htmlToText(html: string): string {
+export function htmlToText(html: string): string {
   return html
     // Remove script/style/noscript blocks entirely
     .replace(/<(script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi, '')
@@ -217,7 +217,7 @@ function htmlToText(html: string): string {
 }
 
 /** Fetch raw HTML from a URL with redirect following (max 3 hops) */
-function fetchHtml(url: string, redirectsLeft = 3): Promise<string> {
+export function fetchHtml(url: string, redirectsLeft = 3): Promise<string> {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
     const req = lib.get(url, {

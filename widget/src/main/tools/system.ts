@@ -60,7 +60,7 @@ export const setClipboardDef: ToolDefinition = {
 
 export const openUrlDef: ToolDefinition = {
   name: 'open_url',
-  description: 'Open a URL in the default web browser.',
+  description: 'Open a URL in the default web browser and return the page text so you can summarize it for the user. Always provide a brief summary of the page content in your response.',
   category: 'system',
   parameters: {
     type: 'object',
@@ -314,18 +314,34 @@ export const openUrlHandler: ToolHandler = async (args): Promise<ToolResult> => 
     if (!url || typeof url !== 'string') {
       return { success: false, error: 'URL is required' };
     }
-    
+
     // Validate URL
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return { success: false, error: 'URL must start with http:// or https://' };
     }
-    
-    // Use Electron's safe shell API — no exec, no injection
+
+    // Open in browser and fetch content in parallel
     const { shell } = require('electron');
-    await shell.openExternal(url);
+    const { fetchHtml, htmlToText } = require('./browser');
+    const [, pageContent] = await Promise.allSettled([
+      shell.openExternal(url),
+      (async () => {
+        const html = await fetchHtml(url);
+        return htmlToText(html);
+      })(),
+    ]);
+
+    const content = pageContent.status === 'fulfilled' ? pageContent.value : null;
+    const truncated = content && content.length > 6000;
+    const snippet = content ? (truncated ? content.slice(0, 6000) + '\n\n[...truncated]' : content) : null;
+
     return {
       success: true,
-      result: { message: `Opened ${url} in default browser` }
+      result: {
+        message: `Opened ${url} in default browser`,
+        url,
+        ...(snippet ? { pageContent: snippet, contentLength: content!.length, truncated } : { pageContent: '(could not fetch page content)' }),
+      }
     };
   } catch (err: any) {
     return { success: false, error: `Failed to open URL: ${err.message}` };
