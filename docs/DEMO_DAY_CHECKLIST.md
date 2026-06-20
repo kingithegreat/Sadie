@@ -38,11 +38,11 @@ curl http://localhost:11434/api/generate -d "{\"model\":\"qwen2.5:7b\",\"prompt\
 # Check containers
 docker ps
 
-# If sadie-n8n is not running:
-docker start sadie-n8n
+# If homebot-n8n is not running:
+docker start homebot-n8n
 
 # IMPORTANT: Stop Docker Ollama (it conflicts with native Ollama on port 11434)
-docker stop sadie-ollama
+docker stop homebot-ollama
 ```
 
 Verify n8n is accessible: open http://localhost:5678 in browser.
@@ -87,7 +87,7 @@ Run through each tab quickly:
 | Image gen fails | Show the code in web.ts explaining 5-backend fallback |
 | Voice doesn't work | Skip voice, mention Windows SAPI in the presentation |
 | App crashes on start | Run `npm run build` first, then `npx electron-vite dev` |
-| Port 11434 conflict | `docker stop sadie-ollama` then `ollama serve` |
+| Port 11434 conflict | `docker stop homebot-ollama` then `ollama serve` |
 
 ## 8. Numbers to Remember
 

@@ -1,0 +1,326 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1190 1684" width="1190" height="1684">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a1628"/>
+      <stop offset="100%" stop-color="#0f2440"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="orangeGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.08)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.03)"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softShadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgba(0,0,0,0.3)"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1190" height="1684" fill="url(#bgGrad)"/>
+  <!-- Subtle grid pattern -->
+  <g opacity="0.04">
+    <line x1="0" y1="0" x2="0" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="119" y1="0" x2="119" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="238" y1="0" x2="238" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="357" y1="0" x2="357" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="476" y1="0" x2="476" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="595" y1="0" x2="595" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="714" y1="0" x2="714" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="833" y1="0" x2="833" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="952" y1="0" x2="952" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="1071" y1="0" x2="1071" y2="1684" stroke="white" stroke-width="0.5"/>
+    <line x1="1190" y1="0" x2="1190" y2="1684" stroke="white" stroke-width="0.5"/>
+  </g>
+  <!-- Decorative circles -->
+  <circle cx="1050" cy="150" r="200" fill="none" stroke="url(#accentGrad)" stroke-width="1" opacity="0.08"/>
+  <circle cx="1050" cy="150" r="300" fill="none" stroke="url(#accentGrad)" stroke-width="0.5" opacity="0.05"/>
+  <circle cx="140" cy="1550" r="250" fill="none" stroke="url(#purpleGrad)" stroke-width="1" opacity="0.06"/>
+
+  <!-- ═══════════ HEADER ═══════════ -->
+  <!-- Top accent bar -->
+  <rect x="0" y="0" width="1190" height="6" fill="url(#accentGrad)"/>
+
+  <!-- Logo circle -->
+  <circle cx="595" cy="80" r="42" fill="url(#accentGrad)" filter="url(#glow)"/>
+  <text x="595" y="93" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="36" fill="white">✦</text>
+
+  <!-- Title -->
+  <text x="595" y="160" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="62" fill="white" letter-spacing="3">HomeBot</text>
+  <text x="595" y="200" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="300" font-size="24" fill="#94a3b8" letter-spacing="4">YOUR PRIVATE DESKTOP AI ASSISTANT</text>
+
+  <!-- Divider -->
+  <line x1="395" y1="225" x2="795" y2="225" stroke="url(#accentGrad)" stroke-width="2" opacity="0.5"/>
+
+  <!-- Author + Institution -->
+  <text x="595" y="260" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="20" fill="#e2e8f0">Aden Kingi</text>
+  <text x="595" y="288" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="400" font-size="16" fill="#94a3b8">Bachelor of Computing Systems (Level 7) — Toi Ohomai Institute of Technology</text>
+  <text x="595" y="312" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="400" font-size="14" fill="#64748b">Capstone Project — November 2025 to June 2026</text>
+
+  <!-- ═══════════ ROW 1: PROBLEM + SOLUTION ═══════════ -->
+
+  <!-- Problem Statement Card -->
+  <rect x="40" y="345" width="540" height="200" rx="16" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1" filter="url(#softShadow)"/>
+  <rect x="40" y="345" width="540" height="4" rx="2" fill="#ef4444"/>
+  <text x="70" y="385" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="20" fill="#ef4444">THE PROBLEM</text>
+  <text x="70" y="415" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#cbd5e1">
+    <tspan x="70" dy="0">Cloud-based AI assistants like ChatGPT and Copilot require</tspan>
+    <tspan x="70" dy="22">sending personal data to external servers. Users have no</tspan>
+    <tspan x="70" dy="22">control over data retention, face subscription costs, and</tspan>
+    <tspan x="70" dy="22">cannot use AI tools offline. Existing local alternatives</tspan>
+    <tspan x="70" dy="22">offer basic chat but lack real desktop agency — they</tspan>
+    <tspan x="70" dy="22">cannot manage files, automate workflows, or execute tools.</tspan>
+  </text>
+
+  <!-- Solution Card -->
+  <rect x="610" y="345" width="540" height="200" rx="16" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1" filter="url(#softShadow)"/>
+  <rect x="610" y="345" width="540" height="4" rx="2" fill="#22c55e"/>
+  <text x="640" y="385" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="20" fill="#22c55e">THE SOLUTION</text>
+  <text x="640" y="415" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#cbd5e1">
+    <tspan x="640" dy="0">HomeBot is a privacy-first desktop AI assistant that runs</tspan>
+    <tspan x="640" dy="22">entirely on the user's machine. It uses Ollama for local</tspan>
+    <tspan x="640" dy="22">LLM inference, providing 85+ tool handlers for file</tspan>
+    <tspan x="640" dy="22">management, web search, image generation, document</tspan>
+    <tspan x="640" dy="22">indexing, and workflow automation — all without sending</tspan>
+    <tspan x="640" dy="22">data to third-party services.</tspan>
+  </text>
+
+  <!-- ═══════════ ROW 2: ARCHITECTURE ═══════════ -->
+
+  <rect x="40" y="570" width="1110" height="320" rx="16" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1" filter="url(#softShadow)"/>
+  <rect x="40" y="570" width="1110" height="4" rx="2" fill="url(#accentGrad)"/>
+  <text x="595" y="610" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="22" fill="url(#accentGrad)">SYSTEM ARCHITECTURE</text>
+
+  <!-- Architecture boxes -->
+  <!-- Renderer -->
+  <rect x="80" y="640" width="250" height="110" rx="10" fill="rgba(59,130,246,0.15)" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="205" y="668" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="14" fill="#60a5fa">RENDERER</text>
+  <text x="205" y="688" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#94a3b8">React 18 + TypeScript</text>
+  <text x="205" y="706" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">Chat UI · Settings · Dashboard</text>
+  <text x="205" y="722" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">Sidebar · Docs · Quiz · Web</text>
+  <text x="205" y="738" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">Glass-morphism Theme</text>
+
+  <!-- Arrow: Renderer -> Main -->
+  <line x1="330" y1="695" x2="400" y2="695" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="365" y="685" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="10" fill="#60a5fa">IPC</text>
+
+  <!-- Main Process -->
+  <rect x="400" y="640" width="310" height="110" rx="10" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="555" y="668" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="14" fill="#a78bfa">MAIN PROCESS</text>
+  <text x="555" y="688" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#94a3b8">Electron 28 + Node.js</text>
+  <text x="555" y="706" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">Message Router · 85+ Tool Handlers</text>
+  <text x="555" y="722" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">Agentic Loop · Memory Manager</text>
+  <text x="555" y="738" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">Scheduler · Config · Security</text>
+
+  <!-- Arrow: Main -> Ollama -->
+  <line x1="710" y1="680" x2="780" y2="660" stroke="#22c55e" stroke-width="2"/>
+  <!-- Arrow: Main -> n8n -->
+  <line x1="710" y1="710" x2="780" y2="730" stroke="#f59e0b" stroke-width="2"/>
+
+  <!-- Ollama -->
+  <rect x="780" y="635" width="230" height="55" rx="10" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="895" y="660" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="14" fill="#4ade80">OLLAMA (LOCAL)</text>
+  <text x="895" y="678" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">qwen2.5:7b · nomic-embed-text</text>
+
+  <!-- n8n -->
+  <rect x="780" y="705" width="230" height="55" rx="10" fill="rgba(245,158,11,0.15)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="895" y="730" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="14" fill="#fbbf24">N8N (DOCKER)</text>
+  <text x="895" y="748" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#64748b">Workflow Automation</text>
+
+  <!-- Preload bridge label -->
+  <rect x="335" y="762" width="130" height="22" rx="6" fill="rgba(59,130,246,0.2)" stroke="#3b82f6" stroke-width="0.5"/>
+  <text x="400" y="778" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="10" fill="#60a5fa">Preload Bridge</text>
+
+  <!-- Cloud (optional) -->
+  <rect x="80" y="775" width="250" height="45" rx="10" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)" stroke-width="1" stroke-dasharray="4"/>
+  <text x="205" y="800" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#64748b">Optional: OpenAI · Anthropic · Groq · 7 more</text>
+
+  <!-- Security badge -->
+  <rect x="555" y="775" width="170" height="45" rx="10" fill="rgba(239,68,68,0.1)" stroke="#ef4444" stroke-width="1"/>
+  <text x="640" y="796" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#f87171">🔒 11 Security Layers</text>
+  <text x="640" y="812" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="10" fill="#64748b">IPC · SSRF · Permissions</text>
+
+  <!-- RAG badge -->
+  <rect x="780" y="775" width="230" height="45" rx="10" fill="rgba(6,182,212,0.1)" stroke="#06b6d4" stroke-width="1"/>
+  <text x="895" y="796" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#22d3ee">📚 Hybrid RAG Engine</text>
+  <text x="895" y="812" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="10" fill="#64748b">TF-IDF + Semantic · RRF Fusion</text>
+
+  <!-- ═══════════ ROW 3: KEY FEATURES (6 cards) ═══════════ -->
+
+  <text x="595" y="925" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="22" fill="white" letter-spacing="2">KEY FEATURES</text>
+
+  <!-- Feature 1: Agentic Tool Execution -->
+  <rect x="40" y="950" width="345" height="145" rx="12" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+  <circle cx="72" cy="982" r="18" fill="rgba(59,130,246,0.2)"/>
+  <text x="72" y="989" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18">🤖</text>
+  <text x="100" y="988" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="15" fill="#60a5fa">Agentic Tool Execution</text>
+  <text x="60" y="1012" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#94a3b8">
+    <tspan x="60" dy="0">85+ tool handlers across 27 modules. The LLM</tspan>
+    <tspan x="60" dy="18">autonomously chains tools for multi-step</tspan>
+    <tspan x="60" dy="18">requests with a safety cap of 10 rounds.</tspan>
+    <tspan x="60" dy="18">File, web, system, vision, browser, API tools.</tspan>
+  </text>
+
+  <!-- Feature 2: Privacy-First Design -->
+  <rect x="415" y="950" width="345" height="145" rx="12" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+  <circle cx="447" cy="982" r="18" fill="rgba(34,197,94,0.2)"/>
+  <text x="447" y="989" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18">🔒</text>
+  <text x="475" y="988" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="15" fill="#4ade80">Privacy-First Design</text>
+  <text x="435" y="1012" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#94a3b8">
+    <tspan x="435" dy="0">All processing runs locally via Ollama. No data</tspan>
+    <tspan x="435" dy="18">leaves the device unless the user explicitly</tspan>
+    <tspan x="435" dy="18">enables a cloud provider. 11-layer security</tspan>
+    <tspan x="435" dy="18">model with SSRF, IPC, and permission gating.</tspan>
+  </text>
+
+  <!-- Feature 3: n8n Workflow Automation -->
+  <rect x="790" y="950" width="345" height="145" rx="12" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+  <circle cx="822" cy="982" r="18" fill="rgba(245,158,11,0.2)"/>
+  <text x="822" y="989" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18">⚙</text>
+  <text x="850" y="988" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="15" fill="#fbbf24">n8n Workflow Automation</text>
+  <text x="810" y="1012" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#94a3b8">
+    <tspan x="810" dy="0">One-click deployment of n8n workflows from</tspan>
+    <tspan x="810" dy="18">the Automation Center. Webhook triggers,</tspan>
+    <tspan x="810" dy="18">Ollama integration, and response formatting.</tspan>
+    <tspan x="810" dy="18">Runs in Docker alongside Qdrant vector DB.</tspan>
+  </text>
+
+  <!-- Feature 4: Document RAG -->
+  <rect x="40" y="1115" width="345" height="145" rx="12" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+  <circle cx="72" cy="1147" r="18" fill="rgba(6,182,212,0.2)"/>
+  <text x="72" y="1154" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18">📄</text>
+  <text x="100" y="1153" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="15" fill="#22d3ee">Document RAG + Export</text>
+  <text x="60" y="1177" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#94a3b8">
+    <tspan x="60" dy="0">Drag-and-drop PDF, DOCX, code, and CSV</tspan>
+    <tspan x="60" dy="18">indexing with hybrid TF-IDF + semantic search.</tspan>
+    <tspan x="60" dy="18">Export conversations as Markdown, DOCX, or</tspan>
+    <tspan x="60" dy="18">PDF. Study Buddy quiz mode from documents.</tspan>
+  </text>
+
+  <!-- Feature 5: Multimodal AI -->
+  <rect x="415" y="1115" width="345" height="145" rx="12" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+  <circle cx="447" cy="1147" r="18" fill="rgba(139,92,246,0.2)"/>
+  <text x="447" y="1154" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18">🎨</text>
+  <text x="475" y="1153" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="15" fill="#a78bfa">Multimodal AI</text>
+  <text x="435" y="1177" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#94a3b8">
+    <tspan x="435" dy="0">Image generation across 5 backends (SD,</tspan>
+    <tspan x="435" dy="18">ComfyUI, DALL-E 3, Pollinations, Stable Horde).</tspan>
+    <tspan x="435" dy="18">Vision/OCR via moondream. Screen capture.</tspan>
+    <tspan x="435" dy="18">Voice I/O with Windows SAPI offline STT.</tspan>
+  </text>
+
+  <!-- Feature 6: Modern Desktop UX -->
+  <rect x="790" y="1115" width="345" height="145" rx="12" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+  <circle cx="822" cy="1147" r="18" fill="rgba(236,72,153,0.2)"/>
+  <text x="822" y="1154" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18">💻</text>
+  <text x="850" y="1153" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="15" fill="#f472b6">Modern Desktop UX</text>
+  <text x="810" y="1177" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#94a3b8">
+    <tspan x="810" dy="0">Electron 28 with glass-morphism UI theme.</tspan>
+    <tspan x="810" dy="18">Responsive layout from 500px to widescreen.</tspan>
+    <tspan x="810" dy="18">Morning briefing, global hotkey, auto-update,</tspan>
+    <tspan x="810" dy="18">conversation sidebar, analytics dashboard.</tspan>
+  </text>
+
+  <!-- ═══════════ ROW 4: TECH STACK + STATS ═══════════ -->
+
+  <!-- Tech Stack Card -->
+  <rect x="40" y="1290" width="540" height="180" rx="16" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1" filter="url(#softShadow)"/>
+  <rect x="40" y="1290" width="540" height="4" rx="2" fill="url(#purpleGrad)"/>
+  <text x="310" y="1330" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="20" fill="url(#purpleGrad)">TECHNOLOGY STACK</text>
+
+  <!-- Tech pills -->
+  <rect x="65" y="1348" width="110" height="28" rx="14" fill="rgba(59,130,246,0.2)" stroke="#3b82f6" stroke-width="0.8"/>
+  <text x="120" y="1367" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#60a5fa">Electron 28</text>
+
+  <rect x="185" y="1348" width="85" height="28" rx="14" fill="rgba(97,218,251,0.2)" stroke="#61dafb" stroke-width="0.8"/>
+  <text x="228" y="1367" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#61dafb">React 18</text>
+
+  <rect x="280" y="1348" width="110" height="28" rx="14" fill="rgba(49,120,198,0.2)" stroke="#3178c6" stroke-width="0.8"/>
+  <text x="335" y="1367" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#60a5fa">TypeScript</text>
+
+  <rect x="400" y="1348" width="80" height="28" rx="14" fill="rgba(34,197,94,0.2)" stroke="#22c55e" stroke-width="0.8"/>
+  <text x="440" y="1367" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#4ade80">Ollama</text>
+
+  <rect x="490" y="1348" width="65" height="28" rx="14" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="0.8"/>
+  <text x="523" y="1367" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#fbbf24">n8n</text>
+
+  <rect x="65" y="1388" width="80" height="28" rx="14" fill="rgba(139,92,246,0.2)" stroke="#8b5cf6" stroke-width="0.8"/>
+  <text x="105" y="1407" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#a78bfa">Docker</text>
+
+  <rect x="155" y="1388" width="80" height="28" rx="14" fill="rgba(6,182,212,0.2)" stroke="#06b6d4" stroke-width="0.8"/>
+  <text x="195" y="1407" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#22d3ee">Qdrant</text>
+
+  <rect x="245" y="1388" width="65" height="28" rx="14" fill="rgba(236,72,153,0.2)" stroke="#ec4899" stroke-width="0.8"/>
+  <text x="278" y="1407" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#f472b6">Jest</text>
+
+  <rect x="320" y="1388" width="100" height="28" rx="14" fill="rgba(139,92,246,0.2)" stroke="#8b5cf6" stroke-width="0.8"/>
+  <text x="370" y="1407" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#a78bfa">Playwright</text>
+
+  <rect x="430" y="1388" width="80" height="28" rx="14" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.2)" stroke-width="0.8"/>
+  <text x="470" y="1407" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="12" fill="#94a3b8">Node.js</text>
+
+  <text x="310" y="1455" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#64748b">Windows 10/11 · Electron-Vite · SAPI · ESPN API</text>
+
+  <!-- Stats Card -->
+  <rect x="610" y="1290" width="540" height="180" rx="16" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1" filter="url(#softShadow)"/>
+  <rect x="610" y="1290" width="540" height="4" rx="2" fill="url(#orangeGrad)"/>
+  <text x="880" y="1330" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="20" fill="url(#orangeGrad)">PROJECT METRICS</text>
+
+  <!-- Stat items - Row 1 -->
+  <text x="680" y="1365" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="32" fill="white">63K</text>
+  <text x="680" y="1385" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Lines of Code</text>
+
+  <text x="810" y="1365" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="32" fill="white">85+</text>
+  <text x="810" y="1385" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Tool Handlers</text>
+
+  <text x="940" y="1365" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="32" fill="white">1932</text>
+  <text x="940" y="1385" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Automated Tests</text>
+
+  <text x="1070" y="1365" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="32" fill="white">122</text>
+  <text x="1070" y="1385" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Test Suites</text>
+
+  <!-- Stat items - Row 2 -->
+  <text x="720" y="1435" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="28" fill="#60a5fa">521</text>
+  <text x="720" y="1452" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Commits</text>
+
+  <text x="840" y="1435" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="28" fill="#4ade80">11</text>
+  <text x="840" y="1452" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Security Layers</text>
+
+  <text x="960" y="1435" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="28" fill="#fbbf24">10</text>
+  <text x="960" y="1452" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Cloud Providers</text>
+
+  <text x="1080" y="1435" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="28" fill="#f472b6">5</text>
+  <text x="1080" y="1452" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" fill="#94a3b8">Image Backends</text>
+
+  <!-- ═══════════ ROW 5: CONCLUSION ═══════════ -->
+
+  <rect x="40" y="1495" width="1110" height="95" rx="16" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+  <rect x="40" y="1495" width="1110" height="4" rx="2" fill="url(#greenGrad)"/>
+  <text x="595" y="1535" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="20" fill="url(#greenGrad)">CONCLUSION</text>
+  <text x="595" y="1560" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#cbd5e1">HomeBot demonstrates that a fully functional, privacy-first desktop AI assistant can operate with zero cloud dependency.</text>
+  <text x="595" y="1580" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#cbd5e1">It combines local LLM inference, agentic tool execution, workflow automation, and an 11-layer security model in a single native application.</text>
+
+  <!-- ═══════════ FOOTER ═══════════ -->
+  <text x="595" y="1630" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="14" fill="#94a3b8">github.com/kingithegreat/HomeBot</text>
+  <text x="595" y="1655" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#475569">Electron · React · TypeScript · Ollama · n8n · Docker · Qdrant · Jest · Playwright</text>
+
+  <!-- Bottom accent bar -->
+  <rect x="0" y="1678" width="1190" height="6" fill="url(#accentGrad)"/>
+</svg>

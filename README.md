@@ -40,7 +40,8 @@ It combines:
 | **Document Review** | Attached documents are parsed into prompt context before routing, and failed retries ask for reattachment instead of replaying a marker-only prompt |
 | **RAG Engine** | Drag-and-drop document indexing (PDF, Word, code, CSV, Markdown) with hybrid TF-IDF + semantic embedding search via nomic-embed-text |
 | **Agentic Tool Loops** | Multi-step requests are automatically detected and the LLM chains tools autonomously with streaming progress indicators |
-| **Morning Briefing** | Proactive daily summary of weather, calendar events, and reminders on first interaction |
+| **Morning Briefing** | Proactive daily summary on startup: weather, calendar, reminders, system status, Ollama model count, conversation stats, and rotating tips |
+| **Screen Capture** | Capture your screen and ask the AI to describe or help with anything visible |
 | **Planning Agent** | Multi-step task planning with persistent plans |
 | **Memory Manager** | Persistent context and fact storage across sessions |
 | **Browser Automation** | Automated browser interactions and content extraction |
@@ -65,11 +66,12 @@ It combines:
 | **Voice Input** | Offline speech recognition via Windows SAPI |
 | **Embedded Web Services** | Access ChatGPT, Claude, and Gemini directly inside HomeBot via sandboxed browser panels |
 | **Conversation Management** | Sidebar with timestamps, message counts, pinning, archiving, tags, reactions, and full-text search |
-| **Markdown Export** | Export any conversation to a clean `.md` file |
+| **Multi-Format Export** | Export conversations as Markdown, DOCX, or PDF from the sidebar context menu |
 | **Keyboard Shortcuts** | Configurable shortcuts for common actions |
 | **Analytics Dashboard** | Visual dashboard for conversation and tool usage analytics |
 | **Message Density Toggle** | Compact or comfortable message spacing |
 | **Focus Mode** | Distraction-free full-screen chat interface |
+| **Responsive UI** | Fully responsive layout with fluid scaling from 500px to widescreen using CSS `min()`, `clamp()`, and viewport breakpoints |
 
 ### Security
 

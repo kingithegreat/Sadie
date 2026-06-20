@@ -7211,14 +7211,7 @@ body {
 
 /* ── Floating Feature Buttons (Voice + Screen Capture) ── */
 .floating-feature-buttons {
-  position: absolute;
-  bottom: 90px;
-  right: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 50;
-  pointer-events: none;
+  display: none;
 }
 
 .fab-btn {

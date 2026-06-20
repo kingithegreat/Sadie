@@ -138,9 +138,13 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         setTimeout(() => setExportStatus(s => { const n = {...s}; delete n[id]; return n; }), 2500);
       } else {
         setExportStatus(s => ({ ...s, [id]: 'error' }));
+        console.error('[Sidebar] Export failed:', r?.error || 'unknown');
+        alert(`Export failed: ${r?.error || 'Unknown error'}`);
       }
-    } catch {
+    } catch (err: any) {
       setExportStatus(s => ({ ...s, [id]: 'error' }));
+      console.error('[Sidebar] Export exception:', err);
+      alert(`Export error: ${err?.message || err}`);
     }
   };
 

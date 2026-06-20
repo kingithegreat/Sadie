@@ -1373,34 +1373,32 @@ try {
       const desktop = app.getPath('desktop');
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeId = conversationId.replace(/[^a-z0-9_-]/gi, '').slice(0, 12);
+      let filePath: string;
 
       if (format === 'docx') {
         const buf = await MemoryManager.exportConversationAsDocx(conversationId);
         if (!buf) return { success: false, error: 'Conversation not found' };
-        const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.docx`);
+        filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.docx`);
         fs.writeFileSync(filePath, buf);
-        console.log('[IPC] DOCX exported to:', filePath);
-        return { success: true, path: filePath };
-      }
-
-      if (format === 'pdf') {
+      } else if (format === 'pdf') {
         const buf = await MemoryManager.exportConversationAsPdf(conversationId);
         if (!buf) return { success: false, error: 'Conversation not found' };
-        const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.pdf`);
+        filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.pdf`);
         fs.writeFileSync(filePath, buf);
-        console.log('[IPC] PDF exported to:', filePath);
-        return { success: true, path: filePath };
+      } else {
+        const isJson = format === 'json';
+        const content = isJson
+          ? MemoryManager.exportConversationAsJSON(conversationId)
+          : MemoryManager.exportConversationAsMarkdown(conversationId);
+        if (!content) return { success: false, error: 'Conversation not found' };
+        const ext = isJson ? 'json' : 'md';
+        filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.${ext}`);
+        fs.writeFileSync(filePath, content, 'utf-8');
       }
 
-      const isJson = format === 'json';
-      const content = isJson
-        ? MemoryManager.exportConversationAsJSON(conversationId)
-        : MemoryManager.exportConversationAsMarkdown(conversationId);
-      if (!content) return { success: false, error: 'Conversation not found' };
-      const ext = isJson ? 'json' : 'md';
-      const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.${ext}`);
-      fs.writeFileSync(filePath, content, 'utf-8');
-      return { success: true, content, path: filePath };
+      console.log('[IPC] Exported to:', filePath);
+      shell.openPath(filePath).catch(() => {});
+      return { success: true, path: filePath };
     } catch (err: any) {
       console.error('[IPC] homebot:export-conversation error:', err.message, err.stack);
       return { success: false, error: err.message };

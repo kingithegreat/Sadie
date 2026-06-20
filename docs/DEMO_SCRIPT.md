@@ -4,8 +4,8 @@
 
 1. Close all other apps to free RAM/VRAM
 2. Open terminal, run: `ollama list` (verify qwen2.5:7b, nomic-embed-text visible)
-3. Run: `docker ps` (verify sadie-n8n is running)
-4. Stop Docker Ollama if it's blocking native: `docker stop sadie-ollama`
+3. Run: `docker ps` (verify homebot-n8n is running)
+4. Stop Docker Ollama if it's blocking native: `docker stop homebot-ollama`
 5. Launch HomeBot: `cd widget && npx electron-vite dev`
 6. Wait for "Hello! I'm HomeBot" greeting
 7. Have a backup URL ready (e.g. https://en.wikipedia.org/wiki/Artificial_intelligence)
@@ -152,7 +152,7 @@
 | Problem | Quick Fix |
 |---------|-----------|
 | Ollama not responding | `ollama serve` in terminal |
-| n8n not running | `docker start sadie-n8n` |
+| n8n not running | `docker start homebot-n8n` |
 | No models showing | `ollama pull qwen2.5:7b` |
 | App won't start | `cd widget && npm run build && npx electron-vite dev` |
 | Image gen fails | Backend auto-fallback handles this; if all fail, skip this act |
