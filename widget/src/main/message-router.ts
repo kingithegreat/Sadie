@@ -3478,7 +3478,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // of returning the canned "couldn't access" error.
         {
           const intentInput = enhancedMessage;
-          const intentResult = await preProcessIntent(intentInput, convId);
+          const hasAttachedDocs = request.documents && request.documents.length > 0;
+          const intentResult = hasAttachedDocs ? null : await preProcessIntent(intentInput, convId);
           if (intentResult && convId) setLastIntent(convId, intentResult, intentInput);
           console.log('[HomeBot] preProcessIntent called with:', intentInput.substring(0, 60));
           console.log('[HomeBot] Intent result:', intentResult ? JSON.stringify(intentResult).substring(0, 200) : 'null');
