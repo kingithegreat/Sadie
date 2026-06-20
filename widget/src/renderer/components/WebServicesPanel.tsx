@@ -29,13 +29,17 @@ function getWs() {
   return (window as any)._webServices as {
     open:   (id: string) => Promise<void>;
     status: ()           => Promise<StatusMap>;
+    openBrowse:  (url: string) => Promise<void>;
+    grabContent: () => Promise<{ success: boolean; url?: string; title?: string; content?: string; error?: string }>;
+    browseStatus: () => Promise<{ open: boolean; url?: string; title?: string }>;
   } | undefined;
 }
 
 function getElectron() {
   return (window as any).electron as {
     fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;
-    ragIndex?: (filePath: string) => Promise<{ success: boolean; result?: { chunks_indexed?: number }; error?: string }>;
+    ragIndex?: (filePath: string, content?: string) => Promise<{ success: boolean; result?: { chunks_indexed?: number }; error?: string }>;
+    summarizeWebContent?: (url: string, content: string) => Promise<{ success: boolean; summary?: string; error?: string }>;
   } | undefined;
 }
 
@@ -49,6 +53,11 @@ const WebServicesPanel: React.FC<WebServicesPanelProps> = ({ onSendToChat }) => 
   const [pageUrl, setPageUrl] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [ragStatus, setRagStatus] = useState<'idle' | 'indexing' | 'done' | 'error'>('idle');
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryStatus, setSummaryStatus] = useState<'idle' | 'summarizing' | 'done' | 'error'>('idle');
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browseTitle, setBrowseTitle] = useState('');
+  const [browseUrl, setBrowseUrl] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -58,6 +67,14 @@ const WebServicesPanel: React.FC<WebServicesPanelProps> = ({ onSendToChat }) => 
       try {
         const s = await ws.status();
         if (alive) setOpen(s);
+        const bs = await ws.browseStatus();
+        if (alive) {
+          setBrowseOpen(bs.open);
+          if (bs.open) {
+            setBrowseTitle(bs.title || '');
+            setBrowseUrl(bs.url || '');
+          }
+        }
       } catch { /* ignore */ }
     };
     poll();
@@ -78,30 +95,60 @@ const WebServicesPanel: React.FC<WebServicesPanelProps> = ({ onSendToChat }) => 
     return u;
   };
 
-  const handleFetch = async () => {
+  const handleOpenBrowse = async () => {
     const normalized = normalizeUrl(url);
     if (!normalized) return;
-
-    setFetchStatus('fetching');
-    setPageContent(null);
-    setPageUrl(null);
+    await getWs()?.openBrowse(normalized);
+    setBrowseOpen(true);
+    setBrowseUrl(normalized);
     setStatusMsg(null);
+    setSummary(null);
+    setPageContent(null);
+    setSummaryStatus('idle');
+  };
+
+  const handleSummarizePage = async () => {
+    setFetchStatus('fetching');
+    setSummary(null);
+    setPageContent(null);
+    setStatusMsg('Grabbing page content...');
+    setSummaryStatus('idle');
 
     try {
-      const result = await getElectron()?.fetchPageContent?.(normalized);
-      if (result?.success && result.result) {
-        setPageContent(result.result.content);
-        setPageUrl(result.result.url);
-        setFetchStatus('done');
-        const chars = result.result.length.toLocaleString();
-        setStatusMsg(`Fetched ${chars} characters${result.result.truncated ? ' (truncated)' : ''}`);
-      } else {
+      const ws = getWs();
+      const grabbed = await ws?.grabContent();
+      if (!grabbed?.success || !grabbed.content) {
         setFetchStatus('error');
-        setStatusMsg(result?.error || 'Failed to fetch page');
+        setStatusMsg(grabbed?.error || 'Could not grab page content. Is the browser window open?');
+        return;
+      }
+
+      setPageContent(grabbed.content);
+      setPageUrl(grabbed.url || '');
+      setBrowseTitle(grabbed.title || '');
+      setFetchStatus('done');
+      const chars = grabbed.content.length.toLocaleString();
+      setStatusMsg(`Grabbed ${chars} characters — summarizing...`);
+
+      // Auto-summarize
+      setSummaryStatus('summarizing');
+      try {
+        const sumResult = await getElectron()?.summarizeWebContent?.(grabbed.url || '', grabbed.content);
+        if (sumResult?.success && sumResult.summary) {
+          setSummary(sumResult.summary);
+          setSummaryStatus('done');
+          setStatusMsg(`Summary ready (from ${chars} characters)`);
+        } else {
+          setSummaryStatus('error');
+          setStatusMsg(`Grabbed ${chars} characters — summary failed`);
+        }
+      } catch {
+        setSummaryStatus('error');
+        setStatusMsg(`Grabbed ${chars} characters — summary failed`);
       }
     } catch (err: any) {
       setFetchStatus('error');
-      setStatusMsg(err.message || 'Fetch failed');
+      setStatusMsg(err.message || 'Failed to grab page');
     }
   };
 
@@ -133,35 +180,51 @@ const WebServicesPanel: React.FC<WebServicesPanelProps> = ({ onSendToChat }) => 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleFetch();
+    if (e.key === 'Enter') handleOpenBrowse();
   };
 
   return (
     <div className="web-services-panel">
-      {/* ── URL Browser Section ── */}
+      {/* ── Browse & Summarize Section ── */}
       <div className="web-browser-section">
         <h2 className="web-services-title">Web Browser</h2>
         <p className="web-services-subtitle">
-          Fetch any web page, then summarize it in chat or add it to RAG for semantic search.
+          Open any page in a browser window, then summarize it with AI.
         </p>
 
         <div className="web-url-bar">
           <input
             type="text"
             className="web-url-input"
-            placeholder="Enter a URL (e.g. https://example.com/article)..."
+            placeholder="Enter a URL (e.g. https://example.com)..."
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={handleKeyDown}
           />
           <button
             className="web-fetch-btn"
-            onClick={handleFetch}
-            disabled={fetchStatus === 'fetching' || !url.trim()}
+            onClick={handleOpenBrowse}
+            disabled={!url.trim()}
           >
-            {fetchStatus === 'fetching' ? 'Fetching...' : 'Fetch'}
+            Open
           </button>
         </div>
+
+        {browseOpen && (
+          <div className="web-browse-status">
+            <span className="web-browse-dot" />
+            <span className="web-browse-info">
+              Browsing: {browseTitle || browseUrl || 'Loading...'}
+            </span>
+            <button
+              className="web-summarize-btn"
+              onClick={handleSummarizePage}
+              disabled={summaryStatus === 'summarizing' || fetchStatus === 'fetching'}
+            >
+              {summaryStatus === 'summarizing' || fetchStatus === 'fetching' ? 'Summarizing...' : 'Summarize This Page'}
+            </button>
+          </div>
+        )}
 
         {statusMsg && (
           <p className={`web-status-msg ${fetchStatus === 'error' ? 'error' : ''}`}>
@@ -169,32 +232,49 @@ const WebServicesPanel: React.FC<WebServicesPanelProps> = ({ onSendToChat }) => 
           </p>
         )}
 
-        {pageContent && (
+        {(summary || pageContent) && (
           <div className="web-content-preview">
-            <div className="web-content-header">
-              <span className="web-content-url">{pageUrl}</span>
-              <span className="web-content-length">{pageContent.length.toLocaleString()} chars</span>
-            </div>
-            <div className="web-content-text">
-              {pageContent.slice(0, 1500)}
-              {pageContent.length > 1500 && <span className="web-content-fade">... (preview truncated)</span>}
-            </div>
+            {pageUrl && (
+              <div className="web-content-header">
+                <span className="web-content-url">{browseTitle || pageUrl}</span>
+                <span className="web-content-length">{pageContent?.length.toLocaleString()} chars</span>
+              </div>
+            )}
+
+            {summaryStatus === 'summarizing' && (
+              <div className="web-summary-loading">Summarizing with AI...</div>
+            )}
+
+            {summary && (
+              <div className="web-summary-text">{summary}</div>
+            )}
+
+            {pageContent && (
+              <details className="web-raw-details">
+                <summary className="web-raw-toggle">View raw page text</summary>
+                <div className="web-content-text">
+                  {pageContent.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+/g, ' ').trim().slice(0, 2000)}
+                  {pageContent.length > 2000 && <span className="web-content-fade">... (preview truncated)</span>}
+                </div>
+              </details>
+            )}
+
             <div className="web-content-actions">
               <button
                 className="web-action-btn summarize"
                 onClick={handleSendToChat}
-                disabled={!onSendToChat}
-                title="Send page content to chat for AI summarization"
+                disabled={!onSendToChat || !pageContent}
+                title="Send page content to chat for deeper discussion"
               >
-                💬 Summarize in Chat
+                Discuss in Chat
               </button>
               <button
                 className="web-action-btn rag"
                 onClick={handleAddToRag}
-                disabled={ragStatus === 'indexing'}
+                disabled={ragStatus === 'indexing' || !pageContent}
                 title="Index page content into RAG for semantic search"
               >
-                {ragStatus === 'indexing' ? '⏳ Indexing...' : ragStatus === 'done' ? '✓ Indexed' : '🔍 Add to RAG'}
+                {ragStatus === 'indexing' ? 'Indexing...' : ragStatus === 'done' ? 'Indexed' : 'Add to RAG'}
               </button>
             </div>
           </div>

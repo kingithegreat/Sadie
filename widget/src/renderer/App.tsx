@@ -1260,18 +1260,26 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       ) : mode === 'documents' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <DocumentViewer onSendToChat={(filePath, content) => {
-            const fileName = filePath.split(/[\\/]/).pop() || 'document';
-            const ext = fileName.split('.').pop()?.toLowerCase() || 'txt';
-            const mimeMap: Record<string, string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv', json: 'application/json', md: 'text/markdown' };
-            const doc: DocumentAttachment = {
-              id: `doc-${Date.now()}`,
-              filename: fileName,
-              mimeType: mimeMap[ext] || 'text/plain',
-              size: new Blob([content]).size,
-              data: btoa(new TextEncoder().encode(content).reduce((s, b) => s + String.fromCharCode(b), '')),
-            };
-            setMode('chat');
-            handleSendMessage(`I've attached "${fileName}". Please review this document.`, undefined, [doc]);
+            try {
+              const fileName = filePath.split(/[\\/]/).pop() || 'document';
+              const ext = fileName.split('.').pop()?.toLowerCase() || 'txt';
+              const mimeMap: Record<string, string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv', json: 'application/json', md: 'text/markdown' };
+              const bytes = new TextEncoder().encode(content);
+              const binary = Array.from(bytes, b => String.fromCharCode(b)).join('');
+              const doc: DocumentAttachment = {
+                id: `doc-${Date.now()}`,
+                filename: fileName,
+                mimeType: mimeMap[ext] || 'text/plain',
+                size: bytes.length,
+                data: btoa(binary),
+              };
+              setMode('chat');
+              setTimeout(() => {
+                handleSendMessage(`I've attached "${fileName}". Please review this document.`, undefined, [doc]);
+              }, 100);
+            } catch (err) {
+              console.error('[DocViewer] Failed to send to chat:', err);
+            }
           }} />
         </Suspense>
       ) : mode === 'quiz' ? (

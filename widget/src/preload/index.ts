@@ -550,6 +550,11 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:fetch-page-content', url);
   },
 
+  // Summarize web page content via n8n/Ollama
+  summarizeWebContent: async (url: string, content: string) => {
+    return await ipcRenderer.invoke('homebot:summarize-web-content', url, content);
+  },
+
   // RAG: index a local file (or web content when content is provided)
   ragIndex: async (filePath: string, content?: string) => {
     return await ipcRenderer.invoke('homebot:rag-index', filePath, content);
@@ -628,6 +633,9 @@ contextBridge.exposeInMainWorld('_webviewPreload', null);
 contextBridge.exposeInMainWorld('_webServices', {
   open:   (id: string) => ipcRenderer.invoke('homebot:open-web-service', id),
   status: ()           => ipcRenderer.invoke('homebot:web-service-status'),
+  openBrowse:     (url: string) => ipcRenderer.invoke('homebot:open-browse', url),
+  grabContent:    ()            => ipcRenderer.invoke('homebot:grab-browse-content'),
+  browseStatus:   ()            => ipcRenderer.invoke('homebot:browse-status'),
 });
 
 // Export types for TypeScript consumers

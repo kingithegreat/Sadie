@@ -55,7 +55,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const defaultModels = {
     chatModel: 'qwen2.5:7b',
-    uncensoredModel: 'qwen2.5:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
     visionModel: 'moondream',
     codeModel: 'qwen2.5-coder:7b'
   };
@@ -921,9 +921,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className={`hw-profile-btn${localSettings.hardwareProfile === p ? ' active' : ''}`}
                 onClick={() => {
                   const profileDefaults: Record<string, Partial<Settings>> = {
-                    '4gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'qwen2.5:7b', moaEnabled: false },
-                    '8gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'qwen2.5:7b', moaEnabled: false },
-                    '16gb+': { chatModel: 'gemma4:e4b',  visionModel: 'moondream',  uncensoredModel: 'qwen2.5:7b' },
+                    '4gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-mistral:7b', moaEnabled: false },
+                    '8gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-mistral:7b', moaEnabled: false },
+                    '16gb+': { chatModel: 'gemma4:e4b',  visionModel: 'moondream',  uncensoredModel: 'dolphin-mistral:7b' },
                   };
                   setLocalSettings({ ...localSettings, ...(profileDefaults[p] || {}), hardwareProfile: p });
                 }}

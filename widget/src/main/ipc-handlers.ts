@@ -28,6 +28,7 @@ import {
   getDefaultSettings
 } from './config-manager';
 import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
+import { fetchPageContentHandler } from './tools/browser';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
@@ -52,7 +53,7 @@ import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
-import { createAndActivateWorkflow } from './n8n-api';
+import { createAndActivateWorkflow, ensureWebFetchWorkflow } from './n8n-api';
 
 function normalizeOllamaBaseUrl(raw?: string): string {
   const input = (raw || DEFAULT_OLLAMA_URL).trim();
@@ -155,7 +156,10 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const result = { n8n: 'checking', ollama: 'checking', lastChecked: new Date().toISOString() } as any;
       try {
         const r = await axios.get(n8nHealth, { timeout: HEALTH_CHECK_TIMEOUT });
-        if (r && r.status && r.status >= 200 && r.status < 300) result.n8n = 'online';
+        if (r && r.status && r.status >= 200 && r.status < 300) {
+          result.n8n = 'online';
+          ensureWebFetchWorkflow().catch(e => console.log('[WebFetch] n8n workflow deploy skipped:', e?.message));
+        }
         else result.n8n = 'offline';
       } catch (e) {
         result.n8n = 'offline';
@@ -475,13 +479,86 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // ── Fetch web page content (called from Web Browser panel) ──
+  // Try n8n first (it runs in Docker and can fetch any URL), fall back to local
   ipcMain.handle('homebot:fetch-page-content', async (_event, url: string) => {
     try {
       if (!url || typeof url !== 'string') {
         return { success: false, error: 'url is required' };
       }
-      const { fetchPageContentHandler } = require('./tools/browser');
-      return await fetchPageContentHandler({ url, max_length: 12000 });
+
+      // Try n8n webhook route first
+      try {
+        const settings = getSettings();
+        const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
+        const webhookUrl = `${n8nBase}/webhook/homebot/web-fetch`;
+
+        console.log('[WebFetch] Trying n8n webhook:', webhookUrl);
+        const n8nRes = await axios.post(webhookUrl, { url, max_length: 20000 }, {
+          timeout: 30_000,
+          headers: homebotWebhookHeaders()
+        });
+
+        if (n8nRes.data?.success) {
+          console.log('[WebFetch] n8n returned content:', (n8nRes.data.content?.length || 0), 'chars');
+          return n8nRes.data;
+        }
+        console.log('[WebFetch] n8n returned non-success, falling back to local');
+      } catch (n8nErr: any) {
+        console.log('[WebFetch] n8n unavailable, falling back to local:', n8nErr?.message);
+      }
+
+      // Local fallback
+      return await fetchPageContentHandler({ url, max_length: 20000 }, { executionId: `web-fetch-${Date.now()}` });
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Summarize web content via n8n (Ollama), with local fallback ──
+  ipcMain.handle('homebot:summarize-web-content', async (_event, url: string, content: string) => {
+    try {
+      if (!content) return { success: false, error: 'No content to summarize' };
+
+      const model = getSettings().chatModel || 'qwen2.5:7b';
+      const truncated = content.length > 6000 ? content.slice(0, 6000) : content;
+      const prompt = `Summarize this web page concisely. Include key information, services/products offered, and contact details if present. Use bullet points for clarity.\n\nURL: ${url}\n\nContent:\n${truncated}`;
+
+      // Try n8n first
+      try {
+        const settings = getSettings();
+        const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
+        console.log('[WebSummary] Trying n8n...');
+        const n8nRes = await axios.post(`${n8nBase}/webhook/homebot/chat`, {
+          message: prompt,
+          user_id: 'desktop-user',
+          conversation_id: 'web-summary',
+          timestamp: new Date().toISOString()
+        }, { timeout: 60_000, headers: homebotWebhookHeaders() });
+
+        const summary = n8nRes.data?.output || n8nRes.data?.data?.assistant?.content || '';
+        if (summary) {
+          console.log('[WebSummary] n8n returned summary:', summary.length, 'chars');
+          return { success: true, summary };
+        }
+      } catch (n8nErr: any) {
+        console.log('[WebSummary] n8n unavailable, using local Ollama:', n8nErr?.message);
+      }
+
+      // Local Ollama fallback
+      const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
+        model,
+        prompt,
+        system: 'You are a helpful assistant that summarizes web pages concisely with bullet points.',
+        stream: false,
+        options: { temperature: 0.5, num_predict: 1500 }
+      }, { timeout: 90_000 });
+
+      const summary = response.data?.response || '';
+      if (summary) {
+        console.log('[WebSummary] Local Ollama returned summary:', summary.length, 'chars');
+        return { success: true, summary };
+      }
+      return { success: false, error: 'No summary generated' };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
@@ -1651,12 +1728,34 @@ try {
       } catch { /* n8n not available, fall through to local */ }
     }
 
+    // ── Pre-gather local tool data for automations that need system access ──
+    let enrichedMessage = auto.instructions;
+    const needsSystemTools = /\b(get_system_info|list_processes|system.*resource|disk.*usage|memory|cpu|running.*process|ollama.*status)\b/i.test(auto.instructions);
+    if (needsSystemTools) {
+      const preCtx: ToolContext = { executionId: `automation-${auto.id}-pre-${Date.now()}` } as any;
+      try {
+        const sysInfo = await executeTool({ name: 'get_system_info', arguments: { detailed: true } }, preCtx);
+        const sysStr = typeof sysInfo === 'string' ? sysInfo : JSON.stringify(sysInfo, null, 2);
+        enrichedMessage += `\n\n--- System Info (pre-gathered) ---\n${sysStr}`;
+      } catch (e: any) { console.log('[Automation] pre-gather get_system_info failed:', e?.message); }
+      try {
+        const procs = await executeTool({ name: 'list_processes', arguments: { sort_by: 'memory', limit: 25 } }, preCtx);
+        const procStr = typeof procs === 'string' ? procs : JSON.stringify(procs, null, 2);
+        enrichedMessage += `\n\n--- Running Processes (pre-gathered) ---\n${procStr}`;
+      } catch (e: any) { console.log('[Automation] pre-gather list_processes failed:', e?.message); }
+      try {
+        const ollamaBase = process.env.OLLAMA_URL || getSettings().ollamaUrl || 'http://localhost:11434';
+        const tagsRes = await axios.get(`${ollamaBase}/api/tags`, { timeout: 5000 });
+        enrichedMessage += `\n\n--- Installed Ollama Models (pre-gathered) ---\n${JSON.stringify(tagsRes.data?.models?.map((m: any) => ({ name: m.name, size: m.size })) || [], null, 2)}`;
+      } catch (e: any) { console.log('[Automation] pre-gather ollama tags failed:', e?.message); }
+    }
+
     // ── n8n webhook path: POST to the user's n8n workflow ──
     if (auto.n8nWebhookUrl) {
       console.log(`[Automation] n8n path: POST to ${auto.n8nWebhookUrl}`);
       try {
         const n8nRes = await axios.post(auto.n8nWebhookUrl, {
-          message: auto.instructions,
+          message: enrichedMessage,
           automation_id: auto.id,
           automation_name: auto.name,
         }, { timeout: 120_000, headers: { 'Content-Type': 'application/json' } });
@@ -1682,7 +1781,7 @@ try {
       const tools = getFocusedOllamaTools();
       const messages: any[] = [
         { role: 'system', content: `You are HomeBot, a desktop AI assistant with tool access. Today is ${today}. Execute the user's automation task using your tools. Be concise and well-formatted. Use markdown for the final response.` },
-        { role: 'user', content: auto.instructions },
+        { role: 'user', content: enrichedMessage },
       ];
 
       try {
@@ -1817,25 +1916,42 @@ try {
 
       for (let b = 0; b < batches; b++) {
         const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
-        const prompt = `Generate ${count} ${difficulty} ${topic} quiz questions. Return ONLY a JSON array, no other text.
-Each object: {"type":"multiple-choice","question":"...","code":"","options":["A","B","C","D"],"correctIndex":0,"explanation":"..."}
-Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausible options. Use short code if relevant.`;
+        const prompt = `Generate exactly ${count} ${difficulty} difficulty quiz questions about ${topic}.
+RULES:
+- Respond with ONLY a JSON array, nothing else
+- Every question MUST have exactly 4 options in the "options" array
+- "correctIndex" is the index (0-3) of the correct answer in "options"
+- The correct answer MUST be one of the 4 options
+- Mix question types: multiple-choice, code-output, bug-fix, concept
+
+EXAMPLE (follow this format exactly):
+[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]`;
 
         const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
           model,
           prompt,
-          system: `You output ONLY valid JSON arrays. No markdown. No backticks. No explanation. ${difficulty} difficulty ${topic} coding quiz.`,
+          system: `You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.`,
           stream: false,
-          options: { temperature: 0.8, num_predict: 1500 }
-        }, { timeout: 60_000 });
+          options: { temperature: 0.7, num_predict: 3000 }
+        }, { timeout: 120_000 });
 
-        const raw = response.data?.response || '';
+        let raw = response.data?.response || '';
+        console.log(`[Quiz] Batch ${b + 1}/${batches} raw response (${raw.length} chars):`, raw.slice(0, 300));
+        // Strip markdown code fences that LLMs often add
+        raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
         const jsonMatch = raw.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           try {
             const parsed = JSON.parse(jsonMatch[0]);
-            if (Array.isArray(parsed)) allQuestions.push(...parsed);
-          } catch { /* skip bad batch */ }
+            if (Array.isArray(parsed)) {
+              console.log(`[Quiz] Batch ${b + 1}: parsed ${parsed.length} questions`);
+              allQuestions.push(...parsed);
+            }
+          } catch (parseErr: any) {
+            console.warn(`[Quiz] Batch ${b + 1} JSON parse failed:`, parseErr?.message, 'Raw:', raw.slice(0, 200));
+          }
+        } else {
+          console.warn(`[Quiz] Batch ${b + 1}: no JSON array found in response. Raw:`, raw.slice(0, 300));
         }
       }
 
@@ -1843,19 +1959,32 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
         return { success: false, error: 'Could not generate quiz questions. Check that Ollama is running.' };
       }
 
-      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => ({
-        id: `q-${Date.now()}-${i}`,
-        type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
-        question: String(q.question || ''),
-        code: q.code || '',
-        options: Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : ['A', 'B', 'C', 'D'],
-        correctIndex: typeof q.correctIndex === 'number' ? Math.min(Math.max(q.correctIndex, 0), 3) : 0,
-        explanation: String(q.explanation || 'No explanation provided.'),
-      }));
+      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => {
+        let options: string[] = Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [];
+        let correctIndex = typeof q.correctIndex === 'number' ? q.correctIndex : 0;
 
-      for (const q of validated) {
-        while (q.options.length < 4) q.options.push('(no option)');
-      }
+        // Some models return "answer" or "correct" text instead of "correctIndex"
+        const answerText = q.answer || q.correct || q.correctAnswer || '';
+        if (answerText && options.length > 0) {
+          const foundIdx = options.findIndex((o: string) => o.toLowerCase().trim() === String(answerText).toLowerCase().trim());
+          if (foundIdx >= 0) correctIndex = foundIdx;
+        }
+
+        // Pad to exactly 4 options
+        const fillers = ['Option A', 'Option B', 'Option C', 'Option D'];
+        while (options.length < 4) options.push(fillers[options.length]);
+        correctIndex = Math.min(Math.max(correctIndex, 0), 3);
+
+        return {
+          id: `q-${Date.now()}-${i}`,
+          type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
+          question: String(q.question || ''),
+          code: q.code || '',
+          options,
+          correctIndex,
+          explanation: String(q.explanation || 'No explanation provided.'),
+        };
+      });
 
       return { success: true, questions: validated };
     } catch (err: any) {
@@ -1928,30 +2057,39 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
 
       for (let b = 0; b < batches; b++) {
         const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
-        const prompt = `Based on ONLY the following study material, generate ${count} ${difficulty} quiz questions about "${topic}".
+        const prompt = `Based on ONLY the following study material, generate exactly ${count} ${difficulty} quiz questions about "${topic}".
 
 STUDY MATERIAL:
 ${ragContext.slice(0, 3000)}
 
-Return ONLY a JSON array, no other text.
-Each object: {"type":"multiple-choice","question":"...","code":"","options":["A","B","C","D"],"correctIndex":0,"explanation":"..."}
-Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausible options. Base questions strictly on the material above.`;
+RULES:
+- Respond with ONLY a JSON array, nothing else
+- Every question MUST have exactly 4 options
+- "correctIndex" is the index (0-3) of the correct answer in "options"
+- Base questions strictly on the material above
+
+EXAMPLE FORMAT:
+[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]`;
 
         const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
           model,
           prompt,
-          system: `You output ONLY valid JSON arrays. No markdown. No backticks. Generate ${difficulty} difficulty quiz questions based strictly on the provided study material.`,
+          system: `You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.`,
           stream: false,
-          options: { temperature: 0.7, num_predict: 1500 }
-        }, { timeout: 60_000 });
+          options: { temperature: 0.7, num_predict: 3000 }
+        }, { timeout: 120_000 });
 
-        const raw = response.data?.response || '';
+        let raw = response.data?.response || '';
+        console.log(`[Quiz/RAG] Batch ${b + 1}/${batches} raw (${raw.length} chars):`, raw.slice(0, 300));
+        raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
         const jsonMatch = raw.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           try {
             const parsed = JSON.parse(jsonMatch[0]);
             if (Array.isArray(parsed)) allQuestions.push(...parsed);
-          } catch { /* skip bad batch */ }
+          } catch (e: any) {
+            console.warn(`[Quiz/RAG] Batch ${b + 1} parse failed:`, e?.message);
+          }
         }
       }
 
@@ -1959,19 +2097,27 @@ Types: multiple-choice, code-output, bug-fix, concept. Mix them. Make 4 plausibl
         return { success: false, error: 'Could not generate questions from your notes. Try a different topic or add more study material.' };
       }
 
-      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => ({
-        id: `q-${Date.now()}-${i}`,
-        type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
-        question: String(q.question || ''),
-        code: q.code || '',
-        options: Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : ['A', 'B', 'C', 'D'],
-        correctIndex: typeof q.correctIndex === 'number' ? Math.min(Math.max(q.correctIndex, 0), 3) : 0,
-        explanation: String(q.explanation || 'No explanation provided.'),
-      }));
-
-      for (const q of validated) {
-        while (q.options.length < 4) q.options.push('(no option)');
-      }
+      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => {
+        let options: string[] = Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [];
+        let correctIndex = typeof q.correctIndex === 'number' ? q.correctIndex : 0;
+        const answerText = q.answer || q.correct || q.correctAnswer || '';
+        if (answerText && options.length > 0) {
+          const foundIdx = options.findIndex((o: string) => o.toLowerCase().trim() === String(answerText).toLowerCase().trim());
+          if (foundIdx >= 0) correctIndex = foundIdx;
+        }
+        const fillers = ['Option A', 'Option B', 'Option C', 'Option D'];
+        while (options.length < 4) options.push(fillers[options.length]);
+        correctIndex = Math.min(Math.max(correctIndex, 0), 3);
+        return {
+          id: `q-${Date.now()}-${i}`,
+          type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
+          question: String(q.question || ''),
+          code: q.code || '',
+          options,
+          correctIndex,
+          explanation: String(q.explanation || 'No explanation provided.'),
+        };
+      });
 
       return { success: true, questions: validated };
     } catch (err: any) {

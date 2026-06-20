@@ -157,7 +157,7 @@ describe('vision — 20 MB file size limit', () => {
     });
 
     const { visionToolHandlers } = await import('../tools/vision');
-    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH }, {} as any);
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/too large|20 MB/i);
   });
@@ -173,7 +173,7 @@ describe('vision — 20 MB file size limit', () => {
     const result = await visionToolHandlers.vision_query({
       file_path: IMAGE_PATH,
       question: 'What is this?',
-    });
+    }, {} as any);
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/too large|20 MB/i);
   });
@@ -207,7 +207,7 @@ describe('vision — 20 MB file size limit', () => {
     });
 
     const { visionToolHandlers } = await import('../tools/vision');
-    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH }, {} as any);
     expect(result.success).toBe(true);
   });
 
@@ -240,7 +240,7 @@ describe('vision — 20 MB file size limit', () => {
     });
 
     const { visionToolHandlers } = await import('../tools/vision');
-    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    const result = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH }, {} as any);
     expect(result.success).toBe(true);
   });
 });

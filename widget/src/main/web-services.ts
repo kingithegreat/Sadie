@@ -23,6 +23,9 @@ const SERVICES = {
 
 type ServiceId = keyof typeof SERVICES;
 
+// General-purpose browser window for any URL
+let browseWindow: BrowserWindow | null = null;
+
 const ALLOWED_PERMISSION_SET = new Set([
   'clipboard-read',
   'clipboard-sanitized-write',
@@ -126,6 +129,45 @@ function openOrFocus(id: ServiceId): void {
   windows[id]!.show();
 }
 
+function openBrowseWindow(url: string): void {
+  if (browseWindow && !browseWindow.isDestroyed()) {
+    browseWindow.loadURL(url);
+    if (browseWindow.isMinimized()) browseWindow.restore();
+    browseWindow.focus();
+    return;
+  }
+
+  const sesh = session.fromPartition('persist:browse');
+  sesh.setUserAgent(CHROME_UA);
+  sesh.setPermissionRequestHandler((_wc, permission, cb) => {
+    cb(ALLOWED_PERMISSION_SET.has(permission));
+  });
+
+  browseWindow = new BrowserWindow({
+    width: 1200,
+    height: 850,
+    title: 'HomeBot Browser',
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: 'persist:browse',
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, '../preload/webview.js'),
+    },
+  });
+
+  browseWindow.webContents.setUserAgent(CHROME_UA);
+
+  browseWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
+    browseWindow?.loadURL(popupUrl);
+    return { action: 'deny' };
+  });
+
+  browseWindow.loadURL(url);
+  browseWindow.on('closed', () => { browseWindow = null; });
+}
+
 /** Register the IPC handler called from the renderer via window.electron.openWebService */
 export function registerWebServicesHandlers(): void {
   ipcMain.handle('homebot:open-web-service', (_event, id: string) => {
@@ -139,6 +181,45 @@ export function registerWebServicesHandlers(): void {
         !!(windows[id] && !windows[id]!.isDestroyed()),
       ])
     );
+  });
+
+  // Open a general-purpose browser window
+  ipcMain.handle('homebot:open-browse', (_event, url: string) => {
+    if (url && typeof url === 'string') {
+      let normalized = url.trim();
+      if (!/^https?:\/\//i.test(normalized)) normalized = 'https://' + normalized;
+      openBrowseWindow(normalized);
+    }
+  });
+
+  // Get the current URL and page content from the browse window
+  ipcMain.handle('homebot:grab-browse-content', async () => {
+    if (!browseWindow || browseWindow.isDestroyed()) {
+      return { success: false, error: 'No browser window open' };
+    }
+
+    try {
+      const currentUrl = browseWindow.webContents.getURL();
+      const content = await browseWindow.webContents.executeJavaScript(`
+        (function() {
+          var clone = document.cloneNode(true);
+          var scripts = clone.querySelectorAll('script, style, noscript, svg, iframe');
+          for (var i = 0; i < scripts.length; i++) scripts[i].remove();
+          var text = (clone.body || clone.documentElement).innerText || '';
+          return text.replace(/[ \\t]+/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim();
+        })()
+      `);
+      const title = await browseWindow.webContents.executeJavaScript('document.title');
+      return { success: true, url: currentUrl, title: title || '', content: content || '' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to extract page content' };
+    }
+  });
+
+  // Check if browse window is open and get current URL
+  ipcMain.handle('homebot:browse-status', () => {
+    if (!browseWindow || browseWindow.isDestroyed()) return { open: false };
+    return { open: true, url: browseWindow.webContents.getURL(), title: browseWindow.getTitle() };
   });
 }
 

@@ -284,6 +284,117 @@ export async function listWorkflows(): Promise<Array<{ id: string; name: string 
 }
 
 /**
+ * Build a web-fetch workflow: receives { url, max_length } via webhook,
+ * fetches the page via HTTP Request node, strips HTML to plain text, returns it.
+ */
+export function buildWebFetchWorkflowJson(): object {
+  const versionId = randomUUID();
+  return {
+    name: 'HomeBot: Web Fetch',
+    active: true,
+    versionId,
+    nodes: [
+      {
+        parameters: {
+          httpMethod: 'POST',
+          path: 'homebot/web-fetch',
+          responseMode: 'responseNode',
+          options: {},
+        },
+        id: randomUUID(),
+        name: 'Webhook',
+        type: 'n8n-nodes-base.webhook',
+        typeVersion: 1.1,
+        position: [250, 300],
+        webhookId: `homebot-web-fetch`,
+      },
+      {
+        parameters: {
+          method: 'GET',
+          url: '={{ $json.body.url }}',
+          options: {
+            response: { response: { neverError: true, responseFormat: 'text' } },
+            timeout: 20000,
+          },
+        },
+        id: randomUUID(),
+        name: 'Fetch Page',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [480, 300],
+      },
+      {
+        parameters: {
+          jsCode: `const html = typeof $input.item.json === 'string' ? $input.item.json : ($input.item.json.data || '');
+const maxLen = $('Webhook').item.json.body?.max_length || 20000;
+let text = html
+  .replace(/<(script|style|noscript)[^>]*>[\\s\\S]*?<\\/\\1>/gi, '')
+  .replace(/<!--[\\s\\S]*?-->/g, '')
+  .replace(/<\\/(p|div|h[1-6]|li|tr|section|article)[\\s>]/gi, '\\n')
+  .replace(/<br\\s*\\/?>/gi, '\\n')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/g, ' ')
+  .replace(/&amp;/g, '&')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"')
+  .replace(/&#39;/g, "'")
+  .replace(/[ \\t]+/g, ' ')
+  .replace(/\\n /g, '\\n')
+  .replace(/\\n{3,}/g, '\\n\\n')
+  .trim();
+const truncated = text.length > maxLen;
+if (truncated) text = text.slice(0, maxLen) + '\\n\\n[...truncated]';
+const url = $('Webhook').item.json.body?.url || '';
+return { json: { success: true, url, content: text, truncated, length: text.length } };`,
+        },
+        id: randomUUID(),
+        name: 'Extract Text',
+        type: 'n8n-nodes-base.code',
+        typeVersion: 2,
+        position: [700, 300],
+      },
+      {
+        parameters: {
+          respondWith: 'json',
+          responseBody: '={{ JSON.stringify($json) }}',
+          options: {},
+        },
+        id: randomUUID(),
+        name: 'Respond',
+        type: 'n8n-nodes-base.respondToWebhook',
+        typeVersion: 1.1,
+        position: [920, 300],
+      },
+    ],
+    connections: {
+      Webhook: { main: [[{ node: 'Fetch Page', type: 'main', index: 0 }]] },
+      'Fetch Page': { main: [[{ node: 'Extract Text', type: 'main', index: 0 }]] },
+      'Extract Text': { main: [[{ node: 'Respond', type: 'main', index: 0 }]] },
+    },
+    settings: { executionOrder: 'v1' },
+  };
+}
+
+/**
+ * Deploy the web-fetch workflow to n8n if it doesn't already exist.
+ */
+export async function ensureWebFetchWorkflow(): Promise<void> {
+  const existing = await listWorkflows();
+  if (existing.some(w => w.name.includes('Web Fetch'))) {
+    console.log('[n8n-api] Web Fetch workflow already exists, skipping deploy');
+    return;
+  }
+
+  console.log('[n8n-api] Deploying Web Fetch workflow to n8n...');
+  const json = buildWebFetchWorkflowJson();
+  const id = await importWorkflow(json);
+  await activateWorkflow(id, json);
+  await restartN8n();
+  console.log('[n8n-api] Web Fetch workflow deployed, id:', id);
+}
+
+/**
  * Full flow: generate workflow JSON -> import -> activate -> restart n8n -> return info.
  */
 export async function createAndActivateWorkflow(opts: {

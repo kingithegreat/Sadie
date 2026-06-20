@@ -1962,7 +1962,8 @@ export async function processIncomingRequest(request: HomeBotRequestWithImages |
       ? request
       : { ...request, message: enhancedMessage };
 
-    const decision = decisionOverride ?? await analyzeAndRouteMessage(enhancedMessage);
+    const hasAttachedDocs = 'documents' in request && request.documents && request.documents.length > 0;
+    const decision = decisionOverride ?? (hasAttachedDocs ? { type: 'llm' as const, reason: 'Document content already attached' } : await analyzeAndRouteMessage(enhancedMessage));
     // diagnostic log for tests
     try { console.log('[ROUTER DIAG] decision=', JSON.stringify(decision)); } catch (e) { safeCatch(e); }
 
@@ -2173,8 +2174,7 @@ export function handleSlashCommand(input: string, conversationId: string, modelN
 
   return null; // Not a recognized slash command
 }
-// Uncensored model — defaults to qwen2.5:7b (supports tool calling)
-const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'qwen2.5:7b';
+const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-mistral:7b';
 
 // Current mode (can be toggled via IPC)
 let uncensoredModeEnabled = false;

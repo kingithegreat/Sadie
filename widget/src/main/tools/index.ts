@@ -157,6 +157,8 @@ const SMALL_MODEL_CORE_TOOLS = new Set([
   'get_news',
   'remember',
   'recall',
+  'get_system_info',
+  'list_processes',
 ]);
 
 export const SMALL_MODEL_MAX_TOOLS = 12;
