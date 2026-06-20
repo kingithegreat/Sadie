@@ -311,6 +311,24 @@ app.whenReady().then(async () => {
       }
     } catch (e) { console.error('[MAIN] Ollama health check error:', e); }
 
+    // ── Proactive Morning Briefing on startup ────────────────────────────
+    // Fire the daily briefing as a chat message when the app opens, without
+    // waiting for the user to type first. This is what makes HomeBot proactive.
+    if (ollamaOnline && mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        const { shouldOfferBriefing, markBriefingDelivered, generateBriefing } = require('./morning-briefing');
+        if (shouldOfferBriefing()) {
+          markBriefingDelivered();
+          generateBriefing().then((briefing: string | null) => {
+            if (briefing && mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('homebot:proactive-briefing', { content: briefing });
+              console.log('[MAIN] Proactive morning briefing delivered on startup');
+            }
+          }).catch((e: any) => console.error('[MAIN] Startup briefing error:', e?.message));
+        }
+      } catch (e) { console.error('[MAIN] Briefing init error:', e); }
+    }
+
     // Ollama heartbeat — check every 30s and auto-restart if down.
     // Only notify renderer on state CHANGE to avoid toast spam.
     let lastOllamaOnline = ollamaOnline;

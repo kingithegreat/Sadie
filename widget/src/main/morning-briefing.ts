@@ -14,8 +14,11 @@
 
 import { executeToolBatch, ToolCall, ToolContext } from './tools';
 import { getSettings } from './config-manager';
+import { MemoryManager } from './memory-manager';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import axios from 'axios';
 
 // ── State: track last briefing date ──────────────────────────────────────
 
@@ -115,6 +118,29 @@ export async function generateBriefing(
 
   sections.push(`## ${greeting}! Here's your briefing for ${dayName}\n`);
 
+  // ── System Status ──
+  try {
+    const settings = getSettings() as any;
+    const model = settings.chatModel || 'qwen2.5:7b';
+    const uptimeHrs = (os.uptime() / 3600).toFixed(1);
+    const memGB = (os.freemem() / 1073741824).toFixed(1);
+    const totalGB = (os.totalmem() / 1073741824).toFixed(1);
+
+    let statusLine = `### 💻 System\n`;
+    statusLine += `Model: **${model}** · Uptime: ${uptimeHrs}h · RAM: ${memGB}/${totalGB} GB free\n`;
+
+    // Ollama model count
+    try {
+      const ollamaUrl = (settings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
+      const tags = await axios.get(`${ollamaUrl}/api/tags`, { timeout: 3000 });
+      const modelCount = tags.data?.models?.length || 0;
+      statusLine += `Ollama: **online** (${modelCount} model${modelCount !== 1 ? 's' : ''} installed)\n`;
+    } catch {
+      statusLine += `Ollama: checking...\n`;
+    }
+    sections.push(statusLine);
+  } catch { /* skip system section */ }
+
   // ── Weather ──
   const weather = results[0];
   if (weather?.success !== false && weather?.result) {
@@ -160,8 +186,31 @@ export async function generateBriefing(
     sections.push(remLine);
   }
 
-  // If only the greeting section exists, nothing useful to show
-  if (sections.length <= 1) return null;
+  // ── Conversation Stats ──
+  try {
+    const store = MemoryManager.loadConversationStore();
+    const convCount = store.conversations?.length || 0;
+    const totalMsgs = (store.conversations || []).reduce(
+      (sum: number, c: any) => sum + (c.messages?.length || c.messageCount || 0), 0
+    );
+    if (convCount > 0) {
+      sections.push(`### 💬 Activity\n${convCount} conversation${convCount !== 1 ? 's' : ''} · ${totalMsgs.toLocaleString()} messages total\n`);
+    }
+  } catch { /* skip */ }
+
+  // ── Daily Tip ──
+  const tips = [
+    'Try the 📸 button to capture your screen — I can read and explain anything on it.',
+    'You can right-click a conversation to export it as DOCX or PDF.',
+    'Use the Web Browser to open any page, then hit "Summarize This Page" for an AI summary.',
+    'Add documents to the RAG index — then quiz yourself with Study Buddy.',
+    'Create automations in the Automation Center to chain my tools together.',
+    'Ask me to set a reminder — I\'ll notify you even if you switch tabs.',
+    'You can use n8n workflows for complex multi-step automations.',
+    'Try voice mode 🎙 for hands-free conversations.',
+  ];
+  const tipIndex = Math.floor(now.getTime() / 86400000) % tips.length;
+  sections.push(`### 💡 Tip of the Day\n${tips[tipIndex]}\n`);
 
   sections.push('\n---\n_Ask me anything to get started!_');
 

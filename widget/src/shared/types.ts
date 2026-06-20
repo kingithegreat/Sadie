@@ -306,6 +306,7 @@ export interface ElectronAPI {
   listTools?: () => Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }>;
   onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
+  onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
 
   // Fetch a web page and extract its text content
   fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;

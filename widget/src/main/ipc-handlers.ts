@@ -1368,6 +1368,7 @@ try {
    * Accepts an optional format: 'markdown' (default) | 'json'.
    */
   ipcMain.handle('homebot:export-conversation', async (_event, conversationId: string, format?: string) => {
+    console.log('[IPC] export-conversation called:', { conversationId: conversationId?.slice(0, 12), format });
     try {
       const desktop = app.getPath('desktop');
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -1378,6 +1379,7 @@ try {
         if (!buf) return { success: false, error: 'Conversation not found' };
         const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.docx`);
         fs.writeFileSync(filePath, buf);
+        console.log('[IPC] DOCX exported to:', filePath);
         return { success: true, path: filePath };
       }
 
@@ -1386,6 +1388,7 @@ try {
         if (!buf) return { success: false, error: 'Conversation not found' };
         const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.pdf`);
         fs.writeFileSync(filePath, buf);
+        console.log('[IPC] PDF exported to:', filePath);
         return { success: true, path: filePath };
       }
 
@@ -1399,7 +1402,7 @@ try {
       fs.writeFileSync(filePath, content, 'utf-8');
       return { success: true, content, path: filePath };
     } catch (err: any) {
-      console.error('[IPC] homebot:export-conversation error:', err.message);
+      console.error('[IPC] homebot:export-conversation error:', err.message, err.stack);
       return { success: false, error: err.message };
     }
   });

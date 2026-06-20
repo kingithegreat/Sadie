@@ -280,6 +280,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }
     });
 
+    // Proactive morning briefing — appears as an assistant message on app launch
+    const briefingUnsub = window.electron.onProactiveBriefing?.((data) => {
+      setMessages(prev => [...prev, {
+        id: `briefing-${Date.now()}`,
+        role: 'assistant' as const,
+        content: data.content,
+        createdAt: Date.now(),
+        error: null,
+      }]);
+    });
+
     // One-time toast when the main process auto-detects VRAM and applies a hardware profile
     const hwUnsub = window.electron.onHardwareProfileApplied?.((data) => {
       const label = data.profile === '4gb' ? '4 GB' : data.profile === '8gb' ? '8 GB' : '16 GB+';
@@ -335,6 +346,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       unsubscribe?.();
       permUnsub?.();
       reminderUnsub?.();
+      briefingUnsub?.();
       hwUnsub?.();
       titleUnsub?.();
       ollamaUnsub?.();

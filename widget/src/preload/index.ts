@@ -237,6 +237,12 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:hardware-profile-applied', listener);
   },
 
+  onProactiveBriefing: (cb: (data: { content: string }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: { content: string }) => cb(data);
+    ipcRenderer.on('homebot:proactive-briefing', listener);
+    return () => ipcRenderer.removeListener('homebot:proactive-briefing', listener);
+  },
+
   onOllamaStatus: (cb: (data: { online: boolean; url: string }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on('homebot:ollama-status', listener);
