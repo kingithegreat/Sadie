@@ -7,6 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { Message } from '../shared/types';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import PDFDocument from 'pdfkit';
 
 // Resolve memory store path relative to app root (not asar)
 function getMemoryStorePath(): string {
@@ -531,6 +533,79 @@ export function exportConversationAsJSON(conversationId: string): string | null 
   return JSON.stringify(payload, null, 2);
 }
 
+/**
+ * Export a single conversation as a DOCX buffer.
+ */
+export async function exportConversationAsDocx(conversationId: string): Promise<Buffer | null> {
+  const conv = getConversation(conversationId);
+  if (!conv) return null;
+
+  const children: Paragraph[] = [
+    new Paragraph({ text: conv.title || 'Untitled Conversation', heading: HeadingLevel.HEADING_1 }),
+    new Paragraph({ children: [
+      new TextRun({ text: `Created: ${new Date(conv.createdAt).toLocaleString()}  |  `, size: 20, color: '666666' }),
+      new TextRun({ text: `Messages: ${conv.messages.length}`, size: 20, color: '666666' }),
+    ]}),
+    new Paragraph({ text: '' }),
+  ];
+
+  for (const msg of conv.messages) {
+    const role = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'HomeBot' : msg.role;
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2);
+    children.push(new Paragraph({
+      children: [new TextRun({ text: role, bold: true, size: 24 })],
+      heading: HeadingLevel.HEADING_3,
+    }));
+    for (const line of content.split('\n')) {
+      children.push(new Paragraph({ text: line }));
+    }
+    children.push(new Paragraph({ text: '' }));
+  }
+
+  const doc = new Document({ sections: [{ children }] });
+  return Buffer.from(await Packer.toBuffer(doc));
+}
+
+/**
+ * Export a single conversation as a PDF buffer.
+ */
+export function exportConversationAsPdf(conversationId: string): Promise<Buffer | null> {
+  const conv = getConversation(conversationId);
+  if (!conv) return Promise.resolve(null);
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(20).font('Helvetica-Bold')
+      .text(conv.title || 'Untitled Conversation');
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica').fillColor('#666666')
+      .text(`Created: ${new Date(conv.createdAt).toLocaleString()}  |  Messages: ${conv.messages.length}`);
+    doc.moveDown(0.5).fillColor('#000000');
+
+    doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke('#cccccc');
+    doc.moveDown(0.5);
+
+    for (const msg of conv.messages) {
+      const role = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'HomeBot' : msg.role;
+      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2);
+
+      if (doc.y > doc.page.height - 100) doc.addPage();
+
+      doc.fontSize(12).font('Helvetica-Bold').text(role);
+      doc.moveDown(0.2);
+      doc.fontSize(10).font('Helvetica').text(content, { lineGap: 2 });
+      doc.moveDown(0.6);
+    }
+
+    doc.end();
+  });
+}
+
 // ============= Tool Usage Stats =============
 
 export function loadToolStats(): ToolUsageStats {
@@ -575,6 +650,8 @@ export const MemoryManager = {
   searchConversations,
   exportConversationAsMarkdown,
   exportConversationAsJSON,
+  exportConversationAsDocx,
+  exportConversationAsPdf,
 };
 
 export default MemoryManager;

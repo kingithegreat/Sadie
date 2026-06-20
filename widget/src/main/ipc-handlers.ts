@@ -615,11 +615,61 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  // Export chat history as markdown
-  ipcMain.handle('homebot:export-chat', async (_event, markdown: string) => {
+  // Export chat history as markdown, DOCX, or PDF
+  ipcMain.handle('homebot:export-chat', async (_event, markdown: string, format?: string) => {
     try {
       const desktop = app.getPath('desktop');
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+      if (format === 'docx') {
+        const { Document: Doc, Packer: Pack, Paragraph: Para, TextRun: TR, HeadingLevel: HL } = await import('docx');
+        const paragraphs: any[] = [];
+        for (const line of markdown.split('\n')) {
+          if (line.startsWith('# ')) {
+            paragraphs.push(new Para({ text: line.slice(2), heading: HL.HEADING_1 }));
+          } else if (line.startsWith('### ')) {
+            paragraphs.push(new Para({ children: [new TR({ text: line.slice(4), bold: true, size: 24 })] }));
+          } else if (line === '---') {
+            paragraphs.push(new Para({ text: '' }));
+          } else {
+            paragraphs.push(new Para({ text: line }));
+          }
+        }
+        const doc = new Doc({ sections: [{ children: paragraphs }] });
+        const buf = Buffer.from(await Pack.toBuffer(doc));
+        const filePath = path.join(desktop, `homebot-chat-${ts}.docx`);
+        fs.writeFileSync(filePath, buf);
+        return { success: true, path: filePath };
+      }
+
+      if (format === 'pdf') {
+        const PDFDoc = (await import('pdfkit')).default;
+        const buf: Buffer = await new Promise((resolve, reject) => {
+          const doc = new PDFDoc({ margin: 50 });
+          const chunks: Buffer[] = [];
+          doc.on('data', (c: Buffer) => chunks.push(c));
+          doc.on('end', () => resolve(Buffer.concat(chunks)));
+          doc.on('error', reject);
+          for (const line of markdown.split('\n')) {
+            if (line.startsWith('# ')) {
+              doc.fontSize(20).font('Helvetica-Bold').text(line.slice(2));
+              doc.moveDown(0.3);
+            } else if (line.startsWith('### ')) {
+              doc.fontSize(12).font('Helvetica-Bold').text(line.slice(4));
+              doc.moveDown(0.2);
+            } else if (line === '---') {
+              doc.moveDown(0.3);
+            } else {
+              doc.fontSize(10).font('Helvetica').text(line, { lineGap: 2 });
+            }
+          }
+          doc.end();
+        });
+        const filePath = path.join(desktop, `homebot-chat-${ts}.pdf`);
+        fs.writeFileSync(filePath, buf);
+        return { success: true, path: filePath };
+      }
+
       const filePath = path.join(desktop, `homebot-chat-${ts}.md`);
       fs.writeFileSync(filePath, markdown, 'utf-8');
       return { success: true, path: filePath };
@@ -1319,14 +1369,31 @@ try {
    */
   ipcMain.handle('homebot:export-conversation', async (_event, conversationId: string, format?: string) => {
     try {
+      const desktop = app.getPath('desktop');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeId = conversationId.replace(/[^a-z0-9_-]/gi, '').slice(0, 12);
+
+      if (format === 'docx') {
+        const buf = await MemoryManager.exportConversationAsDocx(conversationId);
+        if (!buf) return { success: false, error: 'Conversation not found' };
+        const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.docx`);
+        fs.writeFileSync(filePath, buf);
+        return { success: true, path: filePath };
+      }
+
+      if (format === 'pdf') {
+        const buf = await MemoryManager.exportConversationAsPdf(conversationId);
+        if (!buf) return { success: false, error: 'Conversation not found' };
+        const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.pdf`);
+        fs.writeFileSync(filePath, buf);
+        return { success: true, path: filePath };
+      }
+
       const isJson = format === 'json';
       const content = isJson
         ? MemoryManager.exportConversationAsJSON(conversationId)
         : MemoryManager.exportConversationAsMarkdown(conversationId);
       if (!content) return { success: false, error: 'Conversation not found' };
-      const desktop = app.getPath('desktop');
-      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const safeId = conversationId.replace(/[^a-z0-9_-]/gi, '').slice(0, 12);
       const ext = isJson ? 'json' : 'md';
       const filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.${ext}`);
       fs.writeFileSync(filePath, content, 'utf-8');

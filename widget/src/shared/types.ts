@@ -302,7 +302,7 @@ export interface ElectronAPI {
 
   // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
   writeClipboard?: (text: string) => void;
-  exportChat?: (markdown: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  exportChat?: (markdown: string, format?: 'markdown' | 'docx' | 'pdf') => Promise<{ success: boolean; path?: string; error?: string }>;
   listTools?: () => Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }>;
   onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
@@ -431,7 +431,7 @@ export interface ElectronAPI {
   onConversationCompacted?: (cb: (data: { conversationId: string; originalCount: number; compactedCount: number }) => void) => () => void;
 
   // Export a single conversation to disk as Markdown or JSON
-  exportConversation?: (conversationId: string, format?: 'markdown' | 'json') => Promise<{
+  exportConversation?: (conversationId: string, format?: 'markdown' | 'json' | 'docx' | 'pdf') => Promise<{
     success: boolean;
     path?: string;
     error?: string;

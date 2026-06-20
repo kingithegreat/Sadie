@@ -535,9 +535,9 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:open-external-url', url);
   },
 
-  // Export chat history as a markdown file to the Desktop
-  exportChat: async (markdown: string): Promise<{ success: boolean; path?: string; error?: string }> => {
-    return await ipcRenderer.invoke('homebot:export-chat', markdown);
+  // Export chat history to the Desktop (markdown, docx, or pdf)
+  exportChat: async (markdown: string, format?: string): Promise<{ success: boolean; path?: string; error?: string }> => {
+    return await ipcRenderer.invoke('homebot:export-chat', markdown, format);
   },
 
   // List all registered tool definitions

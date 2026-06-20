@@ -128,7 +128,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     }
   };
 
-  const handleExport = async (id: string, e: React.MouseEvent, format: 'markdown' | 'json' = 'markdown') => {
+  const handleExport = async (id: string, e: React.MouseEvent, format: 'markdown' | 'json' | 'docx' | 'pdf' = 'markdown') => {
     e.stopPropagation();
     setExportStatus(s => ({ ...s, [id]: 'exporting' }));
     try {
@@ -401,6 +401,8 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                   { label: 'Rename', icon: '✏️', action: () => handleStartEdit(conv.id, conv.title, e as any) },
                   { label: 'Export Markdown', icon: '⬇️', action: () => handleExport(conv.id, e as any, 'markdown') },
                   { label: 'Export JSON', icon: '📋', action: () => handleExport(conv.id, e as any, 'json') },
+                  { label: 'Export DOCX', icon: '📄', action: () => handleExport(conv.id, e as any, 'docx') },
+                  { label: 'Export PDF', icon: '📕', action: () => handleExport(conv.id, e as any, 'pdf') },
                   { label: conv.archived ? 'Restore' : 'Archive', icon: '📦', action: () => handleArchive(conv.id, e as any) },
                   { label: `Compact${(conv.messageCount || 0) > 20 ? ` (${conv.messageCount} msgs)` : ''}`, icon: '🗜️', action: () => handleCompact(conv.id, e as any) },
                   { label: `Model${conv.model ? `: ${conv.model}` : ' (default)'}`, icon: '🤖', action: () => handleSetModel(conv.id) },
