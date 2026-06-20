@@ -32,7 +32,7 @@ jobs:
             fi
             sleep 2
           done
-          echo "n8n wait complete (tests use SADIE_E2E mock mode)"
+          echo "n8n wait complete (tests use HOMEBOT_E2E mock mode)"
 
       - name: Install widget dependencies
         run: npm ci --prefix widget
@@ -58,14 +58,14 @@ jobs:
       - name: Run Playwright E2E (Linux)
         if: runner.os == 'Linux'
         env:
-          SADIE_E2E: '1'
+          HOMEBOT_E2E: '1'
           NODE_ENV: 'test'
         run: xvfb-run -s "-screen 0 1920x1080x24" npm run e2e --prefix widget
 
       - name: Run Playwright E2E (non-Linux)
         if: runner.os != 'Linux'
         env:
-          SADIE_E2E: '1'
+          HOMEBOT_E2E: '1'
           NODE_ENV: 'test'
         run: npm run e2e --prefix widget
 

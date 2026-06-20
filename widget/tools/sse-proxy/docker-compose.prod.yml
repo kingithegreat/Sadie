@@ -25,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    image: sadie/sse-proxy:latest
+    image: homebot/sse-proxy:latest
     env_file: .env
     environment:
       - OPENAI_ENDPOINT
