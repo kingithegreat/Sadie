@@ -196,15 +196,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const activeCustomModelId = customLLM?.model || '';
 
+  const lockedModelInfo: ModelInfo = (() => {
+    const rec = RECOMMENDED_MODELS.find(m => normalizeModelId(m.id) === normalizeModelId(forcedModelId));
+    return rec || {
+      id: forcedModelId, name: forcedModelId,
+      shortName: forcedModelId.split(':')[0].split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      description: 'Active while Uncensored Mode is enabled', type: 'ollama', installed: true,
+    };
+  })();
+
   const getCurrentModelInfo = (): ModelInfo => {
-    if (locked) {
-      const rec = RECOMMENDED_MODELS.find(m => normalizeModelId(m.id) === normalizeModelId(forcedModelId));
-      const installed = allModels.find(m => normalizeModelId(m.id) === normalizeModelId(forcedModelId));
-      return installed || rec || {
-        id: forcedModelId, name: forcedModelId, shortName: forcedModelId.split(':')[0],
-        description: 'Active while Uncensored Mode is enabled', type: 'ollama', installed: true,
-      };
-    }
+    if (locked) return lockedModelInfo;
     if (useCustomLLM && customModelInfos.length > 0) {
       return customModelInfos.find(m => m.id === activeCustomModelId) || customModelInfos[0];
     }
@@ -214,7 +216,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     };
   };
 
-  const currentModelInfo = getCurrentModelInfo();
+  const currentModelInfo = locked ? lockedModelInfo : getCurrentModelInfo();
 
   // Prev/next navigation through all models
   const currentIndex = allModels.findIndex(m => {
@@ -315,8 +317,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           aria-expanded={isOpen ? 'true' : 'false'}
         >
           <div className="model-selector-current">
-            <span className="model-icon">{currentModelInfo?.type === 'custom' ? '☁️' : '🦙'}</span>
-            <span className="model-name-display">{currentModelInfo?.shortName || currentModelInfo?.name || 'Select'}</span>
+            <span className="model-icon">{locked ? '🦙' : (currentModelInfo?.type === 'custom' ? '☁️' : '🦙')}</span>
+            <span className="model-name-display">{locked ? lockedModelInfo.shortName : (currentModelInfo?.shortName || currentModelInfo?.name || 'Select')}</span>
             {locked && <span className="model-lock-badge">🔒</span>}
             <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>▼</span>
           </div>
