@@ -51,6 +51,7 @@ const RECOMMENDED_MODELS: ModelInfo[] = [
   { id: 'llama3.1:8b', name: 'Llama 3.1 (8B)', shortName: 'Llama 8B', description: 'Strong general-purpose (4.7GB)', type: 'ollama', sizeGB: 4.7 },
   { id: 'llama3.1:70b', name: 'Llama 3.1 (70B)', shortName: 'Llama 70B', description: 'Top-tier local quality for high-end rigs (43GB)', type: 'ollama', sizeGB: 43 },
   { id: 'llama3.2:3b', name: 'Llama 3.2 (3B)', shortName: 'Llama 3B', description: 'Reliable general chat (2GB)', type: 'ollama', sizeGB: 2 },
+  { id: 'dolphin-mistral:7b', name: 'Dolphin Mistral (7B)', shortName: 'Dolphin 7B', description: 'Uncensored — no safety guardrails (4.1GB)', type: 'ollama', sizeGB: 4.1 },
 ];
 
 function formatSize(bytes: number): string {
@@ -191,13 +192,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const allModels = [...customModelInfos, ...installedModelInfos];
 
-  const forcedModelId = lockedModelId || 'qwen2.5:7b';
+  const forcedModelId = lockedModelId || 'dolphin-mistral:7b';
 
   const activeCustomModelId = customLLM?.model || '';
 
   const getCurrentModelInfo = (): ModelInfo => {
     if (locked) {
-      return allModels.find(m => m.id === forcedModelId) || {
+      const rec = RECOMMENDED_MODELS.find(m => normalizeModelId(m.id) === normalizeModelId(forcedModelId));
+      const installed = allModels.find(m => normalizeModelId(m.id) === normalizeModelId(forcedModelId));
+      return installed || rec || {
         id: forcedModelId, name: forcedModelId, shortName: forcedModelId.split(':')[0],
         description: 'Active while Uncensored Mode is enabled', type: 'ollama', installed: true,
       };

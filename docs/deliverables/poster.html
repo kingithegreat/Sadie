@@ -16,8 +16,8 @@
 
   body {
     font-family: 'Inter', -apple-system, sans-serif;
-    background: #0a0a0f;
-    color: #e8e8f0;
+    background: #f8f9fc;
+    color: #1a1a2e;
     width: 841mm;
     min-height: 594mm;
     margin: 0 auto;
@@ -32,7 +32,7 @@
     gap: 8mm;
     padding: 12mm;
     min-height: 594mm;
-    background: linear-gradient(135deg, #0a0a1a 0%, #0f1628 30%, #0a0a1a 70%, #101020 100%);
+    background: linear-gradient(135deg, #f0f4ff 0%, #f8f9fc 30%, #f0f4ff 70%, #f5f6fa 100%);
     position: relative;
   }
 
@@ -41,8 +41,8 @@
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
     background:
-      radial-gradient(ellipse 600px 400px at 20% 20%, rgba(218,165,32,0.06) 0%, transparent 70%),
-      radial-gradient(ellipse 500px 300px at 80% 80%, rgba(218,165,32,0.04) 0%, transparent 70%);
+      radial-gradient(ellipse 600px 400px at 20% 20%, rgba(59,130,246,0.06) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 300px at 80% 80%, rgba(59,130,246,0.04) 0%, transparent 70%);
     pointer-events: none;
   }
 
@@ -53,8 +53,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 8mm 10mm;
-    background: linear-gradient(90deg, rgba(218,165,32,0.12), rgba(218,165,32,0.05), rgba(218,165,32,0.12));
-    border: 1px solid rgba(218,165,32,0.25);
+    background: linear-gradient(90deg, rgba(59,130,246,0.08), rgba(59,130,246,0.03), rgba(59,130,246,0.08));
+    border: 1px solid rgba(59,130,246,0.2);
     border-radius: 6mm;
     position: relative;
     z-index: 1;
@@ -66,24 +66,25 @@
     gap: 6mm;
   }
 
-  .header-icon {
-    width: 28mm;
-    height: 28mm;
-    background: linear-gradient(135deg, #0088FF, #0055CC);
-    border-radius: 7mm;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16mm;
-    box-shadow: 0 4px 20px rgba(218,165,32,0.3);
+  .header-logo {
+    height: 26mm;
+    width: auto;
+    border-radius: 5mm;
+    background: rgba(255,255,255,0.7);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(59,130,246,0.15);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    padding: 3mm 5mm;
   }
 
   .header h1 {
     font-size: 18mm;
     font-weight: 900;
     letter-spacing: -0.02em;
-    background: linear-gradient(135deg, #0088FF, #00BBFF, #0088FF);
+    background: linear-gradient(135deg, #2563eb, #3b82f6, #2563eb);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     line-height: 1;
   }
@@ -93,7 +94,7 @@
     font-size: 6mm;
     font-weight: 400;
     letter-spacing: 0.15em;
-    -webkit-text-fill-color: #8a8aa0;
+    -webkit-text-fill-color: #64748b;
     margin-top: 1mm;
   }
 
@@ -101,11 +102,11 @@
     text-align: right;
     font-size: 4.5mm;
     line-height: 1.6;
-    color: #a0a0b8;
+    color: #475569;
   }
 
   .header-meta strong {
-    color: #0088FF;
+    color: #2563eb;
     font-weight: 600;
   }
 
@@ -120,20 +121,22 @@
 
   /* ── Section Cards ── */
   .card {
-    background: rgba(20, 20, 40, 0.7);
-    border: 1px solid rgba(218,165,32,0.15);
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(59,130,246,0.12);
     border-radius: 4mm;
     padding: 6mm;
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   }
 
   .card h2 {
     font-size: 6.5mm;
     font-weight: 700;
-    color: #0088FF;
+    color: #2563eb;
     margin-bottom: 4mm;
     padding-bottom: 2mm;
-    border-bottom: 1px solid rgba(218,165,32,0.2);
+    border-bottom: 1px solid rgba(59,130,246,0.15);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -141,7 +144,7 @@
   .card p, .card li {
     font-size: 4.2mm;
     line-height: 1.55;
-    color: #c8c8d8;
+    color: #334155;
   }
 
   .card ul {
@@ -162,7 +165,7 @@
     transform: translateY(-50%);
     width: 2mm;
     height: 2mm;
-    background: #0088FF;
+    background: #3b82f6;
     border-radius: 50%;
   }
 
@@ -174,8 +177,8 @@
   }
 
   .stat-box {
-    background: rgba(218,165,32,0.08);
-    border: 1px solid rgba(218,165,32,0.2);
+    background: rgba(59,130,246,0.06);
+    border: 1px solid rgba(59,130,246,0.15);
     border-radius: 3mm;
     padding: 4mm;
     text-align: center;
@@ -184,13 +187,13 @@
   .stat-value {
     font-size: 10mm;
     font-weight: 800;
-    color: #0088FF;
+    color: #2563eb;
     line-height: 1.1;
   }
 
   .stat-label {
     font-size: 3.5mm;
-    color: #8a8aa0;
+    color: #64748b;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-top: 1mm;
@@ -198,22 +201,22 @@
 
   /* ── Architecture Diagram ── */
   .arch-diagram {
-    background: rgba(10, 10, 30, 0.8);
-    border: 1px solid rgba(218,165,32,0.2);
+    background: rgba(241,245,249,0.9);
+    border: 1px solid rgba(59,130,246,0.15);
     border-radius: 3mm;
     padding: 5mm;
     font-family: 'Courier New', monospace;
     font-size: 3.5mm;
     line-height: 1.4;
-    color: #a0a0c0;
+    color: #475569;
     white-space: pre;
     overflow: hidden;
   }
 
-  .arch-diagram .gold { color: #0088FF; }
-  .arch-diagram .blue { color: #6090d0; }
-  .arch-diagram .green { color: #60c060; }
-  .arch-diagram .dim { color: #505070; }
+  .arch-diagram .gold { color: #2563eb; font-weight: 600; }
+  .arch-diagram .blue { color: #0284c7; }
+  .arch-diagram .green { color: #16a34a; }
+  .arch-diagram .dim { color: #94a3b8; }
 
   /* ── Feature Cards ── */
   .feature-grid {
@@ -223,8 +226,8 @@
   }
 
   .feature-item {
-    background: rgba(218,165,32,0.06);
-    border: 1px solid rgba(218,165,32,0.12);
+    background: rgba(59,130,246,0.04);
+    border: 1px solid rgba(59,130,246,0.1);
     border-radius: 3mm;
     padding: 4mm;
   }
@@ -237,13 +240,13 @@
   .feature-item h3 {
     font-size: 4.5mm;
     font-weight: 600;
-    color: #c0d8f0;
+    color: #1e293b;
     margin-bottom: 1.5mm;
   }
 
   .feature-item p {
     font-size: 3.5mm;
-    color: #9090a8;
+    color: #64748b;
     line-height: 1.4;
   }
 
@@ -258,17 +261,17 @@
     display: flex;
     align-items: center;
     gap: 3mm;
-    background: rgba(218,165,32,0.05);
-    border-left: 2px solid #0088FF;
+    background: rgba(59,130,246,0.04);
+    border-left: 2px solid #3b82f6;
     padding: 2mm 3mm;
     border-radius: 0 2mm 2mm 0;
     font-size: 3.8mm;
-    color: #b0b0c8;
+    color: #334155;
   }
 
   .safety-num {
-    background: rgba(218,165,32,0.2);
-    color: #0088FF;
+    background: rgba(59,130,246,0.12);
+    color: #2563eb;
     font-weight: 700;
     width: 6mm;
     height: 6mm;
@@ -288,13 +291,13 @@
   }
 
   .tech-tag {
-    background: rgba(218,165,32,0.1);
-    border: 1px solid rgba(218,165,32,0.25);
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.18);
     border-radius: 2mm;
     padding: 2mm 4mm;
     font-size: 3.8mm;
     font-weight: 500;
-    color: #90c8f0;
+    color: #1e40af;
   }
 
   /* ── Tool Categories ── */
@@ -307,13 +310,13 @@
   .tool-cat {
     font-size: 3.5mm;
     padding: 1.5mm 3mm;
-    background: rgba(96,144,208,0.08);
-    border-left: 2px solid #6090d0;
+    background: rgba(59,130,246,0.05);
+    border-left: 2px solid #3b82f6;
     border-radius: 0 2mm 2mm 0;
-    color: #a0b0d0;
+    color: #475569;
   }
 
-  .tool-cat strong { color: #6090d0; }
+  .tool-cat strong { color: #2563eb; }
 
   /* ── Footer ── */
   .footer {
@@ -322,8 +325,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 5mm 8mm;
-    background: rgba(20,20,40,0.5);
-    border: 1px solid rgba(218,165,32,0.1);
+    background: rgba(255,255,255,0.6);
+    border: 1px solid rgba(59,130,246,0.1);
     border-radius: 4mm;
     position: relative;
     z-index: 1;
@@ -331,18 +334,18 @@
 
   .footer-left, .footer-right {
     font-size: 4mm;
-    color: #8a8aa0;
+    color: #64748b;
   }
 
   .footer-center {
     font-size: 3.8mm;
-    color: #606078;
+    color: #94a3b8;
     text-align: center;
   }
 
-  .footer strong { color: #0088FF; }
+  .footer strong { color: #2563eb; }
 
-  .highlight { color: #0088FF; font-weight: 600; }
+  .highlight { color: #2563eb; font-weight: 600; }
 
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -352,10 +355,10 @@
 <body>
 <div class="poster">
 
-  <!-- ════ HEADER ════ -->
+  <!-- HEADER -->
   <div class="header">
     <div class="header-brand">
-      <div class="header-icon">&#x1F3E0;</div>
+      <img class="header-logo" src="../../widget/src/renderer/assets/HomeBotLogo.png" alt="HomeBot Logo">
       <h1>HomeBot<span>Your Local AI Desktop Assistant</span></h1>
     </div>
     <div class="header-meta">
@@ -366,7 +369,7 @@
     </div>
   </div>
 
-  <!-- ════ LEFT COLUMN ════ -->
+  <!-- LEFT COLUMN -->
   <div class="col-left">
 
     <div class="card">
@@ -426,36 +429,36 @@
 
   </div>
 
-  <!-- ════ CENTER COLUMN ════ -->
+  <!-- CENTER COLUMN -->
   <div class="col-center">
 
     <div class="card">
       <h2>System Architecture</h2>
-      <div class="arch-diagram"><span class="dim">┌────────────────────────────────────────────────────────────┐</span>
-<span class="dim">│</span>  <span class="gold">HomeBot Electron Application</span>                               <span class="dim">│</span>
-<span class="dim">│</span>                                                            <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">┌──────────────────────┐</span>    <span class="dim">┌─────────────────────────┐</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span> <span class="blue">Renderer (React)</span>     <span class="dim">│</span>    <span class="dim">│</span> <span class="green">Main Process (Node.js)</span>  <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>                      <span class="dim">│</span>    <span class="dim">│</span>                         <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Dashboard Home      <span class="dim">│</span>    <span class="dim">│</span>  IPC Handlers           <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Chat Interface      <span class="dim">│&lt;--&gt;│</span>  Message Router          <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Quiz Mode           <span class="dim">│</span>    <span class="dim">│</span>  Tool Executor (85+)    <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Automation Center   <span class="dim">│</span>    <span class="dim">│</span>  Agentic Loop Engine    <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Image Generator     <span class="dim">│</span>    <span class="dim">│</span>  Config Manager          <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Document Viewer     <span class="dim">│</span>    <span class="dim">│</span>  Scheduler               <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Voice Conversation  <span class="dim">│</span>    <span class="dim">│</span>  Auto-Updater            <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">│</span>  Settings Panel      <span class="dim">│</span>    <span class="dim">│</span>  RAG / Memory Store      <span class="dim">│</span>  <span class="dim">│</span>
-<span class="dim">│</span>  <span class="dim">└──────────────────────┘</span>    <span class="dim">└────────────┬────────────┘</span>  <span class="dim">│</span>
-<span class="dim">│</span>           <span class="gold">Preload Bridge</span>                  <span class="dim">│</span>              <span class="dim">│</span>
-<span class="dim">│</span>        <span class="dim">(window.electron.*)</span>                 <span class="dim">│</span>              <span class="dim">│</span>
-<span class="dim">└────────────────────────────────────────┼─────────────────┘</span>
-                                         <span class="dim">│</span>
-            <span class="dim">┌────────────────┐</span>           <span class="dim">│</span>    <span class="dim">┌────────────────┐</span>
-            <span class="dim">│</span> <span class="gold">Ollama (Local)</span> <span class="dim">│</span>     <span class="dim">&#x250C;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2510;</span>  <span class="dim">│</span> <span class="blue">n8n Workflows</span>  <span class="dim">│</span>
-            <span class="dim">│</span> qwen2.5:7b     <span class="dim">│&lt;----│</span> <span class="green">API</span> <span class="dim">│--&gt;│</span> (Optional)     <span class="dim">│</span>
-            <span class="dim">│</span> moondream      <span class="dim">│</span>     <span class="dim">└─────┘</span>  <span class="dim">│</span> Docker-hosted  <span class="dim">│</span>
-            <span class="dim">│</span> nomic-embed    <span class="dim">│</span>              <span class="dim">└────────────────┘</span>
-            <span class="dim">└────────────────┘</span></div>
+      <div class="arch-diagram"><span class="dim">&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;</span>
+<span class="dim">&#x2502;</span>  <span class="gold">HomeBot Electron Application</span>                               <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>                                                            <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;</span>    <span class="dim">&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span> <span class="blue">Renderer (React)</span>     <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span> <span class="green">Main Process (Node.js)</span>  <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>                      <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>                         <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Dashboard Home      <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>  IPC Handlers           <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Chat Interface      <span class="dim">&#x2502;&lt;--&gt;&#x2502;</span>  Message Router          <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Quiz Mode           <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>  Tool Executor (85+)    <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Automation Center   <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>  Agentic Loop Engine    <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Image Generator     <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>  Config Manager          <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Document Viewer     <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>  Scheduler               <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Voice Conversation  <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>  Auto-Updater            <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>  Settings Panel      <span class="dim">&#x2502;</span>    <span class="dim">&#x2502;</span>  RAG / Memory Store      <span class="dim">&#x2502;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>  <span class="dim">&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</span>    <span class="dim">&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</span>  <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>           <span class="gold">Preload Bridge</span>                  <span class="dim">&#x2502;</span>              <span class="dim">&#x2502;</span>
+<span class="dim">&#x2502;</span>        <span class="dim">(window.electron.*)</span>                 <span class="dim">&#x2502;</span>              <span class="dim">&#x2502;</span>
+<span class="dim">&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x253C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</span>
+                                         <span class="dim">&#x2502;</span>
+            <span class="dim">&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;</span>           <span class="dim">&#x2502;</span>    <span class="dim">&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;</span>
+            <span class="dim">&#x2502;</span> <span class="gold">Ollama (Local)</span> <span class="dim">&#x2502;</span>     <span class="dim">&#x250C;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2510;</span>  <span class="dim">&#x2502;</span> <span class="blue">n8n Workflows</span>  <span class="dim">&#x2502;</span>
+            <span class="dim">&#x2502;</span> qwen2.5:7b     <span class="dim">&#x2502;&lt;----&#x2502;</span> <span class="green">API</span> <span class="dim">&#x2502;--&gt;&#x2502;</span> (Optional)     <span class="dim">&#x2502;</span>
+            <span class="dim">&#x2502;</span> moondream      <span class="dim">&#x2502;</span>     <span class="dim">&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</span>  <span class="dim">&#x2502;</span> Docker-hosted  <span class="dim">&#x2502;</span>
+            <span class="dim">&#x2502;</span> nomic-embed    <span class="dim">&#x2502;</span>              <span class="dim">&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</span>
+            <span class="dim">&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</span></div>
     </div>
 
     <div class="card">
@@ -522,7 +525,7 @@
 
   </div>
 
-  <!-- ════ RIGHT COLUMN ════ -->
+  <!-- RIGHT COLUMN -->
   <div class="col-right">
 
     <div class="card">
@@ -567,7 +570,7 @@
         <li>85+ tools spanning filesystem, web, vision, code, communication, and RAG categories</li>
         <li>9-layer security model preventing SSRF, command injection, path traversal, and tool abuse</li>
         <li>Cross-platform Electron build with NSIS installer for one-click Windows deployment</li>
-        <li>Premium dark UI with glassmorphism, 15+ CSS animations, and reduced-motion accessibility support</li>
+        <li>Clean light UI with glassmorphism, 15+ CSS animations, and reduced-motion accessibility support</li>
       </ul>
     </div>
 
@@ -584,7 +587,7 @@
 
   </div>
 
-  <!-- ════ FOOTER ════ -->
+  <!-- FOOTER -->
   <div class="footer">
     <div class="footer-left">
       <strong>HomeBot</strong> &mdash; Open Source &bull; MIT License<br>

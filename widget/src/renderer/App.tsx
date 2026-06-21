@@ -603,7 +603,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           });
         });
       },
-      onStreamEnd: (payload: { streamId?: string; cancelled?: boolean }) => {
+      onStreamEnd: (payload: { streamId?: string; cancelled?: boolean; model?: string }) => {
         // Clear any test-only watchdog timer if set
         try {
           const t = streamWatchersRef.current.get(streamId);
@@ -622,6 +622,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               streamingState: nextState,
               updatedAt: Date.now(),
               ...(nextState === "finished" ? { durationMs } : {}),
+              ...(payload.model ? { model: payload.model } : {}),
             };
             
             // Persist the final message content
@@ -1207,7 +1208,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         currentModel={settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
-        uncensoredModel={settings.uncensoredModel || 'qwen2.5:7b'}
+        uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}
         vramGB={vramGB}
         onModelChange={async (model: string, useCustom: boolean) => {
           const newSettings = {

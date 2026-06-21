@@ -2176,8 +2176,8 @@ export function handleSlashCommand(input: string, conversationId: string, modelN
 }
 const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-mistral:7b';
 
-// Current mode (can be toggled via IPC)
-let uncensoredModeEnabled = false;
+// Current mode (can be toggled via IPC) — defaults to enabled
+let uncensoredModeEnabled = true;
 
 export function setUncensoredMode(enabled: boolean) {
   uncensoredModeEnabled = enabled;
@@ -2213,17 +2213,18 @@ const CODING_QUERY_PATTERN = /\b(write\s+(code|a\s+script|a\s+function|a\s+progr
 
 // Wrapper function that routes to either Ollama or Custom LLM based on settings
 export async function streamFromLLM(
-  message: string, 
+  message: string,
   images: ImageAttachment[] | undefined,
   conversationId: string,
-  onChunk: (text: string) => void, 
+  onChunk: (text: string) => void,
   onToolCall: (toolName: string, args: any) => void,
   onToolResult: (result: any) => void,
-  onEnd: () => void, 
+  onEnd: () => void,
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; modelOverride?: string }
+  options?: { hasDocuments?: boolean; modelOverride?: string },
+  onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
   const hasDocuments = options?.hasDocuments ?? false;
@@ -2244,6 +2245,8 @@ export async function streamFromLLM(
   if (settings.useCustomLLM && settings.customLLM) {
     const validation = validateCustomLLMConfig(settings.customLLM);
     if (validation.valid) {
+      const cloudModelForMeta = (settings.customLLM as any).model || activeModel;
+      onMeta?.({ model: cloudModelForMeta });
       console.log(`[HomeBot] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
 
       // Extract base64 images for cloud vision
@@ -2544,7 +2547,7 @@ export async function streamFromLLM(
   }
 
   // Default: use Ollama
-  return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options);
+  return streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options, onMeta);
 }
 
 // Stream from Ollama with tool calling support
@@ -2555,11 +2558,12 @@ export async function streamFromOllamaWithTools(
   onChunk: (text: string) => void, 
   _onToolCall: (toolName: string, args: any) => void,
   onToolResult: (result: any) => void,
-  onEnd: () => void, 
+  onEnd: () => void,
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean; modelOverride?: string }
+  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean; modelOverride?: string },
+  onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   // Synthesis calls pass pre-fetched search results — we must NOT offer tools or
   // the LLM will call web_search again, doubling the context and potentially
@@ -2611,7 +2615,8 @@ export async function streamFromOllamaWithTools(
   const chatModel = baseChatModel || preferredChatModel;
   const model = hasImages ? preferredVisionModel : chatModel;
   if (isCodingQuery) console.log(`[HomeBot] Coding query detected — using code model: ${model}`);
-  
+  onMeta?.({ model });
+
   // Extract base64 image data for Ollama
   const imageData: string[] = [];
   if (hasImages) {
@@ -4987,6 +4992,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             // Otherwise, use LLM with tool calling as usual
             const hasCurrentDocuments = !!(request.documents && request.documents.length > 0);
             let llmAssistantResponse = '';
+            let resolvedModel = '';
             const handler = await streamFromLLM(
               enhancedMessage,
               request.images,
@@ -5010,7 +5016,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 if (llmAssistantResponse.trim()) {
                   addToHistory(convId, 'assistant', llmAssistantResponse);
                 }
-                try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                try { event.sender.send('homebot:stream-end', { streamId, model: resolvedModel }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
               },
               (err) => {
@@ -5052,7 +5058,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               },
               requestConfirmation,
               (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
-              { hasDocuments: hasCurrentDocuments, modelOverride: reqAny.modelOverride }
+              { hasDocuments: hasCurrentDocuments, modelOverride: reqAny.modelOverride },
+              (meta) => { resolvedModel = meta.model; }
             );
 
             activeStreams.set(streamId, { destroy: handler.cancel });

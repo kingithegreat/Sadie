@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
-import homebotLogoUrl from '../assets/HomeBotLogo.png';
 
 interface StatusIndicatorProps {
   connectionStatus: ConnectionStatus;
@@ -270,11 +269,11 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   customLLM,
   useCustomLLM = false,
   onModelChange,
-  uncensoredModel = 'qwen2.5:7b',
+  uncensoredModel = 'dolphin-mistral:7b',
   vramGB
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
-  const [uncensoredMode, setUncensoredMode] = useState(false);
+  const [uncensoredMode, setUncensoredMode] = useState(true);
 
   // Load uncensored mode state on mount + listen for external changes
   useEffect(() => {
@@ -310,7 +309,6 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
               ☰
             </button>
           )}
-          <img src={homebotLogoUrl} alt="HomeBot" className="header-logo" />
           <h1>HomeBot</h1>
         </div>
 

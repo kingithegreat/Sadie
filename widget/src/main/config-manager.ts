@@ -121,7 +121,7 @@ const DEFAULT_SETTINGS: Settings = {
   codeModel: '',
   theme: 'system',
   alwaysOnTop: true,
-  uncensoredMode: false,
+  uncensoredMode: true,
   globalHotkey: 'Ctrl+Shift+Space',
   confirmDangerousActions: true,
   saveConversationHistory: true,

@@ -139,11 +139,11 @@ describe('ensureHydrated', () => {
 describe('uncensored mode toggle', () => {
   afterEach(() => {
     // Reset to default
-    mr.setUncensoredMode(false);
+    mr.setUncensoredMode(true);
   });
 
-  test('default is false', () => {
-    expect(mr.getUncensoredMode()).toBe(false);
+  test('default is true', () => {
+    expect(mr.getUncensoredMode()).toBe(true);
   });
 
   test('enable then disable round-trips correctly', () => {

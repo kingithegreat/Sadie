@@ -932,6 +932,11 @@ export function MessageBubble({
 
                 {state === "finished" && (
                   <>
+                    {message.model && (
+                      <span className="status-text model-tag" title={`Model: ${message.model}`}>
+                        {message.model}
+                      </span>
+                    )}
                     <span className="status-text">Done</span>
                     {typeof message.durationMs === 'number' && message.durationMs > 0 && (
                       <span className="status-text response-time" title="Response time">

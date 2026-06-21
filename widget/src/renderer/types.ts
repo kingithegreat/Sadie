@@ -23,6 +23,7 @@ export type ChatMessage = {
   // assistant only
   streamId?: string;
   streamingState?: StreamingState;
+  model?: string;
   error?: string | null;
   recoveryHint?: {
     service: 'ollama' | 'n8n' | 'model' | 'unknown';
@@ -42,6 +43,7 @@ export type StreamChunkPayload = {
 export type StreamEndPayload = {
   streamId: string;
   cancelled?: boolean;
+  model?: string;
 };
 
 export type StreamErrorPayload = {

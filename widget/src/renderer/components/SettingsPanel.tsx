@@ -1519,7 +1519,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </label>
           <small className={`setting-hint${uncensoredMode ? ' sp-hint-warning' : ''}`}>
             {uncensoredMode
-              ? `Using ${(localSettings as any).uncensoredModel || 'qwen2.5:7b'} — No content filters`
+              ? `Using ${(localSettings as any).uncensoredModel || 'dolphin-mistral:7b'} — No content filters`
               : 'Using standard model with safety filters'}
           </small>
         </div>
