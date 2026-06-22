@@ -1483,7 +1483,7 @@ body {
   box-shadow: var(--shadow-md), var(--shadow-inset);
   container-type: inline-size;
   container-name: input-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .input-box:focus-within {
@@ -1581,20 +1581,22 @@ body {
 .voice-button::after {
   content: attr(title);
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
-  padding: 6px 12px;
-  background: oklch(12% 0.01 250 / 0.95);
-  color: var(--text-primary);
-  font-size: 12px;
+  padding: 8px 14px;
+  background: oklch(98% 0 0 / 0.97);
+  color: oklch(15% 0.02 250);
+  font-size: 13.5px;
   font-weight: 500;
-  border-radius: var(--radius-sm);
+  line-height: 1.4;
+  border-radius: var(--radius-md);
+  border: 1px solid oklch(0% 0 0 / 0.1);
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
   transition: opacity 150ms ease;
-  box-shadow: 0 4px 12px oklch(0% 0 0 / 0.25);
+  box-shadow: 0 4px 16px oklch(0% 0 0 / 0.15);
   z-index: 100;
 }
 

@@ -2310,6 +2310,7 @@ export async function streamFromLLM(
         || customConfig.provider === 'together'
         || customConfig.provider === 'huggingface'
         || customConfig.provider === 'sambanova'
+        || customConfig.provider === 'google-ai-studio'
         || customConfig.provider === 'custom';
       const toolDefs = providerSupportsTools && shouldOfferTools
         ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
@@ -2351,11 +2352,12 @@ export async function streamFromLLM(
           ];
           
           // Stream the follow-up (no tools this time to avoid infinite loops)
+          const summaryPrompt = cloudSystemPrompt + '\n\nIMPORTANT: You just called a tool and received its result. Summarize the tool result in a clear, conversational response for the user. Do NOT dump raw JSON or data — present the key information naturally.';
           await streamFromCustomLLM(
             '', // empty — context is in the history
             updatedHistory,
             customConfig,
-            cloudSystemPrompt,
+            summaryPrompt,
             onChunk,
             onEnd,
             onError,

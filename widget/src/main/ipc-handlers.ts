@@ -1819,7 +1819,8 @@ try {
     }
 
     // ── n8n webhook path: POST to the user's n8n workflow ──
-    if (auto.n8nWebhookUrl) {
+    let useN8n = !!auto.n8nWebhookUrl;
+    if (useN8n) {
       console.log(`[Automation] n8n path: POST to ${auto.n8nWebhookUrl}`);
       try {
         const n8nRes = await axios.post(auto.n8nWebhookUrl, {
@@ -1836,67 +1837,103 @@ try {
           || (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
       } catch (err: any) {
         const status = err?.response?.status;
-        const body = err?.response?.data;
-        resultText = `Error calling n8n workflow: ${status ? `HTTP ${status}` : err?.message || err}${body ? `\n${typeof body === 'string' ? body : JSON.stringify(body)}` : ''}`;
+        console.log(`[Automation] n8n webhook failed (${status || err?.code || err?.message}), clearing stale URL and falling back to local`);
+        auto.n8nWebhookUrl = '';
+        auto.n8nWorkflowId = '';
+        const automations = readAutomations();
+        const idx = automations.findIndex((a: any) => a.id === auto.id);
+        if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+        useN8n = false;
       }
-    } else {
-      // ── Local agentic tool-calling loop ──
+    }
+
+    if (!useN8n && !resultText) {
+      // ── LLM execution: prefer cloud API, fall back to Ollama ──
       const settings = getSettings();
-      const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
-      const ollamaModel = process.env.OLLAMA_MODEL || settings.chatModel || 'qwen2.5:7b';
+      const isCustom = !!(settings.useCustomLLM || settings.customLLM?.enabled) && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
       const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const systemMsg = `You are HomeBot, a desktop AI assistant. Today is ${today}. Execute the user's automation task. Be concise and well-formatted. Use markdown for the final response.`;
 
-      const tools = getFocusedOllamaTools();
-      const messages: any[] = [
-        { role: 'system', content: `You are HomeBot, a desktop AI assistant with tool access. Today is ${today}. Execute the user's automation task using your tools. Be concise and well-formatted. Use markdown for the final response.` },
-        { role: 'user', content: enrichedMessage },
-      ];
+      if (isCustom) {
+        // ── Cloud LLM path (Gemini, OpenAI, Anthropic, etc.) ──
+        try {
+          console.log('[Automation] Calling cloud LLM...');
+          const raw = await quizLLMGenerate(enrichedMessage, systemMsg);
+          resultText = raw || 'Automation completed but produced no output.';
+          console.log('[Automation] Cloud LLM succeeded, result length:', resultText.length);
+        } catch (err: any) {
+          const errDetail = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : err?.message;
+          console.error('[Automation] Cloud LLM failed:', errDetail);
+          resultText = '';
+        }
+      }
 
-      try {
-        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-          const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
-            model: ollamaModel,
-            messages,
-            tools,
-            stream: false,
-            options: { num_predict: 2048, temperature: 0.7 },
-          }, { timeout: 120_000 });
+      if (!resultText) {
+        // ── Ollama agentic tool-calling loop ──
+        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
+        const ollamaModel = process.env.OLLAMA_MODEL || settings.chatModel || 'qwen2.5:7b';
 
-          const msg = ollamaRes.data?.message;
-          if (!msg) { resultText = 'No response from model'; break; }
+        // Quick reachability check before committing to 120s timeout
+        try {
+          await axios.get(`${ollamaBase}/api/tags`, { timeout: 3000 });
+        } catch {
+          resultText = 'Error: No AI backend available. Cloud LLM failed and Ollama is not running. Check your API key in Settings or start Ollama.';
+        }
 
-          const toolCalls = msg.tool_calls;
-          if (!toolCalls || toolCalls.length === 0) {
-            resultText = msg.content || 'Done.';
-            break;
-          }
+        if (!resultText) {
+          const tools = getFocusedOllamaTools();
+          const messages: any[] = [
+            { role: 'system', content: systemMsg },
+            { role: 'user', content: enrichedMessage },
+          ];
 
-          messages.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls });
-          const toolCtx: ToolContext = { executionId: `automation-${auto.id}-r${round}-${Date.now()}` } as any;
+          try {
+            for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+              const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
+                model: ollamaModel,
+                messages,
+                tools,
+                stream: false,
+                options: { num_predict: 2048, temperature: 0.7 },
+              }, { timeout: 120_000 });
 
-          for (const tc of toolCalls) {
-            const toolName = TOOL_ALIASES[tc.function?.name] || tc.function?.name || tc.name;
-            let toolArgs = tc.function?.arguments || tc.arguments || {};
-            if (typeof toolArgs === 'string') {
-              try { toolArgs = JSON.parse(toolArgs); } catch { toolArgs = {}; }
+              const msg = ollamaRes.data?.message;
+              if (!msg) { resultText = 'No response from model'; break; }
+
+              const toolCalls = msg.tool_calls;
+              if (!toolCalls || toolCalls.length === 0) {
+                resultText = msg.content || 'Done.';
+                break;
+              }
+
+              messages.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls });
+              const toolCtx: ToolContext = { executionId: `automation-${auto.id}-r${round}-${Date.now()}` } as any;
+
+              for (const tc of toolCalls) {
+                const toolName = TOOL_ALIASES[tc.function?.name] || tc.function?.name || tc.name;
+                let toolArgs = tc.function?.arguments || tc.arguments || {};
+                if (typeof toolArgs === 'string') {
+                  try { toolArgs = JSON.parse(toolArgs); } catch { toolArgs = {}; }
+                }
+
+                console.log(`[Automation] Round ${round + 1}: calling ${toolName}`, toolArgs);
+                let toolResult: any;
+                try {
+                  toolResult = await executeTool({ name: toolName, arguments: toolArgs }, toolCtx);
+                } catch (err: any) {
+                  toolResult = { success: false, error: err?.message || String(err) };
+                }
+
+                const resultStr = typeof toolResult === 'string'
+                  ? toolResult
+                  : JSON.stringify(toolResult, null, 2).slice(0, 4000);
+                messages.push({ role: 'tool', content: resultStr });
+              }
             }
-
-            console.log(`[Automation] Round ${round + 1}: calling ${toolName}`, toolArgs);
-            let toolResult: any;
-            try {
-              toolResult = await executeTool({ name: toolName, arguments: toolArgs }, toolCtx);
-            } catch (err: any) {
-              toolResult = { success: false, error: err?.message || String(err) };
-            }
-
-            const resultStr = typeof toolResult === 'string'
-              ? toolResult
-              : JSON.stringify(toolResult, null, 2).slice(0, 4000);
-            messages.push({ role: 'tool', content: resultStr });
+          } catch (err: any) {
+            resultText = `Error: ${err?.message || err}`;
           }
         }
-      } catch (err: any) {
-        resultText = `Error: ${err?.message || err}`;
       }
     }
 
@@ -1993,15 +2030,19 @@ try {
         });
         return resp.data?.content?.[0]?.text ?? '';
       } else {
-        const resp = await axios.post(`${apiUrl}/chat/completions`, {
+        const isGoogle = cfg.provider === 'google-ai-studio';
+        const body: any = {
           model: cfg.model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt },
           ],
-          max_tokens: 3000,
           temperature: 0.7,
-        }, {
+        };
+        if (!isGoogle) {
+          body.max_tokens = 3000;
+        }
+        const resp = await axios.post(`${apiUrl}/chat/completions`, body, {
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
           timeout: 120_000,
         });

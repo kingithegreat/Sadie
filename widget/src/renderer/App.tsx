@@ -1118,17 +1118,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             >&#x2699;</button>
             <button
               type="button"
+              onClick={() => window.electron?.minimizeWindow?.()}
+              title="Minimize"
+              aria-label="Minimize"
+            >&#x2013;</button>
+            <button
+              type="button"
               className="expand-btn"
               onClick={handleToggleWidgetMode}
               title="Expand to full window"
               aria-label="Expand"
             >&#x26F6;</button>
-            <button
-              type="button"
-              onClick={() => window.electron?.minimizeWindow?.()}
-              title="Minimize"
-              aria-label="Minimize"
-            >&#x2013;</button>
             <button
               type="button"
               className="close-btn"

@@ -342,7 +342,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
         model: model || apiConfig.model,
         messages,
         temperature,
-        max_tokens: maxTokens,
+        ...(apiConfig.provider !== 'google-ai-studio' ? { max_tokens: maxTokens } : {}),
         stream: true,
         ...(openaiTools && openaiTools.length > 0 ? { tools: openaiTools, tool_choice: 'auto' } : {})
       },
