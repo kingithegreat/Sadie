@@ -321,6 +321,14 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.AUTOMATION_IMAGE_GENERATE, { action, payload });
   },
 
+  sdCppStatus: async () => {
+    return await ipcRenderer.invoke('homebot:sd-cpp:status');
+  },
+
+  sdCppSetup: async () => {
+    return await ipcRenderer.invoke('homebot:sd-cpp:setup');
+  },
+
   getEnv: async (): Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_ENV);
   },

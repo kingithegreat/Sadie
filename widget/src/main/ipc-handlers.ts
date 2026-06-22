@@ -29,7 +29,7 @@ import {
 } from './config-manager';
 import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
 import { fetchPageContentHandler } from './tools/browser';
-import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers } from './tools/web';
+import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
 import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
@@ -289,11 +289,29 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   // Image generation panel: delegates to the same tool handler used in chat
   ipcMain.handle('homebot:automation:image:generate', async (_event, { payload }) => {
-    const prompt = String(payload?.prompt || '').trim();
-    const width = Math.min(2048, Math.max(128, Number(payload?.width) || 512));
-    const height = Math.min(2048, Math.max(128, Number(payload?.height) || 512));
+    const rawPrompt = String(payload?.prompt || '').trim();
+    // Parse resolution string (e.g. '512x512') into width/height
+    let width = 512, height = 512;
+    const resParts = String(payload?.resolution || '').match(/^(\d+)x(\d+)$/);
+    if (resParts) {
+      width = Math.min(2048, Math.max(128, Number(resParts[1])));
+      height = Math.min(2048, Math.max(128, Number(resParts[2])));
+    } else if (payload?.width) {
+      width = Math.min(2048, Math.max(128, Number(payload.width) || 512));
+      height = Math.min(2048, Math.max(128, Number(payload.height) || 512));
+    }
     const steps = Math.min(150, Math.max(1, Number(payload?.steps) || 20));
     const backend = payload?.backend || 'hybrid';
+
+    // Incorporate style into prompt
+    const styleMap: Record<string, string> = {
+      realistic: 'photorealistic, highly detailed, 8k,',
+      artistic: 'artistic, painterly, expressive brushstrokes,',
+      cartoon: 'cartoon style, bold outlines, vibrant colors,',
+      anime: 'anime style, cel shaded, detailed anime art,',
+    };
+    const stylePrefix = styleMap[payload?.style] || '';
+    const prompt = stylePrefix ? `${stylePrefix} ${rawPrompt}` : rawPrompt;
 
     if (!prompt) {
       return { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt }, validation: { validated: false }, error: { message: 'Prompt is required', code: 'INVALID_INPUT' } };
@@ -346,6 +364,59 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         }
       };
     }
+  });
+
+  // sd-cpp local image generation status & setup
+  ipcMain.handle('homebot:sd-cpp:status', async () => {
+    const dir = getSDCppDir();
+    const binary = findSDCppBinary();
+    const model = findSDCppModel();
+    return {
+      ready: !!(binary && model),
+      hasBinary: !!binary,
+      hasModel: !!model,
+      dir,
+      modelsDir: require('path').join(dir, 'models'),
+    };
+  });
+
+  ipcMain.handle('homebot:sd-cpp:setup', async () => {
+    const dir = getSDCppDir();
+    const modelsDir = require('path').join(dir, 'models');
+    const fs = require('fs');
+
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true });
+
+    const binary = findSDCppBinary();
+    const model = findSDCppModel();
+
+    if (binary && model) return { success: true, message: 'Already set up and ready.' };
+
+    const instructions: string[] = [];
+    if (!binary) {
+      instructions.push(
+        `Download sd.exe from: https://github.com/leejet/stable-diffusion.cpp/releases`,
+        `Extract sd.exe into: ${dir}`
+      );
+    }
+    if (!model) {
+      instructions.push(
+        `Download a GGUF model from: https://huggingface.co/leejet/FLUX.1-schnell-GGUF (fast) or https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF (classic)`,
+        `Place the .gguf file into: ${modelsDir}`
+      );
+    }
+
+    // Open the sd-cpp directory so user can drop files in
+    try { require('electron').shell.openPath(dir); } catch {}
+
+    return {
+      success: false,
+      message: 'Local image generation setup needed.',
+      instructions,
+      dir,
+      modelsDir,
+    };
   });
 
   /**

@@ -1792,7 +1792,7 @@ export function makeSynthesisPromptCompact(searchContext: string, question: stri
 export function buildSynthesisPrompt(searchContext: string, question: string): string {
   const settings = getSettings();
   const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
   // When using cloud LLM the model is the cloud one — check that.
   // When using local Ollama, check the chat model.
   const modelName = isCloudActive
@@ -1810,7 +1810,7 @@ export function buildSynthesisPrompt(searchContext: string, question: string): s
 function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolType: string): string {
   const settings = getSettings();
   const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
   const modelName = isCloudActive
     ? (cloudCfg?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
@@ -1841,7 +1841,7 @@ function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolTy
 function buildSearchContextForModel(sr: any): string {
   const settings = getSettings();
   const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
   const modelName = isCloudActive
     ? (cloudCfg?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
@@ -1865,7 +1865,7 @@ async function synthesisStream(
 ): Promise<{ cancel: () => void }> {
   const settings = getSettings();
   const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!(settings?.useCustomLLM && cloudCfg?.apiKey && cloudCfg?.model);
+  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
   if (isCloudActive) {
     // Only pass the last few messages as context — synthesis doesn't need full history
     // and long history can exceed provider context limits (especially free tiers).
@@ -2242,7 +2242,7 @@ export async function streamFromLLM(
   const activeModel = perRequestModel || perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
 
   // Check if custom LLM is enabled and configured
-  if (settings.useCustomLLM && settings.customLLM) {
+  if ((settings.useCustomLLM || settings.customLLM?.enabled) && settings.customLLM) {
     const validation = validateCustomLLMConfig(settings.customLLM);
     if (validation.valid) {
       const cloudModelForMeta = (settings.customLLM as any).model || activeModel;

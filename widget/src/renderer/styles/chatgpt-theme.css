@@ -2773,6 +2773,117 @@ body {
   opacity: 0.6;
 }
 
+/* SD-cpp setup section */
+.sd-cpp-setup {
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-md);
+  background: oklch(14% 0.01 250 / 0.6);
+  border: 1px solid oklch(100% 0 0 / 0.08);
+  border-radius: var(--radius-md);
+}
+
+.sd-cpp-setup .setup-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.sd-cpp-setup .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sd-cpp-setup .status-dot.red {
+  background: oklch(65% 0.25 25);
+}
+
+.sd-cpp-setup .status-dot.green {
+  background: oklch(65% 0.2 145);
+}
+
+.sd-cpp-setup .setup-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sd-cpp-setup .setup-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.sd-cpp-setup .setup-btn {
+  padding: 6px 14px;
+  border: 1px solid oklch(58% 0.17 250 / 0.5);
+  background: oklch(58% 0.17 250 / 0.15);
+  color: oklch(75% 0.12 250);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.sd-cpp-setup .setup-btn:hover {
+  background: oklch(58% 0.17 250 / 0.25);
+}
+
+.sd-cpp-setup .setup-btn.secondary {
+  border-color: oklch(100% 0 0 / 0.1);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.sd-cpp-setup .setup-instructions {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: oklch(10% 0.005 250 / 0.5);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.sd-cpp-setup .setup-instructions strong {
+  color: var(--text-primary);
+}
+
+.sd-cpp-setup .setup-instructions ol {
+  margin: var(--spacing-xs) 0;
+  padding-left: 20px;
+}
+
+.sd-cpp-setup .setup-instructions li {
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.sd-cpp-setup .setup-note {
+  margin-top: var(--spacing-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Light mode overrides for sd-cpp setup */
+[data-theme="light"] .sd-cpp-setup {
+  background: oklch(96% 0.005 250 / 0.8);
+  border-color: oklch(0% 0 0 / 0.1);
+}
+
+[data-theme="light"] .sd-cpp-setup .setup-instructions {
+  background: oklch(93% 0.005 250);
+}
+
+[data-theme="light"] .sd-cpp-setup .setup-btn {
+  border-color: oklch(50% 0.17 250 / 0.4);
+  background: oklch(50% 0.17 250 / 0.1);
+  color: oklch(40% 0.15 250);
+}
+
 /* Image generator error */
 .image-generator > .error {
   background: var(--error-muted);

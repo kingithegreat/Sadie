@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-interface ImageGeneratorProps {}
+interface SDCppStatus {
+  ready: boolean;
+  hasBinary: boolean;
+  hasModel: boolean;
+  dir: string;
+  modelsDir: string;
+}
 
-const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
+const ImageGenerator: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [style, setStyle] = useState('realistic');
   const [resolution, setResolution] = useState('512x512');
@@ -12,6 +18,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
   const [metadata, setMetadata] = useState<any>(null);
   const [statusBanner, setStatusBanner] = useState<{ level: 'green'|'yellow'|'red'; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sdCppStatus, setSdCppStatus] = useState<SDCppStatus | null>(null);
+  const [setupInfo, setSetupInfo] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    (window as any).electron?.sdCppStatus?.().then((s: SDCppStatus) => setSdCppStatus(s));
+  }, []);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -40,11 +52,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
       if (result.status === 'success' && result.image) {
         setGeneratedImage(`data:image/png;base64,${result.image}`);
         setMetadata(result.metadata || {});
-        if (result.validation && result.validation.validated === false) {
-          setStatusBanner({ level: 'yellow', text: 'Generated with warnings' });
-        } else {
-          setStatusBanner({ level: 'green', text: 'Generated successfully' });
-        }
+        setStatusBanner({ level: 'green', text: `Generated via ${result.source || 'unknown'}` });
       } else {
         setError(result.error?.message || 'Image generation failed');
         setStatusBanner({ level: 'red', text: 'Failed' });
@@ -56,10 +64,26 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
     }
   };
 
+  const handleSetupSDCpp = async () => {
+    const result = await (window as any).electron?.sdCppSetup?.();
+    if (result?.success) {
+      setSetupInfo(null);
+      setSdCppStatus({ ready: true, hasBinary: true, hasModel: true, dir: result.dir || '', modelsDir: result.modelsDir || '' });
+    } else if (result?.instructions) {
+      setSetupInfo(result.instructions);
+    }
+  };
+
+  const refreshStatus = async () => {
+    const s = await (window as any).electron?.sdCppStatus?.();
+    setSdCppStatus(s);
+    if (s?.ready) setSetupInfo(null);
+  };
+
   return (
     <div className="image-generator">
       <header className="image-header">
-        <h1>🎨 Image Generation</h1>
+        <h1>Image Generation</h1>
         <p>Create images with AI</p>
       </header>
 
@@ -97,13 +121,52 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
 
           <div className="form-group">
             <label htmlFor="backend">Backend:</label>
-            <select id="backend" value={backend} onChange={(e) => setBackend(e.target.value)}>
+            <select id="backend" value={backend} onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}>
               <option value="hybrid">Hybrid (local first)</option>
               <option value="local">Local only</option>
-              <option value="cloud">Cloud only</option>
+              <option value="cloud">Cloud only (free)</option>
             </select>
           </div>
         </div>
+
+        {backend === 'local' && sdCppStatus && !sdCppStatus.ready && (
+          <div className="sd-cpp-setup">
+            <div className="setup-status">
+              <span className="status-dot red" />
+              <span>Local generation not set up</span>
+              <span className="setup-detail">
+                {!sdCppStatus.hasBinary && ' Missing: sd.exe'}
+                {!sdCppStatus.hasModel && ' Missing: model file'}
+              </span>
+            </div>
+            <div className="setup-actions">
+              <button type="button" className="setup-btn" onClick={handleSetupSDCpp}>
+                Setup Guide
+              </button>
+              <button type="button" className="setup-btn secondary" onClick={refreshStatus}>
+                Refresh
+              </button>
+            </div>
+            {setupInfo && (
+              <div className="setup-instructions">
+                <strong>Setup steps:</strong>
+                <ol>
+                  {setupInfo.map((step, i) => <li key={i}>{step}</li>)}
+                </ol>
+                <p className="setup-note">After placing the files, click Refresh to detect them.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {backend === 'local' && sdCppStatus?.ready && (
+          <div className="sd-cpp-setup">
+            <div className="setup-status">
+              <span className="status-dot green" />
+              <span>Local generation ready (stable-diffusion.cpp)</span>
+            </div>
+          </div>
+        )}
 
         <button
           onClick={handleGenerate}

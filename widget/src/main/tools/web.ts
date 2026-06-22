@@ -10,6 +10,10 @@ import * as https from 'https';
 import * as http from 'http';
 import * as dns from 'dns';
 import * as net from 'net';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as childProcess from 'child_process';
+import { app } from 'electron';
 import { isE2E } from '../env';
 
 // Keep-alive agents — reuse TCP+TLS connections across requests
@@ -1433,6 +1437,74 @@ async function tryComfyUI(prompt: string, width: number, height: number, steps: 
   }
 }
 
+// ── Backend 2b: stable-diffusion.cpp (lightweight local binary) ─────────────
+export function getSDCppDir(): string {
+  try {
+    return path.join(app.getPath('userData'), 'sd-cpp');
+  } catch {
+    return path.join(process.env.APPDATA || '', 'HomeBot', 'sd-cpp');
+  }
+}
+
+export function findSDCppBinary(): string | null {
+  const dir = getSDCppDir();
+  for (const name of ['sd.exe', 'sd', 'stable-diffusion.exe', 'main.exe']) {
+    const p = path.join(dir, name);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+export function findSDCppModel(): string | null {
+  const modelsDir = path.join(getSDCppDir(), 'models');
+  if (!fs.existsSync(modelsDir)) return null;
+  const files = fs.readdirSync(modelsDir);
+  const model = files.find(f => f.endsWith('.gguf') || f.endsWith('.safetensors') || f.endsWith('.ckpt'));
+  return model ? path.join(modelsDir, model) : null;
+}
+
+async function trySDCpp(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
+  const binary = findSDCppBinary();
+  const model = findSDCppModel();
+  if (!binary || !model) return null;
+
+  const outputPath = path.join(getSDCppDir(), `output-${Date.now()}.png`);
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const args = [
+        '-M', 'txt2img',
+        '-m', model,
+        '-p', prompt,
+        '-W', String(width),
+        '-H', String(height),
+        '--steps', String(steps),
+        '-o', outputPath,
+      ];
+      console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
+      const proc = childProcess.spawn(binary, args, { timeout: 300000 });
+      let stderr = '';
+      proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`sd.cpp exited with code ${code}: ${stderr.slice(0, 500)}`));
+      });
+      proc.on('error', reject);
+    });
+
+    if (fs.existsSync(outputPath)) {
+      const buf = fs.readFileSync(outputPath);
+      fs.unlinkSync(outputPath);
+      if (buf.length > 1024) return buf.toString('base64');
+    }
+    return null;
+  } catch (err: any) {
+    console.error('[ImageGen] sd.cpp failed:', err?.message);
+    try { fs.unlinkSync(outputPath); } catch {}
+    return null;
+  }
+}
+
 // ── Backend 3: OpenAI DALL-E 3 ───────────────────────────────────────────────
 async function tryDallE(prompt: string, width: number, height: number): Promise<string | null> {
   const key = _openaiApiKey;
@@ -1463,12 +1535,16 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     let source = '';
 
     if (backend !== 'cloud') {
-      // Try local backends first
+      // Try local backends: AUTOMATIC1111 → ComfyUI → stable-diffusion.cpp
       image_base64 = await tryAutomatic1111(prompt, width, height, steps);
       if (image_base64) { source = 'automatic1111'; }
       if (!image_base64) {
         image_base64 = await tryComfyUI(prompt, width, height, steps);
         if (image_base64) { source = 'comfyui'; }
+      }
+      if (!image_base64) {
+        image_base64 = await trySDCpp(prompt, width, height, steps);
+        if (image_base64) { source = 'sd-cpp-local'; }
       }
     }
 
@@ -1498,8 +1574,13 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     }
 
     if (!image_base64) {
+      const sdCppDir = getSDCppDir();
       const msg = backend === 'local'
-        ? 'No local image backends found. Run Stable Diffusion (port 7860) or ComfyUI (port 8188), or switch to "Hybrid" or "Cloud" to use free online generation.'
+        ? `No local image backends found. Options:\n` +
+          `1. stable-diffusion.cpp (lightweight): Place sd.exe in "${sdCppDir}" and a .gguf model in "${sdCppDir}\\models"\n` +
+          `2. AUTOMATIC1111: Run Stable Diffusion WebUI on port 7860\n` +
+          `3. ComfyUI: Run ComfyUI on port 8188\n` +
+          `Or switch to "Hybrid" to use free cloud generation.`
         : 'All image backends failed. ' +
           'Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
           'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +

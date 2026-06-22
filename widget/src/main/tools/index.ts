@@ -123,7 +123,7 @@ export function getFocusedToolDefinitions(options?: { excludeDocumentTools?: boo
     return filtered;
   }
 
-  return filtered.filter(t => SMALL_MODEL_CORE_TOOLS.has(t.name));
+  return filtered.filter(t => SMALL_MODEL_CORE_TOOLS.has(t.name) || t.name.startsWith('mcp_'));
 }
 
 /**
