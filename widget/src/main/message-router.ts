@@ -4980,10 +4980,42 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               }
               
               if (responseText.trim()) {
-                // Stream the formatted response
+                // When cloud LLM is active, let the LLM summarize tool results conversationally
+                const synthSettings = getSettings();
+                const synthCloud = synthSettings?.customLLM;
+                const synthCloudActive = !!((synthSettings?.useCustomLLM || synthCloud?.enabled) && synthCloud?.apiKey && synthCloud?.model);
+
+                if (synthCloudActive) {
+                  const synthPrompt = `The user asked: "${enhancedMessage}"\n\nHere are the tool results:\n${responseText}\n\nSummarize these results in a clear, conversational response. Present the key information naturally. Do NOT dump raw data.`;
+                  let synthResponse = '';
+                  const synthHandler = await synthesisStream(
+                    synthPrompt, convId,
+                    (chunk) => {
+                      if (!activeStreams.has(streamId)) return;
+                      synthResponse += chunk;
+                      try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
+                    },
+                    () => {
+                      if (synthResponse.trim()) addToHistory(convId, 'assistant', synthResponse);
+                      try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                      activeStreams.delete(streamId);
+                    },
+                    (err) => {
+                      console.warn('[HomeBot] Synthesis failed, showing raw results:', err?.message);
+                      try { event.sender.send('homebot:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
+                      addToHistory(convId, 'assistant', responseText);
+                      try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+                      activeStreams.delete(streamId);
+                    },
+                    undefined, requestConfirmation,
+                    (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                  );
+                  activeStreams.set(streamId, { destroy: synthHandler.cancel });
+                  return;
+                }
+
+                // No cloud LLM — stream the formatted response directly
                 addToHistory(convId, 'assistant', responseText);
-                
-                // Send as a single chunk to avoid silent failures
                 try { event.sender.send('homebot:stream-chunk', { chunk: responseText, streamId }); } catch (e) { safeCatch(e); }
                 try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
                 activeStreams.delete(streamId);
