@@ -158,17 +158,23 @@ const getStatusClass = (status: 'online' | 'offline' | 'checking') => {
 const HeaderConnection: React.FC<HeaderConnectionProps> = ({ connectionStatus }) => (
   <div className="header-connection">
     <div className="status-bar-inline">
-      <div className="status-item">
-        <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} />
+      <div className="status-item" aria-label={`Ollama: ${connectionStatus.ollama}`}>
+        <span className={`status-dot ${getStatusClass(connectionStatus.ollama)}`} role="status" />
         <span>Ollama</span>
       </div>
-      <div className="status-item">
-        <span className={`status-dot ${getStatusClass(connectionStatus.n8n)}`} />
+      <div className="status-item" aria-label={`n8n: ${connectionStatus.n8n}`}>
+        <span className={`status-dot ${getStatusClass(connectionStatus.n8n)}`} role="status" />
         <span>n8n</span>
       </div>
     </div>
   </div>
 );
+
+const UNCENSORED_MODEL_LABELS: Record<string, string> = {
+  'dolphin:7b': 'Dolphin 7B',
+  'dolphin-mistral:7b': 'Dolphin 7B',
+  'dolphin-llama3:8b': 'Dolphin Llama3',
+};
 
 const HeaderModel: React.FC<HeaderModelProps> = ({
   currentModel,
@@ -181,19 +187,35 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
   vramGB
 }) => (
   <div className="header-model">
-    {onModelChange && (
+    {uncensoredMode ? (
+      <div className="model-selector locked">
+        <div className="model-selector-row">
+          <button type="button" className="model-nav-btn" disabled title="Previous model" aria-label="Previous model">◀</button>
+          <button className="model-selector-button" type="button" title="Turn off Uncensored Mode to switch models">
+            <div className="model-selector-current">
+              <span className="model-icon">🦙</span>
+              <span className="model-name-display">
+                {UNCENSORED_MODEL_LABELS[uncensoredModel] || uncensoredModel.split(':')[0].charAt(0).toUpperCase() + uncensoredModel.split(':')[0].slice(1) + ' ' + (uncensoredModel.split(':')[1] || '')}
+              </span>
+              <span className="model-lock-badge">🔒</span>
+              <span className="dropdown-arrow">▼</span>
+            </div>
+          </button>
+          <button type="button" className="model-nav-btn" disabled title="Next model" aria-label="Next model">▶</button>
+        </div>
+        <div className="model-lock-hint">Turn off 🔓 Uncensored Mode to switch models</div>
+      </div>
+    ) : onModelChange ? (
       <ModelSelector
         currentModel={currentModel}
         customLLM={customLLM}
         useCustomLLM={useCustomLLM}
         onModelChange={onModelChange}
         onConfigureCustom={onSettingsClick}
-        locked={uncensoredMode}
-        lockedModelId={uncensoredModel}
-        lockReason="Turn off 🔓 Uncensored Mode to switch models"
+        locked={false}
         vramGB={vramGB}
       />
-    )}
+    ) : null}
   </div>
 );
 
@@ -269,7 +291,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   customLLM,
   useCustomLLM = false,
   onModelChange,
-  uncensoredModel = 'dolphin-mistral:7b',
+  uncensoredModel = 'dolphin:7b',
   vramGB
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);

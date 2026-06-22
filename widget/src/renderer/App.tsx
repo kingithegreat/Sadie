@@ -99,6 +99,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [notifHistoryOpen, setNotifHistoryOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [widgetMode, setWidgetMode] = useState(true); // Start in widget mode
+  const [uncensoredMode, setUncensoredMode] = useState(true);
   const { toasts, addToast, dismissToast, history: notifHistory, clearHistory: clearNotifHistory } = useToasts();
   const ollamaToastRef = useRef<string | null>(null);
 
@@ -107,6 +108,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     window.electron?.getWidgetMode?.().then(isWidget => setWidgetMode(isWidget));
     const unsub = window.electron?.onWidgetModeChanged?.(isWidget => setWidgetMode(isWidget));
     return () => { unsub?.(); };
+  }, []);
+
+  // Track uncensored mode for widget-mode model selector
+  useEffect(() => {
+    (window as any).electron?.getUncensoredMode?.().then((result: { enabled: boolean }) => {
+      setUncensoredMode(result?.enabled || false);
+    });
+    const onChanged = (e: Event) => setUncensoredMode((e as CustomEvent).detail);
+    window.addEventListener('homebot:uncensored-mode-changed', onChanged);
+    return () => window.removeEventListener('homebot:uncensored-mode-changed', onChanged);
   }, []);
 
   const handleToggleWidgetMode = useCallback(async () => {
@@ -1079,7 +1090,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
                 }]);
               }}
               onConfigureCustom={() => setSettingsOpen(true)}
-              locked={false}
+              locked={uncensoredMode}
+              lockedModelId={settings.uncensoredModel || 'dolphin:7b'}
+              lockReason="Turn off 🔓 Uncensored Mode to switch models"
               vramGB={vramGB}
             />
           </div>
@@ -1208,7 +1221,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         currentModel={settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
-        uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}
+        uncensoredModel={settings.uncensoredModel || 'dolphin:7b'}
         vramGB={vramGB}
         onModelChange={async (model: string, useCustom: boolean) => {
           const newSettings = {

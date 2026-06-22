@@ -65,7 +65,6 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
     }, {} as Record<string, number>),
   [events]);
 
-  // Tool call events breakdown
   const toolBreakdown = useMemo(() => {
     const tools: Record<string, number> = {};
     for (const ev of events) {
@@ -76,7 +75,6 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
     return Object.entries(tools).sort((a, b) => b[1] - a[1]);
   }, [events]);
 
-  // Activity timeline — messages per hour over last 24h
   const hourlyActivity = useMemo(() => {
     const now = Date.now();
     const buckets = new Array(24).fill(0);
@@ -91,7 +89,6 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
   }, [events]);
   const maxHourly = Math.max(1, ...hourlyActivity);
 
-  // Session uptime (time since first event in this session)
   const uptime = useMemo(() => {
     if (events.length === 0) return null;
     const earliest = events[events.length - 1]?.timestamp;
@@ -104,96 +101,93 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
 
   if (!open) return null;
 
-  const tabStyle = (t: Tab) =>
-    `analytics-tab ${tab === t ? 'analytics-tab-active' : ''}`;
+  const tabClass = (t: Tab) => `td-tab ${tab === t ? 'td-tab-active' : ''}`;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-6" data-testid="analytics-overlay">
-      <div className="w-full max-w-4xl bg-zinc-900 rounded shadow-lg border border-zinc-800 overflow-hidden" style={{ maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="td-overlay" data-testid="analytics-overlay">
+      <div className="td-container">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between" style={{ flexShrink: 0 }}>
-          <div>
-            <div className="text-lg font-semibold">📊 Analytics Dashboard</div>
-            <div className="text-sm text-zinc-400">Local analytics — all data stays on your machine</div>
+        <div className="td-header">
+          <div className="td-header-info">
+            <div className="td-title">📊 Analytics Dashboard</div>
+            <div className="td-subtitle">Local analytics — all data stays on your machine</div>
           </div>
-          <div>
-            <button className="btn" onClick={onClose}>Close</button>
-          </div>
+          <button className="td-close-btn" onClick={onClose}>Close</button>
         </div>
 
         {/* Tabs */}
-        <div className="px-4 pt-2 border-b border-zinc-800 flex gap-1" style={{ flexShrink: 0 }}>
-          <button className={tabStyle('overview')} onClick={() => setTab('overview')}>Overview</button>
-          <button className={tabStyle('tools')} onClick={() => setTab('tools')}>Tools</button>
-          <button className={tabStyle('events')} onClick={() => setTab('events')}>Events</button>
-          <button className={tabStyle('conversations')} onClick={() => setTab('conversations')}>Conversations</button>
+        <div className="td-tab-bar">
+          <button className={tabClass('overview')} onClick={() => setTab('overview')}>Overview</button>
+          <button className={tabClass('tools')} onClick={() => setTab('tools')}>Tools</button>
+          <button className={tabClass('events')} onClick={() => setTab('events')}>Events</button>
+          <button className={tabClass('conversations')} onClick={() => setTab('conversations')}>Conversations</button>
         </div>
 
         {/* Content */}
-        <div className="p-4 overflow-y-auto" style={{ flex: 1, minHeight: 0 }}>
-          {loading && <div>Loading…</div>}
-          {error && <div className="text-red-400">{error}</div>}
+        <div className="td-content">
+          {loading && <div className="td-empty">Loading…</div>}
+          {error && <div className="td-rate-bad">{error}</div>}
 
           {!loading && !error && tab === 'overview' && (
             <>
               {/* Stat cards */}
-              <div className="mb-4 grid grid-cols-4 gap-3">
-                <div className="p-3 bg-zinc-800 rounded">
-                  <div className="text-sm text-zinc-400">Total events</div>
-                  <div className="text-2xl font-semibold">{events.length}</div>
+              <div className="td-stat-grid td-stat-grid-4">
+                <div className="td-stat-card">
+                  <div className="td-stat-label">Total events</div>
+                  <div className="td-stat-value">{events.length}</div>
                 </div>
-                <div className="p-3 bg-zinc-800 rounded">
-                  <div className="text-sm text-zinc-400">Stream failures</div>
-                  <div className="text-2xl font-semibold">{counts['stream_failure'] || 0}</div>
+                <div className="td-stat-card">
+                  <div className="td-stat-label">Stream failures</div>
+                  <div className="td-stat-value">{counts['stream_failure'] || 0}</div>
                 </div>
-                <div className="p-3 bg-zinc-800 rounded">
-                  <div className="text-sm text-zinc-400">Tool calls</div>
-                  <div className="text-2xl font-semibold">{counts['tool_call'] || 0}</div>
+                <div className="td-stat-card">
+                  <div className="td-stat-label">Tool calls</div>
+                  <div className="td-stat-value">{counts['tool_call'] || 0}</div>
                 </div>
-                <div className="p-3 bg-zinc-800 rounded">
-                  <div className="text-sm text-zinc-400">Unique event types</div>
-                  <div className="text-2xl font-semibold">{Object.keys(counts).length}</div>
+                <div className="td-stat-card">
+                  <div className="td-stat-label">Unique event types</div>
+                  <div className="td-stat-value">{Object.keys(counts).length}</div>
                 </div>
               </div>
 
               {/* Uptime */}
               {uptime && (
-                <div className="mb-4 p-3 bg-zinc-800 rounded inline-block">
-                  <span className="text-sm text-zinc-400 mr-2">Session uptime:</span>
-                  <span className="font-semibold">{uptime}</span>
+                <div className="td-uptime">
+                  <span className="td-uptime-label">Session uptime:</span>
+                  <span className="td-uptime-value">{uptime}</span>
                 </div>
               )}
 
-              {/* Activity timeline (24h bar chart) */}
-              <div className="mb-4">
-                <div className="text-sm text-zinc-400 mb-2">Activity — last 24 hours</div>
-                <div className="flex items-end gap-px" style={{ height: 64 }} data-testid="activity-chart">
+              {/* Activity timeline */}
+              <div className="td-section">
+                <div className="td-section-label">Activity — last 24 hours</div>
+                <div className="td-activity-chart" data-testid="activity-chart">
                   {hourlyActivity.map((val, i) => (
                     <div
                       key={i}
-                      className="bg-cyan-500 rounded-t"
-                      style={{ flex: 1, height: `${(val / maxHourly) * 100}%`, minHeight: val > 0 ? 2 : 0, opacity: val > 0 ? 1 : 0.15 }}
+                      className="td-activity-bar"
+                      style={{ height: `${(val / maxHourly) * 100}%`, minHeight: val > 0 ? 2 : 0, opacity: val > 0 ? 1 : 0.15 }}
                       title={`${val} events`}
                     />
                   ))}
                 </div>
-                <div className="flex justify-between text-xs text-zinc-500 mt-1">
+                <div className="td-activity-labels">
                   <span>24h ago</span><span>now</span>
                 </div>
               </div>
 
               {/* Top tools */}
               {toolBreakdown.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-sm text-zinc-400 mb-2">Top tools</div>
-                  <div className="space-y-1">
+                <div className="td-section">
+                  <div className="td-section-label">Top tools</div>
+                  <div className="td-tool-list">
                     {toolBreakdown.slice(0, 8).map(([name, count]) => (
-                      <div key={name} className="flex items-center gap-2 text-sm">
-                        <span className="text-zinc-300 w-40 truncate" title={name}>{name}</span>
-                        <div className="flex-1 bg-zinc-800 rounded h-4 overflow-hidden">
-                          <div className="bg-cyan-600 h-full rounded" style={{ width: `${(count / toolBreakdown[0][1]) * 100}%` }} />
+                      <div key={name} className="td-tool-row">
+                        <span className="td-tool-name" title={name}>{name}</span>
+                        <div className="td-tool-bar-track">
+                          <div className="td-tool-bar-fill" style={{ width: `${(count / toolBreakdown[0][1]) * 100}%` }} />
                         </div>
-                        <span className="text-zinc-400 w-8 text-right">{count}</span>
+                        <span className="td-tool-count">{count}</span>
                       </div>
                     ))}
                   </div>
@@ -202,11 +196,11 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
 
               {/* Event type distribution */}
               {Object.keys(counts).length > 0 && (
-                <div>
-                  <div className="text-sm text-zinc-400 mb-2">Event distribution</div>
-                  <div className="flex flex-wrap gap-2">
+                <div className="td-section">
+                  <div className="td-section-label">Event distribution</div>
+                  <div className="td-event-pills">
                     {Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, count]) => (
-                      <span key={name} className="px-2 py-1 bg-zinc-800 rounded text-xs">
+                      <span key={name} className="td-event-pill">
                         {name}: <strong>{count}</strong>
                       </span>
                     ))}
@@ -220,32 +214,32 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
             <>
               {summary?.toolCallStats && summary.toolCallStats.totalCalls > 0 ? (
                 <>
-                  <div className="mb-4 grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-zinc-800 rounded">
-                      <div className="text-sm text-zinc-400">Total tool calls</div>
-                      <div className="text-2xl font-semibold">{summary.toolCallStats.totalCalls}</div>
+                  <div className="td-stat-grid td-stat-grid-2">
+                    <div className="td-stat-card">
+                      <div className="td-stat-label">Total tool calls</div>
+                      <div className="td-stat-value">{summary.toolCallStats.totalCalls}</div>
                     </div>
-                    <div className="p-3 bg-zinc-800 rounded">
-                      <div className="text-sm text-zinc-400">Overall success rate</div>
-                      <div className="text-2xl font-semibold">
+                    <div className="td-stat-card">
+                      <div className="td-stat-label">Overall success rate</div>
+                      <div className="td-stat-value">
                         {(summary.toolCallStats.successRate * 100).toFixed(1)}%
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-sm text-zinc-400 mb-2">Per-tool breakdown</div>
-                  <div className="rounded border border-zinc-800 overflow-hidden" data-testid="tool-aggregates-table">
-                    <table className="w-full text-sm">
-                      <thead className="bg-zinc-800 text-zinc-400">
+                  <div className="td-section-label">Per-tool breakdown</div>
+                  <div className="td-table-wrap" data-testid="tool-aggregates-table">
+                    <table className="td-table">
+                      <thead>
                         <tr>
-                          <th className="text-left px-3 py-2">Tool</th>
-                          <th className="text-right px-3 py-2">Calls</th>
-                          <th className="text-right px-3 py-2">Success</th>
-                          <th className="text-right px-3 py-2">Errors</th>
-                          <th className="text-right px-3 py-2">Cancelled</th>
-                          <th className="text-right px-3 py-2">p50</th>
-                          <th className="text-right px-3 py-2">p95</th>
-                          <th className="text-left px-3 py-2">Error types</th>
+                          <th>Tool</th>
+                          <th className="td-align-right">Calls</th>
+                          <th className="td-align-right">Success</th>
+                          <th className="td-align-right">Errors</th>
+                          <th className="td-align-right">Cancelled</th>
+                          <th className="td-align-right">p50</th>
+                          <th className="td-align-right">p95</th>
+                          <th>Error types</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -253,23 +247,23 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
                           .sort((a, b) => b[1].count - a[1].count)
                           .map(([name, t]) => {
                             const rate = t.count > 0 ? t.success / t.count : 0;
-                            const rateColor = rate >= 0.95 ? 'text-emerald-400' : rate >= 0.8 ? 'text-yellow-400' : 'text-red-400';
+                            const rateClass = rate >= 0.95 ? 'td-rate-good' : rate >= 0.8 ? 'td-rate-warn' : 'td-rate-bad';
                             const errList = Object.entries(t.errorTypes || {})
                               .sort((a, b) => b[1] - a[1])
                               .map(([k, v]) => `${k}:${v}`)
                               .join(', ');
                             return (
-                              <tr key={name} className="border-t border-zinc-800">
-                                <td className="px-3 py-2 text-zinc-200 truncate" title={name}>{name}</td>
-                                <td className="px-3 py-2 text-right">{t.count}</td>
-                                <td className={`px-3 py-2 text-right ${rateColor}`}>
+                              <tr key={name}>
+                                <td className="td-truncate" title={name}>{name}</td>
+                                <td className="td-align-right">{t.count}</td>
+                                <td className={`td-align-right ${rateClass}`}>
                                   {t.success} ({(rate * 100).toFixed(0)}%)
                                 </td>
-                                <td className="px-3 py-2 text-right">{t.errors}</td>
-                                <td className="px-3 py-2 text-right text-zinc-400">{t.cancelled}</td>
-                                <td className="px-3 py-2 text-right text-zinc-400">{t.p50_ms}ms</td>
-                                <td className="px-3 py-2 text-right text-zinc-400">{t.p95_ms}ms</td>
-                                <td className="px-3 py-2 text-xs text-zinc-500 truncate" title={errList}>{errList || '—'}</td>
+                                <td className="td-align-right">{t.errors}</td>
+                                <td className="td-align-right td-muted">{t.cancelled}</td>
+                                <td className="td-align-right td-muted">{t.p50_ms}ms</td>
+                                <td className="td-align-right td-muted">{t.p95_ms}ms</td>
+                                <td className="td-error-types td-truncate" title={errList}>{errList || '—'}</td>
                               </tr>
                             );
                           })}
@@ -278,20 +272,20 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
                   </div>
                 </>
               ) : (
-                <div className="text-zinc-500">No tool calls recorded yet. Run some queries and come back.</div>
+                <div className="td-empty">No tool calls recorded yet. Run some queries and come back.</div>
               )}
             </>
           )}
 
           {!loading && !error && tab === 'events' && (
             <>
-              <div className="mb-3 text-sm text-zinc-400">Recent events (most recent first)</div>
-              <div className="rounded bg-zinc-900 border border-zinc-800 p-2 telemetry-event-list">
-                {events.length === 0 && <div className="text-zinc-500">No telemetry events recorded.</div>}
+              <div className="td-section-label">Recent events (most recent first)</div>
+              <div className="td-event-list-wrap">
+                {events.length === 0 && <div className="td-empty">No telemetry events recorded.</div>}
                 {events.map((e, idx) => (
-                  <div key={idx} className="p-2 border-b border-zinc-800 last:border-b-0 text-sm">
-                    <div className="text-zinc-400">{new Date(e.timestamp).toLocaleString()} — <strong>{e.event}</strong></div>
-                    <pre className="telemetry-event-pre">{JSON.stringify(e.details || {}, null, 2)}</pre>
+                  <div key={idx} className="td-event-item">
+                    <div><span className="td-event-timestamp">{new Date(e.timestamp).toLocaleString()}</span> — <span className="td-event-name">{e.event}</span></div>
+                    <pre className="td-event-pre">{JSON.stringify(e.details || {}, null, 2)}</pre>
                   </div>
                 ))}
               </div>
@@ -301,51 +295,31 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
           {!loading && !error && tab === 'conversations' && (
             <>
               {summary ? (
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="p-3 bg-zinc-800 rounded">
-                    <div className="text-sm text-zinc-400">Total conversations</div>
-                    <div className="text-2xl font-semibold">{summary.conversationCount}</div>
+                <div className="td-stat-grid td-stat-grid-2">
+                  <div className="td-stat-card">
+                    <div className="td-stat-label">Total conversations</div>
+                    <div className="td-stat-value">{summary.conversationCount}</div>
                   </div>
-                  <div className="p-3 bg-zinc-800 rounded">
-                    <div className="text-sm text-zinc-400">Total messages</div>
-                    <div className="text-2xl font-semibold">{summary.totalMessages}</div>
+                  <div className="td-stat-card">
+                    <div className="td-stat-label">Total messages</div>
+                    <div className="td-stat-value">{summary.totalMessages}</div>
                   </div>
-                  <div className="p-3 bg-zinc-800 rounded">
-                    <div className="text-sm text-zinc-400">Avg messages / conversation</div>
-                    <div className="text-2xl font-semibold">{summary.avgMessagesPerConversation}</div>
+                  <div className="td-stat-card">
+                    <div className="td-stat-label">Avg messages / conversation</div>
+                    <div className="td-stat-value">{summary.avgMessagesPerConversation}</div>
                   </div>
-                  <div className="p-3 bg-zinc-800 rounded">
-                    <div className="text-sm text-zinc-400">First conversation</div>
-                    <div className="text-lg font-semibold">{summary.oldestConversation ? new Date(summary.oldestConversation).toLocaleDateString() : '—'}</div>
+                  <div className="td-stat-card">
+                    <div className="td-stat-label">First conversation</div>
+                    <div className="td-stat-value-lg">{summary.oldestConversation ? new Date(summary.oldestConversation).toLocaleDateString() : '—'}</div>
                   </div>
                 </div>
               ) : (
-                <div className="text-zinc-500">No conversation data available.</div>
+                <div className="td-empty">No conversation data available.</div>
               )}
             </>
           )}
         </div>
       </div>
-
-      <style>{`
-        .analytics-tab {
-          padding: 6px 14px;
-          font-size: 13px;
-          border-radius: 6px 6px 0 0;
-          background: transparent;
-          color: #a1a1aa;
-          border: 1px solid transparent;
-          border-bottom: none;
-          cursor: pointer;
-          transition: background 0.15s;
-        }
-        .analytics-tab:hover { background: rgba(255,255,255,0.04); }
-        .analytics-tab-active {
-          background: #27272a;
-          color: #e4e4e7;
-          border-color: #3f3f46;
-        }
-      `}</style>
     </div>
   );
 }

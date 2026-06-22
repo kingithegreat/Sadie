@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ConversationSearch from './ConversationSearch';
 import { ContextMenu, useContextMenu } from './ContextMenu';
 
@@ -306,12 +306,11 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   if (!isOpen) return null;
 
-  const filteredConversations = (() => {
+  const filteredConversations = useMemo(() => {
     let list = conversations.filter(c => showArchived ? !!c.archived : !c.archived);
     if (filterText.trim()) {
       list = list.filter(c => (c.title || '').toLowerCase().includes(filterText.toLowerCase()));
     }
-    // Apply sort (pinned always first)
     list.sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
@@ -320,7 +319,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
     return list;
-  })();
+  }, [conversations, showArchived, filterText, sortBy]);
 
   if (showSearch) {
     return (

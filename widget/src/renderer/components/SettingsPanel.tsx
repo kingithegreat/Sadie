@@ -55,7 +55,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const defaultModels = {
     chatModel: 'qwen2.5:7b',
-    uncensoredModel: 'dolphin-mistral:7b',
+    uncensoredModel: 'dolphin:7b',
     visionModel: 'moondream',
     codeModel: 'qwen2.5-coder:7b'
   };
@@ -921,9 +921,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className={`hw-profile-btn${localSettings.hardwareProfile === p ? ' active' : ''}`}
                 onClick={() => {
                   const profileDefaults: Record<string, Partial<Settings>> = {
-                    '4gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-mistral:7b', moaEnabled: false },
-                    '8gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin-mistral:7b', moaEnabled: false },
-                    '16gb+': { chatModel: 'gemma4:e4b',  visionModel: 'moondream',  uncensoredModel: 'dolphin-mistral:7b' },
+                    '4gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin:7b', moaEnabled: false },
+                    '8gb':   { chatModel: 'qwen2.5:7b', visionModel: 'moondream', uncensoredModel: 'dolphin:7b', moaEnabled: false },
+                    '16gb+': { chatModel: 'gemma4:e4b',  visionModel: 'moondream',  uncensoredModel: 'dolphin:7b' },
                   };
                   setLocalSettings({ ...localSettings, ...(profileDefaults[p] || {}), hardwareProfile: p });
                 }}
@@ -1519,7 +1519,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </label>
           <small className={`setting-hint${uncensoredMode ? ' sp-hint-warning' : ''}`}>
             {uncensoredMode
-              ? `Using ${(localSettings as any).uncensoredModel || 'dolphin-mistral:7b'} — No content filters`
+              ? `Using ${(localSettings as any).uncensoredModel || 'dolphin:7b'} — No content filters`
               : 'Using standard model with safety filters'}
           </small>
         </div>
@@ -1542,13 +1542,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="setting-group">
           <label className="setting-label">Permissions</label>
           <small className="setting-hint">Enable or disable specific tools.</small>
-          <div className="permission-grid space-y-2">
+          <div className="permission-grid">
             {Object.keys(permissions).map((k) => {
               const isDangerous = DANGEROUS_PERMISSIONS.has(k);
               return (
-                <div key={k} className="flex items-start gap-3">
+                <div key={k} className="perm-row">
                   <label
-                    className="setting-label inline-flex items-center mr-3"
+                    className="setting-label"
                     title={isDangerous ? `⚠ Dangerous — ${PERMISSION_DESCRIPTIONS[k] || k}` : (PERMISSION_DESCRIPTIONS[k] || k)}
                   >
                     <input
@@ -1560,13 +1560,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         setLocalSettings({ ...localSettings, permissions: next } as any);
                       }}
                     />
-                    <span className="ml-2">
+                    <span style={{ marginLeft: 8 }}>
                       {isDangerous && <span className="sp-warn-icon">⚠</span>}
                       {k.replace(/_/g, ' ')}
                     </span>
                   </label>
                   <div>
-                    <small className={isDangerous ? 'sp-perm-danger' : 'text-zinc-500'}>
+                    <small className={isDangerous ? 'sp-perm-danger' : 'setting-hint'}>
                       {PERMISSION_DESCRIPTIONS[k] || 'No description available.'}
                     </small>
                   </div>
@@ -1593,8 +1593,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
         <div className="setting-group">
           <label className="setting-label">Telemetry consent</label>
-          <div className="flex items-center gap-2">
-            <div className="text-sm text-zinc-400">{localSettings.telemetryConsentTimestamp ? `Consented: ${localSettings.telemetryConsentTimestamp} (v${localSettings.telemetryConsentVersion || '1.0'})` : 'No consent on record'}</div>
+          <div className="perm-row">
+            <div className="setting-hint">{localSettings.telemetryConsentTimestamp ? `Consented: ${localSettings.telemetryConsentTimestamp} (v${localSettings.telemetryConsentVersion || '1.0'})` : 'No consent on record'}</div>
             <button className="button button-secondary" onClick={async () => {
               const r = await (window as any).electron.exportTelemetryConsent();
               if (r && r.success) {

@@ -2174,7 +2174,7 @@ export function handleSlashCommand(input: string, conversationId: string, modelN
 
   return null; // Not a recognized slash command
 }
-const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin-mistral:7b';
+const OLLAMA_UNCENSORED_MODEL = process.env.OLLAMA_UNCENSORED_MODEL || 'dolphin:7b';
 
 // Current mode (can be toggled via IPC) — defaults to enabled
 let uncensoredModeEnabled = true;

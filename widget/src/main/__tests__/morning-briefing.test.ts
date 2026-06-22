@@ -9,10 +9,19 @@ jest.mock('../config-manager', () => ({
   getSettings: () => ({ morningBriefing: true }),
 }));
 
+jest.mock('electron', () => ({
+  app: { getPath: jest.fn(() => '/mock'), isPackaged: false },
+  ipcMain: { on: jest.fn(), handle: jest.fn() },
+  BrowserWindow: jest.fn(),
+}));
+
 jest.mock('fs', () => ({
+  existsSync: jest.fn(() => false),
   readFileSync: jest.fn(() => { throw new Error('not found'); }),
   writeFileSync: jest.fn(),
+  writeFile: jest.fn((_p: string, _d: string, _e: string, cb: Function) => cb(null)),
   mkdirSync: jest.fn(),
+  readdirSync: jest.fn(() => []),
 }));
 
 import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from '../morning-briefing';
@@ -30,9 +39,10 @@ describe('morning-briefing', () => {
   });
 
   describe('generateBriefing', () => {
-    test('returns null when no tools return data', async () => {
+    test('returns a briefing even when tools return no data', async () => {
       const result = await generateBriefing();
-      expect(result).toBeNull();
+      expect(typeof result).toBe('string');
+      expect(result).toContain('Tip of the Day');
     });
 
     test('returns formatted markdown when tools return data', async () => {

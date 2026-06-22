@@ -51,7 +51,7 @@ const RECOMMENDED_MODELS: ModelInfo[] = [
   { id: 'llama3.1:8b', name: 'Llama 3.1 (8B)', shortName: 'Llama 8B', description: 'Strong general-purpose (4.7GB)', type: 'ollama', sizeGB: 4.7 },
   { id: 'llama3.1:70b', name: 'Llama 3.1 (70B)', shortName: 'Llama 70B', description: 'Top-tier local quality for high-end rigs (43GB)', type: 'ollama', sizeGB: 43 },
   { id: 'llama3.2:3b', name: 'Llama 3.2 (3B)', shortName: 'Llama 3B', description: 'Reliable general chat (2GB)', type: 'ollama', sizeGB: 2 },
-  { id: 'dolphin-mistral:7b', name: 'Dolphin Mistral (7B)', shortName: 'Dolphin 7B', description: 'Uncensored — no safety guardrails (4.1GB)', type: 'ollama', sizeGB: 4.1 },
+  { id: 'dolphin:7b', name: 'Dolphin (7B)', shortName: 'Dolphin 7B', description: 'Uncensored — no safety guardrails (3.8GB)', type: 'ollama', sizeGB: 3.8 },
 ];
 
 function formatSize(bytes: number): string {
@@ -87,6 +87,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [cloudModels, setCloudModels] = useState<CustomModelInfo[]>([]);
   const [cloudLoading, setCloudLoading] = useState(false);
   const [pulling, setPulling] = useState<string | null>(null);
+  const [pullProgress, setPullProgress] = useState<string | null>(null);
   const [pullError, setPullError] = useState<string | null>(null);
   const [vramWarning, setVramWarning] = useState<string | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -192,7 +193,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const allModels = [...customModelInfos, ...installedModelInfos];
 
-  const forcedModelId = lockedModelId || 'dolphin-mistral:7b';
+  const forcedModelId = lockedModelId || 'dolphin:7b';
 
   const activeCustomModelId = customLLM?.model || '';
 
@@ -258,19 +259,34 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const handlePullModel = async (modelId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setPulling(modelId);
+    setPullProgress('Starting download...');
     setPullError(null);
+
+    const unsub = window.electron?.onPullModelProgress?.((data) => {
+      if (data.model !== modelId) return;
+      if (data.status === 'success') {
+        setPullProgress('Done!');
+      } else if (data.percent != null) {
+        const mb = data.totalMB ? ` (${data.completedMB ?? 0}/${data.totalMB} MB)` : '';
+        setPullProgress(`${data.status || 'Downloading'} ${data.percent}%${mb}`);
+      } else {
+        setPullProgress(data.status || 'Pulling...');
+      }
+    });
+
     try {
-      const result = await window.electron?.pullModel?.(modelId);
+      const result = await window.electron?.pullModelStream?.(modelId);
       if (result?.success) {
         await fetchModels();
-        setPulling(null);
       } else {
         setPullError(result?.error || 'Pull failed');
-        setPulling(null);
       }
     } catch (err: any) {
       setPullError(err.message || 'Pull failed');
+    } finally {
+      unsub?.();
       setPulling(null);
+      setPullProgress(null);
     }
   };
 
@@ -429,6 +445,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                           {pulling === model.id ? '⏳ Pulling...' : '⬇ Pull'}
                         </button>
                       </div>
+                      {pulling === model.id && pullProgress && (
+                        <span className="model-option-desc pull-status">{pullProgress}</span>
+                      )}
                       <span className="model-option-desc">{model.description}</span>
                     </div>
                   );

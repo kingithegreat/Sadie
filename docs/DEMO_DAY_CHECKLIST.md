@@ -50,7 +50,7 @@ Verify n8n is accessible: open http://localhost:5678 in browser.
 ## 4. Launch HomeBot
 
 ```powershell
-cd C:\Users\adenk\Desktop\sadie\widget
+cd widget
 npx electron-vite dev
 ```
 

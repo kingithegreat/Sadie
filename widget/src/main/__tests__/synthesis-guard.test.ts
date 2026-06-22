@@ -59,7 +59,7 @@ function makeMockOllamaStream(content = 'Answer text.'): Readable {
 }
 
 // Import AFTER mocks are in place
-import { streamFromOllamaWithTools } from '../message-router';
+import { streamFromOllamaWithTools, setUncensoredMode } from '../message-router';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers to call the function with minimal boilerplate
@@ -91,6 +91,7 @@ async function callStream(
 describe('streamFromOllamaWithTools — noTools guard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setUncensoredMode(false);
     // Reset settings to no cloud model
     Object.assign(mockSettings, {
       chatModel: 'llama3.2:3b',
@@ -154,6 +155,7 @@ describe('streamFromOllamaWithTools — noTools guard', () => {
 describe('streamFromOllamaWithTools — cloud model guard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setUncensoredMode(false);
     Object.assign(mockSettings, { ollamaUrl: 'http://127.0.0.1:11434' });
     (axios.post as jest.MockedFunction<any>).mockResolvedValue({ data: makeMockOllamaStream() });
   });

@@ -119,7 +119,7 @@ All tools execute locally as TypeScript handlers. HomeBot calls whichever tool t
             | HTTP (localhost)
 ┌───────────v────────────────────────────────────────┐
 │                 Ollama (local)                      │
-│   qwen2.5:7b - dolphin-mistral:7b - moondream      │
+│   qwen2.5:7b - dolphin:7b - moondream      │
 │   gemma4:e4b - nomic-embed-text                    │
 │   127.0.0.1:11434                                   │
 └────────────────────────────────────────────────────┘

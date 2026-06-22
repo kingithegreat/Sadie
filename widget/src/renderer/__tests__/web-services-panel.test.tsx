@@ -18,6 +18,9 @@ function setupElectron(overrides: Record<string, any> = {}) {
   };
   (window as any)._webServices = {
     open: jest.fn().mockResolvedValue(undefined),
+    openBrowse: jest.fn().mockResolvedValue(undefined),
+    grabContent: jest.fn().mockResolvedValue({ success: false }),
+    browseStatus: jest.fn().mockResolvedValue({ open: false }),
     status: jest.fn().mockResolvedValue({ chatgpt: false, claude: false, gemini: false }),
   };
 }
@@ -28,11 +31,12 @@ afterEach(() => {
 });
 
 describe('WebServicesPanel — URL browser', () => {
-  test('renders the URL input and Fetch button', () => {
+  test('renders the URL input and Open button', () => {
     setupElectron();
     render(<WebServicesPanel />);
     expect(screen.getByPlaceholderText(/Enter a URL/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Fetch/i })).toBeInTheDocument();
+    const urlOpenBtn = screen.getAllByRole('button', { name: /^Open$/i })[0];
+    expect(urlOpenBtn).toBeInTheDocument();
   });
 
   test('renders Web Browser heading', () => {
@@ -41,76 +45,36 @@ describe('WebServicesPanel — URL browser', () => {
     expect(screen.getByText('Web Browser')).toBeInTheDocument();
   });
 
-  test('Fetch button is disabled when URL is empty', () => {
+  test('URL Open button is disabled when URL is empty', () => {
     setupElectron();
     render(<WebServicesPanel />);
-    const fetchBtn = screen.getByRole('button', { name: /Fetch/i });
-    expect(fetchBtn).toBeDisabled();
+    const urlOpenBtn = screen.getAllByRole('button', { name: /^Open$/i })[0];
+    expect(urlOpenBtn).toBeDisabled();
   });
 
-  test('fetches page content on click', async () => {
-    setupElectron();
-    render(<WebServicesPanel />);
-
-    const input = screen.getByPlaceholderText(/Enter a URL/i);
-    fireEvent.change(input, { target: { value: 'https://example.com' } });
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Fetch/i }));
-    });
-
-    expect((window as any).electron.fetchPageContent).toHaveBeenCalledWith('https://example.com');
-    expect(screen.getByText(/Example page content/)).toBeInTheDocument();
-  });
-
-  test('shows Summarize in Chat and Add to RAG after fetch', async () => {
+  test('opens browser on click', async () => {
     setupElectron();
     render(<WebServicesPanel />);
 
     const input = screen.getByPlaceholderText(/Enter a URL/i);
     fireEvent.change(input, { target: { value: 'https://example.com' } });
 
+    const urlOpenBtn = screen.getAllByRole('button', { name: /^Open$/i })[0];
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Fetch/i }));
+      fireEvent.click(urlOpenBtn);
     });
 
-    expect(screen.getByRole('button', { name: /Summarize in Chat/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Add to RAG/i })).toBeInTheDocument();
+    expect((window as any)._webServices.openBrowse).toHaveBeenCalledWith('https://example.com');
   });
 
-  test('calls onSendToChat when Summarize is clicked', async () => {
+  test('shows Summarize button when browse status is open', async () => {
     setupElectron();
-    const onSendToChat = jest.fn();
-    render(<WebServicesPanel onSendToChat={onSendToChat} />);
-
-    const input = screen.getByPlaceholderText(/Enter a URL/i);
-    fireEvent.change(input, { target: { value: 'https://example.com' } });
-
+    (window as any)._webServices.browseStatus = jest.fn().mockResolvedValue({ open: true, url: 'https://example.com', title: 'Example' });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Fetch/i }));
+      render(<WebServicesPanel />);
     });
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Summarize in Chat/i }));
-    });
-
-    expect(onSendToChat).toHaveBeenCalledWith('https://example.com', 'Example page content here.');
-  });
-
-  test('shows error when fetch fails', async () => {
-    setupElectron({
-      fetchPageContent: jest.fn().mockResolvedValue({ success: false, error: 'Connection refused' }),
-    });
-    render(<WebServicesPanel />);
-
-    const input = screen.getByPlaceholderText(/Enter a URL/i);
-    fireEvent.change(input, { target: { value: 'https://down.example.com' } });
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Fetch/i }));
-    });
-
-    expect(screen.getByText(/Connection refused/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Summarize This Page/i })).toBeInTheDocument();
   });
 
   test('auto-prepends https:// to bare domains', async () => {
@@ -120,14 +84,15 @@ describe('WebServicesPanel — URL browser', () => {
     const input = screen.getByPlaceholderText(/Enter a URL/i);
     fireEvent.change(input, { target: { value: 'example.com' } });
 
+    const urlOpenBtn = screen.getAllByRole('button', { name: /^Open$/i })[0];
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Fetch/i }));
+      fireEvent.click(urlOpenBtn);
     });
 
-    expect((window as any).electron.fetchPageContent).toHaveBeenCalledWith('https://example.com');
+    expect((window as any)._webServices.openBrowse).toHaveBeenCalledWith('https://example.com');
   });
 
-  test('fetches on Enter key press', async () => {
+  test('opens browser on Enter key press', async () => {
     setupElectron();
     render(<WebServicesPanel />);
 
@@ -138,21 +103,7 @@ describe('WebServicesPanel — URL browser', () => {
       fireEvent.keyDown(input, { key: 'Enter' });
     });
 
-    expect((window as any).electron.fetchPageContent).toHaveBeenCalled();
-  });
-
-  test('shows fetched character count in status message', async () => {
-    setupElectron();
-    render(<WebServicesPanel />);
-
-    const input = screen.getByPlaceholderText(/Enter a URL/i);
-    fireEvent.change(input, { target: { value: 'https://example.com' } });
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Fetch/i }));
-    });
-
-    expect(screen.getByText(/Fetched 27 characters/)).toBeInTheDocument();
+    expect((window as any)._webServices.openBrowse).toHaveBeenCalled();
   });
 });
 
@@ -171,13 +122,15 @@ describe('WebServicesPanel — service launchers', () => {
     expect(screen.getByText('Web Services')).toBeInTheDocument();
   });
 
-  test('clicking Open calls webServices.open', async () => {
+  test('clicking service Open calls webServices.open', async () => {
     setupElectron();
     render(<WebServicesPanel />);
 
-    const openButtons = screen.getAllByRole('button', { name: /Open/i });
+    const openButtons = screen.getAllByRole('button', { name: /^Open$/i });
+    // First Open is the URL bar button; service launcher Open buttons follow
+    const serviceOpenBtn = openButtons[openButtons.length >= 2 ? 1 : 0];
     await act(async () => {
-      fireEvent.click(openButtons[0]);
+      fireEvent.click(serviceOpenBtn);
     });
 
     expect((window as any)._webServices.open).toHaveBeenCalledWith('chatgpt');

@@ -290,9 +290,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // Image generation panel: delegates to the same tool handler used in chat
   ipcMain.handle('homebot:automation:image:generate', async (_event, { payload }) => {
     const prompt = String(payload?.prompt || '').trim();
-    const width = Number(payload?.width) || 512;
-    const height = Number(payload?.height) || 512;
-    const steps = Number(payload?.steps) || 20;
+    const width = Math.min(2048, Math.max(128, Number(payload?.width) || 512));
+    const height = Math.min(2048, Math.max(128, Number(payload?.height) || 512));
+    const steps = Math.min(150, Math.max(1, Number(payload?.steps) || 20));
     const backend = payload?.backend || 'hybrid';
 
     if (!prompt) {
@@ -1972,10 +1972,57 @@ try {
 
   const QUIZ_PROGRESS_FILE = path.join(app.getPath('userData'), 'quiz-progress.json');
 
+  async function quizLLMGenerate(prompt: string, systemPrompt: string): Promise<string> {
+    const settings = getSettings();
+    const isCustom = !!settings.useCustomLLM && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+
+    if (isCustom) {
+      const cfg = settings.customLLM!;
+      const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
+
+      if (cfg.provider === 'anthropic') {
+        const resp = await axios.post(`${apiUrl}/messages`, {
+          model: cfg.model,
+          max_tokens: 3000,
+          temperature: 0.7,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: prompt }],
+        }, {
+          headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
+          timeout: 120_000,
+        });
+        return resp.data?.content?.[0]?.text ?? '';
+      } else {
+        const resp = await axios.post(`${apiUrl}/chat/completions`, {
+          model: cfg.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 3000,
+          temperature: 0.7,
+        }, {
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
+          timeout: 120_000,
+        });
+        return resp.data?.choices?.[0]?.message?.content ?? '';
+      }
+    }
+
+    const model = settings.chatModel || 'qwen2.5:7b';
+    const resp = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
+      model,
+      prompt,
+      system: systemPrompt,
+      stream: false,
+      options: { temperature: 0.7, num_predict: 3000 }
+    }, { timeout: 120_000 });
+    return resp.data?.response ?? '';
+  }
+
   ipcMain.handle('homebot:generate-quiz', async (_event, params: { topic: string; difficulty: string; questionCount: number; questionTypes?: string[]; language?: string }) => {
     try {
       const { topic, difficulty, questionCount } = params;
-      const model = getSettings().chatModel || 'qwen2.5:7b';
 
       // Generate in small batches to avoid timeout on slower GPUs
       const BATCH_SIZE = 3;
@@ -1995,15 +2042,9 @@ RULES:
 EXAMPLE (follow this format exactly):
 [{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]`;
 
-        const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
-          model,
-          prompt,
-          system: `You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.`,
-          stream: false,
-          options: { temperature: 0.7, num_predict: 3000 }
-        }, { timeout: 120_000 });
+        const raw0 = await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.');
 
-        let raw = response.data?.response || '';
+        let raw = raw0 || '';
         console.log(`[Quiz] Batch ${b + 1}/${batches} raw response (${raw.length} chars):`, raw.slice(0, 300));
         // Strip markdown code fences that LLMs often add
         raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
@@ -2024,7 +2065,7 @@ EXAMPLE (follow this format exactly):
       }
 
       if (allQuestions.length === 0) {
-        return { success: false, error: 'Could not generate quiz questions. Check that Ollama is running.' };
+        return { success: false, error: 'Could not generate quiz questions. Check that your LLM provider is running and accessible.' };
       }
 
       const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => {
@@ -2104,7 +2145,6 @@ EXAMPLE (follow this format exactly):
   ipcMain.handle('homebot:generate-quiz-from-rag', async (_event, params: { topic: string; difficulty: string; questionCount: number }) => {
     try {
       const { topic, difficulty, questionCount } = params;
-      const model = getSettings().chatModel || 'qwen2.5:7b';
 
       // Query RAG for relevant chunks
       let ragContext = '';
@@ -2139,15 +2179,9 @@ RULES:
 EXAMPLE FORMAT:
 [{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]`;
 
-        const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
-          model,
-          prompt,
-          system: `You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.`,
-          stream: false,
-          options: { temperature: 0.7, num_predict: 3000 }
-        }, { timeout: 120_000 });
+        const raw0 = await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.');
 
-        let raw = response.data?.response || '';
+        let raw = raw0 || '';
         console.log(`[Quiz/RAG] Batch ${b + 1}/${batches} raw (${raw.length} chars):`, raw.slice(0, 300));
         raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
         const jsonMatch = raw.match(/\[[\s\S]*\]/);
