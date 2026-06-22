@@ -191,6 +191,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // test-only watchdog timers per stream to avoid hanging 'streaming' state in tests
     const streamWatchersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  // Sync theme to <html> and <body> so CSS selectors like [data-theme="light"] body work
+  useEffect(() => {
+    const resolved = settings.theme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : (settings.theme || 'dark');
+    document.documentElement.setAttribute('data-theme', resolved);
+    document.body.setAttribute('data-theme', resolved);
+  }, [settings.theme]);
+
   // Load settings and conversation on boot
   useEffect(() => {
     let mounted = true;
@@ -914,14 +923,18 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     if (!pendingModelSuggestion) return;
     const pending = pendingModelSuggestion;
     setPendingModelSuggestion(null);
+    const newModel = pending.recommendation.recommendedModel;
+    const newSettings = { ...settings, chatModel: newModel, useCustomLLM: false };
+    setSettings(newSettings);
+    saveSettings(newSettings);
     await dispatchMessage(
       pending.text,
       pending.messageText,
       pending.images,
       pending.documents,
-      pending.recommendation.recommendedModel,
+      newModel,
     );
-  }, [dispatchMessage, pendingModelSuggestion]);
+  }, [dispatchMessage, pendingModelSuggestion, settings, saveSettings]);
 
   const retryMessage = useCallback(async (assistantId: string) => {
     const idx = messages.findIndex(m => m.id === assistantId);
