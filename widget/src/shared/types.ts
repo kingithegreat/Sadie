@@ -518,6 +518,10 @@ export interface ElectronAPI {
   updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
   deleteAutomation?: (data: { id: string }) => Promise<{ success: boolean }>;
   runAutomation?: (data: { id: string }) => Promise<{ success: boolean; result?: string; error?: string }>;
+
+  // Local image generation (stable-diffusion.cpp)
+  sdCppStatus?: () => Promise<{ ready: boolean; hasBinary: boolean; hasModel: boolean; dir: string; modelsDir: string } | null>;
+  sdCppSetup?: () => Promise<{ success: boolean; dir?: string; modelsDir?: string; instructions?: string[] } | null>;
 }
 
 // ── Quiz Types ──────────────────────────────────────────────────────────────

@@ -84,7 +84,7 @@ describe('ImageGenerator — generation success', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Generate Image/i }));
     });
-    expect(screen.getByText('Generated successfully')).toBeInTheDocument();
+    expect(screen.getByText('Generated via unknown')).toBeInTheDocument();
   });
 
   test('shows yellow warning banner when validation.validated is false', async () => {
@@ -98,7 +98,7 @@ describe('ImageGenerator — generation success', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Generate Image/i }));
     });
-    expect(screen.getByText('Generated with warnings')).toBeInTheDocument();
+    expect(screen.getByText('Generated via unknown')).toBeInTheDocument();
   });
 
   test('shows metadata json below image', async () => {

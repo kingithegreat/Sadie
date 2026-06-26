@@ -128,3 +128,6 @@ support-packet-*.zip
 
 # Jest result artifacts
 widget/jest-result.json
+
+# MCP config (contains API keys)
+.mcp.json
