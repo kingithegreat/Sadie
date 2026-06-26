@@ -3991,26 +3991,57 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               ) {
                 const nbaFormat = intentResult?.calls?.[0]?.arguments?.format;
                 const nbaEvents = Array.isArray(result.result.events) ? result.result.events : [];
-                // Only route through LLM synthesis when there are actual games to interpret.
-                // Empty results + synthesis = hallucination risk.
-                if (nbaEvents.length > 0) synthesizeType = 'games';
-                try {
-                  const enriched = await enrichNbaGames(nbaEvents, result.result.query || '', {
-                    maxWebResults: 3,
-                    fetchContent: true,
-                    format: nbaFormat,
-                    context: {
-                      executionId: `nba-enrich-${Date.now()}`,
-                      requestConfirmation,
-                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
-                    } as ToolContext
-                  });
-                  responseText += enriched.summary + '\n';
-                } catch (enrichErr: any) {
-                  // Fallback to basic formatting if enrichment fails
-                  console.error('[HomeBot] NBA enrichment failed, using basic format:', enrichErr?.message);
-                  const queryLabel = result.result.query ? `NBA Games — ${result.result.query}` : undefined;
-                  responseText += formatNbaEventsStrict(nbaEvents, queryLabel, 10) + '\n';
+                if (nbaEvents.length > 0) {
+                  synthesizeType = 'games';
+                  try {
+                    const enriched = await enrichNbaGames(nbaEvents, result.result.query || '', {
+                      maxWebResults: 3,
+                      fetchContent: true,
+                      format: nbaFormat,
+                      context: {
+                        executionId: `nba-enrich-${Date.now()}`,
+                        requestConfirmation,
+                        requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                      } as ToolContext
+                    });
+                    responseText += enriched.summary + '\n';
+                  } catch (enrichErr: any) {
+                    console.error('[HomeBot] NBA enrichment failed, using basic format:', enrichErr?.message);
+                    const queryLabel = result.result.query ? `NBA Games — ${result.result.query}` : undefined;
+                    responseText += formatNbaEventsStrict(nbaEvents, queryLabel, 10) + '\n';
+                  }
+                } else {
+                  // Empty NBA results — fall back to web search so the user gets useful info
+                  console.log('[HomeBot] NBA query returned 0 events, falling back to web search');
+                  const nbaQuery = result.result.query || enhancedMessage;
+                  const webFallbackResults = await executeToolBatch(
+                    [{ name: 'web_search', arguments: { query: nbaQuery, maxResults: 3, fetchTopResult: true } }] as ToolCall[],
+                    { executionId: `nba-web-fallback-${Date.now()}`, requestConfirmation,
+                      requestPermission: (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason) } as ToolContext
+                  );
+                  const wsr = webFallbackResults?.[0]?.result;
+                  if (wsr) {
+                    const searchContext = buildSearchContextForModel(wsr);
+                    if (searchContext) {
+                      const augMsg = buildSynthesisPrompt(searchContext, enhancedMessage);
+                      const handler = await synthesisStream(
+                        augMsg, convId,
+                        (chunk) => { if (!activeStreams.has(streamId)) return; assistantResponse += chunk; try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); } },
+                        () => {
+                          const sourcesToken = buildSourceCardsToken(wsr);
+                          if (sourcesToken) { assistantResponse += sourcesToken; try { event.sender.send('homebot:stream-chunk', { chunk: sourcesToken, streamId }); } catch (e) { safeCatch(e); } }
+                          if (assistantResponse.trim()) addToHistory(convId, 'assistant', assistantResponse);
+                          try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId);
+                        },
+                        (err) => { console.error('[HomeBot] NBA web fallback synthesis failed:', err?.message || err); const fb = searchContext || 'No NBA data available right now.'; try { event.sender.send('homebot:stream-chunk', { chunk: fb, streamId }); } catch (e) { safeCatch(e); } addToHistory(convId, 'assistant', fb); try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); } activeStreams.delete(streamId); },
+                        undefined, requestConfirmation,
+                        (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
+                      );
+                      activeStreams.set(streamId, { destroy: handler.cancel });
+                      return;
+                    }
+                  }
+                  responseText += `🏀 No live NBA game data found. Try asking me to search the web for NBA information.\n`;
                 }
               }
               // Handle weather results
@@ -4390,7 +4421,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         }
 
         const cloudSettings = getSettings();
-        const cloudLLMActive = !!(cloudSettings.useCustomLLM && cloudSettings.customLLM && (cloudSettings.customLLM as any).apiKey && (cloudSettings.customLLM as any).model);
+        const cloudCfgPost = cloudSettings?.customLLM as any;
+        const cloudLLMActive = !!((cloudSettings.useCustomLLM || cloudCfgPost?.enabled) && cloudCfgPost?.apiKey && cloudCfgPost?.model);
 
         if (useDirectOllama || cloudLLMActive) {
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct path:', cloudLLMActive ? 'cloud LLM active' : 'direct Ollama');
