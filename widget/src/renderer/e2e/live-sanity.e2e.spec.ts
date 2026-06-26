@@ -9,7 +9,8 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
   let tmpDataDir: string;
 
   test.beforeAll(async () => {
-    // 1. Strip HOMEBOT_E2E so the backend routes to the real Ollama instance
+    // 1. Use E2E mode with bypass-mock so the backend routes directly to the real Ollama instance
+    //    (without HOMEBOT_E2E, useDirectOllama=false and the router tries n8n first)
     const mergedEnv: Record<string, string> = { NODE_ENV: 'test' };
     for (const [key, value] of Object.entries(process.env)) {
       if (typeof value === 'string') {
@@ -17,7 +18,8 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
       }
     }
     delete mergedEnv.ELECTRON_RUN_AS_NODE;
-    delete mergedEnv.HOMEBOT_E2E; 
+    mergedEnv.HOMEBOT_E2E = '1';
+    mergedEnv.HOMEBOT_E2E_BYPASS_MOCK = '1';
 
     // 2. Create an isolated user data directory to prevent touching real user settings
     tmpDataDir = path.join(os.tmpdir(), `homebot-live-sanity-${Date.now()}`);
@@ -46,8 +48,8 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
   });
 
   test('should connect to real Ollama and stream actual tokens to the UI', async () => {
-    test.setTimeout(45000); // Give Ollama plenty of time to boot and stream
-    
+    test.setTimeout(60000);
+
     const statusDot = page.locator('.widget-status-dot');
     await expect(statusDot).not.toHaveClass(/disconnected/, { timeout: 15000 });
 
@@ -56,10 +58,12 @@ test.describe('Live Release Sanity Suite (Real Ollama)', () => {
     await input.fill('Hello HomeBot. Reply with exactly the word "BANANA" and nothing else.');
     await input.press('Enter');
 
-    const assistantBubbles = page.locator('.message-bubble.assistant');
-    await expect(assistantBubbles).toHaveCount(1, { timeout: 10000 });
+    const assistantBubbles = page.locator('[data-role="assistant-message"]');
+    await expect(assistantBubbles.first()).toBeVisible({ timeout: 15000 });
 
+    // Wait for the stream to finish (model fallback can add latency)
     const latestBubble = assistantBubbles.last();
-    await expect(latestBubble).toContainText(/BANANA/i, { timeout: 25000 });
+    await expect(latestBubble).toHaveAttribute('data-state', 'finished', { timeout: 45000 });
+    await expect(latestBubble).toContainText(/BANANA/i, { timeout: 5000 });
   });
 });

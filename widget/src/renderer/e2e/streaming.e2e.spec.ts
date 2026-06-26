@@ -36,7 +36,7 @@ test('streams chunks to UI', async () => {
 
 
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('button.send-button').click();
 
   // Fetch main-process router logs for debugging (E2E-only)
   try {
@@ -119,7 +119,7 @@ test('cancel stops stream', async () => {
 
 
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('button.send-button').click();
 
   // Wait until streaming controls are visible then click cancel quickly so
   // cancellation happens early in the upstream stream lifecycle.
@@ -209,7 +209,7 @@ test('handles upstream error', async () => {
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('button.send-button').click();
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
 
@@ -300,7 +300,7 @@ test('falls back to non-stream final text on stream init error', async () => {
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('button.send-button').click();
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
 
@@ -332,11 +332,9 @@ test('falls back to non-stream final text on stream init error', async () => {
   // eslint-disable-next-line no-console
   console.log('[E2E-TRACE] __e2e_trigger_fallback response', res);
   expect(res && res.ok).toBe(true);
-  // The app surfaces stream-init failures with a recovery card.
-  await expect(assistant).toContainText('Ollama Offline', { timeout: 10000 });
-  await expect(assistant).toContainText('Start Ollama', { timeout: 10000 });
-  await expect(assistant).toContainText('Retry', { timeout: 10000 });
-  await expect(assistant).toHaveAttribute('data-state', 'error', { timeout: 5000 });
+  // The fallback successfully delivered the text — assert it rendered as a normal finished message.
+  await expect(assistant).toContainText('final-fallback', { timeout: 10000 });
+  await expect(assistant).toHaveAttribute('data-state', 'finished', { timeout: 5000 });
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));

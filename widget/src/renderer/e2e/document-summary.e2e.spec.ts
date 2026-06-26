@@ -26,7 +26,7 @@ test('generates a document summary via streaming', async () => {
   // Send a summarize request through the chat UI
 
   await page.getByLabel('Message HomeBot').fill('Summarize: The quick brown fox jumped over the lazy dog.');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('button.send-button').click();
 
   // Wait for streaming assistant message and verify chunks arrived
   const assistantWithChunk = page.locator('[data-role="assistant-message"]:has-text("chunk-1")').first();

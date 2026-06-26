@@ -42,8 +42,8 @@ test.describe('Conversation sidebar', () => {
     await expect(page.locator('.conversation-sidebar')).toHaveCount(0);
 
     // Open sidebar via the menu button (hamburger icon in StatusIndicator)
-    // The menu button is the first button in the header with title/aria for menu
-    const menuBtn = page.locator('button[title="Conversations"], button[aria-label="Conversations"], button[title="Menu"], button[aria-label="Menu"]').first();
+    const menuBtn = page.locator('button[title="Conversations"], button[aria-label="Open conversations"]').first();
+    await menuBtn.waitFor({ state: 'visible', timeout: 15000 });
     await menuBtn.click();
 
     // Sidebar should appear
@@ -58,10 +58,7 @@ test.describe('Conversation sidebar', () => {
     const searchBtn = sidebar.locator('button[aria-label="Search conversations"]');
     await expect(searchBtn).toBeVisible();
 
-    // Close sidebar via the close button. (The backdrop is an empty div whose
-    // full-screen size comes purely from CSS; in the packaged CI build Playwright
-    // intermittently sees it as zero-size / "not visible", so clicking it flakes.
-    // The × button is a real, always-rendered control and still verifies closing.)
+    // Close sidebar via the explicit close button
     await sidebar.locator('button[aria-label="Close sidebar"]').click();
     await expect(sidebar).toHaveCount(0);
 
@@ -75,7 +72,8 @@ test.describe('Conversation sidebar', () => {
     await waitForAppReady(page);
 
     // Open sidebar
-    const menuBtn = page.locator('button[title="Conversations"], button[aria-label="Conversations"], button[title="Menu"], button[aria-label="Menu"]').first();
+    const menuBtn = page.locator('button[title="Conversations"], button[aria-label="Open conversations"]').first();
+    await menuBtn.waitFor({ state: 'visible', timeout: 15000 });
     await menuBtn.click();
     const sidebar = page.locator('.conversation-sidebar');
     await expect(sidebar).toBeVisible({ timeout: 5000 });
