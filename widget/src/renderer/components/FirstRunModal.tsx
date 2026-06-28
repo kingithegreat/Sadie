@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { Settings, CustomLLMConfig } from '../../shared/types';
+import { recommendModelsForVram } from '../../shared/hardware-presets';
 
 type Step = 'welcome' | 'setup' | 'done';
 const STEPS: Step[] = ['welcome', 'setup', 'done'];
@@ -102,6 +103,7 @@ export default function FirstRunModal({
   const [modelPullIndex, setModelPullIndex] = useState(0);
   const [gpuInfo, setGpuInfo] = useState<{ vramGB: number | null; gpuName: string | null } | null>(null);
   const pullCancelledRef = useRef(false);
+  const gpuInfoRef = useRef<{ vramGB: number | null; gpuName: string | null } | null>(null);
 
   // Cloud path state
   const [cloudProvider, setCloudProvider] = useState<CustomLLMConfig['provider']>('groq');
@@ -133,6 +135,7 @@ export default function FirstRunModal({
       const res = await (window as any).electron.detectGpuVram?.();
       if (res?.success) {
         setGpuInfo({ vramGB: res.vramGB, gpuName: res.gpuName });
+        gpuInfoRef.current = { vramGB: res.vramGB, gpuName: res.gpuName };
         if (res.vramGB) {
           const profile = res.vramGB >= 12 ? '16gb+' : res.vramGB >= 6 ? '8gb' : '4gb';
           setDraft(d => ({ ...d, hardwareProfile: profile as any }));
@@ -148,7 +151,15 @@ export default function FirstRunModal({
       const installed: string[] = (modelList?.models || []).map((m: any) => m.name || m);
       setModels(installed);
 
-      const missing = ESSENTIAL_MODELS.filter(m => !installed.some(i => i.startsWith(m.name.split(':')[0])));
+      // Pick a chat model that fits the detected GPU instead of a fixed default.
+      // Falls back to the balanced default (qwen2.5:7b) when VRAM is unknown.
+      const rec = recommendModelsForVram(gpuInfoRef.current?.vramGB ?? null);
+      const essentialModels = [
+        { name: rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB` },
+        ...ESSENTIAL_MODELS.filter(m => m.name !== 'qwen2.5:7b'),
+      ];
+
+      const missing = essentialModels.filter(m => !installed.some(i => i.startsWith(m.name.split(':')[0])));
       if (missing.length === 0) {
         setLocalPhase('ready');
         return;
