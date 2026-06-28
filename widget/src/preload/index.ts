@@ -381,6 +381,10 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:detect-gpu-vram');
   },
 
+  runDiagnostics: async () => {
+    return await ipcRenderer.invoke('homebot:run-diagnostics');
+  },
+
   exportSettings: async () => {
     return await ipcRenderer.invoke('homebot:export-settings');
   },

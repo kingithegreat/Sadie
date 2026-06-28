@@ -782,6 +782,28 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+
+  // ── Comprehensive first-run diagnostics ───────────────────────────────────
+  // Runs disk-space, service-reachability, write-permissions, and GPU checks
+  // in parallel. All checks are non-destructive and safe to call at any time.
+  ipcMain.handle('homebot:run-diagnostics', async () => {
+    try {
+      const { runDiagnostics } = await import('./diagnostics');
+      const settings = getSettings();
+      const userDataPath = app.getPath('userData');
+      const result = await runDiagnostics(
+        {
+          ollamaUrl: settings.ollamaUrl || 'http://127.0.0.1:11434',
+          n8nUrl: settings.n8nUrl || 'http://localhost:5678',
+        },
+        userDataPath
+      );
+      return { success: true, ...result };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   // List installed Ollama models via /api/tags
   ipcMain.handle('homebot:list-ollama-models', async () => {
     const ollamaBase = getConfiguredOllamaBaseUrl();
