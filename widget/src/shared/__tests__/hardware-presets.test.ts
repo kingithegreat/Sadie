@@ -16,6 +16,7 @@ import {
   fitsInVram,
   recommendModelsForVram,
   recommendModelsForProfile,
+  recommendedModelIdsForVram,
   HARDWARE_PRESETS,
   PROFILE_8GB_MIN,
   PROFILE_16GB_MIN,
@@ -144,5 +145,41 @@ describe('preset internal consistency', () => {
         expect(m.label.length).toBeGreaterThan(0);
       });
     });
+  });
+});
+
+
+describe('recommendedModelIdsForVram', () => {
+  it('returns the 8gb tier model ids for a 7-8GB GPU', () => {
+    const ids = recommendedModelIdsForVram(8);
+    expect(ids).toContain('qwen2.5:7b');
+    expect(ids).toContain('qwen2.5-coder:7b');
+    expect(ids).toContain('qwen2.5:3b');
+  });
+
+  it('returns lightweight ids for a 4gb GPU and de-duplicates', () => {
+    const ids = recommendedModelIdsForVram(4);
+    expect(ids).toContain('qwen2.5:3b');
+    expect(ids).toContain('llama3.2:3b');
+    expect(ids.length).toBe(new Set(ids).size); // no duplicates (chat===coder===qwen2.5:3b)
+  });
+
+  it('returns 14b tier ids for a 16gb+ GPU', () => {
+    const ids = recommendedModelIdsForVram(16);
+    expect(ids).toContain('qwen2.5:14b');
+    expect(ids).toContain('qwen2.5-coder:14b');
+  });
+
+  it('returns the safe balanced default set when VRAM is unknown', () => {
+    const ids = recommendedModelIdsForVram(null);
+    expect(ids).toContain('qwen2.5:7b');
+    expect(ids.length).toBeGreaterThan(0);
+  });
+
+  it('never returns duplicate ids for any VRAM value', () => {
+    for (const v of [null, 2, 4, 6, 8, 12, 16, 24]) {
+      const ids = recommendedModelIdsForVram(v as number | null);
+      expect(ids.length).toBe(new Set(ids).size);
+    }
   });
 });

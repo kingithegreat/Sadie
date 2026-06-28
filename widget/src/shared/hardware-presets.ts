@@ -127,3 +127,15 @@ export function recommendModelsForVram(vramGB: number | null): HardwareRecommend
   }
   return { ...HARDWARE_PRESETS[profile], vramGB: vramGB ?? null };
 }
+
+/**
+ * Return the de-duplicated list of Ollama model ids recommended for a given
+ * VRAM reading (chat + coder + fallback). Pure helper intended for UI layers
+ * (e.g. ModelSelector) that want to flag or prioritise the models that best
+ * fit the user's detected GPU. Unknown VRAM yields the safe balanced default
+ * set, so callers can decide whether to surface it.
+ */
+export function recommendedModelIdsForVram(vramGB: number | null): string[] {
+  const rec = recommendModelsForVram(vramGB);
+  return Array.from(new Set([rec.chat.id, rec.coder.id, rec.fallback.id]));
+}
