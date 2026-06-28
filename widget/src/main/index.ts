@@ -16,6 +16,7 @@ import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
+import { logStartupTime } from './utils/perf-logger';
 import { shutdownMcpServers } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
@@ -183,6 +184,18 @@ app.whenReady().then(async () => {
 
   // Create the main window FIRST for fast first-paint, then init tools in background
   mainWindow = createMainWindow();
+
+  // ── Baseline perf metric: total startup time ──────────────────────────
+  // Record ms from process spawn to the renderer being ready (first usable
+  // UI). Persisted to userData/logs/perf.log via perf-logger. Guarded so a
+  // logging failure can never affect launch.
+  try {
+    mainWindow.webContents.once('did-finish-load', () => {
+      try {
+        logStartupTime(Math.round(process.uptime() * 1000), { event: 'did-finish-load' });
+      } catch (e) { safeCatch(e); }
+    });
+  } catch (e) { safeCatch(e); }
 
   // For every <webview> that gets attached to the main window:
   // 1. Re-apply the Chrome UA at the webContents level (strongest override).
