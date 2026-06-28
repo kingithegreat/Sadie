@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, app, shell } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
+import { readPerfAggregates } from './utils/perf-logger';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -194,6 +195,17 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       saveSettings(settings); // This function is already imported from config-manager
       try { setUncensoredMode(enabled); } catch (e) { console.error('[IPC] Failed to set uncensored mode runtime flag:', (e as any)?.message || e); }
       return { success: true, enabled: settings.uncensoredMode };
+    });
+
+    // Baseline perf metrics (startup + first-token/TTFT aggregates) for the Diagnostics & Performance UI
+    ipcMain.handle('homebot:get-perf-aggregates', async () => {
+      try {
+        return readPerfAggregates();
+      } catch (e) {
+        console.error('[IPC] get-perf-aggregates failed:', (e as any)?.message || e);
+        const empty = { count: 0, avg_ms: 0, p50_ms: 0, p95_ms: 0, min_ms: 0, max_ms: 0, last_ms: null };
+        return { startup: empty, firstToken: { ...empty } };
+      }
     });
 
     ipcMain.on('window-minimize', () => {

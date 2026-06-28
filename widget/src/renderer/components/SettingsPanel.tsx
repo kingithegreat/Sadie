@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
-import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob } from '../../shared/types';
+import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -185,8 +185,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     appearance: true,
     permissions: true,
     advanced: true,
+    diagnostics: false,
   });
   const toggleSection = (id: string) => setOpenSections(s => ({ ...s, [id]: !s[id] }));
+
+  // Diagnostics & Performance: baseline startup + first-token (TTFT) aggregates
+  const [perfStats, setPerfStats] = useState<{ startup: PerfStatSummary; firstToken: PerfStatSummary } | null>(null);
+  const [perfLoading, setPerfLoading] = useState(false);
+  const loadPerfStats = async () => {
+    setPerfLoading(true);
+    try {
+      const r = await window.electron?.getPerfAggregates?.();
+      if (r) setPerfStats(r);
+    } catch { /* ignore — empty-state will render */ }
+    finally { setPerfLoading(false); }
+  };
+  useEffect(() => {
+    if (openSections.diagnostics && !perfStats && !perfLoading) { void loadPerfStats(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSections.diagnostics]);
 
   // Fetch installed Ollama models on mount
   useEffect(() => {
@@ -1995,6 +2012,50 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </label>
         </div>
       </div>
+
+
+        {/* Diagnostics & Performance */}
+        <button type="button" className={`sp-section-toggle${openSections.diagnostics ? ' open' : ''}`} onClick={() => toggleSection('diagnostics')}>
+          <span className="sp-section-arrow">{openSections.diagnostics ? '\u25be' : '\u25b8'}</span> Diagnostics &amp; Performance
+        </button>
+        {openSections.diagnostics && <>
+          <div className="setting-group">
+            <label className="setting-label">⚡ Performance metrics</label>
+            <small className="setting-hint">Baseline timings collected locally on this device. Startup = app launch → ready; First-token (TTFT) = chat request → first streamed token.</small>
+            {(() => {
+              const hasData = !!perfStats && (perfStats.startup.count > 0 || perfStats.firstToken.count > 0);
+              if (perfLoading && !perfStats) {
+                return <div className="perf-empty">Loading metrics…</div>;
+              }
+              if (!hasData) {
+                return <div className="perf-empty">No performance samples yet. Use HomeBot for a bit — startup and chat timings will appear here.</div>;
+              }
+              const Row = ({ title, stat }: { title: string; stat: PerfStatSummary }) => (
+                <div className="perf-row">
+                  <div className="perf-row-title">{title}</div>
+                  {stat.count > 0 ? (
+                    <div className="perf-badges">
+                      <span className="perf-badge perf-badge-p50" title="50th percentile (median)">p50 {stat.p50_ms} ms</span>
+                      <span className="perf-badge perf-badge-p95" title="95th percentile">p95 {stat.p95_ms} ms</span>
+                      <span className="perf-badge-meta">avg {stat.avg_ms} · min {stat.min_ms} · max {stat.max_ms} · n={stat.count}</span>
+                    </div>
+                  ) : (
+                    <div className="perf-badges"><span className="perf-badge-meta">no samples</span></div>
+                  )}
+                </div>
+              );
+              return (
+                <div className="perf-metrics">
+                  <Row title="Startup" stat={perfStats!.startup} />
+                  <Row title="First token (TTFT)" stat={perfStats!.firstToken} />
+                </div>
+              );
+            })()}
+            <button type="button" className="button button-cancel" style={{ marginTop: 8 }} onClick={() => { void loadPerfStats(); }} disabled={perfLoading}>
+              {perfLoading ? 'Refreshing\u2026' : 'Refresh'}
+            </button>
+          </div>
+        </>}
 
       </div>{/* end settings-body */}
 
