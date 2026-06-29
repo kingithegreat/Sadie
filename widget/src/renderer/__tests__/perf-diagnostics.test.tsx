@@ -85,7 +85,12 @@ describe('SettingsPanel — Diagnostics & Performance', () => {
 
     await waitFor(() => expect(getPerf).toHaveBeenCalledTimes(1));
 
-    const refreshBtn = Array.from(container.querySelectorAll('button'))
+    // Scope to the Performance metrics group — other sections (e.g. Telemetry
+    // Consent Log) also render a "Refresh" button, and it appears earlier in the DOM.
+    const perfGroup = Array.from(container.querySelectorAll('.setting-group'))
+      .find(g => g.textContent?.includes('Performance metrics')) as HTMLElement;
+    expect(perfGroup).toBeTruthy();
+    const refreshBtn = Array.from(perfGroup.querySelectorAll('button'))
       .find(b => b.textContent === 'Refresh') as HTMLButtonElement;
     expect(refreshBtn).toBeTruthy();
     fireEvent.click(refreshBtn);
