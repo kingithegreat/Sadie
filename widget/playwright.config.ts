@@ -11,8 +11,8 @@ export default defineConfig({
   // Ensure Playwright always writes the artifacts we expect in CI and locally
   reporter: [
     ['list'],
-    ['junit', { outputFile: 'test-results/junit.xml' }],
-    ['html', { outputFolder: 'playwright-report', open: 'never' }],
+    ['junit', { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT || 'test-results/junit.xml' }],
+    ['html', { outputFolder: process.env.PLAYWRIGHT_HTML_REPORT || 'playwright-report', open: 'never' }],
   ],
   use: {
     trace: 'on-first-retry',
