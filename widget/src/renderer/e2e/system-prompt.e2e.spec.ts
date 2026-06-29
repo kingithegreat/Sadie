@@ -97,7 +97,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   // Send a normal message
   await page.getByLabel('Message HomeBot').fill('Hello, how are you?');
   console.log('[E2E-TEST] About to click send button');
-  const sendButton = page.getByRole('button', { name: /send/i });
+  const sendButton = page.getByRole('button', { name: 'Send', exact: true });
   const isEnabled = await sendButton.isEnabled();
   console.log('[E2E-TEST] Send button enabled:', isEnabled);
   await sendButton.click();

@@ -24,7 +24,7 @@
     "e2e:install": "playwright install --with-deps",
     "e2e": "cross-env NODE_ENV=test HOMEBOT_E2E=1 playwright test",
     "e2e:headed": "cross-env NODE_ENV=test HOMEBOT_E2E=1 playwright test --headed",
-    "e2e:live": "cross-env NODE_ENV=test playwright test live-sanity.e2e.spec.ts",
+    "e2e:live": "cross-env NODE_ENV=test HOMEBOT_E2E_LIVE=1 playwright test live-sanity.e2e.spec.ts",
     "capture-logs": "node ./scripts/capture-diagnostics.js",
     "stream-metrics": "node ./scripts/stream-metrics.js",
     "clean-tests": "rmdir /s /q test-results playwright-report trace-output 2>nul || echo No test artifacts to clean",
