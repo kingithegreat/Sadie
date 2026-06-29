@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
+import { recommendedModelIdsForVram } from '../../shared/hardware-presets';
 
 interface OllamaModel {
   name: string;
@@ -219,6 +220,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const currentModelInfo = locked ? lockedModelInfo : getCurrentModelInfo();
 
+  // Hardware recommendation: flag the local models that best fit the detected
+  // GPU VRAM. Only surfaced when VRAM was actually detected, so we never imply
+  // a GPU-specific suggestion on machines where detection failed.
+  const hasDetectedVram = typeof vramGB === 'number' && !Number.isNaN(vramGB) && vramGB > 0;
+  const recommendedIdSet = new Set(
+    (hasDetectedVram ? recommendedModelIdsForVram(vramGB as number) : []).map(normalizeModelId)
+  );
+  const isRecommendedForGpu = (id: string) => recommendedIdSet.has(normalizeModelId(id));
+
   // Prev/next navigation through all models
   const currentIndex = allModels.findIndex(m => {
     if (useCustomLLM && m.type === 'custom') return m.id === activeCustomModelId;
@@ -411,6 +421,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                         <span className="model-option-icon">🦙</span>
                         <span className="model-option-name">{model.name}</span>
                         <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB.toFixed(1)}GB` : ''}</span>
+                        {isRecommendedForGpu(model.id) && <span className="reco-badge" title="Recommended for your detected GPU">✨ Recommended</span>}
                         {warn === 'over' && <span className="vram-badge over" title={`Exceeds ${vramGB}GB VRAM — will use CPU offload (slow)`}>⚠️ slow</span>}
                         {warn === 'tight' && <span className="vram-badge tight" title={`Tight fit for ${vramGB}GB VRAM`}>⚡ tight</span>}
                         {!useCustomLLM && normalizeModelId(currentModel) === normalizeModelId(model.id) && <span className="active-badge">✓</span>}
@@ -426,14 +437,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             {uninstalledRecommended.length > 0 && (
               <>
                 <div className="model-section-label">📦 Available to Download</div>
-                {uninstalledRecommended.map(model => {
+                {[...uninstalledRecommended]
+                  .sort((a, b) => Number(isRecommendedForGpu(b.id)) - Number(isRecommendedForGpu(a.id)))
+                  .map(model => {
                   const warn = getVramWarning(model.sizeGB, vramGB);
                   return (
-                    <div key={model.id} className={`model-option not-installed ${warn !== 'ok' ? 'vram-warn' : ''}`}>
+                    <div key={model.id} className={`model-option not-installed ${isRecommendedForGpu(model.id) ? 'gpu-recommended' : ''} ${warn !== 'ok' ? 'vram-warn' : ''}`}>
                       <div className="model-option-header">
                         <span className="model-option-icon">📦</span>
                         <span className="model-option-name">{model.name}</span>
                         <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB}GB` : ''}</span>
+                        {isRecommendedForGpu(model.id) && <span className="reco-badge" title="Recommended for your detected GPU">✨ Recommended</span>}
                         {warn === 'over' && <span className="vram-badge over" title={`Exceeds ${vramGB}GB VRAM`}>⚠️</span>}
                         {warn === 'tight' && <span className="vram-badge tight" title={`Tight fit for ${vramGB}GB VRAM`}>⚡</span>}
                         <button
