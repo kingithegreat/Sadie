@@ -3,6 +3,7 @@ import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 import { buildSparkline } from '../../shared/sparkline';
+import { buildPerfAdvice } from '../../shared/perf-advice';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -2079,8 +2080,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               );
               const startupSeries = perfHistory?.startup ?? [];
               const firstTokenSeries = perfHistory?.firstToken ?? [];
+              const advice = buildPerfAdvice(perfStats);
+              const overallLabel = advice.overall === 'good' ? 'Good' : advice.overall === 'fair' ? 'A bit slow' : 'Slow';
+              const healthColor = advice.overall === 'good' ? '#3fb950' : advice.overall === 'fair' ? '#d29922' : '#f85149';
               return (
                 <div className="perf-metrics">
+                  {advice.overall !== 'unknown' && (
+                    <div
+                      className={`perf-health perf-health-${advice.overall}`}
+                      title="Overall performance health based on p95 startup and first-token latency"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 8px', fontSize: 13, fontWeight: 600 }}
+                    >
+                      <span
+                        className="perf-health-dot"
+                        aria-hidden="true"
+                        style={{ width: 9, height: 9, borderRadius: '50%', background: healthColor, display: 'inline-block', flex: '0 0 auto' }}
+                      />
+                      <span className="perf-health-label">Performance health: {overallLabel}</span>
+                    </div>
+                  )}
+                  {advice.hints.length > 0 && (
+                    <ul className="perf-health-hints" style={{ margin: '0 0 8px', paddingLeft: 18, fontSize: 12, opacity: 0.85, lineHeight: 1.45 }}>
+                      {advice.hints.map((h, i) => (<li key={i}>{h}</li>))}
+                    </ul>
+                  )}
                   <Row title="Startup" stat={perfStats!.startup} series={startupSeries} />
                   <Row title="First token (TTFT)" stat={perfStats!.firstToken} series={firstTokenSeries} />
                 </div>
