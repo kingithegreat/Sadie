@@ -304,8 +304,6 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     });
   };
 
-  if (!isOpen) return null;
-
   const filteredConversations = useMemo(() => {
     let list = conversations.filter(c => showArchived ? !!c.archived : !c.archived);
     if (filterText.trim()) {
@@ -320,6 +318,13 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     });
     return list;
   }, [conversations, showArchived, filterText, sortBy]);
+
+  // All hooks must run before any early return (Rules of Hooks). When this
+  // bailout sat above useMemo, opening the sidebar (isOpen false→true) added a
+  // hook mid-lifecycle and React threw "Rendered more hooks than during the
+  // previous render", which the Sidebar ErrorBoundary swallowed — so the panel
+  // never appeared. Keep all early returns below every hook.
+  if (!isOpen) return null;
 
   if (showSearch) {
     return (
