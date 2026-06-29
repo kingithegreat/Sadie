@@ -4863,6 +4863,35 @@ body {
   background: rgba(96, 165, 250, 0.12);
 }
 
+/* Disk-space badge — flags model downloads that won't fit on the volume.
+   Mirrors .vram-badge; severity from assessModelDownloadFit(). */
+.disk-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.disk-badge.over {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.disk-badge.tight {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.model-option.disk-blocked {
+  border-left: 2px solid rgba(248, 113, 113, 0.6);
+}
+
+.disk-warn-text {
+  color: #f87171 !important;
+  font-size: 11px !important;
+}
+
 /* Hardware-recommendation badge — flags models that best fit the detected GPU */
 .reco-badge {
   font-size: 10px;

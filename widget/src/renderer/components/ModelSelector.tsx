@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 import { recommendedModelIdsForVram } from '../../shared/hardware-presets';
+import { assessModelDownloadFit } from '../../shared/model-download-fit';
 
 interface OllamaModel {
   name: string;
@@ -91,6 +92,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [pullProgress, setPullProgress] = useState<string | null>(null);
   const [pullError, setPullError] = useState<string | null>(null);
   const [vramWarning, setVramWarning] = useState<string | null>(null);
+  const [freeDiskGB, setFreeDiskGB] = useState<number | null>(null);
+  const diskProbedRef = useRef(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const portalRef = useRef<HTMLDivElement>(null);
@@ -148,6 +151,21 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       if (customLLM?.enabled) fetchCloudModels();
     }
   }, [isOpen, fetchModels, fetchCloudModels, customLLM?.enabled]);
+
+  // Probe free disk space once (lazily, on first open) so the "Available to
+  // Download" rows can warn / block when a pull would not fit. Reuses the
+  // existing first-run diagnostics IPC; failures fail open (freeDiskGB stays null).
+  useEffect(() => {
+    if (!isOpen || diskProbedRef.current) return;
+    diskProbedRef.current = true;
+    (async () => {
+      try {
+        const diag = await (window as any).electron?.runDiagnostics?.();
+        const free = diag?.disk?.freeGB;
+        if (typeof free === 'number' && Number.isFinite(free)) setFreeDiskGB(free);
+      } catch { /* detection unavailable — leave null (never blocks) */ }
+    })();
+  }, [isOpen]);
 
   // Build the merged model list: installed models first, then recommended uninstalled ones
   const installedModelInfos: ModelInfo[] = installedModels.map(m => {
@@ -441,8 +459,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                   .sort((a, b) => Number(isRecommendedForGpu(b.id)) - Number(isRecommendedForGpu(a.id)))
                   .map(model => {
                   const warn = getVramWarning(model.sizeGB, vramGB);
+                  const diskFit = assessModelDownloadFit({ sizeGB: model.sizeGB, freeGB: freeDiskGB });
+                  const diskBlocked = diskFit.severity === 'insufficient';
                   return (
-                    <div key={model.id} className={`model-option not-installed ${isRecommendedForGpu(model.id) ? 'gpu-recommended' : ''} ${warn !== 'ok' ? 'vram-warn' : ''}`}>
+                    <div key={model.id} className={`model-option not-installed ${isRecommendedForGpu(model.id) ? 'gpu-recommended' : ''} ${warn !== 'ok' ? 'vram-warn' : ''} ${diskBlocked ? 'disk-blocked' : ''}`}>
                       <div className="model-option-header">
                         <span className="model-option-icon">📦</span>
                         <span className="model-option-name">{model.name}</span>
@@ -450,15 +470,21 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                         {isRecommendedForGpu(model.id) && <span className="reco-badge" title="Recommended for your detected GPU">✨ Recommended</span>}
                         {warn === 'over' && <span className="vram-badge over" title={`Exceeds ${vramGB}GB VRAM`}>⚠️</span>}
                         {warn === 'tight' && <span className="vram-badge tight" title={`Tight fit for ${vramGB}GB VRAM`}>⚡</span>}
+                        {diskFit.severity === 'insufficient' && <span className="disk-badge over" title={diskFit.message ?? 'Not enough disk space'}>💾</span>}
+                        {diskFit.severity === 'tight' && <span className="disk-badge tight" title={diskFit.message ?? 'Low disk space'}>💾</span>}
                         <button
                           type="button"
                           className="pull-model-btn"
                           onClick={(e) => handlePullModel(model.id, e)}
-                          disabled={pulling !== null}
+                          disabled={pulling !== null || diskBlocked}
+                          title={diskBlocked ? (diskFit.message ?? 'Not enough disk space to download') : undefined}
                         >
-                          {pulling === model.id ? '⏳ Pulling...' : '⬇ Pull'}
+                          {pulling === model.id ? '⏳ Pulling...' : diskBlocked ? '🚫 No space' : '⬇ Pull'}
                         </button>
                       </div>
+                      {diskBlocked && diskFit.message && (
+                        <span className="model-option-desc disk-warn-text">{diskFit.message}</span>
+                      )}
                       {pulling === model.id && pullProgress && (
                         <span className="model-option-desc pull-status">{pullProgress}</span>
                       )}
