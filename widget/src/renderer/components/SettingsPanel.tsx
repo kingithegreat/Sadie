@@ -4,6 +4,7 @@ import TelemetryDashboard from './TelemetryDashboard';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 import { buildSparkline } from '../../shared/sparkline';
 import { buildPerfAdvice } from '../../shared/perf-advice';
+import { buildDiagnosticsReport } from '../../shared/diagnostics-report';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -211,6 +212,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (openSections.diagnostics && !perfStats && !perfLoading) { void loadPerfStats(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSections.diagnostics]);
+
+  // Diagnostics: copy a plain-text support report (env + perf summary) to the clipboard.
+  const [reportCopied, setReportCopied] = useState(false);
+  const copyDiagnosticsReport = async () => {
+    try {
+      const env = (await window.electron?.getEnv?.()) ?? undefined;
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+      const electronVersion = /Electron\/([0-9.]+)/.exec(ua)?.[1];
+      const chromeVersion = /Chrome\/([0-9.]+)/.exec(ua)?.[1];
+      const platform = typeof navigator !== 'undefined' ? (navigator.platform || undefined) : undefined;
+      const report = buildDiagnosticsReport({
+        platform,
+        electronVersion,
+        chromeVersion,
+        env,
+        perf: perfStats,
+      });
+      window.electron?.writeClipboard?.(report);
+      setReportCopied(true);
+      setTimeout(() => setReportCopied(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy diagnostics report:', e);
+    }
+  };
 
   // Fetch installed Ollama models on mount
   useEffect(() => {
@@ -2111,6 +2136,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             })()}
             <button type="button" className="button button-cancel" style={{ marginTop: 8 }} onClick={() => { void loadPerfStats(); }} disabled={perfLoading}>
               {perfLoading ? 'Refreshing\u2026' : 'Refresh'}
+            </button>
+            <button
+              type="button"
+              className="button button-cancel"
+              style={{ marginTop: 8, marginLeft: 8 }}
+              onClick={() => { void copyDiagnosticsReport(); }}
+              title="Copy a plain-text report (app/runtime info + performance summary) to the clipboard for support or a bug report. Your home folder path is redacted."
+            >
+              {reportCopied ? '\u2713 Copied report' : 'Copy diagnostics report'}
             </button>
           </div>
         </>}
