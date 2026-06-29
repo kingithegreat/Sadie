@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
-import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob } from '../../shared/types';
+import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
+import { buildSparkline } from '../../shared/sparkline';
+import { buildPerfAdvice } from '../../shared/perf-advice';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -185,8 +187,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     appearance: true,
     permissions: true,
     advanced: true,
+    diagnostics: false,
   });
   const toggleSection = (id: string) => setOpenSections(s => ({ ...s, [id]: !s[id] }));
+
+  // Diagnostics & Performance: baseline startup + first-token (TTFT) aggregates
+  const [perfStats, setPerfStats] = useState<{ startup: PerfStatSummary; firstToken: PerfStatSummary } | null>(null);
+  const [perfHistory, setPerfHistory] = useState<{ startup: number[]; firstToken: number[] } | null>(null);
+  const [perfLoading, setPerfLoading] = useState(false);
+  const loadPerfStats = async () => {
+    setPerfLoading(true);
+    try {
+      const [r, h] = await Promise.all([
+        window.electron?.getPerfAggregates?.(),
+        window.electron?.getPerfHistory?.(20),
+      ]);
+      if (r) setPerfStats(r);
+      if (h) setPerfHistory(h);
+    } catch { /* ignore — empty-state will render */ }
+    finally { setPerfLoading(false); }
+  };
+  useEffect(() => {
+    if (openSections.diagnostics && !perfStats && !perfLoading) { void loadPerfStats(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSections.diagnostics]);
 
   // Fetch installed Ollama models on mount
   useEffect(() => {
@@ -1995,6 +2019,101 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </label>
         </div>
       </div>
+
+
+        {/* Diagnostics & Performance */}
+        <button type="button" className={`sp-section-toggle${openSections.diagnostics ? ' open' : ''}`} onClick={() => toggleSection('diagnostics')}>
+          <span className="sp-section-arrow">{openSections.diagnostics ? '\u25be' : '\u25b8'}</span> Diagnostics &amp; Performance
+        </button>
+        {openSections.diagnostics && <>
+          <div className="setting-group">
+            <label className="setting-label">⚡ Performance metrics</label>
+            <small className="setting-hint">Baseline timings collected locally on this device. Startup = app launch → ready; First-token (TTFT) = chat request → first streamed token.</small>
+            {(() => {
+              const hasData = !!perfStats && (perfStats.startup.count > 0 || perfStats.firstToken.count > 0);
+              if (perfLoading && !perfStats) {
+                return <div className="perf-empty">Loading metrics…</div>;
+              }
+              if (!hasData) {
+                return <div className="perf-empty">No performance samples yet. Use HomeBot for a bit — startup and chat timings will appear here.</div>;
+              }
+              const Sparkline = ({ series }: { series: number[] }) => {
+                const geo = buildSparkline(series, { width: 120, height: 26, padding: 3 });
+                if (!geo.hasData) return null;
+                return (
+                  <svg
+                    className="perf-sparkline"
+                    width={geo.width}
+                    height={geo.height}
+                    viewBox={`0 0 ${geo.width} ${geo.height}`}
+                    role="img"
+                    aria-label={`Trend of last ${series.length} samples — min ${geo.min} ms, max ${geo.max} ms, latest ${geo.last} ms`}
+                    preserveAspectRatio="none"
+                  >
+                    <path d={geo.areaPath} fill="currentColor" fillOpacity={0.12} stroke="none" />
+                    <path d={geo.linePath} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+                    {geo.points.length > 0 && (
+                      <circle cx={geo.points[geo.points.length - 1].x} cy={geo.points[geo.points.length - 1].y} r={2} fill="currentColor" />
+                    )}
+                  </svg>
+                );
+              };
+              const Row = ({ title, stat, series }: { title: string; stat: PerfStatSummary; series: number[] }) => (
+                <div className="perf-row">
+                  <div className="perf-row-title">{title}</div>
+                  {stat.count > 0 ? (
+                    <div className="perf-badges">
+                      <span className="perf-badge perf-badge-p50" title="50th percentile (median)">p50 {stat.p50_ms} ms</span>
+                      <span className="perf-badge perf-badge-p95" title="95th percentile">p95 {stat.p95_ms} ms</span>
+                      <span className="perf-badge-meta">avg {stat.avg_ms} · min {stat.min_ms} · max {stat.max_ms} · n={stat.count}</span>
+                    </div>
+                  ) : (
+                    <div className="perf-badges"><span className="perf-badge-meta">no samples</span></div>
+                  )}
+                  {series.length > 1 && (
+                    <div className="perf-trend" title={`Last ${series.length} samples (oldest → newest)`}>
+                      <Sparkline series={series} />
+                      <span className="perf-trend-label">last {series.length} · latest {series[series.length - 1]} ms</span>
+                    </div>
+                  )}
+                </div>
+              );
+              const startupSeries = perfHistory?.startup ?? [];
+              const firstTokenSeries = perfHistory?.firstToken ?? [];
+              const advice = buildPerfAdvice(perfStats);
+              const overallLabel = advice.overall === 'good' ? 'Good' : advice.overall === 'fair' ? 'A bit slow' : 'Slow';
+              const healthColor = advice.overall === 'good' ? '#3fb950' : advice.overall === 'fair' ? '#d29922' : '#f85149';
+              return (
+                <div className="perf-metrics">
+                  {advice.overall !== 'unknown' && (
+                    <div
+                      className={`perf-health perf-health-${advice.overall}`}
+                      title="Overall performance health based on p95 startup and first-token latency"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 8px', fontSize: 13, fontWeight: 600 }}
+                    >
+                      <span
+                        className="perf-health-dot"
+                        aria-hidden="true"
+                        style={{ width: 9, height: 9, borderRadius: '50%', background: healthColor, display: 'inline-block', flex: '0 0 auto' }}
+                      />
+                      <span className="perf-health-label">Performance health: {overallLabel}</span>
+                    </div>
+                  )}
+                  {advice.hints.length > 0 && (
+                    <ul className="perf-health-hints" style={{ margin: '0 0 8px', paddingLeft: 18, fontSize: 12, opacity: 0.85, lineHeight: 1.45 }}>
+                      {advice.hints.map((h, i) => (<li key={i}>{h}</li>))}
+                    </ul>
+                  )}
+                  <Row title="Startup" stat={perfStats!.startup} series={startupSeries} />
+                  <Row title="First token (TTFT)" stat={perfStats!.firstToken} series={firstTokenSeries} />
+                </div>
+              );
+            })()}
+            <button type="button" className="button button-cancel" style={{ marginTop: 8 }} onClick={() => { void loadPerfStats(); }} disabled={perfLoading}>
+              {perfLoading ? 'Refreshing\u2026' : 'Refresh'}
+            </button>
+          </div>
+        </>}
 
       </div>{/* end settings-body */}
 

@@ -205,6 +205,16 @@ export interface ScheduledJob {
   createdAt: number;
 }
 
+export interface PerfStatSummary {
+  count: number;
+  avg_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  min_ms: number;
+  max_ms: number;
+  last_ms: number | null;
+}
+
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
@@ -282,6 +292,11 @@ export interface ElectronAPI {
   resetPermissions?: () => Promise<Settings>;
   // Debug helper exposed for dev/E2E: returns main + renderer log buffers and conversation store snapshot
   readDebugLogs?: () => Promise<{ success: boolean; rendererLogs?: string[]; mainLogs?: string[]; conversationStore?: any; error?: string }>;
+
+  // Diagnostic: baseline perf aggregates (startup + first-token/TTFT) for the Settings Diagnostics section
+  getPerfAggregates?: () => Promise<{ startup: PerfStatSummary; firstToken: PerfStatSummary }>;
+  // Diagnostic: recent raw perf samples (chronological) for the Diagnostics trend sparklines
+  getPerfHistory?: (limit?: number) => Promise<{ startup: number[]; firstToken: number[] }>;
   
   // Diagnostic: get env info
   getEnv?: () => Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }>;

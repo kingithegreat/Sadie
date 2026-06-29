@@ -14,6 +14,7 @@ import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
 import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig, PROVIDER_API_URLS } from './custom-llm-client';
+import { markRequestStart, markFirstToken } from './utils/perf-logger';
 import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
@@ -154,6 +155,12 @@ function pushRouter(line: string) {
  */
 function safeSend(sender: Electron.WebContents | undefined, channel: string, data?: any) {
   try {
+    // Baseline perf metric: record first-token latency on the first chunk of a
+    // stream. Idempotent per streamId, so this central hook plus the direct
+    // event.sender.send paths below all resolve to a single logged entry.
+    if (channel === 'homebot:stream-chunk' && data && data.streamId) {
+      try { markFirstToken(data.streamId); } catch (e) { safeCatch(e); }
+    }
     sender?.send(channel, data);
   } catch (err) {
     console.warn(`[HomeBot] IPC send failed (window destroyed?) channel=${channel}`, err);
@@ -3256,6 +3263,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received homebot:stream-message', { request });
       try { pushRouter(`Received homebot:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      // Baseline perf metric: stamp request arrival for first-token latency.
+      try { markRequestStart(streamId, streamStartMs); } catch (e) { safeCatch(e); }
 
       if (!request || typeof request !== 'object' || !request.user_id || !request.message || !request.conversation_id) {
         event.sender.send('homebot:stream-error', { error: true, message: 'Invalid request format.', streamId });
@@ -4399,6 +4408,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 const ttfb = Date.now() - streamStartMs;
                 console.log(`[PERF] TTFB streamId=${streamId} ${ttfb}ms`);
                 try { event.sender.send('homebot:stream-ttfb', { streamId, ttfbMs: ttfb }); } catch (e) { safeCatch(e); }
+                try { markFirstToken(streamId); } catch (e) { safeCatch(e); }
               }
               assistantResponse += chunk;
               try { pushRouter(`OLLAMA emitted chunk streamId=${streamId} len=${String(chunk?.length ?? 0)}`); } catch (e) { safeCatch(e); }
@@ -4455,6 +4465,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               proxyAssistantResponse += text;
               // forward raw chunk to renderer
               try { pushRouter(`PROXY emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) { safeCatch(e); }
+              try { markFirstToken(streamId); } catch (e) { safeCatch(e); }
               event.sender.send('homebot:stream-chunk', { chunk: text, streamId });
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-chunk (proxy)', { streamId, chunkLen: String(chunk).length, snippet: String(chunk).substring(0, 120) });
@@ -5035,6 +5046,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   if (!activeStreams.has(streamId)) return;
                   llmAssistantResponse += chunk;
                   try { pushRouter(`LLM emitted chunk streamId=${streamId} len=${String(chunk).length}`); } catch (e) { safeCatch(e); }
+                  try { markFirstToken(streamId); } catch (e) { safeCatch(e); }
                   try { event.sender.send('homebot:stream-chunk', { chunk, streamId }); } catch (e) { safeCatch(e); }
                   if (process.env.NODE_ENV !== 'production') logDebug('[DIAG] direct-ollama chunk', { streamId, len: String(chunk).length, snippet: String(chunk).substring(0,120) });
                 },

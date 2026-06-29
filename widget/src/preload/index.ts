@@ -30,6 +30,7 @@ import {
   HomeBotResponse,
   ConnectionStatus,
   ElectronAPI,
+  PerfStatSummary,
   Settings,
   StoredConversation,
   ConversationStore,
@@ -309,6 +310,14 @@ const electronAPI: ElectronAPI = {
 
   readDebugLogs: async (): Promise<{ success: boolean; rendererLogs?: string[]; mainLogs?: string[]; conversationStore?: any; error?: string }> => {
     return await ipcRenderer.invoke('homebot:read-debug-logs');
+  },
+
+  getPerfAggregates: async (): Promise<{ startup: PerfStatSummary; firstToken: PerfStatSummary }> => {
+    return await ipcRenderer.invoke('homebot:get-perf-aggregates');
+  },
+
+  getPerfHistory: async (limit?: number): Promise<{ startup: number[]; firstToken: number[] }> => {
+    return await ipcRenderer.invoke('homebot:get-perf-history', typeof limit === 'number' ? limit : 20);
   },
 
   getMode: async (): Promise<{ demo: boolean }> => {
