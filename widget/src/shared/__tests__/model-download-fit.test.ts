@@ -118,3 +118,43 @@ describe('assessModelDownloadFit severity ladder', () => {
     expect(r.severity).toBe('insufficient');
   });
 });
+
+// Simulates the FirstRunModal auto-pull guard: given free disk space and the
+// recommended model set, which models get pulled vs. skipped. Mirrors the
+// `if (!fit.fits) continue;` logic wired into checkModelsAndPull.
+describe('FirstRunModal auto-pull disk guard (decision simulation)', () => {
+  type M = { name: string; sizeGB: number };
+  const decide = (models: M[], freeGB: number | null) =>
+    models.filter(m => assessModelDownloadFit({ sizeGB: m.sizeGB, freeGB }).fits).map(m => m.name);
+
+  const set14b: M[] = [
+    { name: 'qwen2.5:14b', sizeGB: 8.2 },
+    { name: 'nomic-embed-text', sizeGB: 0.3 },
+  ];
+
+  test('plenty of space → pulls every model', () => {
+    expect(decide(set14b, 200)).toEqual(['qwen2.5:14b', 'nomic-embed-text']);
+  });
+
+  test('only room for the embedding model → big chat model is skipped', () => {
+    // 5 GB free: 8.2 GB chat model is insufficient (skipped), 0.3 GB embed fits.
+    expect(decide(set14b, 5)).toEqual(['nomic-embed-text']);
+  });
+
+  test('tight space still pulls (fails toward attempting)', () => {
+    // 9 GB free vs 8.2 GB model → tight, but tight.fits === true.
+    const fit = assessModelDownloadFit({ sizeGB: 8.2, freeGB: 9 });
+    expect(fit.severity).toBe('tight');
+    expect(decide(set14b, 9)).toEqual(['qwen2.5:14b', 'nomic-embed-text']);
+  });
+
+  test('unknown free disk fails open → nothing skipped', () => {
+    expect(decide(set14b, null)).toEqual(['qwen2.5:14b', 'nomic-embed-text']);
+  });
+
+  test('insufficient chat fit carries a user-facing message', () => {
+    const chatFit = assessModelDownloadFit({ sizeGB: 8.2, freeGB: 5 });
+    expect(chatFit.severity).toBe('insufficient');
+    expect(chatFit.message).toMatch(/Not enough disk space/);
+  });
+});

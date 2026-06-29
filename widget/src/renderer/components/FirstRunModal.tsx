@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { Settings, CustomLLMConfig } from '../../shared/types';
 import { recommendModelsForVram } from '../../shared/hardware-presets';
+import { assessModelDownloadFit, type ModelDownloadFit } from '../../shared/model-download-fit';
 
 type Step = 'welcome' | 'setup' | 'done';
 const STEPS: Step[] = ['welcome', 'setup', 'done'];
@@ -50,8 +51,8 @@ const PROVIDER_URLS: Record<string, string> = {
 };
 
 const ESSENTIAL_MODELS = [
-  { name: 'qwen2.5:7b', desc: 'Chat model', sizeHint: '4.7 GB' },
-  { name: 'nomic-embed-text', desc: 'Embeddings for RAG', sizeHint: '274 MB' },
+  { name: 'qwen2.5:7b', desc: 'Chat model', sizeHint: '4.7 GB', sizeGB: 4.7 },
+  { name: 'nomic-embed-text', desc: 'Embeddings for RAG', sizeHint: '274 MB', sizeGB: 0.3 },
 ];
 
 type LocalSetupPhase =
@@ -104,8 +105,10 @@ export default function FirstRunModal({
   const [gpuInfo, setGpuInfo] = useState<{ vramGB: number | null; gpuName: string | null } | null>(null);
   const [diskWarning, setDiskWarning] = useState<string | null>(null);
   const [diskOk, setDiskOk] = useState<boolean>(true);
+  const [modelDiskFit, setModelDiskFit] = useState<ModelDownloadFit | null>(null);
   const pullCancelledRef = useRef(false);
   const gpuInfoRef = useRef<{ vramGB: number | null; gpuName: string | null } | null>(null);
+  const freeDiskGBRef = useRef<number | null>(null);
 
   // Cloud path state
   const [cloudProvider, setCloudProvider] = useState<CustomLLMConfig['provider']>('groq');
@@ -157,7 +160,7 @@ export default function FirstRunModal({
       // Falls back to the balanced default (qwen2.5:7b) when VRAM is unknown.
       const rec = recommendModelsForVram(gpuInfoRef.current?.vramGB ?? null);
       const essentialModels = [
-        { name: rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB` },
+        { name: rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB`, sizeGB: rec.chat.sizeGB },
         ...ESSENTIAL_MODELS.filter(m => m.name !== 'qwen2.5:7b'),
       ];
 
@@ -167,11 +170,25 @@ export default function FirstRunModal({
         return;
       }
 
+      // Model-size-aware disk guard. The disk.ok check in runLocalSetup is a flat
+      // threshold; this compares the *actual* recommended chat model size against
+      // free disk space so we never kick off a multi-GB pull that can't finish.
+      const freeGB = freeDiskGBRef.current;
+      const chatFit = assessModelDownloadFit({ sizeGB: rec.chat.sizeGB, freeGB });
+      setModelDiskFit(chatFit.severity === 'ok' ? null : chatFit);
+
       setLocalPhase('pulling-models');
       pullCancelledRef.current = false;
       const pulled: string[] = [];
       for (let i = 0; i < missing.length; i++) {
         if (pullCancelledRef.current) break;
+        // Skip any model that definitively won't fit instead of starting a doomed
+        // download. unknown/tight/ok all proceed (the guard fails open).
+        const fit = assessModelDownloadFit({ sizeGB: missing[i].sizeGB, freeGB });
+        if (!fit.fits) {
+          console.warn('Skipping model pull \u2014 insufficient disk:', missing[i].name, fit.message);
+          continue;
+        }
         setModelPullIndex(i);
         setModelPullProgress({ model: missing[i].name, status: 'starting pull...', percent: 0, completedMB: null, totalMB: null });
         try {
@@ -197,6 +214,7 @@ export default function FirstRunModal({
     setOllamaError(null);
     setDiskWarning(null);
     setDiskOk(true);
+    setModelDiskFit(null);
     detectHardware();
 
     // Check disk space before potentially pulling large models
@@ -205,6 +223,8 @@ export default function FirstRunModal({
       if (diagResult?.disk) {
         setDiskOk(diagResult.disk.ok);
         setDiskWarning(diagResult.disk.warning ?? null);
+        freeDiskGBRef.current =
+          typeof diagResult.disk.freeGB === 'number' ? diagResult.disk.freeGB : null;
       }
     } catch { /* non-critical — don't block setup */ }
 
@@ -441,6 +461,14 @@ export default function FirstRunModal({
               {diskWarning && (
                 <div className={`wizard-status ${diskOk ? 'warning' : 'error'}`}>
                   💾 {diskWarning}
+                </div>
+              )}
+
+              {/* Model-specific disk fit — the recommended chat model vs. free space */}
+              {modelDiskFit && modelDiskFit.message && (
+                <div className={`wizard-status ${modelDiskFit.severity === 'insufficient' ? 'error' : 'warning'}`}>
+                  💾 {modelDiskFit.message}
+                  {modelDiskFit.severity === 'insufficient' && ' The chat model download was skipped.'}
                 </div>
               )}
 
