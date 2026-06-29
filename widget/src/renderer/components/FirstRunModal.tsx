@@ -102,6 +102,8 @@ export default function FirstRunModal({
   const [modelsPulled, setModelsPulled] = useState<string[]>([]);
   const [modelPullIndex, setModelPullIndex] = useState(0);
   const [gpuInfo, setGpuInfo] = useState<{ vramGB: number | null; gpuName: string | null } | null>(null);
+  const [diskWarning, setDiskWarning] = useState<string | null>(null);
+  const [diskOk, setDiskOk] = useState<boolean>(true);
   const pullCancelledRef = useRef(false);
   const gpuInfoRef = useRef<{ vramGB: number | null; gpuName: string | null } | null>(null);
 
@@ -193,7 +195,18 @@ export default function FirstRunModal({
   const runLocalSetup = useCallback(async () => {
     setLocalPhase('checking');
     setOllamaError(null);
+    setDiskWarning(null);
+    setDiskOk(true);
     detectHardware();
+
+    // Check disk space before potentially pulling large models
+    try {
+      const diagResult = await (window as any).electron.runDiagnostics?.();
+      if (diagResult?.disk) {
+        setDiskOk(diagResult.disk.ok);
+        setDiskWarning(diagResult.disk.warning ?? null);
+      }
+    } catch { /* non-critical — don't block setup */ }
 
     // 1. Check if Ollama is running
     try {
@@ -424,6 +437,13 @@ export default function FirstRunModal({
                 </div>
               )}
 
+              {/* Disk space warning — shown whenever there is a warning, regardless of phase */}
+              {diskWarning && (
+                <div className={`wizard-status ${diskOk ? 'warning' : 'error'}`}>
+                  💾 {diskWarning}
+                </div>
+              )}
+
               {/* Phase: Checking models */}
               {localPhase === 'checking-models' && (
                 <div className="wizard-status checking">
@@ -563,9 +583,9 @@ export default function FirstRunModal({
                 type="button"
                 onClick={() => setStep('done')}
                 className="first-run-btn first-run-btn-primary"
-                disabled={(setupPath === 'local' && localBusy) || (setupPath === 'cloud' && cloudOk !== true && cloudApiKey.trim().length > 0)}
+                disabled={(setupPath === 'local' && (localBusy || !diskOk)) || (setupPath === 'cloud' && cloudOk !== true && cloudApiKey.trim().length > 0)}
               >
-                {setupPath === 'local' && localPhase === 'ready' ? 'Next' : setupPath === 'local' && localBusy ? 'Setting up...' : setupPath === 'local' ? 'Continue anyway' : 'Next'}
+                {setupPath === 'local' && !diskOk ? 'Free up disk space first' : setupPath === 'local' && localPhase === 'ready' ? 'Next' : setupPath === 'local' && localBusy ? 'Setting up...' : setupPath === 'local' ? 'Continue anyway' : 'Next'}
               </button>
             )}
             {step === 'done' && (
