@@ -80,7 +80,11 @@ describe('SettingsPanel — perf trend sparkline', () => {
     expandSection(container, 'Diagnostics');
 
     await waitFor(() => expect(getHist).toHaveBeenCalledTimes(1));
-    const refreshBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Refresh') as HTMLButtonElement;
+    // Scope to the Performance metrics group — other sections (e.g. Telemetry
+    // Consent Log) also render a "Refresh" button, and it appears earlier in the DOM.
+    const perfGroup = Array.from(container.querySelectorAll('.setting-group'))
+      .find(g => g.textContent?.includes('Performance metrics')) as HTMLElement;
+    const refreshBtn = Array.from(perfGroup.querySelectorAll('button')).find(b => b.textContent === 'Refresh') as HTMLButtonElement;
     fireEvent.click(refreshBtn);
     await waitFor(() => expect(getHist).toHaveBeenCalledTimes(2));
   });
