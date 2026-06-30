@@ -44,29 +44,6 @@ import { IPC_SEND_MESSAGE } from '../shared/constants';
 // Whitelist of allowed IPC channels
 const ALLOWED_CHANNELS = {
   SEND: IPC_SEND_MESSAGE,
-<<<<<<< HEAD
-  RECEIVE: 'sadie:reply',
-  GET_SETTINGS: 'sadie:get-settings',
-  GET_MODE: 'sadie:get-mode',
-  SAVE_SETTINGS: 'sadie:save-settings',
-  HAS_PERMISSION: 'sadie:has-permission',
-  RESET_PERMISSIONS: 'sadie:reset-permissions',
-  EXPORT_CONSENT: 'sadie:export-consent',
-  READ_CONSENT_LOG: 'sadie:read-consent-log',
-  SHOW_WINDOW: 'sadie:show-window',
-  HIDE_WINDOW: 'sadie:hide-window',
-  STREAM_SEND: 'sadie:stream-message',
-  STREAM_CHUNK: 'sadie:stream-chunk',
-  STREAM_END: 'sadie:stream-end',
-  STREAM_ERROR: 'sadie:stream-error',
-  CONFIRMATION_REQUEST: 'sadie:confirmation-request',
-  CONFIRMATION_RESPONSE: 'sadie:confirmation-response',
-  PERMISSION_REQUEST: 'sadie:permission-request',
-  PERMISSION_RESPONSE: 'sadie:permission-response',
-  GET_ENV: 'sadie:get-env',
-  GET_CONFIG_PATH: 'sadie:get-config-path',
-  AUTOMATION_EXECUTE: 'automation:execute'
-=======
   RECEIVE: 'homebot:reply',
   GET_SETTINGS: 'homebot:get-settings',
   GET_MODE: 'homebot:get-mode',
@@ -91,7 +68,6 @@ const ALLOWED_CHANNELS = {
   GET_ENV: 'homebot:get-env',
   GET_CONFIG_PATH: 'homebot:get-config-path',
   GET_GENERATED_IMAGE: 'homebot:get-generated-image'
->>>>>>> origin/main
 };
 
 // Listen for router logs forwarded from main so tests and Playwright traces
@@ -564,15 +540,6 @@ const electronAPI: ElectronAPI = {
 
   // Restart the app (for settings that require restart)
   restartApp: async (): Promise<void> => {
-<<<<<<< HEAD
-    return await ipcRenderer.invoke('sadie:restart-app');
-  },
-
-  // Automation Control Center API
-  executeAutomation: async (operation: string, params?: any): Promise<{ success: boolean; result?: any; error?: string }> => {
-    return await ipcRenderer.invoke(ALLOWED_CHANNELS.AUTOMATION_EXECUTE, { operation, params });
-  }
-=======
     return await ipcRenderer.invoke('homebot:restart-app');
   },
 
@@ -677,7 +644,6 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:save-quiz-progress', progress),
   loadQuizProgress: async () =>
     ipcRenderer.invoke('homebot:load-quiz-progress'),
->>>>>>> origin/main
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.

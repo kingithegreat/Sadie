@@ -4,10 +4,6 @@ import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
 import PermissionModal from './components/PermissionModal';
-<<<<<<< HEAD
-import ConversationSidebar from "./components/ConversationSidebar";
-import { AutomationCenter } from "./components/AutomationCenter";
-=======
 import { ToastContainer, useToasts } from './components/ToastContainer';
 import ModelSelector from './components/ModelSelector';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -29,7 +25,6 @@ const ShortcutsPanel = lazy(() => import("./components/ShortcutsPanel"));
 const NotificationHistory = lazy(() => import("./components/NotificationHistory"));
 const DashboardPanel = lazy(() => import("./components/DashboardPanel"));
 const VoiceConversation = lazy(() => import("./components/VoiceConversation"));
->>>>>>> origin/main
 import type {
   ChatMessage,
   StreamingState
@@ -47,11 +42,7 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-<<<<<<< HEAD
-type AppMode = 'chat' | 'automation';
-=======
 type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz' | 'dashboard';
->>>>>>> origin/main
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -189,15 +180,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
   const [backendDiagnostic, setBackendDiagnostic] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
-<<<<<<< HEAD
-  const [mode, setMode] = useState<AppMode>('chat');
-=======
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
   const [vramGB, setVramGB] = useState<number | null>(null);
   const lastModelTipRef = useRef<string>('');
   const [pendingModelSuggestion, setPendingModelSuggestion] = useState<PendingModelSuggestion | null>(null);
->>>>>>> origin/main
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
@@ -1244,19 +1231,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
         mode={mode}
         onModeChange={setMode}
-<<<<<<< HEAD
-      />
-
-      {/* Main Content Area */}
-      {mode === 'chat' ? (
-        <ChatInterface 
-          messages={messages}
-          onSendMessage={handleSendMessage}
-          onUserCancel={handleUserCancel}
-        />
-      ) : (
-        <AutomationCenter />
-=======
         currentModel={settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
@@ -1365,7 +1339,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             handleSendMessage(`I've fetched the web page "${url}". Please summarize this content.`, undefined, [doc]);
           }} />
         </Suspense>
->>>>>>> origin/main
       )}
 
       {/* Action Confirmation Modal */}
