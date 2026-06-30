@@ -4,6 +4,7 @@ import TelemetryDashboard from './TelemetryDashboard';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 import { buildSparkline } from '../../shared/sparkline';
 import { buildPerfAdvice } from '../../shared/perf-advice';
+import { buildSupportReport } from '../../shared/support-report';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -238,6 +239,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setSysCheckError(e?.message || 'System check failed.');
     } finally {
       setSysCheckLoading(false);
+    }
+  };
+
+  // Copy a combined diagnostics "support report" (perf + system check + env)
+  // to the clipboard so users can paste a full snapshot when reporting issues.
+  const [reportCopied, setReportCopied] = useState(false);
+  const copySupportReport = async () => {
+    const report = buildSupportReport({
+      generatedAt: new Date().toISOString(),
+      platform: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      perf: perfStats,
+      systemCheck: sysCheck,
+    });
+    try {
+      await navigator.clipboard.writeText(report);
+      setReportCopied(true);
+      setTimeout(() => setReportCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable — non-critical */
     }
   };
 
@@ -2172,6 +2192,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             })()}
             <button type="button" className="button button-cancel" style={{ marginTop: 8 }} onClick={() => { void runSystemCheck(); }} disabled={sysCheckLoading}>
               {sysCheckLoading ? 'Checking\u2026' : (sysCheck ? 'Re-run system check' : 'Run system check')}
+            </button>
+            <button type="button" className="button button-cancel" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => { void copySupportReport(); }} title="Copy a diagnostics snapshot (performance + system check + environment) to the clipboard">
+              {reportCopied ? '\u2713 Copied' : '\ud83d\udccb Copy support report'}
             </button>
           </div>
         </>}
