@@ -1,0 +1,45 @@
+name: CI
+
+# Consolidated install + typecheck + test + build gate for the Electron/TS app.
+# Complements the existing lint/playwright/release workflows; does not replace
+# them. Required by auto-merge.yml.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - 'ci/**'
+      - 'claude/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Lint (if configured)
+        run: npm run lint --if-present
+
+      - name: Test (jest)
+        run: npm test
+
+      - name: Build (if configured)
+        run: npm run build --if-present
