@@ -4,6 +4,7 @@ import TelemetryDashboard from './TelemetryDashboard';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 import { buildSparkline } from '../../shared/sparkline';
 import { buildPerfAdvice } from '../../shared/perf-advice';
+import { buildSupportReport } from '../../shared/support-report';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -211,6 +212,54 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (openSections.diagnostics && !perfStats && !perfLoading) { void loadPerfStats(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSections.diagnostics]);
+
+  // System check: on-demand re-run of the first-run environment diagnostics
+  // (disk / Ollama / n8n / Qdrant / write-permissions / GPU). Reuses the
+  // existing `homebot:run-diagnostics` IPC — renderer-only, no main changes.
+  type SysCheckReport = {
+    disk: { freeGB: number | null; ok: boolean; warning: string | null };
+    ollama: { reachable: boolean; latencyMs: number | null };
+    n8n: { reachable: boolean; latencyMs: number | null };
+    qdrant: { reachable: boolean; latencyMs: number | null };
+    permissions: { canWrite: boolean };
+    hardware: { vramGB: number | null; gpuName: string | null; profile: string | null };
+    timestamp: string;
+  };
+  const [sysCheck, setSysCheck] = useState<SysCheckReport | null>(null);
+  const [sysCheckLoading, setSysCheckLoading] = useState(false);
+  const [sysCheckError, setSysCheckError] = useState<string | null>(null);
+  const runSystemCheck = async () => {
+    setSysCheckLoading(true);
+    setSysCheckError(null);
+    try {
+      const r = await (window as any).electron?.runDiagnostics?.();
+      if (r) setSysCheck(r as SysCheckReport);
+      else setSysCheckError('System check is unavailable on this build.');
+    } catch (e: any) {
+      setSysCheckError(e?.message || 'System check failed.');
+    } finally {
+      setSysCheckLoading(false);
+    }
+  };
+
+  // Copy a combined diagnostics "support report" (perf + system check + env)
+  // to the clipboard so users can paste a full snapshot when reporting issues.
+  const [reportCopied, setReportCopied] = useState(false);
+  const copySupportReport = async () => {
+    const report = buildSupportReport({
+      generatedAt: new Date().toISOString(),
+      platform: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      perf: perfStats,
+      systemCheck: sysCheck,
+    });
+    try {
+      await navigator.clipboard.writeText(report);
+      setReportCopied(true);
+      setTimeout(() => setReportCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable — non-critical */
+    }
+  };
 
   // Fetch installed Ollama models on mount
   useEffect(() => {
@@ -2111,6 +2160,41 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             })()}
             <button type="button" className="button button-cancel" style={{ marginTop: 8 }} onClick={() => { void loadPerfStats(); }} disabled={perfLoading}>
               {perfLoading ? 'Refreshing\u2026' : 'Refresh'}
+            </button>
+          </div>
+
+          <div className="setting-group">
+            <label className="setting-label">\ud83e\ude7a System check</label>
+            <small className="setting-hint">Re-run the first-run environment checks on demand: disk space, Ollama / n8n / Qdrant reachability, write permissions, and detected GPU.</small>
+            {sysCheckError && <div className="perf-empty">{sysCheckError}</div>}
+            {sysCheck && (() => {
+              const dotColor = (ok: boolean | null) => ok === null ? '#8b949e' : ok ? '#3fb950' : '#f85149';
+              const Item = ({ label, ok, detail }: { label: string; ok: boolean | null; detail?: string }) => (
+                <div className="syscheck-row" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '2px 0' }}>
+                  <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: '50%', flex: '0 0 auto', background: dotColor(ok), display: 'inline-block' }} />
+                  <span style={{ fontWeight: 600 }}>{label}</span>
+                  {detail && <span style={{ opacity: 0.8 }}>\u2014 {detail}</span>}
+                </div>
+              );
+              const svc = (s: { reachable: boolean; latencyMs: number | null }) =>
+                s.reachable ? `online${s.latencyMs != null ? ` (${s.latencyMs} ms)` : ''}` : 'offline';
+              return (
+                <div className="syscheck-results" style={{ marginTop: 6 }}>
+                  <Item label="Disk space" ok={sysCheck.disk.ok} detail={sysCheck.disk.freeGB != null ? `${sysCheck.disk.freeGB.toFixed(1)} GB free${sysCheck.disk.warning ? ` \u2014 ${sysCheck.disk.warning}` : ''}` : 'unknown'} />
+                  <Item label="Ollama" ok={sysCheck.ollama.reachable} detail={svc(sysCheck.ollama)} />
+                  <Item label="n8n" ok={sysCheck.n8n.reachable} detail={svc(sysCheck.n8n)} />
+                  <Item label="Qdrant" ok={sysCheck.qdrant.reachable} detail={svc(sysCheck.qdrant)} />
+                  <Item label="Write permissions" ok={sysCheck.permissions.canWrite} detail={sysCheck.permissions.canWrite ? 'OK' : 'cannot write to userData'} />
+                  <Item label="GPU" ok={sysCheck.hardware.vramGB != null ? true : null} detail={sysCheck.hardware.vramGB != null ? `${sysCheck.hardware.gpuName ?? 'GPU'} \u00b7 ${sysCheck.hardware.vramGB} GB${sysCheck.hardware.profile ? ` \u00b7 ${sysCheck.hardware.profile}` : ''}` : 'not detected'} />
+                  <small className="setting-hint" style={{ display: 'block', marginTop: 4 }}>Last run: {new Date(sysCheck.timestamp).toLocaleTimeString()}</small>
+                </div>
+              );
+            })()}
+            <button type="button" className="button button-cancel" style={{ marginTop: 8 }} onClick={() => { void runSystemCheck(); }} disabled={sysCheckLoading}>
+              {sysCheckLoading ? 'Checking\u2026' : (sysCheck ? 'Re-run system check' : 'Run system check')}
+            </button>
+            <button type="button" className="button button-cancel" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => { void copySupportReport(); }} title="Copy a diagnostics snapshot (performance + system check + environment) to the clipboard">
+              {reportCopied ? '\u2713 Copied' : '\ud83d\udccb Copy support report'}
             </button>
           </div>
         </>}

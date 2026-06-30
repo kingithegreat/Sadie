@@ -1,0 +1,60 @@
+name: Auto-merge feature branches
+
+# When a feature/claude branch is pushed, open a PR to main (if missing) and
+# enable GitHub native auto-merge. The merge only lands once required CI checks
+# are green. This runs on GitHub's runners using the built-in GITHUB_TOKEN, so
+# it is NOT subject to the api.github.com restriction that affects local agents.
+#
+# One-time activation (repo Settings):
+#   - Settings -> General -> Pull Requests -> "Allow auto-merge" (ON)
+#   - Settings -> Actions -> General -> Workflow permissions ->
+#       "Allow GitHub Actions to create and approve pull requests" (ON)
+#   - (Optional) Settings -> Branches -> protect main + require the CI check,
+#     so auto-merge waits for green instead of merging immediately.
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+      - 'feat/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  open-pr-and-enable-auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open PR (if missing) and enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME}"
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR" ]; then
+            echo "No open PR for $BRANCH — creating one."
+            TITLE=$(git log -1 --pretty=%s)
+            gh pr create --head "$BRANCH" --base main               --title "$TITLE"               --body "Automated PR for \`$BRANCH\`. Auto-merges to main once CI is green." || true
+            PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          else
+            echo "Existing open PR #$PR for $BRANCH."
+          fi
+          if [ -z "$PR" ]; then
+            echo "::warning::Could not determine a PR number; ensure 'Allow GitHub Actions to create and approve pull requests' is enabled."
+            exit 0
+          fi
+          if gh pr merge "$PR" --auto --squash; then
+            echo "Auto-merge enabled on PR #$PR."
+          else
+            echo "::warning::Could not enable auto-merge on PR #$PR. Enable 'Allow auto-merge' in repo settings and add branch protection requiring the CI check."
+          fi

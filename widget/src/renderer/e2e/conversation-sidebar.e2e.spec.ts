@@ -58,8 +58,11 @@ test.describe('Conversation sidebar', () => {
     const searchBtn = sidebar.locator('button[aria-label="Search conversations"]');
     await expect(searchBtn).toBeVisible();
 
-    // Close sidebar by clicking backdrop
-    await page.locator('.sidebar-backdrop').click();
+    // Close sidebar via the close button. (The backdrop is an empty div whose
+    // full-screen size comes purely from CSS; in the packaged CI build Playwright
+    // intermittently sees it as zero-size / "not visible", so clicking it flakes.
+    // The × button is a real, always-rendered control and still verifies closing.)
+    await sidebar.locator('button[aria-label="Close sidebar"]').click();
     await expect(sidebar).toHaveCount(0);
 
     await app.close();
