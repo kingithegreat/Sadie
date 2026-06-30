@@ -308,17 +308,17 @@ export interface ElectronAPI {
   captureLogs?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Test-only: invoke arbitrary IPC channels (E2E only)
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
-<<<<<<< HEAD
-  
-  // Automation operations
-  executeAutomation?: (operation: string, params?: any) => Promise<{ success: boolean; result?: any; error?: string }>;
-=======
 
   listCustomLLMModels?: (config: { apiUrl: string; apiKey?: string; provider?: CustomLLMConfig['provider'] }) => Promise<{ success: boolean; models?: CustomModelInfo[]; error?: string }>;
 
   // Image generation helper
   executeImageGenerate?: (params: { action: string; payload?: any }) => Promise<any>;
   getGeneratedImage?: (filename: string) => Promise<string | null>;
+  // Local image-gen backend (stable-diffusion.cpp) status + one-time setup
+  sdCppStatus?: () => Promise<{ ready: boolean; hasBinary: boolean; hasModel: boolean; dir: string; modelsDir: string }>;
+  sdCppSetup?: () => Promise<{ success: boolean; dir?: string; modelsDir?: string; instructions?: string[] }>;
+  // Full system/connectivity diagnostics report
+  runDiagnostics?: () => Promise<{ success: boolean; error?: string; [key: string]: any }>;
 
   // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
   writeClipboard?: (text: string) => void;
@@ -531,5 +531,4 @@ export interface SavedAutomation {
   lastResult?: string;
   lastStatus?: 'success' | 'error';
   createdAt: string;
->>>>>>> origin/main
 }
