@@ -1,0 +1,23 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  lint:
+    name: ESLint (React Hooks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # --ignore-scripts: lint needs only the JS eslint toolchain, not the
+      # native/electron postinstall — keeps this job fast and flake-free.
+      - name: Install widget dependencies
+        run: npm ci --prefix widget --ignore-scripts
+      - name: ESLint (errors on react-hooks/rules-of-hooks)
+        run: npm run lint --prefix widget

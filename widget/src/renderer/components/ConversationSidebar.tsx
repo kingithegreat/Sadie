@@ -304,8 +304,6 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     });
   };
 
-  if (!isOpen) return null;
-
   const filteredConversations = useMemo(() => {
     let list = conversations.filter(c => showArchived ? !!c.archived : !c.archived);
     if (filterText.trim()) {
@@ -320,6 +318,9 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     });
     return list;
   }, [conversations, showArchived, filterText, sortBy]);
+
+  // All hooks must run before any early return (react-hooks/rules-of-hooks).
+  if (!isOpen) return null;
 
   if (showSearch) {
     return (
