@@ -199,6 +199,21 @@ export default function FirstRunModal({
     setDiskOk(true);
     detectHardware();
 
+    // E2E: skip the real Ollama detection. With no Ollama present,
+    // checkConnection / checkOllamaInstalled / startOllama each run their full
+    // network/spawn timeouts, which left the footer button stuck on "Setting
+    // up…" well past the test's click timeout and flaked the first-run specs.
+    // Jump straight to a deterministic terminal phase so "Continue anyway" is
+    // immediately available. (diskOk stays true from above so the button isn't
+    // gated on disk.)
+    try {
+      const env = await (window as any).electron?.getEnv?.();
+      if (env?.isE2E) {
+        setLocalPhase('ollama-missing');
+        return;
+      }
+    } catch { /* fall through to real detection */ }
+
     // Check disk space before potentially pulling large models
     try {
       const diagResult = await (window as any).electron.runDiagnostics?.();

@@ -88,9 +88,17 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
   // flags (--remote-debugging-port, --inspect) as "bad option" in Electron 28.
   const electronPath = require('electron') as unknown as string;
 
+  // On headless Linux CI runners the Chromium sandbox helper isn't configured,
+  // so Electron exits immediately with "Process failed to launch!". Disable the
+  // sandbox / GPU there (harmless flags, scoped to Linux so macOS/Windows and
+  // local dev keep their normal launch behaviour).
+  const launchFlags = process.platform === 'linux'
+    ? ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
+    : [];
+
   const app = await electron.launch({
     executablePath: electronPath,
-    args: [entry],
+    args: [entry, ...launchFlags],
     env: mergedEnv,
   });
 
