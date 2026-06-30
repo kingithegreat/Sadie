@@ -295,6 +295,8 @@ export interface ElectronAPI {
 
   // Diagnostic: baseline perf aggregates (startup + first-token/TTFT) for the Settings Diagnostics section
   getPerfAggregates?: () => Promise<{ startup: PerfStatSummary; firstToken: PerfStatSummary }>;
+  // Diagnostic: recent raw perf samples (chronological) for the Diagnostics trend sparklines
+  getPerfHistory?: (limit?: number) => Promise<{ startup: number[]; firstToken: number[] }>;
   
   // Diagnostic: get env info
   getEnv?: () => Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }>;

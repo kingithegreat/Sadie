@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
+import { buildSparkline } from '../../shared/sparkline';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -191,12 +192,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Diagnostics & Performance: baseline startup + first-token (TTFT) aggregates
   const [perfStats, setPerfStats] = useState<{ startup: PerfStatSummary; firstToken: PerfStatSummary } | null>(null);
+  const [perfHistory, setPerfHistory] = useState<{ startup: number[]; firstToken: number[] } | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
   const loadPerfStats = async () => {
     setPerfLoading(true);
     try {
-      const r = await window.electron?.getPerfAggregates?.();
+      const [r, h] = await Promise.all([
+        window.electron?.getPerfAggregates?.(),
+        window.electron?.getPerfHistory?.(20),
+      ]);
       if (r) setPerfStats(r);
+      if (h) setPerfHistory(h);
     } catch { /* ignore — empty-state will render */ }
     finally { setPerfLoading(false); }
   };
@@ -2030,7 +2036,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               if (!hasData) {
                 return <div className="perf-empty">No performance samples yet. Use HomeBot for a bit — startup and chat timings will appear here.</div>;
               }
-              const Row = ({ title, stat }: { title: string; stat: PerfStatSummary }) => (
+              const Sparkline = ({ series }: { series: number[] }) => {
+                const geo = buildSparkline(series, { width: 120, height: 26, padding: 3 });
+                if (!geo.hasData) return null;
+                return (
+                  <svg
+                    className="perf-sparkline"
+                    width={geo.width}
+                    height={geo.height}
+                    viewBox={`0 0 ${geo.width} ${geo.height}`}
+                    role="img"
+                    aria-label={`Trend of last ${series.length} samples — min ${geo.min} ms, max ${geo.max} ms, latest ${geo.last} ms`}
+                    preserveAspectRatio="none"
+                  >
+                    <path d={geo.areaPath} fill="currentColor" fillOpacity={0.12} stroke="none" />
+                    <path d={geo.linePath} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+                    {geo.points.length > 0 && (
+                      <circle cx={geo.points[geo.points.length - 1].x} cy={geo.points[geo.points.length - 1].y} r={2} fill="currentColor" />
+                    )}
+                  </svg>
+                );
+              };
+              const Row = ({ title, stat, series }: { title: string; stat: PerfStatSummary; series: number[] }) => (
                 <div className="perf-row">
                   <div className="perf-row-title">{title}</div>
                   {stat.count > 0 ? (
@@ -2042,12 +2069,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   ) : (
                     <div className="perf-badges"><span className="perf-badge-meta">no samples</span></div>
                   )}
+                  {series.length > 1 && (
+                    <div className="perf-trend" title={`Last ${series.length} samples (oldest → newest)`}>
+                      <Sparkline series={series} />
+                      <span className="perf-trend-label">last {series.length} · latest {series[series.length - 1]} ms</span>
+                    </div>
+                  )}
                 </div>
               );
+              const startupSeries = perfHistory?.startup ?? [];
+              const firstTokenSeries = perfHistory?.firstToken ?? [];
               return (
                 <div className="perf-metrics">
-                  <Row title="Startup" stat={perfStats!.startup} />
-                  <Row title="First token (TTFT)" stat={perfStats!.firstToken} />
+                  <Row title="Startup" stat={perfStats!.startup} series={startupSeries} />
+                  <Row title="First token (TTFT)" stat={perfStats!.firstToken} series={firstTokenSeries} />
                 </div>
               );
             })()}

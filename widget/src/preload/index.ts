@@ -316,6 +316,10 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:get-perf-aggregates');
   },
 
+  getPerfHistory: async (limit?: number): Promise<{ startup: number[]; firstToken: number[] }> => {
+    return await ipcRenderer.invoke('homebot:get-perf-history', typeof limit === 'number' ? limit : 20);
+  },
+
   getMode: async (): Promise<{ demo: boolean }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_MODE);
   },

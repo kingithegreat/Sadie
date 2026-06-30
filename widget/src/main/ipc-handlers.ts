@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, app, shell } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
-import { readPerfAggregates } from './utils/perf-logger';
+import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -205,6 +205,16 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         console.error('[IPC] get-perf-aggregates failed:', (e as any)?.message || e);
         const empty = { count: 0, avg_ms: 0, p50_ms: 0, p95_ms: 0, min_ms: 0, max_ms: 0, last_ms: null };
         return { startup: empty, firstToken: { ...empty } };
+      }
+    });
+
+    // Raw recent samples (chronological) for the Diagnostics trend sparklines
+    ipcMain.handle('homebot:get-perf-history', async (_evt, limit?: number) => {
+      try {
+        return readPerfHistory(typeof limit === 'number' ? limit : 20);
+      } catch (e) {
+        console.error('[IPC] get-perf-history failed:', (e as any)?.message || e);
+        return { startup: [], firstToken: [] };
       }
     });
 

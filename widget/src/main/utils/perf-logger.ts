@@ -158,6 +158,44 @@ function summarize(values: number[]): PerfStat {
   };
 }
 
+export interface PerfHistory {
+  startup: number[];
+  firstToken: number[];
+}
+
+/**
+ * Read the most recent raw samples from perf.log for trend sparklines.
+ *
+ * Returns up to `limit` startup and first-token `ms` values each, in
+ * chronological order (oldest -> newest), so the renderer can draw a left->right
+ * trend line. Never throws; on any error it returns empty arrays.
+ */
+export function readPerfHistory(limit = 20): PerfHistory {
+  const startup: number[] = [];
+  const firstToken: number[] = [];
+  const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 20;
+  try {
+    const file = getPerfLogPath();
+    if (fs.existsSync(file)) {
+      const lines = fs.readFileSync(file, 'utf-8').trim().split('\n').filter(Boolean);
+      for (const line of lines) {
+        let evt: any;
+        try { evt = JSON.parse(line); } catch { continue; }
+        if (typeof evt?.ms !== 'number' || !Number.isFinite(evt.ms)) continue;
+        if (evt.type === STARTUP) startup.push(evt.ms);
+        else if (evt.type === FIRST_TOKEN) firstToken.push(evt.ms);
+      }
+    }
+  } catch {
+    return { startup: [], firstToken: [] };
+  }
+  // Keep only the most recent `cap` of each, preserving chronological order.
+  return {
+    startup: startup.slice(-cap),
+    firstToken: firstToken.slice(-cap),
+  };
+}
+
 /**
  * Read and aggregate perf.log. Returns startup + first-token summaries
  * (count, avg, p50, p95, min, max, last) for a lightweight perf dashboard.
@@ -190,4 +228,5 @@ export default {
   markFirstToken,
   clearRequest,
   readPerfAggregates,
+  readPerfHistory,
 };
