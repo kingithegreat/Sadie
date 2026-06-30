@@ -2,6 +2,10 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'src/renderer/e2e',
+  // live-sanity.e2e.spec.ts requires a real running Ollama server and can never
+  // pass in standard CI (status stays "disconnected"). It is run explicitly via
+  // the `e2e:live` script, which sets HOMEBOT_E2E_LIVE=1 to opt back in.
+  testIgnore: process.env.HOMEBOT_E2E_LIVE === '1' ? [] : ['**/live-sanity.e2e.spec.ts'],
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

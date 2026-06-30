@@ -36,7 +36,7 @@ test('streams chunks to UI', async () => {
 
 
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: /send/i }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   // Fetch main-process router logs for debugging (E2E-only)
   try {
@@ -119,7 +119,7 @@ test('cancel stops stream', async () => {
 
 
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: /send/i }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   // Wait until streaming controls are visible then click cancel quickly so
   // cancellation happens early in the upstream stream lifecycle.
@@ -209,7 +209,7 @@ test('handles upstream error', async () => {
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: /send/i }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
 
@@ -300,7 +300,7 @@ test('falls back to non-stream final text on stream init error', async () => {
 
   const beforeCount = await page.locator('[data-role="assistant-message"]').count();
   await page.getByLabel('Message HomeBot').fill('hello');
-  await page.getByRole('button', { name: /send/i }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
 

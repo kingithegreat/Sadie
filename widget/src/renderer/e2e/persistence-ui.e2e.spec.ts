@@ -47,7 +47,7 @@ test('UI -> message persistence and debug logs available', async () => {
 
   // Send a user message
   await page.getByLabel('Message HomeBot').fill('persistence-ui-test');
-  await page.getByRole('button', { name: /send/i }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   // Query conversation store via preload API
   const store = await page.evaluate(async () => (window as any).electron.loadConversations?.());
