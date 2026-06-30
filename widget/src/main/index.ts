@@ -6,6 +6,10 @@ function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
 import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
+<<<<<<< HEAD
+import { registerAutomationIpc } from './ipc-automation';
+import { sanitizeEnvForPackaged, isPackagedBuild } from './env';
+=======
 import { registerMessageRouter } from './message-router';
 import { initializeTools } from './tools';
 import { getSettings, saveSettings, applyHardwareProfile } from './config-manager';
@@ -21,6 +25,7 @@ import { shutdownMcpServers } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
 import { spawn } from 'child_process';
+>>>>>>> origin/main
 
 let mainWindow: BrowserWindow | null = null;
 function normalizeOllamaBaseUrl(raw?: string): string {
@@ -46,6 +51,81 @@ async function tryStartOllamaBackground(): Promise<void> {
       ]
     : ['ollama'];
 
+<<<<<<< HEAD
+  // Register automation IPC handlers
+  registerAutomationIpc('http://localhost:5678'); // Adjust n8n URL as needed
+  pushMainLog('Registered automation IPC handlers.');
+  logStartup('Registered automation IPC handlers.');
+
+  // Auto-start n8n on Windows using the shipped helper script. This ensures the
+  // local orchestrator is running before the renderer attempts to reach it.
+  if (process.platform === 'win32') {
+    try {
+      const scriptPath = require('path').join(process.cwd(), 'scripts', 'start-n8n.ps1');
+      spawn('powershell.exe', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
+      pushMainLog('Invoked start-n8n.ps1');
+    } catch (e) {
+      console.error('Failed to invoke start-n8n.ps1:', e);
+      pushMainLog('Failed to invoke start-n8n.ps1');
+    }
+  }
+
+  mainWindow = createMainWindow();
+  pushMainLog('Main window created');
+
+  // Register message router for SADIE backend communication
+  const { registerMessageRouter, setUncensoredMode, getUncensoredMode } = require('./message-router');
+  const n8nUrl = process.env.N8N_URL || require('../shared/constants').DEFAULT_N8N_URL;
+  if (mainWindow) registerMessageRouter(mainWindow, n8nUrl);
+  
+  // IPC handler for uncensored mode toggle
+  const { ipcMain } = require('electron');
+  ipcMain.handle('sadie:set-uncensored-mode', (_event: any, enabled: boolean) => {
+    setUncensoredMode(enabled);
+    return { success: true, enabled };
+  });
+  ipcMain.handle('sadie:get-uncensored-mode', () => {
+    return { enabled: getUncensoredMode() };
+  });
+  
+  // Restart app handler - relaunch from the correct directory
+  ipcMain.handle('sadie:restart-app', () => {
+    const execPath = process.execPath;
+    const appPath = app.getAppPath();
+    app.relaunch({ 
+      execPath: execPath,
+      args: [appPath]
+    });
+    app.exit(0);
+  });
+
+  // Diagnostic env handler
+  ipcMain.handle('sadie:get-env', () => {
+    const { isE2E, isPackagedBuild, isReleaseBuild } = require('./env');
+    return {
+      isE2E,
+      isPackagedBuild,
+      isReleaseBuild,
+      userDataPath: app.getPath('userData')
+    };
+  });
+  // Allow renderer to append a log string to the runtime diag file
+  ipcMain.on('sadie:append-renderer-log', (_e: IpcMainEvent, line: string) => {
+    try { appendDiagLog(`[RENDERER] ${line}`); } catch (e) {}
+  });
+
+  // Handler invoked by renderer to capture logs and return the file path
+  ipcMain.handle('sadie:capture-logs', async () => {
+    try {
+      const TS = new Date().toISOString().replace(/[:.]/g, '-');
+      const outPath = path.join((global as any).__SADIE_DIAG_DIR, `sadie-diagnostics-${TS}.log`);
+      // Copy runtime log file to snapshot
+      const src = (global as any).__SADIE_DIAG_FILE;
+      if (src && existsSync(src)) {
+        const content = require('fs').readFileSync(src, 'utf8');
+        require('fs').writeFileSync(outPath, content, 'utf8');
+        return { success: true, path: outPath };
+=======
   for (const cmd of candidates) {
     if (!cmd) continue;
     const ok = await new Promise<boolean>((resolve) => {
@@ -65,6 +145,7 @@ async function tryStartOllamaBackground(): Promise<void> {
         }, 200);
       } catch {
         resolve(false);
+>>>>>>> origin/main
       }
     });
     if (ok) return;

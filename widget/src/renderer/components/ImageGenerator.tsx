@@ -1,3 +1,17 @@
+<<<<<<< HEAD
+import React, { useState } from 'react';
+
+interface ImageGeneratorProps {}
+
+const ImageGenerator: React.FC<ImageGeneratorProps> = () => {
+  const [prompt, setPrompt] = useState('');
+  const [style, setStyle] = useState('realistic');
+  const [resolution, setResolution] = useState('512x512');
+  const [backend, setBackend] = useState('stability');
+  const [loading, setLoading] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+=======
 import React, { useState, useEffect } from 'react';
 
 interface SDCppStatus {
@@ -24,6 +38,7 @@ const ImageGenerator: React.FC = () => {
   useEffect(() => {
     (window as any).electron?.sdCppStatus?.().then((s: SDCppStatus) => setSdCppStatus(s));
   }, []);
+>>>>>>> origin/main
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -31,6 +46,25 @@ const ImageGenerator: React.FC = () => {
     setLoading(true);
     setError(null);
     setGeneratedImage(null);
+<<<<<<< HEAD
+
+    try {
+      // Call the n8n workflow
+      const result = await window.electron.callTool({
+        tool: 'image_generate',
+        parameters: {
+          prompt: prompt.trim(),
+          style,
+          resolution,
+          backend
+        }
+      });
+
+      if (result.success && result.data?.image_base64) {
+        setGeneratedImage(`data:image/png;base64,${result.data.image_base64}`);
+      } else {
+        setError(result.error || 'Failed to generate image');
+=======
     setMetadata(null);
     setStatusBanner(null);
 
@@ -56,6 +90,7 @@ const ImageGenerator: React.FC = () => {
       } else {
         setError(result.error?.message || 'Image generation failed');
         setStatusBanner({ level: 'red', text: 'Failed' });
+>>>>>>> origin/main
       }
     } catch (err) {
       setError('Error generating image');
@@ -64,6 +99,12 @@ const ImageGenerator: React.FC = () => {
     }
   };
 
+<<<<<<< HEAD
+  return (
+    <div className="image-generator">
+      <header className="image-header">
+        <h1>🎨 Image Generation</h1>
+=======
   const handleSetupSDCpp = async () => {
     const result = await (window as any).electron?.sdCppSetup?.();
     if (result?.success) {
@@ -84,6 +125,7 @@ const ImageGenerator: React.FC = () => {
     <div className="image-generator">
       <header className="image-header">
         <h1>Image Generation</h1>
+>>>>>>> origin/main
         <p>Create images with AI</p>
       </header>
 
@@ -121,14 +163,22 @@ const ImageGenerator: React.FC = () => {
 
           <div className="form-group">
             <label htmlFor="backend">Backend:</label>
+<<<<<<< HEAD
+            <select id="backend" value={backend} onChange={(e) => setBackend(e.target.value)}>
+              <option value="stability">Stability AI</option>
+              <option value="local">Local (SD)</option>
+=======
             <select id="backend" value={backend} onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}>
               <option value="hybrid">Hybrid (local first)</option>
               <option value="local">Local only</option>
               <option value="cloud">Cloud only (free)</option>
+>>>>>>> origin/main
             </select>
           </div>
         </div>
 
+<<<<<<< HEAD
+=======
         {backend === 'local' && sdCppStatus && !sdCppStatus.ready && (
           <div className="sd-cpp-setup">
             <div className="setup-status">
@@ -168,6 +218,7 @@ const ImageGenerator: React.FC = () => {
           </div>
         )}
 
+>>>>>>> origin/main
         <button
           onClick={handleGenerate}
           disabled={loading || !prompt.trim()}
@@ -179,6 +230,12 @@ const ImageGenerator: React.FC = () => {
 
       {error && <div className="error">{error}</div>}
 
+<<<<<<< HEAD
+      {generatedImage && (
+        <div className="image-display">
+          <img src={generatedImage} alt="Generated" />
+          <button onClick={() => setGeneratedImage(null)}>Clear</button>
+=======
       {statusBanner && (
         <div className={`status-banner ${statusBanner.level}`}>{statusBanner.text}</div>
       )}
@@ -193,10 +250,15 @@ const ImageGenerator: React.FC = () => {
           {metadata && (
             <pre className="image-metadata">{JSON.stringify(metadata, null, 2)}</pre>
           )}
+>>>>>>> origin/main
         </div>
       )}
     </div>
   );
 };
 
+<<<<<<< HEAD
 export default ImageGenerator;
+=======
+export default ImageGenerator;
+>>>>>>> origin/main

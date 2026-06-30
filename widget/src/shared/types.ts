@@ -308,6 +308,11 @@ export interface ElectronAPI {
   captureLogs?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Test-only: invoke arbitrary IPC channels (E2E only)
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
+<<<<<<< HEAD
+  
+  // Automation operations
+  executeAutomation?: (operation: string, params?: any) => Promise<{ success: boolean; result?: any; error?: string }>;
+=======
 
   listCustomLLMModels?: (config: { apiUrl: string; apiKey?: string; provider?: CustomLLMConfig['provider'] }) => Promise<{ success: boolean; models?: CustomModelInfo[]; error?: string }>;
 
@@ -526,4 +531,5 @@ export interface SavedAutomation {
   lastResult?: string;
   lastStatus?: 'success' | 'error';
   createdAt: string;
+>>>>>>> origin/main
 }
