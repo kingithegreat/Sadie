@@ -1,13 +1,22 @@
 {
-  "name": "SADIE File Manager Tool (Phase 6.1)",
+  "name": "HomeBot File Manager Tool (Phase 6.1)",
   "nodes": [
     {
-      "parameters": {},
       "id": "start-node",
-      "name": "Start",
-      "type": "n8n-nodes-base.start",
-      "typeVersion": 1,
-      "position": [250, 300]
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/tools/file-manager",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "1f3c660b-00a0-4c8a-bdb0-780c96e84fb9"
     },
     {
       "parameters": {
@@ -17,18 +26,24 @@
       "name": "Parse Parameters",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [
+        580,
+        300
+      ]
     },
     {
       "parameters": {
-        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"file_manager\" -Action \"{{ $json.action }}\" -Parameters @{{ $json.params | ConvertTo-Json -Compress }} -UserConfirmed ${{ $json.params.user_confirmed || false }}",
-        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"file_manager\" -Action \"{{ $json.action }}\" -Parameters @{{ $json.params | ConvertTo-Json -Compress }} -UserConfirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
       },
       "id": "safety-validation",
       "name": "Safety Validation",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [
+        780,
+        300
+      ]
     },
     {
       "parameters": {
@@ -38,18 +53,24 @@
       "name": "Check Validation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [
+        980,
+        300
+      ]
     },
     {
       "parameters": {
-        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"{{ $json.action }}\"{{ $json.params.file_path ? ` -Path \"${$json.params.file_path}\"` : '' }}{{ $json.params.directory_path ? ` -Path \"${$json.params.directory_path}\"` : '' }}{{ $json.params.content ? ` -Content \"${$json.params.content.replace(/\"/g, '\"\"')}\"` : '' }}{{ $json.params.destination ? ` -Destination \"${$json.params.destination}\"` : '' }}{{ $json.params.pattern ? ` -Pattern \"${$json.params.pattern}\"` : '' }}{{ $json.params.query ? ` -Pattern \"${$json.params.query}\"` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
-        "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+        "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.params.file_path ? ` -Path \"${String($json.params.file_path).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.directory_path ? ` -Path \"${String($json.params.directory_path).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.content ? ` -Content \"${String($json.params.content).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.destination ? ` -Destination \"${String($json.params.destination).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.pattern ? ` -Pattern \"${String($json.params.pattern).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}{{ $json.params.query ? ` -Pattern \"${String($json.params.query).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
+        "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
       },
       "id": "execute-fileops",
       "name": "Execute FileOps",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [1050, 300]
+      "position": [
+        1180,
+        300
+      ]
     },
     {
       "parameters": {
@@ -59,24 +80,91 @@
       "name": "Format Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1250, 300]
+      "position": [
+        1380,
+        300
+      ]
+    },
+    {
+      "id": "homebot-auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
+      }
     }
   ],
   "connections": {
-    "Start": {
-      "main": [[{ "node": "Parse Parameters", "type": "main", "index": 0 }]]
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Auth Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Parameters": {
-      "main": [[{ "node": "Safety Validation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Safety Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Safety Validation": {
-      "main": [[{ "node": "Check Validation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Check Validation": {
-      "main": [[{ "node": "Execute FileOps", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Execute FileOps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Execute FileOps": {
-      "main": [[{ "node": "Format Result", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -86,5 +174,6 @@
   "tags": [],
   "triggerCount": 0,
   "updatedAt": "2025-11-17T00:00:00.000Z",
-  "versionId": "2"
+  "versionId": "2",
+  "active": true
 }

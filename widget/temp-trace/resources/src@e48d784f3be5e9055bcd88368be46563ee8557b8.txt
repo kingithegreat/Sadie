@@ -7,8 +7,8 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
   // Log merged environment to help diagnose whether the child process receives the expected env vars
   try {
     console.log('[E2E-LAUNCH] Merged env:', {
-      SADIE_E2E: mergedEnv.SADIE_E2E,
-      SADIE_DIRECT_OLLAMA: mergedEnv.SADIE_DIRECT_OLLAMA,
+      HOMEBOT_E2E: mergedEnv.HOMEBOT_E2E,
+      HOMEBOT_DIRECT_OLLAMA: mergedEnv.HOMEBOT_DIRECT_OLLAMA,
       NODE_ENV: mergedEnv.NODE_ENV
     });
   } catch (e) {

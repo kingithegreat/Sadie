@@ -1,0 +1,95 @@
+{
+  "app": {
+    "title": "HomeBot",
+    "subtitle": "Asistente de Escritorio con IA"
+  },
+  "chat": {
+    "placeholder": "Mensaje a HomeBot...",
+    "send": "Enviar",
+    "stopGenerating": "Dejar de generar",
+    "retry": "Reintentar",
+    "thinking": "Pensando...",
+    "errorGeneric": "Algo salió mal. Por favor, inténtalo de nuevo.",
+    "welcomeTitle": "Bienvenido a HomeBot",
+    "welcomeSubtitle": "Tu Asistente de Escritorio con IA"
+  },
+  "settings": {
+    "title": "Configuración",
+    "close": "Cerrar configuración",
+    "alwaysOnTop": "Siempre visible",
+    "n8nUrl": "URL de n8n",
+    "chatModel": "Modelo de Chat",
+    "uncensoredModel": "Modelo sin censura",
+    "visionModel": "Modelo de Visión",
+    "codeModel": "Modelo de Código",
+    "codeApi": "API de Código (Nube)",
+    "chatGuidelines": "Instrucciones de Chat",
+    "cloudApi": "API en la Nube",
+    "permissions": "Permisos",
+    "telemetry": "Telemetría",
+    "scheduledJobs": "Tareas Programadas",
+    "mcpServers": "Servidores MCP",
+    "theme": "Tema",
+    "themeDark": "Oscuro",
+    "themeLight": "Claro",
+    "themeSystem": "Sistema",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "apiKey": "Clave API",
+    "fetchModels": "Obtener Modelos",
+    "language": "Idioma"
+  },
+  "sidebar": {
+    "title": "Conversaciones",
+    "newChat": "Nuevo Chat",
+    "search": "Buscar conversaciones",
+    "export": "Exportar",
+    "delete": "Eliminar",
+    "rename": "Renombrar",
+    "untitled": "Sin título",
+    "noConversations": "No hay conversaciones aún",
+    "confirmDelete": "¿Eliminar esta conversación?"
+  },
+  "modes": {
+    "chat": "Chat",
+    "automation": "Automatización",
+    "image": "Imagen",
+    "web": "Web"
+  },
+  "status": {
+    "connected": "Conectado",
+    "disconnected": "Desconectado",
+    "ollamaOnline": "Ollama en línea",
+    "ollamaOffline": "Ollama fuera de línea",
+    "n8nOnline": "n8n en línea",
+    "n8nOffline": "n8n fuera de línea"
+  },
+  "permissions": {
+    "title": "Permiso Requerido",
+    "allowOnce": "Permitir una vez",
+    "alwaysAllow": "Permitir siempre",
+    "deny": "Denegar",
+    "readFile": "Leer archivo",
+    "writeFile": "Escribir archivo",
+    "deleteFile": "Eliminar archivo",
+    "launchApp": "Abrir aplicación",
+    "screenshot": "Captura de pantalla"
+  },
+  "firstRun": {
+    "welcome": "Bienvenido a HomeBot",
+    "setupDescription": "Vamos a configurar tus preferencias.",
+    "telemetryLabel": "Telemetría",
+    "defaultTeam": "Equipo NBA predeterminado",
+    "finish": "Finalizar"
+  },
+  "confirmation": {
+    "title": "Confirmar Acción",
+    "approve": "Aprobar",
+    "reject": "Rechazar"
+  },
+  "tokens": {
+    "used": "tokens usados",
+    "remaining": "restantes",
+    "budget": "presupuesto"
+  }
+}

@@ -1,5 +1,5 @@
 /**
- * SADIE Web Tools
+ * HomeBot Web Tools
  * 
  * Provides web search and URL fetching capabilities.
  * Uses DuckDuckGo for search (no API key required).
@@ -10,13 +10,60 @@ import * as https from 'https';
 import * as http from 'http';
 import * as dns from 'dns';
 import * as net from 'net';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as childProcess from 'child_process';
+import { app } from 'electron';
 import { isE2E } from '../env';
+
+// Keep-alive agents — reuse TCP+TLS connections across requests
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 6, timeout: 60000 });
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 6, timeout: 60000 });
+
+// Response body size limits (bytes)
+const MAX_TEXT_RESPONSE = 2 * 1024 * 1024;   // 2 MB for HTML/text fetches
+const MAX_BINARY_RESPONSE = 10 * 1024 * 1024; // 10 MB for image buffers
+const MAX_API_RESPONSE = 5 * 1024 * 1024;     // 5 MB for API JSON responses
+
+// Search/image API keys — loaded from settings on first use
+let _tavilyApiKey: string | null = null;
+let _serperApiKey: string | null = null;
+let _openaiApiKey: string | null = null;
+let _stableHordeApiKey: string | null = null;
+
+export function setTavilyApiKey(key: string | null) {
+  _tavilyApiKey = key;
+}
+
+export function setStableHordeApiKey(key: string | null) {
+  _stableHordeApiKey = key;
+}
+
+export function getTavilyApiKey(): string | null {
+  return _tavilyApiKey;
+}
+
+export function setSerperApiKey(key: string | null) {
+  _serperApiKey = key;
+}
+
+export function getSerperApiKey(): string | null {
+  return _serperApiKey;
+}
+
+export function setOpenaiApiKey(key: string | null) {
+  _openaiApiKey = key;
+}
+
+export function getOpenaiApiKey(): string | null {
+  return _openaiApiKey;
+}
 
 // ============= TOOL DEFINITIONS =============
 
 export const webSearchDef: ToolDefinition = {
   name: 'web_search',
-  description: 'Search the web and get results. By default, automatically fetches content from the top result to provide actual information. Use this when the user asks about current events, sports, news, facts you\'re unsure about, or anything that requires up-to-date information.',
+  description: 'Search the web and get results. Automatically fetches and summarises content from multiple top sources to provide accurate, up-to-date answers. Use this when the user asks about current events, sports, news, facts you\'re unsure about, or anything that requires up-to-date information.',
   category: 'web',
   parameters: {
     type: 'object',
@@ -27,12 +74,17 @@ export const webSearchDef: ToolDefinition = {
       },
       maxResults: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 5, max: 10)',
+        description: 'Maximum number of search results to return (default: 5, max: 10)',
         default: 5
+      },
+      fetchResultCount: {
+        type: 'number',
+        description: 'Number of top results to fetch full content from and summarise (default: 3, max: 5). Higher values give more complete answers but take slightly longer.',
+        default: 3
       },
       fetchTopResult: {
         type: 'boolean',
-        description: 'Automatically fetch and include content from the top result (default: true)',
+        description: 'Automatically fetch content from top results (default: true)',
         default: true
       }
     },
@@ -79,8 +131,9 @@ export const getWeatherDef: ToolDefinition = {
 
 // ============= HELPER FUNCTIONS =============
 
-function httpGet(url: string, headers: Record<string, string> = {}): Promise<string> {
+function httpGet(url: string, headers: Record<string, string> = {}, redirectsLeft = 5): Promise<string> {
   return new Promise(async (resolve, reject) => {
+    if (redirectsLeft <= 0) return reject(new Error('Too many redirects'));
     // Validate the URL before attempting any network request to mitigate SSRF/local access
     try {
       const safe = await isUrlSafe(url);
@@ -94,36 +147,44 @@ function httpGet(url: string, headers: Record<string, string> = {}): Promise<str
     const client = isHttps ? https : http;
     
     const options = {
+      agent: isHttps ? httpsAgent : httpAgent,
       headers: {
-        // Use a browser-like User-Agent - DuckDuckGo blocks bot-like agents
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
         ...headers
       }
     };
-    
+
     const req = client.get(url, options, (res) => {
-      // Handle redirects
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        const redirectUrl = res.headers.location.startsWith('http') 
-          ? res.headers.location 
+        const redirectUrl = res.headers.location.startsWith('http')
+          ? res.headers.location
           : new URL(res.headers.location, url).href;
-        return httpGet(redirectUrl, headers).then(resolve).catch(reject);
+        return httpGet(redirectUrl, headers, redirectsLeft - 1).then(resolve).catch(reject);
       }
-      
+
       if (res.statusCode && res.statusCode >= 400) {
         reject(new Error(`HTTP ${res.statusCode}`));
         return;
       }
-      
+
       let data = '';
+      let bytes = 0;
       res.setEncoding('utf8');
-      res.on('data', chunk => data += chunk);
+      res.on('data', chunk => {
+        bytes += Buffer.byteLength(chunk);
+        if (bytes > MAX_TEXT_RESPONSE) {
+          req.destroy();
+          resolve(data); // return what we have so far
+          return;
+        }
+        data += chunk;
+      });
       res.on('end', () => resolve(data));
       res.on('error', reject);
     });
-    
+
     req.on('error', reject);
     req.setTimeout(15000, () => {
       req.destroy();
@@ -287,10 +348,12 @@ function extractMainContent(html: string): string {
 
 // ============= SEARCH HELPERS =============
 
-// Filter out unwanted domains
-function isAllowedDomain(url: string): boolean {
+// Filter out search-engine pages (not content sources) from scraper results.
+// Wikipedia is intentionally NOT blocked here — it's one of the best free
+// sources of factual and current-events content.
+/** Exported so the allow-list can be verified in unit tests. */
+export function isAllowedDomain(url: string): boolean {
   const blockedDomains = [
-    'wikipedia.org',
     'duckduckgo.com',
     'google.com/search',
     'bing.com/search',
@@ -306,9 +369,9 @@ async function searchGoogle(query: string, maxResults: number): Promise<Array<{ 
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://www.google.com/search?q=${encodedQuery}&num=${maxResults + 5}&hl=en`;
   
-  console.log('[SADIE Web] Searching Google for:', query);
+  console.log('[HomeBot Web] Searching Google for:', query);
   const html = await httpGet(searchUrl);
-  console.log('[SADIE Web] Google response length:', html.length);
+  console.log('[HomeBot Web] Google response length:', html.length);
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   
@@ -356,51 +419,124 @@ async function searchGoogle(query: string, maxResults: number): Promise<Array<{ 
   return results;
 }
 
-// Search using DuckDuckGo (fallback)
+// Search using DuckDuckGo HTML (fallback — scraper, brittle)
 async function searchDuckDuckGo(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
   
-  console.log('[SADIE Web] Searching DuckDuckGo for:', query);
+  console.log('[HomeBot Web] Searching DuckDuckGo for:', query);
   const html = await httpGet(searchUrl);
-  console.log('[SADIE Web] DDG response length:', html.length);
+  console.log('[HomeBot Web] DDG response length:', html.length);
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
-  
-  // Split by result divs
-  const resultBlocks = html.split(/<div class="result\s+results_links/gi);
-  
-  for (let i = 1; i < resultBlocks.length && results.length < maxResults; i++) {
-    const block = resultBlocks[i];
-    
-    if (block.includes('result--ad')) continue;
-    
-    const titleMatch = block.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]+)/i);
-    if (!titleMatch) continue;
-    
-    const rawUrl = titleMatch[1];
-    const title = stripHtml(titleMatch[2]).trim();
-    
-    const snippetMatch = block.match(/<a[^>]*class="result__snippet"[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/a>/i);
-    const snippet = snippetMatch ? stripHtml(snippetMatch[1]).trim() : '';
-    
-    if (!rawUrl || !title) continue;
-    
-    let finalUrl = rawUrl;
-    const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
-    if (uddgMatch) {
-      try {
-        finalUrl = decodeURIComponent(uddgMatch[1]);
-      } catch {
-        finalUrl = rawUrl;
+
+  // DDG HTML structure as of 2024–2025: result items use class="result results_links"
+  // Try splitting on the result container class patterns
+  const blockSplitters = [
+    /<div class="result\s+results_links/gi,
+    /<div class="results_links/gi,
+    /<div class="web-result/gi,
+  ];
+
+  for (const splitter of blockSplitters) {
+    const resultBlocks = html.split(splitter);
+    if (resultBlocks.length < 2) continue;
+
+    for (let i = 1; i < resultBlocks.length && results.length < maxResults; i++) {
+      const block = resultBlocks[i];
+      if (block.includes('result--ad')) continue;
+
+      // Title + URL: <a class="result__a" href="...">Title</a>
+      //   OR newer: <h2 class="result__title"><a href="...">Title</a></h2>
+      const titleMatch =
+        block.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i) ||
+        block.match(/<h2[^>]*><a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a><\/h2>/i);
+      if (!titleMatch) continue;
+
+      const rawUrl = titleMatch[1];
+      const title = stripHtml(titleMatch[2]).trim();
+
+      // Snippet: <a class="result__snippet" ...> or <div class="result__snippet">
+      const snippetMatch =
+        block.match(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i) ||
+        block.match(/<div[^>]*class="[^"]*snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      const snippet = snippetMatch ? stripHtml(snippetMatch[1]).trim() : '';
+
+      if (!rawUrl || !title) continue;
+
+      // Decode DDG redirect URL (/url?uddg=...)
+      let finalUrl = rawUrl;
+      const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
+      if (uddgMatch) {
+        try { finalUrl = decodeURIComponent(uddgMatch[1]); } catch { finalUrl = rawUrl; }
       }
+
+      if (!isAllowedDomain(finalUrl)) continue;
+      results.push({ title, url: finalUrl, snippet });
     }
-    
-    if (!isAllowedDomain(finalUrl)) continue;
-    
-    results.push({ title, url: finalUrl, snippet });
+
+    if (results.length > 0) break; // found results with this splitter, stop trying
+  }
+
+  // Last-resort: extract any external https links with meaningful anchor text
+  if (results.length === 0) {
+    const linkPat = /<a[^>]*href="(https?:\/\/(?!(?:www\.)?duckduckgo\.com)[^"]+)"[^>]*>([^<]{10,100})<\/a>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = linkPat.exec(html)) !== null && results.length < maxResults) {
+      const url = m[1];
+      const title = stripHtml(m[2]).trim();
+      if (!isAllowedDomain(url)) continue;
+      if (results.some(r => r.url === url)) continue;
+      results.push({ title, url, snippet: '' });
+    }
   }
   
+  return results;
+}
+
+// Search using DuckDuckGo Lite (simpler HTML, more reliable than full DDG)
+async function searchDDGLite(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  const encodedQuery = encodeURIComponent(query);
+  const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}`;
+
+  console.log('[HomeBot Web] Searching DDG Lite for:', query);
+  const html = await httpGet(searchUrl, {
+    'Accept': 'text/html',
+    'Accept-Language': 'en-US,en;q=0.5',
+  });
+  console.log('[HomeBot Web] DDG Lite response length:', html.length);
+
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // DDG Lite uses simple table rows:
+  //   <a rel="nofollow" href="URL" class="result-link">Title</a>
+  //   followed by <td class="result-snippet">Snippet text</td>
+  const linkPat = /<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const snippetPat = /<td[^>]*class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi;
+
+  const links: Array<{ url: string; title: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = linkPat.exec(html)) !== null) {
+    const url = m[1].trim();
+    const title = stripHtml(m[2]).trim();
+    if (url.startsWith('http') && title.length > 3 && isAllowedDomain(url)) {
+      links.push({ url, title });
+    }
+  }
+
+  const snippets: string[] = [];
+  while ((m = snippetPat.exec(html)) !== null) {
+    snippets.push(stripHtml(m[1]).trim());
+  }
+
+  for (let i = 0; i < Math.min(links.length, maxResults); i++) {
+    results.push({
+      title: links[i].title,
+      url: links[i].url,
+      snippet: snippets[i] || '',
+    });
+  }
+
   return results;
 }
 
@@ -409,9 +545,9 @@ async function searchBrave(query: string, maxResults: number): Promise<Array<{ t
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://search.brave.com/search?q=${encodedQuery}`;
   
-  console.log('[SADIE Web] Searching Brave for:', query);
+  console.log('[HomeBot Web] Searching Brave for:', query);
   const html = await httpGet(searchUrl);
-  console.log('[SADIE Web] Brave response length:', html.length);
+  console.log('[HomeBot Web] Brave response length:', html.length);
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   
@@ -447,6 +583,339 @@ async function searchBrave(query: string, maxResults: number): Promise<Array<{ t
   return results;
 }
 
+// ============= DUCKDUCKGO INSTANT ANSWER API (free, no key) =============
+// Uses DDG's structured JSON endpoint — not HTML scraping. Returns instant
+// answers, abstracts (usually from Wikipedia), and related topic links.
+// Reliable for factual and current-events queries without any API key.
+
+async function searchDDGInstant(query: string): Promise<{
+  results: Array<{ title: string; url: string; snippet: string }>;
+  sources: Array<{ url: string; title: string; content: string }>;
+  answer?: string;
+} | null> {
+  const encodedQuery = encodeURIComponent(query);
+  const apiUrl = `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`;
+
+  console.log('[HomeBot Web] Querying DDG Instant Answer API for:', query);
+  const raw = await httpGet(apiUrl, { 'Accept': 'application/json' });
+  const json = JSON.parse(raw);
+
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const sources: Array<{ url: string; title: string; content: string }> = [];
+  let answer: string | undefined;
+
+  // Direct answer (e.g. "What is 2+2?")
+  if (json.Answer) answer = String(json.Answer);
+
+  // Abstract — usually sourced from Wikipedia or other authoritative sources
+  if (json.AbstractText && json.AbstractURL) {
+    const content = String(json.AbstractText);
+    const url = String(json.AbstractURL);
+    const title = String(json.Heading || json.AbstractSource || query);
+    results.push({ title, url, snippet: content.slice(0, 300) });
+    if (content.length > 50) {
+      sources.push({ url, title, content });
+    }
+    if (!answer && content) answer = content;
+  }
+
+  // Related topics — each has a text snippet and link
+  if (Array.isArray(json.RelatedTopics)) {
+    for (const topic of json.RelatedTopics) {
+      // Some entries are sub-groups ({Topics: [...]}), skip them
+      if (!topic.FirstURL || !topic.Text) continue;
+      const url = String(topic.FirstURL);
+      const text = String(topic.Text);
+      const title = text.split(' - ')[0]?.trim() || text.slice(0, 80);
+      results.push({ title, url, snippet: text.slice(0, 300) });
+      if (text.length > 50) {
+        sources.push({ url, title, content: text });
+      }
+      if (results.length >= 8) break;
+    }
+  }
+
+  // Results block (less common but used for some queries)
+  if (Array.isArray(json.Results)) {
+    for (const r of json.Results) {
+      if (!r.FirstURL || !r.Text) continue;
+      results.push({ title: r.Text.slice(0, 80), url: r.FirstURL, snippet: r.Text });
+    }
+  }
+
+  if (results.length === 0 && !answer) return null;
+  console.log(`[HomeBot Web] DDG Instant returned ${results.length} results, answer=${!!answer}`);
+  return { results, sources, answer };
+}
+
+// ============= TAVILY SEARCH (AI-optimized, structured JSON) =============
+
+interface TavilyResult {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
+  raw_content?: string;
+}
+
+interface TavilyResponse {
+  query: string;
+  answer?: string;
+  results: TavilyResult[];
+  response_time: number;
+}
+
+async function searchTavily(query: string, maxResults: number): Promise<{
+  results: Array<{ title: string; url: string; snippet: string }>;
+  sources: Array<{ url: string; title: string; content: string }>;
+  answer?: string;
+}> {
+  const apiKey = getTavilyApiKey();
+  if (!apiKey) throw new Error('Tavily API key not configured');
+
+  const body = JSON.stringify({
+    query,
+    max_results: maxResults,
+    include_answer: true,
+    include_raw_content: false,
+    search_depth: 'basic'
+  });
+
+  console.log('[HomeBot Web] Searching Tavily for:', query);
+
+  const data = await new Promise<string>((resolve, reject) => {
+    const req = https.request('https://api.tavily.com/search', {
+      method: 'POST',
+      agent: httpsAgent,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        let errBody = '';
+        res.on('data', (c: Buffer) => errBody += c.toString());
+        res.on('end', () => reject(new Error(`Tavily HTTP ${res.statusCode}: ${errBody.slice(0, 200)}`)));
+        return;
+      }
+      let d = '';
+      let bytes = 0;
+      res.on('data', (c: Buffer) => {
+        bytes += c.length;
+        if (bytes > MAX_API_RESPONSE) { req.destroy(); resolve(d); return; }
+        d += c.toString();
+      });
+      res.on('end', () => resolve(d));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Tavily timeout')); });
+    req.write(body);
+    req.end();
+  });
+
+  const json: TavilyResponse = JSON.parse(data);
+  console.log(`[HomeBot Web] Tavily returned ${json.results?.length || 0} results in ${json.response_time}s`);
+
+  const results = (json.results || []).map(r => ({
+    title: r.title,
+    url: r.url,
+    snippet: r.content || ''
+  }));
+
+  // Collect clean content from ALL results Tavily returned (it already pre-cleans them)
+  const sources: Array<{ url: string; title: string; content: string }> = (json.results || [])
+    .filter(r => r.content && r.content.length > 50)
+    .map(r => ({
+      url: r.url,
+      title: r.title,
+      content: r.content
+    }));
+
+  return { results, sources, answer: json.answer };
+}
+
+/**
+ * Search using Serper.dev Google Search API (secondary paid provider).
+ * POST https://google.serper.dev/search
+ * Header: X-API-KEY
+ * Returns structured Google results as JSON — no HTML scraping.
+ */
+async function searchSerper(
+  query: string,
+  maxResults: number
+): Promise<{ results: Array<{ title: string; url: string; snippet: string }>; topContent?: { url: string; title: string; content: string } }> {
+  const apiKey = getSerperApiKey();
+  if (!apiKey) throw new Error('Serper API key not configured');
+
+  const body = JSON.stringify({
+    q: query,
+    num: maxResults
+  });
+
+  const raw = await new Promise<string>((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'google.serper.dev',
+        path: '/search',
+        method: 'POST',
+        headers: {
+          'X-API-KEY': apiKey,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        },
+        timeout: 15000
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c: Buffer) => (data += c.toString()));
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`Serper API ${res.statusCode}: ${data.substring(0, 200)}`));
+          } else {
+            resolve(data);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Serper request timed out')); });
+    req.write(body);
+    req.end();
+  });
+
+  const json = JSON.parse(raw);
+
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // Serper returns { organic: [{ title, link, snippet, ... }], answerBox?, knowledgeGraph?, ... }
+  if (json.organic && Array.isArray(json.organic)) {
+    for (const item of json.organic.slice(0, maxResults)) {
+      results.push({
+        title: item.title || '',
+        url: item.link || '',
+        snippet: item.snippet || ''
+      });
+    }
+  }
+
+  // Build topContent from answer box or knowledge graph if available
+  let topContent: { url: string; title: string; content: string } | undefined;
+
+  if (json.answerBox) {
+    const ab = json.answerBox;
+    topContent = {
+      url: ab.link || results[0]?.url || '',
+      title: ab.title || 'Answer',
+      content: ab.answer || ab.snippet || ab.snippetHighlighted || ''
+    };
+  } else if (json.knowledgeGraph) {
+    const kg = json.knowledgeGraph;
+    const kgParts: string[] = [];
+    if (kg.description) kgParts.push(kg.description);
+    if (kg.attributes) {
+      for (const [k, v] of Object.entries(kg.attributes)) {
+        kgParts.push(`${k}: ${v}`);
+      }
+    }
+    if (kgParts.length > 0) {
+      topContent = {
+        url: kg.descriptionLink || results[0]?.url || '',
+        title: kg.title || 'Knowledge Graph',
+        content: kgParts.join('\n')
+      };
+    }
+  }
+
+  return { results, topContent };
+}
+
+// ============= SEARCH PROVIDER REGISTRY =============
+// Unified return shape for every provider.
+interface SearchProviderResult {
+  results: Array<{ title: string; url: string; snippet: string }>;
+  sources: Array<{ url: string; title: string; content: string }>;
+  answer?: string;
+}
+
+// Common strategy interface — each provider implements search() and reports
+// whether it is currently available (e.g. API key present).
+interface SearchProvider {
+  name: string;
+  available(): boolean;
+  search(query: string, maxResults: number, fetchCount: number): Promise<SearchProviderResult | null>;
+}
+
+const SEARCH_PROVIDERS: SearchProvider[] = [
+  {
+    name: 'Tavily',
+    available: () => !!getTavilyApiKey(),
+    search: async (query, max, fetchCount) => {
+      const r = await searchTavily(query, max);
+      return { results: r.results, sources: r.sources.slice(0, fetchCount), answer: r.answer };
+    }
+  },
+  {
+    name: 'Serper',
+    available: () => !!getSerperApiKey(),
+    search: async (query, max) => {
+      const r = await searchSerper(query, max);
+      const sources = (r.topContent && r.topContent.content.length > 50) ? [r.topContent] : [];
+      return { results: r.results, sources };
+    }
+  },
+  {
+    name: 'DDG Instant',
+    available: () => true,
+    search: async (query, _max, fetchCount) => {
+      const r = await searchDDGInstant(query);
+      if (!r) return null;
+      // Instant answer with no related topics — synthesise a single result so
+      // the payload always has something for the LLM to work with.
+      const results = r.results.length > 0
+        ? r.results
+        : r.answer
+          ? [{ title: 'Instant Answer', url: 'https://duckduckgo.com', snippet: r.answer }]
+          : [];
+      if (results.length === 0) return null;
+      return { results, sources: r.sources.slice(0, fetchCount), answer: r.answer };
+    }
+  },
+  {
+    name: 'DuckDuckGo',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchDuckDuckGo(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  },
+  {
+    name: 'DDG Lite',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchDDGLite(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  },
+  {
+    name: 'Google',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchGoogle(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  },
+  {
+    name: 'Brave',
+    available: () => true,
+    search: async (query, max) => {
+      const r = await searchBrave(query, max);
+      return r.length > 0 ? { results: r, sources: [] } : null;
+    }
+  }
+];
+
 // ============= TOOL HANDLERS =============
 
 export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> => {
@@ -463,27 +932,30 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     if (cached) {
       return { success: true, result: { ...cached }, fromCache: true } as any;
     }
+
+    const fetchResultCount = Math.min(Math.max(1, args.fetchResultCount || 3), 5);
+
+    // Try each provider in order until one returns results.
     let results: Array<{ title: string; url: string; snippet: string }> = [];
-    
-    // Try multiple search engines - DuckDuckGo is most reliable for actual results
-    const searchEngines = [
-      { name: 'DuckDuckGo', fn: searchDuckDuckGo },
-      { name: 'Google', fn: searchGoogle },
-      { name: 'Brave', fn: searchBrave }
-    ];
-    
-    for (const engine of searchEngines) {
+    let tavilyAnswer: string | undefined;
+    let tavilySources: Array<{ url: string; title: string; content: string }> = [];
+    let searchProvider = 'none';
+
+    for (const provider of SEARCH_PROVIDERS) {
+      if (!provider.available()) continue;
       try {
-        console.log(`[SADIE Web] Trying ${engine.name}...`);
-        results = await engine.fn(query, maxResults);
-        
-        if (results.length > 0) {
-          console.log(`[SADIE Web] ${engine.name} returned ${results.length} results`);
+        console.log(`[HomeBot Web] Trying ${provider.name}...`);
+        const providerResult = await provider.search(query, maxResults, fetchResultCount);
+        if (providerResult && providerResult.results.length > 0) {
+          results = providerResult.results;
+          tavilySources = providerResult.sources;
+          if (providerResult.answer) tavilyAnswer = providerResult.answer;
+          searchProvider = provider.name;
+          console.log(`[HomeBot Web] ${provider.name} returned ${results.length} results`);
           break;
         }
       } catch (err: any) {
-        console.log(`[SADIE Web] ${engine.name} failed: ${err.message}`);
-        continue;
+        console.log(`[HomeBot Web] ${provider.name} failed: ${err.message}`);
       }
     }
     
@@ -499,54 +971,82 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       };
     }
     
-    // Automatically fetch content from top result(s) for better answers
+    // Fetch full content from top N results
     const fetchTop = args.fetchTopResult !== false; // Default to true
-    let topContent: { url: string; title: string; content: string } | null = null;
-    
-    if (fetchTop && results.length > 0) {
-      // Try to fetch the top result
-      for (let i = 0; i < Math.min(3, results.length); i++) {
-        try {
-          console.log(`[SADIE Web] Fetching content from: ${results[i].url}`);
-          const html = await httpGet(results[i].url);
-          
-          // Extract title
+    let sources: Array<{ url: string; title: string; content: string }> = [];
+
+    if (tavilySources.length > 0) {
+      // Tavily already provides clean pre-extracted text — use all of them directly
+      sources = tavilySources;
+      console.log(`[HomeBot Web] Using ${sources.length} Tavily pre-cleaned source(s)`);
+    } else if (fetchTop && results.length > 0) {
+      // Fallback: fetch top N URLs in parallel
+      const toFetch = results.slice(0, fetchResultCount);
+      console.log(`[HomeBot Web] Parallel-fetching ${toFetch.length} result(s)...`);
+      const fetchResults = await Promise.allSettled(
+        toFetch.map(async (r) => {
+          const html = await httpGet(r.url);
           const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-          const title = titleMatch ? stripHtml(titleMatch[1]).trim() : results[i].title;
-          
-          // Extract content
+          const title = titleMatch ? stripHtml(titleMatch[1]).trim() : r.title;
           let content = extractMainContent(html);
-          
-          // Only use if we got meaningful content
-          if (content.length > 200) {
-            // Truncate to reasonable size
-            if (content.length > 3000) {
-              content = content.substring(0, 3000) + '... [truncated]';
-            }
-            topContent = { url: results[i].url, title, content };
-            console.log(`[SADIE Web] Got ${content.length} chars from ${results[i].url}`);
-            break;
-          }
-        } catch (err: any) {
-          console.log(`[SADIE Web] Failed to fetch ${results[i].url}: ${err.message}`);
-          continue;
+          if (content.length < 200) throw new Error('Too little content');
+          if (content.length > 2500) content = content.substring(0, 2500) + '... [truncated]';
+          return { url: r.url, title, content };
+        })
+      );
+      for (const res of fetchResults) {
+        if (res.status === 'fulfilled') {
+          sources.push(res.value);
+        } else {
+          console.log(`[HomeBot Web] Fetch failed: ${(res as PromiseRejectedResult).reason?.message}`);
         }
       }
+      console.log(`[HomeBot Web] Got content from ${sources.length}/${toFetch.length} source(s)`);
     }
-    
-    const resultPayload = {
+
+    // When page fetches all failed but we have snippets from the search results,
+    // use snippets as lightweight source content so the LLM has real data to work with.
+    if (sources.length === 0 && results.length > 0) {
+      const snippetSources = results
+        .filter(r => r.snippet && r.snippet.length > 30)
+        .slice(0, fetchResultCount)
+        .map(r => ({ url: r.url, title: r.title, content: r.snippet }));
+      if (snippetSources.length > 0) {
+        sources = snippetSources;
+        console.log(`[HomeBot Web] Using ${snippetSources.length} snippet(s) as fallback sources`);
+      }
+    }
+
+    const topContent = sources[0] ?? null;
+    // Trim source content for small models — long walls of text cause hallucination.
+    // Keep first 800 chars per source (enough for key facts, short enough to reason over).
+    const trimmedSources = sources.map(s => ({
+      url: s.url,
+      title: s.title,
+      content: s.content.length > 800 ? s.content.substring(0, 800) + '...' : s.content,
+    }));
+    const resultPayload: any = {
       query,
       resultCount: results.length,
-      results,
-      topResultContent: topContent,
-      note: topContent 
-        ? `I fetched the content from "${topContent.title}" - use this to answer the question.`
-        : 'Could not fetch detailed content. You may need to use fetch_url on specific results.'
+      searchProvider,
+      results: results.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
+      sources: trimmedSources,
+      sourceCount: sources.length,
+      // Keep topResultContent for backward-compat with any code that reads it
+      topResultContent: topContent ? { ...topContent, content: topContent.content.length > 800 ? topContent.content.substring(0, 800) + '...' : topContent.content } : null,
+      instruction: 'Summarize the KEY facts from these sources in 2-4 sentences. Do not repeat raw text. If the sources do not answer the question, say so.',
+      note: sources.length > 0
+        ? `Fetched content from ${sources.length} source(s) via ${searchProvider}: ${sources.map(s => `"${s.title}"`).join(', ')}`
+        : `Search via ${searchProvider} found links but could not fetch detailed content.`,
     };
+    // Include Tavily AI answer if available
+    if (tavilyAnswer) {
+      resultPayload.aiAnswer = tavilyAnswer;
+    }
     setCache(cacheKey, resultPayload);
     return { success: true, result: resultPayload, fromCache: false } as any;
   } catch (err: any) {
-    console.error('[SADIE Web] Search error:', err.message);
+    console.error('[HomeBot Web] Search error:', err.message);
     return { success: false, error: `Search failed: ${err.message}` };
   }
 };
@@ -655,15 +1155,456 @@ export const getWeatherHandler: ToolHandler = async (args): Promise<ToolResult> 
   }
 };
 
+// ============= IMAGE GENERATE TOOL =============
+
+export const imageGenerateDef: ToolDefinition = {
+  name: 'image_generate',
+  description:
+    'Generate an image from a text prompt. ' +
+    'Tries local Stable Diffusion (AUTOMATIC1111 / ComfyUI) first, ' +
+    'then Pollinations.ai (free, no API key), ' +
+    'then falls back to DALL·E if an OpenAI API key is configured. ' +
+    'Returns a base64-encoded image.',
+  category: 'utility',
+  requiresConfirmation: false,
+  parameters: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        description: 'Text description of the image to generate'
+      },
+      width: {
+        type: 'number',
+        description: 'Image width in pixels (default: 512, max: 1024)',
+        default: 512
+      },
+      height: {
+        type: 'number',
+        description: 'Image height in pixels (default: 512, max: 1024)',
+        default: 512
+      },
+      steps: {
+        type: 'number',
+        description: 'Number of diffusion steps (default: 20)',
+        default: 20
+      },
+      backend: {
+        type: 'string',
+        description: '"local" (SD/ComfyUI only), "cloud" (Pollinations free → DALL-E), or "hybrid" (local first, then Pollinations, default)',
+        enum: ['local', 'cloud', 'hybrid'],
+        default: 'hybrid'
+      }
+    },
+    required: ['prompt']
+  }
+};
+
+// ── Shared HTTP POST helper used by image backends ──────────────────────────
+function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, string> = {}, timeoutMs = 120000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const isHttps = urlStr.startsWith('https');
+    const lib = isHttps ? https : http;
+    const url = new URL(urlStr);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'POST',
+      agent: isHttps ? httpsAgent : httpAgent,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        ...extraHeaders
+      },
+      timeout: timeoutMs
+    };
+    const req = lib.request(options, (res: any) => {
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      res.on('data', (c: Buffer) => {
+        bytes += c.length;
+        if (bytes > MAX_API_RESPONSE) {
+          req.destroy();
+          const body = Buffer.concat(chunks).toString();
+          try { resolve(JSON.parse(body)); } catch { resolve({ _raw: body }); }
+          return;
+        }
+        chunks.push(c);
+      });
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString();
+        try { resolve(JSON.parse(body)); } catch { resolve({ _raw: body }); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('request timed out')); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── Buffer GET (for binary responses like images) ──────────────────────────
+function httpGetBuffer(urlStr: string, timeoutMs = 30000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const isHttps = urlStr.startsWith('https');
+    const lib = isHttps ? https : http;
+    const req = lib.get(urlStr, { timeout: timeoutMs, agent: isHttps ? httpsAgent : httpAgent } as any, (res: any) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        resolve(httpGetBuffer(res.headers.location as string, timeoutMs));
+        return;
+      }
+      if (res.statusCode >= 400) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      res.on('data', (c: Buffer) => {
+        bytes += c.length;
+        if (bytes > MAX_BINARY_RESPONSE) {
+          req.destroy();
+          reject(new Error(`Response too large (>${MAX_BINARY_RESPONSE / 1024 / 1024} MB)`));
+          return;
+        }
+        chunks.push(c);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('httpGetBuffer timed out')); });
+  });
+}
+
+// ── Backend 0: Pollinations.ai (free, no API key required) ───────────────────
+// Cache Pollinations availability so we don't burn an HTTPS round-trip on every
+// image request when the service is known-down.  The "down" state expires after
+// 5 minutes so we transparently recover when Pollinations comes back.
+let _pollinationsLastFailAt = 0;
+const POLLINATIONS_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
+
+async function tryPollinations(prompt: string, width: number, height: number): Promise<string | null> {
+  // Skip quickly if we recently saw a failure
+  if (Date.now() - _pollinationsLastFailAt < POLLINATIONS_BACKOFF_MS) return null;
+
+  try {
+    const seed = Math.floor(Math.random() * 1e9);
+    const encodedPrompt = encodeURIComponent(prompt);
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true`;
+    const buf = await httpGetBuffer(url, 60000);
+    if (!buf || buf.length < 1024) {
+      _pollinationsLastFailAt = Date.now();
+      return null;
+    }
+    const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+    const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+    const isWebp = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
+    if (!isPng && !isJpeg && !isWebp) {
+      _pollinationsLastFailAt = Date.now();
+      return null;
+    }
+    _pollinationsLastFailAt = 0;
+    return buf.toString('base64');
+  } catch {
+    _pollinationsLastFailAt = Date.now();
+    return null;
+  }
+}
+
+// ── Backend 0b: Stable Horde (free community-powered distributed inference) ──
+async function tryStableHorde(prompt: string, width: number, height: number): Promise<string | null> {
+  try {
+    // Stable Horde requires dimensions to be multiples of 64
+    const w = Math.round(Math.min(width, 1024) / 64) * 64 || 512;
+    const h = Math.round(Math.min(height, 1024) / 64) * 64 || 512;
+
+    const apiKey = (_stableHordeApiKey && _stableHordeApiKey.trim()) ? _stableHordeApiKey.trim() : '0000000000';
+
+    const body = JSON.stringify({
+      prompt,
+      params: { sampler_name: 'k_euler_a', width: w, height: h, steps: 20, n: 1, karras: true },
+      nsfw: false,
+      censor_nsfw: true,
+      r2: false,
+      shared: false,
+      slow_workers: true,
+      models: ['stable_diffusion']
+    });
+
+    const submitRes = await httpPost(
+      'https://stablehorde.net/api/v2/generate/async',
+      body,
+      { apikey: apiKey, 'Client-Agent': 'HomeBot:1.0:local' },
+      30000
+    );
+
+    const jobId = submitRes?.id;
+    if (!jobId) return null;
+
+    // Helper: JSON GET for hardcoded Stable Horde URLs (no SSRF risk)
+    const hordeGet = (path: string): Promise<any> => new Promise((resolve, reject) => {
+      const req = https.get(
+        `https://stablehorde.net${path}`,
+        { headers: { apikey: apiKey }, timeout: 10000 } as any,
+        (res: any) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { resolve(null); } });
+        }
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('horde GET timeout')); });
+    });
+
+    // Poll for completion — max 120 seconds, check every 6 s
+    const started = Date.now();
+    while (Date.now() - started < 120000) {
+      await new Promise(r => setTimeout(r, 6000));
+      const check = await hordeGet(`/api/v2/generate/check/${jobId}`).catch(() => null);
+      if (!check?.done) continue;
+
+      const status = await hordeGet(`/api/v2/generate/status/${jobId}`).catch(() => null);
+      const img = status?.generations?.[0]?.img as string | undefined;
+      if (img && img.length > 100) return img; // already base64 PNG
+      return null;
+    }
+    return null; // timed out
+  } catch {
+    return null;
+  }
+}
+
+// ── Backend 1: AUTOMATIC1111 / stable-diffusion-webui ────────────────────────
+async function tryAutomatic1111(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
+  try {
+    const url = 'http://127.0.0.1:7860/sdapi/v1/txt2img';
+    const payload = JSON.stringify({ prompt, negative_prompt: '', width, height, steps, cfg_scale: 7, sampler_name: 'Euler a' });
+    const res = await httpPost(url, payload, {}, 180000);
+    const b64 = res?.images?.[0];
+    return b64 ? (b64 as string) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Backend 2: ComfyUI simple prompt ─────────────────────────────────────────
+async function tryComfyUI(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
+  try {
+    // ComfyUI requires a workflow JSON — use the minimal KSampler workflow
+    const workflow = {
+      "3": { class_type: 'KSampler', inputs: { seed: Math.floor(Math.random() * 1e9), steps, cfg: 7, sampler_name: 'euler', scheduler: 'normal', denoise: 1, model: ["4", 0], positive: ["6", 0], negative: ["7", 0], latent_image: ["5", 0] } },
+      "4": { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'v1-5-pruned-emaonly.ckpt' } },
+      "5": { class_type: 'EmptyLatentImage', inputs: { batch_size: 1, height, width } },
+      "6": { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ["4", 1] } },
+      "7": { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ["4", 1] } },
+      "8": { class_type: 'VAEDecode', inputs: { samples: ["3", 0], vae: ["4", 2] } },
+      "9": { class_type: 'SaveImage', inputs: { filename_prefix: 'homebot', images: ["8", 0] } }
+    };
+    const promptRes = await httpPost('http://127.0.0.1:8188/prompt', JSON.stringify({ prompt: workflow }), {}, 30000);
+    if (!promptRes?.prompt_id) return null;
+
+    // Poll for result
+    const promptId = promptRes.prompt_id as string;
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const history = await new Promise<any>((res2, rej2) => {
+        const req = http.get(`http://127.0.0.1:8188/history/${promptId}`, (r) => {
+          let d = ''; r.on('data', (c: Buffer) => d += c); r.on('end', () => { try { res2(JSON.parse(d)); } catch { res2({}); } });
+        }); req.on('error', rej2);
+      });
+      const outputs = history?.[promptId]?.outputs;
+      if (outputs) {
+        for (const node of Object.values(outputs) as any[]) {
+          if (node?.images?.[0]) {
+            const img = node.images[0];
+            const imgData = await new Promise<Buffer>((r3, e3) => {
+              const url = `http://127.0.0.1:8188/view?filename=${img.filename}&subfolder=${img.subfolder || ''}&type=${img.type || 'output'}`;
+              http.get(url, (response) => {
+                const chunks: Buffer[] = [];
+                response.on('data', (c: Buffer) => chunks.push(c));
+                response.on('end', () => r3(Buffer.concat(chunks)));
+              }).on('error', e3);
+            });
+            return imgData.toString('base64');
+          }
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Backend 2b: stable-diffusion.cpp (lightweight local binary) ─────────────
+export function getSDCppDir(): string {
+  try {
+    return path.join(app.getPath('userData'), 'sd-cpp');
+  } catch {
+    return path.join(process.env.APPDATA || '', 'HomeBot', 'sd-cpp');
+  }
+}
+
+export function findSDCppBinary(): string | null {
+  const dir = getSDCppDir();
+  for (const name of ['sd.exe', 'sd', 'stable-diffusion.exe', 'main.exe']) {
+    const p = path.join(dir, name);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+export function findSDCppModel(): string | null {
+  const modelsDir = path.join(getSDCppDir(), 'models');
+  if (!fs.existsSync(modelsDir)) return null;
+  const files = fs.readdirSync(modelsDir);
+  const model = files.find(f => f.endsWith('.gguf') || f.endsWith('.safetensors') || f.endsWith('.ckpt'));
+  return model ? path.join(modelsDir, model) : null;
+}
+
+async function trySDCpp(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
+  const binary = findSDCppBinary();
+  const model = findSDCppModel();
+  if (!binary || !model) return null;
+
+  const outputPath = path.join(getSDCppDir(), `output-${Date.now()}.png`);
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const args = [
+        '-M', 'txt2img',
+        '-m', model,
+        '-p', prompt,
+        '-W', String(width),
+        '-H', String(height),
+        '--steps', String(steps),
+        '-o', outputPath,
+      ];
+      console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
+      const proc = childProcess.spawn(binary, args, { timeout: 300000 });
+      let stderr = '';
+      proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`sd.cpp exited with code ${code}: ${stderr.slice(0, 500)}`));
+      });
+      proc.on('error', reject);
+    });
+
+    if (fs.existsSync(outputPath)) {
+      const buf = fs.readFileSync(outputPath);
+      fs.unlinkSync(outputPath);
+      if (buf.length > 1024) return buf.toString('base64');
+    }
+    return null;
+  } catch (err: any) {
+    console.error('[ImageGen] sd.cpp failed:', err?.message);
+    try { fs.unlinkSync(outputPath); } catch {}
+    return null;
+  }
+}
+
+// ── Backend 3: OpenAI DALL-E 3 ───────────────────────────────────────────────
+async function tryDallE(prompt: string, width: number, height: number): Promise<string | null> {
+  const key = _openaiApiKey;
+  if (!key) return null;
+  try {
+    // DALL-E 3 supports: 1024x1024, 1792x1024, 1024x1792
+    const size = width > height ? '1792x1024' : width < height ? '1024x1792' : '1024x1024';
+    const payload = JSON.stringify({ model: 'dall-e-3', prompt, n: 1, size, response_format: 'b64_json' });
+    const res = await httpPost('https://api.openai.com/v1/images/generations', payload, { Authorization: `Bearer ${key}` }, 120000);
+    const b64 = res?.data?.[0]?.b64_json as string | undefined;
+    return b64 || null;
+  } catch {
+    return null;
+  }
+}
+
+export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  try {
+    const prompt = String(args.prompt || '').trim();
+    if (!prompt) return { success: false, error: 'prompt is required' };
+
+    const width = Math.min(Math.max(64, Number(args.width) || 512), 1024);
+    const height = Math.min(Math.max(64, Number(args.height) || 512), 1024);
+    const steps = Math.min(Math.max(1, Number(args.steps) || 20), 50);
+    const backend = String(args.backend || 'hybrid');
+
+    let image_base64: string | null = null;
+    let source = '';
+
+    if (backend !== 'cloud') {
+      // Try local backends: AUTOMATIC1111 → ComfyUI → stable-diffusion.cpp
+      image_base64 = await tryAutomatic1111(prompt, width, height, steps);
+      if (image_base64) { source = 'automatic1111'; }
+      if (!image_base64) {
+        image_base64 = await tryComfyUI(prompt, width, height, steps);
+        if (image_base64) { source = 'comfyui'; }
+      }
+      if (!image_base64) {
+        image_base64 = await trySDCpp(prompt, width, height, steps);
+        if (image_base64) { source = 'sd-cpp-local'; }
+      }
+    }
+
+    if (!image_base64 && backend !== 'local') {
+      // Try Pollinations.ai — free, no API key required
+      image_base64 = await tryPollinations(prompt, width, height);
+      if (image_base64) { source = 'pollinations'; }
+    }
+
+    if (!image_base64 && backend !== 'local') {
+      // Try Stable Horde — free community-powered distributed inference
+      image_base64 = await tryStableHorde(prompt, width, height);
+      if (image_base64) { source = 'stable-horde'; }
+    }
+
+    if (!image_base64 && backend !== 'local') {
+      // Fall back to DALL-E 3 if OpenAI key is set
+      image_base64 = await tryDallE(prompt, width, height);
+      if (image_base64) { source = 'dall-e-3'; }
+    }
+
+    if (!image_base64 && backend !== 'local') {
+      // Retry Pollinations once more with backoff reset in case it was a transient failure
+      _pollinationsLastFailAt = 0;
+      image_base64 = await tryPollinations(prompt, width, height);
+      if (image_base64) { source = 'pollinations'; }
+    }
+
+    if (!image_base64) {
+      const sdCppDir = getSDCppDir();
+      const msg = backend === 'local'
+        ? `No local image backends found. Options:\n` +
+          `1. stable-diffusion.cpp (lightweight): Place sd.exe in "${sdCppDir}" and a .gguf model in "${sdCppDir}\\models"\n` +
+          `2. AUTOMATIC1111: Run Stable Diffusion WebUI on port 7860\n` +
+          `3. ComfyUI: Run ComfyUI on port 8188\n` +
+          `Or switch to "Hybrid" to use free cloud generation.`
+        : 'All image backends failed. ' +
+          'Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
+          'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
+          'For DALL-E 3, add an OpenAI API key in Settings.';
+      return { success: false, error: msg };
+    }
+
+    return { success: true, result: { image_base64, source, metadata: { prompt, width, height } } };
+  } catch (err: any) {
+    return { success: false, error: `image_generate failed: ${err.message}` };
+  }
+};
+
 // Export all definitions and handlers
 export const webToolDefs = [
   webSearchDef,
   fetchUrlDef,
-  getWeatherDef
+  getWeatherDef,
+  imageGenerateDef
 ];
 
 export const webToolHandlers: Record<string, ToolHandler> = {
   'web_search': webSearchHandler,
   'fetch_url': fetchUrlHandler,
-  'get_weather': getWeatherHandler
+  'get_weather': getWeatherHandler,
+  'image_generate': imageGenerateHandler
 };

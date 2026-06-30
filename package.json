@@ -1,13 +1,33 @@
 {
-  "name": "sadie-root",
-  "version": "1.0.0",
-  "description": "SADIE Root - Redirects to widget",
-  "private": true,
+  "name": "homebot-tool-registry",
+  "version": "1.0.4",
+  "description": "Standalone ToolRegistry module for HomeBot",
+  "main": "src/toolRegistry.ts",
   "scripts": {
-    "start": "cd widget && npm start",
-    "build": "cd widget && npm run build",
-    "dev": "cd widget && npm run dev",
-    "test": "cd widget && npm test",
-    "release": "node scripts/preflight-env-check.js --require-production && cd widget && npm run build && node ../scripts/preflight-env-check.js --scan-artifacts && npm run dist && node ../scripts/scan-package-integrity.js"
+    "smoke": "npx ts-node src/test.ts",
+    "test": "npx jest"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ]
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "@types/jest": "^29.5.14",
+    "@types/json-stable-stringify": "^1.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "ajv": "^8.18.0",
+    "crypto": "^1.0.1",
+    "json-stable-stringify": "^1.3.0"
   }
 }

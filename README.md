@@ -1,264 +1,316 @@
-# SADIE - Structured AI Desktop Intelligence Engine
+﻿# HomeBot — Your Private Desktop AI Assistant
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Electron](https://img.shields.io/badge/Electron-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Jest](https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white)](https://jestjs.io/)
-[![Playwright](https://img.shields.io/badge/Playwright-45ba4b?style=for-the-badge&logo=Playwright&logoColor=white)](https://playwright.dev/)
+> A secure, offline-first desktop AI assistant built with Electron, React, and TypeScript. Runs entirely on your machine with optional cloud LLM support. Your data stays local unless you explicitly enable a cloud provider.
 
-> A secure, cross-platform desktop AI assistant built with Electron that provides structured tool-based AI interactions while maintaining strict security boundaries and offline-first operation.
-
-## ✨ Features
-
-### 🔍 Web Intelligence Tools
-- **Multi-Engine Web Search**: DuckDuckGo, Google, and Brave search with automatic content fetching
-- **Safe URL Fetching**: SSRF-protected content extraction with DNS validation
-- **Weather Information**: Real-time weather data via wttr.in (no API keys required)
-
-### 📄 Document Processing
-- **PDF & Text Analysis**: Local document processing with mammoth and pdf-parse
-- **Content Extraction**: Intelligent text extraction from various document formats
-
-### 🎤 Speech & Audio
-- **Offline Speech Recognition**: Local STT using whisper-node
-- **Audio Processing**: Real-time audio capture and processing
-
-### 🖼️ Image Processing
-- **Local Image Analysis**: Client-side image processing capabilities
-- **Format Support**: Multiple image format handling
-
-### 🔒 Security Features
-- **URL Safety Validation**: Comprehensive SSRF protection with DNS resolution checks
-- **Process Isolation**: Electron main/renderer separation with secure IPC
-- **Input Sanitization**: All inputs validated and sanitized
-- **Compile-time Gating**: Development code automatically removed in production builds
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    SADIE Desktop Application                     │
-│                    (Electron Framework)                          │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │   Main Process  │  │  Preload Script │  │ Renderer Process │ │
-│  │   (Node.js)     │  │   (Security)    │  │   (React UI)     │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-│           │                       │                   │         │
-│           └───────────────────────┼───────────────────┘         │
-│                                   │                             │
-│                    ┌──────────────┴──────────────┐              │
-│                    │     IPC Communication       │              │
-│                    │   (Context Isolation)       │              │
-│                    └─────────────────────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  │   Web Search    │  │   URL Fetch     │  │   Weather API   │ │
-│  │   (DuckDuckGo)  │  │   (Safe HTTP)   │  │   (wttr.in)     │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
-│  │                                                                │ │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │ │
-│  │  │ Document Tools  │  │   Speech Tools  │  │   Image Tools   │ │
-│  │  │   (PDF/Text)    │  │   (Offline STT) │  │   (Processing)  │ │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │ │
-│  │                                                                │ │
-│  └─────────────────────── AI Model Integration ──────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+ and npm
-- Windows 10+, macOS 10.15+, or Linux
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/kingithegreat/sadie.git
-   cd sadie/widget
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Install Playwright browsers** (for E2E testing)
-   ```bash
-   npx playwright install --with-deps
-   ```
-
-### Development
-
-                                 ## Architecture: Permissions & Batching
-
-                                 High-level flow (permissions and batch execution):
-
-                                 - Batch precheck: when a batch of tool calls is requested, `executeToolBatch()` inspects all unique tools and their declared `requiredPermissions` before executing any tool.
-                                 - `requiredPermissions` (tool definition): tools declare any named permissions they require (for example, a report generator declares `['write_file']`). These are discovered by the batch precheck so nested permissions are not missed.
-                                 - `overrideAllowed` (ToolContext): used for "Allow once" semantics. When the user chooses Allow once, the router re-invokes the batch with `overrideAllowed` set for the current execution; tools should consult this transient list when checking permissions.
-                                 - Re-execution semantics: if precheck finds missing permissions, the batch returns a `needs_confirmation` result (no tools run). The router prompts the user; on `allow_once` the batch is retried with `overrideAllowed`, on `always_allow` the setting is persisted and the batch is retried normally.
-
-                                 This section is the canonical reference for contributors implementing or modifying permission-related code.
-
-1. **Start development mode**
-   ```bash
-   npm run dev
-   ```
-
-2. **Run tests**
-   ```bash
-   npm run test
-   ```
-
-3. **Run E2E tests**
-   ```bash
-   npm run e2e
-   ```
-
-### Production Build
-
-1. **Build for production**
-   ```bash
-   npm run build
-   ```
-
-2. **Package application**
-   ```bash
-   npm run dist
-   ```
-
-## 📋 Usage
-
-### First Launch
-- Launch SADIE to see the first-run modal
-- Review privacy settings and telemetry preferences
-- Configure your preferences in the settings panel
-
-### AI Interactions
-SADIE uses a structured tool-based approach for AI interactions:
-
-- **Web Search**: "What are the current NBA standings?"
-- **Weather**: "What's the weather in Tokyo?"
-- **URL Fetching**: "Summarize https://example.com/article"
-- **Document Analysis**: Upload and analyze documents locally
-
-### Security Features
-- All web requests are validated for safety
-- Local network access is blocked
-- Private IP ranges are prohibited
-- Content is processed client-side only
-
-## 🧪 Testing
-
-### Test Suite
-- **Unit Tests**: Jest-based testing with TypeScript support
-- **E2E Tests**: Playwright tests for complete user workflows
-- **Security Tests**: Automated scanning for forbidden strings
-- **Build Verification**: Preflight checks prevent unsafe releases
-
-### Running Tests
-```bash
-# Unit tests
-npm run test
-
-# E2E tests (headed)
-npm run e2e:headed
-
-# E2E tests (headless)
-npm run e2e
-```
-
-### CI behavior (short note)
-
-- **Widget E2E (`widget-e2e.yml`)**: Runs on pull requests only (PRs -> feature branches). You may see "failed" runs on `main` with zero jobs — these are expected and can be ignored.
-- **Release Gate**: The `Release Gate` workflow is the source of truth for `main` branch health and release readiness.
-- **If you'd like**: we can add a cosmetic guard job or a README entry to change visibility later — nothing is required now.
-
-## 🔒 Security
-
-SADIE implements multiple layers of security:
-
-- **URL Safety**: DNS resolution and IP validation prevent SSRF attacks
-- **Process Isolation**: Electron's context isolation prevents code injection
-- **Input Validation**: All user inputs are sanitized and validated
-- **Compile-time Security**: Development code is automatically removed in production
-- **Privacy Controls**: User consent required for telemetry
-
-## 📚 Documentation
-
-### Core Documentation
-- **[Architecture Overview](FINAL_ARCHITECTURE_DIAGRAM.md)** - System design and components
-- **[Submission Overview](SUBMISSION_OVERVIEW.md)** - Project summary and features
-- **[Demo Script](DEMO_SCRIPT.md)** - Step-by-step demonstration guide
-- **[Evidence Index](EVIDENCE_INDEX.md)** - Comprehensive implementation evidence
-
-### Development Documentation
-- **[Developer Build Guide](DEVELOPER_BUILD_GUIDE.md)** - Setup and development instructions
-- **[Testing Matrix](TESTING_MATRIX.md)** - Test coverage and scenarios
-- **[Release Process](RELEASE_PROCESS.md)** - Build and deployment procedures
-- **[Security & Compliance](SECURITY_AND_COMPLIANCE.md)** - Security measures and compliance
-
-## 🛠️ Development
-
-### Project Structure
-```
-widget/
-├── src/
-│   ├── main/           # Main process (Node.js)
-│   │   ├── tools/      # AI tool implementations
-│   │   ├── env.ts      # Environment detection
-│   │   └── index.ts    # Application entry point
-│   ├── preload/        # Preload scripts (security)
-│   └── renderer/       # React UI components
-├── dist/               # Built application bundles
-├── scripts/            # Build and utility scripts
-└── tests/              # Test files
-```
-
-### Key Technologies
-- **Electron**: Cross-platform desktop framework
-- **React**: UI framework with hooks
-- **TypeScript**: Type-safe JavaScript
-- **Webpack**: Module bundling and optimization
-- **Jest**: Unit testing framework
-- **Playwright**: E2E testing framework
-
-### Build System
-- **Webpack**: Multi-target bundling (main, preload, renderer)
-- **DefinePlugin**: Compile-time constants and code elimination
-- **Electron Builder**: Cross-platform packaging
-- **Preflight Checks**: Automated security and quality verification
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built for Toi Ohomai COMP.7112 / COMP.7203 assessment
-- Electron community for the excellent framework
-- Open source AI and security communities
-- DuckDuckGo for privacy-focused search capabilities
-
-## 📞 Contact
-
-**Project Author**: kingithegreat
-**Repository**: [https://github.com/kingithegreat/sadie](https://github.com/kingithegreat/sadie)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
+![Electron](https://img.shields.io/badge/Electron-28-9feaf9)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-3178c6)
+![React](https://img.shields.io/badge/React-18-61dafb)
+![AI](https://img.shields.io/badge/AI-Ollama%20(local)-green)
+![Tests](https://img.shields.io/badge/tests-Jest%20%2B%20Playwright-brightgreen)
+![License](https://img.shields.io/badge/license-Private-lightgrey)
 
 ---
 
-**SADIE** - Bringing safe, intelligent AI assistance to the desktop while protecting user privacy and security.
+## What is HomeBot?
+
+HomeBot is a **privacy-first desktop AI assistant** that can search the web, read and write files, inspect your system, understand images, generate images, automate browser tasks, index documents for semantic search, track NBA scores, chain multi-step tool workflows autonomously, and greet you each morning with a personalized briefing — all without sending your data to a third party.
+
+It combines:
+
+- **Electron 28 + React 18** for a modern, themeable desktop UI with futuristic glass-morphism accents
+- **Ollama** for fully offline LLM inference — no API keys or internet connection required
+- **85+ TypeScript tool handlers** executed locally with structured JSON tool-calling
+- **Agentic tool loop** — the LLM autonomously chains tools for multi-step requests ("search for X, save it, then email me")
+- **Optional cloud LLM routing** to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or any OpenAI-compatible endpoint
+- **n8n integration** — deploy n8n workflows directly from HomeBot's Automation Center (no n8n UI required); automations run via webhook triggers with Ollama-powered AI
+
+---
+
+## Feature Overview
+
+### Core AI and Tools
+
+| Capability | Description |
+|---|---|
+| **Web Search** | Multi-engine cascade (Tavily, Serper, DuckDuckGo, Google, Brave) with automatic content fetching and SSRF protection |
+| **File Manager** | Safe read, write, list, move, delete, and search with path validation and directory whitelisting |
+| **System Info** | Disk usage, memory, running processes, and network adapter inspection |
+| **Vision / OCR** | Describe images and extract text via `vision_describe` and `vision_query` using Ollama moondream |
+| **Document Review** | Attached documents are parsed into prompt context before routing, and failed retries ask for reattachment instead of replaying a marker-only prompt |
+| **RAG Engine** | Drag-and-drop document indexing (PDF, Word, code, CSV, Markdown) with hybrid TF-IDF + semantic embedding search via nomic-embed-text |
+| **Agentic Tool Loops** | Multi-step requests are automatically detected and the LLM chains tools autonomously with streaming progress indicators |
+| **Morning Briefing** | Proactive daily summary on startup: weather, calendar, reminders, system status, Ollama model count, conversation stats, and rotating tips |
+| **Screen Capture** | Capture your screen and ask the AI to describe or help with anything visible |
+| **Planning Agent** | Multi-step task planning with persistent plans |
+| **Memory Manager** | Persistent context and fact storage across sessions |
+| **Browser Automation** | Automated browser interactions and content extraction |
+| **API Tool** | External HTTPS requests restricted to an approved host allowlist |
+| **Code Cloud API** | Route coding queries to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or a custom endpoint |
+| **Image Generation** | Text-to-image via local Stable Diffusion WebUI, ComfyUI, DALL-E 3, Pollinations.ai, or Stable Horde — auto-detected with progress indicator |
+| **Sports / NBA** | Live scores, full-season results, standings, and player stats via ESPN integration |
+| **Word Documents** | Generate `.docx` files with headings, paragraphs, and formatting |
+| **Archive Ops** | ZIP archive creation, extraction, and inspection with size and path-traversal guards |
+| **Scheduler** | Persistent reminders and scheduled jobs that survive app restarts |
+| **Quiz Mode** | Interactive coding quizzes with 12 topics, 3 difficulty levels, persistent progress tracking, and letter grades |
+| **Automation Center** | Create, edit, and run reusable automations with optional one-click n8n deployment; manual or scheduled triggers; status indicators and credential management via n8n dashboard |
+| **Mixture of Agents** | Multiple local models propose answers; an aggregator synthesises the best response (16 GB+ GPU) |
+
+### User Experience
+
+| Feature | Description |
+|---|---|
+| **Themes** | Light, dark, and system-auto theme with futuristic UI accents, glass morphism, neon glows, and 15+ CSS keyframe animations |
+| **Global Hotkey** | `Ctrl+Shift+Space` toggles HomeBot from any application |
+| **Auto-Update** | Background updates via electron-updater with IPC progress events |
+| **Voice Input** | Offline speech recognition via Windows SAPI |
+| **Embedded Web Services** | Access ChatGPT, Claude, and Gemini directly inside HomeBot via sandboxed browser panels |
+| **Conversation Management** | Sidebar with timestamps, message counts, pinning, archiving, tags, reactions, and full-text search |
+| **Multi-Format Export** | Export conversations as Markdown, DOCX, or PDF from the sidebar context menu |
+| **Keyboard Shortcuts** | Configurable shortcuts for common actions |
+| **Analytics Dashboard** | Visual dashboard for conversation and tool usage analytics |
+| **Message Density Toggle** | Compact or comfortable message spacing |
+| **Focus Mode** | Distraction-free full-screen chat interface |
+| **Responsive UI** | Fully responsive layout with fluid scaling from 500px to widescreen using CSS `min()`, `clamp()`, and viewport breakpoints |
+
+### Security
+
+| Measure | Description |
+|---|---|
+| **SSRF Protection** | URL validation blocks loopback, private IPs, and DNS rebinding |
+| **IPC Hardening** | Context isolation, preload bridge, path-traversal prevention |
+| **Webhook Auth** | 256-bit shared secret (`X-HOMEBOT-Auth`) for all n8n communication |
+| **Tool Recursion Cap** | `MAX_TOOL_ROUNDS = 10` prevents infinite tool-call loops |
+| **PID Injection Guard** | Positive integer validation before `Stop-Process` |
+| **Contact Injection Guard** | PowerShell metacharacter stripping in contact search queries |
+| **Toast XML Sanitisation** | Entity-encoding prevents injection in Windows notifications |
+| **Git Message Sanitisation** | Character whitelist prevents shell metacharacter injection |
+| **Redirect Depth Limit** | HTTP redirect chains capped at 5 hops to prevent loops |
+| **File Size Guards** | 50 MB cap on document parsing, 20 MB on vision input |
+| **Environment Gating** | Test code, debug logs, and dev features are compile-time gated |
+
+All tools execute locally as TypeScript handlers. HomeBot calls whichever tool the LLM selects, receives structured JSON, and keeps everything on your machine.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│              Electron 28 Shell                    │
+│   React 18 UI  <-->  IPC Bridge  <-->  Main Proc  │
+│   (Themes, Glass UI, Animations)                  │
+├──────────────────────────────────────────────────┤
+│   Message Router     |   85+ Tool Handlers        │
+│   (intent detection, |   (TypeScript, local exec)  │
+│    agentic loop,     |                            │
+│    tool recursion    |   Web - File - System      │
+│    cap, context      |   Vision - RAG - Plan      │
+│    budget)           |   Memory - Browser         │
+│                      |   API - Sports - Docs      │
+│   Morning Briefing   |   Archive - Image Gen      │
+│   (weather+cal+rem)  |   Voice - Scheduler        │
+├──────────────────────┼────────────────────────────┤
+│   Code Cloud API     |   Embedded Web Services    │
+│   (OpenAI/Anthropic  |   (ChatGPT / Claude /      │
+│    /OpenRouter/Groq  |    Gemini in sandboxed      │
+│    /DeepSeek/Google)  |    BrowserWindows)          │
+└───────────┬──────────┴────────────────────────────┘
+            | HTTP (localhost)
+┌───────────v────────────────────────────────────────┐
+│                 Ollama (local)                      │
+│   qwen2.5:7b - dolphin:7b - moondream      │
+│   gemma4:e4b - nomic-embed-text                    │
+│   127.0.0.1:11434                                   │
+└────────────────────────────────────────────────────┘
+```
+
+---
+
+## Prerequisites
+
+| Dependency | Version | Purpose | Install |
+|---|---|---|---|
+| **Node.js** | 18 LTS or higher | Electron app runtime | [nodejs.org](https://nodejs.org) |
+| **Ollama** | Latest | Local LLM inference | [ollama.com](https://ollama.com/download) |
+| **Docker Desktop** | Latest | Runs n8n (optional) | [docker.com](https://docker.com) |
+| **Git** | Latest | Version control | [git-scm.com](https://git-scm.com) |
+
+### Minimum Hardware
+
+- **OS:** Windows 10 or Windows 11
+- **RAM:** 16 GB recommended (8 GB minimum)
+- **GPU:** 4 GB+ VRAM recommended (NVIDIA RTX 2050 or better; CPU-only mode works but is slower)
+- **Storage:** 15 GB free space (for AI models and dependencies)
+
+---
+
+## Quick Start
+
+### Option A — One-Click Installer (Recommended)
+
+Download `HomeBot-Setup.exe` from the latest release (or build it yourself with `cd widget && npm run dist`). Double-click the installer — HomeBot installs to your user profile and launches automatically. No admin rights required.
+
+On first launch, the setup wizard will:
+
+1. Detect your GPU and recommend a hardware profile.
+2. Install Ollama automatically if it isn't already on your machine.
+3. Download the essential AI models (`qwen2.5:7b` + `nomic-embed-text`) with a progress bar.
+4. Drop you into a ready-to-chat interface.
+
+### Option B — Developer Setup
+
+```bash
+git clone https://github.com/kingithegreat/HomeBot.git
+cd HomeBot/widget
+npm install
+npm run dev
+```
+
+`npm run dev` uses the repo's Electron wrapper, which clears `ELECTRON_RUN_AS_NODE` before launching Electron so the app starts correctly from VS Code and other integrated terminals. HomeBot will launch with hot-reload enabled.
+
+The first-run wizard handles Ollama and model setup — you don't need to install anything else manually.
+
+### Optional: n8n Workflows
+
+```bash
+docker compose up -d
+```
+
+n8n will be available at `http://localhost:5678`. HomeBot can deploy workflows to n8n automatically from the Automation Center — check "Deploy to n8n" when creating an automation. You can also import workflows manually from `n8n-workflows/` via the n8n UI. HomeBot's core AI features work without n8n.
+
+Press `Ctrl+Shift+Space` to toggle the HomeBot window from any application.
+
+---
+
+## Project Structure
+
+```
+HomeBot/
+├── widget/                       # Electron + React desktop application
+│   ├── src/
+│   │   ├── main/                 # Main process (message-router, tools, IPC)
+│   │   │   ├── tools/            # 85+ TypeScript tool handler modules
+│   │   │   └── __tests__/        # Main-process unit test suites
+│   │   ├── renderer/             # React UI (components, styles)
+│   │   │   ├── components/       # ChatInterface, Settings, Sidebar, etc.
+│   │   │   ├── e2e/              # Playwright E2E test specs
+│   │   │   └── __tests__/        # Renderer unit test suites
+│   │   ├── preload/              # Context bridge (sandbox-safe IPC)
+│   │   └── shared/               # Types, constants, and utilities
+│   ├── electron.vite.config.ts   # electron-vite build configuration
+│   ├── electron-builder.yml      # Installer packaging configuration
+│   ├── jest.config.ts            # Jest test configuration
+│   ├── playwright.config.ts      # Playwright E2E configuration
+│   └── package.json
+├── n8n-workflows/                # n8n workflow definitions
+│   ├── core/                     # Chat orchestrator, safety validator
+│   └── tools/                    # Image generation workflow
+├── config/                       # JSON configuration files
+│   ├── safety-rules.json         # Path and operation whitelists
+│   ├── api-allowlist.json        # Approved API hostnames
+│   └── default-config.json       # Default application settings
+├── scripts/                      # Setup, build, and utility scripts
+├── prompts/                      # System prompts and intent detection
+├── schemas/                      # JSON schemas for tool validation
+├── docs/                         # Developer and API documentation
+├── memory/                       # Local memory and RAG index storage
+├── docker-compose.yml            # n8n container configuration
+└── README.md
+```
+
+---
+
+## Testing
+
+HomeBot maintains a comprehensive Jest and Playwright coverage suite with 120 test suites.
+
+```bash
+cd widget
+
+# Run all unit tests
+npx jest --config jest.config.ts --no-coverage
+
+# Run with coverage report
+npx jest --config jest.config.ts --coverage
+
+# Run a specific test file
+npx jest --config jest.config.ts vision-tools --no-coverage
+
+# Watch mode (re-runs on file changes)
+npx jest --config jest.config.ts --watch
+
+# End-to-end tests (requires Ollama running)
+npm run e2e
+```
+
+Test coverage reports are generated in `widget/coverage/`.
+
+---
+
+## Documentation
+
+Detailed documentation is available in the `docs/` folder:
+
+| Document | Description |
+|---|---|
+| [Architecture](docs/architecture.md) | System overview, component details, tool execution flow, safety model |
+| [Setup Guide](docs/setup-guide.md) | Step-by-step installation and first-run instructions |
+| [API Reference](docs/api-reference.md) | Complete IPC channel reference, tool schemas, permission system |
+| [Custom LLM API](docs/custom-llm-api.md) | Configure OpenAI, Anthropic, OpenRouter, or custom endpoints |
+| [Permissions](docs/permissions.md) | Tool permission model and batch execution behaviour |
+| [PowerShell Scripts](docs/powershell-scripts.md) | FileOps, SystemInfo, SafetyValidation, ArchiveOps reference |
+| [n8n Integration](docs/n8n-integration.md) | Workflow integration and PowerShell script wiring |
+| [Sports Report](docs/sports-report.md) | NBA tool usage, permissions, and ESPN integration |
+
+---
+
+## Academic Context
+
+HomeBot is developed as a capstone project at **Toi Ohomai Institute of Technology** (2026).
+
+| | |
+|---|---|
+| **Student** | Aden Kingi |
+| **Supervisor** | Francisco Roldao |
+| **Institution** | Toi Ohomai Institute of Technology |
+| **Stack** | Electron 28, React 18, TypeScript 5.9.3, Ollama, n8n, PowerShell |
+
+---
+
+## Roadmap
+
+HomeBot's next roadmap is focused on becoming the strongest local-first AI desktop option for Windows users. That means setup, performance, reliability, privacy, and proof come before broad feature expansion.
+
+### Next 30 Days
+
+- First-run diagnostics for Ollama, hardware, ports, disk space, and permissions
+- Hardware-aware presets for low-end, balanced, and high-performance machines
+- Better model recommendations for chat, coding, vision, and embeddings
+- Clear error recovery for missing models, stopped Ollama, and invalid config
+- Plain-language privacy contract in product and docs
+- Baseline performance metrics for startup, load, and first-token latency
+
+### 30 to 60 Days
+
+- Model manager with fallback routing and download guidance
+- Stronger offline-mode support for core local workflows
+- Repair paths for corrupted indexes, caches, and local state
+- Simpler setup and support flows for non-technical users
+- Compatibility matrix for Windows hardware tiers
+- Regression coverage for onboarding, model fallback, and offline behavior
+
+### 60 to 90 Days
+
+- Deeper local workflows for document intelligence, desktop automation, and coding tasks
+- Published benchmarks by hardware tier with recommended model bundles
+- Better installer, update, and recovery experience
+- User-feedback-driven reduction of friction in the most common local workflows
+- Sharper positioning around privacy-first local productivity
+
+### Deferred Until the Core Experience Is Stronger
+
+- Always-on voice mode and wake word detection
+- Conversation branching UI
+- Broad i18n expansion
+- Additional cloud integrations that do not improve the local-first product

@@ -1,5 +1,5 @@
 /**
- * SADIE Document Tools
+ * HomeBot Document Tools
  * 
  * Tools for parsing and processing uploaded documents (PDF, Word, text files).
  */
@@ -7,15 +7,20 @@
 import { ToolDefinition, ToolHandler, ToolResult, ToolContext } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveUserPath } from './filesystem';
+
+const fsPromises = fs.promises;
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
 
 // Lazy load document parsers
 let pdfParse: any = null;
 let mammoth: typeof import('mammoth') | null = null;
+let ExcelJS: any = null;
 
 async function getPdfParser() {
   if (!pdfParse) {
-    const mod = await import('pdf-parse');
-    pdfParse = mod.default || mod;
+    // pdf-parse v1.1.1 exports the function directly
+    pdfParse = require('pdf-parse');
   }
   return pdfParse;
 }
@@ -25,6 +30,13 @@ async function getMammoth() {
     mammoth = await import('mammoth');
   }
   return mammoth;
+}
+
+async function getExcelJS() {
+  if (!ExcelJS) {
+    ExcelJS = require('exceljs');
+  }
+  return ExcelJS;
 }
 
 /**
@@ -43,6 +55,40 @@ interface ParsedDocument {
 // In-memory store for parsed documents (cleared on restart)
 const parsedDocuments = new Map<string, ParsedDocument>();
 
+function resolveLocalDocumentPath(targetPath: string): { valid: boolean; resolved: string; error?: string } {
+  if (!targetPath || typeof targetPath !== 'string') {
+    return { valid: false, resolved: '', error: 'Path is required' };
+  }
+
+  const resolved = path.resolve(resolveUserPath(targetPath));
+  if (!HOME_DIR || !resolved.toLowerCase().startsWith(HOME_DIR.toLowerCase())) {
+    return { valid: false, resolved, error: `Access denied: Path must be within your home directory (${HOME_DIR})` };
+  }
+
+  return { valid: true, resolved };
+}
+
+function inferMimeType(ext: string): string {
+  switch (ext) {
+    case '.pdf':
+      return 'application/pdf';
+    case '.docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case '.doc':
+      return 'application/msword';
+    case '.xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case '.xls':
+      return 'application/vnd.ms-excel';
+    case '.csv':
+      return 'text/csv';
+    case '.txt':
+      return 'text/plain';
+    default:
+      return '';
+  }
+}
+
 /**
  * Parse document content from base64 data
  */
@@ -58,8 +104,8 @@ async function parseDocumentContent(
   
   // PDF parsing
   if (mimeType === 'application/pdf' || ext === '.pdf') {
-    const pdf = await getPdfParser();
-    const result = await pdf(buffer);
+    const pdfParser = await getPdfParser();
+    const result = await pdfParser(buffer);
     return {
       text: result.text,
       pageCount: result.numpages
@@ -76,6 +122,39 @@ async function parseDocumentContent(
     return { text: result.value };
   }
   
+  // Excel spreadsheet (.xlsx)
+  if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    mimeType === 'application/vnd.ms-excel' ||
+    ext === '.xlsx' || ext === '.xls'
+  ) {
+    const EJ = await getExcelJS();
+    const workbook = new EJ.Workbook();
+    await workbook.xlsx.load(buffer);
+    const lines: string[] = [];
+    workbook.eachSheet((sheet: any) => {
+      lines.push(`## Sheet: ${sheet.name}`);
+      sheet.eachRow((row: any, _rowNum: number) => {
+        const cells = row.values as any[];
+        // row.values is 1-indexed (index 0 is undefined)
+        const values = (cells || []).slice(1).map((v: any) => {
+          if (v === null || v === undefined) return '';
+          if (typeof v === 'object' && v.result !== undefined) return String(v.result);
+          if (typeof v === 'object' && v.text) return String(v.text);
+          return String(v);
+        });
+        lines.push(values.join('\t'));
+      });
+      lines.push('');
+    });
+    return { text: lines.join('\n') };
+  }
+
+  // CSV files
+  if (mimeType === 'text/csv' || ext === '.csv') {
+    return { text: buffer.toString('utf-8') };
+  }
+
   // Legacy Word document (.doc) - mammoth doesn't support .doc well
   if (mimeType === 'application/msword' || ext === '.doc') {
     // Try mammoth anyway, but warn user
@@ -138,6 +217,26 @@ export const documentToolDefs: ToolDefinition[] = [
         }
       },
       required: ['document_id', 'data']
+    },
+    requiresConfirmation: false
+  },
+  {
+    name: 'parse_document_from_path',
+    description: 'Parse and extract text content from a local file path (PDF, Word, or text). Useful for summarizing documents stored on your machine.',
+    category: 'document',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute or home-relative path to the document (e.g., Desktop/CV.pdf)'
+        },
+        document_id: {
+          type: 'string',
+          description: 'Optional document ID to reuse for lookups'
+        }
+      },
+      required: ['path']
     },
     requiresConfirmation: false
   },
@@ -261,6 +360,62 @@ export const documentToolHandlers: Record<string, ToolHandler> = {
       return {
         success: false,
         error: `Failed to parse document: ${err.message}`
+      };
+    }
+  },
+
+  parse_document_from_path: async (args: Record<string, any>, _context: ToolContext): Promise<ToolResult> => {
+    const validation = resolveLocalDocumentPath(args.path);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    try {
+      const stats = await fsPromises.stat(validation.resolved);
+      if (stats.isDirectory()) {
+        return { success: false, error: 'Cannot parse a directory. Provide a file path.' };
+      }
+
+      const MAX_BYTES = 5 * 1024 * 1024;
+      if (stats.size > MAX_BYTES) {
+        return { success: false, error: 'File is too large (max 5MB).' };
+      }
+
+      const buffer = await fsPromises.readFile(validation.resolved);
+      const ext = path.extname(validation.resolved).toLowerCase();
+      const mimeType = inferMimeType(ext);
+      const filename = path.basename(validation.resolved);
+      const { text, pageCount } = await parseDocumentContent(buffer.toString('base64'), mimeType, filename);
+
+      const documentId = args.document_id || `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+
+      parsedDocuments.set(documentId, {
+        id: documentId,
+        filename,
+        mimeType,
+        text,
+        wordCount,
+        pageCount,
+        parsedAt: new Date().toISOString()
+      });
+
+      return {
+        success: true,
+        result: {
+          document_id: documentId,
+          filename,
+          path: validation.resolved,
+          word_count: wordCount,
+          page_count: pageCount,
+          preview: text.substring(0, 500) + (text.length > 500 ? '...' : ''),
+          message: 'Document parsed successfully from disk. Use get_document_content for full text or search_document for queries.'
+        }
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: `Failed to parse document from path: ${err.message}`
       };
     }
   },

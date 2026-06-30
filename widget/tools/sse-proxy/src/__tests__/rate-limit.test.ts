@@ -10,7 +10,7 @@ describe('Rate limiting', () => {
     const max = 5;
     let lastRes: any = null;
     for (let i = 0; i < max + 2; i++) {
-      lastRes = await request(app).post('/stream').set('x-sadie-key', 'test').send({ provider: 'openai', model: 'x', prompt: 'hi' });
+      lastRes = await request(app).post('/stream').set('x-homebot-key', 'test').send({ provider: 'openai', model: 'x', prompt: 'hi' });
       if (lastRes.status === 429) break;
     }
     expect([429, 200, 500]).toContain(lastRes.status);

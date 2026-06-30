@@ -6,7 +6,7 @@
     "streamHeader": "text/event-stream"
   },
   "ollama": {
-    "endpoint": "http://localhost:11434/api/infer",
+    "endpoint": "http://127.0.0.1:11434/api/infer",
     "streamHeader": "text/event-stream"
   },
   "maxBodySize": "12mb",

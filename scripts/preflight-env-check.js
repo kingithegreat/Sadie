@@ -22,7 +22,7 @@ if (process.env.SKIP_PREFLIGHT === '1' || process.env.SKIP_PREFLIGHT === 'true')
 }
 
 // Dangerous flags that must not be present in release builds
-const dangerousFlags = ['SADIE_E2E', 'SADIE_DIRECT_OLLAMA'];
+const dangerousFlags = ['HOMEBOT_E2E', 'HOMEBOT_DIRECT_OLLAMA'];
 let failed = false;
 for (const f of dangerousFlags) {
   if (process.env[f] !== undefined && process.env[f] !== '') {

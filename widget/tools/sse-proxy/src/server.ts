@@ -55,5 +55,5 @@ wss.on('connection', (socket: any) => {
 	socket.on('close', () => { if (upstreamController) upstreamController.abort(); console.log('WS client disconnected'); });
 });
 
-server.listen(port, () => console.log(`SADIE SSE Proxy listening on port ${port}`));
+server.listen(port, () => console.log(`HomeBot SSE Proxy listening on port ${port}`));
 export default app;

@@ -1,4 +1,5 @@
-import React from 'react';
+/** @jest-environment jsdom */
+
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 import { Message as SharedMessage, ElectronAPI } from '../../shared/types';
@@ -65,7 +66,7 @@ describe('cancel flow (renderer)', () => {
     const { getByLabelText, getByText, unmount } = render(<App />);
 
     // Type a user message and send to create a streaming assistant placeholder and subscriptions
-    const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Start streaming' } });
     const sendBtn = getByText('Send') as HTMLButtonElement;
     // Send should be enabled now

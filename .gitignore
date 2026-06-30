@@ -1,4 +1,4 @@
-# SADIE - Structured AI Desktop Intelligence Engine
+# HomeBot - Desktop AI Assistant
 # .gitignore
 
 # Node modules
@@ -93,3 +93,38 @@ $RECYCLE.BIN/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+# Generated tool registry log
+execution.log.jsonl
+
+# Local test/output scratch files
+e2e-*.txt
+full-test-out.txt
+test-out.txt
+persist*.txt
+persist*/
+hello.txt
+memory/rag-index.json
+
+# Build output (root-level)
+out/
+
+# Claude Code tooling
+.claude/
+
+# Memory archives (local data)
+memory/json-store/archives/
+
+# Temporary E2E debug artifacts
+widget/.tmp-e2e-*
+
+# Office documents and presentation files (keep in Google Drive, not git)
+*.docx
+*.pptx
+*.xlsx
+
+# Support packets / debug archives
+support-packet-*.zip
+
+# Jest result artifacts
+widget/jest-result.json

@@ -1,35 +1,128 @@
-import { ipcMain, BrowserWindow } from 'electron';
-import { getMainWindow } from './window-manager';
+import { ipcMain, BrowserWindow, app, shell } from 'electron';
+import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
+import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
+
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
+
 import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getSettings, saveSettings } from './config-manager';
+import * as os from 'os';
+import * as https from 'https';
+import { spawn, execFile } from 'child_process';
+
+// ── Timeout constants (ms) ─────────────────────────────────────────────────
+const HEALTH_CHECK_TIMEOUT = 2000;
+const OLLAMA_OP_TIMEOUT = 30_000;
+const OLLAMA_PULL_TIMEOUT = 600_000;
+const SPEECH_RECOGNITION_TIMEOUT = 20_000;
+const OLLAMA_READY_POLL_TIMEOUT = 1500;
+
+import {
+  getSettings, 
+  saveSettings, 
+  assertPermission, 
+  getSettingsPath, 
+  resetPermissions, 
+  exportTelemetryConsent,
+  getDefaultSettings
+} from './config-manager';
+import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
+import { fetchPageContentHandler } from './tools/browser';
+import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
+import { ragToolHandlers } from './tools/rag';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
+import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
+import type { ToolContext } from './tools/index';
+import { detectGpuVram, recommendConfig } from './moa';
+import { speakHandler, stopSpeakingHandler } from './tools/voice';
+import { listJobs, addJob, removeJob, toggleJob } from './scheduler';
+import {
+  loadMcpConfig,
+  saveMcpConfig,
+  getMcpStatus,
+  type McpServerConfig
+} from './mcp-client';
 import {
   MemoryManager,
   StoredConversation,
-  ConversationStore,
+  ConversationSearchResult,
 } from './memory-manager';
 import { Message } from '../shared/types';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
+import { isDevelopment, isDemoMode } from './env';
+import { homebotWebhookHeaders } from './webhook-auth';
+import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
+import { createAndActivateWorkflow, ensureWebFetchWorkflow } from './n8n-api';
 
-// Default settings
-const DEFAULT_SETTINGS = {
-  alwaysOnTop: true,
-  n8nUrl: 'http://localhost:5678',
-  widgetHotkey: 'Ctrl+Shift+Space'
-};
-
-// Get settings file path
-const getSettingsPath = (): string => {
-  const configDir = path.join(__dirname, '..', '..', 'config');
-  
-  // Ensure config directory exists
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true });
+function normalizeOllamaBaseUrl(raw?: string): string {
+  const input = (raw || DEFAULT_OLLAMA_URL).trim();
+  let withScheme = /^https?:\/\//i.test(input) ? input : `http://${input}`;
+  // Replace localhost with 127.0.0.1 because Ollama on Windows binds to IPv4 127.0.0.1
+  // and Node.js >= 17 prefers IPv6 (::1), causing ECONNREFUSED or timeouts.
+  withScheme = withScheme.replace(/:\/\/localhost(:|\/|$)/i, '://127.0.0.1$1');
+  try {
+    const u = new URL(withScheme);
+    // Users sometimes paste /api or /api/tags into settings; normalize to host root.
+    u.pathname = u.pathname.replace(/\/api(?:\/tags)?\/?$/i, '');
+    const base = `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '');
+    return base || DEFAULT_OLLAMA_URL;
+  } catch {
+    return DEFAULT_OLLAMA_URL;
   }
-  
-  return path.join(configDir, 'user-settings.json');
-};
+}
+
+function getConfiguredOllamaBaseUrl(): string {
+  const settings = getSettings();
+  return normalizeOllamaBaseUrl(process.env.OLLAMA_URL || settings.ollamaUrl || DEFAULT_OLLAMA_URL);
+}
+
+async function launchOllamaServe(): Promise<{ started: boolean; error?: string }> {
+  const candidates = process.platform === 'win32'
+    ? [
+        'ollama.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Ollama', 'ollama.exe'),
+      ]
+    : ['ollama'];
+
+  for (const cmd of candidates) {
+    if (!cmd) continue;
+    const outcome = await new Promise<{ ok: boolean; notFound: boolean; message?: string }>((resolve) => {
+      try {
+        const child = spawn(cmd, ['serve'], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        let settled = false;
+        child.once('error', (err: any) => {
+          if (settled) return;
+          settled = true;
+          resolve({ ok: false, notFound: err?.code === 'ENOENT', message: String(err?.message || err) });
+        });
+        child.unref();
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve({ ok: true, notFound: false });
+        }, 200);
+      } catch (e: any) {
+        resolve({ ok: false, notFound: true, message: String(e?.message || e) });
+      }
+    });
+
+    if (outcome.ok) return { started: true };
+    if (!outcome.notFound) return { started: false, error: outcome.message || 'Failed to start Ollama.' };
+  }
+
+  return {
+    started: false,
+    error: 'Ollama executable not found. Install from https://ollama.com/download or add it to PATH.',
+  };
+}
+
 
 /**
  * Register all IPC handlers for communication between renderer and main process
@@ -40,24 +133,34 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     // early renderer invokes during startup without races.
     // Note: we store a flag on the global to persist across reloads in dev.
     const g = global as any;
-    if (g.__sadie_ipc_registered) {
+    if (g.__homebot_ipc_registered) {
       // Only log idempotent registration warnings in development
-      const { isDevelopment } = require('./env');
       if (isDevelopment) {
         console.log('[IPC] registerIpcHandlers already executed — skipping');
-        try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) {}
+        try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] registerIpcHandlers already executed — skipping'); } catch (e) { safeCatch(e); }
       }
       return;
     }
+    // Align runtime uncensored flag with persisted settings at startup
+    try {
+      const initialSettings = getSettings();
+      setUncensoredMode(!!initialSettings.uncensoredMode);
+    } catch (e) {
+      console.error('[IPC] Failed to hydrate uncensored mode from settings:', (e as any)?.message || e);
+    }
+
     // Health check: verify n8n and Ollama statuses
-    ipcMain.handle('sadie:check-connection', async () => {
+    ipcMain.handle('homebot:check-connection', async () => {
       const settings = getSettings();
       const n8nBase = settings.n8nUrl || 'http://localhost:5678';
       const n8nHealth = `${n8nBase.replace(/\/$/, '')}/healthz`;
       const result = { n8n: 'checking', ollama: 'checking', lastChecked: new Date().toISOString() } as any;
       try {
-        const r = await axios.get(n8nHealth, { timeout: 2000 });
-        if (r && r.status && r.status >= 200 && r.status < 300) result.n8n = 'online';
+        const r = await axios.get(n8nHealth, { timeout: HEALTH_CHECK_TIMEOUT });
+        if (r && r.status && r.status >= 200 && r.status < 300) {
+          result.n8n = 'online';
+          ensureWebFetchWorkflow().catch(e => console.log('[WebFetch] n8n workflow deploy skipped:', e?.message));
+        }
         else result.n8n = 'offline';
       } catch (e) {
         result.n8n = 'offline';
@@ -65,8 +168,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
       try {
         // Ollama may not expose /healthz; a simple GET on base URL will suffice for a quick check
-        const ollamaBase = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
-        const r2 = await axios.get(ollamaBase, { timeout: 2000 });
+        const ollamaBase = getConfiguredOllamaBaseUrl();
+        const r2 = await axios.get(ollamaBase, { timeout: HEALTH_CHECK_TIMEOUT });
         result.ollama = (r2 && r2.status && r2.status >= 200 && r2.status < 500) ? 'online' : 'offline';
       } catch (e) {
         result.ollama = 'offline';
@@ -76,10 +179,60 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return result as { n8n: 'online'|'offline'|'checking'; ollama: 'online'|'offline'|'checking'; lastChecked: string };
     });
 
+    // Uncensored Mode Handlers
+    ipcMain.handle('homebot:get-uncensored-mode', async () => {
+      try {
+        return { enabled: routerGetUncensoredMode() };
+      } catch (e) {
+        const settings = getSettings();
+        return { enabled: !!settings.uncensoredMode };
+      }
+    });
+
+    ipcMain.handle('homebot:set-uncensored-mode', async (_event, enabled: boolean) => {
+      const settings = getSettings();
+      settings.uncensoredMode = enabled;
+      saveSettings(settings); // This function is already imported from config-manager
+      try { setUncensoredMode(enabled); } catch (e) { console.error('[IPC] Failed to set uncensored mode runtime flag:', (e as any)?.message || e); }
+      return { success: true, enabled: settings.uncensoredMode };
+    });
+
+    // Baseline perf metrics (startup + first-token/TTFT aggregates) for the Diagnostics & Performance UI
+    ipcMain.handle('homebot:get-perf-aggregates', async () => {
+      try {
+        return readPerfAggregates();
+      } catch (e) {
+        console.error('[IPC] get-perf-aggregates failed:', (e as any)?.message || e);
+        const empty = { count: 0, avg_ms: 0, p50_ms: 0, p95_ms: 0, min_ms: 0, max_ms: 0, last_ms: null };
+        return { startup: empty, firstToken: { ...empty } };
+      }
+    });
+
+    // Raw recent samples (chronological) for the Diagnostics trend sparklines
+    ipcMain.handle('homebot:get-perf-history', async (_evt, limit?: number) => {
+      try {
+        return readPerfHistory(typeof limit === 'number' ? limit : 20);
+      } catch (e) {
+        console.error('[IPC] get-perf-history failed:', (e as any)?.message || e);
+        return { startup: [], firstToken: [] };
+      }
+    });
+
     ipcMain.on('window-minimize', () => {
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {
         win.minimize();
+      }
+    });
+
+    ipcMain.on('window-maximize', () => {
+      const win = mainWindow ?? getMainWindow();
+      if (win && !win.isDestroyed()) {
+        if (win.isMaximized()) {
+          win.unmaximize();
+        } else {
+          win.maximize();
+        }
       }
     });
 
@@ -89,42 +242,55 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         win.close();
       }
     });
+
+    ipcMain.handle('homebot:toggle-widget-mode', () => {
+      return toggleWidgetMode();
+    });
+
+    ipcMain.handle('homebot:get-widget-mode', () => {
+      return getWidgetMode();
+    });
+
+    ipcMain.on('homebot:set-always-on-top', (_event, value: boolean) => {
+      const win = mainWindow ?? getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.setAlwaysOnTop(value);
+      }
+    });
   
   /**
    * Handle message from renderer → forward to n8n orchestrator
    */
-  ipcMain.on('sadie:message', async (_event, { message, conversationId }) => {
+  ipcMain.on('homebot:message', async (_event, { message, conversationId }) => {
     try {
       console.log('[Main] Received sendMessage', { conversationId, preview: String(message).substring(0,120) });
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] Received sendMessage conv=${conversationId} preview=${String(message).substring(0,120)}`); } catch (e) {}
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(`[MAIN] Received sendMessage conv=${conversationId} preview=${String(message).substring(0,120)}`); } catch (e) { safeCatch(e); }
           // Load settings to get n8n URL
           const settings = getSettings();
       console.log('[Main] Calling messageRouter.sendStreamRequest (via axios post)');
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push('[MAIN] Calling messageRouter.sendStreamRequest (via axios post)'); } catch (e) {}
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] Calling messageRouter.sendStreamRequest (via axios post)'); } catch (e) { safeCatch(e); }
 
       // Send message to n8n orchestrator
-      const response = await axios.post(`${settings.n8nUrl}/webhook/sadie/chat`, {
+      const response = await axios.post(`${settings.n8nUrl}/webhook/homebot/chat`, {
         user_id: 'desktop-user',
         conversation_id: conversationId || 'default',
         message: message,
         timestamp: new Date().toISOString()
       }, {
-        timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        timeout: OLLAMA_OP_TIMEOUT,
+        headers: homebotWebhookHeaders()
       });
 
       // Send response back to renderer
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send('sadie:reply', {
+        win.webContents.send('homebot:reply', {
         success: true,
         data: response.data
         });
       }
       console.log('[Main] sendStreamRequest returned', { status: response.status });
-      try { (global as any).__SADIE_MAIN_LOG_BUFFER?.push(`[MAIN] sendStreamRequest returned status=${response.status}`); } catch (e) {}
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(`[MAIN] sendStreamRequest returned status=${response.status}`); } catch (e) { safeCatch(e); }
 
     } catch (err: any) {
       console.error('Error communicating with n8n orchestrator:', err.message);
@@ -132,10 +298,10 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // Send error response back to renderer
       const win = mainWindow ?? getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send('sadie:reply', {
+        win.webContents.send('homebot:reply', {
           success: false,
           error: true,
-          message: 'Sadie could not reach the orchestrator.',
+          message: 'HomeBot could not reach the orchestrator.',
           details: err.message,
           response: 'I\'m having trouble connecting to my backend. Please make sure n8n is running.'
         });
@@ -143,22 +309,184 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Image generation panel: delegates to the same tool handler used in chat
+  ipcMain.handle('homebot:automation:image:generate', async (_event, { payload }) => {
+    const rawPrompt = String(payload?.prompt || '').trim();
+    // Parse resolution string (e.g. '512x512') into width/height
+    let width = 512, height = 512;
+    const resParts = String(payload?.resolution || '').match(/^(\d+)x(\d+)$/);
+    if (resParts) {
+      width = Math.min(2048, Math.max(128, Number(resParts[1])));
+      height = Math.min(2048, Math.max(128, Number(resParts[2])));
+    } else if (payload?.width) {
+      width = Math.min(2048, Math.max(128, Number(payload.width) || 512));
+      height = Math.min(2048, Math.max(128, Number(payload.height) || 512));
+    }
+    const steps = Math.min(150, Math.max(1, Number(payload?.steps) || 20));
+    const backend = payload?.backend || 'hybrid';
+
+    // Incorporate style into prompt
+    const styleMap: Record<string, string> = {
+      realistic: 'photorealistic, highly detailed, 8k,',
+      artistic: 'artistic, painterly, expressive brushstrokes,',
+      cartoon: 'cartoon style, bold outlines, vibrant colors,',
+      anime: 'anime style, cel shaded, detailed anime art,',
+    };
+    const stylePrefix = styleMap[payload?.style] || '';
+    const prompt = stylePrefix ? `${stylePrefix} ${rawPrompt}` : rawPrompt;
+
+    if (!prompt) {
+      return { status: 'failure', timestamp: new Date().toISOString(), operation: 'image_generate', source: null, image: null, metadata: { prompt }, validation: { validated: false }, error: { message: 'Prompt is required', code: 'INVALID_INPUT' } };
+    }
+
+    try {
+      const toolResult = await webToolHandlers['image_generate'](
+        { prompt, width, height, steps, backend },
+        { executionId: `img-panel-${Date.now()}` } as any
+      );
+
+      if (toolResult.success && toolResult.result?.image_base64) {
+        return {
+          status: 'success',
+          timestamp: new Date().toISOString(),
+          operation: 'image_generate',
+          source: toolResult.result.source || 'unknown',
+          image: toolResult.result.image_base64,
+          metadata: { prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
+          validation: { validated: true },
+          error: { message: '', code: '' }
+        };
+      }
+
+      return {
+        status: 'failure',
+        timestamp: new Date().toISOString(),
+        operation: 'image_generate',
+        source: null,
+        image: null,
+        metadata: { prompt, width, height, steps },
+        validation: { validated: false },
+        error: {
+          message: toolResult.error || 'Image generation failed',
+          code: 'GENERATION_FAILED'
+        }
+      };
+    } catch (err: any) {
+      return {
+        status: 'failure',
+        timestamp: new Date().toISOString(),
+        operation: 'image_generate',
+        source: null,
+        image: null,
+        metadata: { prompt, width, height, steps },
+        validation: { validated: false },
+        error: {
+          message: err.message || 'Unexpected error during image generation',
+          code: 'INTERNAL_ERROR'
+        }
+      };
+    }
+  });
+
+  // sd-cpp local image generation status & setup
+  ipcMain.handle('homebot:sd-cpp:status', async () => {
+    const dir = getSDCppDir();
+    const binary = findSDCppBinary();
+    const model = findSDCppModel();
+    return {
+      ready: !!(binary && model),
+      hasBinary: !!binary,
+      hasModel: !!model,
+      dir,
+      modelsDir: require('path').join(dir, 'models'),
+    };
+  });
+
+  ipcMain.handle('homebot:sd-cpp:setup', async () => {
+    const dir = getSDCppDir();
+    const modelsDir = require('path').join(dir, 'models');
+    const fs = require('fs');
+
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true });
+
+    const binary = findSDCppBinary();
+    const model = findSDCppModel();
+
+    if (binary && model) return { success: true, message: 'Already set up and ready.' };
+
+    const instructions: string[] = [];
+    if (!binary) {
+      instructions.push(
+        `Download sd.exe from: https://github.com/leejet/stable-diffusion.cpp/releases`,
+        `Extract sd.exe into: ${dir}`
+      );
+    }
+    if (!model) {
+      instructions.push(
+        `Download a GGUF model from: https://huggingface.co/leejet/FLUX.1-schnell-GGUF (fast) or https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF (classic)`,
+        `Place the .gguf file into: ${modelsDir}`
+      );
+    }
+
+    // Open the sd-cpp directory so user can drop files in
+    try { require('electron').shell.openPath(dir); } catch {}
+
+    return {
+      success: false,
+      message: 'Local image generation setup needed.',
+      instructions,
+      dir,
+      modelsDir,
+    };
+  });
+
   /**
    * Get user settings from file
    */
-  ipcMain.handle('sadie:get-settings', async () => {
+  ipcMain.handle('homebot:get-settings', async () => {
     try {
       return getSettings();
     } catch (err: any) {
       console.error('Error loading settings:', err.message);
-      return getSettings();
+      return getDefaultSettings();
+    }
+  });
+
+  ipcMain.handle('homebot:list-custom-llm-models', async (_event, payload) => {
+    try {
+      console.log('[IPC] Fetching custom LLM models with config:', {
+        apiUrl: payload?.apiUrl,
+        provider: payload?.provider,
+        hasApiKey: !!payload?.apiKey
+      });
+      
+      if (!payload?.apiUrl) {
+        return { success: false, error: 'API URL is required' };
+      }
+
+      // Validate URL protocol to prevent non-HTTP SSRF (file://, ftp://, etc.)
+      try {
+        const parsed = new URL(payload.apiUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+        }
+      } catch {
+        return { success: false, error: 'Invalid URL format' };
+      }
+      
+      const models = await fetchAvailableCustomModels(payload || {});
+      console.log('[IPC] Successfully fetched', models.length, 'models');
+      return { success: true, models };
+    } catch (err: any) {
+      console.error('[IPC] Failed to fetch custom LLM models:', err?.message || err);
+      return { success: false, error: err?.message || 'Unable to fetch models' };
     }
   });
 
   // Check a single permission for a given tool (used by renderer to hide/disable UI)
-  ipcMain.handle('sadie:has-permission', async (_event, toolName: string) => {
+  ipcMain.handle('homebot:has-permission', async (_event, toolName: string) => {
     try {
-      const { assertPermission } = require('./config-manager');
       const allowed = assertPermission(toolName);
       return { success: true, allowed };
     } catch (err: any) {
@@ -170,10 +498,22 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Save user settings to file
    */
-  ipcMain.handle('sadie:save-settings', async (_event, settings) => {
+  ipcMain.handle('homebot:save-settings', async (_event, settings) => {
     try {
-      const merged = { ...getSettings(), ...settings };
+      const prev = getSettings();
+      const merged = { ...prev, ...settings };
       saveSettings(merged);
+
+      // Track model changes
+      if (merged.chatModel && merged.chatModel !== prev.chatModel) {
+        try { logTelemetryEvent('model_switch', { from: prev.chatModel, to: merged.chatModel }); } catch (_e) {}
+      }
+
+      // Refresh search API keys in memory
+      setTavilyApiKey(merged.tavilyApiKey || null);
+      setSerperApiKey(merged.serperApiKey || null);
+      setStableHordeApiKey(merged.stableHordeApiKey || null);
+
       return { success: true, data: merged };
     } catch (err: any) {
       console.error('Error saving settings:', err.message);
@@ -184,14 +524,35 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Get the absolute path to the config file (for E2E testing)
    */
-  ipcMain.handle('sadie:get-config-path', async () => {
-    const { getSettingsPath } = require('./config-manager');
+  ipcMain.handle('homebot:get-config-path', async () => {
     return getSettingsPath();
   });
 
-  ipcMain.handle('sadie:reset-permissions', async () => {
+  ipcMain.handle('homebot:get-generated-image', async (_event, filename: string) => {
     try {
-      const { resetPermissions, getSettings } = require('./config-manager');
+      const path = require('path');
+      const fs = require('fs');
+      if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) return null;
+      const filePath = path.join(app.getPath('userData'), 'generated-images', filename);
+      if (!fs.existsSync(filePath)) return null;
+      const buf = fs.readFileSync(filePath);
+      const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+      const mime = isJpeg ? 'image/jpeg' : 'image/png';
+      return `data:${mime};base64,${buf.toString('base64')}`;
+    } catch { return null; }
+  });
+
+  ipcMain.handle('homebot:get-env', async () => {
+    return {
+      isE2E: !!process.env.HOMEBOT_E2E,
+      isPackagedBuild: app.isPackaged,
+      isReleaseBuild: app.isPackaged,
+      userDataPath: app.getPath('userData')
+    };
+  });
+
+  ipcMain.handle('homebot:reset-permissions', async () => {
+    try {
       const updated = resetPermissions();
       return { success: true, data: updated };
     } catch (err: any) {
@@ -200,9 +561,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle('sadie:export-consent', async () => {
+  ipcMain.handle('homebot:export-consent', async () => {
     try {
-      const { exportTelemetryConsent } = require('./config-manager');
       const result = exportTelemetryConsent();
       return result;
     } catch (err: any) {
@@ -211,24 +571,344 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // ── Fetch web page content (called from Web Browser panel) ──
+  // Try n8n first (it runs in Docker and can fetch any URL), fall back to local
+  ipcMain.handle('homebot:fetch-page-content', async (_event, url: string) => {
+    try {
+      if (!url || typeof url !== 'string') {
+        return { success: false, error: 'url is required' };
+      }
+
+      // Try n8n webhook route first
+      try {
+        const settings = getSettings();
+        const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
+        const webhookUrl = `${n8nBase}/webhook/homebot/web-fetch`;
+
+        console.log('[WebFetch] Trying n8n webhook:', webhookUrl);
+        const n8nRes = await axios.post(webhookUrl, { url, max_length: 20000 }, {
+          timeout: 30_000,
+          headers: homebotWebhookHeaders()
+        });
+
+        if (n8nRes.data?.success) {
+          console.log('[WebFetch] n8n returned content:', (n8nRes.data.content?.length || 0), 'chars');
+          return n8nRes.data;
+        }
+        console.log('[WebFetch] n8n returned non-success, falling back to local');
+      } catch (n8nErr: any) {
+        console.log('[WebFetch] n8n unavailable, falling back to local:', n8nErr?.message);
+      }
+
+      // Local fallback
+      return await fetchPageContentHandler({ url, max_length: 20000 }, { executionId: `web-fetch-${Date.now()}` });
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Summarize web content via n8n (Ollama), with local fallback ──
+  ipcMain.handle('homebot:summarize-web-content', async (_event, url: string, content: string) => {
+    try {
+      if (!content) return { success: false, error: 'No content to summarize' };
+
+      const model = getSettings().chatModel || 'qwen2.5:7b';
+      const truncated = content.length > 6000 ? content.slice(0, 6000) : content;
+      const prompt = `Summarize this web page concisely. Include key information, services/products offered, and contact details if present. Use bullet points for clarity.\n\nURL: ${url}\n\nContent:\n${truncated}`;
+
+      // Try n8n first
+      try {
+        const settings = getSettings();
+        const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
+        console.log('[WebSummary] Trying n8n...');
+        const n8nRes = await axios.post(`${n8nBase}/webhook/homebot/chat`, {
+          message: prompt,
+          user_id: 'desktop-user',
+          conversation_id: 'web-summary',
+          timestamp: new Date().toISOString()
+        }, { timeout: 60_000, headers: homebotWebhookHeaders() });
+
+        const summary = n8nRes.data?.output || n8nRes.data?.data?.assistant?.content || '';
+        if (summary) {
+          console.log('[WebSummary] n8n returned summary:', summary.length, 'chars');
+          return { success: true, summary };
+        }
+      } catch (n8nErr: any) {
+        console.log('[WebSummary] n8n unavailable, using local Ollama:', n8nErr?.message);
+      }
+
+      // Local Ollama fallback
+      const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
+        model,
+        prompt,
+        system: 'You are a helpful assistant that summarizes web pages concisely with bullet points.',
+        stream: false,
+        options: { temperature: 0.5, num_predict: 1500 }
+      }, { timeout: 90_000 });
+
+      const summary = response.data?.response || '';
+      if (summary) {
+        console.log('[WebSummary] Local Ollama returned summary:', summary.length, 'chars');
+        return { success: true, summary };
+      }
+      return { success: false, error: 'No summary generated' };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── RAG: index a local file or web content ──
+  ipcMain.handle('homebot:rag-index', async (_event, filePath: string, content?: string) => {
+    try {
+      if (!filePath || typeof filePath !== 'string') {
+        return { success: false, error: 'filePath is required' };
+      }
+      if (content && typeof content === 'string') {
+        const result = await ragToolHandlers.rag_index({ path: filePath, web_content: content }, {} as any);
+        return result;
+      }
+      const result = await ragToolHandlers.rag_index({ path: filePath }, {} as any);
+      return result;
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── RAG: list all indexed documents ──
+  ipcMain.handle('homebot:rag-list', async () => {
+    try {
+      return await ragToolHandlers.rag_list({}, {} as any);
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── RAG: remove a document from the index ──
+  ipcMain.handle('homebot:rag-clear', async (_event, docId: string) => {
+    try {
+      if (!docId || typeof docId !== 'string') {
+        return { success: false, error: 'doc_id is required' };
+      }
+      return await ragToolHandlers.rag_clear({ doc_id: docId }, {} as any);
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('homebot:list-tools', async () => {
+    try {
+      const tools = getAllToolDefinitions().map(t => ({
+        name: t.name,
+        description: t.description,
+        category: t.category || 'utility',
+      }));
+      return { success: true, tools };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Export chat history as markdown, DOCX, or PDF
+  ipcMain.handle('homebot:export-chat', async (_event, markdown: string, format?: string) => {
+    try {
+      const desktop = app.getPath('desktop');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+      if (format === 'docx') {
+        const { Document: Doc, Packer: Pack, Paragraph: Para, TextRun: TR, HeadingLevel: HL } = await import('docx');
+        const paragraphs: any[] = [];
+        for (const line of markdown.split('\n')) {
+          if (line.startsWith('# ')) {
+            paragraphs.push(new Para({ text: line.slice(2), heading: HL.HEADING_1 }));
+          } else if (line.startsWith('### ')) {
+            paragraphs.push(new Para({ children: [new TR({ text: line.slice(4), bold: true, size: 24 })] }));
+          } else if (line === '---') {
+            paragraphs.push(new Para({ text: '' }));
+          } else {
+            paragraphs.push(new Para({ text: line }));
+          }
+        }
+        const doc = new Doc({ sections: [{ children: paragraphs }] });
+        const buf = Buffer.from(await Pack.toBuffer(doc));
+        const filePath = path.join(desktop, `homebot-chat-${ts}.docx`);
+        fs.writeFileSync(filePath, buf);
+        return { success: true, path: filePath };
+      }
+
+      if (format === 'pdf') {
+        const PDFDoc = (await import('pdfkit')).default;
+        const buf: Buffer = await new Promise((resolve, reject) => {
+          const doc = new PDFDoc({ margin: 50 });
+          const chunks: Buffer[] = [];
+          doc.on('data', (c: Buffer) => chunks.push(c));
+          doc.on('end', () => resolve(Buffer.concat(chunks)));
+          doc.on('error', reject);
+          for (const line of markdown.split('\n')) {
+            if (line.startsWith('# ')) {
+              doc.fontSize(20).font('Helvetica-Bold').text(line.slice(2));
+              doc.moveDown(0.3);
+            } else if (line.startsWith('### ')) {
+              doc.fontSize(12).font('Helvetica-Bold').text(line.slice(4));
+              doc.moveDown(0.2);
+            } else if (line === '---') {
+              doc.moveDown(0.3);
+            } else {
+              doc.fontSize(10).font('Helvetica').text(line, { lineGap: 2 });
+            }
+          }
+          doc.end();
+        });
+        const filePath = path.join(desktop, `homebot-chat-${ts}.pdf`);
+        fs.writeFileSync(filePath, buf);
+        return { success: true, path: filePath };
+      }
+
+      const filePath = path.join(desktop, `homebot-chat-${ts}.md`);
+      fs.writeFileSync(filePath, markdown, 'utf-8');
+      return { success: true, path: filePath };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // E2E ping helper - used by tests to ensure main is responsive
-  ipcMain.handle('sadie:__e2e_ping', async () => {
-    try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; (global as any).__SADIE_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) {}
+  ipcMain.handle('homebot:__e2e_ping', async () => {
+    try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER = (global as any).__HOMEBOT_ROUTER_LOG_BUFFER || []; (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push('[E2E] ping'); } catch (e) { safeCatch(e); }
     return { ok: true };
   });
 
   // Expose current app mode (demo or normal)
-  ipcMain.handle('sadie:get-mode', async () => {
-    const { isDemoMode } = require('./env');
+  ipcMain.handle('homebot:get-mode', async () => {
     return { demo: !!isDemoMode };
   });
 
-  // Read telemetry consent log (JSONL) for UI display
-  ipcMain.handle('sadie:read-consent-log', async () => {
+  // GPU VRAM detection and hardware-aware model recommendations
+  ipcMain.handle('homebot:detect-gpu-vram', async () => {
     try {
-      const { app } = require('electron');
-      const path = require('path');
-      const fs = require('fs');
+      const gpu = await detectGpuVram();
+      const config = gpu.vramGB ? recommendConfig(gpu.vramGB) : null;
+      return {
+        success: true,
+        vramGB: gpu.vramGB,
+        gpuName: gpu.gpuName,
+        method: gpu.method,
+        recommendation: config ? {
+          mode: config.mode,
+          preset: config.preset ?? null,
+          model: config.model ?? null,
+          reason: config.reason,
+        } : null,
+      };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+
+  // ── Comprehensive first-run diagnostics ───────────────────────────────────
+  // Runs disk-space, service-reachability, write-permissions, and GPU checks
+  // in parallel. All checks are non-destructive and safe to call at any time.
+  ipcMain.handle('homebot:run-diagnostics', async () => {
+    try {
+      const { runDiagnostics } = await import('./diagnostics');
+      const settings = getSettings();
+      const userDataPath = app.getPath('userData');
+      const result = await runDiagnostics(
+        {
+          ollamaUrl: settings.ollamaUrl || 'http://127.0.0.1:11434',
+          n8nUrl: settings.n8nUrl || 'http://localhost:5678',
+        },
+        userDataPath
+      );
+      return { success: true, ...result };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // List installed Ollama models via /api/tags
+  ipcMain.handle('homebot:list-ollama-models', async () => {
+    const ollamaBase = getConfiguredOllamaBaseUrl();
+    try {
+      const res = await axios.get(`${ollamaBase}/api/tags`, { timeout: OLLAMA_OP_TIMEOUT });
+      const models = (res.data?.models || []).map((m: any) => ({
+        name: m.name,
+        size: m.size,
+        modifiedAt: m.modified_at,
+        details: m.details || {},
+      }));
+      return { success: true, models };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err), models: [] };
+    }
+  });
+
+  // Delete an Ollama model
+  ipcMain.handle('homebot:delete-ollama-model', async (_event, modelName: string) => {
+    if (!modelName || typeof modelName !== 'string') {
+      return { success: false, error: 'Invalid model name' };
+    }
+    const ollamaBase = getConfiguredOllamaBaseUrl();
+    try {
+      await axios.delete(`${ollamaBase}/api/delete`, { data: { name: modelName }, timeout: OLLAMA_OP_TIMEOUT });
+      return { success: true, model: modelName };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // Pull an Ollama model with progress reporting
+  ipcMain.handle('homebot:pull-model', async (_event, modelName: string) => {
+    if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
+      return { success: false, error: 'Invalid model name' };
+    }
+    const ollamaBase = getConfiguredOllamaBaseUrl();
+    try {
+      const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName }, { timeout: OLLAMA_PULL_TIMEOUT });
+      return { success: true, model: modelName, status: res?.data?.status || 'done' };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // Start Ollama (`ollama serve`) detached. Best-effort: succeeds if already
+  // running, or if `ollama` is on PATH; returns a clear error otherwise so the
+  // UI can tell the user to install/run it manually.
+  ipcMain.handle('homebot:start-ollama', async () => {
+    const ollamaBase = getConfiguredOllamaBaseUrl();
+
+    // Already running? Don't spawn a duplicate.
+    try {
+      await axios.get(`${ollamaBase}/api/tags`, { timeout: HEALTH_CHECK_TIMEOUT });
+      return { success: true, alreadyRunning: true };
+    } catch (e) {
+      console.error('[OLLAMA HEALTH CHECK ERROR]', e);
+    }
+
+    try {
+      const launched = await launchOllamaServe();
+      if (!launched.started) {
+        return { success: false, error: launched.error || 'Failed to start Ollama.' };
+      }
+
+      // Poll for readiness (up to ~30s) so the UI can flip from "offline" to "ready"
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          await axios.get(`${ollamaBase}/api/tags`, { timeout: OLLAMA_READY_POLL_TIMEOUT });
+          return { success: true, alreadyRunning: false };
+        } catch { /* keep polling */ }
+      }
+      return { success: false, error: 'Ollama did not become ready within 30s. Check the terminal for errors.' };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // Read telemetry consent log (JSONL) for UI display
+  ipcMain.handle('homebot:read-consent-log', async () => {
+    try {
       const userData = app.getPath('userData');
       const logPath = path.join(userData, 'logs', 'telemetry-consent.log');
       if (!fs.existsSync(logPath)) return { success: true, data: '' };
@@ -240,12 +920,119 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // Read telemetry events (JSONL) for the Telemetry dashboard UI
+  ipcMain.handle('homebot:read-telemetry-events', async () => {
+    try {
+      const userData = app.getPath('userData');
+      const pathsToCheck = [
+        path.join(userData, 'logs', 'telemetry-events.log'),
+        path.join(os.homedir(), 'HOMEBOT_DIAG', 'telemetry-events.log')
+      ];
+      const found = pathsToCheck.find(p => fs.existsSync(p));
+      if (!found) return { success: true, events: [] };
+      const data = fs.readFileSync(found, 'utf-8').trim();
+      if (!data) return { success: true, events: [] };
+      const lines = data.split('\n').filter(Boolean);
+      const events = lines.map(l => {
+        try { return JSON.parse(l); } catch { return null; }
+      }).filter(Boolean);
+      return { success: true, events };
+    } catch (err: any) {
+      console.error('Failed to read telemetry events:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Analytics summary — aggregated conversation stats for the dashboard
+  ipcMain.handle('homebot:get-analytics-summary', async () => {
+    try {
+      const store = MemoryManager.loadConversationStore();
+      const conversations = store?.conversations || [];
+      let totalMessages = 0;
+      let oldest: string | null = null;
+      for (const conv of conversations) {
+        totalMessages += (conv?.messages?.length || 0);
+        const created = conv?.createdAt;
+        if (created && (!oldest || created < oldest)) oldest = created;
+      }
+      const conversationCount = conversations.length;
+      const avg = conversationCount > 0 ? Math.round(totalMessages / conversationCount) : 0;
+      const toolCallStats = readToolCallAggregates();
+      return {
+        success: true,
+        summary: {
+          conversationCount,
+          totalMessages,
+          avgMessagesPerConversation: avg,
+          oldestConversation: oldest,
+          toolCallStats,
+        },
+      };
+    } catch (err: any) {
+      console.error('Failed to build analytics summary:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Dev/E2E debug: return main/renderer in-memory buffers and conversation store snapshot
+  ipcMain.handle('homebot:read-debug-logs', async () => {
+    try {
+      const rendererLogs = (global as any).__HOMEBOT_RENDERER_LOGS || [];
+      const mainLogs = (global as any).__HOMEBOT_MAIN_LOG_BUFFER || [];
+      const store = MemoryManager.loadConversationStore();
+      return { success: true, rendererLogs, mainLogs, conversationStore: store };
+    } catch (err: any) {
+      console.error('Failed to read debug logs:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Append renderer log to in-memory buffer for diagnostics
+  ipcMain.on('homebot:append-renderer-log', (_event, line: string) => {
+    try {
+      if (!(global as any).__HOMEBOT_RENDERER_LOGS) (global as any).__HOMEBOT_RENDERER_LOGS = [];
+      (global as any).__HOMEBOT_RENDERER_LOGS.push(line);
+      if ((global as any).__HOMEBOT_RENDERER_LOGS.length > 500) {
+        (global as any).__HOMEBOT_RENDERER_LOGS.shift();
+      }
+    } catch (e) { safeCatch(e); }
+  });
+
+  // Capture logs: write runtime snapshot to temp file and return path
+  ipcMain.handle('homebot:capture-logs', async () => {
+    try {
+      const rendererLogs = (global as any).__HOMEBOT_RENDERER_LOGS || [];
+      const mainLogs = (global as any).__HOMEBOT_MAIN_LOG_BUFFER || [];
+      const logContent = [
+        '=== HomeBot Log Capture ===',
+        `Timestamp: ${new Date().toISOString()}`,
+        '',
+        '--- Main Process Logs ---',
+        ...mainLogs,
+        '',
+        '--- Renderer Logs ---',
+        ...rendererLogs,
+      ].join('\n');
+      const logPath = path.join(os.tmpdir(), `homebot-logs-${Date.now()}.txt`);
+      fs.writeFileSync(logPath, logContent, 'utf-8');
+      return { success: true, path: logPath };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Restart the application
+  ipcMain.handle('homebot:restart-app', async () => {
+    app.relaunch();
+    app.quit();
+  });
+
   // ============= Memory / Conversation Handlers =============
 
   /**
    * Load all conversations (list view)
    */
-  ipcMain.handle('sadie:load-conversations', async () => {
+  ipcMain.handle('homebot:load-conversations', async () => {
     try {
       const store = MemoryManager.loadConversationStore();
       return { success: true, data: store };
@@ -258,7 +1045,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Get a single conversation by ID
    */
-  ipcMain.handle('sadie:get-conversation', async (_event, conversationId: string) => {
+  ipcMain.handle('homebot:get-conversation', async (_event, conversationId: string) => {
     try {
       const conversation = MemoryManager.getConversation(conversationId);
       return { success: true, data: conversation };
@@ -271,7 +1058,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Create a new conversation
    */
-  ipcMain.handle('sadie:create-conversation', async (_event, title?: string) => {
+  ipcMain.handle('homebot:create-conversation', async (_event, title?: string) => {
     try {
       const conversation = MemoryManager.createNewConversation(title);
       return { success: true, data: conversation };
@@ -284,7 +1071,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Save/update a conversation
    */
-  ipcMain.handle('sadie:save-conversation', async (_event, conversation: StoredConversation) => {
+  ipcMain.handle('homebot:save-conversation', async (_event, conversation: StoredConversation) => {
     try {
       const success = MemoryManager.saveConversation(conversation);
       return { success };
@@ -297,9 +1084,10 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Delete a conversation
    */
-  ipcMain.handle('sadie:delete-conversation', async (_event, conversationId: string) => {
+  ipcMain.handle('homebot:delete-conversation', async (_event, conversationId: string) => {
     try {
       const success = MemoryManager.deleteConversation(conversationId);
+      clearHistory(conversationId);
       return { success };
     } catch (err: any) {
       console.error('Error deleting conversation:', err.message);
@@ -308,11 +1096,29 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   /**
+   * Compact a conversation — archive older messages, replace with summary
+   */
+  ipcMain.handle('homebot:compact-conversation', async (_event, conversationId: string, keepRecent?: number) => {
+    try {
+      const result = MemoryManager.compactConversation(conversationId, keepRecent);
+      if (result.success) {
+        clearHistory(conversationId);
+      }
+      return result;
+    } catch (err: any) {
+      console.error('Error compacting conversation:', err.message);
+      return { success: false, originalCount: 0, compactedCount: 0, error: err.message };
+    }
+  });
+
+  /**
    * Set active conversation
    */
-  ipcMain.handle('sadie:set-active-conversation', async (_event, conversationId: string | null) => {
+  ipcMain.handle('homebot:set-active-conversation', async (_event, conversationId: string | null) => {
     try {
       const success = MemoryManager.setActiveConversation(conversationId);
+      // Pre-warm LLM context so first message in this conversation has full history
+      if (conversationId) ensureHydrated(conversationId);
       return { success };
     } catch (err: any) {
       console.error('Error setting active conversation:', err.message);
@@ -323,12 +1129,39 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Add a message to a conversation
    */
-  ipcMain.handle('sadie:add-message', async (_event, { conversationId, message }: { conversationId: string; message: Message }) => {
+  ipcMain.handle('homebot:add-message', async (_event, { conversationId, message }: { conversationId: string; message: Message }) => {
     try {
+      console.log(`[IPC] homebot:add-message conv=${conversationId} msgId=${message.id} len=${String(message.content || '').length}`);
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER = (global as any).__HOMEBOT_MAIN_LOG_BUFFER || []; (global as any).__HOMEBOT_MAIN_LOG_BUFFER.push(`[IPC] homebot:add-message conv=${conversationId} msgId=${message.id}`); } catch (e) { safeCatch(e); }
       const success = MemoryManager.addMessageToConversation(conversationId, message);
+      console.log(`[IPC] addMessage -> success=${success}`);
+
+      // Auto-compact when conversation exceeds threshold
+      const AUTO_COMPACT_THRESHOLD = 50;
+      try {
+        const conv = MemoryManager.getConversation(conversationId);
+        if (conv && conv.messages.length >= AUTO_COMPACT_THRESHOLD) {
+          const alreadyCompacted = conv.messages.some(m => m.role === 'system' && m.content?.startsWith('[Conversation summary'));
+          if (!alreadyCompacted) {
+            const result = MemoryManager.compactConversation(conversationId);
+            if (result.success && !result.error) {
+              clearHistory(conversationId);
+              const win = mainWindow ?? getMainWindow();
+              win?.webContents.send('homebot:conversation-compacted', {
+                conversationId,
+                originalCount: result.originalCount,
+                compactedCount: result.compactedCount,
+              });
+              console.log(`[IPC] Auto-compacted ${conversationId}: ${result.originalCount} → ${result.compactedCount} messages`);
+            }
+          }
+        }
+      } catch (e) { safeCatch(e); }
+
       return { success };
     } catch (err: any) {
       console.error('Error adding message:', err.message);
+      try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER.push(`[IPC] addMessage error=${String(err)}`); } catch (e) { safeCatch(e); }
       return { success: false, error: err.message };
     }
   });
@@ -336,9 +1169,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   /**
    * Update a message in a conversation
    */
-  ipcMain.handle('sadie:update-message', async (_event, { conversationId, messageId, updates }: { conversationId: string; messageId: string; updates: Partial<Message> }) => {
+  ipcMain.handle('homebot:update-message', async (_event, { conversationId, messageId, updates }: { conversationId: string; messageId: string; updates: Partial<Message> }) => {
     try {
       const success = MemoryManager.updateMessageInConversation(conversationId, messageId, updates);
+      if (success) {
+        resyncHistoryFromStore(conversationId);
+      }
       return { success };
     } catch (err: any) {
       console.error('Error updating message:', err.message);
@@ -347,30 +1183,176 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   /**
+   * Auto-generate a short conversation title from the first exchange.
+   * Calls Ollama non-streaming with a minimal prompt, saves to memory,
+   * and pushes the result back to the renderer via homebot:title-updated.
+   */
+  ipcMain.handle('homebot:generate-title', async (_event, {
+    conversationId,
+    userMessage,
+    assistantReply,
+  }: { conversationId: string; userMessage: string; assistantReply: string }) => {
+    try {
+      const settings = getSettings();
+      const userSnippet = userMessage.slice(0, 200);
+      const assistantSnippet = assistantReply.slice(0, 200);
+      const titleInstruction = 'Generate a short conversation title (4-6 words max, no punctuation, no quotes) that captures what this exchange is about.';
+
+      let title = '';
+      const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+
+      if (isCustomLLMActive) {
+        const cfg = settings.customLLM!;
+        const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
+
+        if (cfg.provider === 'anthropic') {
+          const resp = await axios.post(`${apiUrl}/messages`, {
+            model: cfg.model,
+            max_tokens: 30,
+            temperature: 0.3,
+            messages: [{ role: 'user', content: `${titleInstruction}\nUser: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:` }],
+          }, {
+            headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
+            timeout: 15000,
+          });
+          title = resp.data?.content?.[0]?.text ?? '';
+        } else {
+          const resp = await axios.post(`${apiUrl}/chat/completions`, {
+            model: cfg.model,
+            messages: [
+              { role: 'system', content: titleInstruction },
+              { role: 'user', content: `User: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:` },
+            ],
+            max_tokens: 30,
+            temperature: 0.3,
+          }, {
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
+            timeout: 15000,
+          });
+          title = resp.data?.choices?.[0]?.message?.content ?? '';
+        }
+      } else {
+        const ollamaBase = getConfiguredOllamaBaseUrl();
+        const model = settings.chatModel || process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const prompt = `${titleInstruction}\nUser: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:`;
+        const resp = await axios.post(
+          `${ollamaBase}/api/generate`,
+          { model, prompt, stream: false, options: { temperature: 0.3, num_predict: 20 } },
+          { timeout: OLLAMA_OP_TIMEOUT }
+        );
+        title = resp.data?.response ?? '';
+      }
+
+      title = title.replace(/^["'\s]+|["'\s]+$/g, '').replace(/\n.*/g, '').trim();
+      if (!title || title.length < 2) return { success: false, error: 'Empty title response' };
+      if (title.length > 60) title = title.slice(0, 57) + '…';
+
+      const conv = MemoryManager.getConversation(conversationId);
+      if (conv) {
+        conv.title = title;
+        MemoryManager.saveConversation(conv);
+      }
+
+      const win = mainWindow ?? getMainWindow();
+      win?.webContents.send('homebot:title-updated', { conversationId, title });
+
+      return { success: true, title };
+    } catch (err: any) {
+      console.warn('[IPC] generate-title failed:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Open a file in the system default application
+   */
+  ipcMain.handle('homebot:open-file', async (_event, filePath: string) => {
+    try {
+      if (!filePath) {
+        return { success: false, error: 'No file path provided' };
+      }
+      // Resolve and restrict to user home directory to prevent path traversal
+      const normalizedPath = path.resolve(filePath);
+      const homeDir = require('os').homedir();
+      const homeWithSep = homeDir.toLowerCase() + path.sep;
+      if (normalizedPath.toLowerCase() !== homeDir.toLowerCase() && !normalizedPath.toLowerCase().startsWith(homeWithSep)) {
+        return { success: false, error: 'Access denied: path must be within home directory' };
+      }
+      if (!fs.existsSync(normalizedPath)) {
+        return { success: false, error: 'File not found' };
+      }
+      await shell.openPath(normalizedPath);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error opening file:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('homebot:open-external-url', async (_event, url: string) => {
+    try {
+      if (!url || typeof url !== 'string') {
+        return { success: false, error: 'No URL provided' };
+      }
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return { success: false, error: 'Only http/https URLs are allowed' };
+      }
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Show a file in the system file explorer (and select it)
+   */
+  ipcMain.handle('homebot:show-in-folder', async (_event, filePath: string) => {
+    try {
+      if (!filePath) {
+        return { success: false, error: 'No file path provided' };
+      }
+      // Resolve and restrict to user home directory to prevent path traversal
+      const normalizedPath = path.resolve(filePath);
+      const homeDir = require('os').homedir();
+      const homeWithSep = homeDir.toLowerCase() + path.sep;
+      if (normalizedPath.toLowerCase() !== homeDir.toLowerCase() && !normalizedPath.toLowerCase().startsWith(homeWithSep)) {
+        return { success: false, error: 'Access denied: path must be within home directory' };
+      }
+      if (!fs.existsSync(normalizedPath)) {
+        return { success: false, error: 'File not found' };
+      }
+      shell.showItemInFolder(normalizedPath);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error showing in folder:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
    * Start Windows speech recognition (offline capable)
    * Uses Windows SAPI through PowerShell
    */
-  ipcMain.handle('sadie:start-speech-recognition', async () => {
-    const { exec } = require('child_process');
-    
+  ipcMain.handle('homebot:start-speech-recognition', async () => {
+
     return new Promise((resolve) => {
-      // PowerShell script to use Windows Speech Recognition
+      // PowerShell script to use Windows Speech Recognition (SAPI — fully offline)
       const psScript = `
 Add-Type -AssemblyName System.Speech
 $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
 $recognizer.SetInputToDefaultAudioDevice()
 
-# Create a simple grammar that accepts any dictation
 $dictation = New-Object System.Speech.Recognition.DictationGrammar
 $recognizer.LoadGrammar($dictation)
 
-# Listen for 10 seconds max
-$recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(5)
-$recognizer.BabbleTimeout = [TimeSpan]::FromSeconds(3)
-$recognizer.EndSilenceTimeout = [TimeSpan]::FromSeconds(1)
+$recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(6)
+$recognizer.BabbleTimeout         = [TimeSpan]::FromSeconds(4)
+$recognizer.EndSilenceTimeout     = [TimeSpan]::FromSeconds(1.5)
 
 try {
-    $result = $recognizer.Recognize([TimeSpan]::FromSeconds(10))
+    $result = $recognizer.Recognize([TimeSpan]::FromSeconds(15))
     if ($result -and $result.Text) {
         Write-Output $result.Text
     } else {
@@ -382,13 +1364,22 @@ try {
     $recognizer.Dispose()
 }
 `;
+      // Write to a unique temp file so concurrent calls don't race
+      const tmpFile = path.join(os.tmpdir(), `homebot-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
+      try {
+        fs.writeFileSync(tmpFile, psScript, 'utf8');
+      } catch (writeErr: any) {
+        resolve({ success: false, error: 'Could not write temp script: ' + writeErr.message, text: '' });
+        return;
+      }
 
-      exec(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, 
-        { timeout: 15000 }, 
+      execFile('powershell', ['-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', tmpFile],
+        { timeout: SPEECH_RECOGNITION_TIMEOUT },
         (error: any, stdout: string, stderr: string) => {
+          try { fs.unlinkSync(tmpFile); } catch (_) {}
           if (error) {
-            console.error('Speech recognition error:', error.message);
-            resolve({ success: false, error: 'Speech recognition failed', text: '' });
+            console.error('[Voice] SAPI error:', error.message, stderr);
+            resolve({ success: false, error: 'Speech recognition failed: ' + (error.message || ''), text: '' });
           } else {
             const text = stdout.trim();
             resolve({ success: true, text });
@@ -398,9 +1389,1002 @@ try {
     });
   });
 
+  // ── Scheduler ──────────────────────────────────────────────────────────────────
+  ipcMain.handle('homebot:scheduler-list', () => listJobs());
+
+  ipcMain.handle('homebot:scheduler-add', (_event, input: any) => {
+    const { name, message, intervalMinutes, dailyTime, enabled } = input || {};
+    if (!name || !message) return { success: false, error: 'name and message are required' };
+    const job = addJob({
+      name: String(name).slice(0, 80),
+      message: String(message).slice(0, 500),
+      intervalMinutes: Math.max(1, Number(intervalMinutes) || 60),
+      dailyTime: dailyTime ? String(dailyTime) : undefined,
+      enabled: enabled !== false,
+    });
+    return { success: true, job };
+  });
+
+  ipcMain.handle('homebot:scheduler-remove', (_event, id: string) => {
+    return { success: removeJob(id) };
+  });
+
+  ipcMain.handle('homebot:scheduler-toggle', (_event, id: string, enabled: boolean) => {
+    const job = toggleJob(id, enabled);
+    return job ? { success: true, job } : { success: false, error: 'Job not found' };
+  });
+
+  // ── TTS (text-to-speech) ────────────────────────────────────────────────────
+  // Uses Edge TTS neural voices (msedge-tts), falls back to Web Speech API
+  ipcMain.handle('homebot:tts-speak', async (_event, text: string, rate?: number) => {
+    return speakHandler({ text, rate: rate ?? 0 }, {} as any);
+  });
+
+  ipcMain.handle('homebot:tts-stop', async () => {
+    return stopSpeakingHandler({}, {} as any);
+  });
+
+  // ── MCP Server Management ───────────────────────────────────────────────────
+
+  ipcMain.handle('homebot:mcp-get-status', async () => {
+    return getMcpStatus();
+  });
+
+  ipcMain.handle('homebot:mcp-list-servers', async () => {
+    return loadMcpConfig().servers;
+  });
+
+  ipcMain.handle('homebot:mcp-add-server', async (_event, config: McpServerConfig) => {
+    const current = loadMcpConfig();
+    // Replace if same name already exists, otherwise append
+    const idx = current.servers.findIndex(s => s.name === config.name);
+    if (idx >= 0) {
+      current.servers[idx] = config;
+    } else {
+      current.servers.push(config);
+    }
+    saveMcpConfig(current);
+    return { success: true };
+  });
+
+  ipcMain.handle('homebot:mcp-remove-server', async (_event, name: string) => {
+    const current = loadMcpConfig();
+    current.servers = current.servers.filter(s => s.name !== name);
+    saveMcpConfig(current);
+    return { success: true };
+  });
+
+  ipcMain.handle('homebot:mcp-toggle-server', async (_event, name: string, enabled: boolean) => {
+    const current = loadMcpConfig();
+    const server = current.servers.find(s => s.name === name);
+    if (server) server.enabled = enabled;
+    saveMcpConfig(current);
+    return { success: true };
+  });
+
+  // ── Conversation Search ─────────────────────────────────────────────────────
+
+  /**
+   * Full-text search across all stored conversations.
+   * Returns matching messages with title, role and a surrounding snippet.
+   */
+  ipcMain.handle('homebot:search-conversations', async (_event, query: string, maxResults?: number) => {
+    try {
+      const results: ConversationSearchResult[] = MemoryManager.searchConversations(query, maxResults ?? 50);
+      return { success: true, data: results };
+    } catch (err: any) {
+      console.error('[IPC] homebot:search-conversations error:', err.message);
+      return { success: false, error: err.message, data: [] };
+    }
+  });
+
+  /**
+   * Export a single conversation as Markdown or JSON.
+   * Accepts an optional format: 'markdown' (default) | 'json'.
+   */
+  ipcMain.handle('homebot:export-conversation', async (_event, conversationId: string, format?: string) => {
+    console.log('[IPC] export-conversation called:', { conversationId: conversationId?.slice(0, 12), format });
+    try {
+      const desktop = app.getPath('desktop');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeId = conversationId.replace(/[^a-z0-9_-]/gi, '').slice(0, 12);
+      let filePath: string;
+
+      if (format === 'docx') {
+        const buf = await MemoryManager.exportConversationAsDocx(conversationId);
+        if (!buf) return { success: false, error: 'Conversation not found' };
+        filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.docx`);
+        fs.writeFileSync(filePath, buf);
+      } else if (format === 'pdf') {
+        const buf = await MemoryManager.exportConversationAsPdf(conversationId);
+        if (!buf) return { success: false, error: 'Conversation not found' };
+        filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.pdf`);
+        fs.writeFileSync(filePath, buf);
+      } else {
+        const isJson = format === 'json';
+        const content = isJson
+          ? MemoryManager.exportConversationAsJSON(conversationId)
+          : MemoryManager.exportConversationAsMarkdown(conversationId);
+        if (!content) return { success: false, error: 'Conversation not found' };
+        const ext = isJson ? 'json' : 'md';
+        filePath = path.join(desktop, `homebot-export-${safeId}-${ts}.${ext}`);
+        fs.writeFileSync(filePath, content, 'utf-8');
+      }
+
+      console.log('[IPC] Exported to:', filePath);
+      shell.openPath(filePath).catch(() => {});
+      return { success: true, path: filePath };
+    } catch (err: any) {
+      console.error('[IPC] homebot:export-conversation error:', err.message, err.stack);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Settings Export/Import ──────────────────────────────────────────────────
+
+  ipcMain.handle('homebot:export-settings', async () => {
+    try {
+      const settings = getSettings();
+      const convStore = MemoryManager.loadConversationStore();
+      const prefs = MemoryManager.loadPreferences();
+      const toolStats = MemoryManager.loadToolStats();
+      const bundle = {
+        _homebot_backup: true,
+        exportedAt: new Date().toISOString(),
+        version: app.getVersion(),
+        settings,
+        preferences: prefs,
+        conversations: convStore,
+        toolStats,
+      };
+      const desktop = path.join(os.homedir(), 'Desktop');
+      const filename = `homebot-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const filePath = path.join(desktop, filename);
+      fs.writeFileSync(filePath, JSON.stringify(bundle, null, 2), 'utf-8');
+      return { success: true, path: filePath };
+    } catch (err: any) {
+      console.error('[IPC] homebot:export-settings error:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('homebot:import-settings', async (_event, filePath: string) => {
+    try {
+      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+      const raw = fs.readFileSync(resolved, 'utf-8');
+      const bundle = JSON.parse(raw);
+      if (!bundle._homebot_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
+
+      if (bundle.settings) {
+        const current = getSettings();
+        saveSettings({ ...current, ...bundle.settings });
+      }
+      if (bundle.preferences) {
+        MemoryManager.savePreferences(bundle.preferences);
+      }
+      if (bundle.conversations) {
+        MemoryManager.saveConversationStore(bundle.conversations);
+      }
+      return { success: true, restoredAt: new Date().toISOString() };
+    } catch (err: any) {
+      console.error('[IPC] homebot:import-settings error:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Document Viewer ────────────────────────────────────────────────────────
+  ipcMain.handle('homebot:parse-document', async (_event, filePath: string) => {
+    try {
+      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+
+      const stat = fs.statSync(resolved);
+      if (stat.size > 50 * 1024 * 1024) {
+        return { success: false, error: 'File too large (max 50 MB)' };
+      }
+
+      const ext = path.extname(resolved).toLowerCase();
+      const buffer = fs.readFileSync(resolved);
+      const fileName = path.basename(resolved);
+
+      // DOCX — return both HTML (for rendering) and plain text (for editing/export)
+      if (ext === '.docx') {
+        const mammoth = await import('mammoth');
+        const [htmlResult, textResult] = await Promise.all([
+          mammoth.convertToHtml({ buffer }),
+          mammoth.extractRawText({ buffer }),
+        ]);
+        return { success: true, html: htmlResult.value, text: textResult.value, fileName };
+      }
+
+      // PDF
+      if (ext === '.pdf') {
+        const pdfParse = require('pdf-parse');
+        const result = await pdfParse(buffer);
+        return { success: true, text: result.text, pageCount: result.numpages, fileName };
+      }
+
+      // Excel
+      if (ext === '.xlsx' || ext === '.xls') {
+        const ExcelJS = require('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer);
+        const lines: string[] = [];
+        workbook.eachSheet((sheet: any) => {
+          lines.push(`## Sheet: ${sheet.name}`);
+          sheet.eachRow((row: any) => {
+            const cells = (row.values as any[]) || [];
+            const values = cells.slice(1).map((v: any) => {
+              if (v === null || v === undefined) return '';
+              if (typeof v === 'object' && v.result !== undefined) return String(v.result);
+              if (typeof v === 'object' && v.text) return String(v.text);
+              return String(v);
+            });
+            lines.push(values.join('\t'));
+          });
+          lines.push('');
+        });
+        return { success: true, text: lines.join('\n'), type: 'spreadsheet', fileName };
+      }
+
+      // Plain text / code / CSV / markdown
+      return { success: true, text: buffer.toString('utf-8'), fileName };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:write-document', async (_event, filePath: string, content: string) => {
+    try {
+      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      const homeDir = os.homedir();
+      const homeWithSep = homeDir.toLowerCase() + path.sep;
+      if (resolved.toLowerCase() !== homeDir.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {
+        return { success: false, error: 'Access denied: path must be within home directory' };
+      }
+      fs.writeFileSync(resolved, content, 'utf-8');
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
+  // ── Ollama installer download ────────────────────────────────────────────
+  // Downloads OllamaSetup.exe and runs it silently, then polls until ready.
+
+  ipcMain.handle('homebot:check-ollama-installed', async () => {
+    const candidates = process.platform === 'win32'
+      ? [
+          'ollama.exe',
+          path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+          path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Ollama', 'ollama.exe'),
+        ]
+      : ['ollama'];
+
+    for (const cmd of candidates) {
+      if (!cmd) continue;
+      try {
+        const resolved = await new Promise<string | null>((resolve) => {
+          execFile(process.platform === 'win32' ? 'where' : 'which', [cmd], { timeout: 3000 }, (err, stdout) => {
+            if (err) resolve(null);
+            else resolve(stdout.trim().split('\n')[0] || null);
+          });
+        });
+        if (resolved) return { installed: true, path: resolved };
+      } catch { /* try next */ }
+      if (path.isAbsolute(cmd) && fs.existsSync(cmd)) {
+        return { installed: true, path: cmd };
+      }
+    }
+    return { installed: false, path: null };
+  });
+
+  ipcMain.handle('homebot:download-ollama', async () => {
+    const win = mainWindow ?? getMainWindow();
+    const sendProgress = (data: any) => {
+      try { if (win && !win.isDestroyed()) win.webContents.send('homebot:ollama-download-progress', data); } catch { /* */ }
+    };
+
+    const installerUrl = 'https://ollama.com/download/OllamaSetup.exe';
+    const tmpPath = path.join(os.tmpdir(), `OllamaSetup-${Date.now()}.exe`);
+
+    try {
+      sendProgress({ stage: 'downloading', percent: 0 });
+
+      await new Promise<void>((resolve, reject) => {
+        const follow = (url: string, redirects = 0) => {
+          if (redirects > 5) { reject(new Error('Too many redirects')); return; }
+          const req = https.get(url, { headers: { 'User-Agent': 'HomeBot-Installer/1.0' } }, (res) => {
+            if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              follow(res.headers.location, redirects + 1);
+              return;
+            }
+            if (!res.statusCode || res.statusCode >= 400) {
+              reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+              return;
+            }
+            const total = parseInt(res.headers['content-length'] || '0', 10);
+            let downloaded = 0;
+            const file = fs.createWriteStream(tmpPath);
+            res.on('data', (chunk: Buffer) => {
+              downloaded += chunk.length;
+              file.write(chunk);
+              if (total > 0) {
+                sendProgress({ stage: 'downloading', percent: Math.round((downloaded / total) * 100), downloadedMB: Math.round(downloaded / 1048576), totalMB: Math.round(total / 1048576) });
+              }
+            });
+            res.on('end', () => { file.end(() => resolve()); });
+            res.on('error', (e) => { file.destroy(); reject(e); });
+          });
+          req.on('error', reject);
+          req.setTimeout(120_000, () => { req.destroy(); reject(new Error('Download timed out')); });
+        };
+        follow(installerUrl);
+      });
+
+      sendProgress({ stage: 'installing', percent: 100 });
+
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(tmpPath, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true });
+        child.once('error', (e) => reject(new Error('Installer launch failed: ' + e.message)));
+        child.once('exit', (code) => {
+          if (code === 0 || code === null) resolve();
+          else reject(new Error(`Installer exited with code ${code}`));
+        });
+        child.unref();
+        setTimeout(() => resolve(), 60_000);
+      });
+
+      try { fs.unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
+
+      sendProgress({ stage: 'starting', percent: 100 });
+      await launchOllamaServe();
+
+      const ollamaBase = getConfiguredOllamaBaseUrl();
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+          await axios.get(`${ollamaBase}/api/tags`, { timeout: 2000 });
+          sendProgress({ stage: 'ready', percent: 100 });
+          return { success: true };
+        } catch { /* keep polling */ }
+      }
+      return { success: false, error: 'Ollama installed but did not start within 30s. Try restarting HomeBot.' };
+    } catch (err: any) {
+      try { fs.unlinkSync(tmpPath); } catch { /* */ }
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Streaming model pull with progress ─────────────────────────────────────
+
+  ipcMain.handle('homebot:pull-model-stream', async (_event, modelName: string) => {
+    if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
+      return { success: false, error: 'Invalid model name' };
+    }
+    const ollamaBase = getConfiguredOllamaBaseUrl();
+    const win = mainWindow ?? getMainWindow();
+
+    const sendProgress = (data: any) => {
+      try { if (win && !win.isDestroyed()) win.webContents.send('homebot:pull-model-progress', data); } catch { /* */ }
+    };
+
+    try {
+      const res = await axios.post(`${ollamaBase}/api/pull`, { name: modelName, stream: true }, {
+        timeout: OLLAMA_PULL_TIMEOUT,
+        responseType: 'stream',
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        let buf = '';
+        const stream = res.data as NodeJS.ReadableStream;
+        stream.on('data', (chunk: Buffer) => {
+          buf += chunk.toString();
+          const lines = buf.split('\n');
+          buf = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const j = JSON.parse(line);
+              const percent = (j.total && j.completed) ? Math.round((j.completed / j.total) * 100) : null;
+              sendProgress({ model: modelName, status: j.status || '', percent, completedMB: j.completed ? Math.round(j.completed / 1048576) : null, totalMB: j.total ? Math.round(j.total / 1048576) : null });
+              if (j.status === 'success') resolve();
+            } catch { /* skip malformed line */ }
+          }
+        });
+        stream.on('end', () => resolve());
+        stream.on('error', (e: Error) => reject(e));
+      });
+
+      sendProgress({ model: modelName, status: 'success', percent: 100 });
+      return { success: true, model: modelName };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Automation Center ──────────────────────────────────────────────────────
+
+  const AUTOMATIONS_FILE = path.join(app.getPath('userData'), 'automations.json');
+
+  function readAutomations(): any[] {
+    try {
+      if (!fs.existsSync(AUTOMATIONS_FILE)) return [];
+      return JSON.parse(fs.readFileSync(AUTOMATIONS_FILE, 'utf8'));
+    } catch { return []; }
+  }
+
+  function writeAutomations(automations: any[]) {
+    fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify(automations, null, 2), 'utf8');
+  }
+
+  ipcMain.handle('homebot:load-automations', async () => {
+    return { automations: readAutomations() };
+  });
+
+  ipcMain.handle('homebot:create-automation', async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
+    const automations = readAutomations();
+    const automation: any = {
+      id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: data.name,
+      description: data.description,
+      instructions: data.instructions,
+      trigger: data.trigger === 'schedule' ? 'schedule' : 'manual',
+      scheduleMinutes: data.trigger === 'schedule' ? (data.scheduleMinutes || 60) : undefined,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    let error: string | undefined;
+
+    if (data.n8nWebhookUrl?.trim()) {
+      automation.n8nWebhookUrl = data.n8nWebhookUrl.trim();
+    } else if (data.deployToN8n) {
+      try {
+        console.log('[Automation] Deploying n8n workflow for:', data.name);
+        const wf = await createAndActivateWorkflow({
+          automationName: data.name,
+          instructions: data.instructions,
+        });
+        automation.n8nWebhookUrl = wf.webhookUrl;
+        automation.n8nWorkflowId = wf.id;
+        console.log('[Automation] n8n workflow deployed:', wf.webhookUrl);
+      } catch (err: any) {
+        console.error('[Automation] n8n deploy failed:', err);
+        error = `n8n deploy failed: ${err?.message || err}. Automation created without n8n — will use local tools.`;
+      }
+    }
+
+    automations.push(automation);
+    writeAutomations(automations);
+    return { automation, error };
+  });
+
+  ipcMain.handle('homebot:update-automation', async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
+    const automations = readAutomations();
+    const idx = automations.findIndex((a: any) => a.id === data.id);
+    if (idx === -1) return { success: false, error: 'Automation not found' };
+    const auto = automations[idx];
+    if (data.enabled !== undefined) auto.enabled = data.enabled;
+    if (data.name !== undefined) auto.name = data.name;
+    if (data.description !== undefined) auto.description = data.description;
+    if (data.instructions !== undefined) auto.instructions = data.instructions;
+    if (data.trigger !== undefined) auto.trigger = data.trigger;
+    if (data.scheduleMinutes !== undefined) auto.scheduleMinutes = data.scheduleMinutes;
+    if (data.n8nWebhookUrl !== undefined) auto.n8nWebhookUrl = data.n8nWebhookUrl || undefined;
+    writeAutomations(automations);
+    return { success: true };
+  });
+
+  ipcMain.handle('homebot:delete-automation', async (_event, data: { id: string }) => {
+    const automations = readAutomations().filter((a: any) => a.id !== data.id);
+    writeAutomations(automations);
+    return { success: true };
+  });
+
+  const MAX_TOOL_ROUNDS = 6;
+  const TOOL_ALIASES: Record<string, string> = { nba_scores: 'nba_query' };
+
+  async function executeAutomation(auto: any): Promise<{ success: boolean; result?: string; error?: string }> {
+    if (!auto?.instructions) return { success: false, error: 'Automation has no instructions' };
+
+    let resultText = '';
+
+    // Auto-deploy to n8n if no webhook URL yet and n8n is reachable
+    if (!auto.n8nWebhookUrl) {
+      try {
+        const settings = getSettings();
+        const n8nBase = settings.n8nUrl || 'http://localhost:5678';
+        const healthRes = await axios.get(`${n8nBase.replace(/\/$/, '')}/healthz`, { timeout: 3000 });
+        if (healthRes.status >= 200 && healthRes.status < 300) {
+          console.log(`[Automation] n8n online — auto-deploying workflow for "${auto.name}"`);
+          const wf = await createAndActivateWorkflow({ automationName: auto.name, instructions: auto.instructions });
+          auto.n8nWebhookUrl = wf.webhookUrl;
+          auto.n8nWorkflowId = wf.id;
+          const automations = readAutomations();
+          const idx = automations.findIndex((a: any) => a.id === auto.id);
+          if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+          console.log(`[Automation] Auto-deployed n8n workflow: ${wf.webhookUrl}`);
+        }
+      } catch { /* n8n not available, fall through to local */ }
+    }
+
+    // ── Pre-gather local tool data for automations that need system access ──
+    let enrichedMessage = auto.instructions;
+    const needsSystemTools = /\b(get_system_info|list_processes|system.*resource|disk.*usage|memory|cpu|running.*process|ollama.*status)\b/i.test(auto.instructions);
+    if (needsSystemTools) {
+      const preCtx: ToolContext = { executionId: `automation-${auto.id}-pre-${Date.now()}` } as any;
+      try {
+        const sysInfo = await executeTool({ name: 'get_system_info', arguments: { detailed: true } }, preCtx);
+        const sysStr = typeof sysInfo === 'string' ? sysInfo : JSON.stringify(sysInfo, null, 2);
+        enrichedMessage += `\n\n--- System Info (pre-gathered) ---\n${sysStr}`;
+      } catch (e: any) { console.log('[Automation] pre-gather get_system_info failed:', e?.message); }
+      try {
+        const procs = await executeTool({ name: 'list_processes', arguments: { sort_by: 'memory', limit: 25 } }, preCtx);
+        const procStr = typeof procs === 'string' ? procs : JSON.stringify(procs, null, 2);
+        enrichedMessage += `\n\n--- Running Processes (pre-gathered) ---\n${procStr}`;
+      } catch (e: any) { console.log('[Automation] pre-gather list_processes failed:', e?.message); }
+      try {
+        const ollamaBase = process.env.OLLAMA_URL || getSettings().ollamaUrl || 'http://localhost:11434';
+        const tagsRes = await axios.get(`${ollamaBase}/api/tags`, { timeout: 5000 });
+        enrichedMessage += `\n\n--- Installed Ollama Models (pre-gathered) ---\n${JSON.stringify(tagsRes.data?.models?.map((m: any) => ({ name: m.name, size: m.size })) || [], null, 2)}`;
+      } catch (e: any) { console.log('[Automation] pre-gather ollama tags failed:', e?.message); }
+    }
+
+    // ── n8n webhook path: POST to the user's n8n workflow ──
+    let useN8n = !!auto.n8nWebhookUrl;
+    if (useN8n) {
+      console.log(`[Automation] n8n path: POST to ${auto.n8nWebhookUrl}`);
+      try {
+        const n8nRes = await axios.post(auto.n8nWebhookUrl, {
+          message: enrichedMessage,
+          automation_id: auto.id,
+          automation_name: auto.name,
+        }, { timeout: 120_000, headers: { 'Content-Type': 'application/json' } });
+
+        const data = n8nRes.data;
+        resultText = data?.output
+          || data?.data?.assistant?.content
+          || data?.message?.content
+          || data?.result
+          || (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+      } catch (err: any) {
+        const status = err?.response?.status;
+        console.log(`[Automation] n8n webhook failed (${status || err?.code || err?.message}), clearing stale URL and falling back to local`);
+        auto.n8nWebhookUrl = '';
+        auto.n8nWorkflowId = '';
+        const automations = readAutomations();
+        const idx = automations.findIndex((a: any) => a.id === auto.id);
+        if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+        useN8n = false;
+      }
+    }
+
+    if (!useN8n && !resultText) {
+      // ── LLM execution: prefer cloud API, fall back to Ollama ──
+      const settings = getSettings();
+      const isCustom = !!(settings.useCustomLLM || settings.customLLM?.enabled) && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+      const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const systemMsg = `You are HomeBot, a desktop AI assistant. Today is ${today}. Execute the user's automation task. Be concise and well-formatted. Use markdown for the final response.`;
+
+      if (isCustom) {
+        // ── Cloud LLM path (Gemini, OpenAI, Anthropic, etc.) ──
+        try {
+          console.log('[Automation] Calling cloud LLM...');
+          const raw = await quizLLMGenerate(enrichedMessage, systemMsg);
+          resultText = raw || 'Automation completed but produced no output.';
+          console.log('[Automation] Cloud LLM succeeded, result length:', resultText.length);
+        } catch (err: any) {
+          const errDetail = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : err?.message;
+          console.error('[Automation] Cloud LLM failed:', errDetail);
+          resultText = '';
+        }
+      }
+
+      if (!resultText) {
+        // ── Ollama agentic tool-calling loop ──
+        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
+        const ollamaModel = process.env.OLLAMA_MODEL || settings.chatModel || 'qwen2.5:7b';
+
+        // Quick reachability check before committing to 120s timeout
+        try {
+          await axios.get(`${ollamaBase}/api/tags`, { timeout: 3000 });
+        } catch {
+          resultText = 'Error: No AI backend available. Cloud LLM failed and Ollama is not running. Check your API key in Settings or start Ollama.';
+        }
+
+        if (!resultText) {
+          const tools = getFocusedOllamaTools();
+          const messages: any[] = [
+            { role: 'system', content: systemMsg },
+            { role: 'user', content: enrichedMessage },
+          ];
+
+          try {
+            for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+              const ollamaRes = await axios.post(`${ollamaBase}/api/chat`, {
+                model: ollamaModel,
+                messages,
+                tools,
+                stream: false,
+                options: { num_predict: 2048, temperature: 0.7 },
+              }, { timeout: 120_000 });
+
+              const msg = ollamaRes.data?.message;
+              if (!msg) { resultText = 'No response from model'; break; }
+
+              const toolCalls = msg.tool_calls;
+              if (!toolCalls || toolCalls.length === 0) {
+                resultText = msg.content || 'Done.';
+                break;
+              }
+
+              messages.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls });
+              const toolCtx: ToolContext = { executionId: `automation-${auto.id}-r${round}-${Date.now()}` } as any;
+
+              for (const tc of toolCalls) {
+                const toolName = TOOL_ALIASES[tc.function?.name] || tc.function?.name || tc.name;
+                let toolArgs = tc.function?.arguments || tc.arguments || {};
+                if (typeof toolArgs === 'string') {
+                  try { toolArgs = JSON.parse(toolArgs); } catch { toolArgs = {}; }
+                }
+
+                console.log(`[Automation] Round ${round + 1}: calling ${toolName}`, toolArgs);
+                let toolResult: any;
+                try {
+                  toolResult = await executeTool({ name: toolName, arguments: toolArgs }, toolCtx);
+                } catch (err: any) {
+                  toolResult = { success: false, error: err?.message || String(err) };
+                }
+
+                const resultStr = typeof toolResult === 'string'
+                  ? toolResult
+                  : JSON.stringify(toolResult, null, 2).slice(0, 4000);
+                messages.push({ role: 'tool', content: resultStr });
+              }
+            }
+          } catch (err: any) {
+            resultText = `Error: ${err?.message || err}`;
+          }
+        }
+      }
+    }
+
+    if (!resultText) resultText = 'Automation completed but produced no output.';
+
+    // Persist result
+    const automations = readAutomations();
+    const stored = automations.find((a: any) => a.id === auto.id);
+    if (stored) {
+      stored.lastRun = new Date().toISOString();
+      stored.lastResult = resultText;
+      writeAutomations(automations);
+    }
+
+    return resultText.startsWith('Error:')
+      ? { success: false, error: resultText }
+      : { success: true, result: resultText };
+  }
+
+  ipcMain.handle('homebot:run-automation', async (_event, data: { id: string }) => {
+    const automations = readAutomations();
+    const auto = automations.find((a: any) => a.id === data.id);
+    if (!auto) return { success: false, error: 'Automation not found' };
+    return executeAutomation(auto);
+  });
+
+  // ── Scheduled automation timer ──
+  const automationTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+  function startAutomationSchedule() {
+    // Clear all existing timers
+    for (const t of automationTimers.values()) clearInterval(t);
+    automationTimers.clear();
+
+    const automations = readAutomations();
+    for (const auto of automations) {
+      if (auto.trigger === 'schedule' && auto.enabled && auto.scheduleMinutes > 0) {
+        const ms = auto.scheduleMinutes * 60_000;
+        const timer = setInterval(async () => {
+          const fresh = readAutomations().find((a: any) => a.id === auto.id);
+          if (!fresh || !fresh.enabled) return;
+          console.log(`[Automation] Running scheduled: "${fresh.name}"`);
+          const result = await executeAutomation(fresh);
+          // Notify renderer
+          try {
+            const win = BrowserWindow.getAllWindows()[0];
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('homebot:reminder-fired', {
+                message: `Automation "${fresh.name}" completed: ${result.result || result.error || 'done'}`,
+                label: fresh.name,
+              });
+            }
+          } catch { /* ignore */ }
+        }, ms);
+        automationTimers.set(auto.id, timer);
+      }
+    }
+  }
+
+  // Start scheduled automations on boot (with a delay to let the app settle)
+  setTimeout(startAutomationSchedule, 5000);
+
+  // Re-sync schedules every 60s to pick up CRUD changes
+  const scheduleResyncTimer = setInterval(startAutomationSchedule, 60_000);
+
+  app.on?.('before-quit', () => {
+    clearInterval(scheduleResyncTimer);
+    for (const t of automationTimers.values()) clearInterval(t);
+    automationTimers.clear();
+  });
+
+  // ── Quiz Mode ──────────────────────────────────────────────────────────────
+
+  const QUIZ_PROGRESS_FILE = path.join(app.getPath('userData'), 'quiz-progress.json');
+
+  async function quizLLMGenerate(prompt: string, systemPrompt: string): Promise<string> {
+    const settings = getSettings();
+    const isCustom = !!settings.useCustomLLM && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+
+    if (isCustom) {
+      const cfg = settings.customLLM!;
+      const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
+
+      if (cfg.provider === 'anthropic') {
+        const resp = await axios.post(`${apiUrl}/messages`, {
+          model: cfg.model,
+          max_tokens: 3000,
+          temperature: 0.7,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: prompt }],
+        }, {
+          headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
+          timeout: 120_000,
+        });
+        return resp.data?.content?.[0]?.text ?? '';
+      } else {
+        const isGoogle = cfg.provider === 'google-ai-studio';
+        const body: any = {
+          model: cfg.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.7,
+        };
+        if (!isGoogle) {
+          body.max_tokens = 3000;
+        }
+        const resp = await axios.post(`${apiUrl}/chat/completions`, body, {
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
+          timeout: 120_000,
+        });
+        return resp.data?.choices?.[0]?.message?.content ?? '';
+      }
+    }
+
+    const model = settings.chatModel || 'qwen2.5:7b';
+    const resp = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
+      model,
+      prompt,
+      system: systemPrompt,
+      stream: false,
+      options: { temperature: 0.7, num_predict: 3000 }
+    }, { timeout: 120_000 });
+    return resp.data?.response ?? '';
+  }
+
+  ipcMain.handle('homebot:generate-quiz', async (_event, params: { topic: string; difficulty: string; questionCount: number; questionTypes?: string[]; language?: string }) => {
+    try {
+      const { topic, difficulty, questionCount } = params;
+
+      // Generate in small batches to avoid timeout on slower GPUs
+      const BATCH_SIZE = 3;
+      const allQuestions: any[] = [];
+      const batches = Math.ceil(questionCount / BATCH_SIZE);
+
+      for (let b = 0; b < batches; b++) {
+        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
+        const prompt = `Generate exactly ${count} ${difficulty} difficulty quiz questions about ${topic}.
+RULES:
+- Respond with ONLY a JSON array, nothing else
+- Every question MUST have exactly 4 options in the "options" array
+- "correctIndex" is the index (0-3) of the correct answer in "options"
+- The correct answer MUST be one of the 4 options
+- Mix question types: multiple-choice, code-output, bug-fix, concept
+
+EXAMPLE (follow this format exactly):
+[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]`;
+
+        const raw0 = await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.');
+
+        let raw = raw0 || '';
+        console.log(`[Quiz] Batch ${b + 1}/${batches} raw response (${raw.length} chars):`, raw.slice(0, 300));
+        // Strip markdown code fences that LLMs often add
+        raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed)) {
+              console.log(`[Quiz] Batch ${b + 1}: parsed ${parsed.length} questions`);
+              allQuestions.push(...parsed);
+            }
+          } catch (parseErr: any) {
+            console.warn(`[Quiz] Batch ${b + 1} JSON parse failed:`, parseErr?.message, 'Raw:', raw.slice(0, 200));
+          }
+        } else {
+          console.warn(`[Quiz] Batch ${b + 1}: no JSON array found in response. Raw:`, raw.slice(0, 300));
+        }
+      }
+
+      if (allQuestions.length === 0) {
+        return { success: false, error: 'Could not generate quiz questions. Check that your LLM provider is running and accessible.' };
+      }
+
+      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => {
+        let options: string[] = Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [];
+        let correctIndex = typeof q.correctIndex === 'number' ? q.correctIndex : 0;
+
+        // Some models return "answer" or "correct" text instead of "correctIndex"
+        const answerText = q.answer || q.correct || q.correctAnswer || '';
+        if (answerText && options.length > 0) {
+          const foundIdx = options.findIndex((o: string) => o.toLowerCase().trim() === String(answerText).toLowerCase().trim());
+          if (foundIdx >= 0) correctIndex = foundIdx;
+        }
+
+        // Pad to exactly 4 options
+        const fillers = ['Option A', 'Option B', 'Option C', 'Option D'];
+        while (options.length < 4) options.push(fillers[options.length]);
+        correctIndex = Math.min(Math.max(correctIndex, 0), 3);
+
+        return {
+          id: `q-${Date.now()}-${i}`,
+          type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
+          question: String(q.question || ''),
+          code: q.code || '',
+          options,
+          correctIndex,
+          explanation: String(q.explanation || 'No explanation provided.'),
+        };
+      });
+
+      return { success: true, questions: validated };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('homebot:save-quiz-progress', async (_event, progress: any) => {
+    try {
+      fs.writeFileSync(QUIZ_PROGRESS_FILE, JSON.stringify(progress, null, 2), 'utf8');
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('homebot:load-quiz-progress', async () => {
+    try {
+      if (!fs.existsSync(QUIZ_PROGRESS_FILE)) {
+        return { success: true, data: null };
+      }
+      const raw = fs.readFileSync(QUIZ_PROGRESS_FILE, 'utf8');
+      return { success: true, data: JSON.parse(raw) };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Screen Capture ──────────────────────────────────────────────────────────
+  ipcMain.handle('homebot:capture-screen', async () => {
+    try {
+      const { desktopCapturer } = require('electron');
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 1920, height: 1080 }
+      });
+      if (!sources || sources.length === 0) {
+        return { success: false, error: 'No screen sources found' };
+      }
+      const thumbnail = sources[0].thumbnail;
+      const dataUrl = thumbnail.toDataURL();
+      return { success: true, dataUrl };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ── Quiz from RAG (Study Buddy) ─────────────────────────────────────────
+  ipcMain.handle('homebot:generate-quiz-from-rag', async (_event, params: { topic: string; difficulty: string; questionCount: number }) => {
+    try {
+      const { topic, difficulty, questionCount } = params;
+
+      // Query RAG for relevant chunks
+      let ragContext = '';
+      try {
+        const ragResult = await ragToolHandlers.rag_query({ query: topic, top_k: 5 }, {} as any);
+        if (ragResult?.success && ragResult?.result?.results) {
+          ragContext = ragResult.result.results.map((r: any) => r.text || r.content || '').join('\n\n');
+        }
+      } catch (e) { /* RAG not available, will use general knowledge */ }
+
+      if (!ragContext) {
+        return { success: false, error: 'No indexed documents found. Drop some study notes into the RAG panel first, then try again.' };
+      }
+
+      const BATCH_SIZE = 3;
+      const allQuestions: any[] = [];
+      const batches = Math.ceil(questionCount / BATCH_SIZE);
+
+      for (let b = 0; b < batches; b++) {
+        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
+        const prompt = `Based on ONLY the following study material, generate exactly ${count} ${difficulty} quiz questions about "${topic}".
+
+STUDY MATERIAL:
+${ragContext.slice(0, 3000)}
+
+RULES:
+- Respond with ONLY a JSON array, nothing else
+- Every question MUST have exactly 4 options
+- "correctIndex" is the index (0-3) of the correct answer in "options"
+- Base questions strictly on the material above
+
+EXAMPLE FORMAT:
+[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]`;
+
+        const raw0 = await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.');
+
+        let raw = raw0 || '';
+        console.log(`[Quiz/RAG] Batch ${b + 1}/${batches} raw (${raw.length} chars):`, raw.slice(0, 300));
+        raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed)) allQuestions.push(...parsed);
+          } catch (e: any) {
+            console.warn(`[Quiz/RAG] Batch ${b + 1} parse failed:`, e?.message);
+          }
+        }
+      }
+
+      if (allQuestions.length === 0) {
+        return { success: false, error: 'Could not generate questions from your notes. Try a different topic or add more study material.' };
+      }
+
+      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => {
+        let options: string[] = Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [];
+        let correctIndex = typeof q.correctIndex === 'number' ? q.correctIndex : 0;
+        const answerText = q.answer || q.correct || q.correctAnswer || '';
+        if (answerText && options.length > 0) {
+          const foundIdx = options.findIndex((o: string) => o.toLowerCase().trim() === String(answerText).toLowerCase().trim());
+          if (foundIdx >= 0) correctIndex = foundIdx;
+        }
+        const fillers = ['Option A', 'Option B', 'Option C', 'Option D'];
+        while (options.length < 4) options.push(fillers[options.length]);
+        correctIndex = Math.min(Math.max(correctIndex, 0), 3);
+        return {
+          id: `q-${Date.now()}-${i}`,
+          type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
+          question: String(q.question || ''),
+          code: q.code || '',
+          options,
+          correctIndex,
+          explanation: String(q.explanation || 'No explanation provided.'),
+        };
+      });
+
+      return { success: true, questions: validated };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   // Mark registration complete
-  g.__sadie_ipc_registered = true;
-  const { isDevelopment } = require('./env');
+  (global as any).__homebot_ipc_registered = true;
   if (isDevelopment) {
     console.log('[IPC] Handlers registered');
   }

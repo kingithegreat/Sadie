@@ -1,5 +1,5 @@
 /**
- * SADIE NBA Tools (balldontlie API)
+ * HomeBot NBA Tools (balldontlie API)
  * Free NBA data: games, teams, players, stats
  * Docs: https://www.balldontlie.io/#get-all-games
  */
@@ -12,14 +12,14 @@ import { URL } from 'url';
 export const nbaQueryDef: ToolDefinition = {
   name: 'nba_query',
   description: 'Query NBA data (games, teams, players, news, rosters). Uses ESPN public API by default (no keys required) and falls back to balldontlie if configured.',
-  category: 'utility',
+  category: 'web',
   parameters: {
     type: 'object',
     properties: {
       type: {
         type: 'string',
-        description: 'Type of query: games, teams, players, teams_roster, news',
-        enum: ['games', 'teams', 'players', 'stats', 'roster', 'news']
+        description: 'Type of query: games, teams, players, stats, roster, news, standings',
+        enum: ['games', 'teams', 'players', 'stats', 'roster', 'news', 'standings']
       },
       query: {
         type: 'string',
@@ -43,12 +43,12 @@ export const nbaQueryDef: ToolDefinition = {
 function httpsGet(url: string, headers: Record<string, string> = {}): Promise<any> {
   return new Promise((resolve, reject) => {
     const options = { headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SADIE/1.0',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) HomeBot/1.0',
       'Accept': 'application/json,text/html;q=0.9,*/*;q=0.8',
       'Accept-Encoding': 'gzip, deflate, br',
       ...headers
     }};
-    https.get(url, options as any, res => {
+    const req = https.get(url, options as any, res => {
       const chunks: Buffer[] = [];
       const encoding = (res.headers['content-encoding'] || '').toLowerCase();
 
@@ -70,7 +70,9 @@ function httpsGet(url: string, headers: Record<string, string> = {}): Promise<an
           reject(e);
         }
       });
-    }).on('error', reject);
+    });
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.on('error', reject);
   });
 }
 
@@ -97,6 +99,47 @@ async function findTeamByQuery(query: string) {
   }
 }
 
+export const FALLBACK_PAST_DAYS = 3;
+export const FALLBACK_FUTURE_DAYS = 30;
+
+/**
+ * Returns the NBA season start date string (YYYYMMDD) for the current
+ * season.  ESPN season metadata shows the 2025-26 season starts in
+ * early-to-mid October; we use Oct 01 to be safe.
+ */
+function seasonStartDate(now: Date = new Date()): string {
+  const year = now.getMonth() >= 9 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${year}1001`;
+}
+
+/**
+ * Fetch all NBA games for the current season using ESPN's date-range
+ * scoreboard parameter (e.g. dates=20251001-20260410).
+ * Returns only completed (state=post) games by default.
+ */
+export async function fetchSeasonEvents(
+  fetcher: (path: string, params?: Record<string, string | number>) => Promise<any> = fetchEspnJson,
+  nowDate: Date = new Date(),
+  includeScheduled = false
+): Promise<any[]> {
+  const start = seasonStartDate(nowDate);
+  const y = nowDate.getFullYear();
+  const mo = String(nowDate.getMonth() + 1).padStart(2, '0');
+  const day = String(nowDate.getDate()).padStart(2, '0');
+  const end = `${y}${mo}${day}`;
+
+  try {
+    const board = await fetcher('/scoreboard', { dates: `${start}-${end}`, limit: 1000 });
+    let events = board?.events || [];
+    if (!includeScheduled) {
+      events = events.filter((e: any) => e.status?.type?.state === 'post');
+    }
+    return events;
+  } catch {
+    return [];
+  }
+}
+
 async function findPlayerByName(query: string, perPage = 20) {
   // Try to find player by scanning rosters for a matching displayName
   const teamsResp = await fetchEspnJson('/teams');
@@ -120,6 +163,33 @@ async function findPlayerByName(query: string, perPage = 20) {
   return found;
 }
 
+/**
+ * Aggregates scoreboard events over a fallback window (past/future days).
+ * The optional `fetcher` is injected for testing to avoid network calls.
+ */
+export async function fetchEventsInWindow(fetcher: (path: string, params?: Record<string, string | number>) => Promise<any> = fetchEspnJson, nowDate: Date = new Date()) {
+  const seen = new Set<string>();
+  const agg: any[] = [];
+  // Check past FALLBACK_PAST_DAYS and next FALLBACK_FUTURE_DAYS
+  for (let i = -FALLBACK_PAST_DAYS; i <= FALLBACK_FUTURE_DAYS; i++) {
+    const dt = new Date(nowDate);
+    dt.setDate(nowDate.getDate() + i);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    const dateParam = `${y}${m}${day}`;
+    try {
+      const b = await fetcher('/scoreboard', { dates: dateParam });
+      const ev = b?.events || [];
+      for (const e of ev) {
+        const id = e?.id || JSON.stringify(e);
+        if (!seen.has(id)) { seen.add(id); agg.push(e); }
+      }
+    } catch (e) { /* ignore individual date fetch errors */ }
+  }
+  return agg;
+}
+
 export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
     const type = args.type;
@@ -140,45 +210,77 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
     }
 
     if (type === 'games') {
+      // Season-wide fetch
+      if (date === 'season') {
+        let events = await fetchSeasonEvents();
+        if (query) {
+          const q = query.toLowerCase();
+          events = events.filter((e: any) =>
+            (e.name || '').toLowerCase().includes(q) ||
+            (e.shortName || '').toLowerCase().includes(q) ||
+            (e.competitions || []).some((c: any) =>
+              (c.competitors || []).some((co: any) =>
+                (co.team?.displayName || '').toLowerCase().includes(q)
+              )
+            )
+          );
+        }
+        return { success: true, result: { query, resultCount: events.length, events, allScheduled: false } };
+      }
+
       // Use ESPN scoreboard; date format: YYYYMMDD (or YYYY-MM-DD)
       const d = (date || '').replace(/-/g, '');
+      const wantsResults = !!args.wantsResults;
       const params: any = {};
       if (d) params.dates = d;
       const board = await fetchEspnJson('/scoreboard', params);
       let events = board?.events || [];
 
       // If no events found for the requested date/range, fall back to a
-      // rolling 7-day window to avoid week-boundary and timezone issues.
-      // If events empty and either no date was given, or the date token is a
-      // fuzzy phrase like 'this week' / 'last week', fall back to a rolling
-      // 7-day window to be tolerant of week-boundaries and timezone shifts.
-      if ((!events || events.length === 0) && (!d || /week|last/i.test(d))) {
-        const seen = new Set<string>();
-        const agg: any[] = [];
-        const now = new Date();
-        for (let i = 0; i < 7; i++) {
-          const dt = new Date(now);
-          dt.setDate(now.getDate() - i);
-          const y = dt.getFullYear();
-          const m = String(dt.getMonth() + 1).padStart(2, '0');
-          const day = String(dt.getDate()).padStart(2, '0');
-          const dateParam = `${y}${m}${day}`;
-          try {
-            const b = await fetchEspnJson('/scoreboard', { dates: dateParam });
-            const ev = b?.events || [];
-            for (const e of ev) {
-              const id = e?.id || JSON.stringify(e);
-              if (!seen.has(id)) { seen.add(id); agg.push(e); }
-            }
-          } catch (e) { /* ignore individual date fetch errors */ }
-        }
-        events = agg;
+      // rolling window to avoid week-boundary and timezone issues.
+      // Check both past and future windows to find upcoming games. Use helper to make this testable.
+      if ((!events || events.length === 0) && (!d || /week|last|next/i.test(d))) {
+        events = await fetchEventsInWindow();
       }
+
+      // If the user wants results but all games are still scheduled, try the previous day
+      // (handles NZ/AU users whose system date is ahead of US Eastern time)
+      if (wantsResults && d && events.length > 0 && events.every((e: any) => e.status?.type?.state === 'pre')) {
+        try {
+          const prevD = new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T12:00:00`);
+          prevD.setDate(prevD.getDate() - 1);
+          const prevDate = `${prevD.getFullYear()}${String(prevD.getMonth()+1).padStart(2,'0')}${String(prevD.getDate()).padStart(2,'0')}`;
+          const prevBoard = await fetchEspnJson('/scoreboard', { dates: prevDate });
+          const prevFinished = (prevBoard?.events || []).filter((e: any) => e.status?.type?.state === 'post');
+          if (prevFinished.length > 0) events = prevFinished;
+        } catch { /* keep today's events */ }
+      }
+
+      const filterByQuery = (evts: any[], q: string) =>
+        evts.filter((e: any) =>
+          (e.name || '').toLowerCase().includes(q) ||
+          (e.shortName || '').toLowerCase().includes(q) ||
+          (e.competitions || []).some((c: any) =>
+            (c.competitors || []).some((co: any) =>
+              (co.team?.displayName || '').toLowerCase().includes(q)
+            )
+          )
+        );
+
       if (query) {
         const q = query.toLowerCase();
-        events = events.filter((e: any) => (e.name || '').toLowerCase().includes(q) || (e.shortName || '').toLowerCase().includes(q) || (e.competitions || []).some((c: any) => (c.competitors || []).some((co: any) => (co.team?.displayName || '').toLowerCase().includes(q))));
+        let filtered = filterByQuery(events, q);
+
+        // If the team has no game today, expand the search to the rolling window
+        // so the user sees the next upcoming game instead of an empty result.
+        if (filtered.length === 0 && (!d || /week|last|next/i.test(d))) {
+          const windowEvents = await fetchEventsInWindow();
+          filtered = filterByQuery(windowEvents, q);
+        }
+
+        events = filtered;
       }
-      return { success: true, result: { query, resultCount: events.length, events } };
+      return { success: true, result: { query, resultCount: events.length, events, allScheduled: events.length > 0 && events.every((e: any) => e.status?.type?.state === 'pre') } };
     }
 
     if (type === 'teams') {
@@ -216,12 +318,91 @@ export const nbaQueryHandler: ToolHandler = async (args): Promise<ToolResult> =>
       return { success: true, result: { query, resultCount: 0, players: [] } };
     }
 
-    // Stats not implemented in ESPN tool (could be added later)
     if (type === 'stats') {
-      return { success: false, error: 'Stats queries not implemented. Use players/games/roster/news.' };
+      // Find the player first, then fetch their stats from ESPN athlete page
+      if (!query) return { success: false, error: 'query (player name) is required for stats' };
+      const found = await findPlayerByName(query, 5);
+      if (!found || found.length === 0) {
+        return { success: false, error: `Player "${query}" not found` };
+      }
+      const playerResults: any[] = [];
+      for (const { player: p, team: t } of found.slice(0, 3)) {
+        const playerId = p.id;
+        try {
+          // ESPN athlete statistics endpoint
+          const statsUrl = `https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${playerId}/stats`;
+          const statsData = await httpsGet(statsUrl);
+          // Extract season averages from the response
+          const categories = statsData?.categories || statsData?.splitCategories || [];
+          const seasonStats: Record<string, any> = {};
+          for (const cat of categories) {
+            const splits = cat?.splits || [];
+            for (const split of splits) {
+              if (split?.type === 'total' || split?.abbreviation === 'Total' || !split?.type) {
+                const statNames = cat?.names || cat?.labels || [];
+                const statValues = split?.stats || [];
+                for (let i = 0; i < statNames.length && i < statValues.length; i++) {
+                  seasonStats[statNames[i]] = statValues[i];
+                }
+              }
+            }
+          }
+          playerResults.push({
+            player: p.displayName || p.fullName,
+            team: t?.displayName || t?.name || 'Unknown',
+            position: p.position?.abbreviation || p.position?.name || '',
+            stats: Object.keys(seasonStats).length > 0 ? seasonStats : 'Stats not available for this player',
+          });
+        } catch {
+          playerResults.push({
+            player: p.displayName || p.fullName,
+            team: t?.displayName || t?.name || 'Unknown',
+            stats: 'Failed to fetch stats from ESPN',
+          });
+        }
+      }
+      return { success: true, result: { query, players: playerResults } };
     }
 
-    return { success: false, error: 'Invalid type. Use games, teams, players, roster, or news.' };
+    if (type === 'standings') {
+      // ESPN standings API (different base URL)
+      const standingsUrl = 'https://site.api.espn.com/apis/v2/sports/basketball/nba/standings';
+      const raw = await httpsGet(standingsUrl);
+      // ESPN returns { children: [ { name: 'Eastern Conference', standings: { entries: [...] } }, ... ] }
+      const conferences: any[] = raw?.children || [];
+      const result: { conference: string; teams: { rank: number; name: string; wins: number; losses: number; pct: string; gb: string; streak: string }[] }[] = [];
+      for (const conf of conferences) {
+        const confName: string = conf.name || conf.abbreviation || 'Conference';
+        const entries: any[] = conf.standings?.entries || [];
+        const teams = entries.map((entry: any) => {
+          const team = entry.team || {};
+          const stats: any[] = entry.stats || [];
+          const getStat = (n: string) => stats.find((s: any) => s.name === n || s.abbreviation === n);
+          const wins = Number(getStat('wins')?.value ?? getStat('W')?.value ?? 0);
+          const losses = Number(getStat('losses')?.value ?? getStat('L')?.value ?? 0);
+          const pctRaw = getStat('winPercent')?.value ?? getStat('PCT')?.value;
+          const pct = pctRaw != null ? Number(pctRaw).toFixed(3) : '-';
+          const gbRaw = getStat('gamesBehind')?.value ?? getStat('GB')?.value;
+          const gb = gbRaw != null ? String(gbRaw) : '-';
+          const streakVal = getStat('streak')?.displayValue ?? getStat('streak')?.value ?? '';
+          return {
+            rank: entry.note?.rank ?? 0,
+            name: team.displayName || team.shortDisplayName || team.name || 'Unknown',
+            wins,
+            losses,
+            pct,
+            gb,
+            streak: String(streakVal)
+          };
+        });
+        // sort by wins desc (API sometimes doesn't guarantee order)
+        teams.sort((a, b) => b.wins - a.wins || a.losses - b.losses);
+        result.push({ conference: confName, teams });
+      }
+      return { success: true, result: { standings: result } };
+    }
+
+    return { success: false, error: 'Invalid type. Use games, teams, players, roster, news, or standings.' };
   } catch (err: any) {
     return { success: false, error: `NBA query failed: ${err.message}` };
   }

@@ -1,12 +1,12 @@
 /**
- * Shared constants for SADIE widget
+ * Shared constants for HomeBot widget
  */
 
 // API Endpoints
 export const DEFAULT_N8N_URL = 'http://localhost:5678';
-export const SADIE_WEBHOOK_PATH = '/webhook/sadie/chat';
+export const HOMEBOT_WEBHOOK_PATH = '/webhook/homebot/chat';
 export const HEALTH_PATH = '/healthz';
-export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+export const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 
 // User Settings
 export const DEFAULT_USER_ID = 'desktop_widget';
@@ -23,15 +23,15 @@ export const WINDOW_MIN_WIDTH = 400;
 export const WINDOW_MIN_HEIGHT = 500;
 
 // IPC Channels
-export const IPC_SHOW_WINDOW = 'sadie:show-window';
-export const IPC_HIDE_WINDOW = 'sadie:hide-window';
-export const IPC_TOGGLE_WINDOW = 'sadie:toggle-window';
-export const IPC_SEND_MESSAGE = 'sadie:message';
-export const IPC_REPLY = 'sadie:reply';
-export const IPC_GET_SETTINGS = 'sadie:get-settings';
-export const IPC_SAVE_SETTINGS = 'sadie:save-settings';
-export const IPC_HAS_PERMISSION = 'sadie:has-permission';
-export const IPC_CHECK_CONNECTION = 'sadie:check-connection';
+export const IPC_SHOW_WINDOW = 'homebot:show-window';
+export const IPC_HIDE_WINDOW = 'homebot:hide-window';
+export const IPC_TOGGLE_WINDOW = 'homebot:toggle-window';
+export const IPC_SEND_MESSAGE = 'homebot:message';
+export const IPC_REPLY = 'homebot:reply';
+export const IPC_GET_SETTINGS = 'homebot:get-settings';
+export const IPC_SAVE_SETTINGS = 'homebot:save-settings';
+export const IPC_HAS_PERMISSION = 'homebot:has-permission';
+export const IPC_CHECK_CONNECTION = 'homebot:check-connection';
 
 // UI Configuration
 export const MAX_MESSAGE_LENGTH = 5000;
@@ -68,10 +68,10 @@ export const INPUT_TYPES = {
 
 // Local Storage Keys
 export const STORAGE_KEYS = {
-  SETTINGS: 'sadie_settings',
-  CONVERSATION: 'sadie_conversation',
-  THEME: 'sadie_theme',
-  WINDOW_POSITION: 'sadie_window_position'
+  SETTINGS: 'homebot_settings',
+  CONVERSATION: 'homebot_conversation',
+  THEME: 'homebot_theme',
+  WINDOW_POSITION: 'homebot_window_position'
 } as const;
 
 // Error Codes
@@ -92,6 +92,6 @@ export const IMAGE_LIMITS = {
 } as const;
 
 // App Metadata
-export const APP_NAME = 'SADIE';
+export const APP_NAME = 'HomeBot';
 export const APP_VERSION = '1.0.0';
-export const APP_DESCRIPTION = 'Structured AI Desktop Intelligence Engine';
+export const APP_DESCRIPTION = 'Desktop AI Assistant';

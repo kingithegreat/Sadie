@@ -3,58 +3,49 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { launchElectronApp } from './launchElectron';
+import { waitForAppReady } from './helpers/appReady';
 
 function makeTempProfile() {
-  const base = path.join(os.tmpdir(), `sadie-e2e-${Date.now()}`);
+  const base = path.join(os.tmpdir(), `homebot-e2e-${Date.now()}`);
   if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
   fs.mkdirSync(base, { recursive: true });
   return base;
 }
 
+async function completeFirstRunWizard(page: any) {
+  await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
+  const modal = page.locator('.first-run-modal');
+  // Choose Local path
+  await modal.getByRole('button', { name: /Local \(Ollama\)/i }).click();
+  await expect(page.getByText('Local Setup')).toBeVisible({ timeout: 5000 });
+  // Advance to done
+  await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
+  await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
+  await modal.getByRole('button', { name: /Get Started/i }).click();
+}
+
 test.describe('First-run onboarding and config persistence', () => {
-  test('fresh profile shows first-run modal with safe defaults and persists after finish', async () => {
+  test('fresh profile shows first-run modal and persists after finish', async () => {
     const tmp = makeTempProfile();
-    // Launch electron with a clean profile
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
 
-    // FirstRun modal should be visible - telemetry is required and shown checked+disabled
-    await expect(page.getByText('Welcome to SADIE')).toBeVisible();
-    // Target the telemetry checkbox specifically inside the telemetry section for stability
-    const telemetryCheckbox = page.locator('div.first-run-section', { hasText: 'Telemetry' }).locator('input[type="checkbox"]').first();
-    await expect(telemetryCheckbox).toBeVisible();
-    // Some test runs may start with the checkbox unchecked due to timing; if so, try to force telemetry,
-    // but don't fail the test only on the UI state — assert persisted config instead.
-    const telemetryIsChecked = await telemetryCheckbox.isChecked();
-    if (!telemetryIsChecked) {
-      console.warn('[E2E] Telemetry checkbox not checked; proceeding using persisted settings expectation');
-    } else {
-      await expect(telemetryCheckbox).toBeChecked();
-    }
-    const telemetryIsDisabled = await telemetryCheckbox.isDisabled();
-    if (!telemetryIsDisabled) console.warn('[E2E] Telemetry checkbox is enabled in this run; continuing.');
+    // FirstRun wizard should be visible
+    await expect(page.getByText('Welcome to HomeBot')).toBeVisible();
 
-    // The default NBA team should be 'GSW' - find an input with this value
-    const teamInputValue = await page.locator('input[value="GSW"]').first();
-    await expect(teamInputValue).toBeVisible();
+    // Path selection cards should be visible
+    await expect(page.getByText('Local (Ollama)')).toBeVisible();
+    await expect(page.getByText('Cloud API')).toBeVisible();
 
-    // Ensure some dangerous tool toggles (e.g., delete file) are present and OFF within the modal
-    const modal = page.locator('div', { hasText: 'Welcome to SADIE' }).first();
-    const deleteFileCheckbox = modal.getByLabel('delete file', { exact: true });
-    await expect(deleteFileCheckbox).toBeVisible();
-    await expect(deleteFileCheckbox).not.toBeChecked();
-
-    // Click Finish setup
-    await page.getByRole('button', { name: /Finish/i }).click();
+    // Complete via local path
+    await completeFirstRunWizard(page);
 
     // After finish, config.json should exist in userData config path
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     await expect(fs.existsSync(configPath)).toBeTruthy();
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.firstRun).toBe(false);
-    // Telemetry is required; persisted value should be a boolean (recording may be handled asynchronously)
-    expect(typeof config.telemetryEnabled).toBe('boolean');
-    expect(config.permissions.delete_file).toBe(false);
-    expect(config.defaultTeam).toBe('GSW');
+    expect(config.telemetryEnabled).toBe(true);
 
     await app.close();
   });
@@ -76,15 +67,14 @@ test.describe('First-run onboarding and config persistence', () => {
     };
     fs.writeFileSync(confPath, JSON.stringify(initial, null, 2), 'utf-8');
 
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
     // FirstRun modal should not be visible
-    await expect(page.getByText('Welcome to SADIE')).toHaveCount(0);
+    await expect(page.getByText('Welcome to HomeBot')).toHaveCount(0);
 
-    // The settings persisted should be accessible via menu or direct saved file - verify the values loaded
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.firstRun).toBe(false);
-    // The persisted settings should show telemetry enabled
     expect(config.telemetryEnabled).toBe(true);
     expect(config.defaultTeam).toBe('GSW');
 
@@ -93,14 +83,12 @@ test.describe('First-run onboarding and config persistence', () => {
 
   test('telemetry is required and consent is recorded on finish', async () => {
     const tmp = makeTempProfile();
-    const { app, page } = await launchElectronApp({ SADIE_E2E: '1', NODE_ENV: 'test' }, tmp);
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
 
-    // Finish onboarding
-    await expect(page.getByText('Welcome to SADIE')).toBeVisible({ timeout: 15000 });
-    await page.getByRole('button', { name: /Finish/i }).click();
+    await completeFirstRunWizard(page);
 
     const configPath = path.join(tmp, 'config', 'user-settings.json');
-    // Wait for the saved config to reflect telemetry enabled (or the runtime settings to reflect it)
     const waitForConfig = async () => {
       const start = Date.now();
       while (Date.now() - start < 5000) {
@@ -110,7 +98,6 @@ test.describe('First-run onboarding and config persistence', () => {
         }
         await new Promise(r => setTimeout(r, 100));
       }
-      // If the config hasn't been saved correctly, attempt to force telemetry on the renderer and wait again
       try {
         await page.evaluate(async () => {
           const s = await (window as any).electron.getSettings();
@@ -127,22 +114,42 @@ test.describe('First-run onboarding and config persistence', () => {
         }
         await new Promise(r => setTimeout(r, 100));
       }
-      // As a fallback, query runtime settings from main process and return that
       const runtime = await page.evaluate(async () => await (window as any).electron.getSettings());
       if (runtime && runtime.telemetryEnabled === true) return runtime;
       throw new Error('Timed out waiting for config telemetryEnabled=true after forcing save');
     };
 
     const config = await waitForConfig();
-    // Prefer runtime truth, but tolerate persisted file still missing in rare runs
     expect(config.telemetryEnabled).toBe(true);
-    // telemetryConsentTimestamp may be applied by main process asynchronously; it's optional here
 
-    // The consent log should contain a consent_given entry
     const consentLog = path.join(tmp, 'logs', 'telemetry-consent.log');
     if (fs.existsSync(consentLog)) {
       const contents = fs.readFileSync(consentLog, 'utf-8');
       expect(contents.includes('consent_given')).toBe(true);
+    }
+
+    await app.close();
+  });
+
+  test('skip setup still marks firstRun as false', async () => {
+    const tmp = makeTempProfile();
+    const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
+    await waitForAppReady(page);
+
+    await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: /Skip setup/i }).click();
+
+    // Modal should close
+    await expect(page.getByText('Welcome to HomeBot')).toHaveCount(0);
+
+    const configPath = path.join(tmp, 'config', 'user-settings.json');
+    const start = Date.now();
+    while (Date.now() - start < 3000 && !fs.existsSync(configPath)) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      expect(config.firstRun).toBe(false);
     }
 
     await app.close();

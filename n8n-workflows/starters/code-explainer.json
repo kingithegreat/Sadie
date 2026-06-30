@@ -1,0 +1,82 @@
+{
+  "active": true,
+  "versionId": "1",
+  "name": "HomeBot Code Explainer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/explain-code",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "homebot-code-explainer"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json || {};\nconst code = body.code || body.message || '';\nconst language = body.language || 'auto-detect';\nconst level = body.level || 'intermediate';\n\nconst systemPrompt = `You are HomeBot Code Explainer. Break down code into clear, understandable explanations.\\n\\nExplanation level: ${level}\\nLanguage hint: ${language}\\n\\nFormat your response as:\\n## Code Analysis\\n**Language:** [detected language]\\n**Purpose:** [one-line summary]\\n\\n### Line-by-Line Breakdown\\nExplain what each significant section does.\\n\\n### Key Concepts Used\\nList and briefly explain programming concepts (e.g., recursion, closures, async/await).\\n\\n### Potential Improvements\\nSuggest 2-3 improvements if applicable.\\n\\nUse code blocks for any code references. Be educational and encouraging.`;\n\nreturn {\n  json: {\n    model: 'qwen2.5:7b',\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: `Explain this code:\\n\\n${code}` }\n    ],\n    stream: false\n  }\n};"
+      },
+      "id": "prepare-request",
+      "name": "Prepare Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": $json.model, \"messages\": $json.messages, \"stream\": false, \"options\": { \"num_predict\": 2048, \"temperature\": 0.4 } } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "call-ollama",
+      "name": "Call Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ollamaRes = $input.item.json;\nconst content = ollamaRes.message?.content || ollamaRes.response || 'Unable to analyze code';\nreturn {\n  json: {\n    output: content,\n    data: { assistant: { role: 'assistant', content } }\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1140, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Prepare Request", "type": "main", "index": 0 }]] },
+    "Prepare Request": { "main": [[{ "node": "Call Ollama", "type": "main", "index": 0 }]] },
+    "Call Ollama": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
+    "Format Response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

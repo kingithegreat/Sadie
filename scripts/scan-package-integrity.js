@@ -6,6 +6,25 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+function findFirstFile(rootDir, predicate) {
+  const stack = [rootDir];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+      if (predicate(entry.name, fullPath)) {
+        return fullPath;
+      }
+    }
+  }
+  return null;
+}
+
 function fail(msg) {
   console.error('[PACKAGE SCAN] ERROR:', msg);
   process.exit(1);
@@ -15,19 +34,24 @@ function ok(msg) {
   console.log('[PACKAGE SCAN]', msg);
 }
 
-const distDir = path.join(__dirname, '..', 'widget', 'dist');
-if (!fs.existsSync(distDir)) {
-  fail('Dist directory does not exist.');
+const widgetDir = path.join(__dirname, '..', 'widget');
+const candidateDirs = [
+  path.join(widgetDir, 'dist-electron'),
+  path.join(widgetDir, 'dist'),
+];
+const distDir = candidateDirs.find(dir => fs.existsSync(dir));
+if (!distDir) {
+  fail('No packaged output directory found (expected widget/dist-electron or widget/dist).');
 }
 
-// Find the .asar file
-const files = fs.readdirSync(distDir);
-const asarFile = files.find(f => f.endsWith('.asar'));
-if (!asarFile) {
-  fail('No .asar file found in dist.');
+const asarPath = findFirstFile(distDir, (name, fullPath) => {
+  if (!name.endsWith('.asar')) return false;
+  return !fullPath.includes(`${path.sep}asar-extract${path.sep}`);
+});
+if (!asarPath) {
+  fail(`No .asar file found under ${distDir}.`);
 }
 
-const asarPath = path.join(distDir, asarFile);
 ok(`Found asar: ${asarPath}`);
 
 // Extract asar to temp

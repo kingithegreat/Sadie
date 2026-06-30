@@ -1,4 +1,5 @@
-import React from 'react';
+/** @jest-environment jsdom */
+
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import App from '../App';
@@ -22,7 +23,7 @@ describe('stream chunks (renderer)', () => {
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+      subscribeToStream: jest.fn((_sid: string, handlers: any) => {
         chunkHandler = handlers.onStreamChunk;
         endHandler = handlers.onStreamEnd;
         return unsub;
@@ -42,7 +43,7 @@ describe('stream chunks (renderer)', () => {
     const { getByLabelText, getByText } = render(<App />);
 
     // Compose a user message and send to create a streaming assistant message and subscribe
-    const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Kick off stream' } });
     const sendButton = getByText('Send');
     fireEvent.click(sendButton);
@@ -76,6 +77,9 @@ describe('stream chunks (renderer)', () => {
 
     // Cancel button should disappear after finish
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
+
+    // Copy response button should appear after finish
+    expect(screen.getByRole('button', { name: /copy response/i })).toBeInTheDocument();
 
     // Ensure unsubscribe functions still exist and can be called (cleanup implicit on end)
     // The test ensures our mocks were returned; actual cleanup on app is tested elsewhere.

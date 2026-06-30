@@ -11,6 +11,10 @@ jest.mock('electron', () => {
       on: jest.fn(),
     },
     BrowserWindow: jest.fn(),
+    app: {
+      isPackaged: false,
+      getPath: (name: string) => `/mock/${name}`,
+    },
   };
 });
 
@@ -20,15 +24,28 @@ describe('IPC registration', () => {
     for (const k of Object.keys(handles)) delete handles[k];
     // reset global idempotency flag used by registerIpcHandlers
     // @ts-ignore
-    (global as any).__sadie_ipc_registered = false;
+    (global as any).__homebot_ipc_registered = false;
   });
 
-  it('registers sadie:check-connection and is idempotent', () => {
+  it('registers homebot:check-connection and is idempotent', () => {
     registerIpcHandlers();
-    expect(handles['sadie:check-connection']).toBeDefined();
+    expect(handles['homebot:check-connection']).toBeDefined();
 
     // Second call should be a no-op (idempotent), not throw
     expect(() => registerIpcHandlers()).not.toThrow();
+  });
+
+  it('registers homebot:get-env handler', () => {
+    registerIpcHandlers();
+    expect(handles['homebot:get-env']).toBeDefined();
+  });
+
+  it('homebot:get-env handler returns environment info', async () => {
+    registerIpcHandlers();
+    const result = await handles['homebot:get-env']();
+    expect(result).toBeDefined();
+    expect(typeof result.isE2E).toBe('boolean');
+    expect(typeof result.userDataPath).toBe('string');
   });
 
   it('check-connection handler returns structured status', async () => {
@@ -42,7 +59,7 @@ describe('IPC registration', () => {
       return Promise.resolve({ status: 200 });
     });
 
-    const res = await handles['sadie:check-connection']();
+    const res = await handles['homebot:check-connection']();
     expect(res).toBeDefined();
     expect(res.n8n).toBe('online');
     expect(res.ollama).toBe('offline');

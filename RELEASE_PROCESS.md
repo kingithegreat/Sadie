@@ -1,238 +1,220 @@
-# SADIE Release Process
+# HomeBot — Release Process
 
-This document outlines the complete process for building, testing, and releasing SADIE in development, test, and production environments.
+Step-by-step process for building, validating, and publishing a HomeBot release.
 
-## Overview
+---
 
-SADIE uses a multi-stage release pipeline that ensures:
-- Environment-specific builds
-- Clean production artifacts
-- Comprehensive testing
-- Security hardening
-- Artifact integrity validation
+## Version Numbering
 
-## Prerequisites
+HomeBot uses semantic versioning: `MAJOR.MINOR.PATCH`
 
-- Node.js 18+
-- npm or yarn
-- Ollama installed (for local AI models)
-- Git
+| Component | When to Increment |
+|---|---|
+| **MAJOR** | Breaking changes to IPC API or tool contracts |
+| **MINOR** | New features, new tools, significant UI additions |
+| **PATCH** | Bug fixes, security patches, documentation updates |
 
-## Environment Modes
+Current version is maintained in `widget/package.json`.
 
-SADIE supports three runtime modes controlled by environment variables:
+---
 
-| Mode | NODE_ENV | Purpose | Features |
-|------|----------|---------|----------|
-| Development | `development` | Local development | Full logging, dev tools, test code included |
-| Test | `test` | CI/testing | E2E enabled, diagnostics, test artifacts |
-| Production | `production` | User deployment | Clean builds, security hardening, no test code |
+## Pre-Release Checklist
 
-## Build Commands
+### 1. Code Quality
+
+```bash
+cd widget
+
+# TypeScript compilation (must be clean)
+npx tsc --noEmit
+
+# All unit tests (must be 0 failures)
+npx jest --config jest.config.ts --no-coverage
+
+# E2E tests (Ollama must be running)
+npm run e2e
+```
+
+**Expected**: 120 suites, 1,872 tests, 0 failures.
+
+### 2. Security Validation
+
+```bash
+# Dependency audit
+npm audit
+
+# Package integrity scan
+node ../scripts/scan-package-integrity.js
+
+# Preflight environment check
+node ../scripts/preflight-env-check.js
+```
+
+### 3. Documentation Review
+
+Verify the following files are up to date:
+
+- [ ] `CHANGELOG.md` — New version entry with all changes
+- [ ] `README.md` — Feature list and test counts
+- [ ] `docs/setup-guide.md` — Installation and first-run instructions
+
+### 4. Version Bump
+
+Update the version in `widget/package.json`:
+
+```json
+{
+  "version": "X.Y.Z"
+}
+```
+
+---
+
+## Build Process
 
 ### Development Build
+
 ```bash
-# Standard dev build
+cd widget
+npm run build
+```
+
+This runs `electron-vite build`, which compiles:
+- **Main process** → `out/main/`
+- **Preload script** → `out/preload/`
+- **Renderer** → `out/renderer/`
+
+### Production Installer
+
+```bash
+cd widget
+npm run dist
+```
+
+This runs `electron-builder` with the configuration in `electron-builder.yml`, producing:
+
+| Artifact | Location | Format |
+|---|---|---|
+| **NSIS Installer** | `widget/dist/` | `.exe` (Windows) |
+| **Unpacked** | `widget/dist/win-unpacked/` | Directory |
+| **Update files** | `widget/dist/` | `.yml`, `.blockmap` |
+
+### Build Configuration
+
+- **electron-builder.yml** — Installer settings (app name, icon, NSIS config)
+- **electron.vite.config.ts** — Build settings (entry points, aliases, plugins)
+
+---
+
+## Release Steps
+
+### 1. Final Validation
+
+```bash
+cd widget
+
+# Clean build
+Remove-Item -Recurse -Force out, dist -ErrorAction SilentlyContinue
 npm run build
 
-# With dev server
-npm run dev
+# Run from build output
+npm start
+
+# Verify the app launches and basic chat works
 ```
 
-### Test Build
+### 2. Create Installer
+
 ```bash
-# Run unit tests
-npm test
-
-# Run E2E tests
-npm run e2e
-
-# Full test suite
-npm run test:all
+npm run dist
 ```
 
-### Production Build
+### 3. Test Installer
+
+1. Run the NSIS installer from `widget/dist/`.
+2. Verify installation completes without errors.
+3. Launch the installed application.
+4. Verify Ollama connection.
+5. Send a test chat message.
+6. Verify tools work (e.g., file read).
+7. Verify settings persist after restart.
+
+### 4. Git Tag
+
 ```bash
-# Full release process (recommended)
-npm run release
-
-# Manual steps (if needed)
-NODE_ENV=production npm run build
-NODE_ENV=production npm run package
+git add -A
+git commit -m "v<X.Y.Z> — <summary>"
+git tag -a v<X.Y.Z> -m "v<X.Y.Z> — <summary>"
+git push origin main
+git push origin v<X.Y.Z>
 ```
 
-## Preflight Script
+### 5. GitHub Release
 
-The preflight script (`scripts/preflight-env-check.js`) runs automatically during `npm run release` and validates:
+1. Go to [Releases](https://github.com/kingithegreat/HomeBot/releases).
+2. Click **Draft a new release**.
+3. Select the tag `v<X.Y.Z>`.
+4. Title: `v<X.Y.Z> — <summary>`.
+5. Body: Copy the relevant CHANGELOG.md entry.
+6. Attach the installer `.exe` from `widget/dist/`.
+7. Publish the release.
 
-### Environment Checks
-- Node.js version compatibility
-- Required dependencies installed
-- Ollama service availability
-- Network connectivity for model downloads
+---
 
-### Security Validation
-- Scans source code for forbidden strings (test code, debug flags)
-- Validates environment variable sanitization
-- Checks for accidental test artifact inclusion
+## Auto-Update
 
-### File System Checks
-- Verifies build output directories
-- Ensures clean working directory
-- Validates package.json integrity
+HomeBot uses Electron's built-in auto-update mechanism:
 
-### Running Preflight Manually
-```bash
-node scripts/preflight-env-check.js
-```
+- The app checks for updates on launch.
+- Update metadata is fetched from the GitHub Releases API.
+- Downloads are verified with signature checks.
+- Users are prompted to install updates.
 
-**Exit Codes:**
-- `0`: All checks passed
-- `1`: Environment issues found
-- `2`: Security violations detected
+The repository field is already configured in [widget/package.json](widget/package.json). The remaining operational step is publishing a GitHub Release with the packaged installer artifacts so update metadata exists for clients to consume.
 
-## Artifact Scanner
+---
 
-The package integrity scanner (`scripts/scan-package-integrity.js`) validates packaged builds:
+## Rollback
 
-### What It Checks
-- ASAR archive structure
-- Forbidden file patterns (test files, debug logs)
-- Environment variable leakage
-- Code signing readiness (future)
-- Bundle size limits
+If a release has critical issues:
 
-### Running Scanner Manually
-```bash
-node scripts/scan-package-integrity.js
-```
+1. **Immediate**: Remove the GitHub Release (hides the download).
+2. **Hotfix**: Create a patch release with the fix.
+3. **Tag cleanup** (if needed): `git tag -d v<X.Y.Z> && git push origin :refs/tags/v<X.Y.Z>`
 
-**Validates:**
-- No `*.test.js` files in packaged app
-- No `[DIAG]` logs in release builds
-- No development environment variables
-- Clean ASAR contents
+---
 
-## Packaging Process
+## Post-Release
 
-### Full Release Command
-```bash
-npm run release
-```
+After a successful release:
 
-This command executes:
-1. Preflight environment check
-2. Clean previous builds (`npm run clean`)
-3. Production build (`NODE_ENV=production npm run build`)
-4. Package application (`NODE_ENV=production npm run package`)
-5. Integrity scan
-6. Generate release artifacts
+1. Update `CHANGELOG.md` to add a new `## [Unreleased]` section.
+2. Monitor GitHub Issues for user reports.
+3. Verify auto-update works by checking the previous version detects the new release.
 
-### Manual Packaging
-```bash
-# Build main process
-NODE_ENV=production npm run build:main
-
-# Build renderer
-NODE_ENV=production npm run build:renderer
-
-# Package with electron-builder
-NODE_ENV=production npm run package
-```
-
-## Expected Outputs
-
-### Development Mode
-- `dist/` - Built application files
-- `dist/main.js` - Main process bundle
-- `dist/preload.js` - Preload script
-- Full debug logging enabled
-
-### Production Mode
-- `release/` - Packaged installers
-- `release/SADIE-*.exe` - Windows installer
-- `release/SADIE-*.dmg` - macOS installer (if configured)
-- `release/SADIE-*.AppImage` - Linux portable (if configured)
-- `app.asar` - Packaged application archive
-- Sanitized environment (no test code, no debug logs)
-
-### Test Artifacts
-- `test-results/` - Playwright traces and screenshots
-- `coverage/` - Test coverage reports
-- `playwright-report/` - E2E test reports
+---
 
 ## Troubleshooting
 
-### Common Release Failures
+### Build Fails
 
-#### Preflight Fails: "Node version too old"
-```
-Error: Node.js 18+ required, found 16.14.0
-```
-**Solution:** Update Node.js to latest LTS version
+| Symptom | Fix |
+|---|---|
+| TypeScript errors | Run `npx tsc --noEmit` and fix reported issues |
+| Missing modules | `Remove-Item -Recurse node_modules; npm install` |
+| electron-builder errors | Check `electron-builder.yml` for syntax issues |
+| Vite build errors | Check `electron.vite.config.ts` for plugin issues |
 
-#### Preflight Fails: "Ollama not running"
-```
-Error: Cannot connect to Ollama at http://localhost:11434
-```
-**Solution:** Start Ollama service and ensure models are downloaded
+### Installer Issues
 
-#### Build Fails: "Module not found"
-```
-Error: Cannot resolve 'electron'
-```
-**Solution:** Run `npm install` to restore dependencies
+| Symptom | Fix |
+|---|---|
+| NSIS compilation fails | Verify electron-builder.yml `nsis` section |
+| Installer too large | Check for unnecessary files in `files` config |
+| App won't launch after install | Check main process entry point in package.json |
 
-#### Packaging Fails: "asar integrity check failed"
-```
-Error: Found forbidden file: src/test/utils.test.js
-```
-**Solution:** Check `.gitignore` and ensure test files are excluded from build
+### Test Failures Before Release
 
-#### E2E Tests Fail: "Modal not showing"
-```
-Error: First-run modal did not appear within 5000ms
-```
-**Solution:** Ensure `SADIE_E2E=true` is set and app is built in test mode
-
-### Debug Commands
-
-```bash
-# Check environment
-node -e "console.log(process.env)"
-
-# Verify Ollama
-curl http://localhost:11434/api/tags
-
-# Clean and rebuild
-npm run clean && npm run build
-
-# Run with verbose logging
-DEBUG=* npm run release
-```
-
-### Release Verification
-
-After successful release:
-1. Install packaged app in clean environment
-2. Verify no console errors in production logs
-3. Test basic functionality (chat, settings)
-4. Check that E2E/test code is absent
-5. Confirm runtime mode shows as "prod"
-
-## CI/CD Integration
-
-For automated releases, the process can be integrated into GitHub Actions:
-
-```yaml
-- name: Release
-  run: npm run release
-  env:
-    NODE_ENV: production
-```
-
-## Version Management
-
-- Versions are managed in `package.json`
-- Use semantic versioning (MAJOR.MINOR.PATCH)
-- Tag releases: `git tag v1.0.0 && git push --tags`
+- Never release with failing tests.
+- Run tests in isolation to identify flaky tests: `npx jest --config jest.config.ts --runInBand`
+- Check for environment-dependent failures (timezone, locale).

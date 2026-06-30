@@ -1,24 +1,27 @@
 import React, { useEffect } from 'react';
 
-interface ToolCall {
-  tool_name: string;
-  parameters: Record<string, any>;
-  reasoning?: string;
-  confirmation_id?: string;
-}
+
 
 interface ActionConfirmationProps {
   actionSummary: string;
   warnings?: string[];
   onConfirm: () => void;
   onReject: () => void;
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
+  rejectLabel?: string;
 }
 
 const ActionConfirmation: React.FC<ActionConfirmationProps> = ({
   actionSummary,
   warnings = [],
   onConfirm,
-  onReject
+  onReject,
+  title = '⚠️ Confirm Action',
+  message = 'HomeBot wants to perform an action that requires your approval.',
+  confirmLabel = 'Confirm',
+  rejectLabel = 'Cancel'
 }) => {
   
   // Handle Escape key
@@ -37,12 +40,12 @@ const ActionConfirmation: React.FC<ActionConfirmationProps> = ({
     <div className="confirmation-overlay">
       <div className="confirmation-modal">
         <div className="confirmation-header">
-          <h2>⚠️ Confirm Action</h2>
+          <h2>{title}</h2>
         </div>
 
         <div className="confirmation-body">
           <p className="confirmation-message">
-            SADIE wants to perform an action that requires your approval.
+            {message}
           </p>
 
           <div className="action-summary">
@@ -67,13 +70,13 @@ const ActionConfirmation: React.FC<ActionConfirmationProps> = ({
             className="button button-cancel"
             onClick={onReject}
           >
-            Cancel
+            {rejectLabel}
           </button>
           <button
             className="button button-confirm"
             onClick={onConfirm}
           >
-            Confirm
+            {confirmLabel}
           </button>
         </div>
       </div>

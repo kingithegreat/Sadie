@@ -1,0 +1,51 @@
+{
+  "_comment": "This file documents the default MCP servers seeded to userData on first run. Edit the live config at %APPDATA%/homebot/config/mcp-servers.json via Settings > MCP Servers.",
+  "servers": [
+    {
+      "type": "stdio",
+      "name": "filesystem",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-filesystem",
+               "~/Desktop", "~/Documents", "~/Downloads"],
+      "enabled": true
+    },
+    {
+      "type": "stdio",
+      "name": "memory",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    },
+    {
+      "type": "stdio",
+      "name": "fetch",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-fetch"],
+      "enabled": true
+    },
+    {
+      "type": "stdio",
+      "name": "playwright",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@playwright/mcp@latest", "--headless"],
+      "enabled": false
+    },
+    {
+      "type": "stdio",
+      "name": "brave-search",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-brave-search"],
+      "env": { "BRAVE_API_KEY": "" },
+      "enabled": false
+    },
+    {
+      "type": "stdio",
+      "name": "github",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "" },
+      "enabled": false
+    }
+  ]
+}
+

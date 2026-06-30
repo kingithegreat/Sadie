@@ -11,7 +11,7 @@ describe('Stream integration tests', () => {
   test('Stream request returns SSE response', async () => {
     const res = await request(app)
       .post('/stream')
-      .set('x-sadie-key', 'test')
+      .set('x-homebot-key', 'test')
       .send({ provider: 'openai', model: 'gpt-4o', prompt: 'Say hello' })
       .expect(200);
 

@@ -1,15 +1,15 @@
 const http = require('http');
 const data = JSON.stringify({
-  model: 'llama3.2:3b',
+  model: 'qwen2.5:7b',
   messages: [
-    { role: 'system', content: 'You are Sadie, be concise.' },
+    { role: 'system', content: 'You are HomeBot, be concise.' },
     { role: 'user', content: 'Write a long essay (200 words) about local LLM streaming.' }
   ],
   stream: true
 });
 
 const options = {
-  hostname: 'localhost',
+  hostname: '127.0.0.1',
   port: 11434,
   path: '/api/chat',
   method: 'POST',

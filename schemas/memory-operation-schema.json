@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://sadie.local/schemas/memory-operation.json",
+  "$id": "https://homebot.local/schemas/memory-operation.json",
   "title": "Memory Manager Operations",
   "description": "Schema for memory subsystem operations",
   "type": "object",

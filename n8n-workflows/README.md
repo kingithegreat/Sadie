@@ -1,6 +1,6 @@
-# n8n Workflows for SADIE
+# n8n Workflows for HomeBot
 
-This directory contains all n8n workflow JSON files for SADIE's automation layer.
+This directory contains all n8n workflow JSON files for HomeBot's automation layer.
 
 ## Structure
 
@@ -15,8 +15,9 @@ These are the main orchestration workflows:
 Individual tool execution workflows:
 
 - **file-manager.json**: File operations (read, write, list, delete, search)
+- **file-manager-hardened.json**: Hardened file manager with schema validation, path traversal guards, confirmation-required workflow paths, and standardized response envelope
 - **memory-manager.json**: Context storage and retrieval (facts, preferences, search)
-- **vision-tool.json**: Image analysis using LLaVA and Tesseract OCR
+- **vision-tool.json**: Image analysis workflow; the Electron app currently defaults to `moondream` for local vision while legacy workflow setups may still reference LLaVA
 - **system-info.json**: System information queries (disk usage, processes, computer info)
 - **planning-agent.json**: Multi-step task breakdown and planning
 - **api-tool.json**: HTTP requests to external/local APIs
@@ -25,7 +26,7 @@ Individual tool execution workflows:
 
 1. Start your n8n instance:
    ```powershell
-   cd C:\Users\adenk\Desktop\sadie
+   cd C:\Users\adenk\Desktop\homebot
    docker-compose up -d
    ```
 
@@ -42,11 +43,10 @@ Individual tool execution workflows:
 
 ## Configuration Notes
 
-- All workflows use absolute paths: `C:/Users/adenk/Desktop/sadie`
-- Ollama endpoint: `http://localhost:11434`
- - Ollama endpoint: `http://localhost:11434`
-- Primary model: `llama3.2:3b`
-- Vision model: `llava:latest`
+- All workflows use absolute paths: `C:/Users/adenk/Desktop/homebot`
+- Ollama endpoint: `http://127.0.0.1:11434`
+- Primary model: `qwen2.5:7b`
+- Vision model: `moondream`
 - Memory storage: `memory/json-store/` directory
 
 ## Workflow Communication
@@ -76,14 +76,14 @@ To modify workflows:
 
 Test the main webhook:
 ```powershell
-curl -X POST http://localhost:5678/webhook/sadie/chat `
+curl -X POST http://localhost:5678/webhook/homebot/chat `
   -H "Content-Type: application/json" `
-  -d '{"message": "Hello Sadie!"}'
+  -d '{"message": "Hello HomeBot!"}'
 ```
 
 To test the streaming endpoint (replace the default orchestrator):
 ```powershell
-curl -X POST http://localhost:5678/webhook/sadie/chat/stream `
+curl -X POST http://localhost:5678/webhook/homebot/chat/stream `
    -H "Content-Type: application/json" `
    -d '{"message": "Stream test"}'
 ```

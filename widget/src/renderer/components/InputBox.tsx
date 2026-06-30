@@ -44,79 +44,121 @@ declare global {
   interface Window {
     SpeechRecognition: new () => SpeechRecognition;
     webkitSpeechRecognition: new () => SpeechRecognition;
-    sadieWhisperPipeline: any;
+    homebotWhisperPipeline: any;
   }
 }
 
-// Offline speech recognition - disabled for now due to Electron compatibility issues
-// The @xenova/transformers library has bundling issues in Electron
-// TODO: Implement native Whisper.cpp integration for true offline support
-
-const OFFLINE_SUPPORTED = false;
-
-async function transcribeWithWhisper(_audioBlob: Blob, _onStatus?: (msg: string) => void): Promise<string> {
-  throw new Error('Offline transcription not yet available. Please connect to the internet for voice input.');
-}
+// Offline speech recognition uses Windows SAPI via PowerShell (fully offline,
+// no external dependencies). Web Speech API is the fallback for non-Windows.
 
 export type InputBoxProps = {
   onSendMessage: (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;
   disabled?: boolean;
 };
 
-export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
+const PLACEHOLDER_HINTS = [
+  'Message HomeBot...',
+  'Try: "What\'s the weather?"',
+  'Try: "Summarize my clipboard"',
+  'Try: "What\'s in the news?"',
+  'Try: "Search the web for..."',
+  'Try: "Read this file..."',
+  'Drop a PDF here to chat about it',
+];
+
+export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) {
   type LocalImage = ImageAttachment & { id: string };
   type LocalDocument = DocumentAttachment & { id: string };
   const [inputValue, setInputValue] = useState('');
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [attachedImages, setAttachedImages] = useState<LocalImage[]>([]);
   const [attachedDocuments, setAttachedDocuments] = useState<LocalDocument[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
+  const [voiceAutoSend, setVoiceAutoSend] = useState(false);
+  const [listenTimer, setListenTimer] = useState(0);
+  const listenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voiceAutoSendPending = useRef(false);
+  const [uncensoredMode, setUncensoredMode] = useState(false);
+  const [ragStatus, setRagStatus] = useState<null | 'indexing' | { ok: boolean; message: string }>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  // Rotate placeholder hints every 5 seconds when input is empty
+  useEffect(() => {
+    if (inputValue) return;
+    const id = setInterval(() => setPlaceholderIndex(i => (i + 1) % PLACEHOLDER_HINTS.length), 5000);
+    return () => clearInterval(id);
+  }, [inputValue]);
+
+  // Sync uncensored mode from main process and listen for toggle events
+  useEffect(() => {
+    (window as any).electron?.getUncensoredMode?.().then((result: { enabled: boolean }) => {
+      setUncensoredMode(result?.enabled || false);
+    });
+    const handler = (e: Event) => setUncensoredMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener('homebot:uncensored-mode-changed', handler);
+    return () => window.removeEventListener('homebot:uncensored-mode-changed', handler);
+  }, []);
 
   // Check for speech recognition support
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setSpeechSupported(!!SpeechRecognition);
+    // Also show the mic button when running inside Electron — Windows SAPI is available there
+    const hasSapi = typeof (window as any).electron?.startSpeechRecognition === 'function';
+    setSpeechSupported(!!(SpeechRecognition || hasSapi));
   }, []);
+
+  // Recording timer — shows elapsed seconds while listening
+  useEffect(() => {
+    if (isListening) {
+      setListenTimer(0);
+      listenTimerRef.current = setInterval(() => setListenTimer(t => t + 1), 1000);
+    } else {
+      if (listenTimerRef.current) { clearInterval(listenTimerRef.current); listenTimerRef.current = null; }
+      setListenTimer(0);
+    }
+    return () => { if (listenTimerRef.current) clearInterval(listenTimerRef.current); };
+  }, [isListening]);
+
+  // Auto-dismiss voice error messages after 4 seconds
+  useEffect(() => {
+    if (errorMessage && errorMessage !== '🎤 Listening… speak now') {
+      const t = setTimeout(() => setErrorMessage(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [errorMessage]);
 
   // Initialize speech recognition (online mode - requires internet)
   const startListening = useCallback(async () => {
-    console.log('[Voice] Starting speech recognition...');
-    console.log('[Voice] electron object:', (window as any).electron);
-    console.log('[Voice] startSpeechRecognition:', (window as any).electron?.startSpeechRecognition);
-    
     // First try Windows SAPI (offline, works reliably in Electron)
     if ((window as any).electron?.startSpeechRecognition) {
-      console.log('[Voice] Using Windows SAPI...');
       setIsListening(true);
-      setErrorMessage('Listening... speak now (10 sec timeout)');
+      setErrorMessage('🎤 Listening… speak now');
       
       try {
         const result = await (window as any).electron.startSpeechRecognition();
-        console.log('[Voice] Result:', result);
         setIsListening(false);
         
         if (result.success && result.text) {
           setInputValue(prev => prev + (prev ? ' ' : '') + result.text);
           setErrorMessage(null);
-        } else if (!result.text) {
-          setErrorMessage('No speech detected. Try again.');
+          if (voiceAutoSend) voiceAutoSendPending.current = true;
+        } else if (result.success && !result.text) {
+          setErrorMessage('No speech detected — try speaking louder or check your microphone.');
         } else {
-          setErrorMessage(result.error || 'Speech recognition failed');
+          setErrorMessage('Voice error: ' + (result.error || 'Speech recognition failed'));
         }
       } catch (err: any) {
         console.error('[Voice] Error:', err);
         setIsListening(false);
-        setErrorMessage('Speech recognition error: ' + (err.message || err));
+        setErrorMessage('Voice error: ' + (err.message || String(err)));
       }
       return;
     }
-    
-    console.log('[Voice] Falling back to Web Speech API...');
 
-    // Fallback to Web Speech API (requires internet)
+    // Fallback to Web Speech API (requires internet / Chromium speech service)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setErrorMessage('Speech recognition not supported in this browser.');
@@ -182,7 +224,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, []);
+  }, [voiceAutoSend]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
@@ -211,6 +253,7 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const docInputRef = useRef<HTMLInputElement | null>(null);
+  const ragInputRef = useRef<HTMLInputElement | null>(null);
   const dropRef = useRef<HTMLDivElement | null>(null);
 
   const { MAX_IMAGES, MAX_PER_IMAGE_BYTES: MAX_PER_IMAGE, MAX_TOTAL_BYTES: MAX_TOTAL } = IMAGE_LIMITS;
@@ -267,6 +310,28 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     setInputValue('');
     setErrorMessage(null);
   }, [inputValue, attachedImages, attachedDocuments, onSendMessage]);
+
+  // Voice auto-send: trigger handleSend once the input value updates after voice recognition
+  useEffect(() => {
+    if (voiceAutoSendPending.current && inputValue.trim()) {
+      voiceAutoSendPending.current = false;
+      // Small delay to let state settle
+      const t = setTimeout(() => handleSend(), 100);
+      return () => clearTimeout(t);
+    }
+  }, [inputValue, handleSend]);
+
+  // Keyboard shortcut: Ctrl+Shift+V toggles voice input
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+        e.preventDefault();
+        if (speechSupported) toggleVoiceInput();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [speechSupported, toggleVoiceInput]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -403,9 +468,45 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
   const handleAttachClick = () => fileInputRef.current?.click();
   const handleDocAttachClick = () => docInputRef.current?.click();
 
+  const handleRagIndex = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    const file = files[0];
+    // In Electron, File objects have a .path property with the OS path
+    const osPath: string = (file as any).path || '';
+    if (!osPath) {
+      setRagStatus({ ok: false, message: 'RAG indexing requires the desktop app (file path unavailable in browser).' });
+      setTimeout(() => setRagStatus(null), 4000);
+      return;
+    }
+    setRagStatus('indexing');
+    try {
+      const result = await (window as any).electron?.ragIndex?.(osPath);
+      if (result?.success) {
+        const { filename, chunks_indexed } = result.result || {};
+        setRagStatus({ ok: true, message: `✅ Indexed “${filename || file.name}” (${chunks_indexed ?? '?'} chunks) — ask me anything about it!` });
+      } else {
+        setRagStatus({ ok: false, message: `❌ RAG index failed: ${result?.error || 'unknown error'}` });
+      }
+    } catch (err: any) {
+      setRagStatus({ ok: false, message: `❌ RAG index error: ${err?.message || String(err)}` });
+    }
+    setTimeout(() => setRagStatus(null), 6000);
+  }, []);
+
+  const handleRagFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length) await handleRagIndex(Array.from(files));
+    if (ragInputRef.current) ragInputRef.current.value = '';
+  };
+
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!isDragging) setIsDragging(true); };
   const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
+  const looksLikeRagFile = (file: File): boolean => {
+    const ext = ('.' + file.name.split('.').pop()?.toLowerCase()) as string;
+    return ['.pdf', '.docx', '.doc', '.txt', '.md', '.json', '.csv', '.ts', '.tsx', '.js', '.jsx', '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.xml', '.yaml', '.yml', '.log', '.ini', '.toml', '.sh', '.ps1', '.bat'].includes(ext);
+  };
+
   const handleDrop = async (e: React.DragEvent) => { 
     e.preventDefault(); 
     e.stopPropagation(); 
@@ -413,8 +514,16 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
     const files = Array.from(e.dataTransfer.files);
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     const docFiles = files.filter(f => isDocumentFile(f) && !f.type.startsWith('image/'));
+    const ragFiles = files.filter(f => !f.type.startsWith('image/') && !isDocumentFile(f) && looksLikeRagFile(f));
     if (imageFiles.length) await processFiles(imageFiles);
-    if (docFiles.length) await processDocuments(docFiles);
+    if (docFiles.length) {
+      await processDocuments(docFiles);
+      // Also index document files into RAG for future queries
+      const ragEligible = docFiles.filter(f => (f as any).path);
+      if (ragEligible.length) handleRagIndex(ragEligible).catch(() => {});
+    }
+    // Index non-image, non-chat-document files into RAG automatically
+    if (ragFiles.length) await handleRagIndex(ragFiles);
   };
 
   const removeAttachment = (id: string) => {
@@ -440,31 +549,45 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
   };
 
   return (
-    <div ref={dropRef} className={`input-box ${isDragging ? 'dragging' : ''}`} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+    <div ref={dropRef} className={`input-box ${isDragging ? 'dragging' : ''} ${uncensoredMode ? 'uncensored' : ''}`} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
       {isDragging && (
         <div className="drop-overlay" role="status" aria-live="polite"><div className="drop-inner">📥 Drop files to attach</div></div>
       )}
 
       <div className="input-top">
-        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Message SADIE..." rows={2} aria-label="Message SADIE" />
+        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message HomeBot" maxLength={4000} />
+        <div className={`char-counter${inputValue.length > 3000 ? (inputValue.length > 3800 ? ' danger' : ' warning') : ''}`}>{inputValue.length} / 4000</div>
 
         <div className="input-actions">
-          <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFileChange} />
-          <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple style={{ display: 'none' }} onChange={handleDocChange} />
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden-file-input" aria-label="Attach images" onChange={handleFileChange} />
+          <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple className="hidden-file-input" aria-label="Attach documents" onChange={handleDocChange} />
+          <input ref={ragInputRef} type="file" accept="*" className="hidden-file-input" aria-label="Index file for RAG" onChange={handleRagFileChange} />
           <button className="attach-button" title="Attach images" onClick={handleAttachClick}>📷</button>
           <button className="attach-button" title="Attach documents (PDF, Word, Text)" onClick={handleDocAttachClick}>📄</button>
+          <button
+            className="attach-button rag-index-button"
+            title="Index file for RAG — ask questions about any document"
+            onClick={() => ragInputRef.current?.click()}
+            disabled={ragStatus === 'indexing'}
+          >{ragStatus === 'indexing' ? '⏳' : '📎'}</button>
           {speechSupported && (
-            <button 
-              className={`voice-button ${isListening ? 'listening' : ''}`} 
-              title={isListening ? 'Stop listening' : 'Voice input'} 
-              onClick={toggleVoiceInput}
-              style={{
-                background: isListening ? '#ff3b30' : 'transparent',
-                animation: isListening ? 'pulse 1.5s infinite' : 'none'
-              }}
-            >
-              🎤
-            </button>
+            <>
+              <button 
+                className={`voice-button ${isListening ? 'listening voice-btn-active voice-pulse' : 'voice-btn-idle'}`} 
+                title={isListening ? `Stop listening (${listenTimer}s) — Ctrl+Shift+V` : 'Voice input — Ctrl+Shift+V'} 
+                onClick={toggleVoiceInput}
+              >
+                {isListening ? `🎤 ${listenTimer}s` : '🎤'}
+              </button>
+              <button
+                className={`attach-button ${voiceAutoSend ? 'voice-auto-active' : ''}`}
+                title={voiceAutoSend ? 'Auto-send after voice: ON' : 'Auto-send after voice: OFF'}
+                onClick={() => setVoiceAutoSend(v => !v)}
+                style={{ fontSize: '11px', padding: '2px 4px', minWidth: 0 }}
+              >
+                {voiceAutoSend ? '⚡' : '⏸'}
+              </button>
+            </>
           )}
           <button className="send-button" onClick={handleSend} disabled={!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0}>Send</button>
         </div>
@@ -473,12 +596,9 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
       {attachedImages.length > 0 && (
         <div className="image-preview-gallery">
           {attachedImages.map((img) => (
-            <div key={img.id} className="image-preview">
+            <div key={img.id} className="image-preview" title={img.filename ?? 'image'}>
               {img.url && <img src={img.url} alt={img.filename} className="image-thumb" />}
-              <div className="image-meta">
-                <div className="image-filename">{img.filename ?? 'image'}</div>
-                <button className="remove-image" onClick={() => removeAttachment(img.id)} title="Remove image">Remove</button>
-              </div>
+              <button className="remove-image" onClick={() => removeAttachment(img.id)} title="Remove image" aria-label={`Remove ${img.filename}`}>✕</button>
             </div>
           ))}
         </div>
@@ -503,9 +623,20 @@ export function InputBox({ onSendMessage, disabled }: InputBoxProps) {
         </div>
       )}
 
-      {errorMessage && <div role="alert" className="image-error" style={{ color: '#ff3b30', marginTop: 8 }}>{errorMessage}</div>}
+      {ragStatus && ragStatus !== 'indexing' && (
+        <div
+          role="status"
+          className={`rag-status-banner ${ragStatus.ok ? 'rag-status-ok' : 'rag-status-err'}`}
+        >
+          {ragStatus.message}
+        </div>
+      )}
+
+      {errorMessage && <div role="alert" className="image-error input-error-msg">{errorMessage}</div>}
     </div>
   );
 }
+
+export default InputBox;
 
 

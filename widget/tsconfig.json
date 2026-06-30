@@ -1,39 +1,28 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "commonjs",
+    "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "outDir": "./dist",
-    "rootDirs": ["./src/main", "./src/renderer", "./src/shared", "./src/preload"],
-    "strict": true,
-    "esModuleInterop": true,
+    "module": "ESNext",
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "allowSyntheticDefaultImports": true,
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["../shared/*"]
+    },
+    "allowImportingTsExtensions": false,
+    "esModuleInterop": true,
+    
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "moduleResolution": "node",
     "noEmit": false,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "allowJs": true,
-    "typeRoots": ["./node_modules/@types"],
-    "types": ["node"]
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "dist-electron",
-    "build",
-    "src/renderer/components/InputBox.previous.corrupted.tsx",
-    "src/renderer/components/InputBox.*.tsx",
-    "src/renderer/components/InputBoxNew.tsx",
-    "src/renderer/components/InputBoxClean.tsx",
-    "src/renderer/components/InputBox.bak.tsx"
-  ]
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
 }

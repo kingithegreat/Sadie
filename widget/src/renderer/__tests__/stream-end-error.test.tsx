@@ -1,4 +1,4 @@
-import React from 'react';
+/** @jest-environment jsdom */
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import App from '../App';
@@ -21,7 +21,7 @@ describe('stream end and error handling (renderer)', () => {
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+      subscribeToStream: jest.fn((_sid: string, handlers: any) => {
         chunkHandler = handlers.onStreamChunk;
         endHandler = handlers.onStreamEnd;
         return unsub;
@@ -37,7 +37,7 @@ describe('stream end and error handling (renderer)', () => {
     const { getByLabelText, getByText } = render(<App />);
 
     // Send a user message, creating an assistant streaming message
-    const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Testing end' } });
     const sendBtn = getByText('Send');
     fireEvent.click(sendBtn);
@@ -55,6 +55,8 @@ describe('stream end and error handling (renderer)', () => {
     // After end, final content remains and streaming UI is removed
     await waitFor(() => expect(screen.getByText('First chunk')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
+    // Copy response button should appear for finished messages
+    expect(screen.getByRole('button', { name: /copy response/i })).toBeInTheDocument();
     // No Error badge expected
     expect(screen.queryByText('Error')).toBeNull();
 
@@ -70,13 +72,10 @@ describe('stream end and error handling (renderer)', () => {
     let errorHandler: ((d: any) => void) | undefined;
 
     const unsub = jest.fn();
-    const chunkUnsub = unsub;
-    const endUnsub = unsub;
-    const errorUnsub = unsub;
 
     (window as any).electron = {
       cancelStream: jest.fn(),
-      subscribeToStream: jest.fn((sid: string, handlers: any) => {
+      subscribeToStream: jest.fn((_sid: string, handlers: any) => {
         chunkHandler = handlers.onStreamChunk;
         errorHandler = handlers.onStreamError;
         return unsub;
@@ -92,7 +91,7 @@ describe('stream end and error handling (renderer)', () => {
     const { getByLabelText, getByText } = render(<App />);
 
     // Send message to create streaming assistant
-    const textarea = getByLabelText('Message SADIE') as HTMLTextAreaElement;
+    const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Testing error' } });
     const sendBtn = getByText('Send');
     fireEvent.click(sendBtn);
@@ -108,8 +107,10 @@ describe('stream end and error handling (renderer)', () => {
     act(() => { errorHandler?.({ streamId, error: 'test error' }); });
 
     // Error badge should appear and cancel button should disappear
-    await waitFor(() => expect(screen.getByText('Error')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
+    // Retry button should appear for errored messages
+    expect(screen.getByText('↻ Retry')).toBeInTheDocument();
 
     // Message should no longer grow after error - simulate another chunk and ensure final text unchanged
     act(() => { chunkHandler?.({ streamId, chunk: 'more' }); });
@@ -117,6 +118,12 @@ describe('stream end and error handling (renderer)', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText('partialmore')).toBeNull();
 
+    // Also ensure renderer logs diagnostic fields if provided by main
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const diag = { url: 'http://127.0.0.1:5678/webhook/homebot/chat/stream', errorText: 'ECONNREFUSED', n8nResponded: false, httpStatus: 502 };
+    act(() => { errorHandler?.({ streamId, error: 'diagnostic error', diagnostic: diag }); });
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining(`url=${diag.url}`));
+    consoleSpy.mockRestore();
     // edge-case: error before any chunk
     // Start a new message
     let newStreamId: string | undefined;
@@ -132,7 +139,7 @@ describe('stream end and error handling (renderer)', () => {
 
     // The new message should exist but be empty and have an Error badge
     // Find any Error badge in the DOM - we expect at least one
-    await waitFor(() => expect(screen.getAllByText('Error').length).toBeGreaterThanOrEqual(1));
+    await waitFor(() => expect(screen.getAllByText('Something went wrong').length).toBeGreaterThanOrEqual(1));
 
   });
 });

@@ -1,13 +1,16 @@
 import axios from 'axios';
 import { Readable } from 'stream';
 
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
+
 export interface StreamProxyOptions {
   proxyUrl?: string; // full proxy endpoint e.g. http://localhost:5050/stream
-  apiKey?: string; // x-sadie-key
+  apiKey?: string; // x-homebot-key
 }
 
-export function streamFromSadieProxy(body: any, onChunk: (chunk: string) => void, onEnd?: () => void, onError?: (err: any) => void, opts?: StreamProxyOptions) {
-  const proxyUrl = opts?.proxyUrl || process.env.SADIE_PROXY_URL || 'http://localhost:5050/stream';
+export function streamFromHomeBotProxy(body: any, onChunk: (chunk: string) => void, onEnd?: () => void, onError?: (err: any) => void, opts?: StreamProxyOptions) {
+  const proxyUrl = opts?.proxyUrl || process.env.HOMEBOT_PROXY_URL || 'http://localhost:5050/stream';
   const apiKey = opts?.apiKey || process.env.PROXY_API_KEYS || process.env.PROXY_API_KEY || '';
 
   // Setup abort controller for canceling the request
@@ -20,7 +23,7 @@ export function streamFromSadieProxy(body: any, onChunk: (chunk: string) => void
       'Content-Type': 'application/json'
     }
   };
-  if (apiKey) config.headers['x-sadie-key'] = Array.isArray(apiKey) ? apiKey[0] : String(apiKey).split(',')[0];
+  if (apiKey) config.headers['x-homebot-key'] = Array.isArray(apiKey) ? apiKey[0] : String(apiKey).split(',')[0];
 
   let canceled = false;
 
@@ -37,7 +40,7 @@ export function streamFromSadieProxy(body: any, onChunk: (chunk: string) => void
       }
     });
     stream.on('end', () => {
-      try { onEnd?.(); } catch (e) {}
+      try { onEnd?.(); } catch (e) { safeCatch(e); }
     });
     stream.on('error', (err: any) => {
       onError?.(err);
@@ -50,9 +53,9 @@ export function streamFromSadieProxy(body: any, onChunk: (chunk: string) => void
   return {
     cancel: () => {
       canceled = true;
-      try { controller.abort(); } catch (e) {}
+      try { controller.abort(); } catch (e) { safeCatch(e); }
     }
   };
 }
 
-export default streamFromSadieProxy;
+export default streamFromHomeBotProxy;

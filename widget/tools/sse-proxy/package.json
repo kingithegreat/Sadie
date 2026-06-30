@@ -1,7 +1,7 @@
 {
-  "name": "sadie-sse-proxy",
+  "name": "homebot-sse-proxy",
   "version": "0.1.0",
-  "description": "SADIE SSE Proxy - forwards model streaming responses (OpenAI / Ollama) to clients via SSE",
+  "description": "HomeBot SSE Proxy - forwards model streaming responses (OpenAI / Ollama) to clients via SSE",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -13,7 +13,7 @@
     "test": "jest --runInBand --config=jest.config.ts",
     "lint": "eslint . --ext .ts"
   },
-  "author": "sadie-team",
+  "author": "homebot-team",
   "license": "MIT",
   "dependencies": {
     "cors": "^2.8.5",

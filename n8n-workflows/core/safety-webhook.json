@@ -1,11 +1,10 @@
 {
-  "name": "SADIE Safety Webhook",
-  "active": false,
+  "name": "HomeBot Safety Webhook",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "sadie/validate",
+        "path": "homebot/validate",
         "responseMode": "onReceived",
         "options": {}
       },
@@ -13,8 +12,11 @@
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
-      "position": [250, 300],
-      "webhookId": "sadie-validate"
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "homebot-validate"
     },
     {
       "parameters": {
@@ -24,7 +26,10 @@
       "name": "Validate Safety",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [
+        580,
+        300
+      ]
     },
     {
       "parameters": {
@@ -35,21 +40,67 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [650, 300]
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "id": "homebot-auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
+      }
     }
   ],
   "connections": {
     "Webhook Trigger": {
-      "main": [[{"node": "Validate Safety", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Auth Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validate Safety": {
-      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Validate Safety",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "staticData": null,
   "tags": [],
   "triggerCount": 0,
   "updatedAt": "2025-12-14T00:00:00.000Z",
-  "versionId": "1"
+  "versionId": "1",
+  "active": true
 }

@@ -2,7 +2,7 @@
 
 ## Integrating PowerShell Scripts into n8n Workflows
 
-This guide shows how to wire PowerShell scripts into existing SADIE n8n workflows.
+This guide shows how to wire PowerShell scripts into existing HomeBot n8n workflows.
 
 ---
 
@@ -24,8 +24,8 @@ This guide shows how to wire PowerShell scripts into existing SADIE n8n workflow
 ```json
 {
   "parameters": {
-    "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"={{ $json.params.action }}\" -Path \"={{ $json.params.file_path || $json.params.directory_path }}\" {{ $json.params.content ? `-Content \"${$json.params.content}\"` : '' }} {{ $json.params.destination ? `-Destination \"${$json.params.destination}\"` : '' }} {{ $json.params.pattern ? `-Pattern \"${$json.params.pattern}\"` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
-    "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+    "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\FileOps.ps1\" -Action \"={{ $json.params.action }}\" -Path \"={{ $json.params.file_path || $json.params.directory_path }}\" {{ $json.params.content ? `-Content \"${$json.params.content}\"` : '' }} {{ $json.params.destination ? `-Destination \"${$json.params.destination}\"` : '' }} {{ $json.params.pattern ? `-Pattern \"${$json.params.pattern}\"` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
+    "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
   },
   "name": "Execute File Operation",
   "type": "n8n-nodes-base.executeCommand"
@@ -83,7 +83,7 @@ const userConfirmed = params.user_confirmed || false;
 // Build parameters hashtable for PowerShell
 const paramsJson = JSON.stringify(params).replace(/"/g, '\\"');
 
-const command = `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SafetyValidation.ps1" -ToolName "${toolName}" -Action "${params.action}" -Parameters (ConvertFrom-Json '${paramsJson}') -UserConfirmed $${userConfirmed}`;
+const command = `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\SafetyValidation.ps1" -ToolName "${toolName}" -Action "${params.action}" -Parameters (ConvertFrom-Json '${paramsJson}') -UserConfirmed $${userConfirmed}`;
 
 return {
   json: {
@@ -104,8 +104,8 @@ Replace existing system info collection with:
 ```json
 {
   "parameters": {
-    "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\SystemInfo.ps1\" -InfoType \"={{ $json.params.info_type || 'all' }}\" -TopProcesses {{ $json.params.top_processes || 10 }}",
-    "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+    "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\SystemInfo.ps1\" -InfoType \"={{ $json.params.info_type || 'all' }}\" -TopProcesses {{ $json.params.top_processes || 10 }}",
+    "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
   },
   "name": "Get System Information",
   "type": "n8n-nodes-base.executeCommand"
@@ -137,8 +137,8 @@ Format Result
 ```json
 {
   "parameters": {
-    "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\sadie\\scripts\\tools\\powershell\\ArchiveOps.ps1\" -Action \"={{ $json.params.action }}\" {{ $json.params.archive_path ? `-ArchivePath \"${$json.params.archive_path}\"` : '' }} {{ $json.params.destination ? `-Destination \"${$json.params.destination}\"` : '' }} {{ $json.params.files ? `-Files @(${$json.params.files.map(f => `\"${f}\"`).join(',')})` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
-    "cwd": "C:\\Users\\adenk\\Desktop\\sadie"
+    "command": "powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\ArchiveOps.ps1\" -Action \"={{ $json.params.action }}\" {{ $json.params.archive_path ? `-ArchivePath \"${$json.params.archive_path}\"` : '' }} {{ $json.params.destination ? `-Destination \"${$json.params.destination}\"` : '' }} {{ $json.params.files ? `-Files @(${$json.params.files.map(f => `\"${f}\"`).join(',')})` : '' }} -Confirmed ${{ $json.params.user_confirmed || false }}",
+    "cwd": "C:\\Users\\adenk\\Desktop\\homebot"
   },
   "name": "Execute Archive Operation",
   "type": "n8n-nodes-base.executeCommand"
@@ -374,7 +374,7 @@ $VerbosePreference = 'Continue'
 Monitor n8n logs for script errors:
 
 ```powershell
-docker logs -f sadie-n8n | Select-String "powershell"
+docker logs -f homebot-n8n | Select-String "powershell"
 ```
 
 ---

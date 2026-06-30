@@ -1,0 +1,184 @@
+{
+  "name": "HomeBot Browser Automation Tool (Phase 6)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "start",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/tools/browser",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "dce91d0b-da65-4b14-8215-65839a85755c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first()?.json?.body ?? $input.first()?.json ?? {};\nconst action = (body.action || 'open_url').toLowerCase();\nconst allowed = ['open_url','screenshot','close_browser'];\nif (!allowed.includes(action)) {\n  throw new Error('Invalid action. Must be one of: ' + allowed.join(', '));\n}\nconst url = body.url || '';\nconst confirmed = body.confirmed === true || body.confirmed === 'true';\nif (action === 'open_url' && !url) throw new Error('url is required for open_url action');\nconst urlPattern = /^https?:\\/\\//i;\nif (url && !urlPattern.test(url)) throw new Error('URL must begin with http:// or https://');\nreturn [{ json: { action, url, confirmed } }];"
+      },
+      "id": "parse-params",
+      "name": "Parse & Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        590,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=powershell.exe -NoProfile -NonInteractive -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\SafetyValidation.ps1\" -ToolName \"browser\" -Action \"{{ $json.action }}\" -RulesPath \"C:\\Users\\adenk\\Desktop\\homebot\\config\\safety-rules.json\""
+      },
+      "id": "safety-validation",
+      "name": "Safety Validation",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        810,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first()?.json?.stdout ?? '';\nlet validation;\ntry { validation = JSON.parse(raw); } catch { validation = { allowed: true }; }\nif (validation.allowed === false) {\n  throw new Error('Safety validation blocked browser operation: ' + (validation.reason || 'policy'));\n}\nconst params = $('Parse & Validate').first().json;\nreturn [{ json: params }];"
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1030,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:\\Users\\adenk\\Desktop\\homebot\\scripts\\tools\\powershell\\BrowserOps.ps1\" -Action \"{{ ($json.action || '').replace(/[^a-z_]/gi, '') }}\"{{ $json.url ? ` -Url \"${String($json.url).replace(/[\\'\\\"`$;&|<>]/g, '')}\"` : '' }}"
+      },
+      "id": "execute-browser",
+      "name": "Execute Browser Action",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first()?.json?.stdout ?? $input.first()?.json?.stderr ?? '';\nlet result;\ntry { result = JSON.parse(raw); } catch { result = { success: false, error: raw || 'No output from browser action' }; }\nreturn [{ json: result }];"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1470,
+        300
+      ]
+    },
+    {
+      "id": "homebot-auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Auth Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate": {
+      "main": [
+        [
+          {
+            "node": "Safety Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Validation": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Execute Browser Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Browser Action": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "homebot"
+    },
+    {
+      "name": "tools"
+    },
+    {
+      "name": "browser"
+    }
+  ],
+  "versionId": "87dbce2d-3d82-4edf-b7cf-9e2a028d1181"
+}

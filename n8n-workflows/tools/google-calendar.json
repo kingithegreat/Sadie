@@ -1,0 +1,187 @@
+{
+  "name": "HomeBot Google Calendar Tool",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/calendar",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "webhookId": "homebot-calendar-v1"
+    },
+    {
+      "id": "parse-action",
+      "name": "Parse Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "jsCode": "const body = $input.item.json;\nconst action = String(body.action || 'list');\nconst daysAhead = Math.max(1, Math.min(Number(body.days_ahead) || 7, 90));\nconst limit = Math.max(1, Math.min(Number(body.limit) || 20, 100));\n\nconst now = new Date();\nconst future = new Date(now.getTime() + daysAhead * 86400000);\n\nreturn {\n  json: {\n    action,\n    daysAhead,\n    limit,\n    title: String(body.title || ''),\n    start: String(body.start || ''),\n    end: String(body.end || ''),\n    location: String(body.location || ''),\n    notes: String(body.notes || ''),\n    timeMin: now.toISOString(),\n    timeMax: future.toISOString()\n  }\n};"
+      }
+    },
+    {
+      "id": "route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [720, 300],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "list",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "list"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "add",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "add"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "gcal-list",
+      "name": "List Google Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [960, 200],
+      "parameters": {
+        "operation": "getAll",
+        "calendar": { "__rl": true, "mode": "id", "value": "primary" },
+        "returnAll": false,
+        "limit": "={{ $json.limit }}",
+        "options": {
+          "timeMin": "={{ $json.timeMin }}",
+          "timeMax": "={{ $json.timeMax }}",
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar-cred",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "id": "format-list",
+      "name": "Format Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 200],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst events = items.map(item => {\n  const e = item.json;\n  const startRaw = e.start?.dateTime || e.start?.date || '';\n  const endRaw   = e.end?.dateTime   || e.end?.date   || '';\n  return {\n    id:       String(e.id || ''),\n    title:    String(e.summary || '(No subject)'),\n    start:    startRaw,\n    end:      endRaw,\n    location: e.location ? String(e.location) : undefined,\n    notes:    e.description ? String(e.description).slice(0, 200) : undefined,\n    source:   'google'\n  };\n}).filter(e => e.start);\n\nreturn { json: { events, count: events.length } };"
+      }
+    },
+    {
+      "id": "gcal-add",
+      "name": "Add Google Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [960, 420],
+      "parameters": {
+        "operation": "create",
+        "calendar": { "__rl": true, "mode": "id", "value": "primary" },
+        "start": "={{ $json.start }}",
+        "end": "={{ $json.end }}",
+        "additionalFields": {
+          "summary": "={{ $json.title }}",
+          "location": "={{ $json.location }}",
+          "description": "={{ $json.notes }}"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar-cred",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "id": "format-add",
+      "name": "Format Add Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 420],
+      "parameters": {
+        "jsCode": "const e = $input.item.json;\nreturn { json: { id: String(e.id || ''), success: true } };"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond to HomeBot",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1440, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Parse Action", "type": "main", "index": 0 }]]
+    },
+    "Parse Action": {
+      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+    },
+    "Route Action": {
+      "main": [
+        [{ "node": "List Google Calendar Events", "type": "main", "index": 0 }],
+        [{ "node": "Add Google Calendar Event", "type": "main", "index": 0 }]
+      ]
+    },
+    "List Google Calendar Events": {
+      "main": [[{ "node": "Format Events", "type": "main", "index": 0 }]]
+    },
+    "Format Events": {
+      "main": [[{ "node": "Respond to HomeBot", "type": "main", "index": 0 }]]
+    },
+    "Add Google Calendar Event": {
+      "main": [[{ "node": "Format Add Response", "type": "main", "index": 0 }]]
+    },
+    "Format Add Response": {
+      "main": [[{ "node": "Respond to HomeBot", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "versionId": "homebot-gcal-v1",
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "homebot-local"
+  }
+}

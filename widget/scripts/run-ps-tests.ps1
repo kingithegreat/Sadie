@@ -10,7 +10,7 @@ $outFile = Join-Path $logsDir 'powershell-test-results.json'
 
 $tests = @(
     @{ id = 'list_desktop'; name = 'List Desktop'; command = 'Get-ChildItem -Path "$env:USERPROFILE\\Desktop" -ErrorAction Stop | Select-Object -First 1 | ForEach-Object { $_.Name }'; expected = 'Command succeeds and returns 0+ items'; },
-    @{ id = 'create_temp_file'; name = 'Create Temp File'; command = '$p = Join-Path $env:TEMP "sadie-ps-test-$(Get-Random).txt"; Set-Content -Path $p -Value "sadie-test" -Force; $exists = Test-Path $p; Remove-Item -Path $p -Force; $exists'; expected = 'Creates and removes a temp file (Test-Path returns True)'; },
+    @{ id = 'create_temp_file'; name = 'Create Temp File'; command = '$p = Join-Path $env:TEMP "homebot-ps-test-$(Get-Random).txt"; Set-Content -Path $p -Value "homebot-test" -Force; $exists = Test-Path $p; Remove-Item -Path $p -Force; $exists'; expected = 'Creates and removes a temp file (Test-Path returns True)'; },
     @{ id = 'get_file_info'; name = 'Get File Info (profile)'; command = 'Get-Item -Path "$env:USERPROFILE" | Select-Object Name,FullName | ConvertTo-Json -Compress'; expected = 'Returns profile folder info'; },
     @{ id = 'get_computer_info'; name = 'Get Computer Info'; command = 'Get-ComputerInfo | Select-Object CsName,OsName,OsVersion | ConvertTo-Json -Compress'; expected = 'Returns basic computer info'; },
     @{ id = 'get_hostname'; name = 'Get Hostname'; command = 'hostname'; expected = 'Returns hostname string'; }

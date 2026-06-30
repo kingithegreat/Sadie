@@ -1,0 +1,83 @@
+{
+  "active": true,
+  "versionId": "1",
+  "name": "HomeBot Code Review",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/code-review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "homebot-code-review"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json || {};\nconst code = body.code || body.message || '';\nconst language = body.language || 'auto-detect';\nconst context = body.context || '';\nconst severity = body.severity || 'standard';\n\nconst systemPrompt = `You are HomeBot Code Reviewer — an expert code review assistant. Perform a thorough code review on the submitted code.\n\nReview severity level: ${severity}\nLanguage hint: ${language}\n${context ? 'Additional context: ' + context : ''}\n\nStructure your review as:\n\n## Code Review Summary\n**Language:** [detected language]\n**Overall Rating:** [A/B/C/D/F] — [one-line verdict]\n**Risk Level:** [Low/Medium/High/Critical]\n\n### Issues Found\nFor each issue:\n- **[SEVERITY]** [Category]: Description\n  - Line/section reference\n  - Suggested fix with code block\n\nSeverity levels: CRITICAL, WARNING, INFO, STYLE\n\nCategories to check:\n1. **Security** — injection, XSS, hardcoded secrets, unsafe eval, path traversal\n2. **Bugs** — logic errors, off-by-one, null/undefined access, race conditions\n3. **Performance** — unnecessary loops, memory leaks, blocking calls, N+1 queries\n4. **Best Practices** — naming, DRY, SOLID, error handling, type safety\n5. **Maintainability** — complexity, readability, missing validation, magic numbers\n\n### What's Done Well\nHighlight 2-3 positive aspects of the code.\n\n### Recommended Changes\nPrioritised list of changes, most critical first. Include code snippets for non-trivial fixes.\n\nBe specific and actionable. Reference line numbers or function names. Do not be vague.`;\n\nreturn {\n  json: {\n    model: 'qwen2.5:7b',\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: `Review this code:\\n\\n\\`\\`\\`${language !== 'auto-detect' ? language : ''}\\n${code}\\n\\`\\`\\`` }\n    ],\n    stream: false\n  }\n};"
+      },
+      "id": "prepare-review",
+      "name": "Prepare Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": $json.model, \"messages\": $json.messages, \"stream\": false, \"options\": { \"num_predict\": 3072, \"temperature\": 0.3 } } }}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "call-ollama",
+      "name": "Call Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ollamaRes = $input.item.json;\nconst content = ollamaRes.message?.content || ollamaRes.response || 'Code review unavailable — Ollama may be offline.';\n\n// Extract rating if present\nconst ratingMatch = content.match(/Overall Rating:\\s*\\*?\\*?([A-F])/);\nconst riskMatch = content.match(/Risk Level:\\s*\\*?\\*?(Low|Medium|High|Critical)/i);\n\nreturn {\n  json: {\n    output: content,\n    rating: ratingMatch ? ratingMatch[1] : null,\n    riskLevel: riskMatch ? riskMatch[1] : null,\n    data: { assistant: { role: 'assistant', content } }\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1140, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Prepare Review", "type": "main", "index": 0 }]] },
+    "Prepare Review": { "main": [[{ "node": "Call Ollama", "type": "main", "index": 0 }]] },
+    "Call Ollama": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
+    "Format Response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

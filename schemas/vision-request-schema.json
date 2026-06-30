@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://sadie.local/schemas/vision-request.json",
+  "$id": "https://homebot.local/schemas/vision-request.json",
   "title": "Vision Tool Request",
   "description": "Schema for vision analysis operations",
   "type": "object",

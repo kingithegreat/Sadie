@@ -1,8 +1,11 @@
 /**
- * SADIE Tool Registry & Executor
+ * HomeBot Tool Registry & Executor
  * 
  * Central registry for all tools and execution engine.
  */
+
+/** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
+function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
 import { 
   ToolDefinition, 
@@ -12,6 +15,7 @@ import {
   RegisteredTool,
   OllamaTool,
   toOllamaTool,
+  toCompactOllamaTool,
   ToolCall
 } from './types';
 import { fileSystemTools } from './filesystem';
@@ -22,14 +26,52 @@ import { voiceToolDefs, voiceToolHandlers } from './voice';
 import { memoryToolDefs, memoryToolHandlers } from './memory';
 import { documentToolDefs, documentToolHandlers } from './documents';
 import { nbaQueryDef, nbaQueryHandler } from './nba';
-import sports from './sports';
+import { notificationToolDefs, notificationToolHandlers } from './notification';
+import { codeRunnerToolDefs, codeRunnerToolHandlers } from './code-runner';
+import { reminderToolDefs, reminderToolHandlers } from './reminder';
+import { processManagerToolDefs, processManagerToolHandlers } from './process-manager';
+import { contactsToolDefs, contactsToolHandlers } from './contacts';
+import { calendarToolDefs, calendarToolHandlers } from './calendar';
+import { clipboardToolDefs, clipboardToolHandlers } from './clipboard';
+import { browserToolDefs, browserToolHandlers } from './browser';
+import { emailToolDefs, emailToolHandlers } from './email';
+import { newsToolDefs, newsToolHandlers } from './news';
+import { gitToolDefs, gitToolHandlers } from './git';
+import { diffToolDefs, diffToolHandlers } from './diff';
+import { searchToolDefs, searchToolHandlers } from './search';
+import { planningToolDefs, planningToolHandlers } from './planning';
+import { apiToolDefs, apiToolHandlers } from './api-tool';
+import { ragToolDefs, ragToolHandlers } from './rag';
+import { visionToolDefs, visionToolHandlers } from './vision';
+import { terminalToolDefs, terminalToolHandlers } from './terminal';
+import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
+import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
+import { logTelemetryEvent } from '../utils/logger';
+
+/** Classify a tool error into a coarse category for metrics aggregation */
+function classifyToolError(err: unknown): string {
+  const msg = (err instanceof Error ? err.message : String(err || '')).toLowerCase();
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'timeout';
+  if (msg.includes('permission') || msg.includes('denied') || msg.includes('eacces')) return 'permission';
+  if (msg.includes('enoent') || msg.includes('not found')) return 'not_found';
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('econnrefused') || msg.includes('enotfound')) return 'network';
+  if (msg.includes('parse') || msg.includes('json') || msg.includes('invalid')) return 'parse';
+  if (msg.includes('cancel')) return 'cancelled';
+  return 'other';
+}
 
 // Global tool registry
 const toolRegistry = new Map<string, RegisteredTool>();
 
 // Aliases for tool names coming from models that may use different names
 const TOOL_ALIASES: Record<string, string> = {
-  nba_scores: 'nba_query'
+  nba_scores: 'nba_query',
+  terminal: 'run_terminal_command',
+  shell: 'run_terminal_command',
+  exec: 'run_terminal_command',
+  grep: 'grep_code',
+  search_code: 'grep_code',
+  tree: 'project_tree',
 };
 
 // Pending confirmations for tools that require user approval
@@ -45,7 +87,7 @@ const pendingConfirmations = new Map<string, {
  */
 export function registerTool(name: string, definition: ToolDefinition, handler: ToolHandler): void {
   toolRegistry.set(name, { definition, handler });
-  console.log(`[SADIE Tools] Registered tool: ${name}`);
+  console.log(`[HomeBot Tools] Registered tool: ${name}`);
 }
 
 /**
@@ -56,10 +98,107 @@ export function getAllToolDefinitions(): ToolDefinition[] {
 }
 
 /**
- * Get tool definitions in Ollama format
+ * Document-related tool names that should only be available when documents are attached
  */
-export function getOllamaTools(): OllamaTool[] {
-  return getAllToolDefinitions().map(toOllamaTool);
+const DOCUMENT_TOOL_NAMES = ['parse_document', 'get_document_content', 'list_documents', 'search_document'];
+
+function filterToolDefinitions(options?: { excludeDocumentTools?: boolean; categories?: string[] }): ToolDefinition[] {
+  let tools = getAllToolDefinitions();
+
+  if (options?.excludeDocumentTools) {
+    tools = tools.filter(t => !DOCUMENT_TOOL_NAMES.includes(t.name));
+  }
+
+  if (options?.categories && options.categories.length > 0) {
+    const cats = new Set(options.categories);
+    tools = tools.filter(t => t.category && cats.has(t.category));
+  }
+
+  return tools;
+}
+
+export function getFocusedToolDefinitions(options?: { excludeDocumentTools?: boolean; categories?: string[] }): ToolDefinition[] {
+  const filtered = filterToolDefinitions(options);
+  if (options?.categories && options.categories.length > 0) {
+    return filtered;
+  }
+
+  return filtered.filter(t => SMALL_MODEL_CORE_TOOLS.has(t.name) || t.name.startsWith('mcp_'));
+}
+
+/**
+ * Get tool definitions in Ollama format
+ * @param options.excludeDocumentTools - If true, excludes document parsing tools (use when no docs attached)
+ * @param options.categories - If provided, only include tools in these categories (for small models)
+ */
+export function getOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+  return filterToolDefinitions(options).map(toOllamaTool);
+}
+
+export function getFocusedOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+  return getFocusedToolDefinitions(options).map(toOllamaTool);
+}
+
+/**
+ * Core tools that small models should always have access to.
+ * These cover the most common user intents while keeping the count manageable
+ * for a 3B model with a 4096-token context window.
+ */
+const SMALL_MODEL_CORE_TOOLS = new Set([
+  'web_search',
+  'get_weather',
+  'nba_query',
+  'read_file',
+  'write_file',
+  'list_directory',
+  'run_terminal_command',
+  'grep_code',
+  'show_notification',
+  'get_news',
+  'remember',
+  'recall',
+  'get_system_info',
+  'list_processes',
+]);
+
+export const SMALL_MODEL_MAX_TOOLS = 12;
+
+/**
+ * Get a compact tool set for small models.
+ * Starts with SMALL_MODEL_CORE_TOOLS, then adds category-specific tools
+ * up to SMALL_MODEL_MAX_TOOLS.  This prevents a 3B model from drowning
+ * in 80+ tool definitions that consume most of its context window.
+ */
+export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+  let allTools = getAllToolDefinitions();
+
+  if (options?.excludeDocumentTools) {
+    allTools = allTools.filter(t => !DOCUMENT_TOOL_NAMES.includes(t.name));
+  }
+
+  // Core tools first (order-preserving)
+  const selected: ToolDefinition[] = [];
+  const selectedNames = new Set<string>();
+  for (const t of allTools) {
+    if (SMALL_MODEL_CORE_TOOLS.has(t.name)) {
+      selected.push(t);
+      selectedNames.add(t.name);
+    }
+  }
+
+  // Add category-specific tools not already in the core set
+  if (options?.categories && options.categories.length > 0) {
+    const cats = new Set(options.categories);
+    for (const t of allTools) {
+      if (selected.length >= SMALL_MODEL_MAX_TOOLS) break;
+      if (!selectedNames.has(t.name) && t.category && cats.has(t.category)) {
+        selected.push(t);
+        selectedNames.add(t.name);
+      }
+    }
+  }
+
+  return selected.slice(0, SMALL_MODEL_MAX_TOOLS).map(toCompactOllamaTool);
 }
 
 /**
@@ -95,44 +234,64 @@ export async function executeTool(
     };
   }
   
-  console.log(`[SADIE Tools] Executing: ${call.name}`, call.arguments);
+  console.log(`[HomeBot Tools] Executing: ${call.name}`, call.arguments);
   
   // Check permission first
   try {
     const allowed = assertPermission(call.name);
     if (!allowed) {
-      console.warn(`[SADIE Tools] Permission denied for tool: ${call.name}`);
+      console.warn(`[HomeBot Tools] Permission denied for tool: ${call.name}`);
       return { success: false, error: `Permission denied: ${call.name}` };
     }
   } catch (e) {
     // Fail closed if any error occurs while checking permission
-    console.error(`[SADIE Tools] Permission check failed: ${e}`);
+    console.error(`[HomeBot Tools] Permission check failed: ${e}`);
     return { success: false, error: 'Permission check failed' };
   }
 
   // Check if confirmation is required
-  console.log(`[SADIE Tools] requiresConfirmation=${tool.definition.requiresConfirmation}, hasCallback=${!!context.requestConfirmation}`);
+  console.log(`[HomeBot Tools] requiresConfirmation=${tool.definition.requiresConfirmation}, hasCallback=${!!context.requestConfirmation}`);
   if (tool.definition.requiresConfirmation && context.requestConfirmation) {
     const confirmMessage = formatConfirmationMessage(call.name, call.arguments);
-    console.log(`[SADIE Tools] Requesting confirmation: ${confirmMessage}`);
+    console.log(`[HomeBot Tools] Requesting confirmation: ${confirmMessage}`);
     const confirmed = await context.requestConfirmation(confirmMessage);
-    
+
     if (!confirmed) {
-      console.log(`[SADIE Tools] User cancelled operation`);
+      console.log(`[HomeBot Tools] User cancelled operation`);
+      try { logTelemetryEvent('tool_call', { tool: call.name, outcome: 'cancelled', duration_ms: 0 }); } catch (_e) {}
       return {
         success: false,
         error: 'Operation cancelled by user'
       };
     }
-    console.log(`[SADIE Tools] User confirmed operation`);
+    console.log(`[HomeBot Tools] User confirmed operation`);
   }
-  
+
+  const startedAt = Date.now();
   try {
     const result = await tool.handler(call.arguments, context);
-    console.log(`[SADIE Tools] Result:`, result.success ? 'success' : result.error);
+    const duration_ms = Date.now() - startedAt;
+    console.log(`[HomeBot Tools] Result:`, result.success ? 'success' : result.error);
+    try {
+      logTelemetryEvent('tool_call', {
+        tool: call.name,
+        outcome: result.success ? 'success' : 'handler_error',
+        duration_ms,
+        error_type: result.success ? undefined : classifyToolError(result.error),
+      });
+    } catch (_e) {}
     return result;
   } catch (err: any) {
-    console.error(`[SADIE Tools] Error executing ${call.name}:`, err);
+    const duration_ms = Date.now() - startedAt;
+    console.error(`[HomeBot Tools] Error executing ${call.name}:`, err);
+    try {
+      logTelemetryEvent('tool_call', {
+        tool: call.name,
+        outcome: 'threw',
+        duration_ms,
+        error_type: classifyToolError(err),
+      });
+    } catch (_e) {}
     return {
       success: false,
       error: `Tool execution failed: ${err.message}`
@@ -155,7 +314,7 @@ export async function executeToolCalls(
     
     // If a tool fails, continue but note it
     if (!result.success) {
-      console.warn(`[SADIE Tools] Tool ${call.name} failed, continuing...`);
+      console.warn(`[HomeBot Tools] Tool ${call.name} failed, continuing...`);
     }
   }
   
@@ -172,9 +331,9 @@ export async function executeToolBatch(
   context: ToolContext,
   options?: { overrideAllowed?: string[] }
 ): Promise<ToolResult[]> {
-  try { (global as any).__SADIE_ROUTER_LOG_BUFFER = (global as any).__SADIE_ROUTER_LOG_BUFFER || []; } catch (e) {}
+  try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER = (global as any).__HOMEBOT_ROUTER_LOG_BUFFER || []; } catch (e) { safeCatch(e); }
   console.log('[BATCH] executeToolBatch called', { toolCount: calls.length, toolNames: calls.map(c => c.name) });
-  try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) {}
+  try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) { safeCatch(e); }
   // Pre-check permissions for all unique tools
   const denied: string[] = [];
   const seen = new Set<string>();
@@ -186,8 +345,8 @@ export async function executeToolBatch(
     try {
       if (overrides.has(name)) continue;
       const allowed = assertPermission(name);
-      console.log(`[SADIE Tools] Permission check for ${name}: allowed=${allowed}`);
-      try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) {}
+      console.log(`[HomeBot Tools] Permission check for ${name}: allowed=${allowed}`);
+      try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) { safeCatch(e); }
       if (!allowed) denied.push(name);
 
       // Also check any permissions declared by the tool (e.g., write_file)
@@ -197,8 +356,8 @@ export async function executeToolBatch(
           for (const perm of (tool.definition as any).requiredPermissions as string[]) {
             if (overrides.has(perm)) continue;
             const pAllowed = assertPermission(perm);
-            console.log(`[SADIE Tools] Permission check for declared permission ${perm}: allowed=${pAllowed}`);
-            try { (global as any).__SADIE_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${perm}=${pAllowed}`); } catch (e) {}
+            console.log(`[HomeBot Tools] Permission check for declared permission ${perm}: allowed=${pAllowed}`);
+            try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${perm}=${pAllowed}`); } catch (e) { safeCatch(e); }
             if (!pAllowed) denied.push(perm);
           }
         }
@@ -214,7 +373,7 @@ export async function executeToolBatch(
     // caller (message router) can prompt the user for confirmation and
     // optionally enable or allow once.
     console.log('[BATCH] executeToolBatch missing permissions', { denied });
-    try { (global as any).__SADIE_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) {}
+    try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) { safeCatch(e); }
     return [{ success: false, status: 'needs_confirmation', missingPermissions: denied, reason: `Requires permissions: ${denied.join(', ')}` } as any];
   }
 
@@ -256,6 +415,20 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `Move "${args.source}" to "${args.destination}"?`;
     case 'write_file':
       return `${args.append ? 'Append to' : 'Overwrite'} file "${args.path}"?`;
+    case 'create_docx':
+      return `Create Word document "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
+    case 'create_spreadsheet':
+      return `Create spreadsheet "${args.path}" with ${Array.isArray(args.rows) ? args.rows.length : '?'} rows?`;
+    case 'create_pdf':
+      return `Create PDF "${args.path}"${args.title ? ` — "${args.title}"` : ''}?`;
+    case 'edit_file':
+      return `Edit file "${args.path}":\nReplace: "${String(args.old_string || '').slice(0, 100)}${String(args.old_string || '').length > 100 ? '...' : ''}"\nWith: "${String(args.new_string || '').slice(0, 100)}${String(args.new_string || '').length > 100 ? '...' : ''}"${args.replace_all ? ' (all occurrences)' : ''}`;
+    case 'run_terminal_command':
+      return `Run command:\n$ ${args.command}${args.cwd ? `\nDirectory: ${args.cwd}` : ''}${args.timeout && args.timeout !== 60 ? `\nTimeout: ${args.timeout}s` : ''}`;
+    case 'git_commit':
+      return `Git commit: "${args.message}"${args.repo_path ? `\nRepo: ${args.repo_path}` : ''}`;
+    case 'kill_process':
+      return `Kill process${args.name ? ` "${args.name}"` : ''}${args.pid ? ` (PID ${args.pid})` : ''}${args.force ? ' (force)' : ''}?`;
     default:
       return `Execute ${toolName} with: ${JSON.stringify(args)}?`;
   }
@@ -354,10 +527,129 @@ export function initializeTools(): void {
 
   // Register NBA tool (balldontlie)
   registerTool(nbaQueryDef.name, nbaQueryDef, nbaQueryHandler);
-  // Register sports report tool
-  registerTool(sports.definition.name, sports.definition, sports.handler);
-  
-  console.log(`[SADIE Tools] Initialized ${toolRegistry.size} tools`);
+
+  // Register notification tools
+  for (const def of notificationToolDefs) {
+    const handler = notificationToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register code runner tools
+  for (const def of codeRunnerToolDefs) {
+    const handler = codeRunnerToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register reminder tools
+  for (const def of reminderToolDefs) {
+    const handler = reminderToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register process manager tools
+  for (const def of processManagerToolDefs) {
+    const handler = processManagerToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register contacts tools
+  for (const def of contactsToolDefs) {
+    const handler = contactsToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register news tools
+  for (const def of newsToolDefs) {
+    const handler = newsToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register git tools
+  for (const def of gitToolDefs) {
+    const handler = gitToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register diff tools
+  for (const def of diffToolDefs) {
+    const handler = diffToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register calendar tools
+  for (const def of calendarToolDefs) {
+    const handler = calendarToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register clipboard tools
+  for (const def of clipboardToolDefs) {
+    const handler = clipboardToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register browser tools
+  for (const def of browserToolDefs) {
+    const handler = browserToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register email tools
+  for (const def of emailToolDefs) {
+    const handler = emailToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register search tool (local file search)
+  for (const def of searchToolDefs) {
+    const handler = searchToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register planning agent tools
+  for (const def of planningToolDefs) {
+    const handler = planningToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register API tool
+  for (const def of apiToolDefs) {
+    const handler = apiToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register RAG tools (local document semantic search)
+  for (const def of ragToolDefs) {
+    const handler = ragToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register vision tools (image analysis via Ollama multimodal)
+  for (const def of visionToolDefs) {
+    const handler = visionToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register terminal tools (shell command execution)
+  for (const def of terminalToolDefs) {
+    const handler = terminalToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register codebase tools (grep, tree, analyze)
+  for (const def of codebaseToolDefs) {
+    const handler = codebaseToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  console.log(`[HomeBot Tools] Initialized ${toolRegistry.size} tools`);
+
+  // Auto-discover servers from Cursor / Claude Desktop / VS Code, then seed defaults
+  discoverExternalMcpServers();
+  seedMcpDefaults();
+  initializeMcpServers(registerTool).catch(e =>
+    console.warn('[MCP] Server initialization failed:', e)
+  );
 }
 
 // Export types for use in message router

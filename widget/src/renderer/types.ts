@@ -13,11 +13,26 @@ export type ChatMessage = {
   content: string;
   createdAt: number;
   updatedAt?: number;
+  bookmarked?: boolean;
+  reactions?: Record<string, number>;
+  edited?: boolean;
+
+  // user only — image attachment previews (url = objectURL or dataURL, renderer-only)
+  images?: Array<{ url: string; filename?: string }>;
 
   // assistant only
   streamId?: string;
   streamingState?: StreamingState;
+  model?: string;
   error?: string | null;
+  recoveryHint?: {
+    service: 'ollama' | 'n8n' | 'model' | 'unknown';
+    userMessage: string;
+    action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings' | 'reattach-document';
+    actionLabel?: string;
+    model?: string;
+  } | null;
+  durationMs?: number;
 };
 
 export type StreamChunkPayload = {
@@ -28,11 +43,14 @@ export type StreamChunkPayload = {
 export type StreamEndPayload = {
   streamId: string;
   cancelled?: boolean;
+  model?: string;
 };
 
 export type StreamErrorPayload = {
   streamId: string;
   error?: string;
+  message?: string;
+  recoveryHint?: ChatMessage['recoveryHint'];
 };
 
 export type Settings = {

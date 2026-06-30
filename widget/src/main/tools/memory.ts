@@ -1,54 +1,150 @@
 /**
- * SADIE Memory Tools
- * 
- * Provides long-term memory using Qdrant vector database.
- * Stores and retrieves memories semantically.
+ * HomeBot Memory Tools
+ *
+ * Primary storage: Qdrant vector database (semantic search via nomic-embed-text).
+ * Fallback storage: flat JSON file at memory/json-store/memories.json
+ *   (used automatically when Qdrant is unavailable, with keyword matching).
+ *
+ * Conversation history tools use memory/json-store/conversation-history.json
+ * independently of Qdrant.
  */
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const COLLECTION_NAME = 'sadie_memories';
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+const COLLECTION_NAME = 'homebot_memories';
 const EMBEDDING_MODEL = 'nomic-embed-text';
 
-// ============= HELPER FUNCTIONS =============
-
-// Get embedding from Ollama
-async function getEmbedding(text: string): Promise<number[]> {
+// Resolve the JSON fallback store directory the same way memory-manager.ts does:
+// dev  → project-root/memory/json-store  (4 levels up from widget/out/main/tools)
+// prod → %APPDATA%/homebot/memory/json-store  (Electron userData)
+// Uses require() lazily so Jest’s electron mock is active before the call.
+function getJsonStoreDir(): string {
   try {
-    const response = await axios.post(`${OLLAMA_URL}/api/embeddings`, {
-      model: EMBEDDING_MODEL,
-      prompt: text
-    });
-    return response.data.embedding;
-  } catch (error: any) {
-    console.error('Failed to get embedding:', error.message);
-    throw new Error(`Embedding failed: ${error.message}`);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as typeof import('electron');
+    if (!app.isPackaged) {
+      return path.resolve(__dirname, '..', '..', '..', '..', 'memory', 'json-store');
+    }
+    return path.join(app.getPath('userData'), 'memory', 'json-store');
+  } catch {
+    // Fallback for test/CI environments where Electron binary isn’t installed
+    return path.resolve(__dirname, '..', '..', '..', '..', 'memory', 'json-store');
   }
 }
 
-// Ensure collection exists
+function getMemoriesJson(): string { return path.join(getJsonStoreDir(), 'memories.json'); }
+function getHistoryJson(): string { return path.join(getJsonStoreDir(), 'conversation-history.json'); }
+
+// Maximum stored conversation turns (oldest trimmed first)
+const MAX_HISTORY_TURNS = 200;
+
+// ============= QDRANT HELPERS =============
+
+/** Returns true when Qdrant is reachable (fast probe). */
+async function isQdrantAvailable(): Promise<boolean> {
+  try {
+    await axios.get(`${QDRANT_URL}/healthz`, { timeout: 1000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Get embedding from Ollama. */
+async function getEmbedding(text: string): Promise<number[]> {
+  const response = await axios.post(`${OLLAMA_URL}/api/embeddings`, {
+    model: EMBEDDING_MODEL,
+    prompt: text
+  }, { timeout: 15000 });
+  return response.data.embedding;
+}
+
+/** Create the Qdrant collection if it does not yet exist. */
 async function ensureCollection(): Promise<void> {
   try {
-    // Check if collection exists
-    const response = await axios.get(`${QDRANT_URL}/collections/${COLLECTION_NAME}`);
-    if (response.status === 200) return;
+    await axios.get(`${QDRANT_URL}/collections/${COLLECTION_NAME}`, { timeout: 3000 });
   } catch (error: any) {
     if (error.response?.status === 404) {
-      // Create collection with 768 dimensions (nomic-embed-text)
       await axios.put(`${QDRANT_URL}/collections/${COLLECTION_NAME}`, {
-        vectors: {
-          size: 768,
-          distance: 'Cosine'
-        }
-      });
+        vectors: { size: 768, distance: 'Cosine' }
+      }, { timeout: 5000 });
       console.log('[Memory] Created Qdrant collection:', COLLECTION_NAME);
     } else {
       throw error;
     }
   }
+}
+
+// ============= JSON FALLBACK HELPERS =============
+
+interface MemoryRecord {
+  id: string;
+  content: string;
+  category: string;
+  createdAt: string;
+}
+
+function readMemoriesJson(): MemoryRecord[] {
+  try {
+    const p = getMemoriesJson();
+    if (!fs.existsSync(p)) return [];
+    const raw = fs.readFileSync(p, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeMemoriesJson(memories: MemoryRecord[]): void {
+  const dir = getJsonStoreDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(getMemoriesJson(), JSON.stringify(memories, null, 2), 'utf8');
+}
+
+/** Very simple keyword relevance: count matching words, normalised to 0-1. */
+function keywordScore(query: string, content: string): number {
+  const qWords = query.toLowerCase().split(/\W+/).filter(Boolean);
+  if (qWords.length === 0) return 0;
+  const lower = content.toLowerCase();
+  const hits = qWords.filter(w => lower.includes(w)).length;
+  return hits / qWords.length;
+}
+
+// ============= CONVERSATION HISTORY HELPERS =============
+
+interface ConversationTurn {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  conversationId?: string;
+}
+
+interface ConversationStore {
+  conversations: ConversationTurn[];
+  activeConversationId: string | null;
+}
+
+function readHistoryJson(): ConversationStore {
+  try {
+    const p = getHistoryJson();
+    if (!fs.existsSync(p)) return { conversations: [], activeConversationId: null };
+    return JSON.parse(fs.readFileSync(p, 'utf8')) as ConversationStore;
+  } catch {
+    return { conversations: [], activeConversationId: null };
+  }
+}
+
+function writeHistoryJson(store: ConversationStore): void {
+  const dir = getJsonStoreDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(getHistoryJson(), JSON.stringify(store, null, 2), 'utf8');
 }
 
 // ============= TOOL DEFINITIONS =============
@@ -99,6 +195,7 @@ export const forgetDef: ToolDefinition = {
   name: 'forget',
   description: 'Remove a specific memory from long-term storage. Use when asked to forget something.',
   category: 'memory',
+  requiresConfirmation: true,
   parameters: {
     type: 'object',
     properties: {
@@ -132,185 +229,311 @@ export const listMemoriesDef: ToolDefinition = {
   }
 };
 
+export const saveConversationDef: ToolDefinition = {
+  name: 'save_conversation',
+  description: 'Save a message turn to the conversation history log for future context.',
+  category: 'memory',
+  parameters: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        description: 'Speaker role: "user", "assistant", or "system"',
+        enum: ['user', 'assistant', 'system']
+      },
+      content: {
+        type: 'string',
+        description: 'The message content to save'
+      },
+      conversationId: {
+        type: 'string',
+        description: 'Optional conversation session identifier'
+      }
+    },
+    required: ['role', 'content']
+  }
+};
+
+export const getConversationHistoryDef: ToolDefinition = {
+  name: 'get_conversation_history',
+  description: 'Retrieve recent conversation history, optionally filtered by conversation ID.',
+  category: 'memory',
+  parameters: {
+    type: 'object',
+    properties: {
+      limit: {
+        type: 'number',
+        description: 'Number of most-recent turns to return (default: 20)',
+        default: 20
+      },
+      conversationId: {
+        type: 'string',
+        description: 'Filter to a specific conversation session (optional)'
+      }
+    },
+    required: []
+  }
+};
+
+export const clearConversationHistoryDef: ToolDefinition = {
+  name: 'clear_conversation_history',
+  description: 'Clear all saved conversation history. This cannot be undone.',
+  category: 'memory',
+  requiresConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      conversationId: {
+        type: 'string',
+        description: 'If provided, only clear turns from this conversation (otherwise clears all)'
+      }
+    },
+    required: []
+  }
+};
+
 // ============= TOOL HANDLERS =============
 
 export const rememberHandler: ToolHandler = async (args): Promise<ToolResult> => {
-  try {
-    const content = args.content;
-    if (!content || typeof content !== 'string') {
-      return { success: false, error: 'Content is required' };
-    }
-
-    const category = args.category || 'general';
-    
-    // Ensure collection exists
-    await ensureCollection();
-    
-    // Get embedding for the content
-    const embedding = await getEmbedding(content);
-    
-    // Generate unique ID
-    const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-    
-    // Store in Qdrant
-    await axios.put(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points`, {
-      points: [{
-        id: id,
-        vector: embedding,
-        payload: {
-          content: content,
-          category: category,
-          createdAt: new Date().toISOString()
-        }
-      }]
-    });
-
-    return {
-      success: true,
-      result: {
-        message: `Remembered: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`,
-        memoryId: id,
-        category: category
-      }
-    };
-  } catch (err: any) {
-    console.error('Remember error:', err.message);
-    return { success: false, error: `Failed to remember: ${err.message}` };
+  const content = args.content;
+  if (!content || typeof content !== 'string') {
+    return { success: false, error: 'Content is required' };
   }
-};
+  const category = args.category || 'general';
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 
-export const recallHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  // Try Qdrant first
   try {
-    const query = args.query;
-    if (!query || typeof query !== 'string') {
-      return { success: false, error: 'Query is required' };
-    }
-
-    const limit = Math.min(args.limit || 5, 20);
-    
-    // Ensure collection exists
-    await ensureCollection();
-    
-    // Get embedding for the query
-    const embedding = await getEmbedding(query);
-    
-    // Search in Qdrant
-    const response = await axios.post(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points/search`, {
-      vector: embedding,
-      limit: limit,
-      with_payload: true,
-      score_threshold: 0.5  // Only return reasonably relevant results
-    });
-
-    const memories = response.data.result.map((hit: any) => ({
-      id: hit.id,
-      content: hit.payload.content,
-      category: hit.payload.category,
-      createdAt: hit.payload.createdAt,
-      relevance: Math.round(hit.score * 100) + '%'
-    }));
-
-    if (memories.length === 0) {
+    if (await isQdrantAvailable()) {
+      await ensureCollection();
+      const embedding = await getEmbedding(content);
+      await axios.put(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points`, {
+        points: [{ id, vector: embedding, payload: { content, category, createdAt: new Date().toISOString() } }]
+      }, { timeout: 10000 });
       return {
         success: true,
         result: {
-          message: 'No relevant memories found.',
-          memories: []
+          message: `Remembered (vector): "${content.slice(0, 50)}${content.length > 50 ? '...' : ''}"`,
+          memoryId: id, category, backend: 'qdrant'
         }
       };
     }
-
-    return {
-      success: true,
-      result: {
-        message: `Found ${memories.length} relevant memories`,
-        memories: memories
-      }
-    };
   } catch (err: any) {
-    console.error('Recall error:', err.message);
-    return { success: false, error: `Failed to recall: ${err.message}` };
+    console.warn('[Memory] Qdrant unavailable, falling back to JSON:', err.message);
   }
+
+  // JSON fallback
+  const memories = readMemoriesJson();
+  memories.push({ id, content, category, createdAt: new Date().toISOString() });
+  writeMemoriesJson(memories);
+  return {
+    success: true,
+    result: {
+      message: `Remembered (json): "${content.slice(0, 50)}${content.length > 50 ? '...' : ''}"`,
+      memoryId: id, category, backend: 'json'
+    }
+  };
+};
+
+export const recallHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const query = args.query;
+  if (!query || typeof query !== 'string') {
+    return { success: false, error: 'Query is required' };
+  }
+  const limit = Math.min(args.limit || 5, 20);
+
+  // Try Qdrant first
+  try {
+    if (await isQdrantAvailable()) {
+      await ensureCollection();
+      const embedding = await getEmbedding(query);
+      const response = await axios.post(
+        `${QDRANT_URL}/collections/${COLLECTION_NAME}/points/search`,
+        { vector: embedding, limit, with_payload: true, score_threshold: 0.5 },
+        { timeout: 10000 }
+      );
+      const memories = response.data.result.map((hit: any) => ({
+        id: hit.id,
+        content: hit.payload.content,
+        category: hit.payload.category,
+        createdAt: hit.payload.createdAt,
+        relevance: Math.round(hit.score * 100) + '%'
+      }));
+      return {
+        success: true,
+        result: { message: `Found ${memories.length} relevant memories (vector)`, memories, backend: 'qdrant' }
+      };
+    }
+  } catch (err: any) {
+    console.warn('[Memory] Qdrant unavailable, falling back to JSON:', err.message);
+  }
+
+  // JSON keyword fallback
+  const all = readMemoriesJson();
+  const scored = all
+    .map(m => ({ ...m, score: keywordScore(query, m.content) }))
+    .filter(m => m.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  return {
+    success: true,
+    result: {
+      message: scored.length > 0 ? `Found ${scored.length} relevant memories (keyword)` : 'No relevant memories found.',
+      memories: scored.map(({ score: _, ...m }) => ({ ...m, relevance: 'keyword' })),
+      backend: 'json'
+    }
+  };
 };
 
 export const forgetHandler: ToolHandler = async (args): Promise<ToolResult> => {
-  try {
-    const memoryId = args.memoryId;
-    if (!memoryId) {
-      return { success: false, error: 'Memory ID is required' };
-    }
-
-    // Delete from Qdrant
-    await axios.post(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points/delete`, {
-      points: [memoryId]
-    });
-
-    return {
-      success: true,
-      result: {
-        message: `Memory ${memoryId} has been forgotten.`
-      }
-    };
-  } catch (err: any) {
-    console.error('Forget error:', err.message);
-    return { success: false, error: `Failed to forget: ${err.message}` };
+  const memoryId = args.memoryId;
+  if (!memoryId) {
+    return { success: false, error: 'Memory ID is required' };
   }
+
+  // Try Qdrant first
+  try {
+    if (await isQdrantAvailable()) {
+      await axios.post(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points/delete`, {
+        points: [memoryId]
+      }, { timeout: 5000 });
+      return { success: true, result: { message: `Memory ${memoryId} forgotten (qdrant).`, backend: 'qdrant' } };
+    }
+  } catch (err: any) {
+    console.warn('[Memory] Qdrant unavailable, falling back to JSON:', err.message);
+  }
+
+  // JSON fallback
+  const memories = readMemoriesJson();
+  const before = memories.length;
+  const filtered = memories.filter(m => m.id !== memoryId);
+  if (filtered.length === before) {
+    return { success: false, error: `Memory ${memoryId} not found.` };
+  }
+  writeMemoriesJson(filtered);
+  return { success: true, result: { message: `Memory ${memoryId} forgotten (json).`, backend: 'json' } };
 };
 
 export const listMemoriesHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const category = args.category as string | undefined;
+  const limit = Math.min(args.limit || 20, 100);
+
+  // Try Qdrant first
   try {
-    const category = args.category;
-    const limit = Math.min(args.limit || 20, 100);
-    
-    // Ensure collection exists
-    await ensureCollection();
-    
-    // Build filter if category specified
-    const filter = category ? {
-      must: [{
-        key: 'category',
-        match: { value: category }
-      }]
-    } : undefined;
-    
-    // Scroll through all points
-    const response = await axios.post(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points/scroll`, {
-      limit: limit,
-      with_payload: true,
-      filter: filter
-    });
-
-    const memories = response.data.result.points.map((point: any) => ({
-      id: point.id,
-      content: point.payload.content,
-      category: point.payload.category,
-      createdAt: point.payload.createdAt
-    }));
-
-    return {
-      success: true,
-      result: {
-        count: memories.length,
-        memories: memories
-      }
-    };
+    if (await isQdrantAvailable()) {
+      await ensureCollection();
+      const filter = category
+        ? { must: [{ key: 'category', match: { value: category } }] }
+        : undefined;
+      const response = await axios.post(
+        `${QDRANT_URL}/collections/${COLLECTION_NAME}/points/scroll`,
+        { limit, with_payload: true, filter },
+        { timeout: 10000 }
+      );
+      const memories = response.data.result.points.map((p: any) => ({
+        id: p.id,
+        content: p.payload.content,
+        category: p.payload.category,
+        createdAt: p.payload.createdAt
+      }));
+      return { success: true, result: { count: memories.length, memories, backend: 'qdrant' } };
+    }
   } catch (err: any) {
-    console.error('List memories error:', err.message);
-    return { success: false, error: `Failed to list memories: ${err.message}` };
+    console.warn('[Memory] Qdrant unavailable, falling back to JSON:', err.message);
   }
+
+  // JSON fallback
+  let memories = readMemoriesJson();
+  if (category) memories = memories.filter(m => m.category === category);
+  memories = memories.slice(-limit);
+  return { success: true, result: { count: memories.length, memories, backend: 'json' } };
 };
 
-// Export all definitions and handlers
+export const saveConversationHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const { role, content, conversationId } = args;
+  if (!role || !content) {
+    return { success: false, error: 'Role and content are required' };
+  }
+  if (!['user', 'assistant', 'system'].includes(role)) {
+    return { success: false, error: 'Role must be user, assistant, or system' };
+  }
+
+  const store = readHistoryJson();
+  const turn: ConversationTurn = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    role,
+    content,
+    timestamp: new Date().toISOString(),
+    ...(conversationId ? { conversationId } : {})
+  };
+  store.conversations.push(turn);
+
+  // Trim oldest turns if over limit
+  if (store.conversations.length > MAX_HISTORY_TURNS) {
+    store.conversations = store.conversations.slice(-MAX_HISTORY_TURNS);
+  }
+  if (conversationId) store.activeConversationId = conversationId;
+
+  writeHistoryJson(store);
+  return { success: true, result: { message: 'Turn saved.', id: turn.id } };
+};
+
+export const getConversationHistoryHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const limit = Math.min(args.limit || 20, 100);
+  const conversationId = args.conversationId as string | undefined;
+
+  const store = readHistoryJson();
+  let turns = store.conversations;
+  if (conversationId) {
+    turns = turns.filter(t => t.conversationId === conversationId);
+  }
+  turns = turns.slice(-limit);
+
+  return {
+    success: true,
+    result: {
+      count: turns.length,
+      turns,
+      activeConversationId: store.activeConversationId
+    }
+  };
+};
+
+export const clearConversationHistoryHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const conversationId = args.conversationId as string | undefined;
+  const store = readHistoryJson();
+
+  if (conversationId) {
+    const before = store.conversations.length;
+    store.conversations = store.conversations.filter(t => t.conversationId !== conversationId);
+    const removed = before - store.conversations.length;
+    if (store.activeConversationId === conversationId) store.activeConversationId = null;
+    writeHistoryJson(store);
+    return { success: true, result: { message: `Cleared ${removed} turns from conversation ${conversationId}.` } };
+  }
+
+  writeHistoryJson({ conversations: [], activeConversationId: null });
+  return { success: true, result: { message: 'All conversation history cleared.' } };
+};
+
+// ============= EXPORTS =============
+
 export const memoryToolDefs = [
   rememberDef,
   recallDef,
   forgetDef,
-  listMemoriesDef
+  listMemoriesDef,
+  saveConversationDef,
+  getConversationHistoryDef,
+  clearConversationHistoryDef
 ];
 
 export const memoryToolHandlers: Record<string, ToolHandler> = {
-  'remember': rememberHandler,
-  'recall': recallHandler,
-  'forget': forgetHandler,
-  'list_memories': listMemoriesHandler
+  remember: rememberHandler,
+  recall: recallHandler,
+  forget: forgetHandler,
+  list_memories: listMemoriesHandler,
+  save_conversation: saveConversationHandler,
+  get_conversation_history: getConversationHistoryHandler,
+  clear_conversation_history: clearConversationHistoryHandler
 };

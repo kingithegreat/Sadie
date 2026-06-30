@@ -1,5 +1,23 @@
+// jest.mock is hoisted before imports — mock electron BEFORE tools/index.ts loads
+// so mcp-client.ts sees a valid app when seedMcpDefaults() calls app.getPath().
+jest.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: jest.fn(() => require('os').tmpdir()),
+    getAppPath: jest.fn(() => require('os').tmpdir()),
+  },
+  ipcMain: { on: jest.fn(), handle: jest.fn() },
+  BrowserWindow: jest.fn().mockImplementation(() => ({
+    webContents: { send: jest.fn() },
+  })),
+  Notification: jest.fn().mockImplementation(() => ({ show: jest.fn() })),
+  shell: { openExternal: jest.fn(), openPath: jest.fn() },
+  dialog: { showMessageBox: jest.fn(), showOpenDialog: jest.fn() },
+  nativeTheme: { themeSource: 'system' },
+}));
+
 import os from 'os';
-import fs from 'fs';
+import * as fs from 'fs';
 import path from 'path';
 
 // Note: we intentionally `require` the tools after setting `HOME` so
@@ -13,7 +31,7 @@ describe('CI smoke - permissions', () => {
   test('permission-allowed batch executes end-to-end', async () => {
     // Make a temp HOME so writes do not affect runner home and ensure module-level
     // constants are initialized with this temp during module load.
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sadie-smoke-'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-smoke-'));
     process.env.HOME = tmp;
     process.env.USERPROFILE = tmp;
 
@@ -41,7 +59,7 @@ describe('CI smoke - permissions', () => {
       expect(r.success).toBe(true);
     }
 
-    // Verify file exists by resolving via SADIE's path resolver
+    // Verify file exists by resolving via HomeBot's path resolver
     const { resolveUserPath } = require('../tools/filesystem');
     const reportPath = resolveUserPath('Desktop/SmokeTest/report.txt');
     expect(fs.existsSync(reportPath)).toBe(true);

@@ -2,12 +2,16 @@ import { mockApp, mockIpcMain, mockBrowserWindow } from './jest-setup';
 
 // Wrap plain mocks with jest.fn now that the Jest environment is ready
 for (const key of Object.keys(mockApp)) {
-  // @ts-ignore
-  mockApp[key] = jest.fn(mockApp[key]);
+  const original = (mockApp as any)[key];
+  if (typeof original === 'function') {
+    (mockApp as any)[key] = jest.fn(original);
+  }
 }
 for (const key of Object.keys(mockIpcMain)) {
-  // @ts-ignore
-  mockIpcMain[key] = jest.fn(mockIpcMain[key]);
+  const original = (mockIpcMain as any)[key];
+  if (typeof original === 'function') {
+    (mockIpcMain as any)[key] = jest.fn(original);
+  }
 }
 
 const browserWindowFactory = jest.fn(mockBrowserWindow as any);
@@ -31,7 +35,7 @@ jest.mock('electron', () => ({
 }));
 
 // Mock axios globally to avoid real XHR timers in tests
-import axios from 'axios';
+
 jest.mock('axios', () => ({
   get: jest.fn().mockResolvedValue({ status: 200 }),
   post: jest.fn().mockResolvedValue({ data: {} }),

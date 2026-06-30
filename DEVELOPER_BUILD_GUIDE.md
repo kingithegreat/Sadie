@@ -1,128 +1,158 @@
-# SADIE Developer Build Guide
+# HomeBot Developer Build Guide
 
-This guide helps new developers set up SADIE for local development, testing, and contribution.
+A comprehensive guide for developers setting up HomeBot for local development, testing, and contribution.
+
+---
+
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Getting Started](#getting-started)
+3. [Development Workflow](#development-workflow)
+4. [Testing](#testing)
+5. [Code Changes and Rebuilding](#code-changes-and-rebuilding)
+6. [Safe Development Practices](#safe-development-practices)
+7. [Debugging](#debugging)
+8. [Contributing](#contributing)
+
+---
 
 ## Prerequisites
 
 ### System Requirements
-- **Node.js**: 18.0 or higher (LTS recommended)
-- **Git**: Latest version
-- **Ollama**: For local AI model hosting
-- **Operating System**: Windows 10+, macOS 10.15+, or Linux
+
+| Requirement | Version | Notes |
+|---|---|---|
+| **Node.js** | 18.0 or higher | Tested with v24.13.0 |
+| **npm** | 9.0 or higher | Ships with Node.js |
+| **Git** | Latest | Version control |
+| **Ollama** | Latest | Local AI model hosting |
+| **Docker Desktop** | Latest | For n8n (optional) |
+| **OS** | Windows 10+ | Primary development platform |
 
 ### Hardware Requirements
-- **RAM**: 4GB minimum, 8GB recommended
-- **Storage**: 2GB free space
-- **Network**: Internet connection for dependencies
+
+| Resource | Minimum | Recommended |
+|---|---|---|
+| **RAM** | 8 GB | 16 GB |
+| **GPU** | Integrated (CPU-only) | NVIDIA RTX 2050+ (4 GB VRAM) |
+| **Storage** | 15 GB free | 25 GB free |
+| **Network** | Required for initial setup | Optional after models downloaded |
+
+---
 
 ## Getting Started
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/kingithegreat/Sadie.git
-cd Sadie
+git clone https://github.com/kingithegreat/HomeBot.git
+cd HomeBot
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-# Install all dependencies
+cd widget
 npm install
-
-# Verify installation
-npm --version
-node --version
 ```
 
 ### 3. Install and Configure Ollama
 
-#### Download Ollama
-- **Windows/macOS**: Download from [ollama.ai](https://ollama.ai/download)
-- **Linux**: Follow installation instructions for your distribution
+Download Ollama from [ollama.com](https://ollama.com/download), then pull the required models:
 
-#### Start Ollama Service
 ```bash
-# Start Ollama (runs in background)
-ollama serve
+ollama pull qwen2.5:7b           # Primary chat model (4.7 GB)
+ollama pull qwen2.5-coder:7b    # Code model (optional, 4.4 GB)
+ollama pull moondream            # Default vision model (1.7 GB)
 ```
 
-#### Download Required Models
-```bash
-# Pull the default model used by SADIE
-ollama pull llama2:7b
+Verify models are available:
 
-# Verify models are available
+```bash
 ollama list
 ```
 
-**Note:** SADIE defaults to `llama2:7b` but can work with any Ollama-compatible model.
+> **Note:** HomeBot defaults to `qwen2.5:7b` for chat, `moondream` for vision, and `qwen2.5-coder:7b` for code. Models can be changed in Settings.
+
+---
 
 ## Development Workflow
 
 ### Project Structure
 
 ```
-Sadie/
-├── widget/                 # Main Electron application
+HomeBot/
+├── widget/                     # Main Electron application
 │   ├── src/
-│   │   ├── main/          # Main process code
-│   │   ├── renderer/      # UI code
-│   │   └── preload/       # Context bridge
-│   ├── dist/              # Built output
-│   └── package.json
-├── orchestrator/          # Backend services (future)
-├── scripts/               # Build and utility scripts
-└── docs/                  # Documentation
+│   │   ├── main/               # Main process (Node.js)
+│   │   │   ├── tools/          # 85+ TypeScript tool handlers
+│   │   │   └── __tests__/      # Main-process unit test suites
+│   │   ├── renderer/           # React UI (Vite + HMR)
+│   │   │   ├── components/     # React components
+│   │   │   ├── styles/         # CSS (themes, animations)
+│   │   │   ├── e2e/            # Playwright E2E specs
+│   │   │   └── __tests__/      # Renderer unit test suites
+│   │   ├── preload/            # Context bridge (sandbox-safe IPC)
+│   │   └── shared/             # Types, constants, utilities
+│   ├── electron.vite.config.ts # Build configuration
+│   ├── jest.config.ts          # Jest configuration
+│   ├── playwright.config.ts    # E2E configuration
+│   └── package.json            # Includes electron-builder config
+├── n8n-workflows/              # n8n workflow definitions
+├── config/                     # JSON configuration files
+├── scripts/                    # Build and utility scripts
+├── prompts/                    # System prompts, intent detection
+├── schemas/                    # JSON schemas for tool validation
+├── docs/                       # Documentation
+└── memory/                     # Local memory and RAG index
 ```
 
 ### Development Commands
 
-#### Start Development Server
 ```bash
 cd widget
 
-# Start with hot reload
+# Start with hot-reload (electron-vite dev server + Electron)
 npm run dev
 
-# Or build and run manually
+# Full production build (main + preload + renderer via electron-vite)
 npm run build
-npm start
+
+# Create installable package (Windows NSIS installer)
+npm run dist
 ```
 
-#### Development Builds
-```bash
-# Build main process only
-npm run build:main
+> **Important:** HomeBot uses **electron-vite** (not Webpack). The `npm run dev` command starts the Vite dev server for the renderer with HMR and builds the main process. The wrapper script also clears `ELECTRON_RUN_AS_NODE`, which VS Code terminals often inherit and which would otherwise make Electron start in Node-only mode. There are no separate `build:main` / `build:renderer` scripts — `npm run build` handles everything.
 
-# Build renderer only
-npm run build:renderer
-
-# Full build
-npm run build
-```
-
-#### Watch Mode for Development
-```bash
-# Watch for changes and rebuild
-npm run dev:watch
-```
+---
 
 ## Testing
 
 ### Unit Tests
+
+HomeBot maintains broad Jest and Playwright coverage across router, tools, renderer flows, and Electron E2E scenarios.
+
 ```bash
+cd widget
+
 # Run all unit tests
-npm test
+npx jest --config jest.config.ts --no-coverage
 
-# Run with coverage
-npm run test:coverage
+# Run with coverage report
+npx jest --config jest.config.ts --coverage
 
-# Watch mode
-npm run test:watch
+# Run specific test file
+npx jest --config jest.config.ts vision-tools --no-coverage
+
+# Watch mode (re-runs on file changes)
+npx jest --config jest.config.ts --watch
 ```
 
+> **Important:** Always use `--config jest.config.ts` to avoid the multi-config error.
+
 ### E2E Tests
+
 ```bash
 # Ensure Ollama is running first
 ollama serve
@@ -130,234 +160,174 @@ ollama serve
 # Run E2E tests
 npm run e2e
 
-# Debug E2E tests
+# Debug E2E tests with Playwright UI
 npx playwright test --ui
+
+# Run in headed mode (see the browser)
+npx playwright test --headed
 ```
 
 ### Test Prerequisites
-- Ollama must be running for E2E tests
-- Set `SADIE_E2E=true` for test mode
-- Clean userData directory for isolation
+
+- Ollama must be running for E2E tests.
+- Set `HOMEBOT_E2E=true` for test mode.
+- E2E tests use an isolated `userData` directory for each run via `HOMEBOT_E2E_USER_DATA_DIR` instead of Chromium CLI flags.
+
+---
 
 ## Code Changes and Rebuilding
 
-### Main Process Changes
-When modifying `src/main/` files:
+### Renderer Changes (React / CSS)
 
-```bash
-# Rebuild main process
-npm run build:main
-
-# Restart the application
-npm start
-```
-
-### Renderer Changes
 When modifying `src/renderer/` files:
 
-```bash
-# Rebuild renderer (usually auto with dev server)
-npm run build:renderer
-```
+- If `npm run dev` is running, **changes are applied automatically via HMR** — no rebuild needed.
+- The Vite dev server at `localhost:5173` serves the renderer with hot module replacement.
+
+### Main Process Changes
+
+When modifying `src/main/` files:
+
+- electron-vite rebuilds the main process automatically in dev mode.
+- For a full rebuild: `npm run build` then `npm start`.
 
 ### Preload Script Changes
+
 When modifying `src/preload/` files:
 
-```bash
-# Rebuild preload
-npm run build:preload
+- Preload scripts require a full app restart: `npm run build` then `npm start`.
 
-# Restart application (preload requires restart)
-npm start
-```
+---
 
-## Working Safely (Avoid Breaking Release Mode)
+## Safe Development Practices
 
-### Environment Awareness
+HomeBot has three runtime modes. Always know which you are working in:
 
-SADIE has three modes - always know which you're in:
-
-| Mode | When to Use | Environment |
-|------|-------------|-------------|
+| Mode | When Used | Gating Variable |
+|---|---|---|
 | Development | Local coding | `NODE_ENV=development` |
-| Test | Running tests | `SADIE_E2E=true` |
+| Test | Running tests | `HOMEBOT_E2E=true` |
 | Production | User releases | `NODE_ENV=production` |
 
-### Safe Development Practices
+### Rules
 
-#### 1. Never Commit Test Code to Production
+**1. Never commit test code to production paths**
+
 ```typescript
-// ✅ Safe: Gated with environment check
-if (process.env.SADIE_E2E === 'true') {
+// CORRECT: Gated with environment check
+if (process.env.HOMEBOT_E2E === 'true') {
   // Test-only code here
 }
 
-// ❌ Unsafe: Ungated test code
-setupTestMocks(); // This will ship in production!
+// WRONG: Ungated test code
+setupTestMocks(); // This will ship in production
 ```
 
-#### 2. Gate Diagnostic Logs
+**2. Gate diagnostic logs**
+
 ```typescript
-// ✅ Safe: Release-gated logging
+// CORRECT: Release-gated logging
 if (!isReleaseBuild) {
   console.log('[DIAG] Debug info');
 }
 
-// ❌ Unsafe: Ungated debug logs
-console.log('[DIAG] This ships to users!');
+// WRONG: Ungated debug logs
+console.log('[DIAG] This ships to users');
 ```
 
-#### 3. Use Environment Variables Wisely
+**3. Use environment variables wisely**
+
 ```typescript
-// ✅ Safe: Environment-aware features
-const apiUrl = isE2E ? 'http://localhost:3000' : 'https://api.sadie.ai';
+// CORRECT: Environment-aware features
+const endpoint = isE2E ? 'http://localhost:3000' : productionUrl;
 
-// ❌ Unsafe: Hardcoded test values
-const apiUrl = 'http://localhost:3000'; // Ships test URL to production
+// WRONG: Hardcoded test values
+const endpoint = 'http://localhost:3000';
 ```
 
-#### 4. Test in All Modes
-Before committing:
+**4. Test in all modes before committing**
+
 ```bash
-# Test development mode
-npm run dev
-
-# Test production build
-NODE_ENV=production npm run build
-NODE_ENV=production npm start
-
-# Run full test suite
-npm run test:all
+npm run dev                                # Development mode
+NODE_ENV=production npm run build          # Production build
+npx jest --config jest.config.ts           # Unit tests
 ```
 
 ### Code Review Checklist
 
 - [ ] No ungated test code
-- [ ] No hardcoded localhost URLs
+- [ ] No hardcoded localhost URLs in production paths
 - [ ] Diagnostic logs are release-gated
 - [ ] Environment variables properly handled
-- [ ] Tested in production mode
-- [ ] E2E tests still pass
+- [ ] New tools declare `requiredPermissions` in their tool definition
+- [ ] TypeScript compiles cleanly: `npx tsc --noEmit`
+
+---
 
 ## Debugging
 
-### Common Issues
+### Application Does Not Start
 
-#### Application Won't Start
 ```bash
-# Check for build errors
-npm run build
+npm run build        # Check for build errors
+node --version       # Verify Node.js 18+
+```
 
-# Check Node version
-node --version
+If `node_modules` is corrupted:
 
-# Clear node_modules and reinstall
-rm -rf node_modules package-lock.json
+```bash
+Remove-Item -Recurse node_modules, package-lock.json
 npm install
 ```
 
-#### Ollama Connection Issues
+### Ollama Connection Issues
+
 ```bash
-# Verify Ollama is running
-curl http://localhost:11434/api/tags
-
-# Restart Ollama
-ollama serve
-
-# Check model availability
-ollama list
+curl http://127.0.0.1:11434/api/tags   # Verify Ollama is running
+ollama list                             # Check model availability
+ollama serve                            # Restart Ollama
 ```
 
-#### E2E Test Failures
+### E2E Test Failures
+
 ```bash
-# Run with debug output
-DEBUG=* npm run e2e
-
-# Check traces
-npx playwright show-trace test-results/
-
-# Run in headed mode
-npx playwright test --headed
+npx playwright test --ui               # Debug with Playwright UI
+npx playwright show-trace test-results/ # View test traces
+npx playwright test --headed            # Run with visible browser
 ```
 
-#### Build Errors
+If Playwright or manual Electron launches die immediately with "bad option" or Node-only behavior, verify `ELECTRON_RUN_AS_NODE` is unset. The repo's `npm run dev` and `npm start` scripts already handle this.
+
+### TypeScript Errors
+
 ```bash
-# Clear cache
-npm run clean
-
-# Rebuild from scratch
-npm run build
-
-# Check TypeScript errors
-npx tsc --noEmit
+npx tsc --noEmit     # Check for type errors not shown by VS Code
 ```
 
-## Advanced Development
-
-### Custom Model Configuration
-```bash
-# Use different Ollama model
-ollama pull codellama:7b
-# Then configure in SADIE settings
-```
-
-### Development with Custom Ollama
-```bash
-# Run Ollama on custom port
-OLLAMA_HOST=0.0.0.0:8080 ollama serve
-```
-
-### Performance Profiling
-```bash
-# Build with source maps
-NODE_ENV=development npm run build
-
-# Profile main process
-npm run profile:main
-```
+---
 
 ## Contributing
 
 ### Pull Request Process
-1. Fork the repository
-2. Create a feature branch
-3. Make changes following safe development practices
-4. Test in all modes
-5. Submit PR with description
+
+1. Fork the repository.
+2. Create a feature branch from `main`.
+3. Make changes following the safe development practices above.
+4. Ensure all tests pass: `npx jest --config jest.config.ts --no-coverage`
+5. Ensure TypeScript compiles cleanly: `npx tsc --noEmit`
+6. Submit a pull request with a clear description.
 
 ### Code Standards
-- TypeScript for type safety
-- ESLint for code quality
-- Prettier for formatting
-- Jest for testing
+
+- **TypeScript** for type safety with strict mode enabled.
+- **Jest** for unit testing; **Playwright** for E2E testing.
+- **CSS classes** preferred over inline styles.
+- **`requiredPermissions`** declared on tool definitions for permission-gated tools.
 
 ### Documentation Updates
-When adding features:
-- Update this guide if setup changes
-- Add to TESTING_MATRIX.md for new tests
-- Update SECURITY_AND_COMPLIANCE.md for security changes
 
-## Getting Help
+When adding features, update the relevant documentation:
 
-### Resources
-- **Issues**: [GitHub Issues](https://github.com/kingithegreat/Sadie/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/kingithegreat/Sadie/discussions)
-- **Documentation**: See docs/ folder
-
-### Troubleshooting Checklist
-- [ ] Node.js version correct?
-- [ ] Dependencies installed?
-- [ ] Ollama running?
-- [ ] Environment variables set?
-- [ ] Ports not conflicting?
-- [ ] Firewall allowing connections?
-
-## Next Steps
-
-Once set up:
-1. Read SECURITY_AND_COMPLIANCE.md
-2. Review TESTING_MATRIX.md
-3. Run the full test suite
-4. Start contributing!
-
-Welcome to the SADIE development team! 🚀
+- `README.md` — Feature list and project overview.
+- `docs/api-reference.md` — New IPC channels or tool schemas.
+- `docs/setup-guide.md` — Installation and first-run instructions.

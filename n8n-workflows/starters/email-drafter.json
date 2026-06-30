@@ -1,0 +1,82 @@
+{
+  "active": true,
+  "versionId": "1",
+  "name": "HomeBot Email Drafter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/draft-email",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "homebot-email-drafter"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json || {};\nconst context = body.context || body.message || '';\nconst tone = body.tone || 'professional';\nconst recipient = body.recipient || 'colleague';\n\nconst systemPrompt = `You are HomeBot Email Assistant. Draft professional, well-structured emails based on the user's context.\\n\\nGuidelines:\\n- Tone: ${tone}\\n- Recipient type: ${recipient}\\n- Include a clear subject line\\n- Keep paragraphs short (2-3 sentences max)\\n- End with an appropriate sign-off\\n- Be concise but thorough\\n\\nFormat your response as:\\n**Subject:** [subject line]\\n\\n---\\n\\n[email body]\\n\\n---\\n\\n*Suggested sign-off options: [2-3 options]*`;\n\nreturn {\n  json: {\n    model: 'qwen2.5:7b',\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: `Draft an email with this context: ${context}` }\n    ],\n    stream: false\n  }\n};"
+      },
+      "id": "prepare-request",
+      "name": "Prepare Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": $json.model, \"messages\": $json.messages, \"stream\": false, \"options\": { \"num_predict\": 1024, \"temperature\": 0.6 } } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "call-ollama",
+      "name": "Call Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ollamaRes = $input.item.json;\nconst content = ollamaRes.message?.content || ollamaRes.response || 'Unable to draft email';\nreturn {\n  json: {\n    output: content,\n    data: { assistant: { role: 'assistant', content } }\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1140, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Prepare Request", "type": "main", "index": 0 }]] },
+    "Prepare Request": { "main": [[{ "node": "Call Ollama", "type": "main", "index": 0 }]] },
+    "Call Ollama": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
+    "Format Response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

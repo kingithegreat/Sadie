@@ -1,0 +1,289 @@
+{
+  "name": "HomeBot Chat Orchestrator",
+  "active": true,
+  "versionId": "1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/chat",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "HomeBot Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "homebot-chat-main"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "homebot/chat/stream",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "webhook-stream",
+      "name": "HomeBot Stream Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 520],
+      "webhookId": "homebot-chat-stream"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.message }}",
+        "options": {
+          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
+          "maxIterations": 6
+        }
+      },
+      "id": "ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "baseUrl": "http://host.docker.internal:11434",
+        "options": {
+          "temperature": 0.7,
+          "numPredict": 2048
+        }
+      },
+      "id": "ollama-model",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [480, 520]
+    },
+    {
+      "parameters": {
+        "name": "web_search",
+        "description": "Search the web for current information. Use for news, facts, weather, sports, or anything requiring up-to-date data.",
+        "url": "=https://api.duckduckgo.com/?q={{ encodeURIComponent($fromAI('query', 'The search query', 'string')) }}&format=json&no_html=1&skip_disambig=1",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "query",
+              "description": "The search query - be specific",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tool-web-search",
+      "name": "Web Search",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [700, 520]
+    },
+    {
+      "parameters": {
+        "name": "run_command",
+        "description": "Execute a terminal command on the host system. Use for git operations, file management, system info, or running scripts. Available commands: dir, type, git, powershell scripts, etc.",
+        "language": "javaScript",
+        "jsCode": "const cmd = $fromAI('command', 'The command to execute', 'string');\nconst { execSync } = require('child_process');\ntry {\n  const output = execSync(cmd, { timeout: 30000, encoding: 'utf8', maxBuffer: 1024 * 1024 });\n  return output.trim() || '(command completed with no output)';\n} catch (err) {\n  return `Error: ${err.message}\\nStderr: ${err.stderr || ''}`.trim();\n}"
+      },
+      "id": "tool-command",
+      "name": "Run Command",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [880, 520]
+    },
+    {
+      "parameters": {
+        "name": "read_file",
+        "description": "Read the contents of a file from the filesystem. Provide the full file path.",
+        "language": "javaScript",
+        "jsCode": "const filePath = $fromAI('path', 'Full path to the file to read', 'string');\nconst fs = require('fs');\ntry {\n  const content = fs.readFileSync(filePath, 'utf8');\n  return content.slice(0, 8000);\n} catch (err) {\n  return `Error reading file: ${err.message}`;\n}"
+      },
+      "id": "tool-read-file",
+      "name": "Read File",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [1060, 520]
+    },
+    {
+      "parameters": {
+        "name": "write_file",
+        "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does.",
+        "language": "javaScript",
+        "jsCode": "const filePath = $fromAI('path', 'Full path to write the file to', 'string');\nconst content = $fromAI('content', 'The content to write to the file', 'string');\nconst fs = require('fs');\nconst path = require('path');\ntry {\n  const dir = path.dirname(filePath);\n  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });\n  fs.writeFileSync(filePath, content, 'utf8');\n  return `File written successfully: ${filePath} (${content.length} characters)`;\n} catch (err) {\n  return `Error writing file: ${err.message}`;\n}"
+      },
+      "id": "tool-write-file",
+      "name": "Write File",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [1240, 520]
+    },
+    {
+      "parameters": {
+        "name": "get_weather",
+        "description": "Get the current weather for a location. Returns temperature, conditions, humidity, and wind.",
+        "url": "=https://wttr.in/{{ encodeURIComponent($fromAI('location', 'City or location name', 'string')) }}?format=j1",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "location",
+              "description": "City or location name (e.g. Tauranga, New Zealand)",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tool-weather",
+      "name": "Get Weather",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [700, 700]
+    },
+    {
+      "parameters": {
+        "name": "list_directory",
+        "description": "List the files and folders in a directory.",
+        "language": "javaScript",
+        "jsCode": "const dirPath = $fromAI('path', 'Directory path to list', 'string');\nconst fs = require('fs');\nconst path = require('path');\ntry {\n  const entries = fs.readdirSync(dirPath, { withFileTypes: true });\n  const result = entries.slice(0, 50).map(e => {\n    const icon = e.isDirectory() ? '[DIR]' : '[FILE]';\n    let size = '';\n    if (!e.isDirectory()) {\n      try { const s = fs.statSync(path.join(dirPath, e.name)); size = ` (${(s.size / 1024).toFixed(1)} KB)`; } catch {}\n    }\n    return `${icon} ${e.name}${size}`;\n  });\n  return `Contents of ${dirPath}:\\n${result.join('\\n')}`;\n} catch (err) {\n  return `Error: ${err.message}`;\n}"
+      },
+      "id": "tool-list-dir",
+      "name": "List Directory",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [880, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ output: $json.output, data: { assistant: { role: 'assistant', content: $json.output } } }) }}",
+        "options": {}
+      },
+      "id": "respond-main",
+      "name": "Respond Main",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ output: $json.output, data: { assistant: { role: 'assistant', content: $json.output } } }) }}",
+        "options": {}
+      },
+      "id": "respond-stream",
+      "name": "Respond Stream",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1000, 520]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.message }}",
+        "options": {
+          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
+          "maxIterations": 6
+        }
+      },
+      "id": "ai-agent-stream",
+      "name": "AI Agent Stream",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [620, 520]
+    }
+  ],
+  "connections": {
+    "HomeBot Webhook": {
+      "main": [
+        [{ "node": "AI Agent", "type": "main", "index": 0 }]
+      ]
+    },
+    "HomeBot Stream Webhook": {
+      "main": [
+        [{ "node": "AI Agent Stream", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [{ "node": "Respond Main", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI Agent Stream": {
+      "main": [
+        [{ "node": "Respond Stream", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          { "node": "AI Agent", "type": "ai_languageModel", "index": 0 },
+          { "node": "AI Agent Stream", "type": "ai_languageModel", "index": 0 }
+        ]
+      ]
+    },
+    "Web Search": {
+      "ai_tool": [
+        [
+          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
+          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+        ]
+      ]
+    },
+    "Run Command": {
+      "ai_tool": [
+        [
+          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
+          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+        ]
+      ]
+    },
+    "Read File": {
+      "ai_tool": [
+        [
+          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
+          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+        ]
+      ]
+    },
+    "Write File": {
+      "ai_tool": [
+        [
+          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
+          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+        ]
+      ]
+    },
+    "Get Weather": {
+      "ai_tool": [
+        [
+          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
+          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+        ]
+      ]
+    },
+    "List Directory": {
+      "ai_tool": [
+        [
+          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
+          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "HomeBot" }
+  ]
+}
