@@ -97,20 +97,20 @@ describe('Automation Center — handler/IPC gate', () => {
   const proTier = () => 'pro' as const;
 
   test('channel registry maps channels to capabilities', () => {
-    expect(isAutomationChannel('homebot:automation:scheduler:add')).toBe(true);
+    expect(isAutomationChannel('homebot:scheduler-add')).toBe(true);
     expect(isAutomationChannel('homebot:get-settings')).toBe(false);
     expect(capabilityForChannel('homebot:automation:image:generate')).toBe('imageGen');
-    expect(capabilityForChannel('homebot:automation:workflow:create')).toBe('automation');
+    expect(capabilityForChannel('homebot:scheduler-add')).toBe('automation');
     expect(Object.keys(AUTOMATION_CENTER_CHANNELS).length).toBeGreaterThanOrEqual(5);
   });
 
   test('guardAutomationChannel blocks free, allows pro', async () => {
-    const blocked = await guardAutomationChannel('homebot:automation:scheduler:add', freeTier);
+    const blocked = await guardAutomationChannel('homebot:scheduler-add', freeTier);
     expect(blocked).not.toBeNull();
     expect(isGateBlocked(blocked)).toBe(true);
     expect(blocked?.upgrade.capability).toBe('automation');
 
-    const allowed = await guardAutomationChannel('homebot:automation:scheduler:add', proTier);
+    const allowed = await guardAutomationChannel('homebot:scheduler-add', proTier);
     expect(allowed).toBeNull();
   });
 
@@ -124,12 +124,12 @@ describe('Automation Center — handler/IPC gate', () => {
       ran++;
       return { ok: true, job };
     };
-    const freeWrapped = gatedAutomationHandler('homebot:automation:scheduler:add', freeTier, handler);
+    const freeWrapped = gatedAutomationHandler('homebot:scheduler-add', freeTier, handler);
     const res1 = await freeWrapped({}, { name: 'daily' });
     expect(isGateBlocked(res1)).toBe(true);
     expect(ran).toBe(0); // real handler never executed for free user
 
-    const proWrapped = gatedAutomationHandler('homebot:automation:scheduler:add', proTier, handler);
+    const proWrapped = gatedAutomationHandler('homebot:scheduler-add', proTier, handler);
     const res2 = await proWrapped({}, { name: 'daily' });
     expect(isGateBlocked(res2)).toBe(false);
     expect((res2 as any).ok).toBe(true);

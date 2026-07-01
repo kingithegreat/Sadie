@@ -1,3 +1,40 @@
+// ── Pro licensing / entitlements (renderer-facing mirror of src/entitlements + src/licensing) ──
+export type LicenseTier = 'free' | 'pro';
+
+export interface UpgradePrompt {
+  reason: 'upgrade_required';
+  capability: string;
+  requiredTier: LicenseTier;
+  title: string;
+  message: string;
+  upgradeUrl: string;
+}
+
+/** Shape returned by a Pro-gated IPC handler when the caller is on Free. */
+export interface GateBlockedResponse {
+  status: 'upgrade_required';
+  upgrade: UpgradePrompt;
+}
+
+export interface LicenseStatus {
+  tier: LicenseTier;
+  hasLicense: boolean;
+  lastValidatedAt?: number;
+  expiresAt?: number;
+  upgradeUrl: string;
+}
+
+/** Result of an activate/validate/deactivate call against the license provider. */
+export interface LicenseActionResult {
+  valid: boolean;
+  status?: string;
+  instanceId?: string;
+  activationUsage?: number;
+  activationLimit?: number;
+  expiresAt?: string | null;
+  error?: string;
+}
+
 export interface HomeBotRequest {
   user_id: string;
   conversation_id: string;
@@ -269,12 +306,18 @@ export interface ElectronAPI {
   ttsSpeak?: (text: string, rate?: number) => Promise<{ success: boolean; error?: string }>;
   ttsStop?: () => Promise<{ success: boolean; error?: string }>;
 
-  // Scheduler
-  schedulerList?: () => Promise<ScheduledJob[]>;
-  schedulerAdd?: (input: Omit<ScheduledJob, 'id' | 'createdAt'>) => Promise<{ success: boolean; job?: ScheduledJob; error?: string }>;
-  schedulerRemove?: (id: string) => Promise<{ success: boolean }>;
-  schedulerToggle?: (id: string, enabled: boolean) => Promise<{ success: boolean; job?: ScheduledJob; error?: string }>;
-  
+  // Scheduler (Pro-gated — handlers may resolve to GateBlockedResponse for free users)
+  schedulerList?: () => Promise<ScheduledJob[] | GateBlockedResponse>;
+  schedulerAdd?: (input: Omit<ScheduledJob, 'id' | 'createdAt'>) => Promise<{ success: boolean; job?: ScheduledJob; error?: string } | GateBlockedResponse>;
+  schedulerRemove?: (id: string) => Promise<{ success: boolean } | GateBlockedResponse>;
+  schedulerToggle?: (id: string, enabled: boolean) => Promise<{ success: boolean; job?: ScheduledJob; error?: string } | GateBlockedResponse>;
+
+  // Licensing (Pro entitlement — Lemon Squeezy backed)
+  licenseStatus?: () => Promise<LicenseStatus>;
+  licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
+  licenseValidate?: () => Promise<LicenseActionResult>;
+  licenseDeactivate?: () => Promise<LicenseActionResult>;
+
   // Uncensored mode toggle
   setUncensoredMode?: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;
   getUncensoredMode?: () => Promise<{ enabled: boolean }>;

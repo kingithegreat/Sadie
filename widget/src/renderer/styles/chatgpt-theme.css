@@ -2372,6 +2372,7 @@ body {
 
 .sp-section-title { display: flex; align-items: center; gap: 8px; }
 .sp-section-subtitle { font-weight: 400; font-size: 0.75em; color: var(--text-muted); }
+.sp-pro-badge { font-size: 0.7em; font-weight: 700; color: #1a1a1a; background: linear-gradient(135deg, #ffd966, #ffb84d); border-radius: 999px; padding: 2px 8px; letter-spacing: 0.02em; }
 .sp-empty-hint { font-size: 0.85em; color: var(--text-muted); margin: 4px 0 12px; }
 .sp-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .sp-list-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg-medium); border-radius: 6px; padding: 6px 10px; font-size: 0.85em; }

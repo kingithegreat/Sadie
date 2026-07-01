@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { isGateBlocked } from '../../shared/upgrade';
+import type { UpgradePrompt } from '../../shared/types';
+import UpgradeModal from './UpgradeModal';
 
 interface SDCppStatus {
   ready: boolean;
@@ -20,6 +23,7 @@ const ImageGenerator: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [sdCppStatus, setSdCppStatus] = useState<SDCppStatus | null>(null);
   const [setupInfo, setSetupInfo] = useState<string[] | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(null);
 
   useEffect(() => {
     (window as any).electron?.sdCppStatus?.().then((s: SDCppStatus) => setSdCppStatus(s));
@@ -46,6 +50,11 @@ const ImageGenerator: React.FC = () => {
 
       if (!result) {
         setError('No response from image generator');
+        return;
+      }
+
+      if (isGateBlocked(result)) {
+        setUpgradePrompt(result.upgrade);
         return;
       }
 
@@ -83,7 +92,7 @@ const ImageGenerator: React.FC = () => {
   return (
     <div className="image-generator">
       <header className="image-header">
-        <h1>Image Generation</h1>
+        <h1>Image Generation <span className="sp-pro-badge" title="Requires HomeBot Pro">⭐ PRO</span></h1>
         <p>Create images with AI</p>
       </header>
 
@@ -195,6 +204,7 @@ const ImageGenerator: React.FC = () => {
           )}
         </div>
       )}
+      <UpgradeModal prompt={upgradePrompt} onClose={() => setUpgradePrompt(null)} />
     </div>
   );
 };

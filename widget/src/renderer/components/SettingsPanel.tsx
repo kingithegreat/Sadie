@@ -5,6 +5,9 @@ import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, Sche
 import { buildSparkline } from '../../shared/sparkline';
 import { buildPerfAdvice } from '../../shared/perf-advice';
 import { buildSupportReport } from '../../shared/support-report';
+import { isGateBlocked } from '../../shared/upgrade';
+import type { LicenseStatus, UpgradePrompt } from '../../shared/types';
+import UpgradeModal from './UpgradeModal';
 
 interface Settings {
   alwaysOnTop: boolean;
@@ -189,6 +192,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     permissions: true,
     advanced: true,
     diagnostics: false,
+    license: true,
   });
   const toggleSection = (id: string) => setOpenSections(s => ({ ...s, [id]: !s[id] }));
 
@@ -475,6 +479,52 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   };
 
+  // Pro licensing state
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [licenseKeyInput, setLicenseKeyInput] = useState('');
+  const [licenseBusy, setLicenseBusy] = useState(false);
+  const [licenseMessage, setLicenseMessage] = useState<string | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(null);
+
+  const loadLicenseStatus = async () => {
+    try {
+      const status = await (window as any).electron?.licenseStatus?.();
+      if (status) setLicenseStatus(status);
+    } catch { /* IPC not yet ready */ }
+  };
+  useEffect(() => { loadLicenseStatus(); }, []);
+
+  const handleActivateLicense = async () => {
+    if (!licenseKeyInput.trim()) return;
+    setLicenseBusy(true);
+    setLicenseMessage(null);
+    try {
+      const result = await (window as any).electron?.licenseActivate?.(licenseKeyInput.trim());
+      if (result?.valid) {
+        setLicenseMessage('✓ Pro activated on this device.');
+        setLicenseKeyInput('');
+      } else {
+        setLicenseMessage(result?.error || 'Activation failed — check the license key.');
+      }
+    } finally {
+      setLicenseBusy(false);
+      loadLicenseStatus();
+    }
+  };
+
+  const handleDeactivateLicense = async () => {
+    if (!confirm('Deactivate Pro on this device? You can reactivate later with the same key.')) return;
+    setLicenseBusy(true);
+    setLicenseMessage(null);
+    try {
+      await (window as any).electron?.licenseDeactivate?.();
+      setLicenseMessage('License deactivated on this device.');
+    } finally {
+      setLicenseBusy(false);
+      loadLicenseStatus();
+    }
+  };
+
   // Scheduler state
   const [scheduledJobs, setScheduledJobs] = useState<ScheduledJob[]>([]);
   const [showJobForm, setShowJobForm] = useState(false);
@@ -490,6 +540,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     try {
       const jobs = await (window as any).electron?.schedulerList?.();
       if (Array.isArray(jobs)) setScheduledJobs(jobs);
+      else if (isGateBlocked(jobs)) setScheduledJobs([]);
     } catch { /* IPC not yet ready */ }
   };
 
@@ -1718,7 +1769,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       {/* ── Scheduled Jobs ─────────────────────────────────────────────────── */}
       <div className="settings-section">
         <h3 className="settings-section-title sp-section-title">
-          ⏰ Scheduled Jobs
+          ⏰ Scheduled Jobs <span className="sp-pro-badge" title="Requires HomeBot Pro">⭐ PRO</span>
           <small className="sp-section-subtitle">
             — recurring messages and reminders while HomeBot is open
           </small>
@@ -1821,13 +1872,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   className="button button-save sp-btn-save-sm"
                   onClick={async () => {
                     if (!jobForm.name.trim() || !jobForm.message.trim()) return;
-                    await (window as any).electron?.schedulerAdd?.({
+                    const result = await (window as any).electron?.schedulerAdd?.({
                       name: jobForm.name.trim(),
                       message: jobForm.message.trim(),
                       intervalMinutes: jobForm.intervalMinutes,
                       dailyTime: jobForm.mode === 'daily' ? jobForm.dailyTime : undefined,
                       enabled: true,
                     });
+                    if (isGateBlocked(result)) {
+                      setUpgradePrompt(result.upgrade);
+                      return;
+                    }
                     setJobForm({ name: '', message: '', mode: 'interval', intervalMinutes: 60, dailyTime: '09:00' });
                     setShowJobForm(false);
                     loadJobs();
@@ -2069,6 +2124,70 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
       </div>
 
+        {/* HomeBot Pro license */}
+        <button type="button" className={`sp-section-toggle${openSections.license ? ' open' : ''}`} onClick={() => toggleSection('license')}>
+          <span className="sp-section-arrow">{openSections.license ? '▾' : '▸'}</span> HomeBot Pro
+        </button>
+        {openSections.license && <>
+          <div className="setting-group">
+            <label className="setting-label">
+              {licenseStatus?.tier === 'pro' ? '⭐ Pro' : 'Free'}
+              <small className="setting-hint" style={{ display: 'block', marginTop: 2 }}>
+                {licenseStatus?.tier === 'pro'
+                  ? 'Pro unlocks the Automation Center (scheduled jobs) and local image generation.'
+                  : 'Unlock the Automation Center (scheduled jobs) and local image generation with HomeBot Pro.'}
+              </small>
+            </label>
+
+            {licenseStatus?.tier === 'pro' ? (
+              <>
+                {licenseStatus.expiresAt && (
+                  <small className="setting-hint" style={{ display: 'block', marginBottom: 8 }}>
+                    Renews/expires {new Date(licenseStatus.expiresAt).toLocaleDateString()}
+                  </small>
+                )}
+                <button
+                  type="button"
+                  className="button button-cancel"
+                  disabled={licenseBusy}
+                  onClick={() => { void handleDeactivateLicense(); }}
+                >
+                  Deactivate on this device
+                </button>
+              </>
+            ) : (
+              <div className="sp-form-col">
+                <input
+                  className="setting-input"
+                  placeholder="Enter your license key"
+                  value={licenseKeyInput}
+                  onChange={(e) => setLicenseKeyInput(e.target.value)}
+                  disabled={licenseBusy}
+                />
+                <div className="sp-mcp-actions">
+                  <button
+                    type="button"
+                    className="button sp-license-activate-btn sp-btn-save-sm"
+                    disabled={licenseBusy || !licenseKeyInput.trim()}
+                    onClick={() => { void handleActivateLicense(); }}
+                  >
+                    {licenseBusy ? 'Activating…' : 'Activate'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-cancel sp-btn-save-sm"
+                    onClick={() => window.electron?.openExternalUrl?.(licenseStatus?.upgradeUrl || 'sadie://upgrade')}
+                  >
+                    Get a license
+                  </button>
+                </div>
+              </div>
+            )}
+            {licenseMessage && (
+              <small className="setting-hint" style={{ display: 'block', marginTop: 8 }}>{licenseMessage}</small>
+            )}
+          </div>
+        </>}
 
         {/* Diagnostics & Performance */}
         <button type="button" className={`sp-section-toggle${openSections.diagnostics ? ' open' : ''}`} onClick={() => toggleSection('diagnostics')}>
@@ -2210,6 +2329,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </button>
       </div>
       </div>
+      <UpgradeModal prompt={upgradePrompt} onClose={() => setUpgradePrompt(null)} />
     </div>
   );
 };

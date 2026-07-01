@@ -529,6 +529,12 @@ const electronAPI: ElectronAPI = {
   schedulerRemove: async (id: string) => ipcRenderer.invoke('homebot:scheduler-remove', id),
   schedulerToggle: async (id: string, enabled: boolean) => ipcRenderer.invoke('homebot:scheduler-toggle', id, enabled),
 
+  // Licensing (Pro entitlement)
+  licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
+  licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
+  licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),
+  licenseDeactivate: async () => ipcRenderer.invoke('homebot:license:deactivate'),
+
   // Uncensored mode toggle
   setUncensoredMode: async (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> => {
     return await ipcRenderer.invoke('homebot:set-uncensored-mode', enabled);
