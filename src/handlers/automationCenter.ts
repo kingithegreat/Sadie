@@ -6,10 +6,10 @@
  * proactive/briefing and local-image-generation surfaces that depend on it.
  *
  * In the running app these are exposed as ipcMain.handle channels in
- * widget/src/main/ipc-handlers.ts, e.g.:
+ * widget/src/main/ipc-handlers.ts — the literal channel strings registered
+ * there, e.g.:
  *   - 'homebot:automation:image:generate'   (sd.cpp image gen)   → imageGen
- *   - scheduler jobs: addJob/removeJob/toggleJob/listJobs        → automation
- *   - n8n workflow create/activate                               → automation
+ *   - 'homebot:scheduler-list'/-add/-remove/-toggle               → automation
  *
  * This module enumerates those channels, maps each to the capability that
  * unlocks it, and provides a single guard + a helper to register pre-gated
@@ -26,16 +26,15 @@ import {
 /**
  * Automation Center IPC channels → required capability.
  * Listing them in one place means adding a new automation channel is a
- * one-line addition that is automatically fenced.
+ * one-line addition that is automatically fenced. Keys mirror the literal
+ * channel names registered in widget/src/main/ipc-handlers.ts.
  */
 export const AUTOMATION_CENTER_CHANNELS: Readonly<Record<string, Capability>> = {
   'homebot:automation:image:generate': 'imageGen',
-  'homebot:automation:scheduler:list': 'automation',
-  'homebot:automation:scheduler:add': 'automation',
-  'homebot:automation:scheduler:remove': 'automation',
-  'homebot:automation:scheduler:toggle': 'automation',
-  'homebot:automation:workflow:create': 'automation',
-  'homebot:automation:workflow:activate': 'automation',
+  'homebot:scheduler-list': 'automation',
+  'homebot:scheduler-add': 'automation',
+  'homebot:scheduler-remove': 'automation',
+  'homebot:scheduler-toggle': 'automation',
 };
 
 /** Is this IPC channel part of the (Pro-gated) Automation Center? */
@@ -74,8 +73,8 @@ export async function guardAutomationChannel(
  *   import { addJob } from './scheduler';
  *
  *   ipcMain.handle(
- *     'homebot:automation:scheduler:add',
- *     gatedAutomationHandler('homebot:automation:scheduler:add', getCurrentTier,
+ *     'homebot:scheduler-add',
+ *     gatedAutomationHandler('homebot:scheduler-add', getCurrentTier,
  *       async (_event, job) => addJob(job))
  *   );
  *

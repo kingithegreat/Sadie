@@ -55,6 +55,14 @@ import { isDevelopment, isDemoMode } from './env';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, ensureWebFetchWorkflow } from './n8n-api';
+import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
+import {
+  getCurrentTier,
+  getLicenseStatus,
+  activateLicense,
+  validateLicense,
+  deactivateLicense,
+} from './licensing';
 
 function normalizeOllamaBaseUrl(raw?: string): string {
   const input = (raw || DEFAULT_OLLAMA_URL).trim();
@@ -310,7 +318,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // Image generation panel: delegates to the same tool handler used in chat
-  ipcMain.handle('homebot:automation:image:generate', async (_event, { payload }) => {
+  // Pro-gated (imageGen) — free users get a structured upgrade_required response.
+  ipcMain.handle('homebot:automation:image:generate', gatedAutomationHandler(
+    'homebot:automation:image:generate',
+    getCurrentTier,
+    async (_event, { payload }) => {
     const rawPrompt = String(payload?.prompt || '').trim();
     // Parse resolution string (e.g. '512x512') into width/height
     let width = 512, height = 512;
@@ -386,7 +398,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         }
       };
     }
-  });
+  }));
 
   // sd-cpp local image generation status & setup
   ipcMain.handle('homebot:sd-cpp:status', async () => {
@@ -1389,10 +1401,13 @@ try {
     });
   });
 
-  // ── Scheduler ──────────────────────────────────────────────────────────────────
-  ipcMain.handle('homebot:scheduler-list', () => listJobs());
+  // ── Scheduler (Pro-gated: 'automation') ──────────────────────────────────────
+  ipcMain.handle('homebot:scheduler-list', gatedAutomationHandler(
+    'homebot:scheduler-list', getCurrentTier, async () => listJobs()
+  ));
 
-  ipcMain.handle('homebot:scheduler-add', (_event, input: any) => {
+  ipcMain.handle('homebot:scheduler-add', gatedAutomationHandler(
+    'homebot:scheduler-add', getCurrentTier, async (_event, input: any) => {
     const { name, message, intervalMinutes, dailyTime, enabled } = input || {};
     if (!name || !message) return { success: false, error: 'name and message are required' };
     const job = addJob({
@@ -1403,16 +1418,32 @@ try {
       enabled: enabled !== false,
     });
     return { success: true, job };
-  });
+  }));
 
-  ipcMain.handle('homebot:scheduler-remove', (_event, id: string) => {
+  ipcMain.handle('homebot:scheduler-remove', gatedAutomationHandler(
+    'homebot:scheduler-remove', getCurrentTier, async (_event, id: string) => {
     return { success: removeJob(id) };
-  });
+  }));
 
-  ipcMain.handle('homebot:scheduler-toggle', (_event, id: string, enabled: boolean) => {
+  ipcMain.handle('homebot:scheduler-toggle', gatedAutomationHandler(
+    'homebot:scheduler-toggle', getCurrentTier, async (_event, id: string, enabled: boolean) => {
     const job = toggleJob(id, enabled);
     return job ? { success: true, job } : { success: false, error: 'Job not found' };
+  }));
+
+  // ── Licensing (Pro entitlement) ───────────────────────────────────────────────
+  ipcMain.handle('homebot:license:status', async () => getLicenseStatus());
+
+  ipcMain.handle('homebot:license:activate', async (_event, licenseKey: string) => {
+    if (!licenseKey || !String(licenseKey).trim()) {
+      return { valid: false, error: 'License key is required' };
+    }
+    return activateLicense(String(licenseKey));
   });
+
+  ipcMain.handle('homebot:license:validate', async () => validateLicense());
+
+  ipcMain.handle('homebot:license:deactivate', async () => deactivateLicense());
 
   // ── TTS (text-to-speech) ────────────────────────────────────────────────────
   // Uses Edge TTS neural voices (msedge-tts), falls back to Web Speech API
