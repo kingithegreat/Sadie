@@ -1,6 +1,6 @@
 
 
-import Ajv, { JSONSchemaType, ValidateFunction } from 'ajv';
+import Ajv, { JSONSchemaType, ValidateFunction, ErrorObject } from 'ajv';
 import crypto from 'crypto';
 import stringify from 'json-stable-stringify';
 import {
@@ -52,6 +52,12 @@ export interface ToolExecutionResult<TInput = any, TOutput = any> {
   entryHash: string;
   output: TOutput | null;
   error?: string;
+  /**
+   * Present only when `error === 'Input validation failed'`: the structured
+   * AJV validation errors explaining WHICH part of the input was rejected.
+   * Additive and optional — undefined on success and all other error paths.
+   */
+  validationErrors?: ErrorObject[];
   /** Present when execution was blocked by the Pro tier gate. */
   upgrade?: UpgradePrompt;
   context?: ExecutionContext;
@@ -118,6 +124,7 @@ export class ToolRegistry {
     let outputHash: string | undefined = undefined;
     let error: string | undefined = undefined;
     let upgrade: UpgradePrompt | undefined = undefined;
+    let validationErrors: ErrorObject[] | undefined = undefined;
     let success = false;
     const safeContext = context ? Object.freeze({ ...context }) : undefined;
     const previousHash = this.previousHash;
@@ -161,6 +168,11 @@ export class ToolRegistry {
       });
     } else if (!reg.validate(input)) {
       error = 'Input validation failed';
+      // Capture AJV's structured errors immediately: the .errors property is
+      // overwritten on the validator's next invocation, so it must be read now.
+      validationErrors = reg.validate.errors
+        ? [...reg.validate.errors]
+        : undefined;
     } else {
       try {
         const execStart = Date.now();
@@ -209,6 +221,7 @@ export class ToolRegistry {
       entryHash,
       output,
       error,
+      validationErrors,
       upgrade,
       context: safeContext
     };

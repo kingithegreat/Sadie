@@ -147,6 +147,27 @@ describe('ToolRegistry — input schema validation', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe('Input validation failed');
   });
+
+  test('validation failure surfaces structured AJV validationErrors', async () => {
+    const result = await registry.execute('echo', { message: 42 });
+    expect(result.error).toBe('Input validation failed');
+    expect(Array.isArray(result.validationErrors)).toBe(true);
+    expect(result.validationErrors!.length).toBeGreaterThan(0);
+    // AJV reports the offending instance path for the wrong-typed field.
+    expect(result.validationErrors![0].instancePath).toBe('/message');
+  });
+
+  test('missing required property is named in validationErrors', async () => {
+    const result = await registry.execute('echo', {});
+    expect(result.error).toBe('Input validation failed');
+    expect(result.validationErrors!.some(e => e.keyword === 'required')).toBe(true);
+  });
+
+  test('successful execution has no validationErrors', async () => {
+    const result = await registry.execute('echo', { message: 'ok' });
+    expect(result.success).toBe(true);
+    expect(result.validationErrors).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
