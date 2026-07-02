@@ -43,3 +43,18 @@ jobs:
 
       - name: Build (if configured)
         run: npm run build --if-present
+
+  duplicate-export-guard:
+    # Mechanical check for parallel-build collisions (e.g. two incompatible
+    # cosmetics systems in a sibling project) and scaffold-vs-integration
+    # mismatches (e.g. Step 1's entitlements gate channel-name bug) — see
+    # CLAIMS.md.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for duplicate exports vs. base branch
+        run: node scripts/check-duplicate-exports.mjs "${{ github.base_ref }}"

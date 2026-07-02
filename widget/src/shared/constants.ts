@@ -93,5 +93,5 @@ export const IMAGE_LIMITS = {
 
 // App Metadata
 export const APP_NAME = 'HomeBot';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 export const APP_DESCRIPTION = 'Desktop AI Assistant';

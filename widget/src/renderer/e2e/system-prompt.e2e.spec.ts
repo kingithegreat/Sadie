@@ -1,39 +1,7 @@
 import { test, expect } from '@playwright/test';
 process.env.HOMEBOT_E2E = 'true';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
-
-function makeTempProfile() {
-  const base = path.join(os.tmpdir(), `homebot-e2e-system-prompt-${Date.now()}`);
-  if (fs.existsSync(base)) fs.rmSync(base, { recursive: true, force: true });
-  fs.mkdirSync(base, { recursive: true });
-  return base;
-}
-
-// Seed config with uncensored mode OFF. Uncensored mode (the default) strips ALL
-// system prompts by design (message-router gates every system message on
-// !uncensoredModeEnabled), so a conversation system prompt can only reach the
-// model when uncensored mode is disabled. ipc-handlers init calls
-// setUncensoredMode(initialSettings.uncensoredMode) on startup, so this sticks.
-function seedConfig(dir: string) {
-  const confDir = path.join(dir, 'config');
-  fs.mkdirSync(confDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(confDir, 'user-settings.json'),
-    JSON.stringify({
-      firstRun: false,
-      uncensoredMode: false,
-      telemetryEnabled: true,
-      widgetHotkey: 'Ctrl+Shift+Space',
-      alwaysOnTop: true,
-      theme: 'dark',
-    }, null, 2),
-    'utf-8'
-  );
-}
 
 async function completeFirstRunWizardIfVisible(page: any) {
   const firstRunHeader = page.getByText('Welcome to HomeBot');
@@ -107,8 +75,6 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   process.env.OLLAMA_URL = base;
   process.env.N8N_URL = base; // not used by this test but keep consistent
 
-  const tmp = makeTempProfile();
-  seedConfig(tmp);
   const { app, page } = await launchElectronApp({
     OLLAMA_URL: base,
     N8N_URL: base,
@@ -116,7 +82,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
     HOMEBOT_E2E_BYPASS_MOCK: '1',
     HOMEBOT_DIRECT_OLLAMA: '1',
     NODE_ENV: 'test'
-  }, tmp);
+  });
   await waitForAppReady(page);
 
   // Ensure first-run modal (if any) is dismissed so we can interact with main UI
@@ -131,7 +97,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
   // Send a normal message
   await page.getByLabel('Message HomeBot').fill('Hello, how are you?');
   console.log('[E2E-TEST] About to click send button');
-  const sendButton = page.getByRole('button', { name: 'Send', exact: true });
+  const sendButton = page.locator('button.send-button');
   const isEnabled = await sendButton.isEnabled();
   console.log('[E2E-TEST] Send button enabled:', isEnabled);
   await sendButton.click();
