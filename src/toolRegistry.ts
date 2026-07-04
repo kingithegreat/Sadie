@@ -173,6 +173,16 @@ export class ToolRegistry {
       validationErrors = reg.validate.errors
         ? [...reg.validate.errors]
         : undefined;
+      // Audit the failed-validation attempt: this branch previously never
+      // wrote to the execution log, so schema-rejected calls were invisible
+      // alongside gated ('Upgrade required') and failed executions.
+      this.executionLog.push({
+        tool: toolName,
+        input,
+        output: { error, validationErrors },
+        ts: Date.now(),
+        durationMs: 0
+      });
     } else {
       try {
         const execStart = Date.now();
