@@ -275,3 +275,53 @@ describe('ToolRegistry — hash chaining', () => {
     expect(e1.inputHash).toBe(e2.inputHash);
   });
 });
+
+describe('ToolRegistry — audit log records failed-validation attempts', () => {
+  const echoTool = {
+    name: 'echo',
+    description: 'echoes a message',
+    inputSchema: {
+      type: 'object',
+      properties: { message: { type: 'string' } },
+      required: ['message'],
+      additionalProperties: false
+    },
+    execute: async (input: { message: string }) => ({ echoed: input.message })
+  };
+
+  function makeRegistry() {
+    const reg = new ToolRegistry(['echo']);
+    reg.register(echoTool as any);
+    return reg;
+  }
+
+  test('a schema-rejected call appends an execution log entry', async () => {
+    const reg = makeRegistry();
+    const before = reg.getExecutionLog().length;
+    await reg.execute('echo', { message: 123 } as any);
+    const log = reg.getExecutionLog();
+    expect(log.length).toBe(before + 1);
+    const last = log[log.length - 1];
+    expect(last.tool).toBe('echo');
+    expect((last.output as any).error).toBe('Input validation failed');
+  });
+
+  test('the log entry carries the structured AJV validationErrors', async () => {
+    const reg = makeRegistry();
+    await reg.execute('echo', {} as any); // missing required "message"
+    const last = reg.getExecutionLog().slice(-1)[0];
+    const errs = (last.output as any).validationErrors;
+    expect(Array.isArray(errs)).toBe(true);
+    expect(errs.length).toBeGreaterThan(0);
+    expect(errs[0].keyword).toBe('required');
+    expect(JSON.stringify(errs)).toContain('message');
+  });
+
+  test('successful executions do not gain an extra log entry', async () => {
+    const reg = makeRegistry();
+    const before = reg.getExecutionLog().length;
+    const r = await reg.execute('echo', { message: 'hi' });
+    expect(r.success).toBe(true);
+    expect(reg.getExecutionLog().length).toBe(before + 1);
+  });
+});
