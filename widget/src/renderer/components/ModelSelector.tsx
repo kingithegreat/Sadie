@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 import { recommendedModelIdsForVram } from '../../shared/hardware-presets';
 import { assessModelDownloadFit } from '../../shared/model-download-fit';
+import { assessPullById, normalizeModelId } from '../../shared/model-pull-guard';
 
 interface OllamaModel {
   name: string;
@@ -36,7 +37,7 @@ interface ModelSelectorProps {
 }
 
 // Well-known models with descriptions — shown even if not installed (with a "pull" option)
-const RECOMMENDED_MODELS: ModelInfo[] = [
+export const RECOMMENDED_MODELS: ModelInfo[] = [
   { id: 'qwen2.5:7b', name: 'Qwen 2.5 (7B)', shortName: 'Qwen 7B', description: 'Smartest local model — best tool use & reasoning (4.4GB)', type: 'ollama', sizeGB: 4.4 },
   { id: 'qwen2.5:14b', name: 'Qwen 2.5 (14B)', shortName: 'Qwen 14B', description: 'Stronger reasoning and coding for bigger GPUs (8.2GB)', type: 'ollama', sizeGB: 8.2 },
   { id: 'gemma4:e4b', name: 'Gemma 4 (E4B)', shortName: 'Gemma4 E4B', description: 'Google quality-focused Gemma 4 — strong general chat, but heavier (~5.5GB)', type: 'ollama', sizeGB: 5.5 },
@@ -59,10 +60,6 @@ const RECOMMENDED_MODELS: ModelInfo[] = [
 function formatSize(bytes: number): string {
   const gb = bytes / (1024 * 1024 * 1024);
   return gb >= 1 ? `${gb.toFixed(1)}GB` : `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
-}
-
-function normalizeModelId(id: string): string {
-  return (id || '').toLowerCase().replace(/:latest$/, '').replace(/[^a-z0-9]/g, '');
 }
 
 function getVramWarning(modelSizeGB: number | undefined, vramGB: number | null | undefined): 'ok' | 'tight' | 'over' {
@@ -286,6 +283,25 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const handlePullModel = async (modelId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Action-site disk guard: the render-time freeDiskGB reading is probed
+    // once per dropdown session and can be stale by (re-)pull time — e.g.
+    // after a failed pull or once other downloads filled the disk. Re-probe
+    // NOW and refuse to start a doomed multi-GB pull. Unknown readings fail
+    // open (never block), matching model-download-fit's contract.
+    let latestFreeGB = freeDiskGB;
+    try {
+      const diag = await (window as any).electron?.runDiagnostics?.();
+      const free = diag?.disk?.freeGB;
+      if (typeof free === 'number' && Number.isFinite(free)) {
+        latestFreeGB = free;
+        setFreeDiskGB(free); // keep the 💾 row badges in sync with reality
+      }
+    } catch { /* probe unavailable — keep prior reading, guard fails open */ }
+    const fit = assessPullById(modelId, latestFreeGB);
+    if (fit.severity === 'insufficient') {
+      setPullError(fit.message ?? 'Not enough disk space to download this model.');
+      return;
+    }
     setPulling(modelId);
     setPullProgress('Starting download...');
     setPullError(null);

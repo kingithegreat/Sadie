@@ -26,6 +26,7 @@ import diff from 'highlight.js/lib/languages/diff';
 import ruby from 'highlight.js/lib/languages/ruby';
 import php from 'highlight.js/lib/languages/php';
 import powershell from 'highlight.js/lib/languages/powershell';
+import { assessPullById } from '../../shared/model-pull-guard';
 
 // Register languages
 hljs.registerLanguage('javascript', javascript);
@@ -569,11 +570,31 @@ function StartOllamaButton() {
 function PullModelButton({ model }: { model: string }) {
   const [pulling, setPulling] = useState(false);
   const [result, setResult] = useState<'idle' | 'done' | 'failed'>('idle');
+  const [diskMsg, setDiskMsg] = useState<string | null>(null);
 
   const handlePull = async () => {
     setPulling(true);
     setResult('idle');
+    setDiskMsg(null);
     try {
+      // Same disk guard as the model dropdown (PRs #35/#38 follow-up): probe
+      // free space and refuse to start a pull that definitively won't fit.
+      // Unknown readings / unknown model sizes fail open — never block.
+      let freeGB: number | null = null;
+      try {
+        const diag = await (window as any).electron?.runDiagnostics?.();
+        const free = diag?.disk?.freeGB;
+        if (typeof free === 'number' && Number.isFinite(free)) freeGB = free;
+      } catch { /* detection unavailable — fail open */ }
+      const fit = assessPullById(model, freeGB);
+      if (fit.severity === 'insufficient') {
+        setDiskMsg(fit.message ?? 'Not enough disk space to download this model.');
+        setResult('failed');
+        return;
+      }
+      if (fit.severity === 'tight' && fit.message) {
+        setDiskMsg(fit.message); // warn, but proceed
+      }
       const res = await window.electron?.pullModel?.(model);
       setResult(res?.success ? 'done' : 'failed');
     } catch {
@@ -588,15 +609,22 @@ function PullModelButton({ model }: { model: string }) {
   }
 
   return (
-    <button
-      className="message-action-btn"
-      onClick={handlePull}
-      disabled={pulling}
-      style={{ padding: '4px 12px' }}
-    >
-      {pulling ? `Pulling ${model}...` : `📦 Pull ${model}`}
-      {result === 'failed' && <span style={{ color: 'var(--warning-color, #f59e0b)', marginLeft: '4px' }}>failed</span>}
-    </button>
+    <>
+      <button
+        className="message-action-btn"
+        onClick={handlePull}
+        disabled={pulling}
+        style={{ padding: '4px 12px' }}
+      >
+        {pulling ? `Pulling ${model}...` : `📦 Pull ${model}`}
+        {result === 'failed' && !diskMsg && <span style={{ color: 'var(--warning-color, #f59e0b)', marginLeft: '4px' }}>failed</span>}
+      </button>
+      {diskMsg && (
+        <span style={{ color: 'var(--warning-color, #f59e0b)', fontSize: '11px', marginLeft: '4px', alignSelf: 'center' }}>
+          💾 {diskMsg}
+        </span>
+      )}
+    </>
   );
 }
 
