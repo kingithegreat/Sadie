@@ -108,6 +108,10 @@ export interface Settings {
   projectPath?: string;
   // Default location for weather queries when user doesn't specify one
   defaultLocation?: string;
+  // Reflection validation: after a tool batch runs, ask the model to verify
+  // the result actually answers the request before surfacing it. Off by
+  // default — additive safety layer, opt-in while it proves itself out.
+  reflectionValidationEnabled?: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -115,6 +119,7 @@ const DEFAULT_SETTINGS: Settings = {
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
   modelRoutingMode: 'prompt',
+  reflectionValidationEnabled: false,
   chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
   uncensoredModel: 'dolphin:7b',
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
