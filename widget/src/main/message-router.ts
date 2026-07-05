@@ -9,6 +9,7 @@ import { HomeBotRequest, HomeBotResponse, HomeBotRequestWithImages, ImageAttachm
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
 import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, ToolCall, ToolContext } from './tools';
+import { evaluateToolResults } from './reflection-validator';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
@@ -3126,6 +3127,43 @@ export async function streamFromOllamaWithTools(
             if (r.precipitation) toolContent += `\nPrecipitation: ${r.precipitation}`;
           }
           messages.push({ role: 'tool', content: toolContent });
+        }
+
+        // Optional reflection validation: ask the model to verify the tool
+        // results actually answer the request before continuing. Disabled by
+        // default; any failure inside this layer falls back to existing
+        // behavior (continue to next round) so it can never block the chat.
+        if (getSettings().reflectionValidationEnabled) {
+          try {
+            const toolSummary = batchResults.map(r => JSON.stringify(r)).join('\n');
+            const reflection = await evaluateToolResults({
+              ollamaBaseUrl: ollamaBase,
+              model,
+              userMessage: message,
+              toolSummary,
+              depth: round
+            });
+            if (!reflection.fallback) {
+              if (reflection.accepted) {
+                onChunk(reflection.message);
+                safeEnd('reflection-accepted');
+                return;
+              }
+              if (reflection.toolRequest) {
+                messages.push({
+                  role: 'system',
+                  content: `Reflection requested another tool call: ${reflection.toolRequest.name}. Continue accordingly.`
+                });
+              } else if (reflection.message) {
+                onChunk(reflection.message);
+                safeEnd('reflection-explained');
+                return;
+              }
+            }
+          } catch (e) {
+            safeCatch(e);
+            // fall through to default behavior below
+          }
         }
 
         // Continue the conversation with tool results
