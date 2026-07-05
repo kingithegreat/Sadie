@@ -211,55 +211,61 @@ async function connectServer(
 
 // ─── Default server catalogue ────────────────────────────────────────────────
 
+// `npx` isn't directly executable on Windows (it's a .cmd shim), so it must be
+// invoked via `cmd /c npx ...` there. On POSIX platforms (the ubuntu-latest CI
+// runner included) there is no `cmd` binary at all — spawning it fails with
+// ENOENT. Resolve the right invocation per-platform so default MCP servers
+// actually start on every OS, not just Windows.
+function npxInvocation(npxArgs: string[]): { command: string; args: string[] } {
+  if (process.platform === 'win32') {
+    return { command: 'cmd', args: ['/c', 'npx', ...npxArgs] };
+  }
+  return { command: 'npx', args: npxArgs };
+}
+
 function getDefaultServers(): McpServerConfig[] {
   const home = os.homedir();
   return [
     {
       type: 'stdio',
       name: 'filesystem',
-      command: 'cmd',
-      args: [
-        '/c', 'npx', '-y', '@modelcontextprotocol/server-filesystem',
+      ...npxInvocation([
+        '-y', '@modelcontextprotocol/server-filesystem',
         path.join(home, 'Desktop'),
         path.join(home, 'Documents'),
         path.join(home, 'Downloads'),
-      ],
+      ]),
       enabled: true,
     },
     {
       type: 'stdio',
       name: 'memory',
-      command: 'cmd',
-      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-memory'],
+      ...npxInvocation(['-y', '@modelcontextprotocol/server-memory']),
       enabled: true,
     },
     {
       type: 'stdio',
       name: 'fetch',
-      command: 'cmd',
-      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-fetch'],
+      ...npxInvocation(['-y', '@modelcontextprotocol/server-fetch']),
       enabled: false,
     },
     {
       type: 'stdio',
       name: 'playwright',
-      command: 'cmd',
-      args: ['/c', 'npx', '-y', '@playwright/mcp@latest', '--headless'],
+      ...npxInvocation(['-y', '@playwright/mcp@latest', '--headless']),
       enabled: false, // opt-in: heavy, needs Playwright browsers installed
     },
     {
       type: 'stdio',
       name: 'brave-search',
-      command: 'cmd',
-      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-brave-search'],
+      ...npxInvocation(['-y', '@modelcontextprotocol/server-brave-search']),
       env: { BRAVE_API_KEY: '' },
       enabled: false, // set BRAVE_API_KEY and enable
     },
     {
       type: 'stdio',
       name: 'github',
-      command: 'cmd',
-      args: ['/c', 'npx', '-y', '@modelcontextprotocol/server-github'],
+      ...npxInvocation(['-y', '@modelcontextprotocol/server-github']),
       env: { GITHUB_TOKEN: '' },
       enabled: false, // set GITHUB_TOKEN and enable
     },

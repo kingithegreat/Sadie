@@ -146,6 +146,28 @@ describe('seedMcpDefaults', () => {
     expect(cfg.servers.length).toBe(1);
     expect(cfg.servers[0].name).toBe('custom');
   });
+
+  test('resolves default server commands for the current platform (never hardcoded "cmd" on POSIX)', () => {
+    // Regression test for a CI/prod bug: default servers hardcoded `command: 'cmd'`,
+    // which only exists on Windows. On any POSIX host (ubuntu-latest CI runners,
+    // macOS, Linux desktops) every default server spawn failed with ENOENT.
+    seedMcpDefaults();
+    const cfg = loadMcpConfig();
+    const stdioServers = cfg.servers.filter(
+      (s): s is Extract<typeof s, { type: 'stdio' }> => s.type === 'stdio'
+    );
+    expect(stdioServers.length).toBeGreaterThan(0);
+    for (const server of stdioServers) {
+      if (process.platform === 'win32') {
+        expect(server.command).toBe('cmd');
+        expect(server.args?.[0]).toBe('/c');
+        expect(server.args?.[1]).toBe('npx');
+      } else {
+        expect(server.command).toBe('npx');
+        expect(server.args?.[0]).not.toBe('/c');
+      }
+    }
+  });
 });
 
 // ── getMcpStatus ──────────────────────────────────────────────────────────────

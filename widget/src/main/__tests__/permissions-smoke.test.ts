@@ -1,3 +1,17 @@
+// jest.mock is hoisted before imports — mock mcp-client so initializeTools()'s
+// fire-and-forget MCP bootstrap (../mcp-client's initializeMcpServers) never
+// spawns real npx subprocesses / makes real network calls in this smoke test.
+// Without this, initializeTools() kicks off connection attempts (with retries)
+// that are still in flight when the test's own assertions finish — Jest tears
+// the environment down mid-flight and any subsequent console.log/warn/error
+// from those retries fails the whole run with "Cannot log after tests are done",
+// even though the actual permission-batch assertions passed.
+jest.mock('../mcp-client', () => ({
+  seedMcpDefaults: jest.fn(),
+  discoverExternalMcpServers: jest.fn(),
+  initializeMcpServers: jest.fn().mockResolvedValue(undefined),
+}));
+
 // jest.mock is hoisted before imports — mock electron BEFORE tools/index.ts loads
 // so mcp-client.ts sees a valid app when seedMcpDefaults() calls app.getPath().
 jest.mock('electron', () => ({
