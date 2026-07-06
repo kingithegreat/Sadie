@@ -1,4 +1,4 @@
-import { existsSync, rmSync, mkdirSync } from 'fs';
+import { existsSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import os from 'os';
 
@@ -20,7 +20,7 @@ jest.mock('electron', () => ({
   }
 }));
 
-import { getSettings, saveSettings, assertPermission } from '../../main/config-manager';
+import { getSettings, saveSettings, assertPermission, getAndClearConfigRecovery, getSettingsPath } from '../../main/config-manager';
 
 describe('config-manager integration tests', () => {
   const temp = join(os.tmpdir(), 'homebot-test-' + Date.now());
@@ -242,5 +242,62 @@ describe('settings cache', () => {
     saveSettings(s);
     const loaded = getSettings();
     expect(loaded.defaultLocation).toBe('Wellington');
+  });
+
+  describe('corrupt settings file recovery', () => {
+    const { invalidateSettingsCache } = require('../../main/config-manager');
+
+    afterEach(() => {
+      // Clean up any backup files this describe block created so they don't
+      // leak into other tests' directory listings.
+      invalidateSettingsCache();
+      getAndClearConfigRecovery(); // drain in case a test didn't consume it
+    });
+
+    test('an existing-but-corrupt settings file resets to defaults and is backed up', () => {
+      const settingsPath = getSettingsPath();
+      const garbage = '{ this is not valid json ,,, }';
+      writeFileSync(settingsPath, garbage, 'utf-8');
+      invalidateSettingsCache();
+
+      const settings = getSettings();
+      // Falls back to defaults rather than throwing / crashing startup.
+      expect(settings.firstRun).toBe(true);
+
+      const recovery = getAndClearConfigRecovery();
+      expect(recovery).not.toBeNull();
+      expect(recovery!.reason).toMatch(/invalid/i);
+      expect(recovery!.backupPath).toBeTruthy();
+
+      // The original (corrupt) bytes must be preserved in the backup file —
+      // this is the whole point of backing up before resetting to defaults.
+      const backedUp = readFileSync(recovery!.backupPath as string, 'utf-8');
+      expect(backedUp).toBe(garbage);
+
+      rmSync(recovery!.backupPath as string, { force: true });
+    });
+
+    test('getAndClearConfigRecovery is one-shot', () => {
+      const settingsPath = getSettingsPath();
+      writeFileSync(settingsPath, 'not json at all', 'utf-8');
+      invalidateSettingsCache();
+      getSettings();
+
+      const first = getAndClearConfigRecovery();
+      expect(first).not.toBeNull();
+      if (first?.backupPath) rmSync(first.backupPath, { force: true });
+
+      const second = getAndClearConfigRecovery();
+      expect(second).toBeNull();
+    });
+
+    test('a missing settings file does NOT trigger a recovery event', () => {
+      const settingsPath = getSettingsPath();
+      rmSync(settingsPath, { force: true });
+      invalidateSettingsCache();
+
+      getSettings();
+      expect(getAndClearConfigRecovery()).toBeNull();
+    });
   });
 });

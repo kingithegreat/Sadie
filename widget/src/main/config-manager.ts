@@ -289,24 +289,87 @@ export function invalidateSettingsCache(): void {
   _settingsCache = null;
 }
 
+/** Describes a one-time "settings file was corrupt and got reset" event. */
+export interface ConfigRecoveryEvent {
+  reason: string;
+  backupPath: string | null;
+  timestamp: string;
+}
+
+// Set when getSettings() finds an existing-but-unreadable settings file.
+// Consumed exactly once via getAndClearConfigRecovery() so index.ts can
+// notify the renderer a single time per occurrence (mirrors the one-shot
+// hardware-profile-applied notice below).
+let _lastConfigRecovery: ConfigRecoveryEvent | null = null;
+
+/**
+ * Returns the most recent config-recovery event (if any) and clears it.
+ * Call this once at startup, after the first getSettings() call, to decide
+ * whether to show the user a "settings were reset" notice.
+ */
+export function getAndClearConfigRecovery(): ConfigRecoveryEvent | null {
+  const event = _lastConfigRecovery;
+  _lastConfigRecovery = null;
+  return event;
+}
+
+/**
+ * Copies a corrupt settings file to a timestamped `<path>.corrupt-<ts>.json`
+ * sibling before we overwrite the user's config with defaults, so the
+ * original bytes aren't lost if they're partially recoverable by hand.
+ * Never throws — a failed backup must not block the app from starting.
+ */
+function backupCorruptSettings(settingsPath: string): string | null {
+  try {
+    const raw = readFileSync(settingsPath, 'utf-8');
+    const backupPath = `${settingsPath}.corrupt-${Date.now()}.json`;
+    writeFileSync(backupPath, raw, 'utf-8');
+    return backupPath;
+  } catch {
+    return null;
+  }
+}
+
 export function getSettings(): Settings {
   const now = Date.now();
   if (_settingsCache && (now - _settingsCacheTime) < SETTINGS_CACHE_TTL) {
     return { ..._settingsCache };
   }
 
+  const settingsPath = getSettingsPath();
+
+  if (!existsSync(settingsPath)) {
+    _settingsCache = { ...DEFAULT_SETTINGS };
+    _settingsCacheTime = now;
+    return { ..._settingsCache };
+  }
+
+  // Read + parse are isolated from the merge/decrypt logic below so a
+  // corrupt/invalid file (bad JSON, wrong shape) is clearly distinguished
+  // from "no file yet" and gets its own recovery path (backup + one-time
+  // notice) instead of silently vanishing into DEFAULT_SETTINGS.
+  let savedSettings: any;
   try {
-    const settingsPath = getSettingsPath();
-
-    if (!existsSync(settingsPath)) {
-      _settingsCache = { ...DEFAULT_SETTINGS };
-      _settingsCacheTime = now;
-      return { ..._settingsCache };
-    }
-
     const data = readFileSync(settingsPath, 'utf-8');
-    const savedSettings = JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('settings.json did not contain a JSON object');
+    }
+    savedSettings = parsed;
+  } catch (parseError: any) {
+    const backupPath = backupCorruptSettings(settingsPath);
+    _lastConfigRecovery = {
+      reason: `Settings file was invalid (${parseError?.message || parseError}) and has been reset to defaults.`,
+      backupPath,
+      timestamp: new Date().toISOString(),
+    };
+    console.error('Failed to load settings, resetting to defaults:', parseError);
+    _settingsCache = { ...DEFAULT_SETTINGS };
+    _settingsCacheTime = now;
+    return { ..._settingsCache };
+  }
 
+  try {
     const merged = { ...DEFAULT_SETTINGS, ...savedSettings } as Settings;
     const mergedPermissions = {
       ...(DEFAULT_SETTINGS.permissions || {}),
