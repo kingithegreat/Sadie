@@ -318,6 +318,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       addToast(`GPU detected${gpu}: ${data.vramGB} GB VRAM — ${label} model profile applied automatically.`, 'info', 10000);
     });
 
+    // One-time toast when the main process finds an existing-but-corrupt
+    // settings file and resets it to defaults (a timestamped backup of the
+    // original file is kept alongside it for manual recovery).
+    const configRecoveredUnsub = window.electron.onConfigRecovered?.((data) => {
+      addToast(
+        `⚠️ Your settings file was invalid and has been reset to defaults.${data.backupPath ? ' A backup of the original was saved for recovery.' : ''}`,
+        'warning',
+        0
+      );
+    });
+
     // Subscribe to title updates pushed from main (keeps sidebar title in sync)
     const titleUnsub = window.electron.onTitleUpdated?.((data) => {
       // Dispatch a custom DOM event so ConversationSidebar can patch its local list
@@ -368,6 +379,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       reminderUnsub?.();
       briefingUnsub?.();
       hwUnsub?.();
+      configRecoveredUnsub?.();
       titleUnsub?.();
       ollamaUnsub?.();
       modelFbUnsub?.();

@@ -8,7 +8,7 @@ import { createMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
 import { initializeTools } from './tools';
-import { getSettings, saveSettings, applyHardwareProfile } from './config-manager';
+import { getSettings, saveSettings, applyHardwareProfile, getAndClearConfigRecovery } from './config-manager';
 import { isE2E } from './env';
 import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
@@ -193,6 +193,14 @@ app.whenReady().then(async () => {
     mainWindow.webContents.once('did-finish-load', () => {
       try {
         logStartupTime(Math.round(process.uptime() * 1000), { event: 'did-finish-load' });
+      } catch (e) { safeCatch(e); }
+      // One-time notice if getSettings() found an existing-but-corrupt
+      // settings file and reset it to defaults (see config-manager.ts).
+      try {
+        const recovery = getAndClearConfigRecovery();
+        if (recovery && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('homebot:config-recovered', recovery);
+        }
       } catch (e) { safeCatch(e); }
     });
   } catch (e) { safeCatch(e); }

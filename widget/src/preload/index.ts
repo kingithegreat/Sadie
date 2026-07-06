@@ -238,6 +238,12 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:hardware-profile-applied', listener);
   },
 
+  onConfigRecovered: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('homebot:config-recovered', listener);
+    return () => ipcRenderer.removeListener('homebot:config-recovered', listener);
+  },
+
   onProactiveBriefing: (cb: (data: { content: string }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: { content: string }) => cb(data);
     ipcRenderer.on('homebot:proactive-briefing', listener);
