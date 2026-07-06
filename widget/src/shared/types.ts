@@ -357,9 +357,12 @@ export interface ElectronAPI {
   // Image generation helper
   executeImageGenerate?: (params: { action: string; payload?: any }) => Promise<any>;
   getGeneratedImage?: (filename: string) => Promise<string | null>;
-  // Local image-gen backend (stable-diffusion.cpp) status + one-time setup
+  // Local image-gen backend (stable-diffusion.cpp) status + one-time setup.
+  // Neither IPC handler (ipc-handlers.ts) ever returns null on any path, so
+  // this is not Optional/nullable — see the fix note where the stray
+  // duplicate declaration further down used to claim otherwise.
   sdCppStatus?: () => Promise<{ ready: boolean; hasBinary: boolean; hasModel: boolean; dir: string; modelsDir: string }>;
-  sdCppSetup?: () => Promise<{ success: boolean; dir?: string; modelsDir?: string; instructions?: string[] }>;
+  sdCppSetup?: () => Promise<{ success: boolean; message?: string; dir?: string; modelsDir?: string; instructions?: string[] }>;
   // Full system/connectivity diagnostics report
   runDiagnostics?: () => Promise<{ success: boolean; error?: string; [key: string]: any }>;
 
@@ -519,10 +522,6 @@ export interface ElectronAPI {
   updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
   deleteAutomation?: (data: { id: string }) => Promise<{ success: boolean }>;
   runAutomation?: (data: { id: string }) => Promise<{ success: boolean; result?: string; error?: string }>;
-
-  // Local image generation (stable-diffusion.cpp)
-  sdCppStatus?: () => Promise<{ ready: boolean; hasBinary: boolean; hasModel: boolean; dir: string; modelsDir: string } | null>;
-  sdCppSetup?: () => Promise<{ success: boolean; dir?: string; modelsDir?: string; instructions?: string[] } | null>;
 }
 
 // ── Quiz Types ──────────────────────────────────────────────────────────────

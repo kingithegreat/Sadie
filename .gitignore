@@ -131,3 +131,4 @@ widget/jest-result.json
 
 # MCP config (contains API keys)
 .mcp.json
+diagnostic
