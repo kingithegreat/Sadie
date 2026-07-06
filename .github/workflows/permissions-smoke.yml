@@ -2,7 +2,11 @@ name: Permissions Smoke
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'claude/**'
   pull_request:
   workflow_dispatch: {}
 
