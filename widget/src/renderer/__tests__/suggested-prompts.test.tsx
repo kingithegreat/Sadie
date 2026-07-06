@@ -1,7 +1,31 @@
 /** @jest-environment jsdom */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import SuggestedPrompts from '../components/SuggestedPrompts';
+import SuggestedPrompts, { PROMPT_BUCKETS, ALL_DEFAULTS, pickDefaultPrompts } from '../components/SuggestedPrompts';
+
+describe('pickDefaultPrompts (pure)', () => {
+  test('returns the requested count', () => {
+    expect(pickDefaultPrompts(5)).toHaveLength(5);
+    expect(pickDefaultPrompts(3)).toHaveLength(3);
+  });
+
+  test('every returned prompt is a real prompt from one of the buckets', () => {
+    const picks = pickDefaultPrompts(5);
+    for (const p of picks) {
+      expect(ALL_DEFAULTS).toContain(p);
+    }
+  });
+
+  test('has six buckets, five prompts each, matching the roadmap capability surface', () => {
+    const keys = Object.keys(PROMPT_BUCKETS);
+    expect(keys).toEqual(
+      expect.arrayContaining(['files', 'code', 'web', 'productivity', 'creative', 'system']),
+    );
+    for (const key of keys) {
+      expect(PROMPT_BUCKETS[key].length).toBeGreaterThanOrEqual(5);
+    }
+  });
+});
 
 afterEach(() => { delete (window as any).electron; });
 
@@ -35,9 +59,10 @@ describe('SuggestedPrompts', () => {
     await waitFor(() => {
       expect(screen.getByText(/Try asking:/i)).toBeInTheDocument();
     });
-    // Default fallback picks 4
+    // Default fallback picks 5 (one per prompt bucket) since the bucketed
+    // upgrade in 'feat: upgrade first-user suggested prompts'
     const pills = document.querySelectorAll('.suggested-pill');
-    expect(pills.length).toBe(4);
+    expect(pills.length).toBe(5);
   });
 
   test('derives suggestions from past user messages when ≥ 3 unique', async () => {
