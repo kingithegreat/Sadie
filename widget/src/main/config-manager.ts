@@ -245,6 +245,9 @@ const DEFAULT_SETTINGS: Settings = {
     email_list: true,
     // API — network calls, dangerous
     api_request: false,
+    // Video download (yt-dlp) — metadata lookup safe, actual download dangerous (writes files)
+    get_video_info: true,
+    download_video: false,
   },
 
   // Default NBA team for new users

@@ -376,6 +376,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     email_list: 'List recent emails (safe).',
     // API
     api_request: 'Make HTTP requests to external APIs.',
+    // Video download (yt-dlp)
+    get_video_info: 'Look up a video\'s title, duration, and available qualities (safe).',
+    download_video: 'Download a video to disk via yt-dlp. Requires yt-dlp installed separately.',
   };
 
   const DANGEROUS_PERMISSIONS = new Set([
@@ -383,6 +386,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     'kill_process', 'run_code', 'git_commit', 'forget', 'clear_conversation_history',
     'rag_clear', 'cancel_reminder', 'delete_calendar_event', 'email_send', 'api_request',
     'create_docx', 'create_spreadsheet', 'create_pdf', 'set_clipboard', 'clipboard_write',
+    'download_video',
   ]);
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
