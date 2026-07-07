@@ -482,6 +482,31 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* Ollama offline badge — sits below the n8n badge so both can show at once. */
+.ollama-badge {
+  bottom: -48px;
+  border-color: oklch(63% 0.2 25 / 0.25);
+  background: var(--danger-muted, oklch(63% 0.2 25 / 0.12));
+  color: var(--danger, oklch(63% 0.2 25));
+}
+
+.ollama-badge .ollama-start {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.ollama-badge .ollama-start:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ollama-badge-error {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
 .backend-text {
   color: inherit;
 }
