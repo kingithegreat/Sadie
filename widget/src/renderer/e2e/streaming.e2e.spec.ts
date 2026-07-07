@@ -30,9 +30,11 @@ test('streams chunks to UI', async () => {
     PROXY_RETRY_ENABLED: 'false',
     HOMEBOT_E2E: '1',
     HOMEBOT_E2E_BYPASS_MOCK: '0',
+    HOMEBOT_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
   });
   await waitForAppReady(page);
+  await completeFirstRunWizardIfVisible(page);
 
 
   await page.getByLabel('Message HomeBot').fill('hello');
@@ -113,9 +115,11 @@ test('cancel stops stream', async () => {
     PROXY_RETRY_ENABLED: 'false',
     HOMEBOT_E2E: '1',
     HOMEBOT_E2E_BYPASS_MOCK: '0',
+    HOMEBOT_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
   });
   await waitForAppReady(page);
+  await completeFirstRunWizardIfVisible(page);
 
 
   await page.getByLabel('Message HomeBot').fill('hello');
@@ -245,6 +249,16 @@ test('falls back to non-stream final text on stream init error', async () => {
     const http = await import('http');
     return new Promise<any>((resolve) => {
       const s = http.createServer(async (req, res) => {
+        if (req.url === '/api/tags' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ models: [{ name: 'mock-model' }] }));
+          return;
+        }
+        if (req.url === '/api/version' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ version: '0.0.0-test' }));
+          return;
+        }
         if (req.url === '/api/chat' && req.method === 'POST') {
           try {
             let body = '';

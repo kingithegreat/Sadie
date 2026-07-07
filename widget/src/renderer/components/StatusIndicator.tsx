@@ -144,6 +144,72 @@ const BackendBadge: React.FC<BackendBadgeProps> = ({
   </div>
 );
 
+interface OllamaBadgeProps {
+  onRefresh: () => void;
+}
+
+/**
+ * Persistent header badge shown when Ollama drops mid-session. Mirrors the n8n
+ * BackendBadge but adds an inline "Start Ollama" action (via the existing
+ * homebot:start-ollama IPC) so an idle disconnect is recoverable in-place
+ * instead of only surfacing after the next message fails.
+ */
+const OllamaBadge: React.FC<OllamaBadgeProps> = ({ onRefresh }) => {
+  const [starting, setStarting] = useState(false);
+  const [result, setResult] = useState<'idle' | 'done' | 'failed'>('idle');
+  const [errMsg, setErrMsg] = useState('');
+
+  const handleStart = async () => {
+    setStarting(true);
+    setResult('idle');
+    setErrMsg('');
+    try {
+      const res = await (window as any).electron?.startOllama?.();
+      if (res?.success) {
+        setResult('done');
+        onRefresh();
+      } else {
+        setResult('failed');
+        setErrMsg(res?.error || 'Failed to start Ollama');
+      }
+    } catch (e: any) {
+      setResult('failed');
+      setErrMsg(e?.message || 'Failed to start Ollama');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  return (
+    <div className="backend-badge ollama-badge" role="alert" title="Ollama is offline">
+      <span className="backend-text">{result === 'done' ? 'Ollama starting…' : 'Ollama offline'}</span>
+      <button
+        type="button"
+        className="backend-detail ollama-start"
+        onClick={handleStart}
+        disabled={starting || result === 'done'}
+        aria-label="Start Ollama"
+      >
+        {starting ? 'Starting…' : '▶ Start'}
+      </button>
+      <button
+        type="button"
+        className="backend-retry"
+        onClick={() => {
+          try { (window as any).homebotCapture?.log('[Renderer] Retry connection (ollama badge)'); } catch (e) {}
+          onRefresh();
+        }}
+        aria-label="Retry connection"
+      >
+        ↻
+      </button>
+      {result === 'failed' && errMsg && (
+        <span className="ollama-badge-error" role="status">{errMsg}</span>
+      )}
+    </div>
+  );
+};
+
 const getStatusClass = (status: 'online' | 'offline' | 'checking') => {
   switch (status) {
     case 'online':
@@ -373,6 +439,9 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           onToggleDetail={setDetailOpen}
         />
       )}
+
+      {/* Ollama offline banner — proactive inline restart for mid-session drops */}
+      {connectionStatus.ollama === 'offline' && <OllamaBadge onRefresh={onRefresh} />}
     </div>
   );
 }
