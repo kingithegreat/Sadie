@@ -248,23 +248,35 @@ const DEFAULT_SETTINGS: Settings = {
     // Video download (yt-dlp) — metadata lookup safe, actual download dangerous (writes files)
     get_video_info: true,
     download_video: false,
+    // Default MCP server: yt-dlp (github:kingithegreat/yt-dlp-mcp) — mirrors the native
+    // tools above; explicit here even though the generic MCP fallback in assertPermission
+    // would also allow the read-only one, for clarity and consistency with every other entry.
+    mcp_ytdlp_get_video_info: true,
+    mcp_ytdlp_download_video: false,
   },
 
   // Default NBA team for new users
   defaultTeam: 'GSW'
 };
 
-// A convenience function for asserting permissions on a tool
-export function assertPermission(toolName: string): boolean {
+// A convenience function for asserting permissions on a tool.
+// `defaultValue` is only used when the tool has no explicit entry in
+// settings.permissions — today that's exclusively dynamically-discovered
+// MCP tools (native tools always have an explicit entry in DEFAULT_SETTINGS
+// above). Callers should derive it from the tool's own definition, e.g.
+// `!tool.definition.requiresConfirmation`, so a server-annotated read-only
+// tool works out of the box while anything else still defaults to denied.
+export function assertPermission(toolName: string, defaultValue: boolean = false): boolean {
   const settings = getSettings();
-  if (!settings.permissions) return false;
+  if (!settings.permissions) return defaultValue;
   // If the toolName is not present, default to deny (safe approach)
   if (typeof settings.permissions[toolName] === 'boolean') {
     return !!settings.permissions[toolName];
   }
   // Allow if explicitly present in defaults or read-only type
-  // Fallback to false to be conservative
-  return false;
+  // Fallback to the caller-supplied default (false unless the caller knows
+  // the tool is safe, e.g. a read-only MCP tool with no confirmation gate).
+  return defaultValue;
 }
 
 export function getSettingsPath(): string {
