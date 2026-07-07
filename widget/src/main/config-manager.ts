@@ -245,12 +245,8 @@ const DEFAULT_SETTINGS: Settings = {
     email_list: true,
     // API — network calls, dangerous
     api_request: false,
-    // Video download (yt-dlp) — metadata lookup safe, actual download dangerous (writes files)
-    get_video_info: true,
-    download_video: false,
-    // Default MCP server: yt-dlp (github:kingithegreat/yt-dlp-mcp) — mirrors the native
-    // tools above; explicit here even though the generic MCP fallback in assertPermission
-    // would also allow the read-only one, for clarity and consistency with every other entry.
+    // Video download: served via the ytdlp MCP server (see mcp-client.ts
+    // default servers), not a native tool — mcp_ytdlp_* below.
     mcp_ytdlp_get_video_info: true,
     mcp_ytdlp_download_video: false,
   },
