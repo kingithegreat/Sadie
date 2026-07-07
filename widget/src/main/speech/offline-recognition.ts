@@ -1,8 +1,10 @@
 /**
  * HomeBot Offline Speech Recognition
  * 
- * Uses @xenova/transformers to run Whisper locally for offline speech-to-text.
- * The model runs entirely in JavaScript - no native dependencies needed.
+ * Uses @huggingface/transformers (the official successor to @xenova/transformers,
+ * same maintainer/project, renamed on npm in the v3 release - same pipeline() API,
+ * same env object, same Tensor output shape) to run Whisper locally for offline
+ * speech-to-text. The model runs entirely in JavaScript - no native dependencies needed.
  */
 
 import { BrowserWindow } from 'electron';
@@ -38,7 +40,7 @@ class OfflineSpeechRecognition {
     this.status.loading = true;
 
     try {
-      // Run initialization in renderer process where @xenova/transformers works best
+      // Run initialization in renderer process where @huggingface/transformers works best
       const result = await window.webContents.executeJavaScript(`
         (async function() {
           try {
@@ -50,7 +52,7 @@ class OfflineSpeechRecognition {
             console.log('[HomeBot] Loading Whisper model for offline speech recognition...');
             
             // Dynamic import of transformers
-            const { pipeline } = await import('@xenova/transformers');
+            const { pipeline } = await import('@huggingface/transformers');
             
             // Create speech recognition pipeline
             // This will download the model on first use
