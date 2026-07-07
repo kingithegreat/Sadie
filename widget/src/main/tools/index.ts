@@ -45,7 +45,6 @@ import { ragToolDefs, ragToolHandlers } from './rag';
 import { visionToolDefs, visionToolHandlers } from './vision';
 import { terminalToolDefs, terminalToolHandlers } from './terminal';
 import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
-import { videoDownloadToolDefs, videoDownloadToolHandlers } from './video-download';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -617,12 +616,6 @@ export function initializeTools(): void {
   // Register API tool
   for (const def of apiToolDefs) {
     const handler = apiToolHandlers[def.name];
-    if (handler) registerTool(def.name, def, handler);
-  }
-
-  // Register video download tools (yt-dlp)
-  for (const def of videoDownloadToolDefs) {
-    const handler = videoDownloadToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
