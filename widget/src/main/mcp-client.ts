@@ -220,11 +220,22 @@ async function connectServer(
       const prefixedName = `mcp_${config.name}_${mcpTool.name}`;
       toolNames.push(prefixedName);
 
-      // Build a HomeBot-compatible ToolDefinition
+      // Build a HomeBot-compatible ToolDefinition.
+      // MCP tool annotations (readOnlyHint/destructiveHint) are the server's own
+      // declaration of how safe a tool is — pass them through to requiresConfirmation
+      // instead of the previous behavior of always leaving it unset. Default to
+      // "requires confirmation" (safe) unless the server explicitly marked the tool
+      // read-only and non-destructive.
+      const annotations = (mcpTool as any).annotations as
+        | { readOnlyHint?: boolean; destructiveHint?: boolean }
+        | undefined;
+      const isKnownSafe = annotations?.readOnlyHint === true && annotations?.destructiveHint !== true;
+
       const definition = {
         name: prefixedName,
         description: `[MCP: ${config.name}] ${mcpTool.description ?? mcpTool.name}`,
         category: 'utility' as const,
+        requiresConfirmation: !isKnownSafe,
         parameters: {
           type: 'object' as const,
           properties: (mcpTool.inputSchema?.properties ?? {}) as Record<string, any>,
@@ -329,6 +340,12 @@ function getDefaultServers(): McpServerConfig[] {
       ...npxInvocation(['-y', '@modelcontextprotocol/server-github']),
       env: { GITHUB_TOKEN: '' },
       enabled: false, // set GITHUB_TOKEN and enable
+    },
+    {
+      type: 'stdio',
+      name: 'ytdlp',
+      ...npxInvocation(['-y', 'github:kingithegreat/yt-dlp-mcp']),
+      enabled: true, // get_video_info / download_video — see permissions defaults
     },
   ];
 }

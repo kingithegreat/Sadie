@@ -239,7 +239,7 @@ export async function executeTool(
   
   // Check permission first
   try {
-    const allowed = assertPermission(call.name);
+    const allowed = assertPermission(call.name, !tool.definition.requiresConfirmation);
     if (!allowed) {
       console.warn(`[HomeBot Tools] Permission denied for tool: ${call.name}`);
       return { success: false, error: `Permission denied: ${call.name}` };
@@ -345,14 +345,15 @@ export async function executeToolBatch(
     seen.add(name);
     try {
       if (overrides.has(name)) continue;
-      const allowed = assertPermission(name);
+      const precheckTool = getTool(name);
+      const allowed = assertPermission(name, precheckTool ? !precheckTool.definition.requiresConfirmation : false);
       console.log(`[HomeBot Tools] Permission check for ${name}: allowed=${allowed}`);
       try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) { safeCatch(e); }
       if (!allowed) denied.push(name);
 
       // Also check any permissions declared by the tool (e.g., write_file)
       try {
-        const tool = getTool(name);
+        const tool = precheckTool;
         if (tool && Array.isArray((tool.definition as any).requiredPermissions)) {
           for (const perm of (tool.definition as any).requiredPermissions as string[]) {
             if (overrides.has(perm)) continue;
