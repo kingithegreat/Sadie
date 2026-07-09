@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
+import PermissionHistory from './PermissionHistory';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 import { buildSparkline } from '../../shared/sparkline';
 import { buildPerfAdvice } from '../../shared/perf-advice';
@@ -387,6 +388,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
   const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
+  const [showPermissionHistory, setShowPermissionHistory] = useState(false);
 
   // GPU VRAM detection state for MoA recommendations
   const [gpuInfo, setGpuInfo] = useState<{
@@ -1749,6 +1751,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <pre className="sp-telemetry-pre">{telemetryLogPreview()}</pre>
           </div>
         </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Permission History</label>
+          <p className="setting-hint">Review every permission HomeBot has requested and how you responded.</p>
+          <div className="flex items-center gap-2 mb-2">
+            <button className="button button-secondary" onClick={() => setShowPermissionHistory(true)}>Open Permission History</button>
+          </div>
+        </div>
         </>}
         <TelemetryConsentModal
           open={showTelemetryModal}
@@ -1765,6 +1775,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onClose={() => setShowTelemetryModal(false)}
         />
         {showTelemetryDashboard && <TelemetryDashboard open={showTelemetryDashboard} onClose={() => setShowTelemetryDashboard(false)} /> }
+        {showPermissionHistory && <PermissionHistory open={showPermissionHistory} onClose={() => setShowPermissionHistory(false)} /> }
 
       {/* ── Scheduled Jobs ─────────────────────────────────────────────────── */}
       <div className="settings-section">
