@@ -17,6 +17,7 @@ import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import { logStartupTime } from './utils/perf-logger';
+import { installConsoleGate } from './utils/console-gate';
 import { shutdownMcpServers } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
@@ -143,6 +144,10 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 
 app.whenReady().then(async () => {
+  // Silence verbose console.log/debug/info in packaged builds (warn/error kept;
+  // set HOMEBOT_DEBUG_CONSOLE=1 to restore full output). Must run before the
+  // startup logging below.
+  installConsoleGate();
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: HOMEBOT_DIRECT_OLLAMA=', process.env.HOMEBOT_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
