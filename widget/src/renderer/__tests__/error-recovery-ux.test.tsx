@@ -140,7 +140,9 @@ describe('error recovery UX — inline recovery card', () => {
     });
 
     await waitFor(() => expect(screen.getByText('n8n Unavailable')).toBeInTheDocument());
-    expect(screen.getByText('⚙️')).toBeInTheDocument();
+    // ⚙️ also renders as the header Settings button, so scope to "at least one"
+    // (mirrors the 📦 assertion above). Confirms the recovery card shows the gear icon.
+    expect(screen.getAllByText('⚙️').length).toBeGreaterThan(0);
     expect(screen.getByText('The n8n automation service is unavailable.')).toBeInTheDocument();
     // The generic ↻ Retry button in the recovery card actions
     expect(screen.getByText('↻ Retry')).toBeInTheDocument();
