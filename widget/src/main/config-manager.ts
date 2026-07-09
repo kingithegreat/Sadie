@@ -68,6 +68,9 @@ export interface Settings {
 
   // Permissions for tools (granular by tool name)
   permissions?: Record<string, boolean>;
+  // How long (ms) a permission prompt waits before auto-declining. Clamped to
+  // [5s, 10min] at read time; defaults to 60s.
+  permissionPromptTimeoutMs?: number;
 
   // Misc / developer defaults
   defaultTeam?: string;
@@ -131,6 +134,7 @@ const DEFAULT_SETTINGS: Settings = {
   confirmDangerousActions: true,
   saveConversationHistory: true,
   hideOnBlur: false,
+  permissionPromptTimeoutMs: 60000,
 
   // onboarding defaults
   firstRun: true,

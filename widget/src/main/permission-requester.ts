@@ -1,6 +1,23 @@
 import { ipcMain, IpcMainEvent, WebContents } from 'electron';
 import { recordPermissionDecision } from './permission-audit-log';
 
+/** Read the permission-prompt timeout from settings, clamped to a sane range.
+ *  Defensive: any failure (e.g. settings not readable in a test) → 60s default.
+ *  Uses a lazy require so this security-critical module has no load-time
+ *  dependency on config-manager. */
+function resolvePromptTimeoutMs(): number {
+  const DEFAULT = 60000;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getSettings } = require('./config-manager');
+    const raw = (getSettings() as any)?.permissionPromptTimeoutMs;
+    if (typeof raw !== 'number' || !isFinite(raw)) return DEFAULT;
+    return Math.min(Math.max(raw, 5000), 600000);
+  } catch {
+    return DEFAULT;
+  }
+}
+
 type PermissionResponse = { requestId: string; decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] };
 
 const pending = new Map<string, (resp: PermissionResponse) => void>();
@@ -37,7 +54,7 @@ export const permissionRequester = {
       const timeout = setTimeout(() => {
         pending.delete(requestId);
         finish({ requestId, decision: 'cancel' }, 'expired');
-      }, 60000);
+      }, resolvePromptTimeoutMs());
 
       pending.set(requestId, (resp: PermissionResponse) => {
         clearTimeout(timeout);

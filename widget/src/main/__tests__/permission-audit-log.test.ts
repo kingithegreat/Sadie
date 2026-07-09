@@ -14,6 +14,7 @@ import {
   recordPermissionDecision,
   readPermissionAudit,
   clearPermissionAudit,
+  exportPermissionAudit,
   permissionAuditLogPath,
   MAX_ENTRIES,
 } from '../permission-audit-log';
@@ -114,5 +115,29 @@ describe('clear', () => {
   test('clearing an already-empty log is a safe no-op', () => {
     expect(() => clearPermissionAudit()).not.toThrow();
     expect(readPermissionAudit()).toEqual([]);
+  });
+});
+
+describe('export', () => {
+  test('writes a JSON file containing all entries and returns its path', () => {
+    recordPermissionDecision({ permissions: ['write_file'], reason: 'r1', decision: 'always_allow' });
+    recordPermissionDecision({ permissions: ['delete_file'], reason: 'r2', decision: 'cancel' });
+    const res = exportPermissionAudit();
+    expect(res.success).toBe(true);
+    expect(res.path).toBeTruthy();
+    expect(fs.existsSync(res.path!)).toBe(true);
+    const parsed = JSON.parse(fs.readFileSync(res.path!, 'utf-8'));
+    expect(parsed.count).toBe(2);
+    expect(parsed.entries).toHaveLength(2);
+    expect(parsed.entries[0].permissions).toEqual(['write_file']);
+    expect(typeof parsed.exportedAt).toBe('string');
+  });
+
+  test('exports an empty log as count 0', () => {
+    const res = exportPermissionAudit();
+    expect(res.success).toBe(true);
+    const parsed = JSON.parse(fs.readFileSync(res.path!, 'utf-8'));
+    expect(parsed.count).toBe(0);
+    expect(parsed.entries).toEqual([]);
   });
 });

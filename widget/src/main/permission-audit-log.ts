@@ -136,3 +136,23 @@ export function clearPermissionAudit(): void {
     console.error('[HomeBot] Failed to clear permission audit log:', e);
   }
 }
+
+/**
+ * Export the audit log as a single JSON file under the log directory, mirroring
+ * the telemetry-consent export. Returns the written path on success.
+ */
+export function exportPermissionAudit(): { success: boolean; path?: string; error?: string } {
+  try {
+    const logPath = permissionAuditLogPath();
+    const dir = path.dirname(logPath);
+    fs.mkdirSync(dir, { recursive: true });
+    const entries = readPermissionAudit();
+    const payload = { exportedAt: new Date().toISOString(), count: entries.length, entries };
+    const fullPath = path.join(dir, `permission-audit-export-${Date.now()}.json`);
+    fs.writeFileSync(fullPath, JSON.stringify(payload, null, 2), 'utf-8');
+    return { success: true, path: fullPath };
+  } catch (e: any) {
+    console.error('[HomeBot] Failed to export permission audit log:', e);
+    return { success: false, error: String(e?.message || e) };
+  }
+}

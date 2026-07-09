@@ -10,13 +10,22 @@ import PermissionHistory from '../components/PermissionHistory';
 function setup(overrides?: {
   readPermissionAudit?: () => Promise<any>;
   clearPermissionAudit?: () => Promise<any>;
+  exportPermissionAudit?: () => Promise<any>;
+  getSettings?: () => Promise<any>;
+  saveSettings?: (s: any) => Promise<any>;
 }) {
   const readPermissionAudit =
     overrides?.readPermissionAudit ?? jest.fn().mockResolvedValue({ success: true, events: [] });
   const clearPermissionAudit =
     overrides?.clearPermissionAudit ?? jest.fn().mockResolvedValue({ success: true });
-  (window as any).electron = { readPermissionAudit, clearPermissionAudit };
-  return { readPermissionAudit, clearPermissionAudit };
+  const exportPermissionAudit =
+    overrides?.exportPermissionAudit ?? jest.fn().mockResolvedValue({ success: true, path: '/tmp/export.json' });
+  // Empty permissions by default so the "always allowed" section stays hidden
+  // and does not interfere with the log-focused tests.
+  const getSettings = overrides?.getSettings ?? jest.fn().mockResolvedValue({ permissions: {} });
+  const saveSettings = overrides?.saveSettings ?? jest.fn().mockResolvedValue({});
+  (window as any).electron = { readPermissionAudit, clearPermissionAudit, exportPermissionAudit, getSettings, saveSettings };
+  return { readPermissionAudit, clearPermissionAudit, exportPermissionAudit, getSettings, saveSettings };
 }
 
 afterEach(() => {
@@ -119,5 +128,65 @@ describe('PermissionHistory — actions', () => {
     const closeBtn = await screen.findByLabelText('Close permission history');
     fireEvent.click(closeBtn);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PermissionHistory — export', () => {
+  test('Export button calls exportPermissionAudit and shows the path', async () => {
+    const { exportPermissionAudit } = setup();
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    const btn = await screen.findByText('Export');
+    fireEvent.click(btn);
+    await waitFor(() => expect(exportPermissionAudit).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Exported to \/tmp\/export\.json/)).toBeInTheDocument();
+  });
+});
+
+describe('PermissionHistory — always-allowed revoke', () => {
+  const grantedEvents = [
+    { id: 'g1', timestamp: new Date().toISOString(), permissions: ['write_file'], reason: 'Save', decision: 'always_allow' },
+  ];
+
+  test('lists permissions granted via always-allow that are still enabled', async () => {
+    setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: grantedEvents }),
+      getSettings: jest.fn().mockResolvedValue({ permissions: { write_file: true } }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    expect(await screen.findByText(/won't ask again/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Revoke write file/i)).toBeInTheDocument();
+  });
+
+  test('Revoke persists the permission as disabled and removes it from the list', async () => {
+    const { saveSettings } = setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: grantedEvents }),
+      getSettings: jest.fn().mockResolvedValue({ permissions: { write_file: true } }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    const revokeBtn = await screen.findByLabelText(/Revoke write file/i);
+    fireEvent.click(revokeBtn);
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(1));
+    expect((saveSettings as jest.Mock).mock.calls[0][0].permissions.write_file).toBe(false);
+    await waitFor(() => expect(screen.queryByLabelText(/Revoke write file/i)).not.toBeInTheDocument());
+  });
+
+  test('does not show the always-allowed section when a granted perm is no longer enabled', async () => {
+    setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: grantedEvents }),
+      getSettings: jest.fn().mockResolvedValue({ permissions: { write_file: false } }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    await screen.findByText('Permission History');
+    expect(screen.queryByText(/won't ask again/)).not.toBeInTheDocument();
+  });
+
+  test('read-only safe defaults (never prompted) do not appear as revocable', async () => {
+    setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: [] }),
+      getSettings: jest.fn().mockResolvedValue({ permissions: { read_file: true, list_directory: true } }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    await screen.findByText('Permission History');
+    expect(screen.queryByText(/won't ask again/)).not.toBeInTheDocument();
   });
 });

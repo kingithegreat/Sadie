@@ -56,6 +56,7 @@ const ALLOWED_CHANNELS = {
   READ_TELEMETRY_EVENTS: 'homebot:read-telemetry-events',
   READ_PERMISSION_AUDIT: 'homebot:read-permission-audit',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
+  EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
   HIDE_WINDOW: 'homebot:hide-window',
   STREAM_SEND: 'homebot:stream-message',
@@ -396,6 +397,10 @@ const electronAPI: ElectronAPI = {
 
   clearPermissionAudit: async (): Promise<{ success: boolean; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.CLEAR_PERMISSION_AUDIT);
+  },
+
+  exportPermissionAudit: async (): Promise<{ success: boolean; path?: string; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.EXPORT_PERMISSION_AUDIT);
   },
 
   getAnalyticsSummary: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
