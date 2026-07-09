@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const TITLE_ID = 'hb-permission-modal-title';
 const INTRO_ID = 'hb-permission-modal-intro';
@@ -16,6 +16,14 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
   const cardRef = useRef<HTMLDivElement>(null);
   const cancelBtnRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  // Which permissions to persist on "Always allow". A permission is remembered
+  // unless explicitly unticked (empty map = remember everything), so the default
+  // matches the previous behaviour of persisting all requested permissions.
+  const [remember, setRemember] = useState<Record<string, boolean>>({});
+
+  // Reset the selection whenever a new request opens.
+  useEffect(() => { setRemember({}); }, [requestId]);
 
   // Accessibility: focus management, focus trap, and Escape-to-cancel.
   // Hooks must run unconditionally (rules-of-hooks) — the effect no-ops when
@@ -77,7 +85,9 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
     try {
       const settings = await (window as any).electron.getSettings();
       const perms = settings.permissions || {};
-      for (const p of missingPermissions) perms[p] = true;
+      // Persist the ticked permissions; unticked ones are granted for this
+      // action only (not remembered).
+      for (const p of missingPermissions) perms[p] = remember[p] !== false;
       await (window as any).electron.saveSettings({ permissions: perms });
     } catch (e) { /* ignore */ }
     (window as any).electron.sendPermissionResponse(requestId!, 'always_allow', missingPermissions);
@@ -103,12 +113,21 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
         <p id={INTRO_ID} className="hb-modal-text">This action requires the following permissions:</p>
         <div className="hb-modal-consent-detail" role="list" aria-label="Requested permissions">
           {missingPermissions.map((p) => (
-            <div key={p} className="hb-modal-perm-item" role="listitem">{p.replace(/_/g, ' ')}</div>
+            <label key={p} className="hb-modal-perm-item" role="listitem">
+              <input
+                type="checkbox"
+                className="hb-modal-perm-check"
+                checked={remember[p] !== false}
+                onChange={(e) => setRemember((r) => ({ ...r, [p]: e.target.checked }))}
+                aria-label={`Remember ${p.replace(/_/g, ' ')}`}
+              />
+              <span>{p.replace(/_/g, ' ')}</span>
+            </label>
           ))}
         </div>
         <div id={REASON_ID} className="hb-modal-muted">{reason || 'This action will modify files on your system.'}</div>
         <p className="hb-modal-muted hb-modal-perm-hint">
-          <strong>Allow once</strong> applies only to this action. <strong>Always allow</strong> saves these permissions for future actions until you change them in Settings.
+          <strong>Allow once</strong> applies only to this action. <strong>Always allow</strong> saves these permissions for future actions until you change them in Settings. Untick a permission above to allow it just this once without remembering it.
         </p>
 
         <div className="hb-modal-actions">

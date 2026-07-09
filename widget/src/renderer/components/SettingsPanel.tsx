@@ -41,6 +41,7 @@ interface Settings {
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
+  permissionPromptTimeoutMs?: number;
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
   moaEnabled?: boolean;
   moaProposers?: string[];
@@ -136,7 +137,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       moaEnabled: source.moaEnabled ?? false,
       moaProposers: source.moaProposers ?? [],
       moaAggregator: source.moaAggregator ?? '',
-      defaultLocation: source.defaultLocation || ''
+      defaultLocation: source.defaultLocation || '',
+      permissionPromptTimeoutMs: source.permissionPromptTimeoutMs ?? 60000
     };
   };
 
@@ -683,6 +685,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     (nextSettings as any).hardwareProfile = (localSettings as any).hardwareProfile;
     (nextSettings as any).moaProposers = (localSettings as any).moaProposers;
     (nextSettings as any).moaAggregator = (localSettings as any).moaAggregator;
+    (nextSettings as any).permissionPromptTimeoutMs = (localSettings as any).permissionPromptTimeoutMs;
     onSave(nextSettings);
     onClose();
   };
@@ -1758,6 +1761,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div className="flex items-center gap-2 mb-2">
             <button className="button button-secondary" onClick={() => setShowPermissionHistory(true)}>Open Permission History</button>
           </div>
+          <label className="setting-label" htmlFor="perm-timeout">Permission prompt timeout (seconds)</label>
+          <p className="setting-hint">How long a permission prompt waits before auto-declining. Range 5–600s.</p>
+          <input
+            id="perm-timeout"
+            type="number"
+            min={5}
+            max={600}
+            className="input"
+            value={Math.round(((localSettings as any).permissionPromptTimeoutMs ?? 60000) / 1000)}
+            onChange={(e) => {
+              const secs = Math.min(600, Math.max(5, Number(e.target.value) || 60));
+              setLocalSettings({ ...localSettings, permissionPromptTimeoutMs: secs * 1000 } as any);
+            }}
+          />
         </div>
         </>}
         <TelemetryConsentModal

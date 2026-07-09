@@ -186,3 +186,22 @@ test('action buttons are type="button" (no accidental form submit)', () => {
     expect(screen.getByRole('button', { name })).toHaveAttribute('type', 'button');
   }
 });
+
+// ─── Selective always allow (checkbox per permission) ─────────────────────────
+
+test('permission checkboxes render checked by default', () => {
+  setup();
+  expect(screen.getByLabelText(/remember file read/i)).toBeChecked();
+  expect(screen.getByLabelText(/remember file write/i)).toBeChecked();
+});
+
+test('unticking a permission persists it as not-remembered but still grants all for this action', async () => {
+  const { el } = setup();
+  fireEvent.click(screen.getByLabelText(/remember file write/i)); // uncheck file_write
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /always allow/i })); });
+  const saved = el.saveSettings.mock.calls[0][0];
+  expect(saved.permissions.file_read).toBe(true);
+  expect(saved.permissions.file_write).toBe(false);
+  // The grant for THIS action still includes every requested permission.
+  expect(el.sendPermissionResponse).toHaveBeenCalledWith('req-123', 'always_allow', PERMS);
+});

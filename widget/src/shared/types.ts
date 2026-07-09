@@ -186,6 +186,7 @@ export interface Settings {
   telemetryConsentVersion?: string;
   // Per-tool permissions (keys are tool names)
   permissions?: Record<string, boolean>;
+  permissionPromptTimeoutMs?: number;
   defaultTeam?: string;
   // Web search API keys
   tavilyApiKey?: string;
@@ -406,6 +407,7 @@ export interface ElectronAPI {
   // Permission decision audit log (transparency history for the PermissionModal)
   readPermissionAudit?: () => Promise<{ success: boolean; events?: PermissionAuditEntry[]; error?: string }>;
   clearPermissionAudit?: () => Promise<{ success: boolean; error?: string }>;
+  exportPermissionAudit?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Analytics summary (aggregated conversation + event stats)
   getAnalyticsSummary?: () => Promise<{ success: boolean; summary?: any; error?: string }>;
   // Shell file helpers
