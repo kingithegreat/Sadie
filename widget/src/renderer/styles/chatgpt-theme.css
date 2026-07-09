@@ -3421,6 +3421,11 @@ body {
 }
 .hb-modal-consent-detail > * + * { margin-top: var(--spacing-sm); }
 .hb-modal-consent-version { color: var(--text-secondary); }
+.hb-modal-perm-hint {
+  font-size: var(--font-size-sm);
+  margin-top: calc(-1 * var(--spacing-xs));
+}
+.hb-modal-perm-hint strong { color: var(--text-primary); font-weight: 600; }
 
 /* ═══════════════════════════════════════════════════════════════════
    TelemetryDashboard (Analytics Panel)

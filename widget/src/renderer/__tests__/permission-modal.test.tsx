@@ -137,3 +137,52 @@ test('Always allow still sends response even if getSettings throws', async () =>
   expect(el.sendPermissionResponse).toHaveBeenCalledWith('req-123', 'always_allow', PERMS);
   expect(onClose).toHaveBeenCalled();
 });
+
+// ─── accessibility (issue #6) ─────────────────────────────────────────────────
+
+test('exposes a labelled, described modal dialog', () => {
+  setup();
+  const dialog = screen.getByRole('dialog');
+  expect(dialog).toHaveAttribute('aria-modal', 'true');
+  // accessible name comes from the heading
+  expect(dialog).toHaveAccessibleName('Permission Required');
+  // described by the intro + reason text
+  const describedby = dialog.getAttribute('aria-describedby') || '';
+  expect(describedby.split(' ').length).toBe(2);
+});
+
+test('permissions are exposed as a semantic list', () => {
+  setup();
+  expect(screen.getByRole('list', { name: /requested permissions/i })).toBeInTheDocument();
+  expect(screen.getAllByRole('listitem')).toHaveLength(PERMS.length);
+});
+
+test('focus moves to the Cancel button when opened', () => {
+  setup();
+  expect(screen.getByRole('button', { name: /cancel/i })).toHaveFocus();
+});
+
+test('Escape key declines the request (cancel) and closes', () => {
+  const { el, onClose } = setup();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(el.sendPermissionResponse).toHaveBeenCalledWith('req-123', 'cancel');
+  expect(onClose).toHaveBeenCalled();
+});
+
+test('does not handle Escape when closed', () => {
+  const { el } = setup({ open: false });
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(el.sendPermissionResponse).not.toHaveBeenCalled();
+});
+
+test('clarifies the difference between Allow once and Always allow', () => {
+  setup();
+  expect(screen.getByText(/saves these permissions for future actions/i)).toBeInTheDocument();
+});
+
+test('action buttons are type="button" (no accidental form submit)', () => {
+  setup();
+  for (const name of [/cancel/i, /allow once/i, /always allow/i]) {
+    expect(screen.getByRole('button', { name })).toHaveAttribute('type', 'button');
+  }
+});
