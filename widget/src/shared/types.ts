@@ -186,6 +186,7 @@ export interface Settings {
   telemetryConsentVersion?: string;
   // Per-tool permissions (keys are tool names)
   permissions?: Record<string, boolean>;
+  permissionPromptTimeoutMs?: number;
   defaultTeam?: string;
   // Web search API keys
   tavilyApiKey?: string;
@@ -250,6 +251,16 @@ export interface PerfStatSummary {
   min_ms: number;
   max_ms: number;
   last_ms: number | null;
+}
+
+/** A single recorded permission decision, surfaced in the Permission History UI. */
+export interface PermissionAuditEntry {
+  id: string;
+  timestamp: string;
+  permissions: string[];
+  reason: string;
+  decision: 'allow_once' | 'always_allow' | 'cancel' | 'expired';
+  streamId?: string;
 }
 
 export interface ElectronAPI {
@@ -393,6 +404,10 @@ export interface ElectronAPI {
   onTitleUpdated?: (cb: (data: { conversationId: string; title: string }) => void) => () => void;
   // Telemetry event log
   readTelemetryEvents?: () => Promise<{ success: boolean; events?: any[]; error?: string }>;
+  // Permission decision audit log (transparency history for the PermissionModal)
+  readPermissionAudit?: () => Promise<{ success: boolean; events?: PermissionAuditEntry[]; error?: string }>;
+  clearPermissionAudit?: () => Promise<{ success: boolean; error?: string }>;
+  exportPermissionAudit?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Analytics summary (aggregated conversation + event stats)
   getAnalyticsSummary?: () => Promise<{ success: boolean; summary?: any; error?: string }>;
   // Shell file helpers

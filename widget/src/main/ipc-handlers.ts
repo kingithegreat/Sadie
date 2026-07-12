@@ -38,6 +38,7 @@ import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
 import { listJobs, addJob, removeJob, toggleJob } from './scheduler';
+import { readPermissionAudit, clearPermissionAudit, exportPermissionAudit } from './permission-audit-log';
 import {
   loadMcpConfig,
   saveMcpConfig,
@@ -951,6 +952,38 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { success: true, events };
     } catch (err: any) {
       console.error('Failed to read telemetry events:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Read the permission decision audit log for the Permission History UI
+  ipcMain.handle('homebot:read-permission-audit', async () => {
+    try {
+      const events = readPermissionAudit();
+      return { success: true, events };
+    } catch (err: any) {
+      console.error('Failed to read permission audit log:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Clear the permission decision audit log (user-initiated)
+  ipcMain.handle('homebot:clear-permission-audit', async () => {
+    try {
+      clearPermissionAudit();
+      return { success: true };
+    } catch (err: any) {
+      console.error('Failed to clear permission audit log:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Export the permission decision audit log to a JSON file (user-initiated)
+  ipcMain.handle('homebot:export-permission-audit', async () => {
+    try {
+      return exportPermissionAudit();
+    } catch (err: any) {
+      console.error('Failed to export permission audit log:', err);
       return { success: false, error: String(err) };
     }
   });
