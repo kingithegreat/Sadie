@@ -147,8 +147,12 @@ export async function generateBriefing(
     const w = weather.result;
     let weatherLine = '### 🌤️ Weather\n';
     if (w.temperature) {
-      weatherLine += `**${w.temperature.celsius || w.temperature.fahrenheit || ''}**`;
-      if (w.temperature.feelsLike) weatherLine += ` (feels like ${w.temperature.feelsLike})`;
+      // Use != null so a genuine 0° (freezing) isn't treated as "missing" and
+      // silently swapped for the Fahrenheit reading.
+      const temp = w.temperature.celsius != null ? w.temperature.celsius
+        : w.temperature.fahrenheit != null ? w.temperature.fahrenheit : '';
+      weatherLine += `**${temp}**`;
+      if (w.temperature.feelsLike != null) weatherLine += ` (feels like ${w.temperature.feelsLike})`;
     }
     if (w.condition) weatherLine += ` — ${w.condition}`;
     weatherLine += '\n';

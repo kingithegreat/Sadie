@@ -49,13 +49,24 @@ function readAutomations(): StoredAutomation[] {
     if (!fs.existsSync(file)) return [];
     const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
     return Array.isArray(arr) ? arr : [];
-  } catch {
+  } catch (e) {
+    // Back up a corrupt store rather than silently discarding it (a plain
+    // return [] would let the next write overwrite recoverable data).
+    try {
+      const file = automationsFilePath();
+      if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.corrupt-${Date.now()}`);
+    } catch { /* best effort */ }
+    console.error('[Automation Tools] automations.json unreadable:', e);
     return [];
   }
 }
 
 function writeAutomations(automations: StoredAutomation[]): void {
-  fs.writeFileSync(automationsFilePath(), JSON.stringify(automations, null, 2), 'utf8');
+  // Atomic write (temp file + rename) so a crash can't leave a half-written file.
+  const file = automationsFilePath();
+  const tmp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(automations, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
 }
 
 // ---- Execution engine hook ----

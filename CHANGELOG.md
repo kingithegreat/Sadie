@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased — Full codebase sweep, credential management, dolphin-mistral, docs refresh
+## Unreleased — Automation from chat + audit hardening
+
+### Added
+- **Chat-driven automations** (`tools/automation.ts`): the assistant can now create, list, run, update, and delete Automation Center automations directly from chat (`create_automation` with `run_now` to create and fire in one step), backed by the same store and execution engine as the UI.
+
+### Fixed
+- **Scheduled automations never fired** (`ipc-handlers.ts`): the 60s resync destroyed and recreated every timer before it could elapse; timers are now diffed by signature so a running schedule survives resyncs.
+- **Automations JSON corruption/races** (`ipc-handlers.ts`, `tools/automation.ts`): writes are now atomic (temp file + rename) and a corrupt store is backed up rather than silently discarded.
+- **Automation run status** (`ipc-handlers.ts`): success/failure is tracked explicitly instead of sniffing for an `Error:` prefix, and `lastStatus` is persisted.
+
+### Security
+- **License cache tamper-resistance** (`licensing.ts`): the cached entitlement is HMAC-signed and bound to a machine fingerprint; hand-edited/unsigned or copied caches resolve to Free.
+- **Document read path traversal** (`ipc-handlers.ts`): `parse-document` is now confined to the home directory like `write-document`.
+- **n8n SSRF guard** (`n8n-api.ts`): the web-fetch workflow validates the target URL and blocks loopback/private/link-local hosts before fetching.
+- **Local service exposure** (`docker-compose.yml`): n8n/Qdrant/Ollama ports bind to `127.0.0.1`, and the shared hardcoded n8n encryption key default was removed.
+
+## 1.1.0 — Full codebase sweep, credential management, dolphin-mistral, docs refresh
 
 ### Added
 - **Document Viewer RAG and Chat integration** (`DocumentViewer.tsx`, `App.tsx`): "Add to RAG" button indexes the open document for semantic search; "Send to Chat" button switches to chat mode with the document attached as context for immediate Q&A.
