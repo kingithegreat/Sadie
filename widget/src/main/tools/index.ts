@@ -45,6 +45,7 @@ import { ragToolDefs, ragToolHandlers } from './rag';
 import { visionToolDefs, visionToolHandlers } from './vision';
 import { terminalToolDefs, terminalToolHandlers } from './terminal';
 import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
+import { automationToolDefs, automationToolHandlers } from './automation';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -430,6 +431,8 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `Git commit: "${args.message}"${args.repo_path ? `\nRepo: ${args.repo_path}` : ''}`;
     case 'kill_process':
       return `Kill process${args.name ? ` "${args.name}"` : ''}${args.pid ? ` (PID ${args.pid})` : ''}${args.force ? ' (force)' : ''}?`;
+    case 'delete_automation':
+      return `Permanently delete automation "${args.automation}"?`;
     default:
       return `Execute ${toolName} with: ${JSON.stringify(args)}?`;
   }
@@ -640,6 +643,12 @@ export function initializeTools(): void {
   // Register codebase tools (grep, tree, analyze)
   for (const def of codebaseToolDefs) {
     const handler = codebaseToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register automation tools (Automation Center CRUD + fire from chat)
+  for (const def of automationToolDefs) {
+    const handler = automationToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

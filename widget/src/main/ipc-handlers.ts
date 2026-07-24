@@ -34,6 +34,7 @@ import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
 import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
+import { registerAutomationRunner } from './tools/automation';
 import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
@@ -2138,6 +2139,10 @@ try {
     if (!auto) return { success: false, error: 'Automation not found' };
     return executeAutomation(auto);
   });
+
+  // Let the chat-facing automation tools (create_automation, run_automation, …)
+  // fire automations through the same execution engine as the UI.
+  registerAutomationRunner(executeAutomation);
 
   // ── Scheduled automation timer ──
   const automationTimers = new Map<string, ReturnType<typeof setInterval>>();

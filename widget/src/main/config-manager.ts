@@ -207,6 +207,12 @@ const DEFAULT_SETTINGS: Settings = {
     // Diff — pure computation, safe
     diff_text: true,
     diff_files: true,
+    // Automations — create/list/run/update safe (user-authored instructions), delete opt-in
+    create_automation: true,
+    list_automations: true,
+    run_automation: true,
+    update_automation: true,
+    delete_automation: false,
     // Reminders & calendar — read-only safe
     list_reminders: true,
     set_reminder: true,
