@@ -90,4 +90,51 @@ describe('main-process licensing wiring', () => {
     writeFileSync(join(temp, 'license.json'), '{not json', 'utf-8');
     expect(getCurrentTier()).toBe('free');
   });
+
+  test('a hand-edited unsigned Pro cache is rejected and resolves to Free', () => {
+    // The classic offline bypass: write pro:true directly. No valid signature →
+    // must NOT unlock Pro.
+    writeFileSync(
+      join(temp, 'license.json'),
+      JSON.stringify({ cache: { pro: true, lastValidatedAt: Date.now() } }),
+      'utf-8'
+    );
+    expect(getCurrentTier()).toBe('free');
+  });
+
+  test('a Pro cache with a tampered/forged signature is rejected', () => {
+    writeFileSync(
+      join(temp, 'license.json'),
+      JSON.stringify({
+        cache: { pro: true, lastValidatedAt: Date.now() },
+        _machine: 'someone-elses-machine',
+        _sig: 'deadbeef'.repeat(8),
+      }),
+      'utf-8'
+    );
+    expect(getCurrentTier()).toBe('free');
+  });
+
+  test('a legitimately activated Pro cache survives a round-trip (sign → load)', async () => {
+    process.env.LEMONSQUEEZY_API_KEY = 'test-key';
+    process.env.LEMONSQUEEZY_STORE_ID = '123';
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        activated: true,
+        instance: { id: 'inst-1' },
+        license_key: { status: 'active', activation_usage: 1, activation_limit: 5, expires_at: null },
+      }),
+    })) as any;
+    try {
+      await activateLicense('REAL-KEY');
+      // Re-read from disk (fresh loadState) — the signature written by
+      // activateLicense must verify on this same machine.
+      expect(getCurrentTier()).toBe('pro');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

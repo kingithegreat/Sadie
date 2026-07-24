@@ -310,6 +310,37 @@ export function buildWebFetchWorkflowJson(): object {
       },
       {
         parameters: {
+          // SSRF guard: reject non-http(s) schemes and requests aimed at
+          // loopback / private / link-local hosts (incl. the cloud-metadata
+          // IP and Docker's host gateway) before any request leaves the
+          // container. Throws (fails closed) on a blocked or malformed URL.
+          // Note: literal-host checks only — a hostname that DNS-resolves to a
+          // private IP (rebinding) is not caught here.
+          jsCode: `const url = $json.body?.url || '';
+let u;
+try { u = new URL(url); } catch (e) { throw new Error('Invalid URL'); }
+if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('Only http/https URLs are allowed');
+const host = u.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+const blockedNames = ['localhost', 'host.docker.internal', 'metadata.google.internal', 'metadata'];
+if (blockedNames.includes(host) || host.endsWith('.localhost')) throw new Error('Blocked host: ' + host);
+const m = host.match(/^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$/);
+if (m) {
+  const a = Number(m[1]), b = Number(m[2]);
+  if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+    throw new Error('Blocked private/link-local IP: ' + host);
+  }
+}
+if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) throw new Error('Blocked IPv6 host: ' + host);
+return { json: $json };`,
+        },
+        id: randomUUID(),
+        name: 'Validate URL',
+        type: 'n8n-nodes-base.code',
+        typeVersion: 2,
+        position: [420, 300],
+      },
+      {
+        parameters: {
           method: 'GET',
           url: '={{ $json.body.url }}',
           options: {
@@ -321,7 +352,7 @@ export function buildWebFetchWorkflowJson(): object {
         name: 'Fetch Page',
         type: 'n8n-nodes-base.httpRequest',
         typeVersion: 4.2,
-        position: [480, 300],
+        position: [620, 300],
       },
       {
         parameters: {
@@ -368,7 +399,8 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
       },
     ],
     connections: {
-      Webhook: { main: [[{ node: 'Fetch Page', type: 'main', index: 0 }]] },
+      Webhook: { main: [[{ node: 'Validate URL', type: 'main', index: 0 }]] },
+      'Validate URL': { main: [[{ node: 'Fetch Page', type: 'main', index: 0 }]] },
       'Fetch Page': { main: [[{ node: 'Extract Text', type: 'main', index: 0 }]] },
       'Extract Text': { main: [[{ node: 'Respond', type: 'main', index: 0 }]] },
     },

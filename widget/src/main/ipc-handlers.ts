@@ -34,6 +34,7 @@ import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
 import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
+import { registerAutomationRunner } from './tools/automation';
 import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
@@ -1638,9 +1639,25 @@ try {
   });
 
   // ── Document Viewer ────────────────────────────────────────────────────────
+
+  // Confine document read/write to the user's home directory. Without this a
+  // malicious LLM tool-call or a compromised renderer could read arbitrary
+  // files (~/.ssh/id_rsa, browser cookie stores, etc.) and return them.
+  function resolveWithinHome(filePath: string): { resolved: string } | { error: string } {
+    const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+    const homeDir = os.homedir();
+    const homeWithSep = homeDir.toLowerCase() + path.sep;
+    if (resolved.toLowerCase() !== homeDir.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {
+      return { error: 'Access denied: path must be within home directory' };
+    }
+    return { resolved };
+  }
+
   ipcMain.handle('homebot:parse-document', async (_event, filePath: string) => {
     try {
-      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      const guard = resolveWithinHome(filePath);
+      if ('error' in guard) return { success: false, error: guard.error };
+      const resolved = guard.resolved;
       if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
 
       const stat = fs.statSync(resolved);
@@ -1701,13 +1718,9 @@ try {
 
   ipcMain.handle('homebot:write-document', async (_event, filePath: string, content: string) => {
     try {
-      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
-      const homeDir = os.homedir();
-      const homeWithSep = homeDir.toLowerCase() + path.sep;
-      if (resolved.toLowerCase() !== homeDir.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {
-        return { success: false, error: 'Access denied: path must be within home directory' };
-      }
-      fs.writeFileSync(resolved, content, 'utf-8');
+      const guard = resolveWithinHome(filePath);
+      if ('error' in guard) return { success: false, error: guard.error };
+      fs.writeFileSync(guard.resolved, content, 'utf-8');
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || String(err) };
@@ -1876,12 +1889,29 @@ try {
   function readAutomations(): any[] {
     try {
       if (!fs.existsSync(AUTOMATIONS_FILE)) return [];
-      return JSON.parse(fs.readFileSync(AUTOMATIONS_FILE, 'utf8'));
-    } catch { return []; }
+      const parsed = JSON.parse(fs.readFileSync(AUTOMATIONS_FILE, 'utf8'));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      // Don't silently return [] — that would make every automation vanish from
+      // the UI and let the next write overwrite the (recoverable) file. Back up
+      // the corrupt file so it can be inspected/restored, then start clean.
+      try {
+        const backup = `${AUTOMATIONS_FILE}.corrupt-${Date.now()}`;
+        if (fs.existsSync(AUTOMATIONS_FILE)) fs.copyFileSync(AUTOMATIONS_FILE, backup);
+        console.error(`[Automation] automations.json unreadable, backed up to ${backup}:`, e);
+      } catch (backupErr) {
+        console.error('[Automation] failed to back up corrupt automations.json:', backupErr);
+      }
+      return [];
+    }
   }
 
   function writeAutomations(automations: any[]) {
-    fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify(automations, null, 2), 'utf8');
+    // Atomic write: serialize to a temp file then rename, so a crash mid-write
+    // can never leave a half-written (corrupt) automations.json behind.
+    const tmp = `${AUTOMATIONS_FILE}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(automations, null, 2), 'utf8');
+    fs.renameSync(tmp, AUTOMATIONS_FILE);
   }
 
   ipcMain.handle('homebot:load-automations', async () => {
@@ -1955,6 +1985,9 @@ try {
     if (!auto?.instructions) return { success: false, error: 'Automation has no instructions' };
 
     let resultText = '';
+    // Track failure explicitly rather than sniffing the output text — a
+    // legitimate LLM response that begins with "Error:" is not a failed run.
+    let errored = false;
 
     // Auto-deploy to n8n if no webhook URL yet and n8n is reachable
     if (!auto.n8nWebhookUrl) {
@@ -2057,6 +2090,7 @@ try {
           await axios.get(`${ollamaBase}/api/tags`, { timeout: 3000 });
         } catch {
           resultText = 'Error: No AI backend available. Cloud LLM failed and Ollama is not running. Check your API key in Settings or start Ollama.';
+          errored = true;
         }
 
         if (!resultText) {
@@ -2111,6 +2145,7 @@ try {
             }
           } catch (err: any) {
             resultText = `Error: ${err?.message || err}`;
+            errored = true;
           }
         }
       }
@@ -2124,10 +2159,11 @@ try {
     if (stored) {
       stored.lastRun = new Date().toISOString();
       stored.lastResult = resultText;
+      stored.lastStatus = errored ? 'error' : 'success';
       writeAutomations(automations);
     }
 
-    return resultText.startsWith('Error:')
+    return errored
       ? { success: false, error: resultText }
       : { success: true, result: resultText };
   }
@@ -2139,35 +2175,62 @@ try {
     return executeAutomation(auto);
   });
 
+  // Let the chat-facing automation tools (create_automation, run_automation, …)
+  // fire automations through the same execution engine as the UI.
+  registerAutomationRunner(executeAutomation);
+
   // ── Scheduled automation timer ──
-  const automationTimers = new Map<string, ReturnType<typeof setInterval>>();
+  // Each entry keeps the live interval plus a signature of the config that
+  // produced it. The resync below only touches timers whose signature changed
+  // — rebuilding every timer on each 60s tick would reset the interval before
+  // it could ever elapse, so scheduled automations would never fire.
+  const automationTimers = new Map<string, { timer: ReturnType<typeof setInterval>; sig: string }>();
+
+  function scheduleSignature(auto: any): string {
+    return `${auto.scheduleMinutes}`;
+  }
+
+  function makeAutomationTimer(id: string, ms: number): ReturnType<typeof setInterval> {
+    return setInterval(async () => {
+      const fresh = readAutomations().find((a: any) => a.id === id);
+      if (!fresh || !fresh.enabled) return;
+      console.log(`[Automation] Running scheduled: "${fresh.name}"`);
+      const result = await executeAutomation(fresh);
+      // Notify renderer
+      try {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('homebot:reminder-fired', {
+            message: `Automation "${fresh.name}" completed: ${result.result || result.error || 'done'}`,
+            label: fresh.name,
+          });
+        }
+      } catch { /* ignore */ }
+    }, ms);
+  }
 
   function startAutomationSchedule() {
-    // Clear all existing timers
-    for (const t of automationTimers.values()) clearInterval(t);
-    automationTimers.clear();
-
     const automations = readAutomations();
+    const wanted = new Map<string, { ms: number; sig: string }>();
     for (const auto of automations) {
       if (auto.trigger === 'schedule' && auto.enabled && auto.scheduleMinutes > 0) {
-        const ms = auto.scheduleMinutes * 60_000;
-        const timer = setInterval(async () => {
-          const fresh = readAutomations().find((a: any) => a.id === auto.id);
-          if (!fresh || !fresh.enabled) return;
-          console.log(`[Automation] Running scheduled: "${fresh.name}"`);
-          const result = await executeAutomation(fresh);
-          // Notify renderer
-          try {
-            const win = BrowserWindow.getAllWindows()[0];
-            if (win && !win.isDestroyed()) {
-              win.webContents.send('homebot:reminder-fired', {
-                message: `Automation "${fresh.name}" completed: ${result.result || result.error || 'done'}`,
-                label: fresh.name,
-              });
-            }
-          } catch { /* ignore */ }
-        }, ms);
-        automationTimers.set(auto.id, timer);
+        wanted.set(auto.id, { ms: auto.scheduleMinutes * 60_000, sig: scheduleSignature(auto) });
+      }
+    }
+
+    // Remove timers for automations that are gone, disabled, or rescheduled.
+    for (const [id, existing] of automationTimers) {
+      const want = wanted.get(id);
+      if (!want || want.sig !== existing.sig) {
+        clearInterval(existing.timer);
+        automationTimers.delete(id);
+      }
+    }
+
+    // Add timers for newly-scheduled or rescheduled automations.
+    for (const [id, { ms, sig }] of wanted) {
+      if (!automationTimers.has(id)) {
+        automationTimers.set(id, { timer: makeAutomationTimer(id, ms), sig });
       }
     }
   }
@@ -2180,7 +2243,7 @@ try {
 
   app.on?.('before-quit', () => {
     clearInterval(scheduleResyncTimer);
-    for (const t of automationTimers.values()) clearInterval(t);
+    for (const t of automationTimers.values()) clearInterval(t.timer);
     automationTimers.clear();
   });
 
