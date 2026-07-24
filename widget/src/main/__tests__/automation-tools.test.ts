@@ -25,6 +25,7 @@ import {
   updateAutomationHandler,
   deleteAutomationHandler,
   registerAutomationRunner,
+  registerAutomationTierProvider,
   automationToolDefs,
 } from '../tools/automation';
 
@@ -37,6 +38,8 @@ function readFileState(): any[] {
 
 beforeEach(() => {
   if (fs.existsSync(AUTOMATIONS_FILE)) fs.unlinkSync(AUTOMATIONS_FILE);
+  // Default: no tier gate (Pro) so the functional tests below run unblocked.
+  registerAutomationTierProvider(() => 'pro');
 });
 
 afterAll(() => {
@@ -126,6 +129,36 @@ describe('create_automation', () => {
     expect(stored[0].lastStatus).toBe('success');
     expect(stored[0].lastResult).toBe('News summary here');
     expect(stored[0].lastRun).toBeTruthy();
+  });
+});
+
+describe('Pro gate', () => {
+  test('a Free tier blocks create/run/update with an upgrade message; list stays open', async () => {
+    registerAutomationTierProvider(() => 'free');
+    const create = await createAutomationHandler({ name: 'X', instructions: 'y' }, ctx);
+    expect(create.success).toBe(false);
+    expect(create.error).toMatch(/Pro/i);
+
+    // Nothing was written.
+    expect(fs.existsSync(AUTOMATIONS_FILE)).toBe(false);
+
+    const run = await runAutomationHandler({ automation: 'anything' }, ctx);
+    expect(run.success).toBe(false);
+    expect(run.error).toMatch(/Pro/i);
+
+    const update = await updateAutomationHandler({ automation: 'anything', enabled: true }, ctx);
+    expect(update.success).toBe(false);
+    expect(update.error).toMatch(/Pro/i);
+
+    // Listing is not gated.
+    const list = await listAutomationsHandler({}, ctx);
+    expect(list.success).toBe(true);
+  });
+
+  test('a Pro tier allows creation', async () => {
+    registerAutomationTierProvider(() => 'pro');
+    const res = await createAutomationHandler({ name: 'Pro OK', instructions: 'do it' }, ctx);
+    expect(res.success).toBe(true);
   });
 });
 

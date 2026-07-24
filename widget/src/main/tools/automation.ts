@@ -85,6 +85,30 @@ export function registerAutomationRunner(runner: AutomationRunner): void {
   automationRunner = runner;
 }
 
+// ---- Pro gate ----
+// The Automation Center is a Pro feature, so the chat-facing tools that mutate
+// or run automations must be fenced too — otherwise a Free user could bypass
+// the UI's gate by just asking the assistant. Listing stays open.
+let tierProvider: (() => 'free' | 'pro') | null = null;
+
+/** Injected at startup so the chat automation tools share the app's tier. */
+export function registerAutomationTierProvider(fn: () => 'free' | 'pro'): void {
+  tierProvider = fn;
+}
+
+const UPGRADE_MESSAGE =
+  'The Automation Center is a HomeBot Pro feature. Ask the user to upgrade in Settings → HomeBot Pro to unlock creating and running automations.';
+
+/** Returns an upgrade-required tool result when the current tier is not Pro. */
+function proGate(): ToolResult | null {
+  // Fail closed only when we actually know the tier is free. If no provider is
+  // wired (e.g. isolated unit tests), don't block — the IPC layer still gates.
+  if (tierProvider && tierProvider() !== 'pro') {
+    return { success: false, error: UPGRADE_MESSAGE };
+  }
+  return null;
+}
+
 // ---- Lookup helper ----
 
 function findAutomation(
@@ -286,6 +310,8 @@ export const deleteAutomationDef: ToolDefinition = {
 
 export const createAutomationHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
+    const gated = proGate();
+    if (gated) return gated;
     const name = String(args.name || '').trim();
     const instructions = String(args.instructions || '').trim();
     if (!name) return { success: false, error: 'name is required' };
@@ -352,6 +378,8 @@ export const listAutomationsHandler: ToolHandler = async (): Promise<ToolResult>
 
 export const runAutomationHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
+    const gated = proGate();
+    if (gated) return gated;
     const { auto, error } = findAutomation(readAutomations(), String(args.automation || ''));
     if (!auto) return { success: false, error };
     return await fireAutomation(auto);
@@ -362,6 +390,8 @@ export const runAutomationHandler: ToolHandler = async (args): Promise<ToolResul
 
 export const updateAutomationHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
+    const gated = proGate();
+    if (gated) return gated;
     const automations = readAutomations();
     const { auto, error } = findAutomation(automations, String(args.automation || ''));
     if (!auto) return { success: false, error };

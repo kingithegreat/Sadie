@@ -34,7 +34,7 @@ import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
 import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
-import { registerAutomationRunner } from './tools/automation';
+import { registerAutomationRunner, registerAutomationTierProvider } from './tools/automation';
 import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
 import { speakHandler, stopSpeakingHandler } from './tools/voice';
@@ -1918,7 +1918,7 @@ try {
     return { automations: readAutomations() };
   });
 
-  ipcMain.handle('homebot:create-automation', async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
+  ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
     const automations = readAutomations();
     const automation: any = {
       id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1954,9 +1954,9 @@ try {
     automations.push(automation);
     writeAutomations(automations);
     return { automation, error };
-  });
+  }));
 
-  ipcMain.handle('homebot:update-automation', async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
+  ipcMain.handle('homebot:update-automation', gatedAutomationHandler('homebot:update-automation', getCurrentTier, async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
     const automations = readAutomations();
     const idx = automations.findIndex((a: any) => a.id === data.id);
     if (idx === -1) return { success: false, error: 'Automation not found' };
@@ -1970,7 +1970,7 @@ try {
     if (data.n8nWebhookUrl !== undefined) auto.n8nWebhookUrl = data.n8nWebhookUrl || undefined;
     writeAutomations(automations);
     return { success: true };
-  });
+  }));
 
   ipcMain.handle('homebot:delete-automation', async (_event, data: { id: string }) => {
     const automations = readAutomations().filter((a: any) => a.id !== data.id);
@@ -2168,16 +2168,18 @@ try {
       : { success: true, result: resultText };
   }
 
-  ipcMain.handle('homebot:run-automation', async (_event, data: { id: string }) => {
+  ipcMain.handle('homebot:run-automation', gatedAutomationHandler('homebot:run-automation', getCurrentTier, async (_event, data: { id: string }) => {
     const automations = readAutomations();
     const auto = automations.find((a: any) => a.id === data.id);
     if (!auto) return { success: false, error: 'Automation not found' };
     return executeAutomation(auto);
-  });
+  }));
 
   // Let the chat-facing automation tools (create_automation, run_automation, …)
-  // fire automations through the same execution engine as the UI.
+  // fire automations through the same execution engine as the UI, and share the
+  // app's Pro tier so those tools are fenced the same way the IPC channels are.
   registerAutomationRunner(executeAutomation);
+  registerAutomationTierProvider(getCurrentTier);
 
   // ── Scheduled automation timer ──
   // Each entry keeps the live interval plus a signature of the config that

@@ -35,6 +35,14 @@ export const AUTOMATION_CENTER_CHANNELS: Readonly<Record<string, Capability>> = 
   'homebot:scheduler-add': 'automation',
   'homebot:scheduler-remove': 'automation',
   'homebot:scheduler-toggle': 'automation',
+  // Automation Center CRUD — the channels the running UI actually calls.
+  // Creating, running, editing, and deploying automations is the flagship Pro
+  // feature and must be fenced here at the handler layer. (Listing/loading is
+  // intentionally left open so Free users can still see the panel and its
+  // upgrade prompt rather than an empty error.)
+  'homebot:create-automation': 'automation',
+  'homebot:update-automation': 'automation',
+  'homebot:run-automation': 'automation',
 };
 
 /** Is this IPC channel part of the (Pro-gated) Automation Center? */
