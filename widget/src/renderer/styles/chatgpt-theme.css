@@ -7323,6 +7323,25 @@ body {
   margin-bottom: 16px;
 }
 
+.automation-pro-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: oklch(75% 0.15 85 / 0.12);
+  border: 1px solid oklch(75% 0.15 85 / 0.35);
+  color: oklch(80% 0.12 85);
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 16px;
+}
+
+.automation-pro-banner button {
+  flex-shrink: 0;
+}
+
 .automation-error button {
   background: none;
   border: none;

@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased — Automation from chat + audit hardening
+## Unreleased — Automation from chat + monetization + audit hardening
 
 ### Added
+- **Offline Pro licensing** (`src/licensing/signedLicense.ts`, `signingKey.ts`, `scripts/licensing/*`): sell Pro with no third-party account or server. The vendor mints Ed25519-signed license keys per sale; the app verifies them offline against an embedded public key. Customers paste a key into Settings → HomeBot Pro to unlock. See `docs/SELLING_AND_LICENSING.md`.
+- **Pro gate enforced end-to-end**: the Automation Center CRUD IPC channels (`homebot:create/update/run-automation`) and the chat automation tools are now fenced at the handler layer; Free users get a clear in-app upgrade prompt instead of silently using a paid feature.
 - **Chat-driven automations** (`tools/automation.ts`): the assistant can now create, list, run, update, and delete Automation Center automations directly from chat (`create_automation` with `run_now` to create and fire in one step), backed by the same store and execution engine as the UI.
 
 ### Fixed

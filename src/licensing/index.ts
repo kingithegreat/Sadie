@@ -4,6 +4,8 @@
 export * from './types';
 export * from './config';
 export * from './tierResolver';
+export * from './signedLicense';
+export * from './signingKey';
 export {
   LemonSqueezyLicenseService,
   mapLemonSqueezyResponse,
