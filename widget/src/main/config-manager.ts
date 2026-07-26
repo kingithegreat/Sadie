@@ -5,7 +5,7 @@ import { logTelemetryConsent } from './utils/logger';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
-  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'geminiApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl'
+  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'geminiApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl', 'n8nApiKey'
 ];
 
 /**
@@ -44,6 +44,9 @@ interface WindowPosition {
 
 export interface Settings {
   n8nUrl: string;
+  // n8n public API key (Settings → n8n) — unlocks authenticated REST
+  // workflow management instead of the docker-exec fallback
+  n8nApiKey?: string;
   ollamaUrl: string;
   // Model selection
   modelRoutingMode?: 'off' | 'prompt' | 'auto';

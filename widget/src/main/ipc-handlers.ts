@@ -56,7 +56,7 @@ import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
-import { createAndActivateWorkflow, ensureWebFetchWorkflow } from './n8n-api';
+import { createAndActivateWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
 import {
   getCurrentTier,
@@ -2180,6 +2180,24 @@ try {
   // app's Pro tier so those tools are fenced the same way the IPC channels are.
   registerAutomationRunner(executeAutomation);
   registerAutomationTierProvider(getCurrentTier);
+
+  // Feed the n8n layer the URL + API key from Settings, so workflow
+  // management authenticates through HomeBot's own configuration (REST API)
+  // instead of requiring docker exec access.
+  registerN8nConnectionProvider(() => {
+    const s = getSettings();
+    return { baseUrl: s.n8nUrl || 'http://localhost:5678', apiKey: (s as any).n8nApiKey };
+  });
+
+  // Settings → n8n "Test connection" button. Accepts unsaved values so the
+  // user can verify a key before hitting Save.
+  ipcMain.handle('homebot:n8n-test-connection', async (_event, data: { baseUrl?: string; apiKey?: string } | undefined) => {
+    try {
+      return await verifyN8nConnection(data);
+    } catch (err: any) {
+      return { reachable: false, authenticated: null, error: err?.message || 'Connection test failed' };
+    }
+  });
 
   // ── Scheduled automation timer ──
   // Each entry keeps the live interval plus a signature of the config that

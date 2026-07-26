@@ -13,6 +13,7 @@ import UpgradeModal from './UpgradeModal';
 interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
+  n8nApiKey?: string;
   widgetHotkey: string;
   globalHotkey?: string;
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
@@ -232,6 +233,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     hardware: { vramGB: number | null; gpuName: string | null; profile: string | null };
     timestamp: string;
   };
+  // n8n connection test (Settings → n8n API key)
+  const [n8nTesting, setN8nTesting] = useState(false);
+  const [n8nTestResult, setN8nTestResult] = useState<string | null>(null);
+
   const [sysCheck, setSysCheck] = useState<SysCheckReport | null>(null);
   const [sysCheckLoading, setSysCheckLoading] = useState(false);
   const [sysCheckError, setSysCheckError] = useState<string | null>(null);
@@ -835,6 +840,58 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             placeholder="http://localhost:5678"
           />
           <small className="setting-hint">URL of your local n8n instance for workflow automation. Requires Docker Desktop running n8n.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">n8n API key</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={localSettings.n8nApiKey || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                n8nApiKey: e.target.value
+              })
+            }
+            placeholder="n8n_api_..."
+            autoComplete="off"
+          />
+          <small className="setting-hint">
+            Create one in n8n under Settings → API. With a key set, HomeBot manages workflows through n8n&apos;s
+            authenticated API (no Docker access or container restarts needed). Stored encrypted.
+          </small>
+          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              className="sp-btn"
+              disabled={n8nTesting}
+              onClick={async () => {
+                setN8nTesting(true);
+                setN8nTestResult(null);
+                try {
+                  const res = await (window as any).electron?.testN8nConnection?.({
+                    baseUrl: localSettings.n8nUrl,
+                    apiKey: localSettings.n8nApiKey || '',
+                  });
+                  if (!res) setN8nTestResult('Test unavailable');
+                  else if (!res.reachable) setN8nTestResult(`✗ ${res.error || 'n8n not reachable'}`);
+                  else if (res.authenticated === true) setN8nTestResult('✓ Connected and authenticated');
+                  else if (res.authenticated === null) setN8nTestResult('✓ n8n reachable (no API key set — using Docker fallback)');
+                  else setN8nTestResult(`✗ ${res.error || 'API key rejected'}`);
+                } catch (e: any) {
+                  setN8nTestResult(`✗ ${e?.message || 'Test failed'}`);
+                } finally {
+                  setN8nTesting(false);
+                }
+              }}
+            >
+              {n8nTesting ? 'Testing…' : 'Test connection'}
+            </button>
+            {n8nTestResult && (
+              <small className="setting-hint" style={{ margin: 0 }} data-testid="n8n-test-result">{n8nTestResult}</small>
+            )}
+          </div>
         </div>
         </>}
 

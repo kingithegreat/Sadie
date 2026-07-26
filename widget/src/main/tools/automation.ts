@@ -16,6 +16,13 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import {
+  createAndActivateWorkflow,
+  importWorkflow,
+  activateWorkflow,
+  validateWorkflowJson,
+  extractWebhookUrl,
+} from '../n8n-api';
 
 // ---- Persistence (mirrors the Automation Center store in ipc-handlers.ts) ----
 
@@ -212,6 +219,11 @@ export const createAutomationDef: ToolDefinition = {
         type: 'boolean',
         description: 'Fire the automation immediately after creating it, so the result confirms the setup works (default false)',
       },
+      deploy_to_n8n: {
+        type: 'boolean',
+        description:
+          'Also deploy an n8n workflow for this automation and wire its webhook up, so runs execute through n8n (default false). Requires n8n to be running.',
+      },
     },
     required: ['name', 'instructions'],
   },
@@ -289,6 +301,42 @@ export const updateAutomationDef: ToolDefinition = {
   },
 };
 
+export const importN8nWorkflowDef: ToolDefinition = {
+  name: 'import_n8n_workflow',
+  description:
+    'Import a complete n8n workflow (as JSON) into the local n8n instance and optionally activate it. ' +
+    'Use this to build custom multi-node workflows beyond the standard automation template. ' +
+    'The JSON must have: "name" (string), "nodes" (array — each node needs "id", "name", "type", ' +
+    '"typeVersion", "position" [x,y], and "parameters"), "connections" (object keyed by source node ' +
+    'name, e.g. {"Webhook": {"main": [[{"node": "NextNode", "type": "main", "index": 0}]]}}), and ' +
+    '"settings" ({"executionOrder": "v1"}). Common node types: "n8n-nodes-base.webhook" (trigger; set ' +
+    'parameters.httpMethod, parameters.path, parameters.responseMode="responseNode"), ' +
+    '"n8n-nodes-base.code" (parameters.jsCode, typeVersion 2), "n8n-nodes-base.httpRequest" ' +
+    '(typeVersion 4.2), "n8n-nodes-base.respondToWebhook", "n8n-nodes-base.if", "n8n-nodes-base.scheduleTrigger". ' +
+    'Returns the workflow id and its webhook URL (when it has a Webhook node) for test-firing.',
+  category: 'utility',
+  requiresConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      workflow_json: {
+        type: 'string',
+        description: 'The full n8n workflow as a JSON string (name, nodes, connections, settings)',
+      },
+      activate: {
+        type: 'boolean',
+        description: 'Activate the workflow after import so triggers/webhooks go live (default true)',
+      },
+      link_to_automation: {
+        type: 'string',
+        description:
+          'Optional Automation Center automation (id or name) whose runs should call this workflow — its webhook URL is wired into that automation',
+      },
+    },
+    required: ['workflow_json'],
+  },
+};
+
 export const deleteAutomationDef: ToolDefinition = {
   name: 'delete_automation',
   description: 'Permanently delete a saved automation by id or name.',
@@ -341,6 +389,19 @@ export const createAutomationHandler: ToolHandler = async (args): Promise<ToolRe
       createdAt: new Date().toISOString(),
     };
 
+    // Optional: deploy an n8n workflow now (same path as the UI's
+    // "Deploy to n8n" checkbox). Failure is non-fatal — the automation is
+    // still created and will run via local tools.
+    let n8nWarning: string | undefined;
+    if (args.deploy_to_n8n) {
+      try {
+        const wf = await createAndActivateWorkflow({ automationName: name, instructions });
+        automation.n8nWebhookUrl = wf.webhookUrl;
+      } catch (err: any) {
+        n8nWarning = `n8n deploy failed: ${err?.message || err}. Automation created without n8n — runs will use local tools.`;
+      }
+    }
+
     automations.push(automation);
     writeAutomations(automations);
 
@@ -355,6 +416,7 @@ export const createAutomationHandler: ToolHandler = async (args): Promise<ToolRe
         result: {
           created: summarize(automation),
           note,
+          ...(n8nWarning ? { n8n_warning: n8nWarning } : {}),
           first_run: runResult.success
             ? { status: 'success', output: (runResult.result as any)?.output }
             : { status: 'error', error: runResult.error },
@@ -362,7 +424,7 @@ export const createAutomationHandler: ToolHandler = async (args): Promise<ToolRe
       };
     }
 
-    return { success: true, result: { created: summarize(automation), note } };
+    return { success: true, result: { created: summarize(automation), note, ...(n8nWarning ? { n8n_warning: n8nWarning } : {}) } };
   } catch (err: any) {
     return { success: false, error: `create_automation failed: ${err.message}` };
   }
@@ -415,6 +477,77 @@ export const updateAutomationHandler: ToolHandler = async (args): Promise<ToolRe
   }
 };
 
+export const importN8nWorkflowHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  try {
+    const gated = proGate();
+    if (gated) return gated;
+
+    const raw = String(args.workflow_json || '').trim();
+    if (!raw) return { success: false, error: 'workflow_json is required' };
+
+    let workflow: any;
+    try {
+      workflow = JSON.parse(raw);
+    } catch (e: any) {
+      return { success: false, error: `workflow_json is not valid JSON: ${e.message}` };
+    }
+
+    const check = validateWorkflowJson(workflow);
+    if (!check.ok) {
+      return { success: false, error: `Workflow JSON failed validation: ${check.errors.join('; ')}. Fix these and retry.` };
+    }
+
+    // Resolve the automation link BEFORE importing, so a bad reference
+    // doesn't leave an orphaned workflow behind in n8n.
+    let linked: StoredAutomation | undefined;
+    if (args.link_to_automation !== undefined && String(args.link_to_automation).trim()) {
+      const { auto, error } = findAutomation(readAutomations(), String(args.link_to_automation));
+      if (!auto) return { success: false, error };
+      linked = auto;
+    }
+
+    const workflowId = await importWorkflow(workflow);
+
+    const activate = args.activate !== false;
+    if (activate) await activateWorkflow(workflowId);
+
+    const webhookUrl = extractWebhookUrl(workflow);
+
+    if (linked) {
+      if (!webhookUrl) {
+        return {
+          success: false,
+          error: `Workflow imported (id ${workflowId}) but has no Webhook node, so it cannot be linked to automation "${linked.name}". Add an n8n-nodes-base.webhook trigger node.`,
+        };
+      }
+      const automations = readAutomations();
+      const stored = automations.find(a => a.id === linked!.id);
+      if (stored) {
+        stored.n8nWebhookUrl = webhookUrl;
+        writeAutomations(automations);
+      }
+    }
+
+    return {
+      success: true,
+      result: {
+        workflow_id: workflowId,
+        name: workflow.name,
+        activated: activate,
+        webhook_url: webhookUrl || undefined,
+        linked_automation: linked ? { id: linked.id, name: linked.name } : undefined,
+        note: webhookUrl && activate
+          ? `Live — test it with a POST to ${webhookUrl}`
+          : activate
+            ? 'Workflow imported and activated.'
+            : 'Workflow imported but NOT activated — activate it in n8n or re-import with activate=true.',
+      },
+    };
+  } catch (err: any) {
+    return { success: false, error: `import_n8n_workflow failed: ${err.message}` };
+  }
+};
+
 export const deleteAutomationHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
     const automations = readAutomations();
@@ -435,6 +568,7 @@ export const automationToolDefs: ToolDefinition[] = [
   runAutomationDef,
   updateAutomationDef,
   deleteAutomationDef,
+  importN8nWorkflowDef,
 ];
 
 export const automationToolHandlers: Record<string, ToolHandler> = {
@@ -443,4 +577,5 @@ export const automationToolHandlers: Record<string, ToolHandler> = {
   run_automation: runAutomationHandler,
   update_automation: updateAutomationHandler,
   delete_automation: deleteAutomationHandler,
+  import_n8n_workflow: importN8nWorkflowHandler,
 };
