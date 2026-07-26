@@ -168,6 +168,7 @@ export interface CustomLLMConfig {
 export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
+  n8nApiKey?: string;
   widgetHotkey: string;
   globalHotkey?: string;
   theme?: 'light' | 'dark' | 'system';
@@ -537,6 +538,7 @@ export interface ElectronAPI {
   updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
   deleteAutomation?: (data: { id: string }) => Promise<{ success: boolean }>;
   runAutomation?: (data: { id: string }) => Promise<{ success: boolean; result?: string; error?: string }>;
+  testN8nConnection?: (data: { baseUrl?: string; apiKey?: string }) => Promise<{ reachable: boolean; authenticated: boolean | null; error?: string }>;
 }
 
 // ── Quiz Types ──────────────────────────────────────────────────────────────

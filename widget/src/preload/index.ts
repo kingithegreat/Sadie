@@ -661,6 +661,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:delete-automation', data),
   runAutomation: async (data: any) =>
     ipcRenderer.invoke('homebot:run-automation', data),
+  // Test n8n reachability + API-key auth (values may be unsaved Settings input)
+  testN8nConnection: async (data: { baseUrl?: string; apiKey?: string }) =>
+    ipcRenderer.invoke('homebot:n8n-test-connection', data),
 
   // Quiz mode
   generateQuiz: async (params: any) =>

@@ -18,16 +18,30 @@ jest.mock('electron', () => ({
   },
 }));
 
+// The automation tools call into the n8n layer for deploy/import — mock it so
+// these tests never touch Docker or a live n8n instance.
+jest.mock('../n8n-api', () => ({
+  createAndActivateWorkflow: jest.fn(),
+  importWorkflow: jest.fn(),
+  activateWorkflow: jest.fn(),
+  validateWorkflowJson: jest.requireActual('../n8n-api').validateWorkflowJson,
+  extractWebhookUrl: jest.fn(),
+}));
+
 import {
   createAutomationHandler,
   listAutomationsHandler,
   runAutomationHandler,
   updateAutomationHandler,
   deleteAutomationHandler,
+  importN8nWorkflowHandler,
   registerAutomationRunner,
   registerAutomationTierProvider,
   automationToolDefs,
 } from '../tools/automation';
+import * as n8nApi from '../n8n-api';
+
+const mockedN8n = n8nApi as jest.Mocked<typeof n8nApi>;
 
 const AUTOMATIONS_FILE = path.join(mockUserDataDir, 'automations.json');
 const ctx = {} as any;
@@ -47,19 +61,22 @@ afterAll(() => {
 });
 
 describe('tool definitions', () => {
-  test('exposes all five automation tools', () => {
+  test('exposes all six automation tools', () => {
     expect(automationToolDefs.map(d => d.name)).toEqual([
       'create_automation',
       'list_automations',
       'run_automation',
       'update_automation',
       'delete_automation',
+      'import_n8n_workflow',
     ]);
   });
 
-  test('only delete_automation requires confirmation', () => {
+  test('only destructive/arbitrary-code tools require confirmation', () => {
     for (const def of automationToolDefs) {
-      expect(!!def.requiresConfirmation).toBe(def.name === 'delete_automation');
+      expect(!!def.requiresConfirmation).toBe(
+        def.name === 'delete_automation' || def.name === 'import_n8n_workflow'
+      );
     }
   });
 });
@@ -129,6 +146,132 @@ describe('create_automation', () => {
     expect(stored[0].lastStatus).toBe('success');
     expect(stored[0].lastResult).toBe('News summary here');
     expect(stored[0].lastRun).toBeTruthy();
+  });
+});
+
+describe('create_automation deploy_to_n8n', () => {
+  test('wires the deployed webhook URL into the stored automation', async () => {
+    mockedN8n.createAndActivateWorkflow.mockResolvedValue({
+      id: 'wf-1',
+      name: 'HomeBot Auto: Deployed',
+      webhookPath: 'homebot/auto/deployed-x',
+      webhookUrl: 'http://localhost:5678/webhook/homebot/auto/deployed-x',
+    });
+    const res = await createAutomationHandler(
+      { name: 'Deployed', instructions: 'do it via n8n', deploy_to_n8n: true },
+      ctx
+    );
+    expect(res.success).toBe(true);
+    expect(mockedN8n.createAndActivateWorkflow).toHaveBeenCalledWith({ automationName: 'Deployed', instructions: 'do it via n8n' });
+    expect(readFileState()[0].n8nWebhookUrl).toBe('http://localhost:5678/webhook/homebot/auto/deployed-x');
+    expect(res.result.created.uses_n8n).toBe(true);
+  });
+
+  test('n8n deploy failure still creates the automation, with a warning', async () => {
+    mockedN8n.createAndActivateWorkflow.mockRejectedValue(new Error('docker not running'));
+    const res = await createAutomationHandler(
+      { name: 'Fallback', instructions: 'x', deploy_to_n8n: true },
+      ctx
+    );
+    expect(res.success).toBe(true);
+    expect(res.result.n8n_warning).toContain('docker not running');
+    expect(readFileState()[0].n8nWebhookUrl).toBeUndefined();
+  });
+});
+
+describe('import_n8n_workflow', () => {
+  const VALID_WORKFLOW = {
+    name: 'Custom Flow',
+    nodes: [
+      { id: 'a', name: 'Webhook', type: 'n8n-nodes-base.webhook', typeVersion: 1.1, position: [0, 0], parameters: { path: 'custom/flow', httpMethod: 'POST' } },
+      { id: 'b', name: 'Respond', type: 'n8n-nodes-base.respondToWebhook', typeVersion: 1.1, position: [200, 0], parameters: {} },
+    ],
+    connections: { Webhook: { main: [[{ node: 'Respond', type: 'main', index: 0 }]] } },
+    settings: { executionOrder: 'v1' },
+  };
+
+  beforeEach(() => {
+    mockedN8n.importWorkflow.mockReset().mockResolvedValue('wf-42');
+    mockedN8n.activateWorkflow.mockReset().mockResolvedValue(undefined);
+    (mockedN8n.extractWebhookUrl as jest.Mock).mockReset().mockReturnValue('http://localhost:5678/webhook/custom/flow');
+  });
+
+  test('imports, activates, and returns the webhook URL', async () => {
+    const res = await importN8nWorkflowHandler({ workflow_json: JSON.stringify(VALID_WORKFLOW) }, ctx);
+    expect(res.success).toBe(true);
+    expect(mockedN8n.importWorkflow).toHaveBeenCalledTimes(1);
+    expect(mockedN8n.activateWorkflow).toHaveBeenCalledWith('wf-42');
+    expect(res.result.workflow_id).toBe('wf-42');
+    expect(res.result.webhook_url).toBe('http://localhost:5678/webhook/custom/flow');
+    expect(res.result.activated).toBe(true);
+  });
+
+  test('activate=false imports without activating', async () => {
+    const res = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify(VALID_WORKFLOW), activate: false },
+      ctx
+    );
+    expect(res.success).toBe(true);
+    expect(mockedN8n.activateWorkflow).not.toHaveBeenCalled();
+    expect(res.result.activated).toBe(false);
+  });
+
+  test('rejects malformed JSON without touching n8n', async () => {
+    const res = await importN8nWorkflowHandler({ workflow_json: '{not json' }, ctx);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('not valid JSON');
+    expect(mockedN8n.importWorkflow).not.toHaveBeenCalled();
+  });
+
+  test('rejects schema violations (missing nodes, dangling connections)', async () => {
+    const noNodes = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify({ name: 'X', nodes: [], connections: {} }) },
+      ctx
+    );
+    expect(noNodes.success).toBe(false);
+    expect(noNodes.error).toContain('failed validation');
+
+    const dangling = await importN8nWorkflowHandler(
+      {
+        workflow_json: JSON.stringify({
+          ...VALID_WORKFLOW,
+          connections: { Webhook: { main: [[{ node: 'Ghost', type: 'main', index: 0 }]] } },
+        }),
+      },
+      ctx
+    );
+    expect(dangling.success).toBe(false);
+    expect(dangling.error).toContain('Ghost');
+    expect(mockedN8n.importWorkflow).not.toHaveBeenCalled();
+  });
+
+  test('links the webhook to an existing automation', async () => {
+    await createAutomationHandler({ name: 'Linked', instructions: 'x' }, ctx);
+    const res = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify(VALID_WORKFLOW), link_to_automation: 'Linked' },
+      ctx
+    );
+    expect(res.success).toBe(true);
+    expect(res.result.linked_automation.name).toBe('Linked');
+    expect(readFileState()[0].n8nWebhookUrl).toBe('http://localhost:5678/webhook/custom/flow');
+  });
+
+  test('a bad automation reference fails BEFORE importing (no orphan workflow)', async () => {
+    const res = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify(VALID_WORKFLOW), link_to_automation: 'ghost' },
+      ctx
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('not found');
+    expect(mockedN8n.importWorkflow).not.toHaveBeenCalled();
+  });
+
+  test('is Pro-gated', async () => {
+    registerAutomationTierProvider(() => 'free');
+    const res = await importN8nWorkflowHandler({ workflow_json: JSON.stringify(VALID_WORKFLOW) }, ctx);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/Pro/i);
+    expect(mockedN8n.importWorkflow).not.toHaveBeenCalled();
   });
 });
 
