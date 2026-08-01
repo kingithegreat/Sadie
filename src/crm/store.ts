@@ -36,12 +36,29 @@ import {
   TERMINAL_STAGES,
 } from './types';
 
-// better-sqlite3 is a CJS native module; require() keeps ts-jest and the
-// electron-vite bundler (which externalizes it) both happy.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Database = require('better-sqlite3');
-
 type Db = any; // better-sqlite3 Database — typed loosely to avoid a hard @types coupling
+
+/**
+ * Lazy-load better-sqlite3 at construction time, NOT module import time.
+ * Rationale: in the widget, `npm ci` triggers electron-builder's
+ * install-app-deps which rebuilds the native binding against Electron's ABI.
+ * Any plain-node process (e.g. the jest permissions smoke test) that merely
+ * IMPORTS the tool registry would crash on an ABI mismatch if this require
+ * lived at top level. Deferring it means importing/registering CRM tools is
+ * always safe; only actually opening the store needs a compatible binding.
+ */
+function loadDatabaseDriver(): any {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('better-sqlite3');
+  } catch (err: any) {
+    throw new Error(
+      `CRM storage engine failed to load (better-sqlite3): ${err?.message || err}. ` +
+        'If running under plain node after an Electron-targeted install, rebuild ' +
+        'the binding for your node version (npm rebuild better-sqlite3).'
+    );
+  }
+}
 
 const nowIso = (): string => new Date().toISOString();
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
@@ -182,6 +199,7 @@ export class CrmStore {
     if (options.dbPath !== ':memory:') {
       fs.mkdirSync(path.dirname(options.dbPath), { recursive: true });
     }
+    const Database = loadDatabaseDriver();
     this.db = new Database(options.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');

@@ -160,17 +160,17 @@ describe('CrmStore — deals & pipeline', () => {
     store.close();
   });
 
-  test('findStaleDeals surfaces quiet open deals and skips terminal ones', () => {
+  test('findStaleDeals surfaces quiet open deals and skips terminal ones', async () => {
     const store = freshStore();
     const quiet = store.createDeal({ title: 'Quiet deal' });
     const fresh = store.createDeal({ title: 'Fresh deal' });
     const done = store.createDeal({ title: 'Done deal' });
     store.advanceDeal(done.id, 'won');
 
-    // Backdate the quiet deal's last activity by poking through a logged
-    // activity with an old occurredAt, then manually verify the query uses it.
-    // Simpler: stale check with days=0 catches everything with last activity
-    // in the past; days=9999 catches nothing.
+    // days=0 → cutoff is "now": everything last touched in the past counts.
+    // Sleep a few ms first so no timestamp shares the cutoff's millisecond
+    // (the comparison is strict <, which is exactly what we want in prod).
+    await new Promise((r) => setTimeout(r, 10));
     expect(store.findStaleDeals(9999)).toHaveLength(0);
     const staleNow = store.findStaleDeals(0);
     const ids = staleNow.map((s) => s.deal.id).sort();
