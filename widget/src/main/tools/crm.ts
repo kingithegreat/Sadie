@@ -460,6 +460,25 @@ export const crmAuditLogDef: ToolDefinition = {
   },
 };
 
+export const crmExportDef: ToolDefinition = {
+  name: 'crm_export',
+  description:
+    'Export the entire CRM to files the owner can open anywhere: one CSV per table ' +
+    '(companies, contacts, deals, activities, notes, tasks, audit log) plus a combined ' +
+    'crm-export.json. Defaults to a timestamped folder next to the database.',
+  category: 'crm',
+  parameters: {
+    type: 'object',
+    properties: {
+      targetDir: {
+        type: 'string',
+        description: 'Optional absolute directory to write into (created if missing)',
+      },
+    },
+    required: [],
+  },
+};
+
 // ============= HANDLERS =============
 
 export const crmToolHandlers: Record<string, ToolHandler> = {
@@ -648,6 +667,10 @@ export const crmToolHandlers: Record<string, ToolHandler> = {
     );
     return { count: entries.length, entries };
   }),
+
+  crm_export: wrap('crm_export', (a) =>
+    getCrmStore().exportAll(asOptStr(a.targetDir) || undefined, 'owner')
+  ),
 };
 
 // ============= EXPORTS =============
@@ -673,4 +696,5 @@ export const crmToolDefs: ToolDefinition[] = [
   crmGetStagesDef,
   crmRenameStageDef,
   crmAuditLogDef,
+  crmExportDef,
 ];

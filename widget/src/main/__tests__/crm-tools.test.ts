@@ -168,3 +168,28 @@ describe('CRM tools — end-to-end flow', () => {
     expect((found.result as any).count).toBe(1);
   });
 });
+
+describe('crm_export', () => {
+  test('exports CSVs + JSON to an explicit directory', async () => {
+    await call('crm_create_company', { name: 'Export Co', domain: 'export.co.nz' });
+    const target = path.join(tmpDir, 'out');
+    const res = await call('crm_export', { targetDir: target });
+    expect(res.success).toBe(true);
+    const result = res.result as any;
+    expect(result.directory).toBe(target);
+    expect(result.counts.companies).toBe(1);
+    for (const f of ['companies.csv', 'audit_log.csv', 'crm-export.json']) {
+      expect(fs.existsSync(path.join(target, f))).toBe(true);
+    }
+  });
+
+  test('defaults to a timestamped folder beside the database', async () => {
+    await call('crm_create_company', { name: 'Default Dir Co' });
+    const res = await call('crm_export', {});
+    expect(res.success).toBe(true);
+    const dir = (res.result as any).directory as string;
+    expect(dir.startsWith(tmpDir)).toBe(true);
+    expect(path.basename(dir)).toMatch(/^crm-export-\d{8}-\d{6}$/);
+    expect(fs.existsSync(path.join(dir, 'crm-export.json'))).toBe(true);
+  });
+});

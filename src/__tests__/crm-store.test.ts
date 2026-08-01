@@ -324,3 +324,71 @@ describe('CrmStore — audit log', () => {
     store.close();
   });
 });
+
+describe('CrmStore — exportAll', () => {
+  const fs = require('fs') as typeof import('fs');
+  const os = require('os') as typeof import('os');
+  const path = require('path') as typeof import('path');
+
+  test('writes one CSV per table plus combined JSON, with correct counts', () => {
+    const store = freshStore();
+    const company = store.createCompany({ name: 'Comma, Quote "Co"', domain: 'cq.co.nz' });
+    const contact = store.createContact({
+      firstName: 'Line\nBreak',
+      email: 'lb@cq.co.nz',
+      companyId: company.id,
+    });
+    store.createDeal({ title: 'Website build', contactId: contact.id, valueCents: 250000 });
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-export-'));
+    const result = store.exportAll(dir, 'owner');
+
+    expect(result.directory).toBe(dir);
+    expect(result.files).toEqual([
+      'companies.csv',
+      'contacts.csv',
+      'deals.csv',
+      'activities.csv',
+      'notes.csv',
+      'tasks.csv',
+      'audit_log.csv',
+      'crm-export.json',
+    ]);
+    for (const f of result.files) {
+      expect(fs.existsSync(path.join(dir, f))).toBe(true);
+    }
+    expect(result.counts.companies).toBe(1);
+    expect(result.counts.contacts).toBe(1);
+    expect(result.counts.deals).toBe(1);
+    expect(result.counts.audit_log).toBeGreaterThanOrEqual(3);
+
+    // RFC 4180: embedded comma/quote/newline fields are quoted, quotes doubled, CRLF rows.
+    const companiesCsv = fs.readFileSync(path.join(dir, 'companies.csv'), 'utf8');
+    expect(companiesCsv).toContain('"Comma, Quote ""Co"""');
+    expect(companiesCsv.split('\r\n').length).toBeGreaterThanOrEqual(3); // header + row + trailing
+    const contactsCsv = fs.readFileSync(path.join(dir, 'contacts.csv'), 'utf8');
+    expect(contactsCsv).toContain('"Line\nBreak"');
+
+    // JSON payload round-trips and matches counts.
+    const json = JSON.parse(fs.readFileSync(path.join(dir, 'crm-export.json'), 'utf8'));
+    expect(json.companies).toHaveLength(1);
+    expect(json.counts).toEqual(result.counts);
+    expect(Array.isArray(json.stages)).toBe(true);
+    expect(typeof json.exportedAt).toBe('string');
+
+    // The export itself is audited (after the audit table snapshot was taken).
+    const log = store.getAuditLog(10, 'export');
+    expect(log.length).toBe(1);
+    expect(log[0].action).toBe('export');
+    expect(log[0].actor).toBe('owner');
+
+    fs.rmSync(dir, { recursive: true, force: true });
+    store.close();
+  });
+
+  test('in-memory database requires an explicit targetDir', () => {
+    const store = freshStore();
+    expect(() => store.exportAll()).toThrow(/targetDir is required/);
+    store.close();
+  });
+});
