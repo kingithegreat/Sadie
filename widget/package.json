@@ -37,6 +37,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@vitejs/plugin-react": "^5.1.2",
     "axios": "^1.6.2",
+    "better-sqlite3": "^11.10.0",
     "docx": "^9.6.0",
     "dotenv": "^16.3.1",
     "electron-updater": "^6.8.3",
