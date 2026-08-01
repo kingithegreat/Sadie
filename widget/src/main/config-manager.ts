@@ -114,6 +114,14 @@ export interface Settings {
   projectPath?: string;
   // Default location for weather queries when user doesn't specify one
   defaultLocation?: string;
+  // Voice input (speech-to-text)
+  // 'whisper' = local Whisper model (accurate, any accent, default)
+  // 'sapi' = legacy Windows dictation; 'webspeech' = Chromium online service
+  voiceEngine?: 'whisper' | 'sapi' | 'webspeech';
+  whisperModel?: 'tiny' | 'base' | 'small';
+  voiceLanguage?: string;
+  voiceSilenceStopSec?: number;
+  voiceMicDeviceId?: string;
   // Reflection validation: after a tool batch runs, ask the model to verify
   // the result actually answers the request before surfacing it. Off by
   // default — additive safety layer, opt-in while it proves itself out.
@@ -122,6 +130,10 @@ export interface Settings {
 
 const DEFAULT_SETTINGS: Settings = {
   n8nUrl: 'http://localhost:5678',
+  voiceEngine: 'whisper',
+  whisperModel: 'base',
+  voiceLanguage: 'en',
+  voiceSilenceStopSec: 2,
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
   modelRoutingMode: 'prompt',

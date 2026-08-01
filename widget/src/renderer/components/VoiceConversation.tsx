@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { resolveVoiceEngine, whisperTranscribeOnce } from '../utils/speech';
 import '../styles/voice-conversation.css';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -58,18 +59,43 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
     setTranscript('');
 
     try {
-      const result = await window.electron?.startSpeechRecognition?.();
+      let settings: any = {};
+      try { settings = (await (window.electron as any)?.getSettings?.()) || {}; } catch { /* defaults */ }
+      const engine = resolveVoiceEngine(settings.voiceEngine, {
+        hasSapi: typeof window.electron?.startSpeechRecognition === 'function',
+        hasWebSpeech: false, // conversation mode uses one-shot capture only
+      });
+
+      let text = '';
+      let recognitionError: string | undefined;
+
+      if (engine === 'whisper') {
+        const res = await whisperTranscribeOnce({
+          modelSize: settings.whisperModel,
+          language: settings.voiceLanguage,
+          micDeviceId: settings.voiceMicDeviceId,
+          silenceStopSec: settings.voiceSilenceStopSec,
+          onStatus: (s) => { if (mountedRef.current) setTranscript(s); },
+        });
+        text = res.text;
+      } else {
+        const result = await window.electron?.startSpeechRecognition?.();
+        text = result?.success ? (result.text || '') : '';
+        recognitionError = result?.error;
+      }
+
       if (!mountedRef.current) return;
 
-      if (result?.success && result.text) {
+      if (text) {
         conversationActive.current = true;
-        setTranscript(result.text);
+        setTranscript(text);
         setState('thinking');
-        onSendMessage(result.text);
+        onSendMessage(text);
       } else {
         setState('idle');
-        if (result?.error) {
-          setError(result.error);
+        setTranscript('');
+        if (recognitionError) {
+          setError(recognitionError);
         }
       }
     } catch (err) {

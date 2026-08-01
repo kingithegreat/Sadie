@@ -169,6 +169,12 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   n8nApiKey?: string;
+  // Voice input (speech-to-text)
+  voiceEngine?: 'whisper' | 'sapi' | 'webspeech';
+  whisperModel?: 'tiny' | 'base' | 'small';
+  voiceLanguage?: string;
+  voiceSilenceStopSec?: number;
+  voiceMicDeviceId?: string;
   widgetHotkey: string;
   globalHotkey?: string;
   theme?: 'light' | 'dark' | 'system';
