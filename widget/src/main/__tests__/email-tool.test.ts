@@ -31,13 +31,28 @@ import {
   emailSendDef,
   emailDraftDef,
   emailListDef,
+  isCapturableSender,
 } from '../tools/email';
+import { crmToolHandlers, resetCrmStoreForTests } from '../tools/crm';
+
+let crmTmpDir: string;
 
 beforeEach(() => {
   jest.clearAllMocks();
   // Clean up temp draft file between tests
   try { fs.rmSync(TEMP_DIR, { recursive: true, force: true }); } catch {}
+  // Point the CRM at a throwaway temp DB so email_list's CRM wiring never
+  // touches a real path during tests.
+  crmTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-email-crm-'));
+  process.env.HOMEBOT_CRM_DB_PATH = path.join(crmTmpDir, 'crm.sqlite3');
+  resetCrmStoreForTests();
   mockPS('sent');
+});
+
+afterEach(() => {
+  resetCrmStoreForTests();
+  delete process.env.HOMEBOT_CRM_DB_PATH;
+  try { fs.rmSync(crmTmpDir, { recursive: true, force: true }); } catch {}
 });
 
 afterAll(() => {
@@ -157,6 +172,78 @@ describe('emailListHandler', () => {
     const res = await emailListHandler({ limit: 999 }, {} as any);
     expect(res.success).toBe(true);
     // Core validation: no error thrown for limit > 50
+  });
+});
+
+// ------- email_list × CRM wiring -------
+
+describe('email_list CRM wiring', () => {
+  const crm = async (name: string, args: Record<string, any> = {}) =>
+    crmToolHandlers[name](args, {} as any);
+
+  test('annotates known CRM contacts on a plain list, without writing', async () => {
+    await crm('crm_create_company', { name: 'Bayfair Fitness', domain: 'bayfair.co.nz' });
+    await crm('crm_create_contact', {
+      firstName: 'Mere', lastName: 'Walker', email: 'mere@bayfair.co.nz', companyId: 1,
+    });
+
+    mockPS(JSON.stringify([
+      { subject: 'Re: quote', from: 'mere@bayfair.co.nz', received: new Date().toISOString(), preview: 'Sounds good' },
+      { subject: 'Hello', from: 'stranger@somewhere.nz', received: new Date().toISOString(), preview: 'Hi' },
+    ]));
+    const res = await emailListHandler({ limit: 10 }, {} as any);
+    expect(res.success).toBe(true);
+    const [known, unknown] = res.result.emails;
+    expect(known.crm).toEqual({
+      contactId: 1, contactName: 'Mere Walker', companyId: 1, companyName: 'Bayfair Fitness',
+    });
+    expect(unknown.crm).toBeNull();
+    // Read-only: the stranger was NOT created.
+    const search = await crm('crm_search_contacts', { query: 'stranger' });
+    expect((search.result as any).count).toBe(0);
+    expect(res.result.crmCaptured).toBeUndefined();
+  });
+
+  test('captureToCrm creates contacts + companies and logs inbound activities, deduped per sender', async () => {
+    mockPS(JSON.stringify([
+      { subject: 'Website quote', from: 'jo@papamoaplumbing.co.nz', received: new Date().toISOString(), preview: 'Can you build us a site?' },
+      { subject: 'Re: Website quote', from: 'jo@papamoaplumbing.co.nz', received: new Date().toISOString(), preview: 'Following up' },
+      { subject: 'Sale now on!', from: 'noreply@bigstore.com', received: new Date().toISOString(), preview: 'Deals' },
+    ]));
+    const res = await emailListHandler({ limit: 10, captureToCrm: true }, {} as any);
+    expect(res.success).toBe(true);
+    // One capture despite two emails from jo; no-reply skipped.
+    expect(res.result.crmCaptured).toHaveLength(1);
+    expect(res.result.crmCaptured[0]).toMatchObject({
+      email: 'jo@papamoaplumbing.co.nz', contactId: 1, created: true,
+    });
+    // Company inferred from domain; annotation reflects the new contact.
+    expect(res.result.emails[0].crm).toMatchObject({ contactId: 1, companyName: 'Papamoaplumbing' });
+    expect(res.result.emails[2].crm).toBeNull();
+    // Inbound email activity landed in the audit trail via the store.
+    const log = await crm('crm_audit_log', { limit: 20 });
+    const actions = (log.result as any).entries.map((e: any) => e.toolName);
+    expect(actions).toContain('crm_match_email');
+  });
+
+  test('captureToCrm is a safe no-op without a live Outlook inbox', async () => {
+    mockPS('', new Error('no outlook'));
+    const res = await emailListHandler({ limit: 5, captureToCrm: true }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.crmCaptured).toBeUndefined();
+    expect(res.result.crmNote).toMatch(/skipped/i);
+  });
+
+  test('isCapturableSender filters automated senders', () => {
+    expect(isCapturableSender('jane@client.co.nz')).toBe(true);
+    for (const bad of [
+      'no-reply@shop.com', 'noreply@shop.com', 'do-not-reply@x.io', 'donotreply@x.io',
+      'mailer-daemon@mx.com', 'postmaster@mx.com', 'notifications@github.com',
+      'newsletter@brand.com', 'marketing@brand.com', 'alerts@bank.co.nz', 'bounce@mail.com',
+      'not-an-email',
+    ]) {
+      expect(isCapturableSender(bad)).toBe(false);
+    }
   });
 });
 

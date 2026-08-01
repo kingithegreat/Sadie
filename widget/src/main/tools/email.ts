@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { getCrmStore } from './crm';
 
 const execAsync = promisify(exec);
 
@@ -174,6 +175,122 @@ $results | ConvertTo-Json -Depth 3 -Compress
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
+// ----- CRM wiring (Phase 1: inbound email → the built-in CRM) -----
+//
+// email_list is the only place inbound mail enters SADIE, so this is where the
+// CRM email-sync hook (CrmStore.matchInboundEmail) is wired in:
+//   • Annotation (always, read-only): each listed email whose sender is a
+//     known CRM contact gets a `crm` field. Listing never writes.
+//   • Capture (opt-in via captureToCrm): unique human senders are run through
+//     find-or-create + an inbound-email activity — one match per sender per
+//     call, automated senders skipped.
+// CRM failures must never break email listing; every entry point is guarded.
+
+/** Local-parts that indicate automated mail — never auto-created as contacts. */
+const NON_HUMAN_LOCAL_RE =
+  /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?|notifications?|newsletters?|marketing|alerts?)([+._-]|$)/i;
+
+/** True if this sender address is a plausible human worth capturing to the CRM. */
+export function isCapturableSender(email: string): boolean {
+  if (!EMAIL_RE.test(email)) return false;
+  return !NON_HUMAN_LOCAL_RE.test(email.split('@')[0]);
+}
+
+export interface EmailCrmAnnotation {
+  contactId: number;
+  contactName: string;
+  companyId: number | null;
+  companyName: string | null;
+}
+
+export interface EmailCaptureSummary {
+  email: string;
+  contactId: number;
+  created: boolean;
+  activityId: number;
+}
+
+/**
+ * Read-only pass: attach `crm: EmailCrmAnnotation | null` to each listed
+ * email whose sender is already a CRM contact. Never throws.
+ */
+export function annotateEmailsWithCrm(emails: any[]): void {
+  let store: ReturnType<typeof getCrmStore>;
+  try {
+    store = getCrmStore();
+  } catch {
+    return; // CRM unavailable — listing proceeds unannotated
+  }
+  for (const em of emails) {
+    const from = String(em?.from ?? '').trim().toLowerCase();
+    if (!EMAIL_RE.test(from)) {
+      em.crm = null;
+      continue;
+    }
+    try {
+      const contact = store.findContactByEmail(from);
+      if (!contact) {
+        em.crm = null;
+        continue;
+      }
+      const company = contact.companyId != null ? store.getCompany(contact.companyId) : null;
+      const annotation: EmailCrmAnnotation = {
+        contactId: contact.id,
+        contactName: [contact.firstName, contact.lastName].filter(Boolean).join(' '),
+        companyId: company?.id ?? null,
+        companyName: company?.name ?? null,
+      };
+      em.crm = annotation;
+    } catch {
+      em.crm = null;
+    }
+  }
+}
+
+/**
+ * Opt-in pass: run each unique human sender through
+ * CrmStore.matchInboundEmail (find-or-create contact + company from domain,
+ * log an inbound email activity). One match per unique sender per call so a
+ * busy thread doesn't spam the activity log. Never throws.
+ */
+export function captureEmailsToCrm(emails: any[]): {
+  captured: EmailCaptureSummary[];
+  skipped: number;
+} {
+  const captured: EmailCaptureSummary[] = [];
+  let skipped = 0;
+  let store: ReturnType<typeof getCrmStore>;
+  try {
+    store = getCrmStore();
+  } catch {
+    return { captured, skipped: emails.length };
+  }
+  const seen = new Set<string>();
+  for (const em of emails) {
+    const from = String(em?.from ?? '').trim().toLowerCase();
+    if (!isCapturableSender(from) || seen.has(from)) {
+      skipped++;
+      continue;
+    }
+    seen.add(from);
+    try {
+      const res = store.matchInboundEmail(from, {
+        subject: String(em?.subject ?? '').trim() || undefined,
+        body: typeof em?.preview === 'string' && em.preview ? em.preview : undefined,
+      });
+      captured.push({
+        email: from,
+        contactId: res.contact.id,
+        created: res.created,
+        activityId: res.activityId,
+      });
+    } catch {
+      skipped++;
+    }
+  }
+  return { captured, skipped };
+}
+
 // ----- Tool definitions -----
 
 export const emailSendDef: ToolDefinition = {
@@ -243,7 +360,12 @@ export const emailDraftDef: ToolDefinition = {
 
 export const emailListDef: ToolDefinition = {
   name: 'email_list',
-  description: 'List the most recent emails in the Outlook inbox.',
+  description:
+    'List the most recent emails in the Outlook inbox. Senders already in the CRM are ' +
+    'annotated with their contact and company (read-only). Set captureToCrm=true to also ' +
+    'sync the inbox into the CRM: each unique human sender is matched or created as a ' +
+    'contact (company inferred from the email domain) and logged as an inbound email ' +
+    'activity. Automated senders (no-reply, notifications, newsletters…) are never captured.',
   category: 'communication',
   parameters: {
     type: 'object',
@@ -252,6 +374,13 @@ export const emailListDef: ToolDefinition = {
         type: 'number',
         description: 'Maximum number of emails to return (default: 10, max: 50)',
         default: 10,
+      },
+      captureToCrm: {
+        type: 'boolean',
+        description:
+          'Sync listed senders into the CRM (find-or-create contact + company, log inbound ' +
+          'email activity). One capture per unique sender per call. Default: false.',
+        default: false,
       },
     },
     required: [],
@@ -395,12 +524,30 @@ export const emailListHandler: ToolHandler = async (args): Promise<ToolResult> =
     }));
   }
 
+  // CRM wiring: opt-in capture of live inbox senders, then read-only
+  // annotation for everyone. Guarded — CRM problems never break listing.
+  const wantCapture = args.captureToCrm === true || args.captureToCrm === 'true';
+  let crmCaptured: EmailCaptureSummary[] | undefined;
+  let crmNote: string | undefined;
+  try {
+    if (wantCapture && source === 'outlook') {
+      crmCaptured = captureEmailsToCrm(emails).captured;
+    } else if (wantCapture) {
+      crmNote = 'captureToCrm skipped: no live Outlook inbox (local drafts are not inbound email).';
+    }
+    annotateEmailsWithCrm(emails);
+  } catch (err) {
+    crmNote = `CRM annotation unavailable: ${(err as any)?.message?.slice(0, 120) || 'unknown error'}`;
+  }
+
   return {
     success: true,
     result: {
       emails,
       count: emails.length,
       source,
+      ...(crmCaptured !== undefined ? { crmCaptured } : {}),
+      ...(crmNote ? { crmNote } : {}),
     },
   };
 };
