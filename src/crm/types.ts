@@ -129,9 +129,9 @@ export interface Task {
 export interface AuditEntry {
   id: number;
   toolName: string;
-  entityType: 'company' | 'contact' | 'deal' | 'activity' | 'note' | 'task' | 'settings';
+  entityType: 'company' | 'contact' | 'deal' | 'activity' | 'note' | 'task' | 'settings' | 'export';
   entityId: number | null;
-  action: 'create' | 'update' | 'delete' | 'complete' | 'advance';
+  action: 'create' | 'update' | 'delete' | 'complete' | 'advance' | 'export';
   actor: string;
   before: string | null;
   after: string | null;
@@ -220,4 +220,15 @@ export interface DailyBrief {
   recentActivities: Activity[];
   openDealCount: number;
   openPipelineValueCents: number;
+}
+
+/** Result of a full CRM data export (CSV per table + one combined JSON). */
+export interface CrmExportResult {
+  /** Absolute directory the export was written into. */
+  directory: string;
+  /** Files written, relative to `directory`. */
+  files: string[];
+  /** Row counts per exported table. */
+  counts: Record<string, number>;
+  exportedAt: string;
 }

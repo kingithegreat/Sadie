@@ -24,6 +24,7 @@ import {
   CompanyInput,
   Contact,
   ContactInput,
+  CrmExportResult,
   DailyBrief,
   Deal,
   DealInput,
@@ -278,6 +279,12 @@ export class CrmStore {
           'SELECT * FROM audit_log WHERE entity_type = ? AND entity_id = ? ORDER BY id DESC LIMIT ?'
         )
         .all(entityType, entityId, cap)
+        .map(mapAudit);
+    }
+    if (entityType) {
+      return this.db
+        .prepare('SELECT * FROM audit_log WHERE entity_type = ? ORDER BY id DESC LIMIT ?')
+        .all(entityType, cap)
         .map(mapAudit);
     }
     return this.db
@@ -981,4 +988,84 @@ export class CrmStore {
       openPipelineValueCents: Number(openDeals.v),
     };
   }
+
+  // -------------------------------------------------------------------------
+  // Export (owner data portability: one CSV per table + combined JSON)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Export the entire CRM to `targetDir` (default: a timestamped folder next
+   * to the database file). Writes one RFC-4180 CSV per table plus a single
+   * `crm-export.json` containing everything, and audits the export itself.
+   */
+  exportAll(targetDir?: string, actor = 'owner'): CrmExportResult {
+    const exportedAt = nowIso();
+    let dir = targetDir;
+    if (!dir) {
+      if (this.databasePath === ':memory:') {
+        throw new Error('exportAll: targetDir is required for an in-memory database');
+      }
+      const stamp = exportedAt.replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+      dir = path.join(path.dirname(this.databasePath), `crm-export-${stamp}`);
+    }
+    fs.mkdirSync(dir, { recursive: true });
+
+    const files: string[] = [];
+    const counts: Record<string, number> = {};
+    const jsonPayload: Record<string, unknown> = {};
+
+    for (const table of EXPORT_TABLES) {
+      const stmt = this.db.prepare(`SELECT * FROM ${table} ORDER BY id`);
+      const columns: string[] = stmt.columns().map((c: any) => c.name as string);
+      const objects = stmt.all() as Array<Record<string, unknown>>;
+      counts[table] = objects.length;
+      jsonPayload[table] = objects;
+
+      const lines: string[] = [columns.map(csvEscape).join(',')];
+      for (const row of objects) {
+        lines.push(columns.map((c) => csvEscape(row[c])).join(','));
+      }
+      const fileName = `${table}.csv`;
+      fs.writeFileSync(path.join(dir, fileName), lines.join('\r\n') + '\r\n', 'utf8');
+      files.push(fileName);
+    }
+
+    jsonPayload.stages = this.getStages();
+    jsonPayload.exportedAt = exportedAt;
+    jsonPayload.counts = counts;
+    fs.writeFileSync(
+      path.join(dir, 'crm-export.json'),
+      JSON.stringify(jsonPayload, null, 2),
+      'utf8'
+    );
+    files.push('crm-export.json');
+
+    const result: CrmExportResult = { directory: dir, files, counts, exportedAt };
+    this.audit('crm_export', 'export', null, 'export', actor, null, {
+      directory: dir,
+      counts,
+    });
+    return result;
+  }
+}
+
+/** Tables included in a full export (audit_log included — it is the trust story). */
+const EXPORT_TABLES = [
+  'companies',
+  'contacts',
+  'deals',
+  'activities',
+  'notes',
+  'tasks',
+  'audit_log',
+] as const;
+
+/** RFC 4180 field escaping: quote when needed, double embedded quotes. */
+function csvEscape(value: unknown): string {
+  if (value == null) return '';
+  const s = String(value);
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
 }
