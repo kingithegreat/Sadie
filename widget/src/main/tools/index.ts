@@ -46,6 +46,7 @@ import { visionToolDefs, visionToolHandlers } from './vision';
 import { terminalToolDefs, terminalToolHandlers } from './terminal';
 import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
 import { automationToolDefs, automationToolHandlers } from './automation';
+import { crmToolDefs, crmToolHandlers } from './crm';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -649,6 +650,12 @@ export function initializeTools(): void {
   // Register automation tools (Automation Center CRUD + fire from chat)
   for (const def of automationToolDefs) {
     const handler = automationToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register CRM tools (companies, contacts, deals, activities, tasks, brief)
+  for (const def of crmToolDefs) {
+    const handler = crmToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
