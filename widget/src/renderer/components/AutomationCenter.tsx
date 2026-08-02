@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { SavedAutomation } from '../../shared/types';
+import type { SavedAutomation, UpgradePrompt } from '../../shared/types';
+import { UpgradeModal } from './UpgradeModal';
+
+/** Detects the structured upgrade response a gated IPC handler returns. */
+function gateBlock(result: any): UpgradePrompt | null {
+  return result && result.status === 'upgrade_required' && result.upgrade ? result.upgrade : null;
+}
+
+/** Prefer the app's resolved checkout URL over the gate's placeholder default. */
+function withCheckout(prompt: UpgradePrompt, checkoutUrl: string): UpgradePrompt {
+  const dead = !prompt.upgradeUrl || prompt.upgradeUrl === 'sadie://upgrade';
+  return dead && checkoutUrl ? { ...prompt, upgradeUrl: checkoutUrl } : prompt;
+}
 
 const EXAMPLE_AUTOMATIONS = [
   { name: 'Morning News Summary', instructions: 'Search for the top 5 tech news stories today, summarise each in one sentence, and save the summary to a file called tech-news.txt on my Desktop' },
@@ -89,6 +101,9 @@ export const AutomationCenter: React.FC = () => {
   const [formUseN8n, setFormUseN8n] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [n8nOnline, setN8nOnline] = useState(false);
+  const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(null);
+  const [isPro, setIsPro] = useState(true); // assume unlocked until status resolves
+  const [checkoutUrl, setCheckoutUrl] = useState('sadie://upgrade');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
@@ -118,6 +133,14 @@ export const AutomationCenter: React.FC = () => {
     }).catch(() => {});
   }, []);
 
+  // Resolve Pro entitlement so we can show the upsell banner up front.
+  useEffect(() => {
+    (window as any).electron?.licenseStatus?.().then((status: any) => {
+      if (status?.tier) setIsPro(status.tier === 'pro');
+      if (status?.upgradeUrl) setCheckoutUrl(status.upgradeUrl);
+    }).catch(() => {});
+  }, []);
+
   const handleCreate = useCallback(async () => {
     if (!formName.trim() || !formInstructions.trim()) return;
     try {
@@ -131,6 +154,8 @@ export const AutomationCenter: React.FC = () => {
         n8nWebhookUrl: formN8nUrl.trim() || undefined,
         deployToN8n: formUseN8n,
       });
+      const blocked = gateBlock(result);
+      if (blocked) { setIsPro(false); setUpgradePrompt(withCheckout(blocked, checkoutUrl)); return; }
       if (result?.automation) {
         setAutomations(prev => [...prev, result.automation]);
         setFormName('');
@@ -147,24 +172,28 @@ export const AutomationCenter: React.FC = () => {
     } finally {
       setDeploying(false);
     }
-  }, [formName, formDesc, formInstructions, formTrigger, formSchedule, formUseN8n, formN8nUrl]);
+  }, [formName, formDesc, formInstructions, formTrigger, formSchedule, formUseN8n, formN8nUrl, checkoutUrl]);
 
   const handleToggle = useCallback(async (id: string) => {
     const auto = automations.find(a => a.id === id);
     if (!auto) return;
     try {
-      await window.electron?.updateAutomation?.({ id, enabled: !auto.enabled });
+      const result = await window.electron?.updateAutomation?.({ id, enabled: !auto.enabled });
+      const blocked = gateBlock(result);
+      if (blocked) { setIsPro(false); setUpgradePrompt(withCheckout(blocked, checkoutUrl)); return; }
       setAutomations(prev => prev.map(a => a.id === id ? { ...a, enabled: !a.enabled } : a));
     } catch {
       setError('Failed to update automation');
     }
-  }, [automations]);
+  }, [automations, checkoutUrl]);
 
   const handleRun = useCallback(async (id: string) => {
     setRunningId(id);
     setError(null);
     try {
       const result = await window.electron?.runAutomation?.({ id });
+      const blocked = gateBlock(result);
+      if (blocked) { setIsPro(false); setUpgradePrompt(withCheckout(blocked, checkoutUrl)); setRunningId(null); return; }
       const failed = !result?.result || result?.error;
       setAutomations(prev => prev.map(a => a.id === id ? {
         ...a,
@@ -184,7 +213,7 @@ export const AutomationCenter: React.FC = () => {
     } finally {
       setRunningId(null);
     }
-  }, []);
+  }, [checkoutUrl]);
 
   const handleDelete = useCallback(async (id: string) => {
     try {
@@ -254,6 +283,21 @@ export const AutomationCenter: React.FC = () => {
         <h1>Automation Center</h1>
         <p>Create reusable workflows that chain HomeBot's tools together</p>
       </header>
+
+      {!isPro && (
+        <div className="automation-pro-banner" role="note">
+          <span>⭐ <strong>HomeBot Pro</strong> — the Automation Center is a Pro feature. Creating and running automations requires an active license.</span>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => window.electron?.openExternalUrl?.((upgradePrompt?.upgradeUrl) || checkoutUrl)}
+          >
+            Upgrade to Pro
+          </button>
+        </div>
+      )}
+
+      <UpgradeModal prompt={upgradePrompt} onClose={() => setUpgradePrompt(null)} />
 
       {error && (
         <div className="automation-error">

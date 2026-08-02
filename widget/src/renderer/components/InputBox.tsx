@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ImageAttachment, DocumentAttachment } from '../../shared/types';
 import { IMAGE_LIMITS } from '../../shared/constants';
 import { resizeImageFile } from '../utils/imageUtils';
+import { resolveVoiceEngine, whisperTranscribeOnce, type RecordingController } from '../utils/speech';
 
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
@@ -84,6 +85,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [ragStatus, setRagStatus] = useState<null | 'indexing' | { ok: boolean; message: string }>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const whisperControllerRef = useRef<RecordingController | null>(null);
 
   // Rotate placeholder hints every 5 seconds when input is empty
   useEffect(() => {
@@ -102,12 +104,10 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     return () => window.removeEventListener('homebot:uncensored-mode-changed', handler);
   }, []);
 
-  // Check for speech recognition support
+  // Voice input is always available: the local Whisper engine is bundled and
+  // needs only a microphone (SAPI / Web Speech remain as optional engines).
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    // Also show the mic button when running inside Electron — Windows SAPI is available there
-    const hasSapi = typeof (window as any).electron?.startSpeechRecognition === 'function';
-    setSpeechSupported(!!(SpeechRecognition || hasSapi));
+    setSpeechSupported(true);
   }, []);
 
   // Recording timer — shows elapsed seconds while listening
@@ -130,10 +130,55 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     }
   }, [errorMessage]);
 
-  // Initialize speech recognition (online mode - requires internet)
+  // Start voice input using the engine selected in Settings → Voice.
+  // Default is local Whisper — accurate with any accent, no training needed.
   const startListening = useCallback(async () => {
-    // First try Windows SAPI (offline, works reliably in Electron)
-    if ((window as any).electron?.startSpeechRecognition) {
+    let settings: any = {};
+    try { settings = (await (window as any).electron?.getSettings?.()) || {}; } catch { /* defaults */ }
+
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const engine = resolveVoiceEngine(settings.voiceEngine, {
+      hasSapi: typeof (window as any).electron?.startSpeechRecognition === 'function',
+      hasWebSpeech: !!SpeechRecognitionCtor,
+    });
+
+    if (engine === 'whisper') {
+      setIsListening(true);
+      try {
+        const { text } = await whisperTranscribeOnce({
+          modelSize: settings.whisperModel,
+          language: settings.voiceLanguage,
+          micDeviceId: settings.voiceMicDeviceId,
+          silenceStopSec: settings.voiceSilenceStopSec,
+          onStatus: (s) => setErrorMessage(s),
+          onController: (c) => { whisperControllerRef.current = c; },
+        });
+        setIsListening(false);
+        whisperControllerRef.current = null;
+        if (text) {
+          setInputValue(prev => prev + (prev ? ' ' : '') + text);
+          setErrorMessage(null);
+          if (voiceAutoSend) voiceAutoSendPending.current = true;
+        } else {
+          setErrorMessage('No speech detected — try speaking louder or pick your microphone in Settings → Voice.');
+        }
+      } catch (err: any) {
+        console.error('[Voice] Whisper error:', err);
+        setIsListening(false);
+        whisperControllerRef.current = null;
+        const msg = String(err?.message || err);
+        setErrorMessage(
+          /Permission|NotAllowed/i.test(msg)
+            ? 'Microphone access denied. Please allow it in system settings.'
+            : 'Voice error: ' + msg
+        );
+      }
+      return;
+    }
+
+    // Legacy engine: Windows SAPI (offline, but far less accurate — improves
+    // if you train your Windows voice profile)
+    if (engine === 'sapi') {
       setIsListening(true);
       setErrorMessage('🎤 Listening… speak now');
       
@@ -172,7 +217,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    recognition.lang = settings.voiceLanguage && settings.voiceLanguage !== 'en' ? settings.voiceLanguage : 'en-US';
 
     recognition.onstart = () => {
       setIsListening(true);
@@ -227,6 +272,12 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   }, [voiceAutoSend]);
 
   const stopListening = useCallback(() => {
+    // Whisper: stop the recording early — transcription of what was captured
+    // still runs, so a manual stop behaves like "I'm done talking".
+    if (whisperControllerRef.current) {
+      whisperControllerRef.current.stop();
+      return;
+    }
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;

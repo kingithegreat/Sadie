@@ -12,17 +12,22 @@ import { getSettings, saveSettings, applyHardwareProfile, getAndClearConfigRecov
 import { isE2E } from './env';
 import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
+import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
+import { registerTrustIpc } from './trust-ipc';
+import { setBatchSummaryForwarder } from './tools';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import { logStartupTime } from './utils/perf-logger';
+import { installConsoleGate } from './utils/console-gate';
 import { shutdownMcpServers } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
 import { spawn } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
+let supervisorHandle: SupervisorServiceHandle | null = null;
 function normalizeOllamaBaseUrl(raw?: string): string {
   const input = (raw || DEFAULT_OLLAMA_URL).trim();
   let withScheme = /^https?:\/\//i.test(input) ? input : `http://${input}`;
@@ -143,6 +148,10 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 
 app.whenReady().then(async () => {
+  // Silence verbose console.log/debug/info in packaged builds (warn/error kept;
+  // set HOMEBOT_DEBUG_CONSOLE=1 to restore full output). Must run before the
+  // startup logging below.
+  installConsoleGate();
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: HOMEBOT_DIRECT_OLLAMA=', process.env.HOMEBOT_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
@@ -245,6 +254,30 @@ app.whenReady().then(async () => {
   // settings, then fallback to localhost default.
   const resolvedN8nUrl = process.env.N8N_URL || settings.n8nUrl || 'http://localhost:5678';
   if (process.env.NODE_ENV !== 'production') console.log('[MAIN] Resolved n8nUrl =', resolvedN8nUrl);
+
+  // Phase 0 reliability: continuous service supervision (probe + auto-recover).
+  // Startup checks above are one-shot; this watches ollama/n8n/qdrant for the
+  // whole session and self-heals n8n if it dies mid-run. No-ops in E2E mode.
+  supervisorHandle = startSupervisorService({
+    ollamaUrl: normalizeOllamaBaseUrl(settings.ollamaUrl),
+    n8nUrl: resolvedN8nUrl,
+    getWindow: () => mainWindow,
+  });
+  // Phase 2 trust layer: read-only IPC so the renderer can show live service
+  // health and the CRM activity trail. Returns null status in E2E (handle is
+  // a no-op there), which the panel renders as "supervision off".
+  registerTrustIpc(() => supervisorHandle?.getStatus() ?? null);
+  // Batch transparency: forward every tool-batch summary to the renderer so
+  // the Trust panel can show what ran (and what was blocked) in real time.
+  setBatchSummaryForwarder((summary) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('homebot:batch-summary', summary);
+      }
+    } catch (e) {
+      console.error('[HomeBot-CATCH]', e);
+    }
+  });
   registerMessageRouter(mainWindow, resolvedN8nUrl);
   // Expose a safe bridge so main-process router diagnostics can be pushed
   // into the renderer for E2E tracing and diagnostics. This is idempotent
@@ -455,6 +488,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   globalShortcut.unregisterAll();
   closeAllServiceWindows();
+  if (supervisorHandle) supervisorHandle.stop();
   shutdownMcpServers().catch(safeCatch);
 });
 

@@ -47,9 +47,10 @@ if (scanArtifacts) {
   const fs = require('fs');
   const path = require('path');
   
-  const distDir = path.join(__dirname, '..', 'widget', 'dist');
+  // electron-vite emits to widget/out (see widget/package.json "main": out/...).
+  const distDir = path.join(__dirname, '..', 'widget', 'out');
   if (!fs.existsSync(distDir)) {
-    fail('Dist directory does not exist. Run build first.');
+    fail('Build output directory (widget/out) does not exist. Run build first.');
     failed = true;
   } else {
     const forbiddenStrings = ['[E2E-MOCK]', '[DIAG]'];

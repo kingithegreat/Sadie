@@ -5,7 +5,7 @@ import { logTelemetryConsent } from './utils/logger';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
-  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'geminiApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl'
+  'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'geminiApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl', 'n8nApiKey'
 ];
 
 /**
@@ -44,6 +44,9 @@ interface WindowPosition {
 
 export interface Settings {
   n8nUrl: string;
+  // n8n public API key (Settings → n8n) — unlocks authenticated REST
+  // workflow management instead of the docker-exec fallback
+  n8nApiKey?: string;
   ollamaUrl: string;
   // Model selection
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
@@ -68,6 +71,9 @@ export interface Settings {
 
   // Permissions for tools (granular by tool name)
   permissions?: Record<string, boolean>;
+  // How long (ms) a permission prompt waits before auto-declining. Clamped to
+  // [5s, 10min] at read time; defaults to 60s.
+  permissionPromptTimeoutMs?: number;
 
   // Misc / developer defaults
   defaultTeam?: string;
@@ -108,14 +114,28 @@ export interface Settings {
   projectPath?: string;
   // Default location for weather queries when user doesn't specify one
   defaultLocation?: string;
+  // Voice input (speech-to-text)
+  // 'whisper' = local Whisper model (accurate, any accent, default)
+  // 'sapi' = legacy Windows dictation; 'webspeech' = Chromium online service
+  voiceEngine?: 'whisper' | 'sapi' | 'webspeech';
+  whisperModel?: 'tiny' | 'base' | 'small';
+  voiceLanguage?: string;
+  voiceSilenceStopSec?: number;
+  voiceMicDeviceId?: string;
   // Reflection validation: after a tool batch runs, ask the model to verify
   // the result actually answers the request before surfacing it. Off by
   // default — additive safety layer, opt-in while it proves itself out.
   reflectionValidationEnabled?: boolean;
 }
 
-const DEFAULT_SETTINGS: Settings = {
+// Exported for the permission-copy drift gate (permission-copy-registry.test.ts):
+// every default permission name must have human copy in src/trust/permission-copy.ts.
+export const DEFAULT_SETTINGS: Settings = {
   n8nUrl: 'http://localhost:5678',
+  voiceEngine: 'whisper',
+  whisperModel: 'base',
+  voiceLanguage: 'en',
+  voiceSilenceStopSec: 2,
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
   modelRoutingMode: 'prompt',
@@ -131,6 +151,7 @@ const DEFAULT_SETTINGS: Settings = {
   confirmDangerousActions: true,
   saveConversationHistory: true,
   hideOnBlur: false,
+  permissionPromptTimeoutMs: 60000,
 
   // onboarding defaults
   firstRun: true,
@@ -203,6 +224,12 @@ const DEFAULT_SETTINGS: Settings = {
     // Diff — pure computation, safe
     diff_text: true,
     diff_files: true,
+    // Automations — create/list/run/update safe (user-authored instructions), delete opt-in
+    create_automation: true,
+    list_automations: true,
+    run_automation: true,
+    update_automation: true,
+    delete_automation: false,
     // Reminders & calendar — read-only safe
     list_reminders: true,
     set_reminder: true,
@@ -245,23 +272,34 @@ const DEFAULT_SETTINGS: Settings = {
     email_list: true,
     // API — network calls, dangerous
     api_request: false,
+    // Video download: served via the ytdlp MCP server (see mcp-client.ts
+    // default servers), not a native tool — mcp_ytdlp_* below.
+    mcp_ytdlp_get_video_info: true,
+    mcp_ytdlp_download_video: false,
   },
 
   // Default NBA team for new users
   defaultTeam: 'GSW'
 };
 
-// A convenience function for asserting permissions on a tool
-export function assertPermission(toolName: string): boolean {
+// A convenience function for asserting permissions on a tool.
+// `defaultValue` is only used when the tool has no explicit entry in
+// settings.permissions — today that's exclusively dynamically-discovered
+// MCP tools (native tools always have an explicit entry in DEFAULT_SETTINGS
+// above). Callers should derive it from the tool's own definition, e.g.
+// `!tool.definition.requiresConfirmation`, so a server-annotated read-only
+// tool works out of the box while anything else still defaults to denied.
+export function assertPermission(toolName: string, defaultValue: boolean = false): boolean {
   const settings = getSettings();
-  if (!settings.permissions) return false;
+  if (!settings.permissions) return defaultValue;
   // If the toolName is not present, default to deny (safe approach)
   if (typeof settings.permissions[toolName] === 'boolean') {
     return !!settings.permissions[toolName];
   }
   // Allow if explicitly present in defaults or read-only type
-  // Fallback to false to be conservative
-  return false;
+  // Fallback to the caller-supplied default (false unless the caller knows
+  // the tool is safe, e.g. a read-only MCP tool with no confirmation gate).
+  return defaultValue;
 }
 
 export function getSettingsPath(): string {

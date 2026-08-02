@@ -7,6 +7,16 @@
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
+import {
+  BatchCallFacts,
+  BatchCallOutcome,
+  BatchPreview,
+  BatchSummary,
+  batchSummaryLine,
+  buildBatchPreview,
+  buildBatchSummary,
+  buildBlockedSummary,
+} from '../../../../src/trust/batch';
 import { 
   ToolDefinition, 
   ToolHandler, 
@@ -45,6 +55,8 @@ import { ragToolDefs, ragToolHandlers } from './rag';
 import { visionToolDefs, visionToolHandlers } from './vision';
 import { terminalToolDefs, terminalToolHandlers } from './terminal';
 import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
+import { automationToolDefs, automationToolHandlers } from './automation';
+import { crmToolDefs, crmToolHandlers } from './crm';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -238,7 +250,7 @@ export async function executeTool(
   
   // Check permission first
   try {
-    const allowed = assertPermission(call.name);
+    const allowed = assertPermission(call.name, !tool.definition.requiresConfirmation);
     if (!allowed) {
       console.warn(`[HomeBot Tools] Permission denied for tool: ${call.name}`);
       return { success: false, error: `Permission denied: ${call.name}` };
@@ -321,6 +333,72 @@ export async function executeToolCalls(
   return results;
 }
 
+// ── Batch transparency (Phase 2 trust layer) ────────────────────────────────
+const MAX_BATCH_SUMMARIES = 20;
+const recentBatchSummaries: BatchSummary[] = [];
+let batchSummaryForwarder: ((summary: BatchSummary) => void) | null = null;
+
+/** Renderer forwarder for batch summaries (set from index.ts, null to detach). */
+export function setBatchSummaryForwarder(fn: ((summary: BatchSummary) => void) | null): void {
+  batchSummaryForwarder = fn;
+}
+
+/** Last summaries, newest first, capped — so the Trust panel can show batches that ran while it was closed. */
+export function getRecentBatchSummaries(): BatchSummary[] {
+  return [...recentBatchSummaries];
+}
+
+export function clearBatchSummariesForTests(): void {
+  recentBatchSummaries.length = 0;
+}
+
+function recordBatchSummary(summary: BatchSummary): void {
+  recentBatchSummaries.unshift(summary);
+  if (recentBatchSummaries.length > MAX_BATCH_SUMMARIES) recentBatchSummaries.length = MAX_BATCH_SUMMARIES;
+  try { console.log('[BATCH] summary:', batchSummaryLine(summary)); } catch (e) { safeCatch(e); }
+  try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[BATCH] summary ${batchSummaryLine(summary)}`); } catch (e) { safeCatch(e); }
+  if (batchSummaryForwarder) {
+    try { batchSummaryForwarder(summary); } catch (e) { safeCatch(e); }
+  }
+}
+
+/** Mirror of executeToolBatch's permission precheck for a single call — kept adjacent so they cannot drift. */
+function gatherCallFacts(call: ToolCall, overrides: Set<string>): BatchCallFacts {
+  const tool = getTool(call.name);
+  const requiredPermissions =
+    tool && Array.isArray((tool.definition as any).requiredPermissions)
+      ? ([...((tool.definition as any).requiredPermissions as string[])])
+      : [];
+  let permissionGranted = true;
+  if (!overrides.has(call.name)) {
+    try {
+      permissionGranted = assertPermission(call.name, tool ? !tool.definition.requiresConfirmation : false);
+      if (permissionGranted) {
+        for (const perm of requiredPermissions) {
+          if (overrides.has(perm)) continue;
+          if (!assertPermission(perm)) { permissionGranted = false; break; }
+        }
+      }
+    } catch {
+      permissionGranted = false;
+    }
+  }
+  return {
+    name: call.name,
+    args: (call.arguments ?? {}) as Record<string, unknown>,
+    known: !!tool,
+    requiresConfirmation: !!tool?.definition.requiresConfirmation,
+    requiredPermissions,
+    permissionGranted,
+  };
+}
+
+/** Dry-run: what WOULD this batch do — tools, args, permission state — with zero side effects. */
+export function previewBatch(calls: ToolCall[], options?: { overrideAllowed?: string[] }): BatchPreview {
+  const overrides = new Set(options?.overrideAllowed || []);
+  return buildBatchPreview(calls.map((c) => gatherCallFacts(c, overrides)));
+}
+
 /**
  * Execute a batch of tool calls atomically: first verify permissions for all tools,
  * and if any are denied, fail the batch without executing any of them. This
@@ -329,11 +407,18 @@ export async function executeToolCalls(
 export async function executeToolBatch(
   calls: ToolCall[],
   context: ToolContext,
-  options?: { overrideAllowed?: string[] }
+  options?: { overrideAllowed?: string[]; dryRun?: boolean }
 ): Promise<ToolResult[]> {
   try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER = (global as any).__HOMEBOT_ROUTER_LOG_BUFFER || []; } catch (e) { safeCatch(e); }
   console.log('[BATCH] executeToolBatch called', { toolCount: calls.length, toolNames: calls.map(c => c.name) });
   try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) { safeCatch(e); }
+  if (options?.dryRun) {
+    const preview = previewBatch(calls, options);
+    console.log('[BATCH] dry-run preview', { total: preview.total, wouldExecute: preview.wouldExecute });
+    try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[BATCH] dry-run wouldExecute=${preview.wouldExecute}`); } catch (e) { safeCatch(e); }
+    return [{ success: true, dryRun: true, preview } as any];
+  }
+
   // Pre-check permissions for all unique tools
   const denied: string[] = [];
   const seen = new Set<string>();
@@ -344,14 +429,15 @@ export async function executeToolBatch(
     seen.add(name);
     try {
       if (overrides.has(name)) continue;
-      const allowed = assertPermission(name);
+      const precheckTool = getTool(name);
+      const allowed = assertPermission(name, precheckTool ? !precheckTool.definition.requiresConfirmation : false);
       console.log(`[HomeBot Tools] Permission check for ${name}: allowed=${allowed}`);
       try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER?.push(`[TOOLS] permission-check ${name}=${allowed}`); } catch (e) { safeCatch(e); }
       if (!allowed) denied.push(name);
 
       // Also check any permissions declared by the tool (e.g., write_file)
       try {
-        const tool = getTool(name);
+        const tool = precheckTool;
         if (tool && Array.isArray((tool.definition as any).requiredPermissions)) {
           for (const perm of (tool.definition as any).requiredPermissions as string[]) {
             if (overrides.has(perm)) continue;
@@ -374,31 +460,52 @@ export async function executeToolBatch(
     // optionally enable or allow once.
     console.log('[BATCH] executeToolBatch missing permissions', { denied });
     try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push(`[BATCH] missing=${denied.join(',')}`); } catch (e) { safeCatch(e); }
+    recordBatchSummary(buildBlockedSummary(calls.map((c) => c.name), denied));
     return [{ success: false, status: 'needs_confirmation', missingPermissions: denied, reason: `Requires permissions: ${denied.join(', ')}` } as any];
   }
 
   const results: ToolResult[] = [];
+  const outcomes: BatchCallOutcome[] = [];
+  const recordOutcome = (call: ToolCall, r: ToolResult, startedAt: number) => {
+    outcomes.push({
+      name: call.name,
+      ok: r.success === true,
+      error: r.success === true ? undefined : r.error || (r as any).reason || undefined,
+      durationMs: Date.now() - startedAt,
+    });
+  };
   for (const call of calls) {
+    const callStartedAt = Date.now();
     // Prepare execution context including any transient overrides
     const callContext = { ...(context || {} as any), overrideAllowed: Array.from(overrides) } as any;
     // If this call is explicitly overridden, call the handler directly (so tools can honor overrideAllowed)
     if (overrides.has(call.name)) {
       const tool = getTool(call.name);
       if (!tool) {
-        results.push({ success: false, error: `Unknown tool: ${call.name}` });
+        const r = { success: false, error: `Unknown tool: ${call.name}` };
+        results.push(r);
+        recordOutcome(call, r, callStartedAt);
         continue;
       }
       try {
         const r = await tool.handler(call.arguments, callContext);
         results.push(r);
+        recordOutcome(call, r, callStartedAt);
       } catch (e: any) {
-        results.push({ success: false, error: `Tool execution failed: ${e?.message || String(e)}` });
+        const r = { success: false, error: `Tool execution failed: ${e?.message || String(e)}` };
+        results.push(r);
+        recordOutcome(call, r, callStartedAt);
       }
       continue;
     }
 
     const result = await executeTool(call, callContext);
     results.push(result);
+    recordOutcome(call, result, callStartedAt);
+  }
+
+  if (outcomes.length > 0) {
+    recordBatchSummary(buildBatchSummary(outcomes));
   }
 
   return results;
@@ -429,6 +536,8 @@ function formatConfirmationMessage(toolName: string, args: Record<string, any>):
       return `Git commit: "${args.message}"${args.repo_path ? `\nRepo: ${args.repo_path}` : ''}`;
     case 'kill_process':
       return `Kill process${args.name ? ` "${args.name}"` : ''}${args.pid ? ` (PID ${args.pid})` : ''}${args.force ? ' (force)' : ''}?`;
+    case 'delete_automation':
+      return `Permanently delete automation "${args.automation}"?`;
     default:
       return `Execute ${toolName} with: ${JSON.stringify(args)}?`;
   }
@@ -639,6 +748,18 @@ export function initializeTools(): void {
   // Register codebase tools (grep, tree, analyze)
   for (const def of codebaseToolDefs) {
     const handler = codebaseToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register automation tools (Automation Center CRUD + fire from chat)
+  for (const def of automationToolDefs) {
+    const handler = automationToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register CRM tools (companies, contacts, deals, activities, tasks, brief)
+  for (const def of crmToolDefs) {
+    const handler = crmToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

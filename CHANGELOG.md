@@ -1,6 +1,25 @@
 # Changelog
 
-## Unreleased — Full codebase sweep, credential management, dolphin-mistral, docs refresh
+## Unreleased — Automation from chat + monetization + audit hardening
+
+### Added
+- **Built-in CRM (Phase 1 of the business-product plan)** (`src/crm/*`, `widget/src/main/tools/crm.ts`): a local, single-file SQLite CRM (WAL mode, stored under userData) with companies, contacts, deals, activities, notes, and tasks. Every mutation writes an append-only `audit_log` row with before/after JSON snapshots — the substrate for the Phase 2 trust UI. 20 new `crm_*` chat tools: entity CRUD + search, `crm_advance_deal` (the only sanctioned stage-change path, with transition history), `crm_log_activity` (activities drive `last_activity_at` denorms), `crm_find_stale_deals`, `crm_daily_brief` (stale deals + overdue/today tasks + open pipeline totals), `crm_match_email` (inbound-email → find-or-create contact + company-from-domain + logged inbound activity — the email-sync integration point), stage label renaming over stable stage keys, and `crm_audit_log`. Pipeline defaults: lead → contacted → qualified → proposal → won/lost; deal values in integer cents. The CRM core lives in root `src/crm` so the required CI gate (typecheck + jest) protects it; 22 store tests + 8 tool-layer tests. Existing Outlook-backed `search_contacts`/`add_contact` are untouched (personal address book vs. business CRM of record).
+- **Offline Pro licensing** (`src/licensing/signedLicense.ts`, `signingKey.ts`, `scripts/licensing/*`): sell Pro with no third-party account or server. The vendor mints Ed25519-signed license keys per sale; the app verifies them offline against an embedded public key. Customers paste a key into Settings → HomeBot Pro to unlock. See `docs/SELLING_AND_LICENSING.md`.
+- **Pro gate enforced end-to-end**: the Automation Center CRUD IPC channels (`homebot:create/update/run-automation`) and the chat automation tools are now fenced at the handler layer; Free users get a clear in-app upgrade prompt instead of silently using a paid feature.
+- **Chat-driven automations** (`tools/automation.ts`): the assistant can now create, list, run, update, and delete Automation Center automations directly from chat (`create_automation` with `run_now` to create and fire in one step), backed by the same store and execution engine as the UI.
+
+### Fixed
+- **Scheduled automations never fired** (`ipc-handlers.ts`): the 60s resync destroyed and recreated every timer before it could elapse; timers are now diffed by signature so a running schedule survives resyncs.
+- **Automations JSON corruption/races** (`ipc-handlers.ts`, `tools/automation.ts`): writes are now atomic (temp file + rename) and a corrupt store is backed up rather than silently discarded.
+- **Automation run status** (`ipc-handlers.ts`): success/failure is tracked explicitly instead of sniffing for an `Error:` prefix, and `lastStatus` is persisted.
+
+### Security
+- **License cache tamper-resistance** (`licensing.ts`): the cached entitlement is HMAC-signed and bound to a machine fingerprint; hand-edited/unsigned or copied caches resolve to Free.
+- **Document read path traversal** (`ipc-handlers.ts`): `parse-document` is now confined to the home directory like `write-document`.
+- **n8n SSRF guard** (`n8n-api.ts`): the web-fetch workflow validates the target URL and blocks loopback/private/link-local hosts before fetching.
+- **Local service exposure** (`docker-compose.yml`): n8n/Qdrant/Ollama ports bind to `127.0.0.1`, and the shared hardcoded n8n encryption key default was removed.
+
+## 1.1.0 — Full codebase sweep, credential management, dolphin-mistral, docs refresh
 
 ### Added
 - **Document Viewer RAG and Chat integration** (`DocumentViewer.tsx`, `App.tsx`): "Add to RAG" button indexes the open document for semantic search; "Send to Chat" button switches to chat mode with the document attached as context for immediate Q&A.

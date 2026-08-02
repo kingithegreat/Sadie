@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
+import PermissionHistory from './PermissionHistory';
+import TrustPanel from './TrustPanel';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 import { buildSparkline } from '../../shared/sparkline';
 import { buildPerfAdvice } from '../../shared/perf-advice';
@@ -12,6 +14,7 @@ import UpgradeModal from './UpgradeModal';
 interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
+  n8nApiKey?: string;
   widgetHotkey: string;
   globalHotkey?: string;
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
@@ -37,9 +40,15 @@ interface Settings {
   codeApiUrl?: string;
   chatGuidelines?: string;
   calendarIcsUrl?: string;
+  voiceEngine?: 'whisper' | 'sapi' | 'webspeech';
+  whisperModel?: 'tiny' | 'base' | 'small';
+  voiceLanguage?: string;
+  voiceSilenceStopSec?: number;
+  voiceMicDeviceId?: string;
   notificationsEnabled?: boolean;
   notificationSound?: boolean;
   notificationDuration?: number;
+  permissionPromptTimeoutMs?: number;
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
   moaEnabled?: boolean;
   moaProposers?: string[];
@@ -135,7 +144,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       moaEnabled: source.moaEnabled ?? false,
       moaProposers: source.moaProposers ?? [],
       moaAggregator: source.moaAggregator ?? '',
-      defaultLocation: source.defaultLocation || ''
+      defaultLocation: source.defaultLocation || '',
+      permissionPromptTimeoutMs: source.permissionPromptTimeoutMs ?? 60000
     };
   };
 
@@ -186,6 +196,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     general: true,
     models: true,
+    voice: true,
     cloud: true,
     api_keys: true,
     appearance: true,
@@ -229,6 +240,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     hardware: { vramGB: number | null; gpuName: string | null; profile: string | null };
     timestamp: string;
   };
+  // n8n connection test (Settings → n8n API key)
+  const [n8nTesting, setN8nTesting] = useState(false);
+  const [n8nTestResult, setN8nTestResult] = useState<string | null>(null);
+
+  // Voice: available microphone input devices (labels require mic permission)
+  const [micDevices, setMicDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
+  const refreshMicDevices = async () => {
+    try {
+      // A short-lived stream unlocks device labels in enumerateDevices()
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+    } catch { /* permission denied — labels stay generic */ }
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setMicDevices(devices.filter(d => d.kind === 'audioinput').map(d => ({ deviceId: d.deviceId, label: d.label })));
+    } catch { /* enumeration unsupported */ }
+  };
+  useEffect(() => {
+    // Populate on open without forcing a permission prompt
+    navigator.mediaDevices?.enumerateDevices?.()
+      .then(devices => setMicDevices(devices.filter(d => d.kind === 'audioinput').map(d => ({ deviceId: d.deviceId, label: d.label }))))
+      .catch(() => { /* unsupported */ });
+  }, []);
+
   const [sysCheck, setSysCheck] = useState<SysCheckReport | null>(null);
   const [sysCheckLoading, setSysCheckLoading] = useState(false);
   const [sysCheckError, setSysCheckError] = useState<string | null>(null);
@@ -387,6 +422,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
   const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
+  const [showPermissionHistory, setShowPermissionHistory] = useState(false);
+  const [showTrustPanel, setShowTrustPanel] = useState(false);
 
   // GPU VRAM detection state for MoA recommendations
   const [gpuInfo, setGpuInfo] = useState<{
@@ -681,6 +718,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     (nextSettings as any).hardwareProfile = (localSettings as any).hardwareProfile;
     (nextSettings as any).moaProposers = (localSettings as any).moaProposers;
     (nextSettings as any).moaAggregator = (localSettings as any).moaAggregator;
+    (nextSettings as any).permissionPromptTimeoutMs = (localSettings as any).permissionPromptTimeoutMs;
     onSave(nextSettings);
     onClose();
   };
@@ -830,6 +868,58 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             placeholder="http://localhost:5678"
           />
           <small className="setting-hint">URL of your local n8n instance for workflow automation. Requires Docker Desktop running n8n.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">n8n API key</label>
+          <input
+            type="password"
+            className="setting-input"
+            value={localSettings.n8nApiKey || ''}
+            onChange={(e) =>
+              setLocalSettings({
+                ...localSettings,
+                n8nApiKey: e.target.value
+              })
+            }
+            placeholder="n8n_api_..."
+            autoComplete="off"
+          />
+          <small className="setting-hint">
+            Create one in n8n under Settings → API. With a key set, HomeBot manages workflows through n8n&apos;s
+            authenticated API (no Docker access or container restarts needed). Stored encrypted.
+          </small>
+          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              className="sp-btn"
+              disabled={n8nTesting}
+              onClick={async () => {
+                setN8nTesting(true);
+                setN8nTestResult(null);
+                try {
+                  const res = await (window as any).electron?.testN8nConnection?.({
+                    baseUrl: localSettings.n8nUrl,
+                    apiKey: localSettings.n8nApiKey || '',
+                  });
+                  if (!res) setN8nTestResult('Test unavailable');
+                  else if (!res.reachable) setN8nTestResult(`✗ ${res.error || 'n8n not reachable'}`);
+                  else if (res.authenticated === true) setN8nTestResult('✓ Connected and authenticated');
+                  else if (res.authenticated === null) setN8nTestResult('✓ n8n reachable (no API key set — using Docker fallback)');
+                  else setN8nTestResult(`✗ ${res.error || 'API key rejected'}`);
+                } catch (e: any) {
+                  setN8nTestResult(`✗ ${e?.message || 'Test failed'}`);
+                } finally {
+                  setN8nTesting(false);
+                }
+              }}
+            >
+              {n8nTesting ? 'Testing…' : 'Test connection'}
+            </button>
+            {n8nTestResult && (
+              <small className="setting-hint" style={{ margin: 0 }} data-testid="n8n-test-result">{n8nTestResult}</small>
+            )}
+          </div>
         </div>
         </>}
 
@@ -986,6 +1076,99 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           />
           <small className="setting-hint">Local Ollama model for coding. Leave blank to use the chat model. Recommended: <code>qwen2.5-coder:7b</code> (~4.4GB VRAM). If a Code API key is set below, it takes priority over this.</small>
         </div>
+        </>}
+
+        {/* ── Voice (speech-to-text) ── */}
+        <button type="button" className={`sp-section-toggle${openSections.voice ? ' open' : ''}`} onClick={() => toggleSection('voice')}>
+          <span className="sp-section-arrow">{openSections.voice ? '▾' : '▸'}</span> Voice
+        </button>
+        {openSections.voice && <>
+        <div className="setting-group">
+          <label className="setting-label">🎤 Recognition engine</label>
+          <select
+            aria-label="Voice recognition engine"
+            className="setting-input"
+            value={localSettings.voiceEngine || 'whisper'}
+            onChange={(e) => setLocalSettings({ ...localSettings, voiceEngine: e.target.value as any })}
+          >
+            <option value="whisper">Whisper (local AI — recommended)</option>
+            <option value="sapi">Windows dictation (legacy)</option>
+            <option value="webspeech">Web Speech (online)</option>
+          </select>
+          <small className="setting-hint">
+            Whisper runs a local AI model that understands any accent with no training — this is the accurate option.
+            Windows dictation is the old engine; if you stay on it, accuracy only improves by training your Windows
+            voice profile (Control Panel → Speech Recognition → &quot;Train your computer to better understand you&quot;).
+          </small>
+        </div>
+
+        {(localSettings.voiceEngine || 'whisper') === 'whisper' && <>
+        <div className="setting-group">
+          <label className="setting-label">Accuracy vs speed</label>
+          <select
+            aria-label="Whisper model size"
+            className="setting-input"
+            value={localSettings.whisperModel || 'base'}
+            onChange={(e) => setLocalSettings({ ...localSettings, whisperModel: e.target.value as any })}
+          >
+            <option value="tiny">Fast (tiny, ~75 MB download)</option>
+            <option value="base">Balanced (base, ~145 MB download) — recommended</option>
+            <option value="small">Most accurate (small, ~470 MB download)</option>
+          </select>
+          <small className="setting-hint">
+            Bigger models hear you better, especially with background noise or a strong accent. The model downloads
+            once on first use and then works fully offline. If it still mishears you, step up one size.
+          </small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Language</label>
+          <input
+            type="text"
+            className="setting-input"
+            value={localSettings.voiceLanguage ?? 'en'}
+            onChange={(e) => setLocalSettings({ ...localSettings, voiceLanguage: e.target.value.trim() })}
+            placeholder="en"
+            maxLength={8}
+          />
+          <small className="setting-hint">ISO code: en, es, fr, de, mi… Anything other than <code>en</code> switches to the multilingual model.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Stop after silence (seconds)</label>
+          <input
+            type="number"
+            className="setting-input"
+            min={1}
+            max={10}
+            value={localSettings.voiceSilenceStopSec ?? 2}
+            onChange={(e) => setLocalSettings({ ...localSettings, voiceSilenceStopSec: Math.max(1, Math.min(10, Number(e.target.value) || 2)) })}
+          />
+          <small className="setting-hint">How long a pause ends the recording. Raise this if it cuts you off mid-sentence.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Microphone</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select
+              aria-label="Microphone device"
+              className="setting-input"
+              value={localSettings.voiceMicDeviceId || ''}
+              onChange={(e) => setLocalSettings({ ...localSettings, voiceMicDeviceId: e.target.value || undefined })}
+            >
+              <option value="">System default</option>
+              {micDevices.map(d => (
+                <option key={d.deviceId} value={d.deviceId}>{d.label || `Microphone ${d.deviceId.slice(0, 6)}`}</option>
+              ))}
+            </select>
+            <button type="button" className="sp-btn" onClick={refreshMicDevices}>↻</button>
+          </div>
+          <small className="setting-hint">
+            Wrong or far-away mics are the top cause of bad recognition — pick your headset here. Click ↻ to rescan
+            (grants a one-off mic permission to read device names).
+          </small>
+        </div>
+        </>}
         </>}
 
         {/* ── Cloud & Integration ── */}
@@ -1749,6 +1932,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <pre className="sp-telemetry-pre">{telemetryLogPreview()}</pre>
           </div>
         </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Activity &amp; Health</label>
+          <p className="setting-hint">See live health of the services HomeBot depends on, and every change it has made to your CRM — with field-level before/after detail.</p>
+          <div className="flex items-center gap-2 mb-2">
+            <button className="button button-secondary" onClick={() => setShowTrustPanel(true)}>Open Activity &amp; Health</button>
+          </div>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">Permission History</label>
+          <p className="setting-hint">Review every permission HomeBot has requested and how you responded.</p>
+          <div className="flex items-center gap-2 mb-2">
+            <button className="button button-secondary" onClick={() => setShowPermissionHistory(true)}>Open Permission History</button>
+          </div>
+          <label className="setting-label" htmlFor="perm-timeout">Permission prompt timeout (seconds)</label>
+          <p className="setting-hint">How long a permission prompt waits before auto-declining. Range 5–600s.</p>
+          <input
+            id="perm-timeout"
+            type="number"
+            min={5}
+            max={600}
+            className="input"
+            value={Math.round(((localSettings as any).permissionPromptTimeoutMs ?? 60000) / 1000)}
+            onChange={(e) => {
+              const secs = Math.min(600, Math.max(5, Number(e.target.value) || 60));
+              setLocalSettings({ ...localSettings, permissionPromptTimeoutMs: secs * 1000 } as any);
+            }}
+          />
+        </div>
         </>}
         <TelemetryConsentModal
           open={showTelemetryModal}
@@ -1765,6 +1978,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onClose={() => setShowTelemetryModal(false)}
         />
         {showTelemetryDashboard && <TelemetryDashboard open={showTelemetryDashboard} onClose={() => setShowTelemetryDashboard(false)} /> }
+        {showPermissionHistory && <PermissionHistory open={showPermissionHistory} onClose={() => setShowPermissionHistory(false)} /> }
+        {showTrustPanel && <TrustPanel open={showTrustPanel} onClose={() => setShowTrustPanel(false)} /> }
 
       {/* ── Scheduled Jobs ─────────────────────────────────────────────────── */}
       <div className="settings-section">

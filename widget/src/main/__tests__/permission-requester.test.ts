@@ -95,6 +95,9 @@ describe('permissionRequester.request()', () => {
         missingPermissions: ['read_file', 'write_file'],
         reason: 'Need two permissions',
         streamId: 'stream-shape',
+        // Copy pass (issue #6): the renderer states the real auto-decline
+        // deadline, so the payload must carry the timeout that fires here.
+        timeoutMs: 60000,
       })
     );
   });

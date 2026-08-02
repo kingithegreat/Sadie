@@ -55,6 +55,58 @@ const connectedServers: ConnectedServer[] = [];
 const MCP_CONNECT_TIMEOUT = 15_000;
 const MCP_MAX_RETRIES = 2;
 const MCP_RETRY_DELAY = 3_000;
+const MCP_TOOL_DISCOVERY_TIMEOUT = 10_000;
+const MCP_TOOL_DISCOVERY_RETRIES = 2;
+const MCP_TOOL_DISCOVERY_RETRY_DELAY = 800;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+    ),
+  ]);
+}
+
+async function listToolsWithRetry(client: Client, config: McpServerConfig): Promise<any[]> {
+  let lastErr: unknown;
+
+  for (let attempt = 0; attempt <= MCP_TOOL_DISCOVERY_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.log(`[MCP] Retrying tool discovery for "${config.name}" (attempt ${attempt + 1}/${MCP_TOOL_DISCOVERY_RETRIES + 1})...`);
+        await sleep(MCP_TOOL_DISCOVERY_RETRY_DELAY);
+      }
+
+      const { tools } = await withTimeout(
+        client.listTools(),
+        MCP_TOOL_DISCOVERY_TIMEOUT,
+        `Tool discovery timed out after ${MCP_TOOL_DISCOVERY_TIMEOUT}ms`
+      );
+
+      if (Array.isArray(tools) && tools.length === 0 && attempt < MCP_TOOL_DISCOVERY_RETRIES) {
+        // Some MCP servers briefly report no tools right after connect; retry once or twice.
+        console.warn(`[MCP] "${config.name}" returned 0 tools immediately after connect; retrying discovery...`);
+        continue;
+      }
+
+      return Array.isArray(tools) ? tools : [];
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= MCP_TOOL_DISCOVERY_RETRIES) break;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[MCP] Tool discovery attempt ${attempt + 1} failed for "${config.name}": ${msg}`);
+    }
+  }
+
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(`Tool discovery failed for "${config.name}"`);
+}
 
 // ─── Config path ─────────────────────────────────────────────────────────────
 
@@ -152,61 +204,81 @@ async function connectServer(
     transport = new SSEClientTransport(new URL(config.url));
   }
 
-  await Promise.race([
-    client.connect(transport),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Connection timed out after ${MCP_CONNECT_TIMEOUT}ms`)), MCP_CONNECT_TIMEOUT)
-    ),
-  ]);
-  console.log(`[MCP] Connected to "${config.name}"`);
+  try {
+    await withTimeout(
+      client.connect(transport),
+      MCP_CONNECT_TIMEOUT,
+      `Connection timed out after ${MCP_CONNECT_TIMEOUT}ms`
+    );
+    console.log(`[MCP] Connected to "${config.name}"`);
 
-  // Fetch the tool list
-  const { tools } = await client.listTools();
-  const toolNames: string[] = [];
+    // Fetch the tool list with retry: some servers are briefly "connected" before tools are discoverable.
+    const tools = await listToolsWithRetry(client, config);
+    const toolNames: string[] = [];
 
-  for (const mcpTool of tools) {
-    const prefixedName = `mcp_${config.name}_${mcpTool.name}`;
-    toolNames.push(prefixedName);
+    for (const mcpTool of tools) {
+      const prefixedName = `mcp_${config.name}_${mcpTool.name}`;
+      toolNames.push(prefixedName);
 
-    // Build a HomeBot-compatible ToolDefinition
-    const definition = {
-      name: prefixedName,
-      description: `[MCP: ${config.name}] ${mcpTool.description ?? mcpTool.name}`,
-      category: 'utility' as const,
-      parameters: {
-        type: 'object' as const,
-        properties: (mcpTool.inputSchema?.properties ?? {}) as Record<string, any>,
-        required: (mcpTool.inputSchema?.required as string[] | undefined) ?? []
-      }
-    };
+      // Build a HomeBot-compatible ToolDefinition.
+      // MCP tool annotations (readOnlyHint/destructiveHint) are the server's own
+      // declaration of how safe a tool is — pass them through to requiresConfirmation
+      // instead of the previous behavior of always leaving it unset. Default to
+      // "requires confirmation" (safe) unless the server explicitly marked the tool
+      // read-only and non-destructive.
+      const annotations = (mcpTool as any).annotations as
+        | { readOnlyHint?: boolean; destructiveHint?: boolean }
+        | undefined;
+      const isKnownSafe = annotations?.readOnlyHint === true && annotations?.destructiveHint !== true;
 
-    // Build a HomeBot-compatible ToolHandler
-    const handler = async (args: Record<string, any>) => {
-      try {
-        const result = await client.callTool({ name: mcpTool.name, arguments: args });
+      const definition = {
+        name: prefixedName,
+        description: `[MCP: ${config.name}] ${mcpTool.description ?? mcpTool.name}`,
+        category: 'utility' as const,
+        requiresConfirmation: !isKnownSafe,
+        parameters: {
+          type: 'object' as const,
+          properties: (mcpTool.inputSchema?.properties ?? {}) as Record<string, any>,
+          required: (mcpTool.inputSchema?.required as string[] | undefined) ?? []
+        }
+      };
 
-        // MCP returns content[] — flatten to a single string result for HomeBot
-        const content = (result as any).content as any[];
-        const text = content
-          .map((c: any) => {
-            if (c.type === 'text') return c.text;
-            if (c.type === 'image') return `[image: ${c.mimeType}]`;
-            return JSON.stringify(c);
-          })
-          .join('\n');
+      // Build a HomeBot-compatible ToolHandler
+      const handler = async (args: Record<string, any>) => {
+        try {
+          const result = await client.callTool({ name: mcpTool.name, arguments: args });
 
-        return { success: !(result as any).isError, result: { text } };
-      } catch (err: any) {
-        return { success: false, error: `MCP tool error: ${err.message}` };
-      }
-    };
+          // MCP returns content[] — flatten to a single string result for HomeBot
+          const content = (result as any).content as any[];
+          const text = content
+            .map((c: any) => {
+              if (c.type === 'text') return c.text;
+              if (c.type === 'image') return `[image: ${c.mimeType}]`;
+              return JSON.stringify(c);
+            })
+            .join('\n');
 
-    registerTool(prefixedName, definition, handler);
-    console.log(`[MCP]   Registered tool: ${prefixedName}`);
+          return { success: !(result as any).isError, result: { text } };
+        } catch (err: any) {
+          return { success: false, error: `MCP tool error: ${err.message}` };
+        }
+      };
+
+      registerTool(prefixedName, definition, handler);
+      console.log(`[MCP]   Registered tool: ${prefixedName}`);
+    }
+
+    connectedServers.push({ config, client, toolNames });
+    console.log(`[MCP] "${config.name}" registered ${toolNames.length} tool(s).`);
+  } catch (err) {
+    // Ensure failed attempts don't leave half-open clients/transports behind.
+    try {
+      await client.close();
+    } catch {
+      // Ignore cleanup errors; the original connect/discovery error is the one we care about.
+    }
+    throw err;
   }
-
-  connectedServers.push({ config, client, toolNames });
-  console.log(`[MCP] "${config.name}" registered ${toolNames.length} tool(s).`);
 }
 
 // ─── Default server catalogue ────────────────────────────────────────────────
@@ -268,6 +340,12 @@ function getDefaultServers(): McpServerConfig[] {
       ...npxInvocation(['-y', '@modelcontextprotocol/server-github']),
       env: { GITHUB_TOKEN: '' },
       enabled: false, // set GITHUB_TOKEN and enable
+    },
+    {
+      type: 'stdio',
+      name: 'ytdlp',
+      ...npxInvocation(['-y', 'github:kingithegreat/yt-dlp-mcp']),
+      enabled: true, // get_video_info / download_video — see permissions defaults
     },
   ];
 }

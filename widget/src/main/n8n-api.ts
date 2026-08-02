@@ -1,16 +1,119 @@
 /**
  * n8n-api.ts
- * Manages n8n workflows from HomeBot via docker exec CLI commands.
- * Creates, activates, lists, and deletes workflows without requiring
- * an API key — uses the n8n CLI and Node.js SQLite inside the container.
+ * Manages n8n workflows from HomeBot.
+ *
+ * Two transports, picked automatically per call:
+ * - **REST (preferred)**: when an n8n API key is configured in HomeBot
+ *   Settings, all operations go through n8n's public API
+ *   (`/api/v1/workflows`, `X-N8N-API-KEY` header). Activation via the API
+ *   registers webhooks live — no container restart needed.
+ * - **Docker CLI (fallback)**: without an API key, workflows are managed
+ *   via `docker exec homebot-n8n n8n <command>`, which requires Docker and
+ *   a container restart for webhook registration.
  */
 
 import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
+import axios from 'axios';
 
 const CONTAINER = 'homebot-n8n';
 const N8N_BASE = 'http://localhost:5678';
 const SQLITE3_REQUIRE = '/usr/local/lib/node_modules/n8n/node_modules/sqlite3';
+
+// ---- Connection settings (URL + API key from HomeBot Settings) ----
+
+export interface N8nConnection {
+  baseUrl: string;
+  apiKey?: string;
+}
+
+let connectionProvider: (() => N8nConnection) | null = null;
+
+/**
+ * Called once at startup (ipc-handlers.ts) so every n8n operation picks up
+ * the URL and API key the user entered in HomeBot Settings.
+ */
+export function registerN8nConnectionProvider(fn: () => N8nConnection): void {
+  connectionProvider = fn;
+}
+
+function getConnection(): N8nConnection {
+  try {
+    const c = connectionProvider?.();
+    if (c?.baseUrl) {
+      return { baseUrl: c.baseUrl.replace(/\/$/, ''), apiKey: c.apiKey?.trim() || undefined };
+    }
+  } catch { /* fall through to defaults */ }
+  return { baseUrl: N8N_BASE };
+}
+
+function hasApiKey(): boolean {
+  return !!getConnection().apiKey;
+}
+
+async function apiRequest<T = any>(method: 'GET' | 'POST' | 'DELETE', apiPath: string, body?: object): Promise<T> {
+  const { baseUrl, apiKey } = getConnection();
+  if (!apiKey) throw new Error('n8n API key is not configured');
+  const res = await axios.request({
+    method,
+    url: `${baseUrl}/api/v1${apiPath}`,
+    data: body,
+    headers: { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' },
+    timeout: 30_000,
+  });
+  return res.data as T;
+}
+
+// ---- Workflow JSON validation ----
+// Mirrors the minimum schema n8n requires (kept in sync with
+// widget/src/main/__tests__/n8n-workflow-schema.test.ts).
+
+export function validateWorkflowJson(wf: any): { ok: boolean; errors: string[] } {
+  if (!wf || typeof wf !== 'object' || Array.isArray(wf)) {
+    return { ok: false, errors: ['workflow must be a JSON object'] };
+  }
+  const errors: string[] = [];
+  if (!wf.name || typeof wf.name !== 'string') errors.push('missing "name" (string)');
+  if (!Array.isArray(wf.nodes) || wf.nodes.length === 0) {
+    errors.push('"nodes" must be a non-empty array');
+  } else {
+    wf.nodes.forEach((n: any, i: number) => {
+      if (!n || typeof n !== 'object') { errors.push(`nodes[${i}] must be an object`); return; }
+      if (!n.name) errors.push(`nodes[${i}] missing "name"`);
+      if (!n.type) errors.push(`nodes[${i}] missing "type"`);
+    });
+  }
+  if (!wf.connections || typeof wf.connections !== 'object' || Array.isArray(wf.connections)) {
+    errors.push('missing "connections" (object keyed by node name)');
+  } else if (Array.isArray(wf.nodes)) {
+    const names = new Set(wf.nodes.map((n: any) => n?.name));
+    for (const [from, conn] of Object.entries(wf.connections)) {
+      if (!names.has(from)) errors.push(`connections references unknown node "${from}"`);
+      const groups = (conn as any)?.main;
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        if (!Array.isArray(group)) continue;
+        for (const target of group) {
+          if (target?.node && !names.has(target.node)) {
+            errors.push(`connection from "${from}" targets unknown node "${target.node}"`);
+          }
+        }
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/** n8n's public API rejects unknown top-level properties — strip to the allowed set. */
+function toApiCreateBody(wf: any): object {
+  return {
+    name: wf.name,
+    nodes: wf.nodes,
+    connections: wf.connections,
+    settings: wf.settings || { executionOrder: 'v1' },
+    ...(wf.staticData ? { staticData: wf.staticData } : {}),
+  };
+}
 
 function dockerExec(...args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -165,6 +268,20 @@ return {
 }
 
 export async function importWorkflow(workflowJson: object): Promise<string> {
+  const check = validateWorkflowJson(workflowJson);
+  if (!check.ok) throw new Error(`Invalid workflow JSON: ${check.errors.join('; ')}`);
+
+  // ── REST path: authenticated via the API key from HomeBot Settings ──
+  if (hasApiKey()) {
+    const created = await apiRequest<{ id?: string | number }>('POST', '/workflows', toApiCreateBody(workflowJson));
+    if (created?.id === undefined || created?.id === null) {
+      throw new Error('n8n API did not return a workflow id');
+    }
+    console.log('[n8n-api] Imported workflow via REST API, ID:', created.id);
+    return String(created.id);
+  }
+
+  // ── CLI fallback (no API key configured) ──
   const jsonStr = JSON.stringify(workflowJson);
 
   // Write JSON into container via stdin to avoid Windows path encoding issues
@@ -188,41 +305,19 @@ export async function importWorkflow(workflowJson: object): Promise<string> {
 }
 
 /**
- * Activate a workflow by updating the DB via Node.js inside the container.
- * Reads the full nodes/connections from workflow_entity (written by n8n CLI import)
- * and copies them into a workflow_history entry so n8n registers the webhooks.
+ * Activate a workflow.
+ * - REST path: `POST /api/v1/workflows/{id}/activate` — webhooks register live.
+ * - CLI fallback: `n8n update:workflow --active=true` (n8n's own supported
+ *   command), which requires a container restart to register webhooks.
  */
-export async function activateWorkflow(workflowId: string, workflowJson: object): Promise<void> {
-  const wf = workflowJson as any;
-  const versionId = wf.versionId || randomUUID();
-  const wfName = wf.name || 'HomeBot Automation';
-
-  // Node.js script piped via stdin — reads full nodes from workflow_entity
-  const script = [
-    `const sqlite3 = require('${SQLITE3_REQUIRE}');`,
-    `const db = new sqlite3.Database('/home/node/.n8n/database.sqlite');`,
-    `const wfId = ${JSON.stringify(workflowId)};`,
-    `const vId = ${JSON.stringify(versionId)};`,
-    `const name = ${JSON.stringify(wfName)};`,
-    `const now = new Date().toISOString();`,
-    `db.get('SELECT nodes, connections FROM workflow_entity WHERE id = ?', [wfId], (err, row) => {`,
-    `  if (err || !row) { console.error('read err:', err?.message || 'not found'); process.exit(1); }`,
-    `  db.serialize(() => {`,
-    `    db.run('PRAGMA foreign_keys = OFF');`,
-    `    db.run('INSERT OR REPLACE INTO workflow_history (versionId, workflowId, authors, createdAt, updatedAt, nodes, connections, name, autosaved, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',`,
-    `      [vId, wfId, 'homebot', now, now, row.nodes, row.connections, name, 0, null],`,
-    `      function(e) { console.log(e ? 'history err: ' + e.message : 'history OK'); });`,
-    `    db.run('UPDATE workflow_entity SET active = 1, versionId = ?, "activeVersionId" = ? WHERE id = ?',`,
-    `      [vId, vId, wfId],`,
-    `      function(e) { console.log(e ? 'activate err: ' + e.message : 'activated:' + this.changes); });`,
-    `    db.run('PRAGMA foreign_keys = ON');`,
-    `  });`,
-    `  db.close(() => console.log('done'));`,
-    `});`,
-  ].join('\n');
-
-  const result = await dockerExecStdin(script, 'node', '-');
-  console.log('[n8n-api] activate result:', result);
+export async function activateWorkflow(workflowId: string): Promise<void> {
+  if (hasApiKey()) {
+    await apiRequest('POST', `/workflows/${encodeURIComponent(workflowId)}/activate`);
+    console.log('[n8n-api] Activated workflow via REST API:', workflowId);
+    return;
+  }
+  const out = await dockerExec('n8n', 'update:workflow', `--id=${workflowId}`, '--active=true');
+  console.log('[n8n-api] activate result:', out);
 }
 
 export async function restartN8n(): Promise<void> {
@@ -251,6 +346,13 @@ export async function restartN8n(): Promise<void> {
 }
 
 export async function deleteWorkflow(workflowId: string): Promise<void> {
+  if (hasApiKey()) {
+    await apiRequest('DELETE', `/workflows/${encodeURIComponent(workflowId)}`);
+    console.log('[n8n-api] Deleted workflow via REST API:', workflowId);
+    return;
+  }
+  // CLI fallback: n8n has no delete:workflow command, so this is the one
+  // remaining direct-SQLite operation. Configure an API key to avoid it.
   const script = `
 const sqlite3 = require('${SQLITE3_REQUIRE}');
 const db = new sqlite3.Database('/home/node/.n8n/database.sqlite');
@@ -269,6 +371,14 @@ db.close();
 }
 
 export async function listWorkflows(): Promise<Array<{ id: string; name: string }>> {
+  if (hasApiKey()) {
+    try {
+      const res = await apiRequest<{ data?: Array<{ id: string | number; name: string }> }>('GET', '/workflows?limit=200');
+      return (res?.data || []).map((w) => ({ id: String(w.id), name: w.name }));
+    } catch (e: any) {
+      console.warn('[n8n-api] REST list failed, falling back to CLI:', e?.message);
+    }
+  }
   try {
     const out = await dockerExec('n8n', 'list:workflow');
     return out
@@ -310,6 +420,37 @@ export function buildWebFetchWorkflowJson(): object {
       },
       {
         parameters: {
+          // SSRF guard: reject non-http(s) schemes and requests aimed at
+          // loopback / private / link-local hosts (incl. the cloud-metadata
+          // IP and Docker's host gateway) before any request leaves the
+          // container. Throws (fails closed) on a blocked or malformed URL.
+          // Note: literal-host checks only — a hostname that DNS-resolves to a
+          // private IP (rebinding) is not caught here.
+          jsCode: `const url = $json.body?.url || '';
+let u;
+try { u = new URL(url); } catch (e) { throw new Error('Invalid URL'); }
+if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('Only http/https URLs are allowed');
+const host = u.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+const blockedNames = ['localhost', 'host.docker.internal', 'metadata.google.internal', 'metadata'];
+if (blockedNames.includes(host) || host.endsWith('.localhost')) throw new Error('Blocked host: ' + host);
+const m = host.match(/^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$/);
+if (m) {
+  const a = Number(m[1]), b = Number(m[2]);
+  if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+    throw new Error('Blocked private/link-local IP: ' + host);
+  }
+}
+if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) throw new Error('Blocked IPv6 host: ' + host);
+return { json: $json };`,
+        },
+        id: randomUUID(),
+        name: 'Validate URL',
+        type: 'n8n-nodes-base.code',
+        typeVersion: 2,
+        position: [420, 300],
+      },
+      {
+        parameters: {
           method: 'GET',
           url: '={{ $json.body.url }}',
           options: {
@@ -321,7 +462,7 @@ export function buildWebFetchWorkflowJson(): object {
         name: 'Fetch Page',
         type: 'n8n-nodes-base.httpRequest',
         typeVersion: 4.2,
-        position: [480, 300],
+        position: [620, 300],
       },
       {
         parameters: {
@@ -368,7 +509,8 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
       },
     ],
     connections: {
-      Webhook: { main: [[{ node: 'Fetch Page', type: 'main', index: 0 }]] },
+      Webhook: { main: [[{ node: 'Validate URL', type: 'main', index: 0 }]] },
+      'Validate URL': { main: [[{ node: 'Fetch Page', type: 'main', index: 0 }]] },
       'Fetch Page': { main: [[{ node: 'Extract Text', type: 'main', index: 0 }]] },
       'Extract Text': { main: [[{ node: 'Respond', type: 'main', index: 0 }]] },
     },
@@ -389,8 +531,8 @@ export async function ensureWebFetchWorkflow(): Promise<void> {
   console.log('[n8n-api] Deploying Web Fetch workflow to n8n...');
   const json = buildWebFetchWorkflowJson();
   const id = await importWorkflow(json);
-  await activateWorkflow(id, json);
-  await restartN8n();
+  await activateWorkflow(id);
+  if (!hasApiKey()) await restartN8n(); // REST activation registers webhooks live
   console.log('[n8n-api] Web Fetch workflow deployed, id:', id);
 }
 
@@ -414,13 +556,64 @@ export async function createAndActivateWorkflow(opts: {
   const json = buildWorkflowJson({ name: workflowName, webhookPath, systemPrompt });
 
   const id = await importWorkflow(json);
-  await activateWorkflow(id, json);
-  await restartN8n();
+  await activateWorkflow(id);
+  if (!hasApiKey()) await restartN8n(); // REST activation registers webhooks live
 
   return {
     id,
     name: workflowName,
     webhookPath,
-    webhookUrl: `${N8N_BASE}/webhook/${webhookPath}`,
+    webhookUrl: `${getConnection().baseUrl}/webhook/${webhookPath}`,
   };
+}
+
+/**
+ * Extracts the production webhook URL from a workflow's Webhook node, if any.
+ */
+export function extractWebhookUrl(workflowJson: object): string | null {
+  const nodes = (workflowJson as any)?.nodes;
+  if (!Array.isArray(nodes)) return null;
+  const webhookNode = nodes.find((n: any) => n?.type === 'n8n-nodes-base.webhook' && n?.parameters?.path);
+  if (!webhookNode) return null;
+  const p = String(webhookNode.parameters.path).replace(/^\//, '');
+  return `${getConnection().baseUrl}/webhook/${p}`;
+}
+
+/**
+ * Checks the n8n connection: is the instance reachable, and (when an API key
+ * is set) does the key authenticate against the public API?
+ * `authenticated` is null when no key is configured — nothing to verify.
+ * Overrides let Settings test values before they're saved.
+ */
+export async function verifyN8nConnection(
+  override?: { baseUrl?: string; apiKey?: string }
+): Promise<{ reachable: boolean; authenticated: boolean | null; error?: string }> {
+  const conn = getConnection();
+  const baseUrl = (override?.baseUrl?.trim() || conn.baseUrl).replace(/\/$/, '');
+  const apiKey = override?.apiKey !== undefined ? (override.apiKey.trim() || undefined) : conn.apiKey;
+
+  let reachable = false;
+  try {
+    const r = await axios.get(`${baseUrl}/healthz`, { timeout: 4000, validateStatus: () => true });
+    reachable = r.status < 500;
+  } catch { /* unreachable */ }
+  if (!reachable) {
+    return { reachable: false, authenticated: null, error: `n8n is not reachable at ${baseUrl}` };
+  }
+  if (!apiKey) return { reachable: true, authenticated: null };
+
+  try {
+    await axios.get(`${baseUrl}/api/v1/workflows?limit=1`, {
+      headers: { 'X-N8N-API-KEY': apiKey },
+      timeout: 6000,
+    });
+    return { reachable: true, authenticated: true };
+  } catch (err: any) {
+    const status = err?.response?.status;
+    return {
+      reachable: true,
+      authenticated: false,
+      error: status === 401 ? 'API key rejected (401 Unauthorized)' : `API check failed${status ? ` (HTTP ${status})` : `: ${err?.message}`}`,
+    };
+  }
 }

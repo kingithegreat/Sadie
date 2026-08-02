@@ -14,6 +14,7 @@ widget/dist/
 
 # Logs
 logs/*.log
+logs/soak-report-*.json
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -131,3 +132,9 @@ widget/jest-result.json
 
 # MCP config (contains API keys)
 .mcp.json
+
+# License signing PRIVATE keys — must never be committed. The vendor keeps
+# these secret; only the public key (src/licensing/signingKey.ts) is shipped.
+.keys/
+*.private.pem
+license-signing.private.pem

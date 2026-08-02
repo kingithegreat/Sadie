@@ -54,6 +54,14 @@ const ALLOWED_CHANNELS = {
   LIST_CUSTOM_MODELS: 'homebot:list-custom-llm-models',
   READ_CONSENT_LOG: 'homebot:read-consent-log',
   READ_TELEMETRY_EVENTS: 'homebot:read-telemetry-events',
+  READ_PERMISSION_AUDIT: 'homebot:read-permission-audit',
+  GET_SUPERVISOR_STATUS: 'homebot:get-supervisor-status',
+  GET_CRM_ACTIVITY: 'homebot:get-crm-activity',
+  SUPERVISOR_STATUS_PUSH: 'homebot:supervisor-status',
+  GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
+  BATCH_SUMMARY_PUSH: 'homebot:batch-summary',
+  CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
+  EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
   HIDE_WINDOW: 'homebot:hide-window',
   STREAM_SEND: 'homebot:stream-message',
@@ -182,7 +190,7 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);
   },
 
-  onPermissionRequest: (cb: (data: { requestId: string; missingPermissions: string[]; reason: string; streamId?: string }) => void) => {
+  onPermissionRequest: (cb: (data: { requestId: string; missingPermissions: string[]; reason: string; streamId?: string; timeoutMs?: number }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
     // E2E diagnostic: expose the last permission request to the renderer global for tests
@@ -386,6 +394,45 @@ const electronAPI: ElectronAPI = {
 
   readTelemetryEvents: async (): Promise<{ success: boolean; events?: any[]; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.READ_TELEMETRY_EVENTS);
+  },
+
+  readPermissionAudit: async (): Promise<{ success: boolean; events?: any[]; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.READ_PERMISSION_AUDIT);
+  },
+
+  // ── Trust panel (Phase 2): read-only health + activity ────────────────────
+  getSupervisorStatus: async (): Promise<{ success: boolean; status?: any; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SUPERVISOR_STATUS);
+  },
+
+  getCrmActivity: async (limit?: number): Promise<{ success: boolean; items?: any[]; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_CRM_ACTIVITY, limit);
+  },
+
+  /** Live supervisor state-change pushes. Returns an unsubscribe function. */
+  onSupervisorStatus: (callback: (change: any) => void): (() => void) => {
+    const listener = (_event: unknown, change: any) => callback(change);
+    ipcRenderer.on(ALLOWED_CHANNELS.SUPERVISOR_STATUS_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.SUPERVISOR_STATUS_PUSH, listener);
+  },
+
+  getBatchSummaries: async (): Promise<{ success: boolean; summaries?: any[]; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_BATCH_SUMMARIES);
+  },
+
+  /** Live batch-execution summary pushes. Returns an unsubscribe function. */
+  onBatchSummary: (callback: (summary: any) => void): (() => void) => {
+    const listener = (_event: unknown, summary: any) => callback(summary);
+    ipcRenderer.on(ALLOWED_CHANNELS.BATCH_SUMMARY_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.BATCH_SUMMARY_PUSH, listener);
+  },
+
+  clearPermissionAudit: async (): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.CLEAR_PERMISSION_AUDIT);
+  },
+
+  exportPermissionAudit: async (): Promise<{ success: boolean; path?: string; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.EXPORT_PERMISSION_AUDIT);
   },
 
   getAnalyticsSummary: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
@@ -646,6 +693,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:delete-automation', data),
   runAutomation: async (data: any) =>
     ipcRenderer.invoke('homebot:run-automation', data),
+  // Test n8n reachability + API-key auth (values may be unsaved Settings input)
+  testN8nConnection: async (data: { baseUrl?: string; apiKey?: string }) =>
+    ipcRenderer.invoke('homebot:n8n-test-connection', data),
 
   // Quiz mode
   generateQuiz: async (params: any) =>
