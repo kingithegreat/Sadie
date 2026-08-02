@@ -89,7 +89,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [, setPendingToolCall] = useState<any | null>(null);
   const [pendingConfirmationData, setPendingConfirmationData] = useState<any>(null);
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
-  const [permissionRequestData, setPermissionRequestData] = useState<{ requestId?: string; missingPermissions?: string[]; reason?: string; streamId?: string } | null>(null);
+  const [permissionRequestData, setPermissionRequestData] = useState<{ requestId?: string; missingPermissions?: string[]; reason?: string; streamId?: string; timeoutMs?: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -282,7 +282,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     const permUnsub = window.electron.onPermissionRequest?.((data) => {
-      setPermissionRequestData({ requestId: data.requestId, missingPermissions: data.missingPermissions, reason: data.reason, streamId: data.streamId });
+      setPermissionRequestData({ requestId: data.requestId, missingPermissions: data.missingPermissions, reason: data.reason, streamId: data.streamId, timeoutMs: (data as any).timeoutMs });
       setPermissionModalOpen(true);
     });
 
@@ -1405,7 +1405,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       )}
 
       {/* Permission Modal (appears when main requests permission escalation) */}
-      <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />
+      <PermissionModal open={permissionModalOpen} missingPermissions={permissionRequestData?.missingPermissions || []} reason={permissionRequestData?.reason} requestId={permissionRequestData?.requestId} timeoutMs={permissionRequestData?.timeoutMs} onClose={() => { setPermissionModalOpen(false); setPermissionRequestData(null); }} />
 
       {/* Keyboard Shortcuts Panel */}
       {shortcutsOpen && (

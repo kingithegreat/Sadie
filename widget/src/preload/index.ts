@@ -190,7 +190,7 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);
   },
 
-  onPermissionRequest: (cb: (data: { requestId: string; missingPermissions: string[]; reason: string; streamId?: string }) => void) => {
+  onPermissionRequest: (cb: (data: { requestId: string; missingPermissions: string[]; reason: string; streamId?: string; timeoutMs?: number }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on(ALLOWED_CHANNELS.PERMISSION_REQUEST, listener);
     // E2E diagnostic: expose the last permission request to the renderer global for tests

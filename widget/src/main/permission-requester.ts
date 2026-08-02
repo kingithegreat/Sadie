@@ -51,10 +51,14 @@ export const permissionRequester = {
         resolve(resp);
       };
 
+      // Resolved once so the renderer can tell the user the real deadline —
+      // the modal's "declined automatically after about a minute" copy must
+      // describe the same timeout that actually fires here.
+      const timeoutMs = resolvePromptTimeoutMs();
       const timeout = setTimeout(() => {
         pending.delete(requestId);
         finish({ requestId, decision: 'cancel' }, 'expired');
-      }, resolvePromptTimeoutMs());
+      }, timeoutMs);
 
       pending.set(requestId, (resp: PermissionResponse) => {
         clearTimeout(timeout);
@@ -62,7 +66,7 @@ export const permissionRequester = {
       });
 
       try {
-        sender.send('homebot:permission-request', { requestId, missingPermissions, reason, streamId });
+        sender.send('homebot:permission-request', { requestId, missingPermissions, reason, streamId, timeoutMs });
       } catch (e) {
         // If sending fails, resolve as cancel
         clearTimeout(timeout);

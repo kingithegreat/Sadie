@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  describePermission,
+  resolveHumanReason,
+  formatTimeoutNotice,
+} from '../../../../src/trust/permission-copy';
 
 const TITLE_ID = 'hb-permission-modal-title';
 const INTRO_ID = 'hb-permission-modal-intro';
 const REASON_ID = 'hb-permission-modal-reason';
 
-export default function PermissionModal({ open, missingPermissions, reason, requestId, onClose }: {
+export default function PermissionModal({ open, missingPermissions, reason, requestId, timeoutMs, onClose }: {
   open: boolean;
   missingPermissions: string[];
   reason?: string;
   requestId?: string;
+  /** How long the main process waits before auto-declining (informational copy only). */
+  timeoutMs?: number;
   onClose: () => void;
 }) {
   const active = open && !!requestId;
@@ -25,20 +32,20 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
   // Reset the selection whenever a new request opens.
   useEffect(() => { setRemember({}); }, [requestId]);
 
-  // Accessibility: focus management, focus trap, and Escape-to-cancel.
+  // Accessibility: focus management, focus trap, and Escape-to-decline.
   // Hooks must run unconditionally (rules-of-hooks) — the effect no-ops when
   // the modal is not active, so nothing happens until it is actually shown.
   useEffect(() => {
     if (!active) return;
 
     previouslyFocused.current = document.activeElement as HTMLElement | null;
-    // Focus the safest default action (Cancel) so keyboard users start on the
-    // least-destructive choice rather than "Always allow".
+    // Focus the safest default action (Don't allow) so keyboard users start on
+    // the least-destructive choice rather than "Always allow".
     cancelBtnRef.current?.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Escape is treated as an explicit decline — same as Cancel.
+        // Escape is treated as an explicit decline — same as "Don't allow".
         e.preventDefault();
         (window as any).electron.sendPermissionResponse(requestId!, 'cancel');
         onClose();
@@ -99,6 +106,13 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
     onClose();
   };
 
+  // Copy pass (issue #6): plain-English label + one-line detail per
+  // permission instead of raw slugs; the machine-generated
+  // "Requires permissions: …" reason duplicates the list, so only reasons a
+  // human wrote survive to the screen.
+  const described = missingPermissions.map(describePermission);
+  const humanReason = resolveHumanReason(reason);
+
   return (
     <div data-role="permission-modal" className="hb-modal-overlay">
       <div
@@ -110,28 +124,40 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
         aria-describedby={`${INTRO_ID} ${REASON_ID}`}
       >
         <h2 id={TITLE_ID} className="hb-modal-title">Permission Required</h2>
-        <p id={INTRO_ID} className="hb-modal-text">This action requires the following permissions:</p>
+        <p id={INTRO_ID} className="hb-modal-text">
+          {described.length === 1
+            ? 'SADIE is asking for your permission to:'
+            : `SADIE is asking for ${described.length} permissions:`}
+        </p>
         <div className="hb-modal-consent-detail" role="list" aria-label="Requested permissions">
-          {missingPermissions.map((p) => (
-            <label key={p} className="hb-modal-perm-item" role="listitem">
+          {described.map((d) => (
+            <label key={d.name} className="hb-modal-perm-item" role="listitem">
               <input
                 type="checkbox"
                 className="hb-modal-perm-check"
-                checked={remember[p] !== false}
-                onChange={(e) => setRemember((r) => ({ ...r, [p]: e.target.checked }))}
-                aria-label={`Remember ${p.replace(/_/g, ' ')}`}
+                checked={remember[d.name] !== false}
+                onChange={(e) => setRemember((r) => ({ ...r, [d.name]: e.target.checked }))}
+                aria-label={`Remember ${d.label}`}
               />
-              <span>{p.replace(/_/g, ' ')}</span>
+              <span>
+                <strong>{d.label}</strong>
+                <span className="hb-modal-muted hb-modal-perm-detail"> — {d.detail}</span>
+              </span>
             </label>
           ))}
         </div>
-        <div id={REASON_ID} className="hb-modal-muted">{reason || 'This action will modify files on your system.'}</div>
+        <div id={REASON_ID} className="hb-modal-muted">
+          {humanReason || 'Nothing has run yet — SADIE is waiting for your decision.'}
+        </div>
         <p className="hb-modal-muted hb-modal-perm-hint">
           <strong>Allow once</strong> applies only to this action. <strong>Always allow</strong> saves these permissions for future actions until you change them in Settings. Untick a permission above to allow it just this once without remembering it.
         </p>
+        <p className="hb-modal-muted hb-modal-perm-hint">
+          {formatTimeoutNotice(timeoutMs)}
+        </p>
 
         <div className="hb-modal-actions">
-          <button ref={cancelBtnRef} type="button" className="hb-modal-btn hb-modal-btn-secondary" onClick={cancel}>Cancel</button>
+          <button ref={cancelBtnRef} type="button" className="hb-modal-btn hb-modal-btn-secondary" onClick={cancel}>Don&rsquo;t allow</button>
           <button type="button" className="hb-modal-btn hb-modal-btn-warning" onClick={allowOnce}>Allow once</button>
           <button type="button" className="hb-modal-btn hb-modal-btn-primary" onClick={alwaysAllow}>Always allow</button>
         </div>

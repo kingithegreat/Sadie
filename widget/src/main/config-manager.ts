@@ -128,7 +128,9 @@ export interface Settings {
   reflectionValidationEnabled?: boolean;
 }
 
-const DEFAULT_SETTINGS: Settings = {
+// Exported for the permission-copy drift gate (permission-copy-registry.test.ts):
+// every default permission name must have human copy in src/trust/permission-copy.ts.
+export const DEFAULT_SETTINGS: Settings = {
   n8nUrl: 'http://localhost:5678',
   voiceEngine: 'whisper',
   whisperModel: 'base',
