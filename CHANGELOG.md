@@ -7,6 +7,9 @@
 - **n8n credential management** (`AutomationCenter.tsx`): "Credentials" and "n8n Dashboard" buttons open the n8n credential manager and workflow editor in the system browser via `openExternalUrl` IPC bridge.
 - **`homebot:open-external-url` IPC channel** (`ipc-handlers.ts`, `preload/index.ts`, `types.ts`): protocol-validated (http/https) external URL opener exposed through the preload bridge.
 
+### Fixed
+- **Uncensored model tag** (`config-manager.ts`, `message-router.ts`, `ModelSelector.tsx`, `SettingsPanel.tsx`, `App.tsx`, `model-pull-guard.ts`): every `dolphin:7b` reference corrected to the real installed tag `dolphin-mistral:7b`. The bare `dolphin:7b` tag does not exist on the Ollama registry, so uncensored mode always emitted an "unavailable — switching model" fallback. Also switched the 16 GB+ profile chat default from `gemma4:e4b` (9.6 GB) to `qwen2.5:7b` for stronger tool-calling and a lighter memory footprint.
+
 ### Fixed — Full Codebase Sweep (32 issues across 20 files)
 - **CSS light theme** (`chatgpt-theme.css`): fixed dangling selector, double `.widget-mode` nesting, undefined CSS variables, gold-to-blue accent migration, dead pseudo-element selectors, duplicate keyframes, and vendor prefix ordering.
 - **Stale keyboard handler** (`App.tsx`): `Ctrl+N` new conversation used stale closure; fixed with ref pattern.

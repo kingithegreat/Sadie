@@ -1116,7 +1116,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               }}
               onConfigureCustom={() => setSettingsOpen(true)}
               locked={uncensoredMode}
-              lockedModelId={settings.uncensoredModel || 'dolphin:7b'}
+              lockedModelId={settings.uncensoredModel || 'dolphin-mistral:7b'}
               lockReason="Turn off 🔓 Uncensored Mode to switch models"
               vramGB={vramGB}
             />
@@ -1246,7 +1246,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         currentModel={settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
-        uncensoredModel={settings.uncensoredModel || 'dolphin:7b'}
+        uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}
         vramGB={vramGB}
         onModelChange={async (model: string, useCustom: boolean) => {
           const newSettings = {
