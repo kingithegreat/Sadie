@@ -13,6 +13,7 @@ import { isE2E } from './env';
 import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
 import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
+import { registerTrustIpc } from './trust-ipc';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
@@ -261,6 +262,10 @@ app.whenReady().then(async () => {
     n8nUrl: resolvedN8nUrl,
     getWindow: () => mainWindow,
   });
+  // Phase 2 trust layer: read-only IPC so the renderer can show live service
+  // health and the CRM activity trail. Returns null status in E2E (handle is
+  // a no-op there), which the panel renders as "supervision off".
+  registerTrustIpc(() => supervisorHandle?.getStatus() ?? null);
   registerMessageRouter(mainWindow, resolvedN8nUrl);
   // Expose a safe bridge so main-process router diagnostics can be pushed
   // into the renderer for E2E tracing and diagnostics. This is idempotent
