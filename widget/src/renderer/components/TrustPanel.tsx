@@ -36,9 +36,43 @@ interface ActivityItem {
   changes: ActivityChange[];
 }
 
+interface BatchCallOutcomeView {
+  name: string;
+  ok: boolean;
+  error?: string;
+  durationMs: number;
+}
+
+interface BatchSummaryView {
+  kind: 'executed' | 'blocked';
+  at: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  totalDurationMs: number;
+  calls: BatchCallOutcomeView[];
+  missingPermissions?: string[];
+}
+
 interface TrustPanelProps {
   open: boolean;
   onClose: () => void;
+}
+
+const MAX_BATCHES_SHOWN = 20;
+
+function formatBatchDuration(ms: number): string {
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+function batchLine(b: BatchSummaryView): string {
+  const tools = `${b.total} tool${b.total === 1 ? '' : 's'}`;
+  if (b.kind === 'blocked') {
+    return `Blocked — ${tools} needed: ${(b.missingPermissions ?? []).join(', ') || 'permissions'}`;
+  }
+  if (b.failed === 0) return `${tools} ran, all ok in ${formatBatchDuration(b.totalDurationMs)}`;
+  const firstFail = b.calls.find((c) => !c.ok);
+  return `${tools} ran: ${b.succeeded} ok, ${b.failed} failed${firstFail ? ` (${firstFail.name})` : ''} in ${formatBatchDuration(b.totalDurationMs)}`;
 }
 
 const HEALTH_DOT: Record<ServiceStatusView['health'], string> = {
@@ -67,13 +101,16 @@ export default function TrustPanel({ open, onClose }: TrustPanelProps) {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [batches, setBatches] = useState<BatchSummaryView[]>([]);
+  const [expandedBatch, setExpandedBatch] = useState<number | null>(null);
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const [statusR, activityR] = await Promise.all([
+      const [statusR, activityR, batchesR] = await Promise.all([
         (window as any).electron.getSupervisorStatus?.(),
         (window as any).electron.getCrmActivity?.(50),
+        (window as any).electron.getBatchSummaries?.(),
       ]);
       if (statusR && statusR.success) {
         if (statusR.status && Array.isArray(statusR.status.services)) {
@@ -85,9 +122,15 @@ export default function TrustPanel({ open, onClose }: TrustPanelProps) {
         }
       }
       setItems(activityR && activityR.success && Array.isArray(activityR.items) ? activityR.items : []);
+      setBatches(
+        batchesR && batchesR.success && Array.isArray(batchesR.summaries)
+          ? batchesR.summaries.slice(0, MAX_BATCHES_SHOWN)
+          : []
+      );
     } catch {
       setServices([]);
       setItems([]);
+      setBatches([]);
     } finally {
       setLoading(false);
     }
@@ -108,8 +151,12 @@ export default function TrustPanel({ open, onClose }: TrustPanelProps) {
         })
         .catch(() => undefined);
     });
+    const unsubscribeBatch = (window as any).electron.onBatchSummary?.((summary: BatchSummaryView) => {
+      setBatches((prev) => [summary, ...prev].slice(0, MAX_BATCHES_SHOWN));
+    });
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
+      if (typeof unsubscribeBatch === 'function') unsubscribeBatch();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -150,6 +197,43 @@ export default function TrustPanel({ open, onClose }: TrustPanelProps) {
                   {agoLabel(s.lastOkAt)}
                   {s.totalRecoveries > 0 ? ` · auto-recovered ×${s.totalRecoveries}` : ''}
                 </span>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="perm-allow-section" aria-label="Recent tool batches">
+          <div className="perm-allow-title">Recent tool batches</div>
+          {batches.length === 0 ? (
+            <div className="perm-allow-item">
+              <span className="perm-allow-name">No tool batches this session.</span>
+            </div>
+          ) : (
+            batches.map((b, i) => (
+              <div key={`${b.at}-${i}`} className="perm-allow-item" data-batch-kind={b.kind}>
+                <div style={{ flex: 1 }}>
+                  <div className="perm-allow-name">{b.kind === 'blocked' ? '⛔ ' : ''}{batchLine(b)}</div>
+                  <div className="setting-hint">{timeLabel(b.at)}</div>
+                  {expandedBatch === i && (
+                    <div className="setting-hint" data-role="batch-calls">
+                      {b.calls.map((c, j) => (
+                        <div key={`${c.name}-${j}`}>
+                          {c.ok ? '✓' : '✗'} {c.name} · {formatBatchDuration(c.durationMs)}
+                          {c.error ? ` — ${c.error}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {b.calls.length > 0 && (
+                  <button
+                    className="perm-allow-revoke"
+                    onClick={() => setExpandedBatch(expandedBatch === i ? null : i)}
+                    aria-label={`${expandedBatch === i ? 'Hide' : 'Show'} batch detail`}
+                  >
+                    {expandedBatch === i ? 'Hide' : 'Detail'}
+                  </button>
+                )}
               </div>
             ))
           )}

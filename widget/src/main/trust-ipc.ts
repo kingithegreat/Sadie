@@ -14,10 +14,12 @@
 import { ipcMain } from 'electron';
 import { summarizeAuditLog, TrustActivityItem } from '../../../src/trust/activity';
 import { SupervisorStatus } from '../../../src/supervisor/types';
+import { BatchSummary } from '../../../src/trust/batch';
 
 export const TRUST_CHANNELS = {
   GET_SUPERVISOR_STATUS: 'homebot:get-supervisor-status',
   GET_CRM_ACTIVITY: 'homebot:get-crm-activity',
+  GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
 } as const;
 
 const ACTIVITY_LIMIT_DEFAULT = 50;
@@ -35,6 +37,12 @@ export interface CrmActivityResult {
   error?: string;
 }
 
+export interface BatchSummariesResult {
+  success: boolean;
+  summaries: BatchSummary[];
+  error?: string;
+}
+
 /**
  * Register the trust IPC handlers. Call once after the supervisor service has
  * started; `getSupervisorStatus` closes over the live handle (returning null
@@ -44,6 +52,7 @@ export interface CrmActivityResult {
 export function registerTrustIpc(getSupervisorStatus: () => SupervisorStatus | null): void {
   ipcMain.removeHandler(TRUST_CHANNELS.GET_SUPERVISOR_STATUS);
   ipcMain.removeHandler(TRUST_CHANNELS.GET_CRM_ACTIVITY);
+  ipcMain.removeHandler(TRUST_CHANNELS.GET_BATCH_SUMMARIES);
 
   ipcMain.handle(TRUST_CHANNELS.GET_SUPERVISOR_STATUS, async (): Promise<SupervisorStatusResult> => {
     try {
@@ -70,4 +79,15 @@ export function registerTrustIpc(getSupervisorStatus: () => SupervisorStatus | n
       }
     }
   );
+
+  ipcMain.handle(TRUST_CHANNELS.GET_BATCH_SUMMARIES, async (): Promise<BatchSummariesResult> => {
+    try {
+      // Lazy import mirrors the CRM handler: the tool registry is heavy and
+      // this keeps the module import-side-effect-free for tests.
+      const { getRecentBatchSummaries } = await import('./tools/index');
+      return { success: true, summaries: getRecentBatchSummaries() };
+    } catch (e) {
+      return { success: false, summaries: [], error: e instanceof Error ? e.message : String(e) };
+    }
+  });
 }
