@@ -5,7 +5,8 @@
   "main": "src/toolRegistry.ts",
   "scripts": {
     "smoke": "npx ts-node src/test.ts",
-    "test": "npx jest"
+    "test": "npx jest",
+    "soak": "npx ts-node scripts/soak-test.ts"
   },
   "jest": {
     "preset": "ts-jest",

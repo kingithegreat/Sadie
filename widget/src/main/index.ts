@@ -12,6 +12,7 @@ import { getSettings, saveSettings, applyHardwareProfile, getAndClearConfigRecov
 import { isE2E } from './env';
 import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
+import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
@@ -24,6 +25,7 @@ import axios from 'axios';
 import { spawn } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
+let supervisorHandle: SupervisorServiceHandle | null = null;
 function normalizeOllamaBaseUrl(raw?: string): string {
   const input = (raw || DEFAULT_OLLAMA_URL).trim();
   let withScheme = /^https?:\/\//i.test(input) ? input : `http://${input}`;
@@ -250,6 +252,15 @@ app.whenReady().then(async () => {
   // settings, then fallback to localhost default.
   const resolvedN8nUrl = process.env.N8N_URL || settings.n8nUrl || 'http://localhost:5678';
   if (process.env.NODE_ENV !== 'production') console.log('[MAIN] Resolved n8nUrl =', resolvedN8nUrl);
+
+  // Phase 0 reliability: continuous service supervision (probe + auto-recover).
+  // Startup checks above are one-shot; this watches ollama/n8n/qdrant for the
+  // whole session and self-heals n8n if it dies mid-run. No-ops in E2E mode.
+  supervisorHandle = startSupervisorService({
+    ollamaUrl: normalizeOllamaBaseUrl(settings.ollamaUrl),
+    n8nUrl: resolvedN8nUrl,
+    getWindow: () => mainWindow,
+  });
   registerMessageRouter(mainWindow, resolvedN8nUrl);
   // Expose a safe bridge so main-process router diagnostics can be pushed
   // into the renderer for E2E tracing and diagnostics. This is idempotent
@@ -460,6 +471,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   globalShortcut.unregisterAll();
   closeAllServiceWindows();
+  if (supervisorHandle) supervisorHandle.stop();
   shutdownMcpServers().catch(safeCatch);
 });
 
