@@ -60,7 +60,7 @@ export const CURATED_MODEL_SIZES_GB: Readonly<Record<string, number>> = {
   'llama3.1:8b': 4.7,
   'llama3.1:70b': 43,
   'llama3.2:3b': 2,
-  'dolphin:7b': 3.8,
+  'dolphin-mistral:7b': 4.1,
 };
 
 /** Normalized-id → sizeGB lookup table derived from the catalog above. */

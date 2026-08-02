@@ -141,7 +141,7 @@ export const DEFAULT_SETTINGS: Settings = {
   modelRoutingMode: 'prompt',
   reflectionValidationEnabled: false,
   chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
-  uncensoredModel: 'dolphin:7b',
+  uncensoredModel: 'dolphin-mistral:7b',
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
   codeModel: '',
   theme: 'system',
@@ -437,9 +437,10 @@ export function getSettings(): Settings {
     if (merged.customLLM && typeof (merged.customLLM as any).apiKey === 'string' && (merged.customLLM as any).apiKey.length > 0) {
       (merged.customLLM as any).apiKey = decryptSecret((merged.customLLM as any).apiKey);
     }
-    // Ensure uncensored model is always dolphin:7b
-    if (merged.uncensoredModel && merged.uncensoredModel !== 'dolphin:7b') {
-      merged.uncensoredModel = 'dolphin:7b';
+    // Ensure uncensored model is always dolphin-mistral:7b (the real Ollama tag;
+    // the bare "dolphin:7b" tag does not exist and always fell back).
+    if (merged.uncensoredModel && merged.uncensoredModel !== 'dolphin-mistral:7b') {
+      merged.uncensoredModel = 'dolphin-mistral:7b';
     }
     _settingsCache = merged;
     _settingsCacheTime = now;
@@ -520,17 +521,17 @@ export const HARDWARE_PROFILE_DEFAULTS: Record<string, Partial<Settings>> = {
   '4gb': {
     chatModel: 'qwen2.5:7b',
     visionModel: 'moondream',
-    uncensoredModel: 'dolphin:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
   },
   '8gb': {
     chatModel: 'qwen2.5:7b',
     visionModel: 'moondream',
-    uncensoredModel: 'dolphin:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
   },
   '16gb+': {
-    chatModel: 'gemma4:e4b',
+    chatModel: 'qwen2.5:7b',
     visionModel: 'moondream',
-    uncensoredModel: 'dolphin:7b',
+    uncensoredModel: 'dolphin-mistral:7b',
   },
 };
 

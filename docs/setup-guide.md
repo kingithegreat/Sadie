@@ -47,7 +47,7 @@ That's it — no terminal, no manual model pulls, no Docker. Everything below is
 |---|---|---|
 | [Node.js](https://nodejs.org) | 18 LTS or higher | Required to build and run the Electron application |
 | [npm](https://nodejs.org) | 9 or higher | Ships with Node.js |
-| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models. Defaults: `qwen2.5:7b` (chat), `dolphin:7b` (uncensored), `moondream` (vision). |
+| [Ollama](https://ollama.com/download) | Latest | Runs the local AI models. Defaults: `qwen2.5:7b` (chat), `dolphin-mistral:7b` (uncensored), `moondream` (vision). |
 | [Docker Desktop](https://docs.docker.com/get-docker/) | Latest | Required for n8n workflow orchestration (optional) |
 | [Git](https://git-scm.com) | Latest | Version control |
 
@@ -116,7 +116,7 @@ curl http://127.0.0.1:11434/api/tags
 
 ```bash
 ollama pull qwen2.5:7b           # Primary chat model (4.7 GB)
-ollama pull dolphin:7b   # Uncensored mode model (4.1 GB)
+ollama pull dolphin-mistral:7b   # Uncensored mode model (4.1 GB)
 ollama pull moondream            # Default vision model (1.7 GB)
 ollama pull nomic-embed-text     # Embeddings for RAG and memory enrichment
 ollama pull gemma4:e4b           # 16 GB+ GPU recommended (9.6 GB, optional)
