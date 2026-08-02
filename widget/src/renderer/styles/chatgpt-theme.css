@@ -3406,6 +3406,9 @@ body {
 }
 .hb-modal-btn-warning:hover { background: oklch(75% 0.18 85); }
 .hb-modal-perm-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
@@ -3414,6 +3417,13 @@ body {
   margin-bottom: var(--spacing-xs);
   color: var(--text-primary);
 }
+.hb-modal-perm-item strong { font-weight: 600; }
+/* Keyboard users need a visible focus ring on the remember-checkboxes (a11y). */
+.hb-modal-perm-check:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+.hb-modal-perm-detail { font-size: var(--font-size-sm); }
 .hb-modal-consent-detail {
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
