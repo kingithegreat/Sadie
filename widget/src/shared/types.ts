@@ -413,6 +413,10 @@ export interface ElectronAPI {
   readTelemetryEvents?: () => Promise<{ success: boolean; events?: any[]; error?: string }>;
   // Permission decision audit log (transparency history for the PermissionModal)
   readPermissionAudit?: () => Promise<{ success: boolean; events?: PermissionAuditEntry[]; error?: string }>;
+  // Trust panel (Phase 2): read-only health + activity
+  getSupervisorStatus?: () => Promise<{ success: boolean; status?: unknown; error?: string }>;
+  getCrmActivity?: (limit?: number) => Promise<{ success: boolean; items?: unknown[]; error?: string }>;
+  onSupervisorStatus?: (callback: (change: unknown) => void) => () => void;
   clearPermissionAudit?: () => Promise<{ success: boolean; error?: string }>;
   exportPermissionAudit?: () => Promise<{ success: boolean; path?: string; error?: string }>;
   // Analytics summary (aggregated conversation + event stats)

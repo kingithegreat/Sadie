@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
 import PermissionHistory from './PermissionHistory';
+import TrustPanel from './TrustPanel';
 import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, ScheduledJob, PerfStatSummary } from '../../shared/types';
 import { buildSparkline } from '../../shared/sparkline';
 import { buildPerfAdvice } from '../../shared/perf-advice';
@@ -422,6 +423,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);
   const [showTelemetryDashboard, setShowTelemetryDashboard] = useState(false);
   const [showPermissionHistory, setShowPermissionHistory] = useState(false);
+  const [showTrustPanel, setShowTrustPanel] = useState(false);
 
   // GPU VRAM detection state for MoA recommendations
   const [gpuInfo, setGpuInfo] = useState<{
@@ -1932,6 +1934,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="setting-group">
+          <label className="setting-label">Activity &amp; Health</label>
+          <p className="setting-hint">See live health of the services HomeBot depends on, and every change it has made to your CRM — with field-level before/after detail.</p>
+          <div className="flex items-center gap-2 mb-2">
+            <button className="button button-secondary" onClick={() => setShowTrustPanel(true)}>Open Activity &amp; Health</button>
+          </div>
+        </div>
+
+        <div className="setting-group">
           <label className="setting-label">Permission History</label>
           <p className="setting-hint">Review every permission HomeBot has requested and how you responded.</p>
           <div className="flex items-center gap-2 mb-2">
@@ -1969,6 +1979,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         />
         {showTelemetryDashboard && <TelemetryDashboard open={showTelemetryDashboard} onClose={() => setShowTelemetryDashboard(false)} /> }
         {showPermissionHistory && <PermissionHistory open={showPermissionHistory} onClose={() => setShowPermissionHistory(false)} /> }
+        {showTrustPanel && <TrustPanel open={showTrustPanel} onClose={() => setShowTrustPanel(false)} /> }
 
       {/* ── Scheduled Jobs ─────────────────────────────────────────────────── */}
       <div className="settings-section">

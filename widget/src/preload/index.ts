@@ -55,6 +55,9 @@ const ALLOWED_CHANNELS = {
   READ_CONSENT_LOG: 'homebot:read-consent-log',
   READ_TELEMETRY_EVENTS: 'homebot:read-telemetry-events',
   READ_PERMISSION_AUDIT: 'homebot:read-permission-audit',
+  GET_SUPERVISOR_STATUS: 'homebot:get-supervisor-status',
+  GET_CRM_ACTIVITY: 'homebot:get-crm-activity',
+  SUPERVISOR_STATUS_PUSH: 'homebot:supervisor-status',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
@@ -393,6 +396,22 @@ const electronAPI: ElectronAPI = {
 
   readPermissionAudit: async (): Promise<{ success: boolean; events?: any[]; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.READ_PERMISSION_AUDIT);
+  },
+
+  // ── Trust panel (Phase 2): read-only health + activity ────────────────────
+  getSupervisorStatus: async (): Promise<{ success: boolean; status?: any; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SUPERVISOR_STATUS);
+  },
+
+  getCrmActivity: async (limit?: number): Promise<{ success: boolean; items?: any[]; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_CRM_ACTIVITY, limit);
+  },
+
+  /** Live supervisor state-change pushes. Returns an unsubscribe function. */
+  onSupervisorStatus: (callback: (change: any) => void): (() => void) => {
+    const listener = (_event: unknown, change: any) => callback(change);
+    ipcRenderer.on(ALLOWED_CHANNELS.SUPERVISOR_STATUS_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.SUPERVISOR_STATUS_PUSH, listener);
   },
 
   clearPermissionAudit: async (): Promise<{ success: boolean; error?: string }> => {
