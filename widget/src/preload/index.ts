@@ -58,6 +58,8 @@ const ALLOWED_CHANNELS = {
   GET_SUPERVISOR_STATUS: 'homebot:get-supervisor-status',
   GET_CRM_ACTIVITY: 'homebot:get-crm-activity',
   SUPERVISOR_STATUS_PUSH: 'homebot:supervisor-status',
+  GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
+  BATCH_SUMMARY_PUSH: 'homebot:batch-summary',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
@@ -412,6 +414,17 @@ const electronAPI: ElectronAPI = {
     const listener = (_event: unknown, change: any) => callback(change);
     ipcRenderer.on(ALLOWED_CHANNELS.SUPERVISOR_STATUS_PUSH, listener);
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.SUPERVISOR_STATUS_PUSH, listener);
+  },
+
+  getBatchSummaries: async (): Promise<{ success: boolean; summaries?: any[]; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_BATCH_SUMMARIES);
+  },
+
+  /** Live batch-execution summary pushes. Returns an unsubscribe function. */
+  onBatchSummary: (callback: (summary: any) => void): (() => void) => {
+    const listener = (_event: unknown, summary: any) => callback(summary);
+    ipcRenderer.on(ALLOWED_CHANNELS.BATCH_SUMMARY_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.BATCH_SUMMARY_PUSH, listener);
   },
 
   clearPermissionAudit: async (): Promise<{ success: boolean; error?: string }> => {

@@ -21,6 +21,11 @@ jest.mock('../tools/crm', () => ({
   getCrmStore: () => ({ getAuditLog }),
 }));
 
+const getRecentBatchSummaries = jest.fn();
+jest.mock('../tools/index', () => ({
+  getRecentBatchSummaries: () => getRecentBatchSummaries(),
+}));
+
 import { registerTrustIpc, TRUST_CHANNELS } from '../trust-ipc';
 import { SupervisorStatus } from '../../../../src/supervisor/types';
 
@@ -46,6 +51,7 @@ describe('registerTrustIpc', () => {
   beforeEach(() => {
     handlers.clear();
     getAuditLog.mockReset();
+    getRecentBatchSummaries.mockReset();
   });
 
   test('supervisor status handler returns the live status from the getter', async () => {
@@ -99,6 +105,23 @@ describe('registerTrustIpc', () => {
     registerTrustIpc(() => null);
     const r = await invoke(TRUST_CHANNELS.GET_CRM_ACTIVITY);
     expect(r).toEqual({ success: false, items: [], error: expect.stringContaining('db locked') });
+  });
+
+  test('batch summaries handler returns the ring buffer', async () => {
+    const summary = { kind: 'executed', at: 'x', total: 1, succeeded: 1, failed: 0, totalDurationMs: 5, calls: [] };
+    getRecentBatchSummaries.mockReturnValue([summary]);
+    registerTrustIpc(() => null);
+    const r = await invoke(TRUST_CHANNELS.GET_BATCH_SUMMARIES);
+    expect(r).toEqual({ success: true, summaries: [summary] });
+  });
+
+  test('a failing summaries source degrades to success:false with empty summaries', async () => {
+    getRecentBatchSummaries.mockImplementation(() => {
+      throw new Error('registry unavailable');
+    });
+    registerTrustIpc(() => null);
+    const r = await invoke(TRUST_CHANNELS.GET_BATCH_SUMMARIES);
+    expect(r).toEqual({ success: false, summaries: [], error: expect.stringContaining('registry unavailable') });
   });
 
   test('re-registration replaces handlers instead of stacking', async () => {

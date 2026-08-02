@@ -14,6 +14,7 @@ import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
 import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
 import { registerTrustIpc } from './trust-ipc';
+import { setBatchSummaryForwarder } from './tools';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
 import { registerWebServicesHandlers, closeAllServiceWindows } from './web-services';
@@ -266,6 +267,17 @@ app.whenReady().then(async () => {
   // health and the CRM activity trail. Returns null status in E2E (handle is
   // a no-op there), which the panel renders as "supervision off".
   registerTrustIpc(() => supervisorHandle?.getStatus() ?? null);
+  // Batch transparency: forward every tool-batch summary to the renderer so
+  // the Trust panel can show what ran (and what was blocked) in real time.
+  setBatchSummaryForwarder((summary) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('homebot:batch-summary', summary);
+      }
+    } catch (e) {
+      console.error('[HomeBot-CATCH]', e);
+    }
+  });
   registerMessageRouter(mainWindow, resolvedN8nUrl);
   // Expose a safe bridge so main-process router diagnostics can be pushed
   // into the renderer for E2E tracing and diagnostics. This is idempotent
