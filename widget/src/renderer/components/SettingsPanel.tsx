@@ -1801,6 +1801,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </button>
         {openSections.permissions && <>
         <div className="setting-group">
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={!!(localSettings as any).batchPreviewEnabled}
+              onChange={(e) =>
+                setLocalSettings({
+                  ...localSettings,
+                  batchPreviewEnabled: e.target.checked
+                } as any)
+              }
+            />
+            <span>Preview tool batches before they run</span>
+          </label>
+          <small className="setting-hint">
+            When on, SADIE lists exactly what a batch of actions is about to do (tool names and key arguments) in the chat before executing it.
+          </small>
+        </div>
+
+        <div className="setting-group">
           <label className="setting-label">Widget Hotkey (read-only)</label>
           <input
             type="text"

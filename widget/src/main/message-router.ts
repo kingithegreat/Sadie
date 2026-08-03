@@ -8,7 +8,8 @@ import streamFromHomeBotProxy from './stream-proxy-client';
 import { HomeBotRequest, HomeBotResponse, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
-import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, ToolCall, ToolContext } from './tools';
+import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, previewBatch, ToolCall, ToolContext } from './tools';
+import { formatBatchPreviewForChat } from '../../../src/trust/batch';
 import { evaluateToolResults } from './reflection-validator';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
@@ -3043,6 +3044,13 @@ export async function streamFromOllamaWithTools(
           for (const call of calls) {
             onChunk(formatStepProgress(round, call.name, call.arguments));
           }
+        }
+
+        // Batch preview (issue #6): when enabled, stream what is about to run
+        // BEFORE executing — previewBatch existed in the executor but nothing
+        // ever called it. Failure here must never block the chat.
+        if (getSettings().batchPreviewEnabled) {
+          try { onChunk(formatBatchPreviewForChat(previewBatch(calls))); } catch (e) { safeCatch(e); }
         }
 
         const batchResults = await executeToolBatch(calls, toolContext);

@@ -126,6 +126,9 @@ export interface Settings {
   // the result actually answers the request before surfacing it. Off by
   // default — additive safety layer, opt-in while it proves itself out.
   reflectionValidationEnabled?: boolean;
+  // Batch preview (issue #6): stream a "About to run N actions" listing into
+  // chat BEFORE a tool batch executes. Off by default — opt-in transparency.
+  batchPreviewEnabled?: boolean;
 }
 
 // Exported for the permission-copy drift gate (permission-copy-registry.test.ts):
@@ -140,6 +143,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ollamaUrl: 'http://127.0.0.1:11434',
   modelRoutingMode: 'prompt',
   reflectionValidationEnabled: false,
+  batchPreviewEnabled: false,
   chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
   uncensoredModel: 'dolphin-mistral:7b',
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
