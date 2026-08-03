@@ -51,6 +51,9 @@ const QuizPanel: React.FC = () => {
   const [answers, setAnswers] = useState<(number | null)[]>([]);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
+  // Best run achieved WITHIN this quiz — `streak` alone resets to 0 on a
+  // miss, so a 5-streak followed by a wrong final answer recorded 0.
+  const [maxStreakThisQuiz, setMaxStreakThisQuiz] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Progress tracking
@@ -84,6 +87,7 @@ const QuizPanel: React.FC = () => {
     setAnswers([]);
     setScore(0);
     setStreak(0);
+    setMaxStreakThisQuiz(0);
 
     let result;
     if (studyFromNotes) {
@@ -124,7 +128,11 @@ const QuizPanel: React.FC = () => {
     setAnswers(newAnswers);
     if (correct) {
       setScore(s => s + 1);
-      setStreak(s => s + 1);
+      setStreak(s => {
+        const next = s + 1;
+        setMaxStreakThisQuiz(m => Math.max(m, next));
+        return next;
+      });
     } else {
       setStreak(0);
     }
@@ -138,7 +146,9 @@ const QuizPanel: React.FC = () => {
     } else {
       // Quiz complete — update progress
       // score already includes the last answer (updated in handleSubmitAnswer), so don't add it again
-      const topicKey = topic || 'unknown';
+      // Study-from-Notes quizzes were recorded under whichever topic card
+      // happened to be selected (or 'unknown') — use the custom topic.
+      const topicKey = (studyFromNotes ? (customTopic.trim() || topic) : topic) || 'unknown';
       const existing = progress.topicScores[topicKey] || { correct: 0, total: 0 };
       const updated: QuizProgress = {
         totalQuizzes: progress.totalQuizzes + 1,
@@ -152,13 +162,13 @@ const QuizPanel: React.FC = () => {
           },
         },
         streak: streak,
-        bestStreak: Math.max(progress.bestStreak, streak),
+        bestStreak: Math.max(progress.bestStreak, maxStreakThisQuiz),
         lastQuizDate: new Date().toISOString(),
       };
       saveProgress(updated);
       setPhase('results');
     }
-  }, [currentIndex, questions, topic, progress, score, streak, selectedAnswer, saveProgress]);
+  }, [currentIndex, questions, topic, customTopic, studyFromNotes, progress, score, streak, maxStreakThisQuiz, saveProgress]);
 
   const handleReviewQuestion = useCallback((index: number) => {
     setCurrentIndex(index);
@@ -338,7 +348,7 @@ const QuizPanel: React.FC = () => {
             </div>
             <div className="quiz-result-stat">
               <span className="quiz-result-label">Best Streak</span>
-              <span className="quiz-result-value">{Math.max(progress.bestStreak, streak)}</span>
+              <span className="quiz-result-value">{Math.max(progress.bestStreak, maxStreakThisQuiz)}</span>
             </div>
           </div>
 
