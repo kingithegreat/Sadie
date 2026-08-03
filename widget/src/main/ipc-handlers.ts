@@ -58,6 +58,7 @@ import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
+import { parseQuizBatch, dedupeQuestions, ParsedQuizQuestion } from '../../../src/quiz/generate';
 import {
   getCurrentTier,
   getLicenseStatus,
@@ -2327,12 +2328,17 @@ try {
     try {
       const { topic, difficulty, questionCount } = params;
 
-      // Generate in small batches to avoid timeout on slower GPUs
+      // Generate in small batches to avoid timeout on slower GPUs.
+      // Validation + dedup live in src/quiz/generate (CI-gated): invalid
+      // items are dropped, never padded into filler questions, and dupes /
+      // prompt-example echoes are removed across batches. Because rejects
+      // can leave a batch short, keep generating (bounded) until the quiz
+      // is full instead of silently returning fewer questions.
       const BATCH_SIZE = 3;
-      const allQuestions: any[] = [];
-      const batches = Math.ceil(questionCount / BATCH_SIZE);
+      let allQuestions: ParsedQuizQuestion[] = [];
+      const maxAttempts = Math.ceil(questionCount / BATCH_SIZE) + 2;
 
-      for (let b = 0; b < batches; b++) {
+      for (let b = 0; b < maxAttempts && allQuestions.length < questionCount; b++) {
         const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
         const prompt = `Generate exactly ${count} ${difficulty} difficulty quiz questions about ${topic}.
 RULES:
@@ -2347,56 +2353,19 @@ EXAMPLE (follow this format exactly):
 
         const raw0 = await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.');
 
-        let raw = raw0 || '';
-        console.log(`[Quiz] Batch ${b + 1}/${batches} raw response (${raw.length} chars):`, raw.slice(0, 300));
-        // Strip markdown code fences that LLMs often add
-        raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
-        const jsonMatch = raw.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (Array.isArray(parsed)) {
-              console.log(`[Quiz] Batch ${b + 1}: parsed ${parsed.length} questions`);
-              allQuestions.push(...parsed);
-            }
-          } catch (parseErr: any) {
-            console.warn(`[Quiz] Batch ${b + 1} JSON parse failed:`, parseErr?.message, 'Raw:', raw.slice(0, 200));
-          }
-        } else {
-          console.warn(`[Quiz] Batch ${b + 1}: no JSON array found in response. Raw:`, raw.slice(0, 300));
+        const batchQuestions = parseQuizBatch(raw0 || '');
+        console.log(`[Quiz] Batch ${b + 1}/${maxAttempts}: ${batchQuestions.length} valid question(s) from ${String(raw0 || '').length} chars`);
+        if (batchQuestions.length === 0) {
+          console.warn(`[Quiz] Batch ${b + 1}: nothing usable. Raw:`, String(raw0 || '').slice(0, 300));
         }
+        allQuestions = dedupeQuestions([...allQuestions, ...batchQuestions], questionCount);
       }
 
       if (allQuestions.length === 0) {
         return { success: false, error: 'Could not generate quiz questions. Check that your LLM provider is running and accessible.' };
       }
 
-      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => {
-        let options: string[] = Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [];
-        let correctIndex = typeof q.correctIndex === 'number' ? q.correctIndex : 0;
-
-        // Some models return "answer" or "correct" text instead of "correctIndex"
-        const answerText = q.answer || q.correct || q.correctAnswer || '';
-        if (answerText && options.length > 0) {
-          const foundIdx = options.findIndex((o: string) => o.toLowerCase().trim() === String(answerText).toLowerCase().trim());
-          if (foundIdx >= 0) correctIndex = foundIdx;
-        }
-
-        // Pad to exactly 4 options
-        const fillers = ['Option A', 'Option B', 'Option C', 'Option D'];
-        while (options.length < 4) options.push(fillers[options.length]);
-        correctIndex = Math.min(Math.max(correctIndex, 0), 3);
-
-        return {
-          id: `q-${Date.now()}-${i}`,
-          type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
-          question: String(q.question || ''),
-          code: q.code || '',
-          options,
-          correctIndex,
-          explanation: String(q.explanation || 'No explanation provided.'),
-        };
-      });
+      const validated = allQuestions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
 
       return { success: true, questions: validated };
     } catch (err: any) {
@@ -2462,11 +2431,13 @@ EXAMPLE (follow this format exactly):
         return { success: false, error: 'No indexed documents found. Drop some study notes into the RAG panel first, then try again.' };
       }
 
+      // Same validated pipeline as the general quiz handler — see
+      // src/quiz/generate. Bounded retry because rejects can shorten a batch.
       const BATCH_SIZE = 3;
-      const allQuestions: any[] = [];
-      const batches = Math.ceil(questionCount / BATCH_SIZE);
+      let allQuestions: ParsedQuizQuestion[] = [];
+      const maxAttempts = Math.ceil(questionCount / BATCH_SIZE) + 2;
 
-      for (let b = 0; b < batches; b++) {
+      for (let b = 0; b < maxAttempts && allQuestions.length < questionCount; b++) {
         const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
         const prompt = `Based on ONLY the following study material, generate exactly ${count} ${difficulty} quiz questions about "${topic}".
 
@@ -2484,45 +2455,16 @@ EXAMPLE FORMAT:
 
         const raw0 = await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.');
 
-        let raw = raw0 || '';
-        console.log(`[Quiz/RAG] Batch ${b + 1}/${batches} raw (${raw.length} chars):`, raw.slice(0, 300));
-        raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
-        const jsonMatch = raw.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (Array.isArray(parsed)) allQuestions.push(...parsed);
-          } catch (e: any) {
-            console.warn(`[Quiz/RAG] Batch ${b + 1} parse failed:`, e?.message);
-          }
-        }
+        const batchQuestions = parseQuizBatch(raw0 || '');
+        console.log(`[Quiz/RAG] Batch ${b + 1}/${maxAttempts}: ${batchQuestions.length} valid question(s) from ${String(raw0 || '').length} chars`);
+        allQuestions = dedupeQuestions([...allQuestions, ...batchQuestions], questionCount);
       }
 
       if (allQuestions.length === 0) {
         return { success: false, error: 'Could not generate questions from your notes. Try a different topic or add more study material.' };
       }
 
-      const validated = allQuestions.slice(0, questionCount).map((q: any, i: number) => {
-        let options: string[] = Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [];
-        let correctIndex = typeof q.correctIndex === 'number' ? q.correctIndex : 0;
-        const answerText = q.answer || q.correct || q.correctAnswer || '';
-        if (answerText && options.length > 0) {
-          const foundIdx = options.findIndex((o: string) => o.toLowerCase().trim() === String(answerText).toLowerCase().trim());
-          if (foundIdx >= 0) correctIndex = foundIdx;
-        }
-        const fillers = ['Option A', 'Option B', 'Option C', 'Option D'];
-        while (options.length < 4) options.push(fillers[options.length]);
-        correctIndex = Math.min(Math.max(correctIndex, 0), 3);
-        return {
-          id: `q-${Date.now()}-${i}`,
-          type: ['multiple-choice', 'code-output', 'bug-fix', 'fill-blank', 'concept'].includes(q.type) ? q.type : 'multiple-choice',
-          question: String(q.question || ''),
-          code: q.code || '',
-          options,
-          correctIndex,
-          explanation: String(q.explanation || 'No explanation provided.'),
-        };
-      });
+      const validated = allQuestions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
 
       return { success: true, questions: validated };
     } catch (err: any) {
