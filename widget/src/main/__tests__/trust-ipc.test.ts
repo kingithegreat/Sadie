@@ -17,8 +17,9 @@ jest.mock('electron', () => ({
 }));
 
 const getAuditLog = jest.fn();
+const dailyBrief = jest.fn();
 jest.mock('../tools/crm', () => ({
-  getCrmStore: () => ({ getAuditLog }),
+  getCrmStore: () => ({ getAuditLog, dailyBrief }),
 }));
 
 const getRecentBatchSummaries = jest.fn();
@@ -51,7 +52,40 @@ describe('registerTrustIpc', () => {
   beforeEach(() => {
     handlers.clear();
     getAuditLog.mockReset();
+    dailyBrief.mockReset();
     getRecentBatchSummaries.mockReset();
+  });
+
+  test('crm dashboard handler summarizes the daily brief', async () => {
+    dailyBrief.mockReturnValue({
+      generatedAt: '2026-08-03T00:00:00Z',
+      staleDeals: [{}, {}],
+      tasksOverdue: [{}],
+      tasksDueToday: [{}, {}, {}],
+      recentActivities: [],
+      openDealCount: 4,
+      openPipelineValueCents: 450000,
+    });
+    registerTrustIpc(() => null);
+    const r = await invoke(TRUST_CHANNELS.GET_CRM_DASHBOARD);
+    expect(r.success).toBe(true);
+    expect(r.summary).toEqual(expect.objectContaining({
+      openDealCount: 4,
+      pipelineValueFormatted: '$4,500',
+      staleDealCount: 2,
+      tasksDueTodayCount: 3,
+      tasksOverdueCount: 1,
+      isEmpty: false,
+    }));
+  });
+
+  test('crm dashboard handler degrades to success:false when the store throws', async () => {
+    dailyBrief.mockImplementation(() => { throw new Error('db locked'); });
+    registerTrustIpc(() => null);
+    const r = await invoke(TRUST_CHANNELS.GET_CRM_DASHBOARD);
+    expect(r.success).toBe(false);
+    expect(r.summary).toBeNull();
+    expect(r.error).toContain('db locked');
   });
 
   test('supervisor status handler returns the live status from the getter', async () => {

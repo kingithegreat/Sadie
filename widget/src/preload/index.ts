@@ -59,6 +59,7 @@ const ALLOWED_CHANNELS = {
   GET_CRM_ACTIVITY: 'homebot:get-crm-activity',
   SUPERVISOR_STATUS_PUSH: 'homebot:supervisor-status',
   GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
+  GET_CRM_DASHBOARD: 'homebot:get-crm-dashboard',
   BATCH_SUMMARY_PUSH: 'homebot:batch-summary',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
@@ -418,6 +419,11 @@ const electronAPI: ElectronAPI = {
 
   getBatchSummaries: async (): Promise<{ success: boolean; summaries?: any[]; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_BATCH_SUMMARIES);
+  },
+
+  /** Read-only CRM numbers for the Dashboard landing page. */
+  getCrmDashboard: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_CRM_DASHBOARD);
   },
 
   /** Live batch-execution summary pushes. Returns an unsubscribe function. */

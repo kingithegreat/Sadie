@@ -17,6 +17,17 @@ interface DashboardData {
   activeModel: string;
   ollamaStatus: 'online' | 'offline' | 'checking';
   ollamaModelsCount: number;
+  crm: CrmDashboard | null;
+}
+
+/** Read-only CRM numbers from homebot:get-crm-dashboard. null = unavailable. */
+interface CrmDashboard {
+  openDealCount: number;
+  pipelineValueFormatted: string;
+  staleDealCount: number;
+  tasksDueTodayCount: number;
+  tasksOverdueCount: number;
+  isEmpty: boolean;
 }
 
 const DEFAULT_DATA: DashboardData = {
@@ -29,6 +40,7 @@ const DEFAULT_DATA: DashboardData = {
   activeModel: 'Unknown',
   ollamaStatus: 'checking',
   ollamaModelsCount: 0,
+  crm: null,
 };
 
 function formatRelativeDate(dateStr: string): string {
@@ -66,13 +78,14 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
       }
 
       // Fire all requests in parallel
-      const [conversationsResult, quizResult, ollamaResult, settingsResult, analyticsResult] =
+      const [conversationsResult, quizResult, ollamaResult, settingsResult, analyticsResult, crmResult] =
         await Promise.allSettled([
           electron.loadConversations?.(),
           electron.loadQuizProgress?.(),
           electron.listOllamaModels?.(),
           electron.getSettings(),
           electron.getAnalyticsSummary?.(),
+          electron.getCrmDashboard?.(),
         ]);
 
       if (!mounted.current) return;
@@ -141,6 +154,12 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
         }
       }
 
+      // Parse CRM summary — degrade to null (section hidden) on any failure
+      let crm: CrmDashboard | null = null;
+      if (crmResult.status === 'fulfilled' && crmResult.value?.success && crmResult.value.summary) {
+        crm = crmResult.value.summary as CrmDashboard;
+      }
+
       setData({
         totalConversations,
         totalMessages,
@@ -151,6 +170,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
         activeModel,
         ollamaStatus,
         ollamaModelsCount,
+        crm,
       });
     } catch (err: any) {
       if (mounted.current) {
@@ -243,6 +263,38 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
           <span className="dashboard-stat-label">Best Streak</span>
         </div>
       </div>
+
+      {/* CRM at a glance */}
+      {data.crm && (
+        <div data-testid="dashboard-crm-section">
+          <h2 className="dashboard-section-title">CRM</h2>
+          {data.crm.isEmpty ? (
+            <div className="dashboard-crm-empty">
+              No CRM data yet — ask SADIE to add a company or a deal and it will show up here.
+            </div>
+          ) : (
+            <div className="dashboard-stats-grid dashboard-crm-grid">
+              <div className="dashboard-stat-card">
+                <span className="dashboard-stat-value">{data.crm.pipelineValueFormatted}</span>
+                <span className="dashboard-stat-label">
+                  Open Pipeline ({data.crm.openDealCount} deal{data.crm.openDealCount !== 1 ? 's' : ''})
+                </span>
+              </div>
+              <div className={`dashboard-stat-card ${data.crm.staleDealCount > 0 ? 'dashboard-stat-warn' : ''}`}>
+                <span className="dashboard-stat-value">{data.crm.staleDealCount}</span>
+                <span className="dashboard-stat-label">Stale Deals</span>
+              </div>
+              <div className={`dashboard-stat-card ${data.crm.tasksOverdueCount > 0 ? 'dashboard-stat-warn' : ''}`}>
+                <span className="dashboard-stat-value">
+                  {data.crm.tasksDueTodayCount}
+                  {data.crm.tasksOverdueCount > 0 ? ` (+${data.crm.tasksOverdueCount} overdue)` : ''}
+                </span>
+                <span className="dashboard-stat-label">Tasks Due Today</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div>

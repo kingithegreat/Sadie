@@ -13,6 +13,7 @@
 
 import { ipcMain } from 'electron';
 import { summarizeAuditLog, TrustActivityItem } from '../../../src/trust/activity';
+import { summarizeCrmDashboard, CrmDashboardSummary } from '../../../src/crm/dashboard';
 import { SupervisorStatus } from '../../../src/supervisor/types';
 import { BatchSummary } from '../../../src/trust/batch';
 
@@ -20,6 +21,7 @@ export const TRUST_CHANNELS = {
   GET_SUPERVISOR_STATUS: 'homebot:get-supervisor-status',
   GET_CRM_ACTIVITY: 'homebot:get-crm-activity',
   GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
+  GET_CRM_DASHBOARD: 'homebot:get-crm-dashboard',
 } as const;
 
 const ACTIVITY_LIMIT_DEFAULT = 50;
@@ -43,6 +45,12 @@ export interface BatchSummariesResult {
   error?: string;
 }
 
+export interface CrmDashboardResult {
+  success: boolean;
+  summary: CrmDashboardSummary | null;
+  error?: string;
+}
+
 /**
  * Register the trust IPC handlers. Call once after the supervisor service has
  * started; `getSupervisorStatus` closes over the live handle (returning null
@@ -53,6 +61,7 @@ export function registerTrustIpc(getSupervisorStatus: () => SupervisorStatus | n
   ipcMain.removeHandler(TRUST_CHANNELS.GET_SUPERVISOR_STATUS);
   ipcMain.removeHandler(TRUST_CHANNELS.GET_CRM_ACTIVITY);
   ipcMain.removeHandler(TRUST_CHANNELS.GET_BATCH_SUMMARIES);
+  ipcMain.removeHandler(TRUST_CHANNELS.GET_CRM_DASHBOARD);
 
   ipcMain.handle(TRUST_CHANNELS.GET_SUPERVISOR_STATUS, async (): Promise<SupervisorStatusResult> => {
     try {
@@ -79,6 +88,18 @@ export function registerTrustIpc(getSupervisorStatus: () => SupervisorStatus | n
       }
     }
   );
+
+  ipcMain.handle(TRUST_CHANNELS.GET_CRM_DASHBOARD, async (): Promise<CrmDashboardResult> => {
+    try {
+      // Lazy import mirrors GET_CRM_ACTIVITY: defers the CRM store (whose
+      // constructor lazily loads better-sqlite3) until a renderer asks.
+      const { getCrmStore } = await import('./tools/crm');
+      const summary = summarizeCrmDashboard(getCrmStore().dailyBrief());
+      return { success: true, summary };
+    } catch (e) {
+      return { success: false, summary: null, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
 
   ipcMain.handle(TRUST_CHANNELS.GET_BATCH_SUMMARIES, async (): Promise<BatchSummariesResult> => {
     try {

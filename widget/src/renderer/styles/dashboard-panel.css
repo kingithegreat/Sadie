@@ -457,3 +457,26 @@
     font-size: 26px;
   }
 }
+
+/* ── CRM at a glance ─────────────────────────────────────────────────────── */
+.dashboard-crm-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.dashboard-stat-card.dashboard-stat-warn .dashboard-stat-value {
+  color: #f59e0b;
+}
+
+.dashboard-crm-empty {
+  padding: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+@media (max-width: 520px) {
+  .dashboard-crm-grid {
+    grid-template-columns: 1fr;
+  }
+}
