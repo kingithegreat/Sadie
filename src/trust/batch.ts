@@ -153,3 +153,28 @@ export function batchSummaryLine(s: BatchSummary): string {
   const failNote = firstFail ? ` (${firstFail.name})` : '';
   return `${tools} ran: ${s.succeeded} ok, ${s.failed} failed${failNote} in ${formatDuration(s.totalDurationMs)}`;
 }
+
+// ── Chat-facing preview rendering (issue #6: dry-run / preview mode) ────────
+
+/**
+ * Render a BatchPreview as the chat text streamed BEFORE a batch executes,
+ * when the "Preview tool batches" setting is on. previewBatch()/dryRun have
+ * existed in the executor since the batch workstream but nothing ever called
+ * them — this formatter plus the router wiring makes the capability real.
+ *
+ * One line per call using the same argsSummary vocabulary the Trust panel
+ * uses, with a warning suffix for tools that are unknown or still need a
+ * permission (those will trigger the normal permission flow next).
+ */
+export function formatBatchPreviewForChat(preview: BatchPreview): string {
+  const lines: string[] = [];
+  const plural = preview.total === 1 ? 'action' : 'actions';
+  lines.push(`🔍 About to run ${preview.total} ${plural}:`);
+  preview.calls.forEach((c, i) => {
+    let suffix = '';
+    if (c.permission === 'unknown_tool') suffix = ' — ⚠️ unknown tool, will be skipped';
+    else if (c.permission === 'needs_confirmation') suffix = ' — 🔒 will ask permission first';
+    lines.push(`  ${i + 1}. ${c.name} (${c.argsSummary})${suffix}`);
+  });
+  return `\n${lines.join('\n')}\n\n`;
+}
