@@ -418,6 +418,15 @@ export interface ElectronAPI {
   getCrmActivity?: (limit?: number) => Promise<{ success: boolean; items?: unknown[]; error?: string }>;
   onSupervisorStatus?: (callback: (change: unknown) => void) => () => void;
   getBatchSummaries?: () => Promise<{ success: boolean; summaries?: unknown[]; error?: string }>;
+  getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
+    openDealCount: number;
+    openPipelineValueCents: number;
+    pipelineValueFormatted: string;
+    staleDealCount: number;
+    tasksDueTodayCount: number;
+    tasksOverdueCount: number;
+    isEmpty: boolean;
+  } | null; error?: string }>;
   onBatchSummary?: (callback: (summary: unknown) => void) => () => void;
   clearPermissionAudit?: () => Promise<{ success: boolean; error?: string }>;
   exportPermissionAudit?: () => Promise<{ success: boolean; path?: string; error?: string }>;
