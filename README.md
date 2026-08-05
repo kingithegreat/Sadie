@@ -265,16 +265,9 @@ Detailed documentation is available in the `docs/` folder:
 
 ---
 
-## Academic Context
+## Tech Stack
 
-HomeBot is developed as a capstone project at **Toi Ohomai Institute of Technology** (2026).
-
-| | |
-|---|---|
-| **Student** | Aden Kingi |
-| **Supervisor** | Francisco Roldao |
-| **Institution** | Toi Ohomai Institute of Technology |
-| **Stack** | Electron 28, React 18, TypeScript 5.9.3, Ollama, n8n, PowerShell |
+Electron 28, React 18, TypeScript 5.9.3, Ollama, n8n, PowerShell.
 
 ---
 

@@ -1,6 +1,6 @@
-# Demo Day Pre-Warm Checklist
+# Pre-Demo Warm-Up Checklist
 
-Run through this 15-20 minutes before your demo/presentation.
+Run through this 15-20 minutes before a customer or investor demo.
 
 ## 1. System Check
 
@@ -75,7 +75,6 @@ Run through each tab quickly:
 - [ ] Have the Wikipedia AI article URL bookmarked: `https://en.wikipedia.org/wiki/Artificial_intelligence`
 - [ ] Have n8n dashboard tab open: `http://localhost:5678`
 - [ ] Have DEMO_SCRIPT.md open on a second device or printed
-- [ ] Have the poster file ready to display
 
 ## 7. Backup Plans
 
@@ -85,26 +84,19 @@ Run through each tab quickly:
 | Chat is very slow | Switch to a smaller model in Settings (gemma4:e4b) |
 | n8n is down | Demo the automation without deploy (local fallback runs instead) |
 | Image gen fails | Show the code in web.ts explaining 5-backend fallback |
-| Voice doesn't work | Skip voice, mention Windows SAPI in the presentation |
+| Voice doesn't work | Skip voice, mention local Whisper transcription instead |
 | App crashes on start | Run `npm run build` first, then `npx electron-vite dev` |
 | Port 11434 conflict | `docker stop homebot-ollama` then `ollama serve` |
 
 ## 8. Numbers to Remember
 
-These are verified from the codebase (use in presentation):
+Product facts verified from the codebase — useful when a prospect asks:
 
 | Metric | Value |
 |--------|-------|
-| Development period | 17 Nov 2025 - 19 Jun 2026 |
-| Total commits | 521 (all branches) |
-| Source files | 244 |
-| TypeScript LOC | ~63,000 |
-| Test suites | 122 |
-| Automated tests | 1,932 |
 | Tool handlers | 85+ across 27 modules |
-| React components | 31 |
-| IPC handler registrations | 98 |
 | Security layers | 11 |
 | Cloud providers | 10 |
 | Image gen backends | 5 |
+| Automated tests | 1,932 across 122 suites |
 | Ollama models used | qwen2.5:7b, qwen2.5-coder:7b, nomic-embed-text |
