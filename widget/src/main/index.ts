@@ -15,6 +15,11 @@ import { ensureN8nRunning } from './n8n-lifecycle';
 import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
 import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
+// Static import, NOT a runtime require(). electron-vite bundles the main
+// process into a single out/main/index.js, so a bare require('./morning-briefing')
+// resolves to a file that does not exist at runtime — which silently disabled
+// the startup briefing in every built app. See bundle-integrity.test.ts.
+import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from './morning-briefing';
 import { setBatchSummaryForwarder } from './tools';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
@@ -374,7 +379,6 @@ app.whenReady().then(async () => {
     // waiting for the user to type first. This is what makes HomeBot proactive.
     if (ollamaOnline && mainWindow && !mainWindow.isDestroyed()) {
       try {
-        const { shouldOfferBriefing, markBriefingDelivered, generateBriefing } = require('./morning-briefing');
         if (shouldOfferBriefing()) {
           markBriefingDelivered();
           generateBriefing().then((briefing: string | null) => {

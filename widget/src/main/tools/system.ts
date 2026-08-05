@@ -8,6 +8,7 @@ import * as os from 'os';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { fetchHtml, htmlToText } from './browser';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -321,8 +322,10 @@ export const openUrlHandler: ToolHandler = async (args): Promise<ToolResult> => 
     }
 
     // Open in browser and fetch content in parallel
+    // `electron` is a runtime builtin and resolves fine in the bundle; a
+    // relative require() does not — it pointed at a file that never exists
+    // beside out/main/index.js, so open_in_browser threw in every built app.
     const { shell } = require('electron');
-    const { fetchHtml, htmlToText } = require('./browser');
     const [openResult, pageContent] = await Promise.allSettled([
       shell.openExternal(url),
       (async () => {

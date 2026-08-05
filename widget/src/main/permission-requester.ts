@@ -1,15 +1,19 @@
 import { ipcMain, IpcMainEvent, WebContents } from 'electron';
 import { recordPermissionDecision } from './permission-audit-log';
+import { getSettings } from './config-manager';
 
 /** Read the permission-prompt timeout from settings, clamped to a sane range.
  *  Defensive: any failure (e.g. settings not readable in a test) → 60s default.
- *  Uses a lazy require so this security-critical module has no load-time
- *  dependency on config-manager. */
+ *
+ *  This used a lazy require() to avoid a load-time dependency. That intent did
+ *  not survive bundling: electron-vite emits one out/main/index.js, so
+ *  require('./config-manager') found no such file at runtime, fell into the
+ *  catch below, and silently pinned the timeout to 60s in every built app —
+ *  quietly disabling the configurable timeout shipped in #67. config-manager
+ *  only imports electron/path/fs/logger, so there is no cycle to avoid. */
 function resolvePromptTimeoutMs(): number {
   const DEFAULT = 60000;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getSettings } = require('./config-manager');
     const raw = (getSettings() as any)?.permissionPromptTimeoutMs;
     if (typeof raw !== 'number' || !isFinite(raw)) return DEFAULT;
     return Math.min(Math.max(raw, 5000), 600000);

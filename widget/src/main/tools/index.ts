@@ -586,9 +586,32 @@ export function respondToConfirmation(confirmId: string, confirmed: boolean): bo
 }
 
 /**
- * Initialize all built-in tools
+ * Guards against repeat initialization.
+ *
+ * initializeTools() is called from two places — index.ts at startup and
+ * message-router.ts when routing a message — and used to run fully both times:
+ * re-registering all 113 tools, re-running MCP discovery, and re-connecting
+ * every MCP server. In a real startup that meant two rounds of 15-second MCP
+ * connection timeouts before the first message could be handled.
+ *
+ * Registration itself is idempotent (the registry is keyed by name), so the
+ * duplicate work was wasted rather than wrong — but it was the single biggest
+ * avoidable chunk of startup latency.
  */
-export function initializeTools(): void {
+let toolsInitialized = false;
+
+/** Test seam: forget initialization so a suite can start from a clean registry. */
+export function __resetToolsInitForTest(): void {
+  toolsInitialized = false;
+}
+
+/**
+ * Initialize all built-in tools. Safe to call repeatedly — subsequent calls are
+ * a no-op unless `force` is set (e.g. to pick up newly configured MCP servers).
+ */
+export function initializeTools(force = false): void {
+  if (toolsInitialized && !force) return;
+  toolsInitialized = true;
   // Register file system tools
   for (const [name, tool] of Object.entries(fileSystemTools)) {
     registerTool(name, tool.definition, tool.handler);

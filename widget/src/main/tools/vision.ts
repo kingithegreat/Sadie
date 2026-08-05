@@ -16,14 +16,16 @@ import * as http from 'http';
 import * as https from 'https';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import { resolveUserPath } from './filesystem';
-import { assertPermission } from '../config-manager';
+import { assertPermission, getSettings } from '../config-manager';
 
 // ── Config helpers ─────────────────────────────────────────────────────────
 
 function getVisionConfig(): { ollamaUrl: string; visionModel: string } {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getSettings } = require('../config-manager');
+    // Static import (see line 19). A lazy require() here resolved to nothing
+    // once electron-vite bundled the main process, so this always fell into
+    // the catch below — silently ignoring the user's configured visionModel
+    // and ollamaUrl in every built app.
     const s = getSettings();
     return {
       ollamaUrl: (s.ollamaUrl || process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/$/, ''),
