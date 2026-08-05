@@ -672,9 +672,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const selectedProvider = localSettings.customLLM?.provider || 'openai';
-  const curatedProviders = ['openai', 'anthropic', 'groq', 'deepseek', 'google-ai-studio', 'google-gemini', 'huggingface', 'cerebras', 'sambanova', 'together'];
+  const curatedProviders = ['openai', 'anthropic', 'claude-code', 'groq', 'deepseek', 'google-ai-studio', 'google-gemini', 'huggingface', 'cerebras', 'sambanova', 'together'];
   const isCuratedProvider = curatedProviders.includes(selectedProvider);
-  const providerRequiresApiKey = selectedProvider !== 'custom';
+  // Claude Code runs locally on the user's own Claude subscription — no key, no endpoint.
+  const isClaudeCode = selectedProvider === 'claude-code';
+  const providerRequiresApiKey = selectedProvider !== 'custom' && !isClaudeCode;
   const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
   const isConnected = availableModels.length > 0;
 
@@ -739,8 +741,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const defaultUrl = getDefaultApiUrl(provider);
     let apiUrl = defaultUrl || localSettings.customLLM?.apiUrl?.trim() || '';
 
-    // Validate we have what we need
-    if (!apiUrl) {
+    // Validate we have what we need (Claude Code is a local CLI — no URL to enter)
+    if (!apiUrl && provider !== 'claude-code') {
       setModelFetchError('Enter your API URL');
       return;
     }
@@ -1408,6 +1410,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             >
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic (Claude)</option>
+              <option value="claude-code">Claude subscription — no API key (via Claude Code)</option>
               <option value="openrouter">OpenRouter (all models, one key)</option>
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
               <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
@@ -1440,31 +1443,46 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           ) : null}
           
           <div className="api-key-row">
-            <input
-              type="password"
-              className="setting-input api-key-input"
-              value={localSettings.customLLM?.apiKey || ''}
-              onChange={(e) => {
-                const key = e.target.value;
-                const update: any = {
-                  ...localSettings,
-                  customLLM: { ...localSettings.customLLM!, apiKey: key }
-                };
-                if (selectedProvider === 'anthropic') update.anthropicApiKey = key;
-                else if (selectedProvider === 'openai') update.openaiApiKey = key;
-                else if (selectedProvider === 'google-ai-studio' || selectedProvider === 'google-gemini') update.geminiApiKey = key;
-                setLocalSettings(update);
-              }}
-              placeholder={
-                selectedProvider === 'openai' ? 'sk-...' :
-                selectedProvider === 'anthropic' ? 'sk-ant-...' :
-                selectedProvider === 'groq' ? 'gsk_...' :
-                selectedProvider === 'deepseek' ? 'sk-...' :
-                selectedProvider === 'google-ai-studio' ? 'AIza...' :
-                selectedProvider === 'google-gemini' ? 'AIza...' :
-                'API Key'
-              }
-            />
+            {isClaudeCode ? (
+              <input
+                type="text"
+                className="setting-input api-key-input"
+                value={localSettings.customLLM?.apiUrl || ''}
+                onChange={(e) =>
+                  setLocalSettings({
+                    ...localSettings,
+                    customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
+                  })
+                }
+                placeholder="Claude Code path (optional — leave blank to find it automatically)"
+              />
+            ) : (
+              <input
+                type="password"
+                className="setting-input api-key-input"
+                value={localSettings.customLLM?.apiKey || ''}
+                onChange={(e) => {
+                  const key = e.target.value;
+                  const update: any = {
+                    ...localSettings,
+                    customLLM: { ...localSettings.customLLM!, apiKey: key }
+                  };
+                  if (selectedProvider === 'anthropic') update.anthropicApiKey = key;
+                  else if (selectedProvider === 'openai') update.openaiApiKey = key;
+                  else if (selectedProvider === 'google-ai-studio' || selectedProvider === 'google-gemini') update.geminiApiKey = key;
+                  setLocalSettings(update);
+                }}
+                placeholder={
+                  selectedProvider === 'openai' ? 'sk-...' :
+                  selectedProvider === 'anthropic' ? 'sk-ant-...' :
+                  selectedProvider === 'groq' ? 'gsk_...' :
+                  selectedProvider === 'deepseek' ? 'sk-...' :
+                  selectedProvider === 'google-ai-studio' ? 'AIza...' :
+                  selectedProvider === 'google-gemini' ? 'AIza...' :
+                  'API Key'
+                }
+              />
+            )}
             <button
               type="button"
               className={`button connect-btn ${isConnected ? 'connected' : ''}`}
@@ -1474,7 +1492,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               {modelsLoading ? '...' : isConnected ? '✓ Connected' : 'Connect'}
             </button>
           </div>
-          
+
+          {isClaudeCode && (
+            <small className="setting-hint">
+              Runs on your own Claude Pro/Max subscription through the Claude Code CLI — no API key, no per-token billing.
+              Requires Claude Code installed and signed in on this machine. Replies count against your plan's usage limits.
+              Chat only: HomeBot's tools and automations keep using your local model.
+            </small>
+          )}
+
           {modelFetchError && (
             <small className="setting-hint error-hint">{modelFetchError}</small>
           )}

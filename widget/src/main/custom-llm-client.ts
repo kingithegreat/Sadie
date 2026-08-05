@@ -3,6 +3,7 @@
  * Includes function calling support, retry logic, and provider auto-detection
  */
 import axios from 'axios';
+import { spawn } from 'child_process';
 import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
 import type { ToolDefinition } from './tools/types';
 import { toOpenAITool, toAnthropicTool } from './tools/types';
@@ -40,6 +41,12 @@ const MODEL_METADATA: Record<string, Partial<ModelMetadata>> = {
   'gpt-4o': { contextWindow: 128000, maxTokens: 4096, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'gpt-4o-mini': { contextWindow: 128000, maxTokens: 4096, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'gpt-3.5-turbo': { contextWindow: 16385, maxTokens: 4096, supportsTools: true, supportsVision: false, supportsStreaming: true },
+  // Current generation. Explicit entries are required: the partial-match
+  // fallback below would not match these IDs, and the defaults set
+  // supportsTools:false — which silently disables tool calling.
+  'claude-opus-5': { contextWindow: 1000000, maxTokens: 64000, supportsTools: true, supportsVision: true, supportsStreaming: true },
+  'claude-sonnet-5': { contextWindow: 1000000, maxTokens: 64000, supportsTools: true, supportsVision: true, supportsStreaming: true },
+  'claude-haiku-4-5': { contextWindow: 200000, maxTokens: 32000, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'claude-opus-4': { contextWindow: 200000, maxTokens: 16384, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'claude-sonnet-4': { contextWindow: 200000, maxTokens: 16384, supportsTools: true, supportsVision: true, supportsStreaming: true },
   'claude-3-5-sonnet': { contextWindow: 200000, maxTokens: 8192, supportsTools: true, supportsVision: true, supportsStreaming: true }, // Increased from 4096
@@ -49,13 +56,32 @@ const MODEL_METADATA: Record<string, Partial<ModelMetadata>> = {
   'claude-3-haiku': { contextWindow: 200000, maxTokens: 4096, supportsTools: true, supportsVision: false, supportsStreaming: true },
 };
 
+/**
+ * Anthropic model IDs are dated and get RETIRED — a retired ID returns 404,
+ * so a stale list here breaks every customer who picks Claude. The previous
+ * list shipped six IDs that had all passed their retirement dates.
+ *
+ * Prefer undated aliases (`claude-opus-5`) over dated snapshots
+ * (`claude-opus-5-20260115`): aliases track the current model in that tier and
+ * don't expire. Re-check this list against Anthropic's model lifecycle page
+ * whenever the app is released.
+ */
 const ANTHROPIC_MODELS: CustomModelInfo[] = [
-  { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', description: 'Most capable, reasoning & complex tasks', provider: 'anthropic', costHint: '~$15/1M in' },
-  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Fast, intelligent, great for tools', provider: 'anthropic', costHint: '~$3/1M in' },
-  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'High intelligence, fast', provider: 'anthropic', costHint: '~$3/1M in' },
-  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast & affordable', provider: 'anthropic', costHint: '~$0.80/1M in' },
-  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Complex tasks, creative', provider: 'anthropic', costHint: '~$15/1M in' },
-  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fastest, cost-efficient', provider: 'anthropic', costHint: '~$0.25/1M in' },
+  { id: 'claude-opus-5', name: 'Claude Opus 5', description: 'Most capable — complex reasoning and agentic work', provider: 'anthropic', contextWindow: 1000000, costHint: '~$5/1M in · $25/1M out' },
+  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', description: 'Best balance of speed and intelligence', provider: 'anthropic', contextWindow: 1000000, costHint: '~$3/1M in · $15/1M out' },
+  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', description: 'Fastest and most affordable', provider: 'anthropic', contextWindow: 200000, costHint: '~$1/1M in · $5/1M out' },
+];
+
+/**
+ * Models reachable through a local Claude Code CLI running on the user's own
+ * Claude subscription. These are CLI aliases, not API model IDs — Claude Code
+ * resolves each to the current model in that tier, so they don't go stale.
+ * No API key is involved; usage draws on the user's subscription limits.
+ */
+const CLAUDE_CODE_MODELS: CustomModelInfo[] = [
+  { id: 'sonnet', name: 'Claude Sonnet (subscription)', description: 'Balanced speed and intelligence', provider: 'claude-code', costHint: 'Included in your plan' },
+  { id: 'opus', name: 'Claude Opus (subscription)', description: 'Most capable, best for hard tasks', provider: 'claude-code', costHint: 'Included in your plan' },
+  { id: 'haiku', name: 'Claude Haiku (subscription)', description: 'Fastest, lightest', provider: 'claude-code', costHint: 'Included in your plan' },
 ];
 
 const OPENAI_MODELS: CustomModelInfo[] = [
@@ -536,6 +562,22 @@ function toAnthropicMessages(messages: ChatMessage[]): { system: string; message
 /**
  * Stream from Anthropic API with tool calling support.
  */
+/**
+ * Whether a Claude model still accepts `temperature` / `top_p` / `top_k`.
+ *
+ * Sampling parameters were REMOVED on Opus 4.7 and later and on Sonnet 5:
+ * sending one returns a 400, it is not ignored. Steer these models by
+ * prompting instead. Older models (Opus 4.6, Sonnet 4.6, Haiku 4.5, Claude 3.x)
+ * still accept them, and unknown/custom IDs default to accepting so a
+ * self-hosted Anthropic-compatible endpoint keeps working.
+ */
+export function acceptsSamplingParams(model: string): boolean {
+  const m = (model || '').toLowerCase();
+  if (/claude-(opus|sonnet|fable|mythos)-5/.test(m)) return false;
+  if (/claude-opus-4-[78]/.test(m)) return false;
+  return true;
+}
+
 async function streamAnthropic(options: StreamOptions): Promise<void> {
   const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000,
           tools, onChunk, onToolCall, onEnd, onError, signal } = options;
@@ -543,13 +585,18 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
   const { system, messages: anthropicMessages } = toAnthropicMessages(messages);
   const anthropicTools = tools && tools.length > 0 ? tools.map(toAnthropicTool) : undefined;
 
+  // Undated alias as the fallback — a dated snapshot here eventually retires
+  // and starts 404-ing for every user who never picked a model explicitly.
+  const resolvedModel = model || apiConfig.model || 'claude-sonnet-5';
+
   try {
     const response = await axios.post(
       `${apiConfig.apiUrl}/messages`,
       {
-        model: model || apiConfig.model || 'claude-3-5-sonnet-20241022',
+        model: resolvedModel,
         max_tokens: maxTokens,
-        temperature,
+        // Omitted entirely on models that reject sampling parameters (400).
+        ...(acceptsSamplingParams(resolvedModel) ? { temperature } : {}),
         system,
         messages: anthropicMessages,
         stream: true,
@@ -628,6 +675,172 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
     stream.on('error', (err) => onError(err));
   } catch (err: any) {
     onError(err);
+  }
+}
+
+/**
+ * Claude Code's own tools, denied so the CLI acts as a plain text generator.
+ * HomeBot runs its own agentic loop and permission gate; letting Claude Code
+ * touch the filesystem or shell would bypass both. Denying them also strips
+ * their schemas from the prompt, which is most of the token saving below.
+ */
+const CLAUDE_CODE_DENIED_TOOLS = [
+  'Task', 'Artifact', 'Bash', 'CronCreate', 'CronDelete', 'CronList', 'DesignSync',
+  'Edit', 'EnterWorktree', 'ExitWorktree', 'Glob', 'Grep', 'Monitor', 'NotebookEdit',
+  'PowerShell', 'PushNotification', 'Read', 'RemoteTrigger', 'ReportFindings',
+  'ScheduleWakeup', 'SendMessage', 'Skill', 'TaskOutput', 'TaskStop', 'TodoWrite',
+  'ToolSearch', 'WebFetch', 'WebSearch', 'Workflow', 'Write',
+].join(' ');
+
+/** Flatten a conversation into a single prompt. Each CLI invocation is stateless. */
+function toClaudeCodeTranscript(messages: ChatMessage[]): { system: string; prompt: string } {
+  const systemParts: string[] = [];
+  const turns: string[] = [];
+
+  for (const msg of messages) {
+    const text = typeof msg.content === 'string'
+      ? msg.content
+      : msg.content.map(p => (p.type === 'text' ? (p.text || '') : '')).filter(Boolean).join('\n');
+    if (!text.trim()) continue;
+
+    if (msg.role === 'system') { systemParts.push(text); continue; }
+    turns.push(`${msg.role === 'assistant' ? 'Assistant' : 'User'}: ${text}`);
+  }
+
+  // Only the final user turn is unprefixed — a bare prompt reads more naturally
+  // to the model than a transcript when there is no prior history.
+  const prompt = turns.length === 1 && turns[0].startsWith('User: ')
+    ? turns[0].slice(6)
+    : turns.join('\n\n');
+
+  return { system: systemParts.join('\n\n'), prompt };
+}
+
+/**
+ * Stream from a local Claude Code CLI authenticated with the user's own Claude
+ * subscription (Pro/Max) — no API key, no per-token billing.
+ *
+ * Trade-offs, verified by measurement rather than assumed:
+ *  - Passing --system-prompt (replacing Claude Code's coding persona), denying
+ *    its tools, and clearing MCP servers cuts per-call context from ~32.8k
+ *    tokens to ~780. Without those flags this is unusably expensive against
+ *    subscription rate limits.
+ *  - Tool calling is NOT supported here. Claude Code's tools are denied, so the
+ *    caller's `tools` are ignored and onToolCall never fires. Chat only.
+ *  - `--bare` would trim more, but it explicitly disables OAuth and forces an
+ *    API key, defeating the entire point of this provider. Do not add it.
+ */
+async function streamClaudeCode(options: StreamOptions): Promise<void> {
+  const { apiConfig, messages, model, onChunk, onEnd, onError, signal } = options;
+
+  const { system, prompt } = toClaudeCodeTranscript(messages);
+
+  if (!prompt.trim()) {
+    onError(new Error('Nothing to send to Claude Code.'));
+    return;
+  }
+
+  // apiUrl doubles as an optional override for the CLI location; most users
+  // leave it blank and we resolve `claude` from PATH.
+  const configuredPath = apiConfig.apiUrl?.trim();
+  const bin = configuredPath || (process.platform === 'win32' ? 'claude.exe' : 'claude');
+
+  const args = [
+    '-p',
+    '--output-format', 'stream-json',
+    '--include-partial-messages',
+    '--verbose',
+    '--model', model || 'sonnet',
+    '--disallowed-tools', CLAUDE_CODE_DENIED_TOOLS,
+    '--mcp-config', JSON.stringify({ mcpServers: {} }),
+  ];
+  if (system.trim()) args.push('--system-prompt', system);
+
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(bin, args, { windowsHide: true });
+  } catch (err: any) {
+    onError(new Error(`Could not start Claude Code (${bin}): ${err?.message || err}`));
+    return;
+  }
+
+  let ended = false;
+  const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
+  const safeError = (err: any) => { if (!ended) { ended = true; onError(err); } };
+
+  const onAbort = () => { try { child.kill(); } catch { /* already gone */ } };
+  signal?.addEventListener('abort', onAbort, { once: true });
+  const cleanup = () => signal?.removeEventListener('abort', onAbort);
+
+  let stdoutBuf = '';
+  let stderrBuf = '';
+  let sawText = false;
+
+  child.stdout?.on('data', (chunk: Buffer) => {
+    stdoutBuf += chunk.toString('utf8');
+
+    // NDJSON: complete lines only; keep any trailing partial for the next chunk.
+    const lines = stdoutBuf.split('\n');
+    stdoutBuf = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      let evt: any;
+      try { evt = JSON.parse(trimmed); } catch { continue; }
+
+      if (evt.type === 'stream_event') {
+        const inner = evt.event;
+        // text_delta only — thinking_delta is internal reasoning and must not
+        // be surfaced as assistant output.
+        if (inner?.type === 'content_block_delta' && inner.delta?.type === 'text_delta') {
+          const text = inner.delta.text;
+          if (text) { sawText = true; onChunk(text); }
+        }
+        continue;
+      }
+
+      if (evt.type === 'result') {
+        if (evt.is_error) {
+          safeError(new Error(evt.result || evt.api_error_status || 'Claude Code reported an error.'));
+        } else {
+          // Fallback for a non-streaming result (no partial deltas arrived).
+          if (!sawText && typeof evt.result === 'string' && evt.result) onChunk(evt.result);
+          safeEnd();
+        }
+      }
+    }
+  });
+
+  child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString('utf8'); });
+
+  child.on('error', (err: any) => {
+    cleanup();
+    if (err?.code === 'ENOENT') {
+      safeError(new Error(
+        'Claude Code was not found. Install it and sign in with your Claude subscription, ' +
+        'or set the CLI path in Settings.'
+      ));
+    } else {
+      safeError(err);
+    }
+  });
+
+  child.on('close', (code: number | null) => {
+    cleanup();
+    if (ended) return;
+    if (code === 0) { safeEnd(); return; }
+    if (signal?.aborted) { safeEnd(); return; }
+    const detail = stderrBuf.trim().split('\n').slice(-3).join(' ').slice(0, 400);
+    safeError(new Error(`Claude Code exited with code ${code}${detail ? `: ${detail}` : ''}`));
+  });
+
+  try {
+    child.stdin?.write(prompt);
+    child.stdin?.end();
+  } catch (err: any) {
+    safeError(new Error(`Could not send the prompt to Claude Code: ${err?.message || err}`));
   }
 }
 
@@ -742,6 +955,10 @@ export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig
 }
 
 export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig>): Promise<CustomModelInfo[]> {
+  // Claude Code is a local CLI — it has no /models endpoint and needs no apiUrl,
+  // so answer before the apiUrl guard below.
+  if (config?.provider === 'claude-code') return CLAUDE_CODE_MODELS;
+
   if (!config || !config.apiUrl) {
     throw new Error('Enter an API URL to fetch models.');
   }
@@ -891,6 +1108,10 @@ export async function streamFromCustomLLM(
       streamAnthropic(options);
       break;
 
+    case 'claude-code':
+      streamClaudeCode(options);
+      break;
+
     case 'openai':
     case 'openrouter':
     case 'groq':
@@ -925,15 +1146,25 @@ export function validateCustomLLMConfig(config?: CustomLLMConfig): { valid: bool
   if (!config) {
     return { valid: false, error: 'No custom LLM configuration provided' };
   }
-  
+
+  // Claude Code runs as a local subprocess on the user's own subscription:
+  // there is no endpoint to call and no API key to supply. apiUrl, if set at
+  // all, is an optional override for the CLI's location.
+  if (config.provider === 'claude-code') {
+    if (!config.model) {
+      return { valid: false, error: 'Choose which Claude model to use' };
+    }
+    return { valid: true };
+  }
+
   if (!config.apiUrl) {
     return { valid: false, error: 'API URL is required' };
   }
-  
+
   if (!config.apiKey && config.provider !== 'custom') {
     return { valid: false, error: 'API key is required for this provider' };
   }
-  
+
   if (!config.model && config.provider !== 'custom') {
     return { valid: false, error: 'Model name is required' };
   }

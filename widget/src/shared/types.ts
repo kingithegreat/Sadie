@@ -159,7 +159,7 @@ export interface CustomLLMConfig {
   name: string;
   apiUrl: string;
   apiKey?: string;
-  provider: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
+  provider: 'openai' | 'anthropic' | 'claude-code' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   model?: string;
   enabled: boolean;
   metadata?: ModelMetadata;
