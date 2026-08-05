@@ -300,7 +300,6 @@ Or re-run the setup script:
 | `logs/` | Runtime log files |
 | `scripts/` | Setup, build, and utility scripts |
 | `scripts/setup/Setup-HomeBot.ps1` | Automated setup and preflight script |
-| `scripts/generate-docs.js` | Generates capstone .docx files (poster, report, presentation, demo) |
 | `prompts/` | System prompts and intent detection templates |
 | `schemas/` | JSON schemas for tool call validation |
 | `docs/` | Developer and API documentation |
