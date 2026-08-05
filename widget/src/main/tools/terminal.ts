@@ -58,19 +58,37 @@ function looksLikeNaturalLanguage(cmd: string): boolean {
   return false;
 }
 
+/**
+ * Destructive-pattern check, without the natural-language heuristic.
+ *
+ * Exported so the interactive terminal panel enforces the SAME blocklist as
+ * the LLM tool — one source of truth, so adding a pattern here protects both.
+ * The natural-language guard is deliberately NOT part of this: it exists to
+ * catch the model misrouting prose into a shell, and would wrongly reject a
+ * human typing legitimate commands like `where python` or `help`.
+ */
+export function isDestructiveCommand(cmd: string): { blocked: boolean; reason?: string } {
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(cmd)) {
+      return { blocked: true, reason: `Blocked dangerous pattern: ${pattern.source}` };
+    }
+  }
+  return { blocked: false };
+}
+
 function isSafe(cmd: string): { safe: boolean; reason?: string } {
   if (looksLikeNaturalLanguage(cmd)) {
     return { safe: false, reason: 'This looks like a question, not a shell command. Answer it directly instead of executing it.' };
   }
-  for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(cmd)) {
-      return { safe: false, reason: `Blocked dangerous pattern: ${pattern.source}` };
-    }
+  const destructive = isDestructiveCommand(cmd);
+  if (destructive.blocked) {
+    return { safe: false, reason: destructive.reason };
   }
   return { safe: true };
 }
 
-function validateCwd(rawPath: string): { valid: boolean; resolved: string; error?: string } {
+/** Exported so the terminal panel confines sessions to the same home-dir sandbox. */
+export function validateCwd(rawPath: string): { valid: boolean; resolved: string; error?: string } {
   const resolved = path.resolve(rawPath || process.cwd());
   if (!resolved.toLowerCase().startsWith(HOME_DIR.toLowerCase())) {
     return { valid: false, resolved, error: `Working directory must be within home directory (${HOME_DIR})` };

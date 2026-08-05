@@ -145,6 +145,22 @@ export interface ModelMetadata {
   supportsStreaming: boolean;
 }
 
+/** One streamed chunk of output from an interactive terminal session. */
+export interface TerminalOutputChunk {
+  sessionId: string;
+  stream: 'stdout' | 'stderr' | 'system';
+  data: string;
+}
+
+/** Completion of a terminal command; `cwd` reflects any `cd` that ran. */
+export interface TerminalExitEvent {
+  sessionId: string;
+  code: number | null;
+  signal: string | null;
+  durationMs: number;
+  cwd: string;
+}
+
 export interface CustomModelInfo {
   id: string;
   name?: string;
@@ -418,6 +434,13 @@ export interface ElectronAPI {
   getCrmActivity?: (limit?: number) => Promise<{ success: boolean; items?: unknown[]; error?: string }>;
   onSupervisorStatus?: (callback: (change: unknown) => void) => () => void;
   getBatchSummaries?: () => Promise<{ success: boolean; summaries?: unknown[]; error?: string }>;
+  // Interactive terminal panel
+  terminalCreate?: (cwd?: string) => Promise<{ success: boolean; id?: string; cwd?: string; error?: string }>;
+  terminalRun?: (id: string, command: string) => Promise<{ success: boolean; error?: string }>;
+  terminalKill?: (id: string) => Promise<{ success: boolean; error?: string }>;
+  terminalClose?: (id: string) => Promise<{ success: boolean; error?: string }>;
+  onTerminalOutput?: (callback: (chunk: TerminalOutputChunk) => void) => () => void;
+  onTerminalExit?: (callback: (exit: TerminalExitEvent) => void) => () => void;
   getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
     openDealCount: number;
     openPipelineValueCents: number;

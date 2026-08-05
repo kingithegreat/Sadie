@@ -61,6 +61,14 @@ const ALLOWED_CHANNELS = {
   GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
   GET_CRM_DASHBOARD: 'homebot:get-crm-dashboard',
   BATCH_SUMMARY_PUSH: 'homebot:batch-summary',
+  // Interactive terminal panel
+  TERMINAL_CREATE: 'homebot:terminal:create',
+  TERMINAL_RUN: 'homebot:terminal:run',
+  TERMINAL_KILL: 'homebot:terminal:kill',
+  TERMINAL_CLOSE: 'homebot:terminal:close',
+  TERMINAL_STATUS: 'homebot:terminal:status',
+  TERMINAL_OUTPUT_PUSH: 'homebot:terminal:output',
+  TERMINAL_EXIT_PUSH: 'homebot:terminal:exit',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
@@ -424,6 +432,32 @@ const electronAPI: ElectronAPI = {
   /** Read-only CRM numbers for the Dashboard landing page. */
   getCrmDashboard: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_CRM_DASHBOARD);
+  },
+
+  // ── Interactive terminal ──────────────────────────────────────────────
+  terminalCreate: async (cwd?: string): Promise<{ success: boolean; id?: string; cwd?: string; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_CREATE, cwd);
+  },
+  terminalRun: async (id: string, command: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_RUN, id, command);
+  },
+  terminalKill: async (id: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_KILL, id);
+  },
+  terminalClose: async (id: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_CLOSE, id);
+  },
+  /** Streaming stdout/stderr for a running command. Returns an unsubscribe function. */
+  onTerminalOutput: (callback: (chunk: any) => void): (() => void) => {
+    const listener = (_event: unknown, chunk: any) => callback(chunk);
+    ipcRenderer.on(ALLOWED_CHANNELS.TERMINAL_OUTPUT_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.TERMINAL_OUTPUT_PUSH, listener);
+  },
+  /** Command completion (exit code, duration, resulting cwd). Returns an unsubscribe function. */
+  onTerminalExit: (callback: (exit: any) => void): (() => void) => {
+    const listener = (_event: unknown, exit: any) => callback(exit);
+    ipcRenderer.on(ALLOWED_CHANNELS.TERMINAL_EXIT_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.TERMINAL_EXIT_PUSH, listener);
   },
 
   /** Live batch-execution summary pushes. Returns an unsubscribe function. */

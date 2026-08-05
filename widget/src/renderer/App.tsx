@@ -20,6 +20,7 @@ const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
 const QuizPanel = lazy(() => import("./components/QuizPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
+const TerminalPanel = lazy(() => import("./components/TerminalPanel"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
 const ShortcutsPanel = lazy(() => import("./components/ShortcutsPanel"));
 const NotificationHistory = lazy(() => import("./components/NotificationHistory"));
@@ -94,6 +95,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [notifHistoryOpen, setNotifHistoryOpen] = useState(false);
@@ -1211,6 +1213,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onSettingsClick={() => setSettingsOpen(true)}
         onToolsClick={() => setToolsOpen(true)}
         onRagClick={() => setRagPanelOpen(true)}
+        onTerminalClick={() => setTerminalOpen(true)}
         onAnalyticsClick={() => setAnalyticsOpen(true)}
         onNotificationsClick={() => setNotifHistoryOpen(true)}
         notificationCount={notifHistory.length}
@@ -1396,6 +1399,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       <Suspense fallback={null}>
         <RagPanel isOpen={ragPanelOpen} onClose={() => setRagPanelOpen(false)} />
       </Suspense>
+
+      {/* Terminal — runs in the configured project folder, sandboxed to home */}
+      {terminalOpen && (
+        <Suspense fallback={null}>
+          {/* onSendToChat is intentionally not wired yet: the chat input lives
+              inside InputBox/ChatInterface, not App, so routing an excerpt into
+              it needs a small lift of that state. The button hides itself until
+              then rather than pretending to work. */}
+          <TerminalPanel
+            open={terminalOpen}
+            onClose={() => setTerminalOpen(false)}
+            projectPath={settings?.projectPath}
+          />
+        </Suspense>
+      )}
 
       {/* Analytics Dashboard */}
       {analyticsOpen && (

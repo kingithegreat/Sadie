@@ -14,6 +14,7 @@ import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
 import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
 import { registerTrustIpc } from './trust-ipc';
+import { registerTerminalIpc } from './terminal-ipc';
 import { setBatchSummaryForwarder } from './tools';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
@@ -267,6 +268,9 @@ app.whenReady().then(async () => {
   // health and the CRM activity trail. Returns null status in E2E (handle is
   // a no-op there), which the panel renders as "supervision off".
   registerTrustIpc(() => supervisorHandle?.getStatus() ?? null);
+  // Interactive Terminal panel. Shares the destructive-command blocklist and
+  // home-directory sandbox with the LLM-facing terminal tool.
+  registerTerminalIpc();
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.
   setBatchSummaryForwarder((summary) => {

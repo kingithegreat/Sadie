@@ -10,6 +10,7 @@ interface StatusIndicatorProps {
   onExportChat?: () => void;
   onToolsClick?: () => void;
   onRagClick?: () => void;
+  onTerminalClick?: () => void;
   onAnalyticsClick?: () => void;
   onNotificationsClick?: () => void;
   notificationCount?: number;
@@ -65,6 +66,7 @@ interface HeaderActionsProps {
   onAnalyticsClick?: () => void;
   onNotificationsClick?: () => void;
   onRagClick?: () => void;
+  onTerminalClick?: () => void;
   onRefresh: () => void;
   onSettingsClick: () => void;
   onToolsClick?: () => void;
@@ -308,6 +310,7 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
   onAnalyticsClick,
   onNotificationsClick,
   onRagClick,
+  onTerminalClick,
   onRefresh,
   onSettingsClick,
   onToolsClick
@@ -326,6 +329,7 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
     </button>
     {onRagClick && <button onClick={onRagClick} className="header-btn" title="RAG index" aria-label="RAG index">📚</button>}
     {onToolsClick && <button onClick={onToolsClick} className="header-btn" title="Available tools" aria-label="View tools">🔧</button>}
+    {onTerminalClick && <button onClick={onTerminalClick} className="header-btn" title="Terminal" aria-label="Terminal">⌨️</button>}
     {onAnalyticsClick && <button onClick={onAnalyticsClick} className="header-btn" title="Analytics" aria-label="Analytics">📊</button>}
     {onNotificationsClick && (
       <button onClick={onNotificationsClick} className="header-btn notif-bell-btn" title="Notifications" aria-label="Notifications">
@@ -345,6 +349,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onExportChat: _onExportChat,
   onToolsClick,
   onRagClick,
+  onTerminalClick,
   onAnalyticsClick,
   onNotificationsClick,
   notificationCount = 0,
@@ -423,6 +428,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         onAnalyticsClick={onAnalyticsClick}
         onNotificationsClick={onNotificationsClick}
         onRagClick={onRagClick}
+        onTerminalClick={onTerminalClick}
         onRefresh={onRefresh}
         onSettingsClick={onSettingsClick}
         onToolsClick={onToolsClick}
