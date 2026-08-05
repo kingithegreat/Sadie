@@ -2229,7 +2229,7 @@ export async function streamFromLLM(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; modelOverride?: string },
+  options?: { hasDocuments?: boolean; modelOverride?: string; conversationPrompt?: string; agenticMode?: boolean },
   onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
@@ -2408,8 +2408,9 @@ export async function streamFromLLM(
 
         console.warn(`[HomeBot] Cloud LLM unavailable (${cloudTarget}): ${errMsg} — falling back to local Ollama`);
         onChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
-        // Fall through to Ollama
-        streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options)
+        // Fall through to Ollama — forward onMeta so the model badge reports
+        // the local model that actually answered, not the cloud model that failed.
+        streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options, onMeta)
           .catch((ollamaErr: any) => onError(ollamaErr));
       };
 
@@ -3216,31 +3217,12 @@ export async function streamFromOllamaWithTools(
   };
 }
 
-// Legacy streamFromOllama for backward compatibility (no tools)
-async function streamFromOllama(
-  message: string,
-  images: ImageAttachment[] | undefined,
-  conversationId: string,
-  onChunk: (text: string) => void,
-  onEnd: () => void,
-  onError: (err: any) => void,
-  requestConfirmation?: (msg: string) => Promise<boolean>,
-  options?: { conversationPrompt?: string; agenticMode?: boolean }
-): Promise<{ cancel: () => void }> {
-  return streamFromOllamaWithTools(
-    message,
-    images,
-    conversationId,
-    onChunk,
-    () => {}, // ignore tool calls
-    () => {}, // ignore tool results
-    onEnd,
-    onError,
-    requestConfirmation,
-    undefined,
-    options
-  );
-}
+// The legacy `streamFromOllama` wrapper was deleted deliberately. It forwarded
+// straight to streamFromOllamaWithTools — LOCAL ONLY — while both of its call
+// sites logged "Cloud LLM active" / "Falling back to cloud LLM...". Cloud
+// requests taking those paths silently ran on the local model with no model
+// badge. Use streamFromLLM, which routes cloud vs local and reports the model
+// that actually answered via onMeta.
 
 export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string) {
     // Initialize tools system
@@ -4482,9 +4464,14 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         if (useDirectOllama || cloudLLMActive) {
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct path:', cloudLLMActive ? 'cloud LLM active' : 'direct Ollama');
           try { pushRouter(cloudLLMActive ? 'Cloud LLM active — bypassing n8n' : 'Taking direct Ollama path'); } catch (e) { safeCatch(e); }
-          // Direct streaming (cloud LLM or local Ollama) - no n8n required
+          // Direct streaming (cloud LLM or local Ollama) - no n8n required.
+          // streamFromLLM, not the legacy streamFromOllama wrapper: the legacy
+          // wrapper can ONLY reach local Ollama, so this branch used to log
+          // "Cloud LLM active" and then answer from the local model anyway,
+          // with no model badge on stream-end.
           let ttfbLogged = false;
-          const handler = await streamFromOllama(
+          let directModel = '';
+          const handler = await streamFromLLM(
             enhancedMessage,
             request.images,
             convId,
@@ -4504,12 +4491,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                             console.log('[E2E-TRACE] stream-chunk (ollama)', { streamId, chunkLen: chunk?.length ?? 0, snippet: String(chunk).substring(0, 120) });
                           }
             },
+            (toolName, args) => {
+              try { event.sender.send('homebot:tool-call', { toolName, args, streamId }); } catch (e) { safeCatch(e); }
+            },
+            (result) => {
+              try { event.sender.send('homebot:tool-result', { result, streamId }); } catch (e) { safeCatch(e); }
+            },
             () => {
               // Add assistant response to history
               if (assistantResponse.trim()) {
                 addToHistory(convId, 'assistant', assistantResponse);
               }
-              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId, ...(directModel ? { model: directModel } : {}) }); } catch (e) { safeCatch(e); }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-end (ollama)', { streamId });
                           }
@@ -4524,12 +4517,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               activeStreams.delete(streamId);
             },
             requestConfirmation, // Pass confirmation requester
+            (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
             {
+              hasDocuments: !!(request.documents && request.documents.length > 0),
+              modelOverride: reqAny.modelOverride,
               conversationPrompt: isAgenticRequest
                 ? [reqAny.conversationPrompt, buildAgenticSystemPrompt()].filter(Boolean).join('\n\n')
                 : (reqAny.conversationPrompt || undefined),
               agenticMode: isAgenticRequest,
-            }
+            },
+            (meta) => { directModel = meta.model; }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           return;
@@ -5284,7 +5281,8 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           console.log('[HomeBot] Falling back to', fallbackCloudActive ? 'cloud LLM...' : 'direct Ollama...');
           try {
           let fallbackResponse = '';
-          const handler = await streamFromOllama(
+          let fallbackModel = '';
+          const handler = await streamFromLLM(
             reqAny.message,
             reqAny.images,
             convId,
@@ -5293,18 +5291,28 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               fallbackResponse += chunk;
               event.sender.send('homebot:stream-chunk', { chunk, streamId });
             },
+            (toolName, args) => {
+              try { event.sender.send('homebot:tool-call', { toolName, args, streamId }); } catch (e) { safeCatch(e); }
+            },
+            (result) => {
+              try { event.sender.send('homebot:tool-result', { result, streamId }); } catch (e) { safeCatch(e); }
+            },
             () => {
               if (fallbackResponse.trim()) {
                 addToHistory(convId, 'assistant', fallbackResponse);
               }
-              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId, ...(fallbackModel ? { model: fallbackModel } : {}) }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             },
             (err: any) => {
               const hint = classifyError('Ollama error', err?.message || String(err));
               try { event.sender.send('homebot:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
-            }
+            },
+            undefined,
+            (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
+            { modelOverride: reqAny.modelOverride },
+            (meta) => { fallbackModel = meta.model; }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           } catch (ollamaError: any) {
