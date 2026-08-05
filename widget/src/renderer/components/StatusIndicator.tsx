@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
@@ -325,19 +326,19 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
       title="Refresh connection"
       aria-label="Refresh"
     >
-      ↻
+      <Icon name="refresh" />
     </button>
-    {onRagClick && <button onClick={onRagClick} className="header-btn" title="RAG index" aria-label="RAG index">📚</button>}
-    {onToolsClick && <button onClick={onToolsClick} className="header-btn" title="Available tools" aria-label="View tools">🔧</button>}
-    {onTerminalClick && <button onClick={onTerminalClick} className="header-btn" title="Terminal" aria-label="Terminal">⌨️</button>}
-    {onAnalyticsClick && <button onClick={onAnalyticsClick} className="header-btn" title="Analytics" aria-label="Analytics">📊</button>}
+    {onRagClick && <button onClick={onRagClick} className="header-btn" title="RAG index" aria-label="RAG index"><Icon name="library" /></button>}
+    {onToolsClick && <button onClick={onToolsClick} className="header-btn" title="Available tools" aria-label="View tools"><Icon name="tools" /></button>}
+    {onTerminalClick && <button onClick={onTerminalClick} className="header-btn" title="Terminal" aria-label="Terminal"><Icon name="terminal" /></button>}
+    {onAnalyticsClick && <button onClick={onAnalyticsClick} className="header-btn" title="Analytics" aria-label="Analytics"><Icon name="analytics" /></button>}
     {onNotificationsClick && (
       <button onClick={onNotificationsClick} className="header-btn notif-bell-btn" title="Notifications" aria-label="Notifications">
-        🔔
+        <Icon name="bell" />
         {notificationCount > 0 && <span className="notif-badge">{notificationCount > 9 ? '9+' : notificationCount}</span>}
       </button>
     )}
-    <button onClick={onSettingsClick} className="header-btn" title="Settings" aria-label="Settings">⚙️</button>
+    <button onClick={onSettingsClick} className="header-btn" title="Settings" aria-label="Settings"><Icon name="settings" /></button>
   </div>
 );
 

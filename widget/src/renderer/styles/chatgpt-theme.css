@@ -8429,3 +8429,212 @@ body {
   font: inherit;
 }
 .terminal-input:disabled { opacity: 0.55; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   APPLE-FLAVOURED LAYER
+   Layered over the existing tokens rather than replacing them, so nothing
+   below this point changes structure — only the visual grammar.
+
+   The grammar being borrowed is: large continuous-ish radii, translucent
+   materials over content, soft layered shadows instead of hard borders,
+   one saturated accent, tightened tracking on large type, and fast subtle
+   motion. SF Pro is NOT bundled (it can't be redistributed) — Inter is
+   already first in the stack and is deliberately SF-like.
+   ════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Radii — Apple leans much rounder than the default web look */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-pill: 999px;
+
+  /* One accent, used sparingly. Apple's system blue. */
+  --accent: #0A84FF;
+  --accent-hover: #339CFF;
+  --accent-quiet: rgba(10, 132, 255, 0.14);
+  --accent-contrast: #ffffff;
+
+  /* Materials — translucency is the single most "Apple" cue */
+  --material-thin: rgba(28, 28, 30, 0.62);
+  --material-regular: rgba(28, 28, 30, 0.78);
+  --material-thick: rgba(22, 22, 24, 0.92);
+  --material-blur: saturate(180%) blur(20px);
+  --hairline: rgba(255, 255, 255, 0.09);
+
+  /* Shadows — soft, layered, never a hard 1px box */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.24);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.34);
+
+  /* Motion — quick, slightly springy, never bouncy */
+  --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+}
+
+[data-theme='light'] {
+  --material-thin: rgba(255, 255, 255, 0.66);
+  --material-regular: rgba(250, 250, 252, 0.82);
+  --material-thick: rgba(255, 255, 255, 0.94);
+  --hairline: rgba(0, 0, 0, 0.09);
+  --accent: #007AFF;
+  --accent-hover: #0069DB;
+  --accent-quiet: rgba(0, 122, 255, 0.12);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.09);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.13);
+}
+
+/* Apple tightens tracking as type gets larger; the web default does not. */
+body { letter-spacing: -0.006em; }
+h1, h2, h3, .panel-title, .settings-title { letter-spacing: -0.021em; font-weight: 600; }
+h4, h5, .setting-label { letter-spacing: -0.012em; }
+
+/* ── Icons ─────────────────────────────────────────────────────────── */
+.hb-icon {
+  display: block;
+  flex: 0 0 auto;
+  /* Optical alignment: stroke icons sit fractionally high next to text. */
+  transform: translateY(0.5px);
+}
+
+/* ── Chrome buttons ────────────────────────────────────────────────── */
+.header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary, rgba(235, 235, 245, 0.68));
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-apple),
+              color var(--dur-fast) var(--ease-apple),
+              transform var(--dur-fast) var(--ease-apple);
+}
+.header-btn:hover {
+  background: var(--accent-quiet);
+  color: var(--accent);
+}
+.header-btn:active { transform: scale(0.94); }
+.header-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Segmented control (mode switcher) ─────────────────────────────────
+   The classic Apple pattern: a recessed track with a single raised pill
+   that slides. Replaces a row of separate buttons. */
+.mode-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: rgba(120, 120, 128, 0.16);
+  backdrop-filter: var(--material-blur);
+}
+.mode-switcher button,
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-secondary, rgba(235, 235, 245, 0.68));
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.008em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-base) var(--ease-apple),
+              color var(--dur-base) var(--ease-apple),
+              box-shadow var(--dur-base) var(--ease-apple);
+}
+.mode-switcher button:hover,
+.mode-btn:hover { color: var(--text-primary, #fff); }
+.mode-switcher button.active,
+.mode-btn.active,
+.mode-switcher button[aria-selected='true'] {
+  background: var(--material-thick);
+  color: var(--text-primary, #fff);
+  box-shadow: var(--shadow-1);
+}
+
+/* ── Panels: material + depth instead of borders ───────────────────── */
+.settings-panel,
+.tools-panel,
+.rag-panel,
+.trust-panel,
+.terminal-panel,
+.hb-modal-card,
+.conversation-search-panel,
+.notification-history {
+  border-radius: var(--r-md);
+  border: 1px solid var(--hairline);
+  background: var(--material-regular);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  box-shadow: var(--shadow-3);
+}
+
+/* Overlays: dim + blur what's behind, the way sheets do on iOS/macOS. */
+.confirmation-overlay,
+.first-run-overlay,
+.conversation-search-overlay,
+.hb-modal-overlay {
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ── Primary action ────────────────────────────────────────────────── */
+.button-primary,
+.hb-modal-btn-primary,
+.connect-btn.connected {
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  font-weight: 550;
+  letter-spacing: -0.008em;
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur-fast) var(--ease-apple),
+              transform var(--dur-fast) var(--ease-apple);
+}
+.button-primary:hover,
+.hb-modal-btn-primary:hover { background: var(--accent-hover); }
+.button-primary:active,
+.hb-modal-btn-primary:active { transform: scale(0.97); }
+
+/* ── Inputs: recessed, hairline, accent focus ring ─────────────────── */
+.setting-input,
+.terminal-input,
+.hb-modal-input {
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline);
+  transition: border-color var(--dur-fast) var(--ease-apple),
+              box-shadow var(--dur-fast) var(--ease-apple);
+}
+.setting-input:focus,
+.hb-modal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3.5px var(--accent-quiet);
+}
+
+/* Respect the OS reduce-motion setting — Apple treats this as a hard rule. */
+@media (prefers-reduced-motion: reduce) {
+  .header-btn, .mode-switcher button, .mode-btn,
+  .button-primary, .hb-modal-btn-primary {
+    transition: none;
+  }
+  .header-btn:active,
+  .button-primary:active { transform: none; }
+}
