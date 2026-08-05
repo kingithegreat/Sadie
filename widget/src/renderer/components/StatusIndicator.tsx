@@ -12,6 +12,7 @@ interface StatusIndicatorProps {
   onToolsClick?: () => void;
   onRagClick?: () => void;
   onTerminalClick?: () => void;
+  onWorkspaceClick?: () => void;
   onAnalyticsClick?: () => void;
   onNotificationsClick?: () => void;
   notificationCount?: number;
@@ -68,6 +69,7 @@ interface HeaderActionsProps {
   onNotificationsClick?: () => void;
   onRagClick?: () => void;
   onTerminalClick?: () => void;
+  onWorkspaceClick?: () => void;
   onRefresh: () => void;
   onSettingsClick: () => void;
   onToolsClick?: () => void;
@@ -312,6 +314,7 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
   onNotificationsClick,
   onRagClick,
   onTerminalClick,
+  onWorkspaceClick,
   onRefresh,
   onSettingsClick,
   onToolsClick
@@ -330,6 +333,7 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
     </button>
     {onRagClick && <button onClick={onRagClick} className="header-btn" title="RAG index" aria-label="RAG index"><Icon name="library" /></button>}
     {onToolsClick && <button onClick={onToolsClick} className="header-btn" title="Available tools" aria-label="View tools"><Icon name="tools" /></button>}
+    {onWorkspaceClick && <button onClick={onWorkspaceClick} className="header-btn" title="Workspace — files, editor and terminal" aria-label="Workspace"><Icon name="dashboard" /></button>}
     {onTerminalClick && <button onClick={onTerminalClick} className="header-btn" title="Terminal" aria-label="Terminal"><Icon name="terminal" /></button>}
     {onAnalyticsClick && <button onClick={onAnalyticsClick} className="header-btn" title="Analytics" aria-label="Analytics"><Icon name="analytics" /></button>}
     {onNotificationsClick && (
@@ -351,6 +355,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onToolsClick,
   onRagClick,
   onTerminalClick,
+  onWorkspaceClick,
   onAnalyticsClick,
   onNotificationsClick,
   notificationCount = 0,
@@ -430,6 +435,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         onNotificationsClick={onNotificationsClick}
         onRagClick={onRagClick}
         onTerminalClick={onTerminalClick}
+        onWorkspaceClick={onWorkspaceClick}
         onRefresh={onRefresh}
         onSettingsClick={onSettingsClick}
         onToolsClick={onToolsClick}

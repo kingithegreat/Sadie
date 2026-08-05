@@ -15,6 +15,7 @@ import { ensureN8nRunning } from './n8n-lifecycle';
 import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
 import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
+import { registerWorkspaceIpc } from './workspace-ipc';
 // Static import, NOT a runtime require(). electron-vite bundles the main
 // process into a single out/main/index.js, so a bare require('./morning-briefing')
 // resolves to a file that does not exist at runtime — which silently disabled
@@ -276,6 +277,9 @@ app.whenReady().then(async () => {
   // Interactive Terminal panel. Shares the destructive-command blocklist and
   // home-directory sandbox with the LLM-facing terminal tool.
   registerTerminalIpc();
+  // Explorer + code editor. Shares the home-directory sandbox with the
+  // LLM-facing filesystem tools (validatePath), so the two can never diverge.
+  registerWorkspaceIpc(() => getSettings()?.projectPath);
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.
   setBatchSummaryForwarder((summary) => {

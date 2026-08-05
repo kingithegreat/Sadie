@@ -69,6 +69,11 @@ const ALLOWED_CHANNELS = {
   TERMINAL_STATUS: 'homebot:terminal:status',
   TERMINAL_OUTPUT_PUSH: 'homebot:terminal:output',
   TERMINAL_EXIT_PUSH: 'homebot:terminal:exit',
+  // Explorer + code editor
+  WORKSPACE_ROOT: 'homebot:workspace:root',
+  WORKSPACE_LIST: 'homebot:workspace:list',
+  WORKSPACE_READ: 'homebot:workspace:read',
+  WORKSPACE_SAVE: 'homebot:workspace:save',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
@@ -447,6 +452,20 @@ const electronAPI: ElectronAPI = {
   terminalClose: async (id: string): Promise<{ success: boolean; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_CLOSE, id);
   },
+  // ── Workspace (Explorer + editor) ─────────────────────────────────────
+  workspaceRoot: async (): Promise<{ success: boolean; path: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_ROOT);
+  },
+  workspaceList: async (dirPath: string): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_LIST, dirPath);
+  },
+  workspaceRead: async (filePath: string): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_READ, filePath);
+  },
+  workspaceSave: async (filePath: string, content: string): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_SAVE, filePath, content);
+  },
+
   /** Streaming stdout/stderr for a running command. Returns an unsubscribe function. */
   onTerminalOutput: (callback: (chunk: any) => void): (() => void) => {
     const listener = (_event: unknown, chunk: any) => callback(chunk);

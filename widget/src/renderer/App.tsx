@@ -21,6 +21,7 @@ const QuizPanel = lazy(() => import("./components/QuizPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
 const TerminalPanel = lazy(() => import("./components/TerminalPanel"));
+const WorkspaceShell = lazy(() => import("./components/workspace/WorkspaceShell"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
 const ShortcutsPanel = lazy(() => import("./components/ShortcutsPanel"));
 const NotificationHistory = lazy(() => import("./components/NotificationHistory"));
@@ -96,6 +97,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [notifHistoryOpen, setNotifHistoryOpen] = useState(false);
@@ -1214,6 +1216,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onToolsClick={() => setToolsOpen(true)}
         onRagClick={() => setRagPanelOpen(true)}
         onTerminalClick={() => setTerminalOpen(true)}
+        onWorkspaceClick={() => setWorkspaceOpen(true)}
         onAnalyticsClick={() => setAnalyticsOpen(true)}
         onNotificationsClick={() => setNotifHistoryOpen(true)}
         notificationCount={notifHistory.length}
@@ -1399,6 +1402,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       <Suspense fallback={null}>
         <RagPanel isOpen={ragPanelOpen} onClose={() => setRagPanelOpen(false)} />
       </Suspense>
+
+      {/* Workspace — VS Code-shaped IDE: Explorer, tabbed editor, docked terminal */}
+      {workspaceOpen && (
+        <Suspense fallback={null}>
+          <WorkspaceShell open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Terminal — runs in the configured project folder, sandboxed to home */}
       {terminalOpen && (

@@ -8644,3 +8644,216 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   .header-btn:active,
   .button-primary:active { transform: none; }
 }
+
+/* ── Workspace (VS Code–shaped IDE) ──────────────────────────────────────
+   Grid: activity bar | sidebar | main, with a status bar spanning the base.
+   The point is that the terminal DOCKS rather than covering the app. */
+.workspace-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: 48px auto 1fr;
+  grid-template-rows: 1fr 22px;
+  grid-template-areas:
+    "activity sidebar main"
+    "status   status  status";
+  background: var(--ws-bg, #1e1e1e);
+  color: var(--ws-fg, #ccc);
+  font-size: 13px;
+}
+[data-theme='light'] .workspace-shell { --ws-bg: #ffffff; --ws-fg: #3b3b3b; }
+
+/* Activity bar */
+.ws-activity {
+  grid-area: activity;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 6px;
+  background: var(--ws-activity-bg, #181818);
+  border-right: 1px solid var(--hairline);
+}
+[data-theme='light'] .ws-activity { --ws-activity-bg: #f3f3f3; }
+.ws-activity-spacer { flex: 1 1 auto; }
+.ws-activity-btn {
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--ws-icon, #8a8a8a);
+  border-left: 2px solid transparent;
+  transition: color var(--dur-fast) var(--ease-apple);
+}
+.ws-activity-btn:hover { color: var(--ws-fg, #ccc); }
+.ws-activity-btn.active { color: #fff; border-left-color: var(--accent); }
+[data-theme='light'] .ws-activity-btn.active { color: #000; }
+.ws-activity-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Sidebar */
+.ws-sidebar {
+  grid-area: sidebar;
+  width: 250px;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  background: var(--ws-side-bg, #181818);
+  border-right: 1px solid var(--hairline);
+  overflow: hidden;
+  resize: horizontal;
+}
+[data-theme='light'] .ws-sidebar { --ws-side-bg: #f8f8f8; }
+.ws-sidebar-title {
+  padding: 8px 12px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.ws-sidebar-root {
+  padding: 0 12px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ws-sidebar-body { flex: 1 1 auto; overflow: auto; padding-bottom: 8px; }
+
+/* File tree */
+.tree-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 6px; cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+.tree-row:hover { background: rgba(128, 128, 128, 0.16); }
+.tree-row.active { background: var(--accent-quiet); color: var(--accent); }
+.tree-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.tree-chevron { display: flex; transform: rotate(-90deg); transition: transform var(--dur-fast) var(--ease-apple); opacity: 0.8; }
+.tree-chevron.open { transform: rotate(0deg); }
+.tree-file-dot { width: 13px; }
+.tree-label { overflow: hidden; text-overflow: ellipsis; }
+.tree-hint { padding: 4px 12px; opacity: 0.6; font-size: 11.5px; }
+.tree-error { color: var(--ansi-red, #e06c75); }
+
+/* Main: tabs + editor + docked panel */
+.ws-main {
+  grid-area: main;
+  display: grid;
+  grid-template-rows: 35px 1fr auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.ws-tabs {
+  display: flex; align-items: stretch; overflow-x: auto;
+  background: var(--ws-tabs-bg, #181818);
+  border-bottom: 1px solid var(--hairline);
+}
+[data-theme='light'] .ws-tabs { --ws-tabs-bg: #f3f3f3; }
+.ws-tabs-empty { display: flex; align-items: center; padding: 0 12px; opacity: 0.5; font-size: 11.5px; }
+.ws-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 8px 0 12px; cursor: pointer;
+  border-right: 1px solid var(--hairline);
+  border-top: 1px solid transparent;
+  white-space: nowrap; max-width: 220px;
+}
+.ws-tab:hover { background: rgba(128,128,128,0.12); }
+.ws-tab.active {
+  background: var(--ws-bg, #1e1e1e);
+  border-top-color: var(--accent);
+}
+.ws-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-tab-dirty { color: var(--accent); font-size: 15px; line-height: 1; }
+.ws-tab-close {
+  background: transparent; border: none; cursor: pointer;
+  color: inherit; opacity: 0.5; padding: 2px 4px; border-radius: 4px;
+}
+.ws-tab-close:hover { opacity: 1; background: rgba(128,128,128,0.25); }
+
+.ws-editor-area { min-height: 0; overflow: hidden; display: flex; }
+.ws-empty {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; opacity: 0.55; text-align: center; padding: 20px;
+}
+.ws-empty-sub { font-size: 11.5px; opacity: 0.8; }
+
+/* Docked terminal — resizable, not modal */
+.ws-panel {
+  height: 260px;
+  min-height: 90px;
+  max-height: 70vh;
+  overflow: hidden;
+  border-top: 1px solid var(--hairline);
+  resize: vertical;
+}
+/* Inside the dock the terminal is flush: no floating card treatment. */
+.ws-panel .terminal-panel {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Status bar */
+.ws-status {
+  grid-area: status;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+.ws-status-spacer { flex: 1 1 auto; }
+.ws-status-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
+.ws-status-dirty { font-weight: 600; }
+
+/* Code editor: transparent textarea over a highlighted <pre> */
+.code-editor {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas: "gutter surface" "gutter cursor";
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.code-gutter {
+  grid-area: gutter;
+  overflow: hidden;
+  padding: 8px 8px 8px 12px;
+  text-align: right;
+  color: var(--ws-gutter, #6e7681);
+  user-select: none;
+  background: var(--ws-bg, #1e1e1e);
+}
+.code-line-no.current { color: var(--ws-fg, #ccc); }
+.code-surface { grid-area: surface; position: relative; min-width: 0; overflow: hidden; }
+.code-highlight,
+.code-input {
+  position: absolute; inset: 0;
+  margin: 0; padding: 8px 12px;
+  font: inherit; line-height: inherit;
+  white-space: pre; overflow: auto;
+  tab-size: 2;
+}
+.code-highlight { pointer-events: none; z-index: 0; }
+.code-highlight code { font: inherit; background: none; padding: 0; }
+.code-input {
+  z-index: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ws-fg, #ccc);
+  border: none; outline: none; resize: none;
+}
+.code-input::selection { background: rgba(88, 166, 255, 0.35); }
+.code-cursor-pos {
+  grid-area: cursor;
+  padding: 2px 12px;
+  font-size: 11px;
+  opacity: 0.6;
+  border-top: 1px solid var(--hairline);
+}

@@ -145,6 +145,14 @@ export interface ModelMetadata {
   supportsStreaming: boolean;
 }
 
+/** A file or folder in the Explorer tree. */
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+}
+
 /** One streamed chunk of output from an interactive terminal session. */
 export interface TerminalOutputChunk {
   sessionId: string;
@@ -441,6 +449,11 @@ export interface ElectronAPI {
   terminalClose?: (id: string) => Promise<{ success: boolean; error?: string }>;
   onTerminalOutput?: (callback: (chunk: TerminalOutputChunk) => void) => () => void;
   onTerminalExit?: (callback: (exit: TerminalExitEvent) => void) => () => void;
+  // Workspace (Explorer + editor)
+  workspaceRoot?: () => Promise<{ success: boolean; path: string }>;
+  workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
+  workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
+  workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
   getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
     openDealCount: number;
     openPipelineValueCents: number;

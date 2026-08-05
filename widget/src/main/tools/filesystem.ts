@@ -84,7 +84,13 @@ function isPathAllowed(targetPath: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-function validatePath(targetPath: string): { valid: boolean; resolved: string; error?: string } {
+/**
+ * Resolve a user-facing path and report whether it is inside the home-directory
+ * sandbox. Exported so the Explorer/editor IPC enforces the SAME boundary as
+ * the LLM's filesystem tools — one guard, not a second copy that can drift.
+ * `resolveUserPath` discards the error, so callers that must refuse need this.
+ */
+export function validatePath(targetPath: string): { valid: boolean; resolved: string; error?: string } {
   if (!targetPath || typeof targetPath !== 'string') {
     return { valid: false, resolved: '', error: 'Path is required' };
   }
