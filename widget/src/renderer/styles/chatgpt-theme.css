@@ -143,7 +143,10 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--text-primary);
-  background: transparent;
+  /* Opaque window (see window-manager.ts): paint the themed background rather
+     than relying on the window's pre-paint backgroundColor, which is dark and
+     would flash through in light theme. */
+  background: var(--bg-main);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -7027,7 +7030,10 @@ body {
 
 .widget-mode.app-container {
   grid-template-rows: auto 1fr auto;
-  background: transparent;
+  /* Opaque, matching the window: transparency here used to show the desktop
+     through the widget, but the window is no longer transparent — a Windows
+     transparent window cannot be OS-resized or snapped (see window-manager.ts). */
+  background: var(--bg-main);
 }
 
 /* ── Widget mode chat adjustments ────────────────────────────────────────── */

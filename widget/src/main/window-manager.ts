@@ -28,7 +28,13 @@ export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Creating new BrowserWindow...');
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Creating new BrowserWindow'); } catch (e) { safeCatch(e); }
 
-  // Create the browser window — frameless + transparent for glass morphism widget
+  // Create the browser window — frameless with custom chrome, deliberately NOT
+  // transparent. On Windows a transparent window loses its native thick frame,
+  // which is what the OS uses for edge-resizing, Win+Arrow snapping and Snap
+  // Layouts — `resizable: true` is silently neutered. Opaque + frameless (the
+  // VS Code model) keeps the custom titlebar AND normal resize/snap behaviour.
+  // The old glass-over-desktop look can come back via backgroundMaterial:
+  // 'acrylic' once the electron@43 upgrade lands (needs Electron >= 29).
   mainWindow = new BrowserWindow({
     width: isWidgetMode ? WIDGET_SIZE.width : EXPANDED_SIZE.width,
     height: isWidgetMode ? WIDGET_SIZE.height : EXPANDED_SIZE.height,
@@ -41,8 +47,10 @@ export function createMainWindow(): BrowserWindow {
     movable: true,
     alwaysOnTop: isWidgetMode,
     frame: false,
-    transparent: true,
-    hasShadow: false,
+    transparent: false,
+    // Pre-paint colour so the first frame isn't a white flash; matches --bg-dark.
+    backgroundColor: '#15171b',
+    hasShadow: true,
     show: false,
     // Don't show in taskbar when in widget mode — acts like a desktop widget
     skipTaskbar: false,
