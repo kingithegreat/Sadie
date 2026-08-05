@@ -24,7 +24,7 @@ const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint
 
 const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
   openai: 'gpt-4o-mini',
-  anthropic: 'claude-sonnet-4-20250514',
+  anthropic: 'claude-sonnet-5',
   openrouter: 'openai/gpt-4o-mini',
   groq: 'llama-3.3-70b-versatile',
   deepseek: 'deepseek-chat',
