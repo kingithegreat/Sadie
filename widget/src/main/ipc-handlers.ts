@@ -52,6 +52,7 @@ import {
   ConversationSearchResult,
 } from './memory-manager';
 import { Message } from '../shared/types';
+import { resolveCloudLLM } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { homebotWebhookHeaders } from './webhook-auth';
@@ -1246,10 +1247,10 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const titleInstruction = 'Generate a short conversation title (4-6 words max, no punctuation, no quotes) that captures what this exchange is about.';
 
       let title = '';
-      const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+      const titleCloud = resolveCloudLLM(settings);
 
-      if (isCustomLLMActive) {
-        const cfg = settings.customLLM!;
+      if (titleCloud.active && titleCloud.config) {
+        const cfg = titleCloud.config;
         const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
 
         if (cfg.provider === 'anthropic') {
@@ -2063,7 +2064,7 @@ try {
     if (!useN8n && !resultText) {
       // ── LLM execution: prefer cloud API, fall back to Ollama ──
       const settings = getSettings();
-      const isCustom = !!(settings.useCustomLLM || settings.customLLM?.enabled) && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+      const isCustom = resolveCloudLLM(settings).active;
       const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       const systemMsg = `You are HomeBot, a desktop AI assistant. Today is ${today}. Execute the user's automation task. Be concise and well-formatted. Use markdown for the final response.`;
 
@@ -2274,10 +2275,10 @@ try {
 
   async function quizLLMGenerate(prompt: string, systemPrompt: string): Promise<string> {
     const settings = getSettings();
-    const isCustom = !!settings.useCustomLLM && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+    const quizCloud = resolveCloudLLM(settings);
 
-    if (isCustom) {
-      const cfg = settings.customLLM!;
+    if (quizCloud.active && quizCloud.config) {
+      const cfg = quizCloud.config;
       const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
 
       if (cfg.provider === 'anthropic') {

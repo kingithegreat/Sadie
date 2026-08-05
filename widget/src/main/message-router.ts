@@ -27,6 +27,7 @@ import { shouldUseMoA, runMoAPipeline } from './moa';
 import { looksMultiStep, buildAgenticSystemPrompt, formatStepProgress } from './agentic-loop';
 import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from './morning-briefing';
 import { shouldOfferToolsForMessage } from '../shared/model-advisor';
+import { resolveCloudLLM } from '../shared/cloud-llm';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -1800,12 +1801,11 @@ export function makeSynthesisPromptCompact(searchContext: string, question: stri
  */
 export function buildSynthesisPrompt(searchContext: string, question: string): string {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
+  const cloud = resolveCloudLLM(settings);
   // When using cloud LLM the model is the cloud one — check that.
   // When using local Ollama, check the chat model.
-  const modelName = isCloudActive
-    ? (cloudCfg?.model || '')
+  const modelName = cloud.active
+    ? (cloud.config?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
   return isSmallModel(modelName)
     ? makeSynthesisPromptCompact(searchContext, question)
@@ -1818,10 +1818,9 @@ export function buildSynthesisPrompt(searchContext: string, question: string): s
  */
 function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolType: string): string {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
-  const modelName = isCloudActive
-    ? (cloudCfg?.model || '')
+  const cloud = resolveCloudLLM(settings);
+  const modelName = cloud.active
+    ? (cloud.config?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
   const small = isSmallModel(modelName);
 
@@ -1849,10 +1848,9 @@ function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolTy
  */
 function buildSearchContextForModel(sr: any): string {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
-  const modelName = isCloudActive
-    ? (cloudCfg?.model || '')
+  const cloud = resolveCloudLLM(settings);
+  const modelName = cloud.active
+    ? (cloud.config?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
   const budget = isSmallModel(modelName) ? 1500 : 3000;
   return buildSearchContext(sr, budget);
@@ -1873,9 +1871,8 @@ async function synthesisStream(
   requestPermission?: any
 ): Promise<{ cancel: () => void }> {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
-  if (isCloudActive) {
+  const cloud = resolveCloudLLM(settings);
+  if (cloud.active && cloud.config) {
     // Only pass the last few messages as context — synthesis doesn't need full history
     // and long history can exceed provider context limits (especially free tiers).
     // Ensure even count so messages alternate user/assistant (some providers reject
@@ -1886,7 +1883,7 @@ async function synthesisStream(
     }
     const history = recentHistory.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
     return streamFromCustomLLM(
-      augmentedMessage, history, cloudCfg,
+      augmentedMessage, history, cloud.config,
       `You are answering from pre-fetched search results. Today is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}. DO NOT say you are unable to fetch information — the results are already provided. DO NOT fabricate or guess any facts, dates, odds, scores, or statistics not in the results. Summarize the key facts in 2-4 concise sentences.`,
       onChunk, onEnd, onError, signal
     );
@@ -2250,13 +2247,22 @@ export async function streamFromLLM(
   // Build system prompt — compact variant for small models (<=3B)
   const activeModel = perRequestModel || perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
 
-  // Check if custom LLM is enabled and configured
-  if ((settings.useCustomLLM || settings.customLLM?.enabled) && settings.customLLM) {
-    const validation = validateCustomLLMConfig(settings.customLLM);
+  // Check if custom LLM is enabled and configured. resolveCloudLLM is the
+  // single gate for this decision — it also hydrates the API key from the
+  // per-provider vault (geminiApiKey / anthropicApiKey / openaiApiKey), which
+  // raw settings.customLLM may lack. Before this, the renderer hydrated for
+  // display but the router didn't: Settings showed Gemini configured while
+  // every chat silently ran on local qwen.
+  const cloudResolution = resolveCloudLLM(settings);
+  if (cloudResolution.intended && cloudResolution.config) {
+    const hydratedCloud = cloudResolution.config;
+    const validation = cloudResolution.active
+      ? validateCustomLLMConfig(hydratedCloud)
+      : { valid: false, error: cloudResolution.misconfiguration || 'Cloud LLM is not fully configured' };
     if (validation.valid) {
-      const cloudModelForMeta = (settings.customLLM as any).model || activeModel;
+      const cloudModelForMeta = hydratedCloud.model || activeModel;
       onMeta?.({ model: cloudModelForMeta });
-      console.log(`[HomeBot] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
+      console.log(`[HomeBot] Using custom LLM: ${hydratedCloud.name} (${hydratedCloud.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
 
       // Extract base64 images for cloud vision
       let cloudImageData: Array<{ base64: string; mimeType?: string }> | undefined;
@@ -2277,8 +2283,8 @@ export async function streamFromLLM(
       const controller = new AbortController();
       const history = getHistory(conversationId);
       const customConfig = perConvModel
-        ? { ...(settings.customLLM as import('../shared/types').CustomLLMConfig), model: perConvModel }
-        : settings.customLLM as import('../shared/types').CustomLLMConfig;
+        ? { ...hydratedCloud, model: perConvModel }
+        : hydratedCloud;
 
       // BUG FIX: Use the CLOUD model name for system prompt selection, not the local
       // Ollama model. Previously this used activeModel (phi4-mini) which triggered the
@@ -2425,11 +2431,16 @@ export async function streamFromLLM(
         cancel: () => controller.abort()
       };
     } else {
-      // Silently fall back to Ollama if custom LLM isn't fully configured
-      // Only log once per session to avoid spamming
+      // The user turned cloud chat ON. Falling back silently is how a missing
+      // key looked like "Gemini answers as qwen" with no error anywhere —
+      // surface it in-chat once per session (same channel the cloud-API-error
+      // fallback already uses), and log every time.
+      console.warn(`[HomeBot] Cloud chat is on but not usable: ${validation.error} — using local Ollama`);
       if (!customLLMWarningShown) {
-        console.log(`[HomeBot] Custom LLM not ready: ${validation.error}. Using Ollama.`);
         customLLMWarningShown = true;
+        onChunk(`⚠️ ${validation.error} Using your local model for now.
+
+`);
       }
     }
   }
@@ -2585,7 +2596,7 @@ export async function streamFromOllamaWithTools(
   // model name (e.g. 'claude-sonnet-4-20250514'). This function ALWAYS talks to
   // local Ollama, so we must not forward a cloud model name — fall back to the
   // Ollama default instead.
-  const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM;
+  const isCustomLLMActive = resolveCloudLLM(settings).intended && !!settings.customLLM;
   // Per-conversation model override for local Ollama path
   const ollamaConvModel = MemoryManager.getConversation(conversationId)?.model?.trim();
   const perRequestModel = options?.modelOverride?.trim();
@@ -4466,9 +4477,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           try { pushRouter('Agentic mode: multi-step request detected'); } catch (e) { safeCatch(e); }
         }
 
-        const cloudSettings = getSettings();
-        const cloudCfgPost = cloudSettings?.customLLM as any;
-        const cloudLLMActive = !!((cloudSettings.useCustomLLM || cloudCfgPost?.enabled) && cloudCfgPost?.apiKey && cloudCfgPost?.model);
+        const cloudLLMActive = resolveCloudLLM(getSettings()).active;
 
         if (useDirectOllama || cloudLLMActive) {
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct path:', cloudLLMActive ? 'cloud LLM active' : 'direct Ollama');
@@ -5070,9 +5079,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               if (responseText.trim()) {
                 // When cloud LLM is active, let the LLM summarize tool results conversationally
-                const synthSettings = getSettings();
-                const synthCloud = synthSettings?.customLLM;
-                const synthCloudActive = !!((synthSettings?.useCustomLLM || synthCloud?.enabled) && synthCloud?.apiKey && synthCloud?.model);
+                const synthCloudActive = resolveCloudLLM(getSettings()).active;
 
                 if (synthCloudActive) {
                   const synthPrompt = `The user asked: "${enhancedMessage}"\n\nHere are the tool results:\n${responseText}\n\nSummarize these results in a clear, conversational response. Present the key information naturally. Do NOT dump raw data.`;
@@ -5272,7 +5279,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
         console.log('[HomeBot] n8n failed:', error?.message || error);
         try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) { safeCatch(e); }
-          const fallbackCloudActive = (() => { const s = getSettings(); return !!(s.useCustomLLM && s.customLLM && (s.customLLM as any).apiKey && (s.customLLM as any).model); })();
+          const fallbackCloudActive = resolveCloudLLM(getSettings()).active;
           if (useDirectOllama || fallbackCloudActive) {
           console.log('[HomeBot] Falling back to', fallbackCloudActive ? 'cloud LLM...' : 'direct Ollama...');
           try {
