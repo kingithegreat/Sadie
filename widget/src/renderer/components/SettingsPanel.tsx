@@ -1217,7 +1217,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               placeholder="Custom API base URL (e.g. http://localhost:8080/v1)"
             />
           )}
-          <small className="setting-hint">Paste an API key to route all coding queries to a cloud model. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-opus-4-20250514</code>). Leave blank to use local Ollama.</small>
+          <small className="setting-hint">Paste an API key to route all coding queries to a cloud model. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-sonnet-5</code>). Leave blank to use local Ollama.</small>
         </div>
         {/* Hardware Profile — applies safe model defaults for the card's VRAM */}
         <div className="setting-group">
