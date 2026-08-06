@@ -66,8 +66,8 @@ That's it — no terminal, no manual model pulls, no Docker. Everything below is
 ## Step 1 — Clone the Repository
 
 ```bash
-git clone https://github.com/kingithegreat/HomeBot.git
-cd HomeBot
+git clone https://github.com/kingithegreat/Sadie.git
+cd Sadie
 ```
 
 ---
