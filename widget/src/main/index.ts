@@ -16,6 +16,9 @@ import { startSupervisorService, SupervisorServiceHandle } from './supervisor-se
 import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
+import { startAssistantBridge, stopAssistantBridge } from './assistant-bridge';
+import { setAssistantBridgeProvider } from './custom-llm-client';
+import { requestConfirmationFrom } from './message-router';
 // Static import, NOT a runtime require(). electron-vite bundles the main
 // process into a single out/main/index.js, so a bare require('./morning-briefing')
 // resolves to a file that does not exist at runtime — which silently disabled
@@ -280,6 +283,28 @@ app.whenReady().then(async () => {
   // Explorer + code editor. Shares the home-directory sandbox with the
   // LLM-facing filesystem tools (validatePath), so the two can never diverge.
   registerWorkspaceIpc(() => getSettings()?.projectPath);
+
+  // Assistant bridge: exposes HomeBot's permission-gated tools to Claude Code
+  // over loopback MCP, so the subscription provider can act as a coding and
+  // filing assistant without ever bypassing the confirmation modal.
+  startAssistantBridge({
+    requestConfirmation: async (message: string) => {
+      // No window means no way to ask — refuse rather than assume consent.
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
+      return await requestConfirmationFrom(mainWindow.webContents, message);
+    },
+    onToolActivity: (info) => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('homebot:assistant-tool-activity', info);
+        }
+      } catch (e) { safeCatch(e); }
+    },
+  }).then((bridge) => {
+    // Hand the live endpoint to the LLM client via a hook rather than an import,
+    // so the client never pulls the tool registry into its import chain.
+    setAssistantBridgeProvider(() => ({ url: bridge.url, token: bridge.token }));
+  }).catch((e) => console.error('[MAIN] assistant bridge failed to start:', e));
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.
   setBatchSummaryForwarder((summary) => {
@@ -498,6 +523,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+  try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
   globalShortcut.unregisterAll();
   closeAllServiceWindows();
   if (supervisorHandle) supervisorHandle.stop();

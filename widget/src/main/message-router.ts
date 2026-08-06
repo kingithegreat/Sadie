@@ -2215,6 +2215,52 @@ function isSimpleGreeting(message: string): boolean {
 // Keep this in one place so both paths always stay in sync.
 // NOTE: Bare words like "function", "class", "api", "query" were removed because they
 // false-positive on normal conversation. Only language names and explicit coding verbs remain.
+/**
+ * Pending confirmation modals, keyed by id. Hoisted to module scope so surfaces
+ * outside the chat stream — notably the assistant bridge, which lets an external
+ * agent call HomeBot's tools — raise the SAME modal rather than growing a
+ * second, subtly different approval path.
+ */
+const pendingConfirmations = new Map<string, { resolve: (confirmed: boolean) => void }>();
+
+/** Resolve a pending confirmation. Called by the IPC response handler. */
+export function resolveConfirmation(confirmationId: string, confirmed: boolean): void {
+  const pending = pendingConfirmations.get(confirmationId);
+  if (pending) {
+    pending.resolve(confirmed);
+    pendingConfirmations.delete(confirmationId);
+  }
+}
+
+/**
+ * Ask the user to approve an action using the existing confirmation modal.
+ * Auto-declines after 60s — an unanswered prompt must never hang a tool call
+ * or, worse, resolve as approved.
+ */
+export function requestConfirmationFrom(
+  sender: Electron.WebContents,
+  message: string,
+  streamId?: string,
+): Promise<boolean> {
+  const confirmationId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingConfirmations.delete(confirmationId);
+      resolve(false);
+    }, 60000);
+    pendingConfirmations.set(confirmationId, {
+      resolve: (confirmed: boolean) => { clearTimeout(timeout); resolve(confirmed); },
+    });
+    try {
+      sender.send('homebot:confirmation-request', { confirmationId, message, streamId });
+    } catch {
+      clearTimeout(timeout);
+      pendingConfirmations.delete(confirmationId);
+      resolve(false);
+    }
+  });
+}
+
 const CODING_QUERY_PATTERN = /\b(write\s+(code|a\s+script|a\s+function|a\s+program)|create\s+(a\s+script|a\s+function|a\s+class|a\s+program)|generate\s+code|fix\s+(this\s+)?code|debug|refactor|optimise|optimize|implement|explain\s+this\s+code|review.*code|code.*review|algorithm|regex|(?:write|run)\s+(?:a\s+)?(?:sql|query)|script|bash|python|javascript|typescript|html|css|java(?!script)|c\+\+|golang|rust|react|\bcode\b)\b/i;
 
 // Wrapper function that routes to either Ollama or Custom LLM based on settings
@@ -3254,44 +3300,21 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     }
     
     // Track pending confirmation requests
-    const pendingConfirmations = new Map<string, { resolve: (confirmed: boolean) => void }>();
+    // pendingConfirmations now lives at module scope (see requestConfirmationFrom).
 
     // Permission escalation is handled by the centralized `permissionRequester` module
     
     // Handle confirmation responses from renderer
     ipcMain.on('homebot:confirmation-response', (_event: IpcMainEvent, data: { confirmationId: string; confirmed: boolean }) => {
-      const pending = pendingConfirmations.get(data.confirmationId);
-      if (pending) {
-        pending.resolve(data.confirmed);
-        pendingConfirmations.delete(data.confirmationId);
-      }
+      resolveConfirmation(data.confirmationId, data.confirmed);
     });
 
     // Permission responses are handled by the `permissionRequester` module
     
     // Create confirmation requester for a specific event sender
     function createConfirmationRequester(sender: Electron.WebContents, streamId: string) {
-      return async (message: string): Promise<boolean> => {
-        const confirmationId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        
-        return new Promise<boolean>((resolve) => {
-          // Set a timeout to auto-reject after 60 seconds
-          const timeout = setTimeout(() => {
-            pendingConfirmations.delete(confirmationId);
-            resolve(false);
-          }, 60000);
-          
-          pendingConfirmations.set(confirmationId, {
-            resolve: (confirmed: boolean) => {
-              clearTimeout(timeout);
-              resolve(confirmed);
-            }
-          });
-          
-          // Send confirmation request to renderer
-          sender.send('homebot:confirmation-request', { confirmationId, message, streamId });
-        });
-      };
+      return (message: string): Promise<boolean> =>
+        requestConfirmationFrom(sender, message, streamId);
     }
 
     
