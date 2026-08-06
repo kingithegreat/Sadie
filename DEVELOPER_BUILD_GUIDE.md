@@ -46,8 +46,8 @@ A comprehensive guide for developers setting up HomeBot for local development, t
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/kingithegreat/HomeBot.git
-cd HomeBot
+git clone https://github.com/kingithegreat/Sadie.git
+cd Sadie
 ```
 
 ### 2. Install Dependencies

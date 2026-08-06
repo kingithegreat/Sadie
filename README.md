@@ -161,8 +161,8 @@ On first launch, the setup wizard will:
 ### Option B — Developer Setup
 
 ```bash
-git clone https://github.com/kingithegreat/HomeBot.git
-cd HomeBot/widget
+git clone https://github.com/kingithegreat/Sadie.git
+cd Sadie/widget
 npm install
 npm run dev
 ```

@@ -12,7 +12,7 @@ function makeTempProfile() {
   return base;
 }
 
-async function completeFirstRunWizard(page: any) {
+async function completeFirstRunWizard(page: any, opts: { optInTelemetry?: boolean } = {}) {
   await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
   const modal = page.locator('.first-run-modal');
   // Choose Local path
@@ -21,6 +21,9 @@ async function completeFirstRunWizard(page: any) {
   // Advance to done
   await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
   await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
+  if (opts.optInTelemetry) {
+    await modal.locator('.wizard-telemetry-consent input[type="checkbox"]').check();
+  }
   await modal.getByRole('button', { name: /Get Started/i }).click();
 }
 
@@ -45,7 +48,7 @@ test.describe('First-run onboarding and config persistence', () => {
     await expect(fs.existsSync(configPath)).toBeTruthy();
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.firstRun).toBe(false);
-    expect(config.telemetryEnabled).toBe(true);
+    expect(config.telemetryEnabled).toBe(false);
 
     await app.close();
   });
@@ -81,33 +84,17 @@ test.describe('First-run onboarding and config persistence', () => {
     await app.close();
   });
 
-  test('telemetry is required and consent is recorded on finish', async () => {
+  test('telemetry is opt-in: checking consent enables it and records a timestamp', async () => {
     const tmp = makeTempProfile();
     const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
     await waitForAppReady(page);
 
-    await completeFirstRunWizard(page);
+    await completeFirstRunWizard(page, { optInTelemetry: true });
 
     const configPath = path.join(tmp, 'config', 'user-settings.json');
     const waitForConfig = async () => {
       const start = Date.now();
-      while (Date.now() - start < 5000) {
-        if (fs.existsSync(configPath)) {
-          const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          if (cfg.telemetryEnabled === true) return cfg;
-        }
-        await new Promise(r => setTimeout(r, 100));
-      }
-      try {
-        await page.evaluate(async () => {
-          const s = await (window as any).electron.getSettings();
-          s.telemetryEnabled = true;
-          s.telemetryConsentTimestamp = new Date().toISOString();
-          await (window as any).electron.saveSettings(s);
-        });
-      } catch (err) {}
-      const start2 = Date.now();
-      while (Date.now() - start2 < 5000) {
+      while (Date.now() - start < 10000) {
         if (fs.existsSync(configPath)) {
           const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
           if (cfg.telemetryEnabled === true) return cfg;
@@ -116,11 +103,12 @@ test.describe('First-run onboarding and config persistence', () => {
       }
       const runtime = await page.evaluate(async () => await (window as any).electron.getSettings());
       if (runtime && runtime.telemetryEnabled === true) return runtime;
-      throw new Error('Timed out waiting for config telemetryEnabled=true after forcing save');
+      throw new Error('Timed out waiting for opted-in telemetryEnabled=true');
     };
 
     const config = await waitForConfig();
     expect(config.telemetryEnabled).toBe(true);
+    expect(typeof config.telemetryConsentTimestamp).toBe('string');
 
     const consentLog = path.join(tmp, 'logs', 'telemetry-consent.log');
     if (fs.existsSync(consentLog)) {

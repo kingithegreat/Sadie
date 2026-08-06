@@ -159,7 +159,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
   // onboarding defaults
   firstRun: true,
-  telemetryEnabled: true, // REQUIRED: telemetry is anonymous and always enabled
+  telemetryEnabled: false, // opt-in only: enabled solely by explicit user consent (NZ Privacy Act 2020, IPP 3)
 
   // sensible safe defaults: most dangerous tools are disabled until user enables
   permissions: {

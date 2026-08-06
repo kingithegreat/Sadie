@@ -4415,6 +4415,18 @@ body {
   border: 1px solid var(--border-light, #333);
 }
 
+.wizard-telemetry-consent {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 20px; padding: 12px 14px; border-radius: 10px;
+  background: var(--bg-secondary, #16213e);
+  border: 1px solid var(--border-light, #333);
+  font-size: 12.5px; line-height: 1.5; text-align: left;
+  color: var(--text-secondary); cursor: pointer;
+}
+.wizard-telemetry-consent input[type="checkbox"] {
+  margin-top: 2px; flex-shrink: 0; cursor: pointer;
+}
+
 /* Collapsible settings section toggle */
 .sp-section-toggle {
   display: flex; align-items: center; gap: 10px; width: 100%;

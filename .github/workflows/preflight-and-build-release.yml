@@ -5,9 +5,14 @@ on:
     types: [published]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   preflight-and-build:
-    runs-on: ubuntu-latest
+    # HomeBot ships a Windows NSIS installer — this must run on Windows.
+    # Building the win/nsis target on ubuntu-latest cannot produce a usable HomeBot-Setup.exe.
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,3 +30,21 @@ jobs:
 
       - name: Build and package widget
         run: npm run dist --prefix widget
+
+      - name: Upload installer to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            widget/dist-electron/*.exe
+            widget/dist-electron/*.exe.blockmap
+            widget/dist-electron/latest.yml
+
+      - name: Keep installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homebot-windows-installer
+          path: |
+            widget/dist-electron/*.exe
+            widget/dist-electron/latest.yml
+          retention-days: 30

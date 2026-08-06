@@ -151,7 +151,7 @@ git push origin v<X.Y.Z>
 
 ### 5. GitHub Release
 
-1. Go to [Releases](https://github.com/kingithegreat/HomeBot/releases).
+1. Go to [Releases](https://github.com/kingithegreat/Sadie/releases).
 2. Click **Draft a new release**.
 3. Select the tag `v<X.Y.Z>`.
 4. Title: `v<X.Y.Z> — <summary>`.
