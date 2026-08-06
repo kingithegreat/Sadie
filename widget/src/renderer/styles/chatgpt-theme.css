@@ -8857,3 +8857,11 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   opacity: 0.6;
   border-top: 1px solid var(--hairline);
 }
+
+/* Assistant tool activity in the workspace status bar — makes non-dangerous
+   tool calls visible. Dangerous ones already raise the confirmation modal. */
+.ws-status-assistant {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+  font-weight: 500;
+}

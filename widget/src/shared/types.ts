@@ -145,6 +145,13 @@ export interface ModelMetadata {
   supportsStreaming: boolean;
 }
 
+/** A tool call the external assistant made through the permission-gated bridge. */
+export interface AssistantToolActivity {
+  tool: string;
+  allowed: boolean;
+  error?: string;
+}
+
 /** A file or folder in the Explorer tree. */
 export interface WorkspaceEntry {
   name: string;
@@ -454,6 +461,7 @@ export interface ElectronAPI {
   workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
   workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
   workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  onAssistantToolActivity?: (callback: (info: AssistantToolActivity) => void) => () => void;
   getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
     openDealCount: number;
     openPipelineValueCents: number;

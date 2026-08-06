@@ -74,6 +74,7 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_LIST: 'homebot:workspace:list',
   WORKSPACE_READ: 'homebot:workspace:read',
   WORKSPACE_SAVE: 'homebot:workspace:save',
+  ASSISTANT_TOOL_ACTIVITY: 'homebot:assistant-tool-activity',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
@@ -464,6 +465,14 @@ const electronAPI: ElectronAPI = {
   },
   workspaceSave: async (filePath: string, content: string): Promise<any> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_SAVE, filePath, content);
+  },
+
+  /** Tool calls made by the external assistant (Claude Code) via the bridge.
+   *  Returns an unsubscribe function. */
+  onAssistantToolActivity: (callback: (info: { tool: string; allowed: boolean; error?: string }) => void): (() => void) => {
+    const listener = (_event: unknown, info: any) => callback(info);
+    ipcRenderer.on(ALLOWED_CHANNELS.ASSISTANT_TOOL_ACTIVITY, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.ASSISTANT_TOOL_ACTIVITY, listener);
   },
 
   /** Streaming stdout/stderr for a running command. Returns an unsubscribe function. */

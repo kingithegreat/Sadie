@@ -34,6 +34,7 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
   const [activePath, setActivePath] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
+  const [assistantActivity, setAssistantActivity] = useState<string | null>(null);
 
   const api = (window as any).electron;
   const active = files.find(f => f.path === activePath) || null;
@@ -84,6 +85,20 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
       setStatus(res?.error || 'Save failed.');
     }
   }, [active, api]);
+
+  // Surface what the assistant does with HomeBot's tools. Dangerous calls
+  // already raise the confirmation modal; this makes the harmless ones visible
+  // too, so tool use is never silent.
+  useEffect(() => {
+    if (!open) return;
+    const off = api?.onAssistantToolActivity?.((info: { tool: string; allowed: boolean; error?: string }) => {
+      setAssistantActivity(
+        info.allowed ? `assistant: ${info.tool}` : `assistant: ${info.tool} blocked${info.error ? ` — ${info.error}` : ''}`,
+      );
+      window.setTimeout(() => setAssistantActivity(null), 4000);
+    });
+    return () => off?.();
+  }, [open, api]);
 
   // Ctrl+S works from anywhere in the workspace, not just inside the textarea.
   useEffect(() => {
@@ -198,6 +213,7 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
       <footer className="ws-status" aria-label="Status bar">
         <span className="ws-status-item">{active ? active.path : root}</span>
         <span className="ws-status-spacer" />
+        {assistantActivity && <span className="ws-status-item ws-status-assistant">{assistantActivity}</span>}
         {status && <span className="ws-status-item ws-status-msg">{status}</span>}
         {active && <span className="ws-status-item">{active.language}</span>}
         {dirty && <span className="ws-status-item ws-status-dirty">Unsaved</span>}
