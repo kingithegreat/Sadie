@@ -9012,3 +9012,42 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   opacity: 0.5;
   align-self: center;
 }
+
+/* ── Workspace layout fixes ───────────────────────────────────────────────
+   Two defects found by running it:
+
+   1. z-index: the shell sat at 60 while .app-header is 300, so the app header
+      and mode tabs punched through the workspace. The workspace is a full view
+      that replaces that chrome (it has its own way back to chat), so it must
+      sit above it — but below modals/toasts, which start at 1000.
+
+   2. Nothing scrolled. Grid and flex items default to min-height:auto, which
+      lets content dictate track height instead of overflowing — so the
+      Explorer grew past the window rather than scrolling inside it. Every
+      ancestor of a scroll container has to opt out with min-height: 0. */
+.workspace-shell {
+  z-index: 500;
+}
+
+/* Each row of the shell must be allowed to be shorter than its content. */
+.workspace-shell > .ws-sidebar,
+.workspace-shell > .ws-main,
+.workspace-shell > .ws-activity {
+  min-height: 0;
+}
+
+/* The Explorer is the actual scroller; its column must not size to content. */
+.ws-sidebar { min-block-size: 0; }
+.ws-sidebar-body {
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+/* Same rule for the editor column: tabs are fixed, the editor area scrolls. */
+.ws-main > .ws-editor-area { min-height: 0; }
+.ws-editor-area .code-editor { min-height: 0; }
+.code-surface { min-height: 0; }
+
+/* The docked terminal keeps its own scrollback. */
+.ws-panel { min-height: 0; }
+.ws-panel .terminal-output { min-height: 0; }
