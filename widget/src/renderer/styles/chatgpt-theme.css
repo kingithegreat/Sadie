@@ -8985,3 +8985,20 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   background: var(--accent-quiet);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
+
+/* Belt-and-braces for the Settings action bar.
+   The panel is capped at 95vh of the WINDOW, so if the window ever extends
+   past the visible desktop the footer lands off-screen and settings cannot be
+   saved. window-manager keeps the window on screen; this makes the panel
+   itself resilient regardless, by measuring against the small viewport unit
+   (which excludes mobile/overlay chrome) and never exceeding it. */
+.settings-panel {
+  max-block-size: min(95vh, 95svh);
+}
+/* The footer must survive even if content somehow overflows the flex column. */
+.settings-panel .settings-footer {
+  position: sticky;
+  bottom: 0;
+  flex-shrink: 0;
+  z-index: 20;
+}

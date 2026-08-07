@@ -63,6 +63,11 @@ export function createMainWindow(): BrowserWindow {
     }
   });
 
+  // Never let the window grow or drift past the visible desktop — anything
+  // anchored to its bottom edge (e.g. the Settings Save bar) becomes
+  // unreachable, and the user cannot save at all.
+  keepWindowOnScreen(mainWindow);
+
   console.log('[WINDOW] Setting permission handlers...');
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Setting permission handlers'); } catch (e) { safeCatch(e); }
 
@@ -143,6 +148,51 @@ export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Window creation complete');
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Window creation complete'); } catch (e) { safeCatch(e); }
   return mainWindow;
+}
+
+/**
+ * Keep the window inside the visible desktop.
+ *
+ * Making the window resizable (needed for native snap) also made it possible
+ * to size or drag it taller than the screen. Anything anchored to the bottom
+ * of the window then sits below the visible area — the Settings panel is
+ * capped at 95vh of the WINDOW, so its Cancel/Save footer became unreachable
+ * and settings could not be saved at all.
+ *
+ * Debounced because 'resize' and 'move' fire continuously while dragging;
+ * re-positioning mid-drag would fight the user.
+ */
+function keepWindowOnScreen(win: BrowserWindow): void {
+  let timer: NodeJS.Timeout | null = null;
+
+  const clamp = () => {
+    if (!win || win.isDestroyed() || win.isMinimized() || win.isMaximized() || win.isFullScreen()) return;
+    try {
+      const b = win.getBounds();
+      const area = screen.getDisplayMatching(b).workArea;
+
+      const width = Math.min(b.width, area.width);
+      const height = Math.min(b.height, area.height);
+      // Keep the top-left on screen so the titlebar stays grabbable.
+      const x = Math.min(Math.max(b.x, area.x), area.x + area.width - width);
+      const y = Math.min(Math.max(b.y, area.y), area.y + area.height - height);
+
+      if (width !== b.width || height !== b.height || x !== b.x || y !== b.y) {
+        win.setBounds({ x, y, width, height });
+      }
+    } catch (e) {
+      safeCatch(e);
+    }
+  };
+
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(clamp, 220);
+  };
+
+  win.on('resize', schedule);
+  win.on('move', schedule);
+  win.on('closed', () => { if (timer) clearTimeout(timer); });
 }
 
 /** Shrink a window if it exceeds the work area of its current display */
