@@ -23,6 +23,10 @@ jobs:
           node-version: 20
 
       - name: Run preflight checks
+        # Step-level only: setting NODE_ENV=production job-wide would make
+        # `npm ci` skip devDependencies and break the build step.
+        env:
+          NODE_ENV: production
         run: node ./scripts/preflight-env-check.js --require-production
 
       - name: Install widget dependencies
