@@ -102,9 +102,10 @@ const ANTHROPIC_MODELS: CustomModelInfo[] = [
  * No API key is involved; usage draws on the user's subscription limits.
  */
 const CLAUDE_CODE_MODELS: CustomModelInfo[] = [
-  { id: 'sonnet', name: 'Claude Sonnet (subscription)', description: 'Balanced speed and intelligence', provider: 'claude-code', costHint: 'Included in your plan' },
-  { id: 'opus', name: 'Claude Opus (subscription)', description: 'Most capable, best for hard tasks', provider: 'claude-code', costHint: 'Included in your plan' },
-  { id: 'haiku', name: 'Claude Haiku (subscription)', description: 'Fastest, lightest', provider: 'claude-code', costHint: 'Included in your plan' },
+  { id: 'haiku', name: 'Claude Haiku (subscription)', description: 'Fastest and lightest — quick questions', provider: 'claude-code', costHint: 'Lightest on your plan' },
+  { id: 'sonnet', name: 'Claude Sonnet (subscription)', description: 'Balanced speed and intelligence — a good default', provider: 'claude-code', costHint: 'Included in your plan' },
+  { id: 'opus', name: 'Claude Opus (subscription)', description: 'Most capable for complex coding and reasoning', provider: 'claude-code', costHint: 'Heavier on your plan' },
+  { id: 'fable', name: 'Claude Fable (subscription)', description: 'Highest capability — hardest problems, long tasks', provider: 'claude-code', costHint: 'Heaviest on your plan' },
 ];
 
 const OPENAI_MODELS: CustomModelInfo[] = [
