@@ -1497,7 +1497,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <small className="setting-hint">
               Runs on your own Claude Pro/Max subscription through the Claude Code CLI — no API key, no per-token billing.
               Requires Claude Code installed and signed in on this machine. Replies count against your plan's usage limits.
-              Chat only: HomeBot's tools and automations keep using your local model.
+              It can read and edit files, search your project and run commands — always through HomeBot's own permission
+              prompt, never Claude Code's unsupervised tools. Leave the path blank unless Claude Code isn't on your PATH.
             </small>
           )}
 

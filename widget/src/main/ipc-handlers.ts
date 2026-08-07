@@ -477,20 +477,27 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         hasApiKey: !!payload?.apiKey
       });
       
-      if (!payload?.apiUrl) {
-        return { success: false, error: 'API URL is required' };
+      // Claude Code runs as a LOCAL CLI — there is no endpoint, so there is no
+      // apiUrl to demand or validate. Its optional apiUrl is a path to the
+      // executable, not a URL, and would fail the protocol check below.
+      // fetchAvailableCustomModels already special-cases it; this guard ran
+      // first and rejected Connect with "API URL is required".
+      if (payload?.provider !== 'claude-code') {
+        if (!payload?.apiUrl) {
+          return { success: false, error: 'API URL is required' };
+        }
+
+        // Validate URL protocol to prevent non-HTTP SSRF (file://, ftp://, etc.)
+        try {
+          const parsed = new URL(payload.apiUrl);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+          }
+        } catch {
+          return { success: false, error: 'Invalid URL format' };
+        }
       }
 
-      // Validate URL protocol to prevent non-HTTP SSRF (file://, ftp://, etc.)
-      try {
-        const parsed = new URL(payload.apiUrl);
-        if (!['http:', 'https:'].includes(parsed.protocol)) {
-          return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
-        }
-      } catch {
-        return { success: false, error: 'Invalid URL format' };
-      }
-      
       const models = await fetchAvailableCustomModels(payload || {});
       console.log('[IPC] Successfully fetched', models.length, 'models');
       return { success: true, models };
