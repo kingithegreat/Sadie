@@ -106,10 +106,19 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void save(); }
       if ((e.ctrlKey || e.metaKey) && e.key === '`') { e.preventDefault(); setTerminalOpen(t => !t); }
+      // Escape leaves the workspace. "Back to chat" sits at the bottom of the
+      // activity bar, so it is the first thing to disappear if the layout ever
+      // overflows again — and the workspace covers the mode tabs, which were
+      // the only other way out. A keyboard path cannot be clipped off-screen.
+      // Ignored while editing so it can't discard a half-typed line.
+      if (e.key === 'Escape' && !dirty) {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') { e.preventDefault(); onClose(); }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, save]);
+  }, [open, save, dirty, onClose]);
 
   if (!open) return null;
 
