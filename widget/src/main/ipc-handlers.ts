@@ -8,6 +8,7 @@ function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
+import { reloadSkills, skillsDir, type Skill } from './skills';
 import * as os from 'os';
 import * as https from 'https';
 import { spawn, execFile } from 'child_process';
@@ -2477,6 +2478,43 @@ EXAMPLE FORMAT:
       return { success: true, questions: validated };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ---- Skills ----------------------------------------------------------
+  // A skill is a folder with a SKILL.md; these back the Skills page in
+  // Settings. Without a visible surface the whole feature is invisible, which
+  // is the failure mode that hid several capabilities in this codebase already.
+
+  ipcMain.handle('homebot:skills-list', async () => {
+    try {
+      // Re-read from disk each time: the user may have edited a file in the
+      // folder since launch, and a stale list would make their edit look lost.
+      const skills = reloadSkills();
+      return {
+        success: true,
+        dir: skillsDir(),
+        skills: skills.map((s: Skill) => ({
+          name: s.name,
+          description: s.description,
+          whenToUse: s.whenToUse ?? null,
+          tools: s.tools ?? null,
+          path: s.path,
+        })),
+      };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not read skills.' };
+    }
+  });
+
+  ipcMain.handle('homebot:skills-open-folder', async () => {
+    try {
+      const dir = skillsDir();
+      fs.mkdirSync(dir, { recursive: true });
+      await shell.openPath(dir);
+      return { success: true, dir };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not open the skills folder.' };
     }
   });
 

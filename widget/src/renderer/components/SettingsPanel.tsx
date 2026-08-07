@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
+import SkillsSection from './SkillsSection';
 import TelemetryDashboard from './TelemetryDashboard';
 import PermissionHistory from './PermissionHistory';
 import TrustPanel from './TrustPanel';
@@ -2366,6 +2367,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </button>
         )}
       </div>
+
+      {/* Skills — markdown recipes the assistant can follow */}
+      <SkillsSection />
 
       {/* Backup / Restore */}
       <div className="settings-section sp-backup-section">

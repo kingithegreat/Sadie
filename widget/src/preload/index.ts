@@ -302,6 +302,19 @@ const electronAPI: ElectronAPI = {
   /**
    * Get user settings from main process
    */
+  /**
+   * Skills: list the SKILL.md folders, and open that folder in Explorer.
+   * Exposed here AND consumed by SettingsPanel — an IPC channel with no
+   * renderer caller is dead code that reads as a working feature.
+   */
+  skillsList: async (): Promise<any> => {
+    return await ipcRenderer.invoke('homebot:skills-list');
+  },
+
+  skillsOpenFolder: async (): Promise<any> => {
+    return await ipcRenderer.invoke('homebot:skills-open-folder');
+  },
+
   getSettings: async (): Promise<Settings> => {
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.GET_SETTINGS);
     try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.GET_SETTINGS}`); } catch (e) { safeCatch(e); }

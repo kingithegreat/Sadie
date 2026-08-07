@@ -8,6 +8,7 @@ import streamFromHomeBotProxy from './stream-proxy-client';
 import { HomeBotRequest, HomeBotResponse, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
+import { getSkillCatalogue } from './skills';
 import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, previewBatch, ToolCall, ToolContext } from './tools';
 import { formatBatchPreviewForChat } from '../../../src/trust/batch';
 import { evaluateToolResults } from './reflection-validator';
@@ -2095,7 +2096,12 @@ export function isSmallModel(modelName: string): boolean {
 /** Select the appropriate system prompt based on model size. */
 export function getSystemPromptForModel(modelName: string, guidelines?: string): string {
   const base = isSmallModel(modelName) ? HOMEBOT_SYSTEM_PROMPT_COMPACT : HOMEBOT_SYSTEM_PROMPT;
-  return guidelines?.trim() ? `${base}\n\n## User Guidelines\n${guidelines.trim()}` : base;
+  // Skills catalogue: one line per skill, so the model learns what recipes exist
+  // without paying for a tool schema each. Empty when none are installed, so the
+  // prompt never advertises a feature with nothing behind it.
+  const catalogue = getSkillCatalogue();
+  const withSkills = catalogue ? `${base}\n\n${catalogue}` : base;
+  return guidelines?.trim() ? `${withSkills}\n\n## User Guidelines\n${guidelines.trim()}` : withSkills;
 }
 
 /**

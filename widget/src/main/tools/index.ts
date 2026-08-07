@@ -56,6 +56,7 @@ import { visionToolDefs, visionToolHandlers } from './vision';
 import { terminalToolDefs, terminalToolHandlers } from './terminal';
 import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
 import { automationToolDefs, automationToolHandlers } from './automation';
+import { skillToolDefs, skillToolHandlers } from './skills';
 import { crmToolDefs, crmToolHandlers } from './crm';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
@@ -771,6 +772,13 @@ export function initializeTools(force = false): void {
   // Register codebase tools (grep, tree, analyze)
   for (const def of codebaseToolDefs) {
     const handler = codebaseToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register skill tools. One pair for ALL skills — see main/skills.ts for why
+  // skills are not registered as individual tools (SMALL_MODEL_MAX_TOOLS).
+  for (const def of skillToolDefs) {
+    const handler = skillToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

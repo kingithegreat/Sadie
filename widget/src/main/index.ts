@@ -139,6 +139,10 @@ function pushMainLog(line: string) {
 // Apply a safe, idempotent ipcMain.handle patch (keeps behavior local and
 // testable via `applyIpcHandlePatch`). See `src/main/utils/ipc-handle-patch.ts`.
 import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
+// Static imports: electron-vite inlines these. A runtime require() of a
+// relative path is emitted verbatim and dies as MODULE_NOT_FOUND in the build.
+import { reloadSkills } from './skills';
+import { seedSkills } from './skills-seed';
 applyIpcHandlePatch();
 
 // E2E tests pass a custom userData directory via env var so Playwright doesn't
@@ -165,6 +169,17 @@ app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: HOMEBOT_DIRECT_OLLAMA=', process.env.HOMEBOT_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
+
+  // Write the shipped skills into userData/skills on first run (never
+  // overwrites), then load the catalogue so it is ready before the first
+  // message builds a system prompt.
+  try {
+    const seeded = seedSkills();
+    const skills = reloadSkills();
+    console.log(`[MAIN] Skills: ${skills.length} loaded${seeded ? ` (${seeded} seeded)` : ''}`);
+  } catch (e) {
+    console.error('[MAIN] Skill loading failed (non-fatal):', e);
+  }
 
   // Register custom protocol to serve generated images securely from sandbox
   const imgPath = require('path');

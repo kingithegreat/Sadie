@@ -304,6 +304,21 @@ export interface PermissionAuditEntry {
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
+
+  /** Skills: markdown recipes in userData/skills, listed in Settings. */
+  skillsList: () => Promise<{
+    success: boolean;
+    dir?: string;
+    error?: string;
+    skills?: Array<{
+      name: string;
+      description: string;
+      whenToUse: string | null;
+      tools: string[] | null;
+      path: string;
+    }>;
+  }>;
+  skillsOpenFolder: () => Promise<{ success: boolean; dir?: string; error?: string }>;
   saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
   getMode?: () => Promise<{ demo: boolean }>;
   readConsentLog?: () => Promise<{ success: boolean; data?: string; error?: string }>;
