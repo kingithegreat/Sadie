@@ -1194,7 +1194,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </button>
         {openSections.cloud && <>
         <div className="setting-group">
-          <label className="setting-label">🔑 Code model — Cloud API (optional)</label>
+          <label className="setting-label">🔑 Coding questions only — Cloud API (optional)</label>
           <div className="api-key-row">
             <select
               className="setting-input provider-select"
@@ -1232,7 +1232,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               placeholder="Custom API base URL (e.g. http://localhost:8080/v1)"
             />
           )}
-          <small className="setting-hint">Paste an API key to route all coding queries to a cloud model. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-sonnet-5</code>). Leave blank to use local Ollama.</small>
+          <small className="setting-hint">This affects <strong>coding questions only</strong> — it is not your main chat model. To change the model that answers everything else, use <strong>Cloud API</strong> under <em>API Keys &amp; Cloud LLM</em> further down. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-sonnet-5</code>). Leave blank to use local Ollama.</small>
         </div>
         {/* Hardware Profile — applies safe model defaults for the card's VRAM */}
         <div className="setting-group">
@@ -1387,7 +1387,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {openSections.api_keys && <>
         {/* Custom LLM API Section - Simplified */}
         <div className="setting-group custom-llm-section">
-          <label className="setting-label">☁️ Cloud API (OpenAI, Anthropic, etc.)</label>
+          <label className="setting-label">☁️ Main chat model — Cloud API (OpenAI, Anthropic, Claude subscription…)</label>
           
           {/* Step 1: Provider Selection */}
           <div className="provider-row">
