@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import TelemetryDashboard from './TelemetryDashboard';
 import PermissionHistory from './PermissionHistory';
@@ -679,6 +679,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const providerRequiresApiKey = selectedProvider !== 'custom' && !isClaudeCode;
   const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
   const isConnected = availableModels.length > 0;
+  // Settings only apply on Save. With no visible signal, a fully configured
+  // provider can sit unsaved while the app keeps using the previous one —
+  // which reads as "it isn't working" rather than "you haven't saved".
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(localSettings) !== JSON.stringify(buildLocalSettings(settings)),
+    [localSettings, settings],
+  );
 
   useEffect(() => {
     setAvailableModels([]);
@@ -774,15 +781,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         // Keep cloud configured and ready, but local remains the default
         // until the user explicitly turns on cloud chats.
         if (result.models.length > 0) {
-          setLocalSettings(prev => ({
-            ...prev,
-            customLLM: { 
-              ...(prev.customLLM || { ...defaultCustomLLM }), 
-              model: prev.customLLM?.model || result.models[0].id,
-              apiUrl,
-              enabled: true
-            }
-          }));
+          setLocalSettings(prev => {
+            // Only keep the existing selection if THIS provider offers it.
+            // Otherwise a model from the previous provider survives the switch
+            // (e.g. gemini-2.5-flash left selected under claude-code) and the
+            // request goes out naming a model the provider has never heard of.
+            const current = prev.customLLM?.model;
+            const stillValid = !!current && result.models.some((m: any) => m.id === current);
+            return {
+              ...prev,
+              customLLM: {
+                ...(prev.customLLM || { ...defaultCustomLLM }),
+                model: stillValid ? current : result.models[0].id,
+                apiUrl,
+                enabled: true
+              }
+            };
+          });
         }
       } else {
         throw new Error(result?.error || 'No models returned.');
@@ -1539,7 +1554,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <span className={`status-dot ${localSettings.useCustomLLM ? 'active' : ''}`}></span>
               {localSettings.useCustomLLM
                 ? `Using ${localSettings.customLLM.model}`
-                : `Connected: ${localSettings.customLLM.model} is available when you choose it`}
+                : `${localSettings.customLLM.model} is connected but NOT in use — tick the box below, then Save.`}
             </div>
           )}
 
@@ -2585,8 +2600,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <button className="button button-cancel" onClick={handleCancel}>
           Cancel
         </button>
-        <button className="button button-save" onClick={handleSave}>
-          Save
+        <button className={`button button-save${hasUnsavedChanges ? ' has-changes' : ''}`} onClick={handleSave}>
+          {hasUnsavedChanges ? 'Save changes' : 'Save'}
         </button>
       </div>
       </div>

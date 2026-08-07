@@ -8865,3 +8865,12 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   opacity: 0.92;
   font-weight: 500;
 }
+
+/* Unsaved-changes state on the Settings Save button. Settings only apply on
+   Save, so a fully configured provider can sit unsaved while the app keeps
+   using the previous one — which reads as "it isn't working". */
+.button-save.has-changes {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  box-shadow: 0 0 0 3px var(--accent-quiet);
+}

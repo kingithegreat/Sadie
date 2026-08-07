@@ -53,7 +53,11 @@ describe('SettingsPanel — cloud connection defaults', () => {
     fireEvent.click(getByText('Connect'));
 
     await waitFor(() => {
-      expect(container.textContent).toContain('Connected: gpt-4o is available when you choose it');
+      // Copy updated: the old wording ("available when you choose it") described
+      // a state the user had no obvious action for, and people read "Connected"
+      // as "in use". The assertion still pins the same behaviour — connected,
+      // but explicitly NOT the default until the box is ticked and saved.
+      expect(container.textContent).toContain('gpt-4o is connected but NOT in use');
     });
 
     const saveBtn = container.querySelector('.button-save') as HTMLButtonElement;
@@ -92,7 +96,7 @@ describe('SettingsPanel — cloud connection defaults', () => {
     const providerSelect = getByLabelText('Cloud API provider') as HTMLSelectElement;
     fireEvent.change(providerSelect, { target: { value: 'anthropic' } });
 
-    expect(container.textContent).not.toContain('Connected: gpt-4o is available when you choose it');
+    expect(container.textContent).not.toContain('gpt-4o is connected but NOT in use');
     expect(container.textContent).not.toContain('Using gpt-4o');
 
     const saveBtn = container.querySelector('.button-save') as HTMLButtonElement;
