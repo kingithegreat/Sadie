@@ -820,7 +820,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         aria-modal="true"
         aria-label="Settings"
         onClick={e => e.stopPropagation()}
-        onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { onClose(); return; }
+          // Ctrl/Cmd+S saves. The Save bar lives at the bottom of the panel, so
+          // anything that pushes it out of view (a window taller than the
+          // desktop, an unusual display scale) made settings unsaveable with no
+          // way out. A keyboard path cannot be clipped.
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            handleSave();
+          }
+        }}
         tabIndex={-1}
       >
       <div className="settings-header">
@@ -2600,6 +2610,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <button className="button button-cancel" onClick={handleCancel}>
           Cancel
         </button>
+        <span className="settings-footer-hint">Ctrl+S</span>
         <button className={`button button-save${hasUnsavedChanges ? ' has-changes' : ''}`} onClick={handleSave}>
           {hasUnsavedChanges ? 'Save changes' : 'Save'}
         </button>

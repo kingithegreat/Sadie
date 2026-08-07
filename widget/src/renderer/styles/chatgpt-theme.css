@@ -9002,3 +9002,13 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   flex-shrink: 0;
   z-index: 20;
 }
+
+/* Keyboard hint in the Settings action bar — the shortcut exists because the
+   bar itself can be clipped by an oversized window. */
+.settings-footer-hint {
+  margin-right: auto;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  opacity: 0.5;
+  align-self: center;
+}
