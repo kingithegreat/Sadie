@@ -1101,13 +1101,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               currentModel={settings.chatModel || 'qwen2.5:7b'}
               customLLM={settings.customLLM}
               useCustomLLM={settings.useCustomLLM}
-              onModelChange={async (model: string, useCustom: boolean) => {
+              onModelChange={async (model: string, useCustom: boolean, provider?: string) => {
+                // Cloud picks must carry their provider. Saving only the id left configs
+                // like { provider: 'google-ai-studio', model: 'opus' } — Gemini's endpoint
+                // asked for a Claude model, which fails and silently drops to local.
+                // chatModel stays a LOCAL model for the same reason: it is the fallback,
+                // and overwriting it with a cloud id leaves nothing valid to fall back to.
                 const newSettings = {
                   ...settings,
-                  chatModel: model,
+                  ...(useCustom ? {} : { chatModel: model }),
                   useCustomLLM: useCustom,
                   ...(useCustom && settings.customLLM ? {
-                    customLLM: { ...settings.customLLM, model }
+                    customLLM: {
+                      ...settings.customLLM,
+                      model,
+                      provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
+                      enabled: true,
+                    }
                   } : {}),
                 };
                 setSettings(newSettings);
@@ -1254,13 +1264,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         useCustomLLM={settings.useCustomLLM}
         uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}
         vramGB={vramGB}
-        onModelChange={async (model: string, useCustom: boolean) => {
+        onModelChange={async (model: string, useCustom: boolean, provider?: string) => {
+          // Cloud picks must carry their provider. Saving only the id left configs
+          // like { provider: 'google-ai-studio', model: 'opus' } — Gemini's endpoint
+          // asked for a Claude model, which fails and silently drops to local.
+          // chatModel stays a LOCAL model for the same reason: it is the fallback,
+          // and overwriting it with a cloud id leaves nothing valid to fall back to.
           const newSettings = {
             ...settings,
-            chatModel: model,
+            ...(useCustom ? {} : { chatModel: model }),
             useCustomLLM: useCustom,
             ...(useCustom && settings.customLLM ? {
-              customLLM: { ...settings.customLLM, model }
+              customLLM: {
+                ...settings.customLLM,
+                model,
+                provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
+                enabled: true,
+              }
             } : {}),
           };
           setSettings(newSettings);

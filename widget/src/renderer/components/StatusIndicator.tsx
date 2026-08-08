@@ -24,7 +24,7 @@ interface StatusIndicatorProps {
   currentModel?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
-  onModelChange?: (model: string, useCustom: boolean) => void;
+  onModelChange?: (model: string, useCustom: boolean, provider?: string) => void;
   uncensoredModel?: string;
   vramGB?: number | null;
 }
@@ -50,7 +50,7 @@ interface HeaderConnectionProps {
 interface HeaderModelProps {
   currentModel: string;
   customLLM?: CustomLLMConfig;
-  onModelChange?: (model: string, useCustom: boolean) => void;
+  onModelChange?: (model: string, useCustom: boolean, provider?: string) => void;
   onSettingsClick: () => void;
   uncensoredMode: boolean;
   uncensoredModel: string;

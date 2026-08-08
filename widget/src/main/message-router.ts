@@ -2310,7 +2310,16 @@ export async function streamFromLLM(
     const hydratedCloud = cloudResolution.config;
     const validation = cloudResolution.active
       ? validateCustomLLMConfig(hydratedCloud)
-      : { valid: false, error: cloudResolution.misconfiguration || 'Cloud LLM is not fully configured' };
+      : {
+          valid: false,
+          // localOverride first: when uncensored mode deliberately routes to the
+          // local model, nothing is misconfigured, and the generic
+          // "not fully configured" text sent the user hunting for a broken
+          // setting that was fine. Say what actually happened.
+          error: cloudResolution.localOverride
+            || cloudResolution.misconfiguration
+            || 'Cloud LLM is not fully configured',
+        };
     if (validation.valid) {
       const cloudModelForMeta = hydratedCloud.model || activeModel;
       onMeta?.({ model: cloudModelForMeta });
