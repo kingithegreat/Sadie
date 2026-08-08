@@ -143,6 +143,7 @@ import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
 // relative path is emitted verbatim and dies as MODULE_NOT_FOUND in the build.
 import { reloadSkills } from './skills';
 import { seedSkills } from './skills-seed';
+import { registerBrowserPanelIpc, destroyBrowserPanel } from './browser-panel';
 applyIpcHandlePatch();
 
 // E2E tests pass a custom userData directory via env var so Playwright doesn't
@@ -218,6 +219,15 @@ app.whenReady().then(async () => {
 
   // Create the main window FIRST for fast first-paint, then init tools in background
   mainWindow = createMainWindow();
+
+  // Browser side panel. Registered after the window exists because the view is
+  // attached to it; getMainWindow is passed as a getter rather than the window
+  // itself so a re-created window (macOS reactivate) still resolves.
+  try {
+    registerBrowserPanelIpc(() => getMainWindow());
+  } catch (e) {
+    console.error('[MAIN] Browser panel IPC registration failed (non-fatal):', e);
+  }
 
   // ── Baseline perf metric: total startup time ──────────────────────────
   // Record ms from process spawn to the renderer being ready (first usable
@@ -539,6 +549,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
+  try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
   globalShortcut.unregisterAll();
   closeAllServiceWindows();
   if (supervisorHandle) supervisorHandle.stop();

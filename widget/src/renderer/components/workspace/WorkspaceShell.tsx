@@ -4,6 +4,9 @@ import FileTree from './FileTree';
 import CodeEditor from './CodeEditor';
 
 const TerminalPanel = lazy(() => import('../TerminalPanel'));
+// Lazy: the browser panel is off by default, and its first render triggers an
+// attach in main — no reason to pay for either until it is actually opened.
+const BrowserPanel = lazy(() => import('./BrowserPanel'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -33,6 +36,7 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
   const [files, setFiles] = useState<OpenFile[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(true);
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [assistantActivity, setAssistantActivity] = useState<string | null>(null);
 
@@ -142,6 +146,14 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
           aria-pressed={terminalOpen}
           onClick={() => setTerminalOpen(t => !t)}
         ><Icon name="terminal" size={20} /></button>
+        <button
+          type="button"
+          className={`ws-activity-btn${browserOpen ? ' active' : ''}`}
+          title="Browser"
+          aria-label="Toggle browser panel"
+          aria-pressed={browserOpen}
+          onClick={() => setBrowserOpen(b => !b)}
+        ><Icon name="globe" size={20} /></button>
         <div className="ws-activity-spacer" />
         <button
           type="button"
@@ -217,6 +229,15 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
           </div>
         )}
       </main>
+
+      {/* Browser docked to the right, as a sibling of the editor rather than
+          inside it — the page is painted over its own rectangle by the main
+          process, so it must own an area nothing else draws into. */}
+      {browserOpen && (
+        <Suspense fallback={<div className="tree-hint">Loading browser…</div>}>
+          <BrowserPanel onClose={() => setBrowserOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Status bar */}
       <footer className="ws-status" aria-label="Status bar">

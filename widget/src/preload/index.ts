@@ -307,6 +307,31 @@ const electronAPI: ElectronAPI = {
    * Exposed here AND consumed by SettingsPanel — an IPC channel with no
    * renderer caller is dead code that reads as a working feature.
    */
+  /**
+   * Browser side panel. The renderer owns layout — it measures where the panel
+   * sits and sends those bounds, because a BrowserView floats above the page
+   * and main has no idea what the CSS did.
+   */
+  browserAttach: async (url?: string, bounds?: any): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:attach', url, bounds),
+  browserDetach: async (): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:detach'),
+  browserBounds: async (bounds: any): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:bounds', bounds),
+  browserNavigate: async (url: string): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:navigate', url),
+  browserBack: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:back'),
+  browserForward: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:forward'),
+  browserReload: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:reload'),
+  /** PNG of the live page — the "let HomeBot look at this" path. */
+  browserCapture: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:capture'),
+  /** Push updates: url/title/loading/canGoBack change as the user browses. */
+  onBrowserState: (cb: (state: any) => void): (() => void) => {
+    const listener = (_e: any, state: any) => cb(state);
+    ipcRenderer.on('homebot:browser:state', listener);
+    return () => ipcRenderer.removeListener('homebot:browser:state', listener);
+  },
+
   skillsList: async (): Promise<any> => {
     return await ipcRenderer.invoke('homebot:skills-list');
   },

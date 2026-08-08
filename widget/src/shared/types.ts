@@ -301,6 +301,23 @@ export interface PermissionAuditEntry {
   streamId?: string;
 }
 
+/** Bounds for the docked browser view, in CSS pixels relative to the window. */
+export interface BrowserPanelBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Live state of the docked browser, pushed from main as the user navigates. */
+export interface BrowserPanelState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+}
+
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
@@ -319,6 +336,18 @@ export interface ElectronAPI {
     }>;
   }>;
   skillsOpenFolder: () => Promise<{ success: boolean; dir?: string; error?: string }>;
+
+  /** Browser side panel — a BrowserView docked inside the window. */
+  browserAttach: (url?: string, bounds?: BrowserPanelBounds) => Promise<{ success: boolean; error?: string; state?: BrowserPanelState }>;
+  browserDetach: () => Promise<{ success: boolean; error?: string }>;
+  browserBounds: (bounds: BrowserPanelBounds) => Promise<{ success: boolean; error?: string }>;
+  browserNavigate: (url: string) => Promise<{ success: boolean; error?: string }>;
+  browserBack: () => Promise<{ success: boolean }>;
+  browserForward: () => Promise<{ success: boolean }>;
+  browserReload: () => Promise<{ success: boolean }>;
+  browserCapture: () => Promise<{ success: boolean; base64?: string; mimeType?: string; url?: string; title?: string; error?: string }>;
+  /** Returns an unsubscribe function — call it on unmount or the listener leaks. */
+  onBrowserState: (cb: (state: BrowserPanelState) => void) => () => void;
   saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
   getMode?: () => Promise<{ demo: boolean }>;
   readConsentLog?: () => Promise<{ success: boolean; data?: string; error?: string }>;
