@@ -42,7 +42,7 @@ const auditRow = {
   entityType: 'company' as const,
   entityId: 3,
   action: 'create' as const,
-  actor: 'sadie',
+  actor: 'homebot',
   before: null,
   after: JSON.stringify({ name: 'Bayfair Fitness' }),
   createdAt: '2026-08-02T03:00:00.000Z',

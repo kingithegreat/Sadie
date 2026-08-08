@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Resolve a Tier from cached license state.
+ * HomeBot / HomeBot — Resolve a Tier from cached license state.
  * ---------------------------------------------------------------------------
  * Bridges licensing → entitlements. Crucially:
  *   - NO license  → 'free'  (the Free tier always works, zero license calls).

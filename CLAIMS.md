@@ -4,7 +4,7 @@ Repo-native companion to the Notion [🔗 Work Claims Ledger](https://app.notion
 
 **Before starting a new feature build:**
 1. Check the table below for an existing claim on the same feature area. If one exists and looks recent/active, don't start a parallel build.
-2. `grep -rl <concept> src widget/src` for an existing module before writing a new one — Sadie has two source trees (repo-root `src/` for pure/testable modules, `widget/src/` for the actual Electron app), so check both.
+2. `grep -rl <concept> src widget/src` for an existing module before writing a new one — HomeBot has two source trees (repo-root `src/` for pure/testable modules, `widget/src/` for the actual Electron app), so check both.
 3. Add a row below before writing code. Update it to "Ready for Integration" when pushed and self-tested.
 
 CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the build if a newly added file exports the same top-level identifier as an existing file — usually a sign two features were built in parallel without checking here first, or a scaffold was built without checking the real integration point (see the Step 1 entitlements gate channel-name mismatch, which was a variant of this same failure mode). See that script's header comment for how it works and how to suppress a genuine false positive.

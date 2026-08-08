@@ -79,7 +79,7 @@ export class ConfirmationRequiredError extends Error {
 export class UpgradeRequiredError extends Error {
   public readonly upgrade: UpgradePrompt;
   constructor(toolName: string, upgrade: UpgradePrompt) {
-    super(`Tool '${toolName}' requires SADIE Pro (${upgrade.capability}).`);
+    super(`Tool '${toolName}' requires HomeBot Pro (${upgrade.capability}).`);
     this.name = 'UpgradeRequiredError';
     this.upgrade = upgrade;
   }

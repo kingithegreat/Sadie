@@ -1,7 +1,7 @@
 /**
  * Supervisor (Phase 0 — reliability)
  *
- * Continuous health supervision for SADIE's external services. Per service:
+ * Continuous health supervision for HomeBot's external services. Per service:
  *
  *   healthy ──fail──▶ degraded ──threshold──▶ recovering ──▶ healthy
  *                                    │  (no recover() / breaker open)

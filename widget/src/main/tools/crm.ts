@@ -1,7 +1,7 @@
 /**
  * HomeBot CRM Tools (Phase 1)
  *
- * Thin adapter over the CRM core (root src/crm) — the layer that turns SADIE
+ * Thin adapter over the CRM core (root src/crm) — the layer that turns HomeBot
  * from a chatbot into a worker. All state lives in one SQLite file under
  * userData; every mutation is audited by the store itself.
  *
@@ -68,7 +68,7 @@ const asOptId = (v: unknown): number | null => {
   if (!Number.isInteger(n) || n <= 0) throw new Error(`Invalid id: ${v}`);
   return n;
 };
-const asActor = (v: unknown): string => asOptStr(v) || 'sadie';
+const asActor = (v: unknown): string => asOptStr(v) || 'homebot';
 
 function ok(result: unknown): ToolResult {
   return { success: true, result };
@@ -88,7 +88,7 @@ function wrap(name: string, fn: (args: Record<string, any>) => unknown): ToolHan
 const actorParam = {
   actor: {
     type: 'string' as const,
-    description: "Who performed this: 'sadie' (default) or 'owner'",
+    description: "Who performed this: 'homebot' (default) or 'owner'",
   },
 };
 const linkParams = {

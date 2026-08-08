@@ -1841,7 +1841,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <span>Preview tool batches before they run</span>
           </label>
           <small className="setting-hint">
-            When on, SADIE lists exactly what a batch of actions is about to do (tool names and key arguments) in the chat before executing it.
+            When on, HomeBot lists exactly what a batch of actions is about to do (tool names and key arguments) in the chat before executing it.
           </small>
         </div>
 
@@ -2436,7 +2436,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   <button
                     type="button"
                     className="button button-cancel sp-btn-save-sm"
-                    onClick={() => window.electron?.openExternalUrl?.(licenseStatus?.upgradeUrl || 'sadie://upgrade')}
+                    onClick={() => window.electron?.openExternalUrl?.(licenseStatus?.upgradeUrl || 'homebot://upgrade')}
                   >
                     Get a license
                   </button>

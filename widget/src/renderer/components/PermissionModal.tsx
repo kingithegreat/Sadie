@@ -126,8 +126,8 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
         <h2 id={TITLE_ID} className="hb-modal-title">Permission Required</h2>
         <p id={INTRO_ID} className="hb-modal-text">
           {described.length === 1
-            ? 'SADIE is asking for your permission to:'
-            : `SADIE is asking for ${described.length} permissions:`}
+            ? 'HomeBot is asking for your permission to:'
+            : `HomeBot is asking for ${described.length} permissions:`}
         </p>
         <div className="hb-modal-consent-detail" role="list" aria-label="Requested permissions">
           {described.map((d) => (
@@ -147,7 +147,7 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
           ))}
         </div>
         <div id={REASON_ID} className="hb-modal-muted">
-          {humanReason || 'Nothing has run yet — SADIE is waiting for your decision.'}
+          {humanReason || 'Nothing has run yet — HomeBot is waiting for your decision.'}
         </div>
         <p className="hb-modal-muted hb-modal-perm-hint">
           <strong>Allow once</strong> applies only to this action. <strong>Always allow</strong> saves these permissions for future actions until you change them in Settings. Untick a permission above to allow it just this once without remembering it.

@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — CRM schema + migrations (Phase 1).
+ * HomeBot / HomeBot — CRM schema + migrations (Phase 1).
  * ---------------------------------------------------------------------------
  * Single SQLite file, WAL mode. Migrations are append-only: NEVER edit an
  * entry after it has shipped — add a new one. The store runs every migration
@@ -75,7 +75,7 @@ export const MIGRATIONS: Migration[] = [
         contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
         company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL,
         deal_id INTEGER REFERENCES deals(id) ON DELETE SET NULL,
-        actor TEXT NOT NULL DEFAULT 'sadie',
+        actor TEXT NOT NULL DEFAULT 'homebot',
         occurred_at TEXT NOT NULL,
         created_at TEXT NOT NULL
       )`,
@@ -89,7 +89,7 @@ export const MIGRATIONS: Migration[] = [
         contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
         company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL,
         deal_id INTEGER REFERENCES deals(id) ON DELETE SET NULL,
-        actor TEXT NOT NULL DEFAULT 'sadie',
+        actor TEXT NOT NULL DEFAULT 'homebot',
         created_at TEXT NOT NULL
       )`,
 
@@ -102,7 +102,7 @@ export const MIGRATIONS: Migration[] = [
         company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL,
         deal_id INTEGER REFERENCES deals(id) ON DELETE SET NULL,
         completed_at TEXT,
-        actor TEXT NOT NULL DEFAULT 'sadie',
+        actor TEXT NOT NULL DEFAULT 'homebot',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )`,

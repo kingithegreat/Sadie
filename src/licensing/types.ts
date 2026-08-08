@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Licensing types (provider-agnostic).
+ * HomeBot / HomeBot — Licensing types (provider-agnostic).
  * ---------------------------------------------------------------------------
  * These types describe license operations behind an interface so the rest of
  * the app never depends on Lemon Squeezy directly. A different provider (or a

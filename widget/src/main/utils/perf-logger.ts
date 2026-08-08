@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 /**
- * perf-logger — baseline performance metrics for HomeBot / SADIE.
+ * perf-logger — baseline performance metrics for HomeBot / HomeBot.
  *
  * Persists two metrics as JSONL to `<userData>/logs/perf.log`:
  *   1. `startup`     — ms from process spawn to the main window being ready.

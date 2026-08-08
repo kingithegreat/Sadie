@@ -8,7 +8,7 @@
  * This exists because a sibling project (Vacuum Empire) had two independent
  * sessions build two incompatible "cosmetics" systems in the same repo
  * without either checking the other existed (see CLAIMS.md and the Notion
- * "Work Claims Ledger"). Sadie's Step 1 licensing/entitlements scaffold also
+ * "Work Claims Ledger"). HomeBot's Step 1 licensing/entitlements scaffold also
  * shipped with a channel-name mismatch that would have been unreachable in
  * the real app — a variant of the same "built without checking the existing
  * integration point" failure mode. A written rule to "check first" is
@@ -27,7 +27,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 
-// Sadie has two source trees: repo-root src/ (pure, testable modules like
+// HomeBot has two source trees: repo-root src/ (pure, testable modules like
 // licensing/entitlements) and widget/src/ (the actual Electron app).
 const SRC_DIRS = ['src', 'widget/src'];
 const EXT_RE = /\.(ts|tsx)$/;

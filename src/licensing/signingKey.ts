@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Embedded license-verification public key.
+ * HomeBot / HomeBot — Embedded license-verification public key.
  * ---------------------------------------------------------------------------
  * ONLY the PUBLIC key lives here — it is safe to commit and ship. The matching
  * PRIVATE key stays with the vendor (never in the repo) and is used offline by

@@ -1,6 +1,8 @@
-﻿# HomeBot — Your Private Desktop AI Assistant
+# HomeBot — Your Private Desktop AI Assistant
 
 > A secure, offline-first desktop AI assistant built with Electron, React, and TypeScript. Runs entirely on your machine with optional cloud LLM support. Your data stays local unless you explicitly enable a cloud provider.
+
+> *HomeBot began as **SADIE**, my Toi Ohomai Bachelor of Applied IT capstone (graded A+, 93). Same codebase, one name going forward — legacy "SADIE" strings you find in old issues or the git history refer to this project.*
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Electron](https://img.shields.io/badge/Electron-28-9feaf9)
