@@ -45,7 +45,7 @@ const activity = {
       at: '2026-08-02T03:00:00.000Z',
       summary: 'Advanced deal “Website rebuild”: qualified → proposal',
       toolName: 'crm_advance_deal',
-      actor: 'sadie',
+      actor: 'homebot',
       changes: [{ field: 'stage', from: 'qualified', to: 'proposal' }],
     },
     {
@@ -53,7 +53,7 @@ const activity = {
       at: '2026-08-02T02:00:00.000Z',
       summary: 'Created company “Bayfair Fitness”',
       toolName: 'crm_create_company',
-      actor: 'sadie',
+      actor: 'homebot',
       changes: [],
     },
   ],

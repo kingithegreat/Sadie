@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Lemon Squeezy implementation of LicenseService.
+ * HomeBot / HomeBot — Lemon Squeezy implementation of LicenseService.
  * ---------------------------------------------------------------------------
  * Wraps the three LS license endpoints:
  *   POST {apiBase}/licenses/activate

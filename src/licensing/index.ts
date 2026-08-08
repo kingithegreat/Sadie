@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Licensing barrel. Import provider-neutral pieces from here.
+ * HomeBot / HomeBot — Licensing barrel. Import provider-neutral pieces from here.
  */
 export * from './types';
 export * from './config';

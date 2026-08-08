@@ -9,7 +9,7 @@ function gateBlock(result: any): UpgradePrompt | null {
 
 /** Prefer the app's resolved checkout URL over the gate's placeholder default. */
 function withCheckout(prompt: UpgradePrompt, checkoutUrl: string): UpgradePrompt {
-  const dead = !prompt.upgradeUrl || prompt.upgradeUrl === 'sadie://upgrade';
+  const dead = !prompt.upgradeUrl || prompt.upgradeUrl === 'homebot://upgrade' || prompt.upgradeUrl === 'sadie://upgrade'; // legacy sentinel persisted by pre-rename builds
   return dead && checkoutUrl ? { ...prompt, upgradeUrl: checkoutUrl } : prompt;
 }
 
@@ -103,7 +103,7 @@ export const AutomationCenter: React.FC = () => {
   const [n8nOnline, setN8nOnline] = useState(false);
   const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(null);
   const [isPro, setIsPro] = useState(true); // assume unlocked until status resolves
-  const [checkoutUrl, setCheckoutUrl] = useState('sadie://upgrade');
+  const [checkoutUrl, setCheckoutUrl] = useState('homebot://upgrade');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editInstructions, setEditInstructions] = useState('');

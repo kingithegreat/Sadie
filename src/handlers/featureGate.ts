@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Feature gate for the handler / IPC (main-process) layer.
+ * HomeBot / HomeBot — Feature gate for the handler / IPC (main-process) layer.
  * ---------------------------------------------------------------------------
  * The spec is explicit: gate in the handler/IPC layer, NOT just the UI —
  * "editing the renderer can't unlock Pro. UI hiding is cosmetic; the real fence

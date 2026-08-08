@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
  * TrustPanel (Phase 2 — trust layer, slice 1: Activity & Health)
  *
  * Read-only surface answering two questions in one place:
- *   1. "Is everything SADIE depends on actually up right now?" — live service
+ *   1. "Is everything HomeBot depends on actually up right now?" — live service
  *      health from the Phase 0 supervisor (ollama / n8n / qdrant), updated in
  *      real time from `homebot:supervisor-status` pushes.
- *   2. "What has SADIE changed in my CRM?" — the append-only audit trail,
+ *   2. "What has HomeBot changed in my CRM?" — the append-only audit trail,
  *      summarized to human lines with expandable field-level diffs.
  *
  * Mirrors PermissionHistory's modal pattern and styles.

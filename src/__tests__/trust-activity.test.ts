@@ -8,7 +8,7 @@ function entry(overrides: Partial<AuditEntry>): AuditEntry {
     entityType: 'deal',
     entityId: 7,
     action: 'update',
-    actor: 'sadie',
+    actor: 'homebot',
     before: null,
     after: null,
     createdAt: '2026-08-02T03:00:00.000Z',

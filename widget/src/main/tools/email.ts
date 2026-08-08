@@ -177,7 +177,7 @@ $results | ConvertTo-Json -Depth 3 -Compress
 
 // ----- CRM wiring (Phase 1: inbound email → the built-in CRM) -----
 //
-// email_list is the only place inbound mail enters SADIE, so this is where the
+// email_list is the only place inbound mail enters HomeBot, so this is where the
 // CRM email-sync hook (CrmStore.matchInboundEmail) is wired in:
 //   • Annotation (always, read-only): each listed email whose sender is a
 //     known CRM contact gets a `crm` field. Listing never writes.

@@ -76,9 +76,9 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   image_generate: { label: 'Generate images', detail: 'Create an image with the configured image model.' },
   // Documents — read-only
   parse_document: { label: 'Parse documents', detail: 'Read the contents of a document you provide.' },
-  get_document_content: { label: 'Read stored documents', detail: 'Read the text of a document already loaded into SADIE.' },
-  list_documents: { label: 'List stored documents', detail: 'See which documents are loaded into SADIE.' },
-  search_document: { label: 'Search stored documents', detail: 'Search inside documents already loaded into SADIE.' },
+  get_document_content: { label: 'Read stored documents', detail: 'Read the text of a document already loaded into HomeBot.' },
+  list_documents: { label: 'List stored documents', detail: 'See which documents are loaded into HomeBot.' },
+  search_document: { label: 'Search stored documents', detail: 'Search inside documents already loaded into HomeBot.' },
   // Vision
   vision_describe: { label: 'Describe images', detail: 'Look at an image and describe what is in it.' },
   vision_query: { label: 'Answer questions about images', detail: 'Look at an image and answer a question about it.' },
@@ -87,9 +87,9 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   stop_speaking: { label: 'Stop speaking', detail: 'Stop any speech currently playing.' },
   get_voices: { label: 'List voices', detail: 'See which text-to-speech voices are available.' },
   // Memory
-  remember: { label: 'Save memories', detail: 'Save a note to SADIE’s long-term memory on this computer.' },
-  recall: { label: 'Recall memories', detail: 'Read notes from SADIE’s long-term memory.' },
-  list_memories: { label: 'List memories', detail: 'See everything saved in SADIE’s long-term memory.' },
+  remember: { label: 'Save memories', detail: 'Save a note to HomeBot’s long-term memory on this computer.' },
+  recall: { label: 'Recall memories', detail: 'Read notes from HomeBot’s long-term memory.' },
+  list_memories: { label: 'List memories', detail: 'See everything saved in HomeBot’s long-term memory.' },
   forget: { label: 'Delete memories', detail: 'Permanently delete saved memories.' },
   save_conversation: { label: 'Save conversations', detail: 'Save this conversation to your computer.' },
   get_conversation_history: { label: 'Read conversation history', detail: 'Read previous conversations saved on this computer.' },
@@ -123,8 +123,8 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   // Planning & contacts
   plan_task: { label: 'Plan tasks', detail: 'Break a request into a step-by-step plan.' },
   get_plans: { label: 'Read plans', detail: 'See previously created task plans.' },
-  search_contacts: { label: 'Search contacts', detail: 'Search the contacts saved in SADIE.' },
-  add_contact: { label: 'Add contacts', detail: 'Save a new contact in SADIE.' },
+  search_contacts: { label: 'Search contacts', detail: 'Search the contacts saved in HomeBot.' },
+  add_contact: { label: 'Add contacts', detail: 'Save a new contact in HomeBot.' },
   // Git — read-only ops safe
   git_status: { label: 'Check git status', detail: 'Read the state of a git repository on your computer.' },
   git_log: { label: 'Read git history', detail: 'Read the commit history of a git repository.' },
@@ -139,7 +139,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   run_code: { label: 'Run code', detail: 'Execute code on this computer. Only allow this if you trust the request.' },
   // Terminal
   run_terminal_command: { label: 'Run terminal commands', detail: 'Run a command in the terminal. Each command still shows its own confirmation.' },
-  get_terminal_history: { label: 'Read terminal history', detail: 'Read the commands previously run through SADIE.' },
+  get_terminal_history: { label: 'Read terminal history', detail: 'Read the commands previously run through HomeBot.' },
   // Codebase — read-only
   grep_code: { label: 'Search code', detail: 'Search source code files on your computer for matching text.' },
   project_tree: { label: 'Map a project', detail: 'List the folder structure of a code project.' },
@@ -183,7 +183,7 @@ export function describePermission(name: string): DescribedPermission {
     name,
     source: 'fallback',
     label: prettifyPermissionName(name),
-    detail: `Let SADIE use its “${prettifyPermissionName(name).toLowerCase()}” capability.`,
+    detail: `Let HomeBot use its “${prettifyPermissionName(name).toLowerCase()}” capability.`,
   };
 }
 

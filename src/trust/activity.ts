@@ -3,7 +3,7 @@
  *
  * Turns raw CRM audit_log rows (append-only, before/after JSON snapshots —
  * written by every CrmStore mutation since Phase 1) into human-readable
- * activity items for the Trust UI: "what did SADIE change, when, and exactly
+ * activity items for the Trust UI: "what did HomeBot change, when, and exactly
  * which fields."
  *
  * Pure and dependency-free on purpose: lives in root src so the required CI

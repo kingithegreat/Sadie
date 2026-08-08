@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Automation Center gate (the spec's recommended proof point).
+ * HomeBot / HomeBot — Automation Center gate (the spec's recommended proof point).
  * ---------------------------------------------------------------------------
  * "Gate the Automation Center first (highest-value)." The Automation Center is
  * the flagship Pro feature: scheduled + triggered workflows (n8n), plus the
