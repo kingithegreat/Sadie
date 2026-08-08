@@ -29,7 +29,17 @@ import type { Settings, CustomLLMConfig } from './types';
  */
 export type CloudLLMSettingsSlice = Pick<
   Settings,
-  'useCustomLLM' | 'customLLM' | 'anthropicApiKey' | 'openaiApiKey' | 'geminiApiKey'
+  | 'useCustomLLM'
+  | 'customLLM'
+  | 'anthropicApiKey'
+  | 'openaiApiKey'
+  | 'geminiApiKey'
+  // Uncensored mode belongs to this decision, not beside it. It used to be read
+  // only on the Ollama path, so with a cloud provider enabled the router went
+  // to the cloud and never reached the line that honours it — the toggle was
+  // silently ignored while the UI said "Turn off Uncensored Mode to switch
+  // models". Same split-brain shape as the key-vault bug above.
+  | 'uncensoredMode'
 >;
 
 /** Where each provider's key lives in the top-level settings "key vault".
@@ -58,6 +68,11 @@ export interface ResolvedCloudLLM {
   /** Human-readable reason cloud is intended but cannot run. Null when
    *  inactive-by-choice or active. Callers must SURFACE this, not log it. */
   misconfiguration: string | null;
+  /** Set when cloud was deliberately bypassed in favour of the local model —
+   *  currently only uncensored mode. Distinct from `misconfiguration`: nothing
+   *  is broken, the user asked for this. Callers should show it so the reason
+   *  the cloud model went unused is visible rather than mysterious. */
+  localOverride: string | null;
 }
 
 export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefined): ResolvedCloudLLM {
@@ -72,6 +87,7 @@ export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefin
       misconfiguration: intended
         ? 'Cloud chat is turned on, but no cloud provider is configured yet.'
         : null,
+      localOverride: null,
     };
   }
 
@@ -86,7 +102,24 @@ export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefin
   const config: CustomLLMConfig = apiKey === ownKey ? { ...cfg } : { ...cfg, apiKey };
 
   if (!intended) {
-    return { intended, active: false, config, misconfiguration: null };
+    return { intended, active: false, config, misconfiguration: null, localOverride: null };
+  }
+
+  // Uncensored mode wins over any cloud provider. The toggle's whole promise is
+  // that the answer comes from the local uncensored model; routing it to a
+  // hosted provider instead breaks that promise twice over — the content is
+  // filtered by someone else's policy, and it leaves the machine. Checked
+  // BEFORE model/key validation so an unconfigured cloud provider can't turn a
+  // deliberate local choice into a misconfiguration warning.
+  if (settings?.uncensoredMode) {
+    return {
+      intended,
+      active: false,
+      config,
+      misconfiguration: null,
+      localOverride:
+        'Uncensored mode is on, so the local uncensored model answered instead of the cloud model.',
+    };
   }
 
   const needsModel = cfg.provider !== 'custom';
@@ -96,6 +129,7 @@ export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefin
       active: false,
       config,
       misconfiguration: `Cloud chat is on (${cfg.provider}), but no model is selected.`,
+      localOverride: null,
     };
   }
 
@@ -108,8 +142,9 @@ export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefin
       misconfiguration:
         `Cloud chat is on (${cfg.provider}${cfg.model ? ` / ${cfg.model}` : ''}), ` +
         `but no API key is saved for ${cfg.provider}. Add it in Settings to use the cloud model.`,
+      localOverride: null,
     };
   }
 
-  return { intended, active: true, config, misconfiguration: null };
+  return { intended, active: true, config, misconfiguration: null, localOverride: null };
 }

@@ -143,7 +143,9 @@ describe('inactive by choice is not a misconfiguration', () => {
   });
 
   test('null settings → inactive, silent', () => {
-    expect(resolveCloudLLM(null)).toEqual({ intended: false, active: false, config: null, misconfiguration: null });
+    expect(resolveCloudLLM(null)).toEqual({
+      intended: false, active: false, config: null, misconfiguration: null, localOverride: null,
+    });
   });
 });
 
@@ -171,5 +173,61 @@ describe('keyless providers', () => {
       customLLM: { name: 'local', provider: 'custom', model: '', apiUrl: 'http://localhost:8080/v1', apiKey: '', enabled: true },
     }));
     expect(r.active).toBe(true);
+  });
+});
+
+describe('uncensored mode overrides cloud', () => {
+  const cloudOn = {
+    useCustomLLM: true,
+    customLLM: { provider: 'anthropic', model: 'claude-sonnet-5', apiKey: 'sk-test', enabled: true } as any,
+    anthropicApiKey: 'sk-test',
+    openaiApiKey: '',
+    geminiApiKey: '',
+  };
+
+  it('routes to local when uncensored mode is on, even with cloud fully configured', () => {
+    // The observed bug: header said "Dolphin 7B / Uncensored", every reply was
+    // badged sonnet. Uncensored mode was only read on the Ollama path, which a
+    // configured cloud provider never reached.
+    const r = resolveCloudLLM({ ...cloudOn, uncensoredMode: true } as any);
+    expect(r.active).toBe(false);
+    expect(r.localOverride).toMatch(/uncensored/i);
+  });
+
+  it('is not reported as a misconfiguration — nothing is broken', () => {
+    const r = resolveCloudLLM({ ...cloudOn, uncensoredMode: true } as any);
+    expect(r.misconfiguration).toBeNull();
+  });
+
+  it('still reports intent, so the UI can explain why cloud went unused', () => {
+    const r = resolveCloudLLM({ ...cloudOn, uncensoredMode: true } as any);
+    expect(r.intended).toBe(true);
+  });
+
+  it('leaves cloud active when uncensored mode is off', () => {
+    const r = resolveCloudLLM({ ...cloudOn, uncensoredMode: false } as any);
+    expect(r.active).toBe(true);
+    expect(r.localOverride).toBeNull();
+  });
+
+  it('treats a missing uncensoredMode as off', () => {
+    const r = resolveCloudLLM(cloudOn as any);
+    expect(r.active).toBe(true);
+  });
+
+  it('wins over an unconfigured cloud provider instead of warning about it', () => {
+    // Without the ordering, a user in uncensored mode with a half-set-up cloud
+    // provider would get a "no API key" warning about a model they never asked
+    // to use.
+    const r = resolveCloudLLM({
+      useCustomLLM: true,
+      customLLM: { provider: 'anthropic', model: 'claude-sonnet-5', apiKey: '', enabled: true } as any,
+      anthropicApiKey: '',
+      openaiApiKey: '',
+      geminiApiKey: '',
+      uncensoredMode: true,
+    } as any);
+    expect(r.misconfiguration).toBeNull();
+    expect(r.localOverride).toMatch(/uncensored/i);
   });
 });
