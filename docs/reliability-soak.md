@@ -1,6 +1,6 @@
 # Reliability: supervisor + soak test (Phase 0)
 
-SADIE's startup checks were one-shot: diagnostics ran once, n8n was ensured
+HomeBot's startup checks were one-shot: diagnostics ran once, n8n was ensured
 once, and nothing watched the services afterwards. Phase 0 adds a
 **supervisor** that probes Ollama, n8n and Qdrant continuously for the whole
 session, auto-recovers n8n via its Docker container when it dies mid-run, and

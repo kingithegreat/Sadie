@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Offline signed license keys (Ed25519).
+ * HomeBot / HomeBot — Offline signed license keys (Ed25519).
  * ---------------------------------------------------------------------------
  * Lets HomeBot sell Pro TODAY with no third-party licensing account and no
  * server: the vendor holds a private key, mints a signed key per sale (through

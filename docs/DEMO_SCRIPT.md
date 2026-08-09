@@ -121,7 +121,7 @@
 3. Say: "Tell me a fun fact about New Zealand"
 4. Show the transcription appearing, then the AI speaking the response
 
-**Talking point:** "Speech-to-text uses Windows SAPI offline. Text-to-speech uses Edge neural voices."
+**Talking point:** "Speech-to-text runs local Whisper offline. Text-to-speech uses Edge neural voices."
 
 ---
 
@@ -156,4 +156,4 @@
 | No models showing | `ollama pull qwen2.5:7b` |
 | App won't start | `cd widget && npm run build && npx electron-vite dev` |
 | Image gen fails | Backend auto-fallback handles this; if all fail, skip this act |
-| Voice not working | Skip to quiz mode; mention Windows SAPI requirement |
+| Voice not working | Skip to quiz mode; mention local Whisper transcription |

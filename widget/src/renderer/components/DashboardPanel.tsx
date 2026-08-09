@@ -270,7 +270,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
           <h2 className="dashboard-section-title">CRM</h2>
           {data.crm.isEmpty ? (
             <div className="dashboard-crm-empty">
-              No CRM data yet — ask SADIE to add a company or a deal and it will show up here.
+              No CRM data yet — ask HomeBot to add a company or a deal and it will show up here.
             </div>
           ) : (
             <div className="dashboard-stats-grid dashboard-crm-grid">

@@ -1,6 +1,8 @@
-﻿# HomeBot — Your Private Desktop AI Assistant
+# HomeBot — Your Private Desktop AI Assistant
 
 > A secure, offline-first desktop AI assistant built with Electron, React, and TypeScript. Runs entirely on your machine with optional cloud LLM support. Your data stays local unless you explicitly enable a cloud provider.
+
+> *HomeBot began as **SADIE**, my Toi Ohomai Bachelor of Applied IT capstone (graded A+, 93). Same codebase, one name going forward — legacy "SADIE" strings you find in old issues or the git history refer to this project.*
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Electron](https://img.shields.io/badge/Electron-28-9feaf9)
@@ -161,8 +163,8 @@ On first launch, the setup wizard will:
 ### Option B — Developer Setup
 
 ```bash
-git clone https://github.com/kingithegreat/HomeBot.git
-cd HomeBot/widget
+git clone https://github.com/kingithegreat/Sadie.git
+cd Sadie/widget
 npm install
 npm run dev
 ```
@@ -265,16 +267,9 @@ Detailed documentation is available in the `docs/` folder:
 
 ---
 
-## Academic Context
+## Tech Stack
 
-HomeBot is developed as a capstone project at **Toi Ohomai Institute of Technology** (2026).
-
-| | |
-|---|---|
-| **Student** | Aden Kingi |
-| **Supervisor** | Francisco Roldao |
-| **Institution** | Toi Ohomai Institute of Technology |
-| **Stack** | Electron 28, React 18, TypeScript 5.9.3, Ollama, n8n, PowerShell |
+Electron 28, React 18, TypeScript 5.9.3, Ollama, n8n, PowerShell.
 
 ---
 

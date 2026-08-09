@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — main-process wiring for Pro licensing.
+ * HomeBot / HomeBot — main-process wiring for Pro licensing.
  * ---------------------------------------------------------------------------
  * Bridges the pure, electron-agnostic modules in repo-root `src/licensing` and
  * `src/entitlements` to the actual app: persists the CachedEntitlement +

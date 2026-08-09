@@ -92,6 +92,7 @@ export default function FirstRunModal({
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [step, setStep] = useState<Step>('welcome');
+  const [telemetryConsent, setTelemetryConsent] = useState(false);
   const [setupPath, setSetupPath] = useState<SetupPath>(null);
 
   // Local path state
@@ -328,7 +329,8 @@ export default function FirstRunModal({
   };
 
   const handleFinish = async () => {
-    const payload: any = { ...draft, firstRun: false, telemetryEnabled: true, telemetryConsentTimestamp: new Date().toISOString() };
+    const payload: any = { ...draft, firstRun: false, telemetryEnabled: telemetryConsent };
+    if (telemetryConsent) payload.telemetryConsentTimestamp = new Date().toISOString();
 
     if (setupPath === 'cloud' && cloudApiKey.trim()) {
       const apiUrl = PROVIDER_URLS[cloudProvider] || '';
@@ -353,7 +355,7 @@ export default function FirstRunModal({
   };
 
   const handleSkip = async () => {
-    const payload = { ...draft, firstRun: false, telemetryEnabled: true, telemetryConsentTimestamp: new Date().toISOString() } as any;
+    const payload = { ...draft, firstRun: false, telemetryEnabled: false } as any;
     try { await (window as any).electron.saveSettings?.(payload); } catch (e) { console.warn('FirstRun skip save failed:', e); }
     onSave(payload);
     onClose();
@@ -611,6 +613,18 @@ export default function FirstRunModal({
                 <span className="wizard-suggestion-chip">Summarize my clipboard</span>
                 <span className="wizard-suggestion-chip">What's in the news?</span>
               </div>
+              <label className="wizard-telemetry-consent">
+                <input
+                  type="checkbox"
+                  checked={telemetryConsent}
+                  onChange={(e) => setTelemetryConsent(e.target.checked)}
+                />
+                <span>
+                  Help improve HomeBot by sharing anonymous usage statistics (feature counts and
+                  error rates only). No personal data or conversation content is ever collected.
+                  Off by default — you can change this any time in Settings.
+                </span>
+              </label>
             </div>
           )}
         </div>

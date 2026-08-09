@@ -1,12 +1,12 @@
 /**
- * SADIE / HomeBot — CrmStore (Phase 1).
+ * HomeBot / HomeBot — CrmStore (Phase 1).
  * ---------------------------------------------------------------------------
  * SQLite-backed CRM data layer. Design rules:
  *
  *  1. ONE file, WAL mode → trivial backup/export, no server.
  *  2. Every mutation writes an audit_log row (append-only) with before/after
  *     JSON snapshots. The Phase 2 trust UI renders straight from this table.
- *  3. Activities are the spine: communications and SADIE's own actions all
+ *  3. Activities are the spine: communications and HomeBot's own actions all
  *     land as activity rows, and they drive `last_activity_at` denorms which
  *     power find_stale_deals / daily_brief.
  *  4. No electron imports here — the widget adapter supplies the db path.
@@ -347,7 +347,7 @@ export class CrmStore {
   // Companies
   // -------------------------------------------------------------------------
 
-  createCompany(input: CompanyInput, actor = 'sadie'): Company {
+  createCompany(input: CompanyInput, actor = 'homebot'): Company {
     const name = input.name.trim();
     if (!name) throw new Error('Company name is required');
     const ts = nowIso();
@@ -376,7 +376,7 @@ export class CrmStore {
     return row ? mapCompany(row) : null;
   }
 
-  updateCompany(id: number, patch: Partial<CompanyInput>, actor = 'sadie'): Company {
+  updateCompany(id: number, patch: Partial<CompanyInput>, actor = 'homebot'): Company {
     const before = this.getCompany(id);
     if (!before) throw new Error(`Company ${id} not found`);
     const merged = {
@@ -415,7 +415,7 @@ export class CrmStore {
   }
 
   /** Find a company by exact name (case-insensitive) or create it. */
-  findOrCreateCompanyByName(name: string, actor = 'sadie'): Company {
+  findOrCreateCompanyByName(name: string, actor = 'homebot'): Company {
     const trimmed = name.trim();
     const row = this.db
       .prepare('SELECT * FROM companies WHERE name = ? COLLATE NOCASE')
@@ -428,7 +428,7 @@ export class CrmStore {
   // Contacts
   // -------------------------------------------------------------------------
 
-  createContact(input: ContactInput, actor = 'sadie'): Contact {
+  createContact(input: ContactInput, actor = 'homebot'): Contact {
     const firstName = input.firstName.trim();
     if (!firstName) throw new Error('Contact firstName is required');
     let companyId = input.companyId ?? null;
@@ -474,7 +474,7 @@ export class CrmStore {
     return row ? mapContact(row) : null;
   }
 
-  updateContact(id: number, patch: Partial<ContactInput>, actor = 'sadie'): Contact {
+  updateContact(id: number, patch: Partial<ContactInput>, actor = 'homebot'): Contact {
     const before = this.getContact(id);
     if (!before) throw new Error(`Contact ${id} not found`);
     let companyId = patch.companyId !== undefined ? patch.companyId : before.companyId;
@@ -535,7 +535,7 @@ export class CrmStore {
   // Deals
   // -------------------------------------------------------------------------
 
-  createDeal(input: DealInput, actor = 'sadie'): Deal {
+  createDeal(input: DealInput, actor = 'homebot'): Deal {
     const title = input.title.trim();
     if (!title) throw new Error('Deal title is required');
     const stage = input.stage || 'lead';
@@ -588,7 +588,7 @@ export class CrmStore {
     return row ? mapDeal(row) : null;
   }
 
-  updateDeal(id: number, patch: Partial<DealInput>, actor = 'sadie'): Deal {
+  updateDeal(id: number, patch: Partial<DealInput>, actor = 'homebot'): Deal {
     const before = this.getDeal(id);
     if (!before) throw new Error(`Deal ${id} not found`);
     if (patch.stage !== undefined) {
@@ -640,7 +640,7 @@ export class CrmStore {
    * Move a deal to a new stage. The only sanctioned way to change stage —
    * logs both an audit row and an activity so the pipeline history is complete.
    */
-  advanceDeal(id: number, toStage: string, actor = 'sadie', reason?: string): Deal {
+  advanceDeal(id: number, toStage: string, actor = 'homebot', reason?: string): Deal {
     const before = this.getDeal(id);
     if (!before) throw new Error(`Deal ${id} not found`);
     this.assertStageKey(toStage);
@@ -724,7 +724,7 @@ export class CrmStore {
   logActivity(input: ActivityInput, toolName = 'crm_log_activity'): Activity {
     const subject = input.subject.trim();
     if (!subject) throw new Error('Activity subject is required');
-    const actor = input.actor || 'sadie';
+    const actor = input.actor || 'homebot';
     const ts = nowIso();
     const occurredAt = input.occurredAt || ts;
     if (input.contactId != null && !this.getContact(input.contactId)) {
@@ -795,7 +795,7 @@ export class CrmStore {
   addNote(
     body: string,
     links: { contactId?: number | null; companyId?: number | null; dealId?: number | null },
-    actor = 'sadie'
+    actor = 'homebot'
   ): Note {
     const trimmed = body.trim();
     if (!trimmed) throw new Error('Note body is required');
@@ -825,7 +825,7 @@ export class CrmStore {
   createTask(input: TaskInput, actor?: string): Task {
     const title = input.title.trim();
     if (!title) throw new Error('Task title is required');
-    const who = actor || input.actor || 'sadie';
+    const who = actor || input.actor || 'homebot';
     const ts = nowIso();
     const info = this.db
       .prepare(
@@ -853,7 +853,7 @@ export class CrmStore {
     return row ? mapTask(row) : null;
   }
 
-  completeTask(id: number, actor = 'sadie'): Task {
+  completeTask(id: number, actor = 'homebot'): Task {
     const before = this.getTask(id);
     if (!before) throw new Error(`Task ${id} not found`);
     if (before.completedAt) return before;
@@ -890,7 +890,7 @@ export class CrmStore {
   ): EmailMatchResult {
     const email = normalizeEmail(fromEmail);
     if (!email) throw new Error('A sender email address is required');
-    const actor = options?.actor || 'sadie';
+    const actor = options?.actor || 'homebot';
 
     let contact = this.findContactByEmail(email);
     let created = false;

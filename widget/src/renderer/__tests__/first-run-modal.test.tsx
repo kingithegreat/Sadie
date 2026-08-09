@@ -195,7 +195,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ firstRun: false });
   });
 
-  test('calls onSave with telemetryEnabled: true', async () => {
+  test('telemetry is off by default and no consent timestamp is stamped', async () => {
     const onSave = jest.fn();
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
@@ -210,7 +210,30 @@ describe('FirstRunModal — Get Started (final step)', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Get Started'));
     });
+    expect(onSave.mock.calls[0][0]).toMatchObject({ telemetryEnabled: false });
+    expect(onSave.mock.calls[0][0].telemetryConsentTimestamp).toBeUndefined();
+  });
+
+  test('checking the consent box enables telemetry and stamps consent', async () => {
+    const onSave = jest.fn();
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Local (Ollama)'));
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Next'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Get Started'));
+    });
     expect(onSave.mock.calls[0][0]).toMatchObject({ telemetryEnabled: true });
+    expect(typeof onSave.mock.calls[0][0].telemetryConsentTimestamp).toBe('string');
   });
 
   test('calls onClose after Get Started', async () => {
@@ -292,7 +315,8 @@ describe('FirstRunModal — Skip setup button', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Skip setup'));
     });
-    expect(onSave.mock.calls[0][0]).toMatchObject({ firstRun: false, telemetryEnabled: true });
+    expect(onSave.mock.calls[0][0]).toMatchObject({ firstRun: false, telemetryEnabled: false });
+    expect(onSave.mock.calls[0][0].telemetryConsentTimestamp).toBeUndefined();
   });
 
   test('calls onClose after Skip setup', async () => {

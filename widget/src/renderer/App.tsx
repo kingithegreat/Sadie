@@ -40,6 +40,8 @@ import type {
   Settings as SharedSettings
 } from '../shared/types';
 import { recommendLocalModelForTask } from '../shared/model-advisor';
+import { resolveTheme, followsSystem, systemPrefersDark } from '../shared/theme';
+import type { ResolvedTheme } from '../shared/theme';
 import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
@@ -195,13 +197,40 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // test-only watchdog timers per stream to avoid hanging 'streaming' state in tests
     const streamWatchersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Sync theme to <html> and <body> so CSS selectors like [data-theme="light"] body work
+  // Resolve the theme SETTING ('dark' | 'light' | 'system') to the theme STATE
+  // the UI renders. Held in state so the app root, <html> and <body> all carry
+  // the same resolved value — previously the root div got the raw setting, so
+  // on 'system' it read data-theme="system", which matches no stylesheet.
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    resolveTheme(settings.theme, systemPrefersDark()),
+  );
+
   useEffect(() => {
-    const resolved = settings.theme === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : (settings.theme || 'dark');
-    document.documentElement.setAttribute('data-theme', resolved);
-    document.body.setAttribute('data-theme', resolved);
+    const apply = () => {
+      const resolved = resolveTheme(settings.theme, systemPrefersDark());
+      setResolvedTheme(resolved);
+      document.documentElement.setAttribute('data-theme', resolved);
+      document.body.setAttribute('data-theme', resolved);
+    };
+    apply();
+
+    // Only when following the OS does the theme need a live listener. Without
+    // this the app stayed on whatever the OS was at launch until settings
+    // changed, which reads as "dark mode is broken".
+    if (!followsSystem(settings.theme)) return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    // addEventListener is the modern API; addListener is kept as a fallback
+    // for older Chromium runtimes, and either way we remove what we added.
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }
+    if (typeof (mq as any).addListener === 'function') {
+      (mq as any).addListener(apply);
+      return () => (mq as any).removeListener(apply);
+    }
+    return;
   }, [settings.theme]);
 
   // Load settings and conversation on boot
@@ -1085,7 +1114,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={modeClasses} data-testid="homebot-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={settings.theme || 'dark'} data-density={settings.messageDensity || 'comfortable'}>
+    <div className={modeClasses} data-testid="homebot-app-root" data-hydrated={isHydrated ? "true" : undefined} data-theme={resolvedTheme} data-density={settings.messageDensity || 'comfortable'}>
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 

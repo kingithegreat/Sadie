@@ -1,5 +1,5 @@
 /**
- * SADIE / HomeBot — Lemon Squeezy config from env PLACEHOLDERS.
+ * HomeBot / HomeBot — Lemon Squeezy config from env PLACEHOLDERS.
  * ---------------------------------------------------------------------------
  * NO secrets here. Aden supplies the real Lemon Squeezy account, store, and
  * keys later (see .env.example). Until then these read as undefined and the

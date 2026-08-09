@@ -1,7 +1,7 @@
 /**
- * SADIE / HomeBot — CRM core types (Phase 1).
+ * HomeBot / HomeBot — CRM core types (Phase 1).
  * ---------------------------------------------------------------------------
- * The CRM is the layer that turns SADIE from "a chatbot" into "a worker":
+ * The CRM is the layer that turns HomeBot from "a chatbot" into "a worker":
  * companies, contacts, deals, activities, notes, tasks — all local, all in one
  * SQLite file, every mutation audited.
  *
@@ -92,7 +92,7 @@ export interface Activity {
   contactId: number | null;
   companyId: number | null;
   dealId: number | null;
-  /** Who/what performed it: 'sadie' for autonomous actions, 'owner' for user. */
+  /** Who/what performed it: 'homebot' for autonomous actions, 'owner' for user. */
   actor: string;
   occurredAt: string;
   createdAt: string;

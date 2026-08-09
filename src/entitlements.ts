@@ -1,8 +1,8 @@
 /**
- * SADIE / HomeBot — Entitlements (Pro tier dimension)
+ * HomeBot / HomeBot — Entitlements (Pro tier dimension)
  * ---------------------------------------------------------------------------
  * Keystone of the Free-vs-Pro monetization split.
- * See: Notion → SADIE → "💰 Free vs Pro Spec — DECISION (2026-06-29)".
+ * See: Notion → SADIE (legacy name) → "💰 Free vs Pro Spec — DECISION (2026-06-29)".
  *
  * This module is the SINGLE SOURCE OF TRUTH for "what is a tier allowed to do".
  * It is a NEW DIMENSION layered onto the existing permission model
@@ -144,7 +144,7 @@ export interface UpgradePrompt {
 }
 
 /** Default checkout deep link; overridable so the LS store URL is config-driven. */
-export const DEFAULT_UPGRADE_URL = 'sadie://upgrade';
+export const DEFAULT_UPGRADE_URL = 'homebot://upgrade';
 
 /** Human-readable labels for capabilities (single place for UI copy). */
 const CAPABILITY_LABELS: Partial<Record<Capability, string>> = {
@@ -167,8 +167,8 @@ export function buildUpgradePrompt(
     reason: 'upgrade_required',
     capability,
     requiredTier: requiredTierFor(capability),
-    title: 'SADIE Pro',
-    message: `${label} is a SADIE Pro feature. Upgrade to unlock it.`,
+    title: 'HomeBot Pro',
+    message: `${label} is a HomeBot Pro feature. Upgrade to unlock it.`,
     upgradeUrl,
   };
 }

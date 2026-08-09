@@ -1,7 +1,7 @@
 /**
  * Supervisor types (Phase 0 — reliability)
  *
- * The supervisor continuously watches SADIE's external services (Ollama, n8n,
+ * The supervisor continuously watches HomeBot's external services (Ollama, n8n,
  * Qdrant) *after* startup — the gap the one-shot diagnostics and the startup
  * n8n-lifecycle check leave open. It probes on an interval, escalates through
  * a small state machine, optionally runs a recovery action with exponential

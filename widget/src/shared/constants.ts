@@ -10,7 +10,10 @@ export const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 
 // User Settings
 export const DEFAULT_USER_ID = 'desktop_widget';
-export const DEFAULT_THEME: 'light' | 'dark' | 'system' = 'system';
+// Dark-first: the stylesheet's `:root` block IS the dark palette and light is
+// applied as a set of overrides, so defaulting to anything else makes the first
+// paint fight the base stylesheet.
+export const DEFAULT_THEME: 'light' | 'dark' | 'system' = 'dark';
 export const DEFAULT_HOTKEY = 'Ctrl+Shift+Space';
 export const DEFAULT_ALWAYS_ON_TOP = true;
 export const DEFAULT_CONFIRM_DANGEROUS = true;
