@@ -48,10 +48,39 @@ const MIN_QUESTION_LENGTH = 8;
  * prompts. Small local models frequently echo these back verbatim; they must
  * never appear in a real quiz.
  */
+/**
+ * Stable key for "is this the same question?" — text plus code.
+ *
+ * Code-output questions legitimately share a stem ("What does this code
+ * print?") while asking about different snippets, so text alone is not an
+ * identity.
+ */
+export function questionKey(question: string, code?: string): string {
+  const text = normalizeQuestionText(question);
+  const body = (code || '').replace(/\s+/g, ' ').trim();
+  return body ? `${text}::${body}` : text;
+}
+
+/**
+ * Verbatim questions from the prompt's EXAMPLE block, rejected so the model
+ * cannot pad a quiz by parroting the format sample.
+ *
+ * Keyed WITH code deliberately. "What does this code print?" is both the
+ * example's stem and the most natural phrasing for every code-output question
+ * ever written; banning the bare text meant real questions asking about real
+ * snippets were silently deleted, leaving quizzes short and repetitive. Only
+ * the example's exact text+code pair is a parrot.
+ */
 const EXAMPLE_SIGNATURES = new Set([
-  normalizeQuestionText('Which keyword defines a function in Python?'),
-  normalizeQuestionText('What does this code print?'),
-  normalizeQuestionText('What is X?'),
+  questionKey('Which keyword defines a function in Python?'),
+  questionKey('What is X?'),
+  // The example's exact text+code pair.
+  questionKey('What does this code print?', 'print(2 ** 3)'),
+  // And the bare stem with NO code — you cannot ask what code prints without
+  // showing any, so that form is malformed however it arrived. Both entries
+  // are needed: together they reject the parrot and the nonsense while still
+  // admitting "What does this code print?" about a genuine, different snippet.
+  questionKey('What does this code print?'),
 ]);
 
 /** Strip markdown code fences (``` / ```json) the model may wrap output in. */
@@ -192,11 +221,44 @@ export function dedupeQuestions(
   const seen = new Set<string>();
   const out: ParsedQuizQuestion[] = [];
   for (const q of questions) {
-    const key = normalizeQuestionText(q.question);
-    if (!key || seen.has(key) || EXAMPLE_SIGNATURES.has(key)) continue;
+    // Key on question text AND code. Code-output questions legitimately share
+    // the same stem ("What does this code print?") with different snippets;
+    // keying on text alone collapsed those into one and threw away valid
+    // questions, which is part of why short quizzes came back repetitive.
+    const key = questionKey(q.question, q.code);
+    if (!normalizeQuestionText(q.question) || seen.has(key) || EXAMPLE_SIGNATURES.has(key)) continue;
     seen.add(key);
     out.push(q);
     if (limit !== undefined && out.length >= limit) break;
   }
   return out;
+}
+
+/**
+ * A "do not repeat these" clause listing questions already accepted.
+ *
+ * Quiz batches were generated in a loop that sent the SAME prompt every time,
+ * so the model had no idea what it had already produced and naturally
+ * regenerated its most obvious questions. dedupeQuestions then dropped the
+ * literal repeats — but near-duplicates ("Which keyword defines a function?"
+ * vs "What keyword is used to define a function?") survived as distinct
+ * strings, which is how a finished quiz ended up asking the same thing three
+ * times.
+ *
+ * Returns '' when there is nothing to avoid, so the first batch's prompt is
+ * unchanged.
+ */
+export function buildAvoidClause(existing: ParsedQuizQuestion[], max = 20): string {
+  const asked = existing
+    .map(q => q.question.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(-max);
+  if (asked.length === 0) return '';
+
+  return [
+    '',
+    'ALREADY ASKED — do not repeat these, and do not rephrase them:',
+    ...asked.map(q => `- ${q}`),
+    'Generate questions covering DIFFERENT aspects of the topic.',
+  ].join('\n');
 }
