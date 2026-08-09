@@ -60,7 +60,7 @@ import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
-import { parseQuizBatch, dedupeQuestions, ParsedQuizQuestion } from '../../../src/quiz/generate';
+import { parseQuizBatch, dedupeQuestions, buildAvoidClause, ParsedQuizQuestion } from '../../../src/quiz/generate';
 import {
   getCurrentTier,
   getLicenseStatus,
@@ -2307,7 +2307,7 @@ RULES:
 - Mix question types: multiple-choice, code-output, bug-fix, concept
 
 EXAMPLE (follow this format exactly):
-[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]`;
+[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]${buildAvoidClause(allQuestions)}`;
 
         const raw0 = await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.');
 
@@ -2409,7 +2409,7 @@ RULES:
 - Base questions strictly on the material above
 
 EXAMPLE FORMAT:
-[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]`;
+[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]${buildAvoidClause(allQuestions)}`;
 
         const raw0 = await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.');
 
