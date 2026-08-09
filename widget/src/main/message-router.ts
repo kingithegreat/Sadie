@@ -8,7 +8,7 @@ import streamFromHomeBotProxy from './stream-proxy-client';
 import { HomeBotRequest, HomeBotResponse, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
-import { getSkillCatalogue } from './skills';
+import { getSkillCatalogue, matchSkills } from './skills';
 import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, previewBatch, ToolCall, ToolContext } from './tools';
 import { formatBatchPreviewForChat } from '../../../src/trust/batch';
 import { evaluateToolResults } from './reflection-validator';
@@ -23,7 +23,9 @@ import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { ragSearch, ragSearchWarmup } from './tools/rag';
-import { matchSkills } from './skills-loader';
+// matchSkills moved here from skills-loader.ts — that file and skills.ts were
+// two parallel builds of the same feature (caught by the duplicate-export
+// guard at PR time); reconciled into the one loader that also serves use_skill.
 import { shouldUseMoA, runMoAPipeline } from './moa';
 import { looksMultiStep, buildAgenticSystemPrompt, formatStepProgress } from './agentic-loop';
 import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from './morning-briefing';

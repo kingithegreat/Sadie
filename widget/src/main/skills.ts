@@ -33,6 +33,15 @@ export interface Skill {
    * model's toolset to these names (Stage 3) rather than the generic top-12.
    */
   tools?: string[];
+  /**
+   * Trigger phrases for PROACTIVE injection: when a user message contains one,
+   * matchSkills() injects this skill without the model having to ask.
+   * Populated from a frontmatter `triggers: [..]` list or a `## Triggers`
+   * section in the body (one phrase per line) — the second form absorbed from
+   * a parallel skills implementation that shipped on main, so its existing
+   * skills keep working. Empty means on-demand only, via use_skill.
+   */
+  triggers: string[];
   /** Markdown body after the frontmatter — the actual instructions. */
   body: string;
   /** Absolute path to the SKILL.md, so the UI can offer "open folder". */
@@ -82,6 +91,33 @@ export function parseFrontmatter(md: string): { meta: Record<string, string | st
   return { meta, body: match[2].trim() };
 }
 
+/** Lines of a `## <heading>` section in a markdown body, stripped of bullets. */
+function sectionLines(body: string, heading: string): string[] {
+  const lines: string[] = [];
+  let inSection = false;
+  for (const line of body.split(/\r?\n/)) {
+    if (new RegExp(`^##\\s+${heading}\\b`, 'i').test(line)) { inSection = true; continue; }
+    if (/^##\s+/.test(line)) { inSection = false; continue; }
+    if (inSection) {
+      const t = line.replace(/^[-*]\s*/, '').trim();
+      if (t) lines.push(t);
+    }
+  }
+  return lines;
+}
+
+/** Body of a `## <heading>` section, joined; '' when the section is absent. */
+function sectionText(body: string, heading: string): string {
+  let out = '';
+  let inSection = false;
+  for (const line of body.split(/\r?\n/)) {
+    if (new RegExp(`^##\\s+${heading}\\b`, 'i').test(line)) { inSection = true; continue; }
+    if (/^##\s+/.test(line)) { inSection = false; continue; }
+    if (inSection) out += line + '\n';
+  }
+  return out.trim();
+}
+
 function readSkill(dir: string, source: Skill['source']): Skill | null {
   const file = path.join(dir, 'SKILL.md');
   try {
@@ -96,11 +132,18 @@ function readSkill(dir: string, source: Skill['source']): Skill | null {
     const description = String(meta.description || '').trim();
     if (!name || !body) return null;
 
+    // Triggers: frontmatter list wins; a "## Triggers" section is the
+    // fallback so section-format skills load without conversion.
+    const triggers = (Array.isArray(meta.triggers) ? meta.triggers : sectionLines(body, 'Triggers'))
+      .map(t => t.toLowerCase())
+      .filter(Boolean);
+
     return {
       name,
       description: description || 'No description provided.',
       whenToUse: meta.when_to_use ? String(meta.when_to_use) : undefined,
       tools: Array.isArray(meta.tools) ? meta.tools : undefined,
+      triggers,
       body,
       path: file,
       source,
@@ -117,22 +160,42 @@ export function loadSkills(): Skill[] {
   const found: Skill[] = [];
   const byName = new Set<string>();
 
+  // Scan order matters: userData first, so a user's edited copy shadows a
+  // repo-bundled skill of the same name. The repo skills/ folder (second) is
+  // how skills ship with the codebase in dev — absorbed from the parallel
+  // loader on main. Not scanned under jest (hermetic tests) and it resolves
+  // to nothing in a packaged asar, where seeding to userData is the path.
+  // skillsDir() reaches electron's app.getPath, which throws under plain
+  // node/jest. The refactor that introduced `roots` briefly hoisted that call
+  // out of the try — and getSystemPromptForModel started throwing in any
+  // environment without electron. Skills must NEVER take the prompt builder
+  // down: no skills dir means an empty catalogue, not an exception.
+  const roots: Array<[string, Skill['source']]> = [];
   try {
-    const root = skillsDir();
-    if (fs.existsSync(root)) {
+    roots.push([skillsDir(), 'user']);
+  } catch { /* no electron app (plain node) — userData root unavailable */ }
+  if (!process.env.JEST_WORKER_ID) {
+    try {
+      const devDir = path.resolve(__dirname, '..', '..', '..', 'skills');
+      if (fs.existsSync(devDir)) roots.push([devDir, 'bundled']);
+    } catch { /* packaged build — no dev dir */ }
+  }
+
+  for (const [root, source] of roots) {
+    try {
+      if (!fs.existsSync(root)) continue;
       for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
         if (!entry.isDirectory() || found.length >= MAX_SKILLS) continue;
-        const skill = readSkill(path.join(root, entry.name), 'user');
-        // First one wins, so a user copy shadows a bundled skill of the
-        // same name rather than both showing up in the catalogue.
+        const skill = readSkill(path.join(root, entry.name), source);
+        // First one wins across both roots.
         if (skill && !byName.has(skill.name.toLowerCase())) {
           byName.add(skill.name.toLowerCase());
           found.push(skill);
         }
       }
+    } catch (e) {
+      console.error('[SKILLS] Could not read skills directory:', e);
     }
-  } catch (e) {
-    console.error('[SKILLS] Could not read skills directory:', e);
   }
 
   cache = found.sort((a, b) => a.name.localeCompare(b.name));
@@ -175,4 +238,26 @@ export function getSkillCatalogue(): string {
     'its name FIRST and follow the steps it returns. Do not guess the steps.',
     ...lines,
   ].join('\n');
+}
+
+/**
+ * Proactive injection: skills whose trigger phrases appear in the user's
+ * message get their content injected without the model asking. Same contract
+ * as the loader this replaced (substring match, `[Skill: name]` headers,
+ * null when nothing matches), so the router call site is a one-line import
+ * change. Injects the `## Context` section when the skill has one (the
+ * section format's convention), otherwise the whole body.
+ */
+export function matchSkills(message: string): string | null {
+  const lower = (message || '').toLowerCase();
+  if (!lower) return null;
+
+  const matched = loadSkills().filter(
+    s => s.triggers.length > 0 && s.triggers.some(t => lower.includes(t)),
+  );
+  if (matched.length === 0) return null;
+
+  return matched
+    .map(s => `[Skill: ${s.name}]\n${sectionText(s.body, 'Context') || s.body}`)
+    .join('\n\n');
 }

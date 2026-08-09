@@ -16,7 +16,7 @@ jest.mock('electron', () => ({
   app: { getPath: () => tmpRoot },
 }));
 
-import { parseFrontmatter, loadSkills, reloadSkills, getSkill, getSkillCatalogue, skillsDir } from '../skills';
+import { parseFrontmatter, loadSkills, reloadSkills, getSkill, getSkillCatalogue, skillsDir, matchSkills } from '../skills';
 
 function writeSkill(folder: string, content: string) {
   const dir = path.join(skillsDir(), folder);
@@ -153,5 +153,67 @@ describe('getSkillCatalogue', () => {
     // 50 skills must not blow a 7B model's prompt budget. A tool schema each
     // would be many times this.
     expect(getSkillCatalogue().length).toBeLessThan(3000);
+  });
+});
+
+describe('triggers + matchSkills (ported from the reconciled skills-loader)', () => {
+  // skills-loader.ts was a parallel build of this feature that shipped on
+  // main with a different SKILL.md dialect: "## Triggers" / "## Context"
+  // sections instead of frontmatter. The reconciled loader accepts both;
+  // these tests hold it to the old loader's contract.
+
+  it('reads triggers from a "## Triggers" section (old dialect)', () => {
+    writeSkill('roblox', [
+      '# Publish Roblox Game',
+      '',
+      '## Triggers',
+      '- publish roblox',
+      '- roblox go live',
+      '',
+      '## Context',
+      'Check the audience setting before declaring a game live.',
+    ].join('\n'));
+    const s = reloadSkills().find(x => x.name === 'roblox');
+    expect(s).toBeDefined();
+    expect(s!.triggers).toEqual(['publish roblox', 'roblox go live']);
+  });
+
+  it('frontmatter triggers win over a section', () => {
+    writeSkill('ft', '---\nname: ft\ndescription: d\ntriggers: [alpha, beta]\n---\n## Triggers\n- ignored\n\nbody');
+    expect(reloadSkills()[0].triggers).toEqual(['alpha', 'beta']);
+  });
+
+  it('matchSkills injects the Context section with the [Skill: name] header', () => {
+    writeSkill('roblox', '## Triggers\n- publish roblox\n\n## Context\nAudience must be Public.');
+    reloadSkills();
+    const ctx = matchSkills('how do I publish roblox games?');
+    expect(ctx).toContain('[Skill: roblox]');
+    expect(ctx).toContain('Audience must be Public.');
+    // The Triggers section itself must NOT be injected as instructions.
+    expect(ctx).not.toContain('publish roblox\n');
+  });
+
+  it('matchSkills falls back to the whole body when there is no Context section', () => {
+    writeSkill('fm', '---\nname: fm\ndescription: d\ntriggers: [special phrase]\n---\nDo the steps.');
+    reloadSkills();
+    expect(matchSkills('this has the special phrase in it')).toContain('Do the steps.');
+  });
+
+  it('matchSkills returns null when nothing matches', () => {
+    writeSkill('fm', '---\nname: fm\ndescription: d\ntriggers: [nomatch]\n---\nbody');
+    reloadSkills();
+    expect(matchSkills('what is the weather in London')).toBeNull();
+  });
+
+  it('a skill without triggers is on-demand only — never injected', () => {
+    writeSkill('quiet', '---\nname: quiet\ndescription: d\n---\nOnly via use_skill.');
+    reloadSkills();
+    expect(matchSkills('quiet Only via use_skill')).toBeNull();
+  });
+
+  it('matching is case-insensitive substring, per the old contract', () => {
+    writeSkill('cs', '---\nname: cs\ndescription: d\ntriggers: [Content Maturity]\n---\nbody');
+    reloadSkills();
+    expect(matchSkills('what is CONTENT MATURITY?')).not.toBeNull();
   });
 });

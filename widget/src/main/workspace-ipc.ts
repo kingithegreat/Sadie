@@ -33,12 +33,12 @@ const IGNORED_DIRS = new Set([
   '__pycache__', '.venv', 'venv', 'target', 'build',
 ]);
 
-export interface WorkspaceEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size: number;
-}
+// WorkspaceEntry is defined once, in shared/types.ts — the renderer needs the
+// same shape for its ElectronAPI typing, and two identical exported interfaces
+// is how the duplicate-export guard reads "parallel build". Re-exported here so
+// existing `import { WorkspaceEntry } from './workspace-ipc'` sites still work.
+export type { WorkspaceEntry } from '../shared/types';
+import type { WorkspaceEntry } from '../shared/types';
 
 export interface WorkspaceListResult {
   success: boolean;
