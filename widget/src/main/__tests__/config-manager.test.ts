@@ -15,7 +15,12 @@ jest.mock('electron', () => ({
     encryptString: jest.fn((val: string) => Buffer.from('ENC:' + val)),
     decryptString: jest.fn((buf: Buffer) => {
       const str = buf.toString();
-      return str.startsWith('ENC:') ? str.slice(4) : str;
+      // Real DPAPI THROWS on data that is not its ciphertext. The old mock
+      // returned the input unchanged, which made decrypt-until-stable
+      // (legacy multi-wrap recovery) untestable — plaintext would "decrypt"
+      // into garbage forever instead of stopping.
+      if (!str.startsWith('ENC:')) throw new Error('not ciphertext');
+      return str.slice(4);
     })
   }
 }));
@@ -308,5 +313,115 @@ describe('settings cache', () => {
       getSettings();
       expect(getAndClearConfigRecovery()).toBeNull();
     });
+  });
+});
+
+describe('settings corruption hardening (the 2026-08-10 incident)', () => {
+  // One night produced: a BOM-corrupted file, a 42-file archive loop, a
+  // reset that erased the user's keys via a stale renderer snapshot, and a
+  // historical 180MB apiKey from non-idempotent encryption. Each rule here
+  // maps to one of those.
+  const fs = require('fs');
+
+  const freshLoad = () => {
+    jest.resetModules();
+    return require('../../main/config-manager');
+  };
+
+  test('a UTF-8 BOM is not corruption — settings load intact', () => {
+    const cm = freshLoad();
+    const p = cm.getSettingsPath();
+    const s = cm.getSettings();
+    s.chatModel = 'bom-survivor:7b';
+    cm.saveSettings(s);
+    // Simulate PowerShell's Out-File: same JSON, BOM prepended.
+    fs.writeFileSync(p, '\uFEFF' + fs.readFileSync(p, 'utf-8'), 'utf-8');
+
+    const cm2 = freshLoad();
+    expect(cm2.getSettings().chatModel).toBe('bom-survivor:7b');
+    // And no corrupt-archive was produced for it.
+    const dir = require('path').dirname(p);
+    expect(fs.readdirSync(dir).filter((f: string) => f.includes('.corrupt-'))).toHaveLength(0);
+  });
+
+  test('a corrupt file is archived ONCE and repaired in place', () => {
+    const cm = freshLoad();
+    const p = cm.getSettingsPath();
+    fs.writeFileSync(p, 'not json at all', 'utf-8');
+
+    const cm2 = freshLoad();
+    cm2.getSettings(); // triggers recovery
+    // The file on disk must now parse — no loop fuel left behind.
+    expect(() => JSON.parse(fs.readFileSync(p, 'utf-8'))).not.toThrow();
+
+    const dir = require('path').dirname(p);
+    const archivesAfterFirst = fs.readdirSync(dir).filter((f: string) => f.includes('.corrupt-')).length;
+    expect(archivesAfterFirst).toBe(1);
+
+    // A later cold read must NOT archive again.
+    const cm3 = freshLoad();
+    cm3.getSettings();
+    const archivesAfterSecond = fs.readdirSync(dir).filter((f: string) => f.includes('.corrupt-')).length;
+    expect(archivesAfterSecond).toBe(1);
+  });
+
+  test('encryption is idempotent — round-tripping a saved file cannot grow a key', () => {
+    const cm = freshLoad();
+    const s = cm.getSettings();
+    s.geminiApiKey = 'AIza-plain-key';
+    cm.saveSettings(s);
+
+    const raw1 = JSON.parse(fs.readFileSync(cm.getSettingsPath(), 'utf-8'));
+    // Simulate the growth loop: save the RAW (already-encrypted) file content
+    // straight back, twice. Pre-marker, each pass wrapped the ciphertext again.
+    cm.saveSettings(raw1);
+    cm.saveSettings(JSON.parse(fs.readFileSync(cm.getSettingsPath(), 'utf-8')));
+
+    const raw2 = JSON.parse(fs.readFileSync(cm.getSettingsPath(), 'utf-8'));
+    expect(raw2.geminiApiKey.length).toBe(raw1.geminiApiKey.length);
+    // And it still decrypts to the original.
+    expect(cm.getSettings().geminiApiKey).toBe('AIza-plain-key');
+  });
+
+  test('legacy multiply-encrypted values recover to plaintext on load', () => {
+    const cm = freshLoad();
+    const p = cm.getSettingsPath();
+    // Build a pre-marker triple-wrapped value the way the old bug did.
+    const wrap = (v: string) => Buffer.from('ENC:' + v).toString('base64');
+    const damaged = wrap(wrap(wrap('sk-original')));
+    const onDisk = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    onDisk.openaiApiKey = damaged;
+    fs.writeFileSync(p, JSON.stringify(onDisk), 'utf-8');
+
+    const cm2 = freshLoad();
+    expect(cm2.getSettings().openaiApiKey).toBe('sk-original');
+  });
+
+  test('a secret past the size cap is cleared, not persisted', () => {
+    const cm = freshLoad();
+    const s = cm.getSettings();
+    s.tavilyApiKey = 'x'.repeat(20_000);
+    cm.saveSettings(s);
+    const raw = JSON.parse(fs.readFileSync(cm.getSettingsPath(), 'utf-8'));
+    expect(raw.tavilyApiKey).toBe('');
+  });
+
+  test('a save that OMITS a secret keeps the one on disk; empty string clears', () => {
+    const cm = freshLoad();
+    const s = cm.getSettings();
+    s.geminiApiKey = 'AIza-keep-me';
+    cm.saveSettings(s);
+
+    // Stale-snapshot save: the field is simply absent.
+    const stale = cm.getSettings();
+    delete (stale as any).geminiApiKey;
+    cm.saveSettings(stale);
+    expect(cm.getSettings().geminiApiKey).toBe('AIza-keep-me');
+
+    // Explicit clear still works.
+    const clearing = cm.getSettings();
+    clearing.geminiApiKey = '';
+    cm.saveSettings(clearing);
+    expect(cm.getSettings().geminiApiKey || '').toBe('');
   });
 });
