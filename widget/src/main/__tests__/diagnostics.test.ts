@@ -162,13 +162,19 @@ describe('checkWritePermissions', () => {
   });
 
   test('returns canWrite=false for a non-existent uncreateable path', () => {
-    // On a real system /proc/no-such-dir is unwritable on Linux; use a mock for portability
-    const fsMock = jest.spyOn(fs, 'mkdirSync').mockImplementationOnce(() => { throw new Error('EPERM'); });
-    const existsMock = jest.spyOn(fs, 'existsSync').mockReturnValueOnce(false);
-    const result = checkWritePermissions('/proc/no-write-access');
-    expect(result.canWrite).toBe(false);
-    fsMock.mockRestore();
-    existsMock.mockRestore();
+    // Was jest.spyOn(fs, 'mkdirSync') — Node 24 made core fs exports
+    // non-configurable, so the spy throws "Cannot redefine property" before
+    // the assertion even runs. No mock needed: a path whose PARENT is a file
+    // is genuinely uncreateable on every platform — mkdir under a file fails
+    // with ENOTDIR/EEXIST — and tests the real code path instead of a stub.
+    const parentFile = path.join(os.tmpdir(), `diag-not-a-dir-${Date.now()}`);
+    fs.writeFileSync(parentFile, 'x');
+    try {
+      const result = checkWritePermissions(path.join(parentFile, 'child'));
+      expect(result.canWrite).toBe(false);
+    } finally {
+      fs.unlinkSync(parentFile);
+    }
   });
 });
 
