@@ -9,28 +9,61 @@ const SECRET_KEYS: (keyof Settings)[] = [
 ];
 
 /**
- * Encrypt a plaintext string via the OS keychain (DPAPI on Windows, Keychain on macOS).
- * Returns a base64-encoded ciphertext, or the original string if safeStorage is unavailable.
+ * Ciphertext marker. Encryption MUST be idempotent: without a marker there is
+ * no way to tell "already encrypted" from "plaintext that looks like base64",
+ * so any already-encrypted value flowing back into saveSettings got wrapped
+ * again. Each wrap grows the value ~33% (base64-of-ciphertext-of-base64...),
+ * which compounds exponentially across saves — found in the wild as a
+ * user-settings.json whose customLLM.apiKey had grown to 180,106,622 chars,
+ * 180MB of nothing but nested encryption.
+ */
+const ENC_PREFIX = 'enc:v1:';
+
+/** No secret is legitimately this large; beyond it we assume bloat. */
+const MAX_SECRET_CHARS = 10_000;
+
+/**
+ * Encrypt a plaintext string via the OS keychain (DPAPI on Windows, Keychain
+ * on macOS). Idempotent: a value already carrying the marker returns as-is.
  */
 function encryptSecret(value: string): string {
+  if (value.startsWith(ENC_PREFIX)) return value; // already ciphertext
   try {
     if (safeStorage.isEncryptionAvailable()) {
-      return safeStorage.encryptString(value).toString('base64');
+      return ENC_PREFIX + safeStorage.encryptString(value).toString('base64');
     }
   } catch { /* safeStorage may not be ready yet during app startup */ }
   return value;
 }
 
 /**
- * Decrypt a base64-encoded ciphertext via the OS keychain.
- * Falls back to returning the raw value for un-encrypted legacy settings.
+ * Decrypt a stored secret.
+ *  - Marked values (enc:v1:) decrypt once — the normal path going forward.
+ *  - Unmarked values are legacy: either plaintext, single-encrypted, or the
+ *    multiply-encrypted output of the pre-marker growth bug. Decrypt until
+ *    stable (bounded) so those damaged values RECOVER to their original
+ *    plaintext instead of surfacing as ciphertext in the UI.
  */
 function decryptSecret(value: string): string {
   try {
-    if (safeStorage.isEncryptionAvailable()) {
-      const buf = Buffer.from(value, 'base64');
-      return safeStorage.decryptString(buf);
+    if (!safeStorage.isEncryptionAvailable()) return value;
+
+    if (value.startsWith(ENC_PREFIX)) {
+      return safeStorage.decryptString(Buffer.from(value.slice(ENC_PREFIX.length), 'base64'));
     }
+
+    // Legacy path: peel layers until decryption stops succeeding.
+    let current = value;
+    for (let i = 0; i < 25; i++) {
+      try {
+        const next = safeStorage.decryptString(Buffer.from(current, 'base64'));
+        if (next === current) break;
+        current = next;
+      } catch {
+        break; // not ciphertext (anymore) — we've reached the plaintext
+      }
+    }
+    return current;
   } catch {
     // Value was stored as plaintext (legacy) — return as-is
   }
@@ -392,7 +425,10 @@ export function getSettings(): Settings {
   // notice) instead of silently vanishing into DEFAULT_SETTINGS.
   let savedSettings: any;
   try {
-    const data = readFileSync(settingsPath, 'utf-8');
+    // Strip a UTF-8 BOM before parsing. PowerShell's Out-File and plenty of
+    // Windows editors write one; JSON.parse rejects it. A BOM must cost the
+    // user nothing — it is not corruption, it is an encoding convention.
+    const data = readFileSync(settingsPath, 'utf-8').replace(/^﻿/, '');
     const parsed = JSON.parse(data);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('settings.json did not contain a JSON object');
@@ -406,6 +442,15 @@ export function getSettings(): Settings {
       timestamp: new Date().toISOString(),
     };
     console.error('Failed to load settings, resetting to defaults:', parseError);
+    // Repair IN PLACE, not just in memory. Archiving the corrupt file while
+    // leaving it on disk meant every cache expiry re-read the same bad file
+    // and archived it again — observed as 42 .corrupt-* copies stamped ~30s
+    // apart. One incident must produce one archive and one repaired file.
+    try {
+      writeFileSync(settingsPath, JSON.stringify(DEFAULT_SETTINGS, null, 2), 'utf-8');
+    } catch (writeError) {
+      console.error('Could not write repaired settings file:', writeError);
+    }
     _settingsCache = { ...DEFAULT_SETTINGS };
     _settingsCacheTime = now;
     return { ..._settingsCache };
@@ -463,6 +508,20 @@ export function saveSettings(settings: Settings): void {
     // Compare with previous to log telemetry consent events
     const previous = getSettings();
     const toSave = { ...settings } as Settings & { telemetryConsentTimestamp?: string; telemetryConsentVersion?: string };
+
+    // Lost-update guard for secrets. The renderer saves a WHOLE settings
+    // object; when its snapshot is stale (loaded during a corrupt-reset, or
+    // just old), a save silently erased every key the snapshot lacked —
+    // observed live as a vanished geminiApiKey. Rule: a save that OMITS a
+    // secret means "unchanged", and only an explicit empty string clears it.
+    for (const key of SECRET_KEYS) {
+      if ((toSave as any)[key] === undefined && (previous as any)[key]) {
+        (toSave as any)[key] = (previous as any)[key];
+      }
+    }
+    if (toSave.customLLM && (toSave.customLLM as any).apiKey === undefined && previous.customLLM?.apiKey) {
+      (toSave.customLLM as any).apiKey = previous.customLLM.apiKey;
+    }
     if (toSave.telemetryEnabled && !toSave.telemetryConsentTimestamp) {
       toSave.telemetryConsentTimestamp = new Date().toISOString();
     }
@@ -470,17 +529,26 @@ export function saveSettings(settings: Settings): void {
     if (toSave.telemetryEnabled && !toSave.telemetryConsentVersion) {
       toSave.telemetryConsentVersion = '1.0';
     }
-    // Encrypt secret fields before writing to disk
+    // Encrypt secret fields before writing to disk. The size cap applies to
+    // EVERY secret, not just customLLM.apiKey — the 180MB incident happened
+    // under whichever key lacked the guard. encryptSecret is idempotent now
+    // (marker), so re-saving an encrypted value is a no-op, but the cap stays
+    // as the backstop for any legacy multi-wrapped value still on disk.
     for (const key of SECRET_KEYS) {
       const val = (toSave as any)[key];
       if (typeof val === 'string' && val.length > 0) {
-        (toSave as any)[key] = encryptSecret(val);
+        if (val.length > MAX_SECRET_CHARS) {
+          console.error('[CONFIG] %s suspiciously large (%d chars) — clearing to prevent bloat', key, val.length);
+          (toSave as any)[key] = '';
+        } else {
+          (toSave as any)[key] = encryptSecret(val);
+        }
       }
     }
-    // Encrypt nested customLLM.apiKey (guard against bloated re-encryption)
+    // Encrypt nested customLLM.apiKey with the same cap
     if (toSave.customLLM && typeof (toSave.customLLM as any).apiKey === 'string' && (toSave.customLLM as any).apiKey.length > 0) {
       const rawKey = (toSave.customLLM as any).apiKey as string;
-      if (rawKey.length > 10_000) {
+      if (rawKey.length > MAX_SECRET_CHARS) {
         console.error('[CONFIG] customLLM.apiKey suspiciously large (%d chars) — clearing to prevent bloat', rawKey.length);
         (toSave.customLLM as any).apiKey = '';
       } else {
