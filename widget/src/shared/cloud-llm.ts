@@ -40,6 +40,10 @@ export type CloudLLMSettingsSlice = Pick<
   // silently ignored while the UI said "Turn off Uncensored Mode to switch
   // models". Same split-brain shape as the key-vault bug above.
   | 'uncensoredMode'
+  // Read by describeActiveModel so the header can display the same local
+  // model the router would actually pick.
+  | 'chatModel'
+  | 'uncensoredModel'
 >;
 
 /** Where each provider's key lives in the top-level settings "key vault".
@@ -155,4 +159,56 @@ export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefin
   }
 
   return { intended, active: true, config, misconfiguration: null, localOverride: null };
+}
+
+/** What the header should display: who would answer a message sent right now. */
+export interface ActiveModelInfo {
+  /** Where the next reply comes from. */
+  source: 'cloud' | 'local';
+  /** Model id the router would use — 'opus', 'qwen2.5:7b', ... */
+  model: string;
+  /** Provider when source is cloud. */
+  provider: string | null;
+  /**
+   * Why the answer differs from what the user might expect — the uncensored
+   * override or a cloud misconfiguration. Null when there is nothing to
+   * explain. Callers should SHOW this next to the model name.
+   */
+  reason: string | null;
+}
+
+/**
+ * The single answer to "which model answers right now?", for DISPLAY.
+ *
+ * The header used to derive this from the renderer's own settings copy, which
+ * is a second implementation of the routing decision — and every disagreement
+ * between the two shipped as a lying header ("Qwen selected", opus answering;
+ * "opus selected", qwen answering). The renderer now asks this function via
+ * IPC instead of guessing. Built ON resolveCloudLLM, not beside it, so the
+ * display can only diverge from routing if the router itself does.
+ */
+export function describeActiveModel(settings: CloudLLMSettingsSlice | null | undefined): ActiveModelInfo {
+  const cloud = resolveCloudLLM(settings);
+
+  if (cloud.active && cloud.config) {
+    return {
+      source: 'cloud',
+      model: cloud.config.model || '',
+      provider: cloud.config.provider,
+      reason: null,
+    };
+  }
+
+  // Local: mirror the router's uncensored-beats-normal selection. (Vision and
+  // code overrides are per-message and cannot be known here.)
+  const local = settings?.uncensoredMode
+    ? (settings?.uncensoredModel || 'dolphin-mistral:7b')
+    : (settings?.chatModel || 'qwen2.5:7b');
+
+  return {
+    source: 'local',
+    model: local,
+    provider: null,
+    reason: cloud.localOverride || cloud.misconfiguration,
+  };
 }

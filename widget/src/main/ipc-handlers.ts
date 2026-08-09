@@ -53,7 +53,7 @@ import {
   ConversationSearchResult,
 } from './memory-manager';
 import { Message } from '../shared/types';
-import { resolveCloudLLM } from '../shared/cloud-llm';
+import { resolveCloudLLM, describeActiveModel } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { homebotWebhookHeaders } from './webhook-auth';
@@ -2515,6 +2515,18 @@ EXAMPLE FORMAT:
       return { success: true, dir };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Could not open the skills folder.' };
+    }
+  });
+
+  // ---- Active model (header display) -----------------------------------
+  // The header asks the ROUTER who would answer, instead of re-deriving the
+  // decision from its own settings copy. Every header-vs-badge disagreement
+  // this month came from that second derivation drifting.
+  ipcMain.handle('homebot:resolve-active-model', async () => {
+    try {
+      return { success: true, ...describeActiveModel(getSettings() as any) };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not resolve the active model.' };
     }
   });
 

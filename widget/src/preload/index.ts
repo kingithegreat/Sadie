@@ -332,6 +332,14 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:browser:state', listener);
   },
 
+  /**
+   * Ask the ROUTER which model answers a message sent right now. The header
+   * displays this instead of re-deriving the decision from its own settings
+   * copy — the second derivation is where every lying-header bug came from.
+   */
+  resolveActiveModel: async (): Promise<any> =>
+    await ipcRenderer.invoke('homebot:resolve-active-model'),
+
   skillsList: async (): Promise<any> => {
     return await ipcRenderer.invoke('homebot:skills-list');
   },
