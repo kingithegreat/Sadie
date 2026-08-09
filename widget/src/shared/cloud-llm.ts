@@ -77,7 +77,15 @@ export interface ResolvedCloudLLM {
 
 export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefined): ResolvedCloudLLM {
   const cfg = settings?.customLLM;
-  const intended = !!(settings && (settings.useCustomLLM || cfg?.enabled));
+  // Intent rule: an EXPLICIT useCustomLLM boolean is the user's routing choice
+  // and always wins; customLLM.enabled only decides for legacy settings where
+  // useCustomLLM was never written. The old OR meant a leftover enabled:true
+  // silently overrode useCustomLLM:false — observed live three times as
+  // "I have Qwen selected" while every reply stayed badged opus, and no
+  // amount of picking fixed it unless the pick happened to rewrite the flag.
+  const intended = !!settings && (
+    typeof settings.useCustomLLM === 'boolean' ? settings.useCustomLLM : !!cfg?.enabled
+  );
 
   if (!cfg) {
     return {

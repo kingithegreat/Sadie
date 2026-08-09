@@ -132,14 +132,19 @@ describe('inactive by choice is not a misconfiguration', () => {
     expect(r.config?.apiKey).toBe('AIza-vault');
   });
 
-  test('customLLM.enabled alone counts as intended (matches existing gates)', () => {
+  test('explicit useCustomLLM:false beats enabled:true (semantics changed 2026-08-09)', () => {
+    // This test originally asserted the reverse ("enabled alone counts"),
+    // mirroring the legacy gates this module replaced. That OR is what made a
+    // stale enabled:true override the user's explicit local choice — seen
+    // live three times as Qwen selected, opus answering. Explicit choice wins
+    // now; `enabled` only decides when useCustomLLM was never written.
     const r = resolveCloudLLM(baseSettings({
       useCustomLLM: false,
       geminiApiKey: 'AIza-vault',
       customLLM: { name: 't', provider: 'google-ai-studio', model: 'm', apiUrl: 'https://x', apiKey: '', enabled: true },
     }));
-    expect(r.intended).toBe(true);
-    expect(r.active).toBe(true);
+    expect(r.intended).toBe(false);
+    expect(r.active).toBe(false);
   });
 
   test('null settings → inactive, silent', () => {
@@ -232,26 +237,45 @@ describe('uncensored mode overrides cloud', () => {
   });
 });
 
-describe('the enabled-flag OR (why local picks must clear enabled)', () => {
-  // resolveCloudLLM treats EITHER flag as cloud intent:
-  //   intended = useCustomLLM || customLLM.enabled
-  // So any writer that turns useCustomLLM off while leaving enabled true has
-  // NOT switched to local — observed live as "i have quen selected" while
-  // every reply stayed badged opus. The header handlers in App.tsx therefore
-  // write symmetrically: cloud pick => enabled true, local pick => enabled
-  // false. These tests pin the resolver semantics that force that rule.
+describe('explicit useCustomLLM wins; enabled is only the legacy fallback', () => {
+  // History: intent used to be (useCustomLLM || enabled). A leftover
+  // enabled:true then overrode an explicit useCustomLLM:false — live symptom,
+  // three times: "I have Qwen selected" while replies stayed badged opus.
+  // The symmetric header write (#92) fixed NEW picks but couldn't repair
+  // stale files, so the resolver rule itself changed: an explicit boolean
+  // useCustomLLM is the user's routing choice, full stop. enabled only
+  // decides for legacy settings where useCustomLLM was never written.
 
-  it('a still-enabled cloud config keeps cloud active even with useCustomLLM off', () => {
+  it('explicit OFF beats a stale enabled:true — the three-times-live bug', () => {
     const r = resolveCloudLLM({
       useCustomLLM: false,
       customLLM: { provider: 'claude-code', model: 'opus', apiKey: '', enabled: true } as any,
       anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
     } as any);
-    expect(r.intended).toBe(true);
-    expect(r.active).toBe(true); // this is the trap the symmetric write avoids
+    expect(r.intended).toBe(false);
+    expect(r.active).toBe(false);
   });
 
-  it('local pick done right — enabled false — actually routes local', () => {
+  it('explicit ON works even if enabled was never set', () => {
+    const r = resolveCloudLLM({
+      useCustomLLM: true,
+      customLLM: { provider: 'claude-code', model: 'opus', apiKey: '', enabled: false } as any,
+      anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
+    } as any);
+    expect(r.intended).toBe(true);
+    expect(r.active).toBe(true);
+  });
+
+  it('legacy settings without useCustomLLM fall back to enabled', () => {
+    const r = resolveCloudLLM({
+      customLLM: { provider: 'claude-code', model: 'opus', apiKey: '', enabled: true } as any,
+      anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
+    } as any);
+    expect(r.intended).toBe(true);
+    expect(r.active).toBe(true);
+  });
+
+  it('local pick done right — both flags off — routes local', () => {
     const r = resolveCloudLLM({
       useCustomLLM: false,
       customLLM: { provider: 'claude-code', model: 'opus', apiKey: '', enabled: false } as any,
