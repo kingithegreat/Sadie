@@ -33,8 +33,10 @@ export function createMainWindow(): BrowserWindow {
   // which is what the OS uses for edge-resizing, Win+Arrow snapping and Snap
   // Layouts — `resizable: true` is silently neutered. Opaque + frameless (the
   // VS Code model) keeps the custom titlebar AND normal resize/snap behaviour.
-  // The old glass-over-desktop look can come back via backgroundMaterial:
-  // 'acrylic' once the electron@43 upgrade lands (needs Electron >= 29).
+  // The old glass-over-desktop look is now POSSIBLE via backgroundMaterial:
+  // 'acrylic' — the Electron 42 upgrade landed (42, not 43: better-sqlite3
+  // publishes prebuilds up to ABI 146/Electron 42; 43's ABI 148 isn't
+  // published yet). Not enabled here: cosmetic change, own PR.
   mainWindow = new BrowserWindow({
     width: isWidgetMode ? WIDGET_SIZE.width : EXPANDED_SIZE.width,
     height: isWidgetMode ? WIDGET_SIZE.height : EXPANDED_SIZE.height,
