@@ -143,6 +143,7 @@ import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
 // relative path is emitted verbatim and dies as MODULE_NOT_FOUND in the build.
 import { reloadSkills } from './skills';
 import { seedSkills } from './skills-seed';
+import { migrateLegacyUserDataIfNeeded } from './migrate-userdata';
 import { registerBrowserPanelIpc, destroyBrowserPanel } from './browser-panel';
 applyIpcHandlePatch();
 
@@ -170,6 +171,15 @@ app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: HOMEBOT_DIRECT_OLLAMA=', process.env.HOMEBOT_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
+
+  // FIRST profile touch: rescue the pre-rename SADIE profile into this one.
+  // Must run before anything reads or writes userData (settings, skills,
+  // conversations), or the fresh profile's files win over the user's history.
+  try {
+    migrateLegacyUserDataIfNeeded();
+  } catch (e) {
+    console.error('[MAIN] Legacy profile migration failed (non-fatal):', e);
+  }
 
   // Write the shipped skills into userData/skills on first run (never
   // overwrites), then load the catalogue so it is ready before the first
