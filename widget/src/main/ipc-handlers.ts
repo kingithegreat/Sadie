@@ -29,7 +29,7 @@ import {
   exportTelemetryConsent,
   getDefaultSettings
 } from './config-manager';
-import { fetchAvailableCustomModels, PROVIDER_API_URLS } from './custom-llm-client';
+import { fetchAvailableCustomModels, generateFromCustomLLM } from './custom-llm-client';
 import { fetchPageContentHandler } from './tools/browser';
 import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -1258,35 +1258,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const titleCloud = resolveCloudLLM(settings);
 
       if (titleCloud.active && titleCloud.config) {
-        const cfg = titleCloud.config;
-        const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
-
-        if (cfg.provider === 'anthropic') {
-          const resp = await axios.post(`${apiUrl}/messages`, {
-            model: cfg.model,
-            max_tokens: 30,
-            temperature: 0.3,
-            messages: [{ role: 'user', content: `${titleInstruction}\nUser: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:` }],
-          }, {
-            headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
-            timeout: 15000,
-          });
-          title = resp.data?.content?.[0]?.text ?? '';
-        } else {
-          const resp = await axios.post(`${apiUrl}/chat/completions`, {
-            model: cfg.model,
-            messages: [
-              { role: 'system', content: titleInstruction },
-              { role: 'user', content: `User: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:` },
-            ],
-            max_tokens: 30,
-            temperature: 0.3,
-          }, {
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
-            timeout: 15000,
-          });
-          title = resp.data?.choices?.[0]?.message?.content ?? '';
-        }
+        // Same hand-rolled HTTP shape as the quiz path had — it produced
+        // "Invalid URL" for claude-code, which has no apiUrl because it is a
+        // CLI, not an endpoint. Titles are best-effort, so a shorter timeout.
+        title = await generateFromCustomLLM(
+          titleCloud.config,
+          titleInstruction,
+          `User: ${userSnippet}\nAssistant: ${assistantSnippet}\nTitle:`,
+          { timeoutMs: 15_000 },
+        );
       } else {
         const ollamaBase = getConfiguredOllamaBaseUrl();
         const model = settings.chatModel || process.env.OLLAMA_MODEL || 'qwen2.5:7b';
@@ -2286,40 +2266,9 @@ try {
     const quizCloud = resolveCloudLLM(settings);
 
     if (quizCloud.active && quizCloud.config) {
-      const cfg = quizCloud.config;
-      const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
-
-      if (cfg.provider === 'anthropic') {
-        const resp = await axios.post(`${apiUrl}/messages`, {
-          model: cfg.model,
-          max_tokens: 3000,
-          temperature: 0.7,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: prompt }],
-        }, {
-          headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
-          timeout: 120_000,
-        });
-        return resp.data?.content?.[0]?.text ?? '';
-      } else {
-        const isGoogle = cfg.provider === 'google-ai-studio';
-        const body: any = {
-          model: cfg.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.7,
-        };
-        if (!isGoogle) {
-          body.max_tokens = 3000;
-        }
-        const resp = await axios.post(`${apiUrl}/chat/completions`, body, {
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
-          timeout: 120_000,
-        });
-        return resp.data?.choices?.[0]?.message?.content ?? '';
-      }
+      // Was a hand-rolled axios call that assumed an HTTP endpoint — which
+      // gave "Invalid URL" for claude-code (a CLI subprocess with no apiUrl).
+      return await generateFromCustomLLM(quizCloud.config, systemPrompt, prompt);
     }
 
     const model = settings.chatModel || 'qwen2.5:7b';

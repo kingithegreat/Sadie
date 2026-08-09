@@ -1207,3 +1207,63 @@ export function validateCustomLLMConfig(config?: CustomLLMConfig): { valid: bool
   
   return { valid: true };
 }
+
+/**
+ * One-shot, non-streaming generation from whichever cloud provider is active.
+ *
+ * Exists because three separate features — quiz generation, conversation
+ * titles, and code-model routing — each hand-rolled the same axios call:
+ *
+ *     const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
+ *     axios.post(`${apiUrl}/chat/completions`, ...)
+ *
+ * That shape assumes every cloud provider is an HTTP endpoint. `claude-code`
+ * is not — it is a local CLI subprocess with no apiUrl and no entry in
+ * PROVIDER_API_URLS, so apiUrl resolved to '' and axios threw "Invalid URL".
+ * Observed live: the Quiz panel showing "Invalid URL" and refusing to start
+ * while the Claude subscription provider was selected.
+ *
+ * Rather than patch a claude-code branch into three places (and miss the
+ * fourth next time), this routes through streamFromCustomLLM — which already
+ * knows how to reach every provider, subprocess ones included — and buffers
+ * the result. One dispatch table, not four.
+ */
+export async function generateFromCustomLLM(
+  apiConfig: CustomLLMConfig,
+  systemPrompt: string,
+  userPrompt: string,
+  opts?: { timeoutMs?: number },
+): Promise<string> {
+  const timeoutMs = opts?.timeoutMs ?? 120_000;
+
+  return new Promise<string>((resolve, reject) => {
+    let buffer = '';
+    let settled = false;
+    const controller = new AbortController();
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      controller.abort();
+      reject(new Error(`Generation timed out after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+
+    void streamFromCustomLLM(
+      userPrompt,
+      [],                       // no history: these are one-shot utility calls
+      apiConfig,
+      systemPrompt,
+      (text) => { buffer += text; },
+      () => finish(() => resolve(buffer)),
+      (err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))),
+      controller.signal,
+    ).catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
+  });
+}
