@@ -8,7 +8,7 @@
  * fell back to local qwen while Settings showed Gemini as configured.
  */
 
-import { resolveCloudLLM } from '../cloud-llm';
+import { resolveCloudLLM, describeActiveModel } from '../cloud-llm';
 import type { Settings } from '../types';
 
 /** Minimal valid settings; tests override what they exercise. */
@@ -283,5 +283,50 @@ describe('explicit useCustomLLM wins; enabled is only the legacy fallback', () =
     } as any);
     expect(r.intended).toBe(false);
     expect(r.active).toBe(false);
+  });
+});
+
+describe('describeActiveModel — the header display contract', () => {
+  const cloudReady = {
+    useCustomLLM: true,
+    customLLM: { provider: 'claude-code', model: 'opus', apiKey: '', enabled: true } as any,
+    anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
+    chatModel: 'qwen2.5:7b', uncensoredModel: 'dolphin-mistral:7b',
+  };
+
+  it('cloud active: header shows the cloud model, no caveat', () => {
+    const d = describeActiveModel(cloudReady as any);
+    expect(d).toEqual({ source: 'cloud', model: 'opus', provider: 'claude-code', reason: null });
+  });
+
+  it('cloud off: header shows the chat model — never the cloud leftover', () => {
+    const d = describeActiveModel({ ...cloudReady, useCustomLLM: false, customLLM: { ...cloudReady.customLLM, enabled: false } } as any);
+    expect(d.source).toBe('local');
+    expect(d.model).toBe('qwen2.5:7b');
+  });
+
+  it('uncensored on: header shows the uncensored model WITH the reason', () => {
+    // The exact live confusion: opus selected, dolphin answering, no
+    // explanation anywhere. The reason string is the explanation.
+    const d = describeActiveModel({ ...cloudReady, uncensoredMode: true } as any);
+    expect(d.source).toBe('local');
+    expect(d.model).toBe('dolphin-mistral:7b');
+    expect(d.reason).toMatch(/uncensored/i);
+  });
+
+  it('cloud intended but broken: header shows local AND says why', () => {
+    const d = describeActiveModel({
+      ...cloudReady,
+      customLLM: { provider: 'anthropic', model: 'claude-sonnet-5', apiKey: '', enabled: true } as any,
+    } as any);
+    expect(d.source).toBe('local');
+    expect(d.model).toBe('qwen2.5:7b');
+    expect(d.reason).toMatch(/API key/i);
+  });
+
+  it('null settings degrade to the shipped defaults', () => {
+    const d = describeActiveModel(null);
+    expect(d.source).toBe('local');
+    expect(d.model).toBe('qwen2.5:7b');
   });
 });

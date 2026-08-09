@@ -183,12 +183,34 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     widgetHotkey: 'Ctrl+Shift+Space'
   });
   const [isHydrated, setIsHydrated] = useState(false);
+  // What the ROUTER says would answer right now — the header displays this,
+  // never its own derivation. `settings.chatModel` as the header source is
+  // how every lying-header bug happened: it shows the local fallback even
+  // while cloud routing is active.
+  const [activeModel, setActiveModel] = useState<{ source?: 'cloud' | 'local'; model?: string; reason?: string | null }>({});
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
   const [backendDiagnostic, setBackendDiagnostic] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
   const [vramGB, setVramGB] = useState<number | null>(null);
+
+  // Keep the header's model in sync with the router's actual decision.
+  // Re-asks after every settings change (all saves flow through setSettings)
+  // and whenever uncensored mode flips — so the header can only lie if the
+  // router itself does.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await (window as any).electron?.resolveActiveModel?.();
+        if (!cancelled && r?.success) {
+          setActiveModel({ source: r.source, model: r.model, reason: r.reason ?? null });
+        }
+      } catch { /* header falls back to settings-derived display */ }
+    })();
+    return () => { cancelled = true; };
+  }, [settings, uncensoredMode]);
   const lastModelTipRef = useRef<string>('');
   const [pendingModelSuggestion, setPendingModelSuggestion] = useState<PendingModelSuggestion | null>(null);
 
@@ -1127,7 +1149,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           </div>
           <div className="widget-model-selector">
             <ModelSelector
-              currentModel={settings.chatModel || 'qwen2.5:7b'}
+              currentModel={activeModel.model || settings.chatModel || 'qwen2.5:7b'}
               customLLM={settings.customLLM}
               useCustomLLM={settings.useCustomLLM}
               onModelChange={async (model: string, useCustom: boolean, provider?: string) => {
@@ -1295,7 +1317,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
         mode={mode}
         onModeChange={setMode}
-        currentModel={settings.chatModel || 'qwen2.5:7b'}
+        currentModel={activeModel.model || settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
         uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}

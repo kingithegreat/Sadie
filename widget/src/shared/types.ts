@@ -337,6 +337,16 @@ export interface ElectronAPI {
   }>;
   skillsOpenFolder: () => Promise<{ success: boolean; dir?: string; error?: string }>;
 
+  /** Router's answer to "which model replies right now?" — drives the header. */
+  resolveActiveModel: () => Promise<{
+    success: boolean;
+    source?: 'cloud' | 'local';
+    model?: string;
+    provider?: string | null;
+    reason?: string | null;
+    error?: string;
+  }>;
+
   /** Browser side panel — a BrowserView docked inside the window. */
   browserAttach: (url?: string, bounds?: BrowserPanelBounds) => Promise<{ success: boolean; error?: string; state?: BrowserPanelState }>;
   browserDetach: () => Promise<{ success: boolean; error?: string }>;
