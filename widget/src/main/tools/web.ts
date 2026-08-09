@@ -70,7 +70,18 @@ export const webSearchDef: ToolDefinition = {
     properties: {
       query: {
         type: 'string',
-        description: 'The search query - be specific and include dates/years when relevant'
+        // The description carries this rule because the observed failure was a
+        // raw follow-up passed straight through: "but who is likely to make the
+        // playoffs?" searched verbatim returns NFL results, because the phrase
+        // is dominated by NFL content and the conversation's subject was never
+        // in the query. The model is the only place that knows the subject.
+        description:
+          'A STANDALONE search query. The user\'s message is often a follow-up that makes no ' +
+          'sense on its own — rewrite it so a stranger who has not read the conversation would ' +
+          'understand it. Carry the subject over from earlier turns, and include the year or ' +
+          'season. Drop filler like "but", "so", "I\'m talking about". ' +
+          'Example: after discussing basketball, "but who is likely to make the playoffs?" must ' +
+          'become "NBA 2026-27 season playoff predictions", NOT "who is likely to make the playoffs".'
       },
       maxResults: {
         type: 'number',
@@ -365,6 +376,30 @@ export function isAllowedDomain(url: string): boolean {
 }
 
 // Search using Google (most reliable)
+/**
+ * Pull the descriptive text that follows a Google result link.
+ *
+ * Google's class names are obfuscated and change often, so matching on them is
+ * a losing game. Instead take the markup just after the link, strip tags, and
+ * keep the longest run of plain prose — that is reliably the snippet, and it
+ * degrades to '' rather than to wrong text when the layout changes.
+ */
+export function extractSnippetNear(html: string, fromIndex: number): string {
+  const WINDOW = 1200;
+  const region = html.slice(fromIndex, fromIndex + WINDOW);
+
+  const candidates = region
+    .split(/<\/?(?:div|span|td|br|p)[^>]*>/i)
+    .map(chunk => stripHtml(chunk).replace(/\s+/g, ' ').trim())
+    // Drop UI furniture ("Cached", "Similar", breadcrumbs) and anything too
+    // short to be a real description.
+    .filter(text => text.length >= 40 && /[a-z]{3}/i.test(text) && !/^https?:\/\//i.test(text));
+
+  if (candidates.length === 0) return '';
+  const best = candidates.reduce((a, b) => (b.length > a.length ? b : a));
+  return best.length > 300 ? best.slice(0, 300) + '…' : best;
+}
+
 async function searchGoogle(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
   const encodedQuery = encodeURIComponent(query);
   const searchUrl = `https://www.google.com/search?q=${encodedQuery}&num=${maxResults + 5}&hl=en`;
@@ -389,9 +424,12 @@ async function searchGoogle(query: string, maxResults: number): Promise<Array<{ 
       if (!isAllowedDomain(url)) continue;
       if (!url.startsWith('http')) continue;
       
-      // Try to find snippet near this result
-      const snippet = '';
-      
+      // Google's snippet sits in the markup after the result link. This was
+      // hardcoded to '' under a "try to find snippet" comment, so every Google
+      // result arrived with no text at all — and when page fetches also fail,
+      // the snippet fallback below has nothing to fall back to.
+      const snippet = extractSnippetNear(html, match.index);
+
       results.push({ title, url, snippet });
     } catch (e) {
       continue;
@@ -974,6 +1012,11 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
     // Fetch full content from top N results
     const fetchTop = args.fetchTopResult !== false; // Default to true
     let sources: Array<{ url: string; title: string; content: string }> = [];
+    // Whether `sources` are real page text or just search-result previews. The
+    // note below used to claim "Fetched content from N sources" either way, so
+    // the model could not tell a two-line preview from a fetched page — and
+    // answered "the snippet doesn't specify" instead of opening the page.
+    let usedSnippetFallback = false;
 
     if (tavilySources.length > 0) {
       // Tavily already provides clean pre-extracted text — use all of them directly
@@ -1013,6 +1056,7 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
         .map(r => ({ url: r.url, title: r.title, content: r.snippet }));
       if (snippetSources.length > 0) {
         sources = snippetSources;
+        usedSnippetFallback = true;
         console.log(`[HomeBot Web] Using ${snippetSources.length} snippet(s) as fallback sources`);
       }
     }
@@ -1035,9 +1079,19 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       // Keep topResultContent for backward-compat with any code that reads it
       topResultContent: topContent ? { ...topContent, content: topContent.content.length > 800 ? topContent.content.substring(0, 800) + '...' : topContent.content } : null,
       instruction: 'Summarize the KEY facts from these sources in 2-4 sentences. Do not repeat raw text. If the sources do not answer the question, say so.',
-      note: sources.length > 0
-        ? `Fetched content from ${sources.length} source(s) via ${searchProvider}: ${sources.map(s => `"${s.title}"`).join(', ')}`
-        : `Search via ${searchProvider} found links but could not fetch detailed content.`,
+      note: sources.length === 0
+        ? `Search via ${searchProvider} found links but could not fetch detailed content.`
+        : usedSnippetFallback
+          // Say plainly that these are previews, and what to do about it.
+          // Otherwise the model reports "the snippet doesn't specify" as if that
+          // were the end of the road, when fetch_url is right there.
+          ? `Could not open any of these pages, so these are SHORT PREVIEWS only, not full articles. `
+            + `If a preview does not contain the answer, call fetch_url on the most promising URL `
+            + `before concluding anything. Do not report that the preview was insufficient — open the page.`
+          : `Fetched full page content from ${sources.length} source(s) via ${searchProvider}: `
+            + `${sources.map(s => `"${s.title}"`).join(', ')}`,
+      /** True when only previews were available — lets callers spot the degraded path. */
+      previewOnly: usedSnippetFallback,
     };
     // Include Tavily AI answer if available
     if (tavilyAnswer) {

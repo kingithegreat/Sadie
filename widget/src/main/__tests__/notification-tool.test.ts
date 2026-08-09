@@ -8,7 +8,12 @@ const mockNotification = jest.fn().mockImplementation(() => ({ show: mockShow })
 (mockNotification as any).isSupported = jest.fn().mockReturnValue(true);
 
 jest.mock('electron', () => ({
-  Notification: mockNotification
+  Notification: mockNotification,
+  // The handler now reads settings before showing anything (notifications can
+  // be disabled). getSettings() reaches app.getPath — without this, it threw
+  // and every call landed in the catch, so all seven tests failed regardless
+  // of what they asserted.
+  app: { getPath: () => require('os').tmpdir() },
 }));
 
 // Mock child_process for the PowerShell fallback path

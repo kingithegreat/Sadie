@@ -1,3 +1,10 @@
+/**
+ * @jest-environment jsdom
+ *
+ * systemPrefersDark reads window.matchMedia; the repo's jest default is the
+ * node environment (no window), so this suite failed to even load on main.
+ * Same docblock every renderer test here already uses.
+ */
 import { resolveTheme, followsSystem, systemPrefersDark, FALLBACK_THEME } from '../theme';
 
 describe('resolveTheme', () => {

@@ -1,3 +1,12 @@
+// preProcessIntent now reads settings (default weather location), and
+// getSettings() → app.getPath throws under plain Jest where electron's `app`
+// is undefined. Third test suite broken by this exact shape: a handler grows
+// a getSettings() call after its tests were written, and the suite fails on
+// environment, not logic.
+jest.mock('electron', () => ({
+  app: { getPath: () => require('os').tmpdir() },
+}));
+
 import { preProcessIntent, clearHistory, setLastIntent, clearLastIntent, bumpLastIntentAge, getCannedResponse, isGarbageOutput, isSmallModel } from '../message-router';
 
 describe('preProcessIntent', () => {

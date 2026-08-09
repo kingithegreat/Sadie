@@ -72,9 +72,13 @@ describe('config-manager integration tests', () => {
 
   test('enabling telemetry sets consent timestamp', () => {
     const s = getSettings();
-    // Telemetry is required by default
-    expect(s.telemetryEnabled).toBe(true);
-    // Ensure consent timestamp/version exist after persisting
+    // Telemetry is OPT-IN: off until the user explicitly consents
+    // (DEFAULT_SETTINGS cites NZ Privacy Act 2020, IPP 3). This test asserted
+    // the old opt-out default and was red on main — the code changed
+    // deliberately; the test hadn't caught up.
+    expect(s.telemetryEnabled).toBe(false);
+    // The user consents: enabling + saving stamps timestamp and version.
+    s.telemetryEnabled = true;
     saveSettings(s);
     const reloaded = getSettings();
     expect(reloaded.telemetryEnabled).toBe(true);
@@ -87,8 +91,9 @@ describe('config-manager integration tests', () => {
     const path = require('path');
     const temp = process.env.TEST_USERDATA as string;
     const logPath = path.join(temp, 'logs', 'telemetry-consent.log');
-    // Force a save to ensure consent is logged
+    // Opt-in: consent is only recorded when telemetry is explicitly enabled.
     const s = getSettings();
+    s.telemetryEnabled = true;
     // Ensure consent is re-recorded by clearing any existing timestamp/version
     s.telemetryConsentTimestamp = undefined as any;
     s.telemetryConsentVersion = undefined as any;
@@ -112,6 +117,10 @@ describe('config-manager integration tests', () => {
 
   test('export telemetry consent writes file', () => {
     const { exportTelemetryConsent } = require('../../main/config-manager');
+    // Opt-in world: give consent first, then export reflects it.
+    const s = getSettings();
+    s.telemetryEnabled = true;
+    saveSettings(s);
     const r = exportTelemetryConsent();
     expect(r.success).toBe(true);
     const fs = require('fs');

@@ -61,6 +61,20 @@ const ALLOWED_CHANNELS = {
   GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
   GET_CRM_DASHBOARD: 'homebot:get-crm-dashboard',
   BATCH_SUMMARY_PUSH: 'homebot:batch-summary',
+  // Interactive terminal panel
+  TERMINAL_CREATE: 'homebot:terminal:create',
+  TERMINAL_RUN: 'homebot:terminal:run',
+  TERMINAL_KILL: 'homebot:terminal:kill',
+  TERMINAL_CLOSE: 'homebot:terminal:close',
+  TERMINAL_STATUS: 'homebot:terminal:status',
+  TERMINAL_OUTPUT_PUSH: 'homebot:terminal:output',
+  TERMINAL_EXIT_PUSH: 'homebot:terminal:exit',
+  // Explorer + code editor
+  WORKSPACE_ROOT: 'homebot:workspace:root',
+  WORKSPACE_LIST: 'homebot:workspace:list',
+  WORKSPACE_READ: 'homebot:workspace:read',
+  WORKSPACE_SAVE: 'homebot:workspace:save',
+  ASSISTANT_TOOL_ACTIVITY: 'homebot:assistant-tool-activity',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
   SHOW_WINDOW: 'homebot:show-window',
@@ -288,6 +302,44 @@ const electronAPI: ElectronAPI = {
   /**
    * Get user settings from main process
    */
+  /**
+   * Skills: list the SKILL.md folders, and open that folder in Explorer.
+   * Exposed here AND consumed by SettingsPanel — an IPC channel with no
+   * renderer caller is dead code that reads as a working feature.
+   */
+  /**
+   * Browser side panel. The renderer owns layout — it measures where the panel
+   * sits and sends those bounds, because a BrowserView floats above the page
+   * and main has no idea what the CSS did.
+   */
+  browserAttach: async (url?: string, bounds?: any): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:attach', url, bounds),
+  browserDetach: async (): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:detach'),
+  browserBounds: async (bounds: any): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:bounds', bounds),
+  browserNavigate: async (url: string): Promise<any> =>
+    await ipcRenderer.invoke('homebot:browser:navigate', url),
+  browserBack: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:back'),
+  browserForward: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:forward'),
+  browserReload: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:reload'),
+  /** PNG of the live page — the "let HomeBot look at this" path. */
+  browserCapture: async (): Promise<any> => await ipcRenderer.invoke('homebot:browser:capture'),
+  /** Push updates: url/title/loading/canGoBack change as the user browses. */
+  onBrowserState: (cb: (state: any) => void): (() => void) => {
+    const listener = (_e: any, state: any) => cb(state);
+    ipcRenderer.on('homebot:browser:state', listener);
+    return () => ipcRenderer.removeListener('homebot:browser:state', listener);
+  },
+
+  skillsList: async (): Promise<any> => {
+    return await ipcRenderer.invoke('homebot:skills-list');
+  },
+
+  skillsOpenFolder: async (): Promise<any> => {
+    return await ipcRenderer.invoke('homebot:skills-open-folder');
+  },
+
   getSettings: async (): Promise<Settings> => {
     logDebug('[Preload] IPC invoke', ALLOWED_CHANNELS.GET_SETTINGS);
     try { pushRendererLog(`IPC invoke ${ALLOWED_CHANNELS.GET_SETTINGS}`); } catch (e) { safeCatch(e); }
@@ -424,6 +476,54 @@ const electronAPI: ElectronAPI = {
   /** Read-only CRM numbers for the Dashboard landing page. */
   getCrmDashboard: async (): Promise<{ success: boolean; summary?: any; error?: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_CRM_DASHBOARD);
+  },
+
+  // ── Interactive terminal ──────────────────────────────────────────────
+  terminalCreate: async (cwd?: string): Promise<{ success: boolean; id?: string; cwd?: string; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_CREATE, cwd);
+  },
+  terminalRun: async (id: string, command: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_RUN, id, command);
+  },
+  terminalKill: async (id: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_KILL, id);
+  },
+  terminalClose: async (id: string): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.TERMINAL_CLOSE, id);
+  },
+  // ── Workspace (Explorer + editor) ─────────────────────────────────────
+  workspaceRoot: async (): Promise<{ success: boolean; path: string }> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_ROOT);
+  },
+  workspaceList: async (dirPath: string): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_LIST, dirPath);
+  },
+  workspaceRead: async (filePath: string): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_READ, filePath);
+  },
+  workspaceSave: async (filePath: string, content: string): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_SAVE, filePath, content);
+  },
+
+  /** Tool calls made by the external assistant (Claude Code) via the bridge.
+   *  Returns an unsubscribe function. */
+  onAssistantToolActivity: (callback: (info: { tool: string; allowed: boolean; error?: string }) => void): (() => void) => {
+    const listener = (_event: unknown, info: any) => callback(info);
+    ipcRenderer.on(ALLOWED_CHANNELS.ASSISTANT_TOOL_ACTIVITY, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.ASSISTANT_TOOL_ACTIVITY, listener);
+  },
+
+  /** Streaming stdout/stderr for a running command. Returns an unsubscribe function. */
+  onTerminalOutput: (callback: (chunk: any) => void): (() => void) => {
+    const listener = (_event: unknown, chunk: any) => callback(chunk);
+    ipcRenderer.on(ALLOWED_CHANNELS.TERMINAL_OUTPUT_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.TERMINAL_OUTPUT_PUSH, listener);
+  },
+  /** Command completion (exit code, duration, resulting cwd). Returns an unsubscribe function. */
+  onTerminalExit: (callback: (exit: any) => void): (() => void) => {
+    const listener = (_event: unknown, exit: any) => callback(exit);
+    ipcRenderer.on(ALLOWED_CHANNELS.TERMINAL_EXIT_PUSH, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.TERMINAL_EXIT_PUSH, listener);
   },
 
   /** Live batch-execution summary pushes. Returns an unsubscribe function. */

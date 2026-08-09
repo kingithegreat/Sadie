@@ -75,10 +75,13 @@ describe('getMainWindow', () => {
   test('returns null after the closed event fires', () => {
     loadModule();
     createMainWindow();
-    // Trigger the 'closed' handler registered via win.on('closed', ...)
-    const closedCall = mockWindowInstance.on.mock.calls.find(([ev]: [string]) => ev === 'closed');
-    expect(closedCall).toBeDefined();
-    closedCall[1](); // invoke handler
+    // Fire EVERY 'closed' handler, the way Electron does. There are now two:
+    // keepWindowOnScreen registers one (clears its debounce timer) before the
+    // one that nulls mainWindow — invoking only the first found made this test
+    // fail against correct code.
+    const closedCalls = mockWindowInstance.on.mock.calls.filter(([ev]: [string]) => ev === 'closed');
+    expect(closedCalls.length).toBeGreaterThan(0);
+    for (const [, handler] of closedCalls) handler();
     expect(getMainWindow()).toBeNull();
   });
 });

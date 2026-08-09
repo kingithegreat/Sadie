@@ -145,6 +145,37 @@ export interface ModelMetadata {
   supportsStreaming: boolean;
 }
 
+/** A tool call the external assistant made through the permission-gated bridge. */
+export interface AssistantToolActivity {
+  tool: string;
+  allowed: boolean;
+  error?: string;
+}
+
+/** A file or folder in the Explorer tree. */
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+}
+
+/** One streamed chunk of output from an interactive terminal session. */
+export interface TerminalOutputChunk {
+  sessionId: string;
+  stream: 'stdout' | 'stderr' | 'system';
+  data: string;
+}
+
+/** Completion of a terminal command; `cwd` reflects any `cd` that ran. */
+export interface TerminalExitEvent {
+  sessionId: string;
+  code: number | null;
+  signal: string | null;
+  durationMs: number;
+  cwd: string;
+}
+
 export interface CustomModelInfo {
   id: string;
   name?: string;
@@ -270,9 +301,53 @@ export interface PermissionAuditEntry {
   streamId?: string;
 }
 
+/** Bounds for the docked browser view, in CSS pixels relative to the window. */
+export interface BrowserPanelBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Live state of the docked browser, pushed from main as the user navigates. */
+export interface BrowserPanelState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+}
+
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
+
+  /** Skills: markdown recipes in userData/skills, listed in Settings. */
+  skillsList: () => Promise<{
+    success: boolean;
+    dir?: string;
+    error?: string;
+    skills?: Array<{
+      name: string;
+      description: string;
+      whenToUse: string | null;
+      tools: string[] | null;
+      path: string;
+    }>;
+  }>;
+  skillsOpenFolder: () => Promise<{ success: boolean; dir?: string; error?: string }>;
+
+  /** Browser side panel — a BrowserView docked inside the window. */
+  browserAttach: (url?: string, bounds?: BrowserPanelBounds) => Promise<{ success: boolean; error?: string; state?: BrowserPanelState }>;
+  browserDetach: () => Promise<{ success: boolean; error?: string }>;
+  browserBounds: (bounds: BrowserPanelBounds) => Promise<{ success: boolean; error?: string }>;
+  browserNavigate: (url: string) => Promise<{ success: boolean; error?: string }>;
+  browserBack: () => Promise<{ success: boolean }>;
+  browserForward: () => Promise<{ success: boolean }>;
+  browserReload: () => Promise<{ success: boolean }>;
+  browserCapture: () => Promise<{ success: boolean; base64?: string; mimeType?: string; url?: string; title?: string; error?: string }>;
+  /** Returns an unsubscribe function — call it on unmount or the listener leaks. */
+  onBrowserState: (cb: (state: BrowserPanelState) => void) => () => void;
   saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
   getMode?: () => Promise<{ demo: boolean }>;
   readConsentLog?: () => Promise<{ success: boolean; data?: string; error?: string }>;
@@ -418,6 +493,19 @@ export interface ElectronAPI {
   getCrmActivity?: (limit?: number) => Promise<{ success: boolean; items?: unknown[]; error?: string }>;
   onSupervisorStatus?: (callback: (change: unknown) => void) => () => void;
   getBatchSummaries?: () => Promise<{ success: boolean; summaries?: unknown[]; error?: string }>;
+  // Interactive terminal panel
+  terminalCreate?: (cwd?: string) => Promise<{ success: boolean; id?: string; cwd?: string; error?: string }>;
+  terminalRun?: (id: string, command: string) => Promise<{ success: boolean; error?: string }>;
+  terminalKill?: (id: string) => Promise<{ success: boolean; error?: string }>;
+  terminalClose?: (id: string) => Promise<{ success: boolean; error?: string }>;
+  onTerminalOutput?: (callback: (chunk: TerminalOutputChunk) => void) => () => void;
+  onTerminalExit?: (callback: (exit: TerminalExitEvent) => void) => () => void;
+  // Workspace (Explorer + editor)
+  workspaceRoot?: () => Promise<{ success: boolean; path: string }>;
+  workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
+  workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
+  workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  onAssistantToolActivity?: (callback: (info: AssistantToolActivity) => void) => () => void;
   getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
     openDealCount: number;
     openPipelineValueCents: number;

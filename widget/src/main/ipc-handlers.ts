@@ -8,6 +8,7 @@ function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
+import { reloadSkills, skillsDir, type Skill } from './skills';
 import * as os from 'os';
 import * as https from 'https';
 import { spawn, execFile } from 'child_process';
@@ -52,6 +53,7 @@ import {
   ConversationSearchResult,
 } from './memory-manager';
 import { Message } from '../shared/types';
+import { resolveCloudLLM } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { homebotWebhookHeaders } from './webhook-auth';
@@ -476,20 +478,27 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         hasApiKey: !!payload?.apiKey
       });
       
-      if (!payload?.apiUrl) {
-        return { success: false, error: 'API URL is required' };
+      // Claude Code runs as a LOCAL CLI — there is no endpoint, so there is no
+      // apiUrl to demand or validate. Its optional apiUrl is a path to the
+      // executable, not a URL, and would fail the protocol check below.
+      // fetchAvailableCustomModels already special-cases it; this guard ran
+      // first and rejected Connect with "API URL is required".
+      if (payload?.provider !== 'claude-code') {
+        if (!payload?.apiUrl) {
+          return { success: false, error: 'API URL is required' };
+        }
+
+        // Validate URL protocol to prevent non-HTTP SSRF (file://, ftp://, etc.)
+        try {
+          const parsed = new URL(payload.apiUrl);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+          }
+        } catch {
+          return { success: false, error: 'Invalid URL format' };
+        }
       }
 
-      // Validate URL protocol to prevent non-HTTP SSRF (file://, ftp://, etc.)
-      try {
-        const parsed = new URL(payload.apiUrl);
-        if (!['http:', 'https:'].includes(parsed.protocol)) {
-          return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
-        }
-      } catch {
-        return { success: false, error: 'Invalid URL format' };
-      }
-      
       const models = await fetchAvailableCustomModels(payload || {});
       console.log('[IPC] Successfully fetched', models.length, 'models');
       return { success: true, models };
@@ -1246,10 +1255,10 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       const titleInstruction = 'Generate a short conversation title (4-6 words max, no punctuation, no quotes) that captures what this exchange is about.';
 
       let title = '';
-      const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+      const titleCloud = resolveCloudLLM(settings);
 
-      if (isCustomLLMActive) {
-        const cfg = settings.customLLM!;
+      if (titleCloud.active && titleCloud.config) {
+        const cfg = titleCloud.config;
         const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
 
         if (cfg.provider === 'anthropic') {
@@ -2063,7 +2072,7 @@ try {
     if (!useN8n && !resultText) {
       // ── LLM execution: prefer cloud API, fall back to Ollama ──
       const settings = getSettings();
-      const isCustom = !!(settings.useCustomLLM || settings.customLLM?.enabled) && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+      const isCustom = resolveCloudLLM(settings).active;
       const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       const systemMsg = `You are HomeBot, a desktop AI assistant. Today is ${today}. Execute the user's automation task. Be concise and well-formatted. Use markdown for the final response.`;
 
@@ -2274,10 +2283,10 @@ try {
 
   async function quizLLMGenerate(prompt: string, systemPrompt: string): Promise<string> {
     const settings = getSettings();
-    const isCustom = !!settings.useCustomLLM && !!settings.customLLM?.apiKey && !!settings.customLLM?.model;
+    const quizCloud = resolveCloudLLM(settings);
 
-    if (isCustom) {
-      const cfg = settings.customLLM!;
+    if (quizCloud.active && quizCloud.config) {
+      const cfg = quizCloud.config;
       const apiUrl = cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || '';
 
       if (cfg.provider === 'anthropic') {
@@ -2469,6 +2478,43 @@ EXAMPLE FORMAT:
       return { success: true, questions: validated };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
+    }
+  });
+
+  // ---- Skills ----------------------------------------------------------
+  // A skill is a folder with a SKILL.md; these back the Skills page in
+  // Settings. Without a visible surface the whole feature is invisible, which
+  // is the failure mode that hid several capabilities in this codebase already.
+
+  ipcMain.handle('homebot:skills-list', async () => {
+    try {
+      // Re-read from disk each time: the user may have edited a file in the
+      // folder since launch, and a stale list would make their edit look lost.
+      const skills = reloadSkills();
+      return {
+        success: true,
+        dir: skillsDir(),
+        skills: skills.map((s: Skill) => ({
+          name: s.name,
+          description: s.description,
+          whenToUse: s.whenToUse ?? null,
+          tools: s.tools ?? null,
+          path: s.path,
+        })),
+      };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not read skills.' };
+    }
+  });
+
+  ipcMain.handle('homebot:skills-open-folder', async () => {
+    try {
+      const dir = skillsDir();
+      fs.mkdirSync(dir, { recursive: true });
+      await shell.openPath(dir);
+      return { success: true, dir };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not open the skills folder.' };
     }
   });
 

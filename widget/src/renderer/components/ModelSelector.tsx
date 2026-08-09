@@ -28,7 +28,11 @@ interface ModelSelectorProps {
   currentModel: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
-  onModelChange: (model: string, useCustom: boolean) => void;
+  /** provider is REQUIRED for cloud models: saving a model id without its
+   *  provider leaves a config like { provider: 'google-ai-studio', model:
+   *  'opus' } — Gemini's endpoint asked for a Claude model. It fails, and the
+   *  router silently falls back to local. */
+  onModelChange: (model: string, useCustom: boolean, provider?: string) => void;
   onConfigureCustom: () => void;
   locked?: boolean;
   lockedModelId?: string;
@@ -258,7 +262,14 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     } else {
       setVramWarning(null);
     }
-    onModelChange(model.id, model.type === 'custom');
+    // Only cloud picks carry a provider. Local models have none, so they keep
+    // the original two-argument call — which also means the existing local
+    // tests still prove that path is untouched by this change.
+    if (model.type === 'custom') {
+      onModelChange(model.id, true, model.provider);
+    } else {
+      onModelChange(model.id, false);
+    }
   };
 
   const handlePrevModel = (e: React.MouseEvent) => {

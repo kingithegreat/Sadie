@@ -143,7 +143,10 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--text-primary);
-  background: transparent;
+  /* Opaque window (see window-manager.ts): paint the themed background rather
+     than relying on the window's pre-paint backgroundColor, which is dark and
+     would flash through in light theme. */
+  background: var(--bg-main);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -7039,7 +7042,10 @@ body {
 
 .widget-mode.app-container {
   grid-template-rows: auto 1fr auto;
-  background: transparent;
+  /* Opaque, matching the window: transparency here used to show the desktop
+     through the widget, but the window is no longer transparent — a Windows
+     transparent window cannot be OS-resized or snapped (see window-manager.ts). */
+  background: var(--bg-main);
 }
 
 /* ── Widget mode chat adjustments ────────────────────────────────────────── */
@@ -8340,4 +8346,792 @@ body {
   .settings-panel {
     animation: none !important;
   }
+}
+/* ── Terminal panel ───────────────────────────────────────────────────────
+   Interactive terminal (distinct from the LLM's terminal tool). ANSI colours
+   are exposed as variables so output follows the app theme instead of
+   hard-coding a palette. */
+:root {
+  --terminal-bg: #1e222a;
+  --terminal-fg: #abb2bf;
+  --terminal-prompt: #61afef;
+}
+[data-theme='light'] {
+  --terminal-bg: #fbfbfd;
+  --terminal-fg: #2f333d;
+  --terminal-prompt: #2f6fd0;
+  --ansi-white: #2f333d;
+  --ansi-bright-white: #11141a;
+}
+
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+.terminal-title { font-weight: 600; font-size: 12px; }
+.terminal-cwd {
+  flex: 1 1 auto;
+  min-width: 0;
+  opacity: 0.7;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;      /* keep the deepest folder visible when truncating */
+  text-align: left;
+}
+.terminal-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.terminal-actions .button { padding: 2px 8px; font-size: 11px; }
+.terminal-stop { background: var(--ansi-red, #e06c75); color: #fff; }
+
+.terminal-error {
+  padding: 6px 10px;
+  background: rgba(224, 108, 117, 0.15);
+  color: var(--ansi-red, #e06c75);
+  font-size: 11.5px;
+}
+
+.terminal-output {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 8px 10px;
+  line-height: 1.45;
+}
+.terminal-empty { opacity: 0.6; font-size: 11.5px; line-height: 1.6; }
+.terminal-empty code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.terminal-line { white-space: pre-wrap; word-break: break-word; }
+.terminal-line-prompt { color: var(--terminal-prompt); font-weight: 600; }
+.terminal-line-err { color: var(--ansi-red, #e06c75); }
+.terminal-line-system { opacity: 0.72; font-style: italic; }
+
+.terminal-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+.terminal-prompt { color: var(--terminal-prompt); font-weight: 700; }
+.terminal-input {
+  flex: 1 1 auto;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+}
+.terminal-input:disabled { opacity: 0.55; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   APPLE-FLAVOURED LAYER
+   Layered over the existing tokens rather than replacing them, so nothing
+   below this point changes structure — only the visual grammar.
+
+   The grammar being borrowed is: large continuous-ish radii, translucent
+   materials over content, soft layered shadows instead of hard borders,
+   one saturated accent, tightened tracking on large type, and fast subtle
+   motion. SF Pro is NOT bundled (it can't be redistributed) — Inter is
+   already first in the stack and is deliberately SF-like.
+   ════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Radii — Apple leans much rounder than the default web look */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-pill: 999px;
+
+  /* One accent, used sparingly. Apple's system blue. */
+  --accent: #0A84FF;
+  --accent-hover: #339CFF;
+  --accent-quiet: rgba(10, 132, 255, 0.14);
+  --accent-contrast: #ffffff;
+
+  /* Materials — translucency is the single most "Apple" cue */
+  --material-thin: rgba(28, 28, 30, 0.62);
+  --material-regular: rgba(28, 28, 30, 0.78);
+  --material-thick: rgba(22, 22, 24, 0.92);
+  --material-blur: saturate(180%) blur(20px);
+  --hairline: rgba(255, 255, 255, 0.09);
+
+  /* Shadows — soft, layered, never a hard 1px box */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.24);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.34);
+
+  /* Motion — quick, slightly springy, never bouncy */
+  --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+}
+
+[data-theme='light'] {
+  --material-thin: rgba(255, 255, 255, 0.66);
+  --material-regular: rgba(250, 250, 252, 0.82);
+  --material-thick: rgba(255, 255, 255, 0.94);
+  --hairline: rgba(0, 0, 0, 0.09);
+  --accent: #007AFF;
+  --accent-hover: #0069DB;
+  --accent-quiet: rgba(0, 122, 255, 0.12);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.09);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.13);
+}
+
+/* Apple tightens tracking as type gets larger; the web default does not. */
+body { letter-spacing: -0.006em; }
+h1, h2, h3, .panel-title, .settings-title { letter-spacing: -0.021em; font-weight: 600; }
+h4, h5, .setting-label { letter-spacing: -0.012em; }
+
+/* ── Icons ─────────────────────────────────────────────────────────── */
+.hb-icon {
+  display: block;
+  flex: 0 0 auto;
+  /* Optical alignment: stroke icons sit fractionally high next to text. */
+  transform: translateY(0.5px);
+}
+
+/* ── Chrome buttons ────────────────────────────────────────────────── */
+.header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary, rgba(235, 235, 245, 0.68));
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-apple),
+              color var(--dur-fast) var(--ease-apple),
+              transform var(--dur-fast) var(--ease-apple);
+}
+.header-btn:hover {
+  background: var(--accent-quiet);
+  color: var(--accent);
+}
+.header-btn:active { transform: scale(0.94); }
+.header-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Segmented control (mode switcher) ─────────────────────────────────
+   The classic Apple pattern: a recessed track with a single raised pill
+   that slides. Replaces a row of separate buttons. */
+.mode-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: rgba(120, 120, 128, 0.16);
+  backdrop-filter: var(--material-blur);
+}
+.mode-switcher button,
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-secondary, rgba(235, 235, 245, 0.68));
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.008em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-base) var(--ease-apple),
+              color var(--dur-base) var(--ease-apple),
+              box-shadow var(--dur-base) var(--ease-apple);
+}
+.mode-switcher button:hover,
+.mode-btn:hover { color: var(--text-primary, #fff); }
+.mode-switcher button.active,
+.mode-btn.active,
+.mode-switcher button[aria-selected='true'] {
+  background: var(--material-thick);
+  color: var(--text-primary, #fff);
+  box-shadow: var(--shadow-1);
+}
+
+/* ── Panels: material + depth instead of borders ───────────────────── */
+.settings-panel,
+.tools-panel,
+.rag-panel,
+.trust-panel,
+.terminal-panel,
+.hb-modal-card,
+.conversation-search-panel,
+.notification-history {
+  border-radius: var(--r-md);
+  border: 1px solid var(--hairline);
+  background: var(--material-regular);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  box-shadow: var(--shadow-3);
+}
+
+/* Overlays: dim + blur what's behind, the way sheets do on iOS/macOS. */
+.confirmation-overlay,
+.first-run-overlay,
+.conversation-search-overlay,
+.hb-modal-overlay {
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ── Primary action ────────────────────────────────────────────────── */
+.button-primary,
+.hb-modal-btn-primary,
+.connect-btn.connected {
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  font-weight: 550;
+  letter-spacing: -0.008em;
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur-fast) var(--ease-apple),
+              transform var(--dur-fast) var(--ease-apple);
+}
+.button-primary:hover,
+.hb-modal-btn-primary:hover { background: var(--accent-hover); }
+.button-primary:active,
+.hb-modal-btn-primary:active { transform: scale(0.97); }
+
+/* ── Inputs: recessed, hairline, accent focus ring ─────────────────── */
+.setting-input,
+.terminal-input,
+.hb-modal-input {
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline);
+  transition: border-color var(--dur-fast) var(--ease-apple),
+              box-shadow var(--dur-fast) var(--ease-apple);
+}
+.setting-input:focus,
+.hb-modal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3.5px var(--accent-quiet);
+}
+
+/* Respect the OS reduce-motion setting — Apple treats this as a hard rule. */
+@media (prefers-reduced-motion: reduce) {
+  .header-btn, .mode-switcher button, .mode-btn,
+  .button-primary, .hb-modal-btn-primary {
+    transition: none;
+  }
+  .header-btn:active,
+  .button-primary:active { transform: none; }
+}
+
+/* ── Workspace (VS Code–shaped IDE) ──────────────────────────────────────
+   Grid: activity bar | sidebar | main, with a status bar spanning the base.
+   The point is that the terminal DOCKS rather than covering the app. */
+.workspace-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: 48px auto 1fr;
+  grid-template-rows: 1fr 22px;
+  grid-template-areas:
+    "activity sidebar main"
+    "status   status  status";
+  background: var(--ws-bg, #1e1e1e);
+  color: var(--ws-fg, #ccc);
+  font-size: 13px;
+}
+[data-theme='light'] .workspace-shell { --ws-bg: #ffffff; --ws-fg: #3b3b3b; }
+
+/* Activity bar */
+.ws-activity {
+  grid-area: activity;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 6px;
+  background: var(--ws-activity-bg, #181818);
+  border-right: 1px solid var(--hairline);
+}
+[data-theme='light'] .ws-activity { --ws-activity-bg: #f3f3f3; }
+.ws-activity-spacer { flex: 1 1 auto; }
+.ws-activity-btn {
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--ws-icon, #8a8a8a);
+  border-left: 2px solid transparent;
+  transition: color var(--dur-fast) var(--ease-apple);
+}
+.ws-activity-btn:hover { color: var(--ws-fg, #ccc); }
+.ws-activity-btn.active { color: #fff; border-left-color: var(--accent); }
+[data-theme='light'] .ws-activity-btn.active { color: #000; }
+.ws-activity-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Sidebar */
+.ws-sidebar {
+  grid-area: sidebar;
+  width: 250px;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  background: var(--ws-side-bg, #181818);
+  border-right: 1px solid var(--hairline);
+  overflow: hidden;
+  resize: horizontal;
+}
+[data-theme='light'] .ws-sidebar { --ws-side-bg: #f8f8f8; }
+.ws-sidebar-title {
+  padding: 8px 12px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.ws-sidebar-root {
+  padding: 0 12px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ws-sidebar-body { flex: 1 1 auto; overflow: auto; padding-bottom: 8px; }
+
+/* File tree */
+.tree-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 6px; cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+.tree-row:hover { background: rgba(128, 128, 128, 0.16); }
+.tree-row.active { background: var(--accent-quiet); color: var(--accent); }
+.tree-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.tree-chevron { display: flex; transform: rotate(-90deg); transition: transform var(--dur-fast) var(--ease-apple); opacity: 0.8; }
+.tree-chevron.open { transform: rotate(0deg); }
+.tree-file-dot { width: 13px; }
+.tree-label { overflow: hidden; text-overflow: ellipsis; }
+.tree-hint { padding: 4px 12px; opacity: 0.6; font-size: 11.5px; }
+.tree-error { color: var(--ansi-red, #e06c75); }
+
+/* Main: tabs + editor + docked panel */
+.ws-main {
+  grid-area: main;
+  display: grid;
+  grid-template-rows: 35px 1fr auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.ws-tabs {
+  display: flex; align-items: stretch; overflow-x: auto;
+  background: var(--ws-tabs-bg, #181818);
+  border-bottom: 1px solid var(--hairline);
+}
+[data-theme='light'] .ws-tabs { --ws-tabs-bg: #f3f3f3; }
+.ws-tabs-empty { display: flex; align-items: center; padding: 0 12px; opacity: 0.5; font-size: 11.5px; }
+.ws-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 8px 0 12px; cursor: pointer;
+  border-right: 1px solid var(--hairline);
+  border-top: 1px solid transparent;
+  white-space: nowrap; max-width: 220px;
+}
+.ws-tab:hover { background: rgba(128,128,128,0.12); }
+.ws-tab.active {
+  background: var(--ws-bg, #1e1e1e);
+  border-top-color: var(--accent);
+}
+.ws-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-tab-dirty { color: var(--accent); font-size: 15px; line-height: 1; }
+.ws-tab-close {
+  background: transparent; border: none; cursor: pointer;
+  color: inherit; opacity: 0.5; padding: 2px 4px; border-radius: 4px;
+}
+.ws-tab-close:hover { opacity: 1; background: rgba(128,128,128,0.25); }
+
+.ws-editor-area { min-height: 0; overflow: hidden; display: flex; }
+.ws-empty {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; opacity: 0.55; text-align: center; padding: 20px;
+}
+.ws-empty-sub { font-size: 11.5px; opacity: 0.8; }
+
+/* Docked terminal — resizable, not modal */
+.ws-panel {
+  height: 260px;
+  min-height: 90px;
+  max-height: 70vh;
+  overflow: hidden;
+  border-top: 1px solid var(--hairline);
+  resize: vertical;
+}
+/* Inside the dock the terminal is flush: no floating card treatment. */
+.ws-panel .terminal-panel {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Status bar */
+.ws-status {
+  grid-area: status;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+.ws-status-spacer { flex: 1 1 auto; }
+.ws-status-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
+.ws-status-dirty { font-weight: 600; }
+
+/* Code editor: transparent textarea over a highlighted <pre> */
+.code-editor {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas: "gutter surface" "gutter cursor";
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.code-gutter {
+  grid-area: gutter;
+  overflow: hidden;
+  padding: 8px 8px 8px 12px;
+  text-align: right;
+  color: var(--ws-gutter, #6e7681);
+  user-select: none;
+  background: var(--ws-bg, #1e1e1e);
+}
+.code-line-no.current { color: var(--ws-fg, #ccc); }
+.code-surface { grid-area: surface; position: relative; min-width: 0; overflow: hidden; }
+.code-highlight,
+.code-input {
+  position: absolute; inset: 0;
+  margin: 0; padding: 8px 12px;
+  font: inherit; line-height: inherit;
+  white-space: pre; overflow: auto;
+  tab-size: 2;
+}
+.code-highlight { pointer-events: none; z-index: 0; }
+.code-highlight code { font: inherit; background: none; padding: 0; }
+.code-input {
+  z-index: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ws-fg, #ccc);
+  border: none; outline: none; resize: none;
+}
+.code-input::selection { background: rgba(88, 166, 255, 0.35); }
+.code-cursor-pos {
+  grid-area: cursor;
+  padding: 2px 12px;
+  font-size: 11px;
+  opacity: 0.6;
+  border-top: 1px solid var(--hairline);
+}
+
+/* Assistant tool activity in the workspace status bar — makes non-dangerous
+   tool calls visible. Dangerous ones already raise the confirmation modal. */
+.ws-status-assistant {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+  font-weight: 500;
+}
+
+/* Unsaved-changes state on the Settings Save button. Settings only apply on
+   Save, so a fully configured provider can sit unsaved while the app keeps
+   using the previous one — which reads as "it isn't working". */
+.button-save.has-changes {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  box-shadow: 0 0 0 3px var(--accent-quiet);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SETTINGS — grouped-list treatment
+   The panel read as a wall because emphasis was uniform: every control sat in
+   its own bordered card with a 24px gap and a 13px explanation at nearly body
+   size, so ~40 boxes competed and nothing receded. This keeps the structure
+   and re-ranks it — cards lighten into rows, hints demote to reference text,
+   section headers become actual headers.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Section headers: an eyebrow with real air above, not another button. */
+.settings-panel .sp-section-toggle {
+  margin: 26px 0 8px;
+  padding: 6px 2px;
+  background: none;
+  border: none;
+  border-top: none;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-radius: 0;
+}
+.settings-panel .sp-section-toggle:first-child { margin-top: 4px; }
+.settings-panel .sp-section-toggle:hover { background: none; color: var(--accent); }
+.settings-panel .sp-section-toggle.open { color: var(--text-primary); }
+.settings-panel .sp-section-arrow { font-size: 9px; opacity: 0.55; width: 12px; }
+
+/* Controls: rows in a shared surface rather than 40 separate cards. */
+.settings-panel .setting-group {
+  margin: 0;
+  padding: 13px 15px;
+  border: none;
+  border-radius: 0;
+  background: var(--material-thin, rgba(255, 255, 255, 0.03));
+}
+.settings-panel .setting-group + .setting-group {
+  border-top: 1px solid var(--hairline);
+}
+/* Round only where a run begins or ends. */
+.settings-panel .sp-section-toggle + .setting-group {
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+.settings-panel .setting-group:last-of-type {
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+}
+.settings-panel .setting-group:has(+ .sp-section-toggle) {
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  margin-bottom: 2px;
+}
+
+/* Label leads; it should not be pushed around by padding. */
+.settings-panel .setting-label {
+  margin: 0 0 2px;
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 550;
+  letter-spacing: -0.008em;
+}
+
+/* Hints are reference text, not body copy — the single biggest cause of the
+   wall. Smaller, quieter, and capped at a readable measure. */
+.settings-panel .setting-hint {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  opacity: 0.72;
+  max-width: 68ch;
+}
+.settings-panel .setting-hint.error-hint { opacity: 1; }
+
+/* Inputs sit under their label with breathing room, consistent shape. */
+.settings-panel .setting-input {
+  margin-top: 7px;
+  padding: 8px 11px;
+  font-size: 13px;
+  border-radius: var(--r-sm);
+}
+
+/* A row whose control is a checkbox reads better inline. */
+.settings-panel .setting-group > .setting-label:only-child { margin-bottom: 0; }
+
+/* Footer: lift it off the content so Save is unmistakably an action bar. */
+.settings-panel .settings-footer {
+  padding: 11px 15px;
+  background: var(--material-thick, var(--bg-dark));
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  border-top: 1px solid var(--hairline);
+}
+.settings-panel .settings-footer .button {
+  border-radius: var(--r-pill);
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+/* Model chips: a selectable grid, with the active one clearly chosen. */
+.settings-panel .custom-model-chip {
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline);
+  transition: border-color var(--dur-fast) var(--ease-apple),
+              background var(--dur-fast) var(--ease-apple);
+}
+.settings-panel .custom-model-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Belt-and-braces for the Settings action bar.
+   The panel is capped at 95vh of the WINDOW, so if the window ever extends
+   past the visible desktop the footer lands off-screen and settings cannot be
+   saved. window-manager keeps the window on screen; this makes the panel
+   itself resilient regardless, by measuring against the small viewport unit
+   (which excludes mobile/overlay chrome) and never exceeding it. */
+.settings-panel {
+  max-block-size: min(95vh, 95svh);
+}
+/* The footer must survive even if content somehow overflows the flex column. */
+.settings-panel .settings-footer {
+  position: sticky;
+  bottom: 0;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+/* Keyboard hint in the Settings action bar — the shortcut exists because the
+   bar itself can be clipped by an oversized window. */
+.settings-footer-hint {
+  margin-right: auto;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  opacity: 0.5;
+  align-self: center;
+}
+
+/* ── Workspace layout fixes ───────────────────────────────────────────────
+   Two defects found by running it:
+
+   1. z-index: the shell sat at 60 while .app-header is 300, so the app header
+      and mode tabs punched through the workspace. The workspace is a full view
+      that replaces that chrome (it has its own way back to chat), so it must
+      sit above it — but below modals/toasts, which start at 1000.
+
+   2. Nothing scrolled. Grid and flex items default to min-height:auto, which
+      lets content dictate track height instead of overflowing — so the
+      Explorer grew past the window rather than scrolling inside it. Every
+      ancestor of a scroll container has to opt out with min-height: 0. */
+.workspace-shell {
+  z-index: 500;
+}
+
+/* Each row of the shell must be allowed to be shorter than its content. */
+.workspace-shell > .ws-sidebar,
+.workspace-shell > .ws-main,
+.workspace-shell > .ws-activity {
+  min-height: 0;
+}
+
+/* The Explorer is the actual scroller; its column must not size to content. */
+.ws-sidebar { min-block-size: 0; }
+.ws-sidebar-body {
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+/* Same rule for the editor column: tabs are fixed, the editor area scrolls. */
+.ws-main > .ws-editor-area { min-height: 0; }
+.ws-editor-area .code-editor { min-height: 0; }
+.code-surface { min-height: 0; }
+
+/* The docked terminal keeps its own scrollback. */
+.ws-panel { min-height: 0; }
+.ws-panel .terminal-output { min-height: 0; }
+
+/* ── Browser side panel ───────────────────────────────────────────────────
+   Docked right, inside the workspace, instead of a separate window.
+
+   .browser-viewport is deliberately EMPTY and deliberately opaque-free: the
+   actual web page is a BrowserView painted over this rectangle by the main
+   process, not a child element. Anything styled inside it would be hidden
+   underneath the page. Its only job is to have a stable, measurable box —
+   which is why it gets flex: 1 and a min-height of 0 rather than sizing to
+   content it does not have. */
+.browser-panel {
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  inline-size: clamp(320px, 34vw, 560px);
+  border-inline-start: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  background: var(--bg-panel, #1b1d22);
+}
+
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  flex: 0 0 auto;
+}
+
+.browser-btn {
+  flex: 0 0 auto;
+  min-inline-size: 28px;
+  block-size: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.browser-btn:hover:not(:disabled) { background: rgba(127, 127, 127, 0.18); }
+.browser-btn:disabled { opacity: 0.35; cursor: default; }
+.browser-btn:focus-visible { outline: 2px solid var(--accent, #4c8dff); outline-offset: 1px; }
+
+.browser-address {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  block-size: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: var(--bg-input, rgba(0, 0, 0, 0.25));
+  color: inherit;
+  font-size: 12.5px;
+}
+.browser-address:focus { outline: none; border-color: var(--accent, #4c8dff); }
+
+.browser-loading,
+.browser-error {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.browser-loading { opacity: 0.7; }
+.browser-error { color: var(--danger, #ff6b6b); }
+
+/* The measured placeholder. Empty by design — see note above. */
+.browser-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
 }

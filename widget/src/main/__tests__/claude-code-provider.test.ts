@@ -84,6 +84,11 @@ describe('claude-code config', () => {
     expect(result.error).toMatch(/model/i);
   });
 
+  test('is ordered lightest-first so the plan-heavy models are a deliberate pick', async () => {
+    const ids = (await fetchAvailableCustomModels({ provider: 'claude-code' })).map(m => m.id);
+    expect(ids).toEqual(['haiku', 'sonnet', 'opus', 'fable']);
+  });
+
   test('other providers still require an API key', () => {
     const result = validateCustomLLMConfig({
       ...cfg, provider: 'anthropic', apiUrl: 'https://api.anthropic.com/v1', apiKey: undefined,
@@ -94,7 +99,10 @@ describe('claude-code config', () => {
 
   test('lists CLI aliases without needing an endpoint', async () => {
     const models = await fetchAvailableCustomModels({ provider: 'claude-code' });
-    expect(models.map(m => m.id).sort()).toEqual(['haiku', 'opus', 'sonnet']);
+    // These are Claude Code's own `--model` aliases, per its --help: "an alias
+    // for the latest model (e.g. 'fable', 'opus', or 'sonnet')". fable was
+    // missing from the first version of this list.
+    expect(models.map(m => m.id).sort()).toEqual(['fable', 'haiku', 'opus', 'sonnet']);
     // Aliases, not dated API IDs — so they cannot go stale as models are retired.
     expect(models.every(m => !/\d{8}/.test(m.id))).toBe(true);
   });

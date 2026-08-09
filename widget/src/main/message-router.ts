@@ -8,6 +8,7 @@ import streamFromHomeBotProxy from './stream-proxy-client';
 import { HomeBotRequest, HomeBotResponse, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
+import { getSkillCatalogue, matchSkills } from './skills';
 import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, previewBatch, ToolCall, ToolContext } from './tools';
 import { formatBatchPreviewForChat } from '../../../src/trust/batch';
 import { evaluateToolResults } from './reflection-validator';
@@ -22,11 +23,14 @@ import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { ragSearch, ragSearchWarmup } from './tools/rag';
-import { matchSkills } from './skills-loader';
+// matchSkills moved here from skills-loader.ts — that file and skills.ts were
+// two parallel builds of the same feature (caught by the duplicate-export
+// guard at PR time); reconciled into the one loader that also serves use_skill.
 import { shouldUseMoA, runMoAPipeline } from './moa';
 import { looksMultiStep, buildAgenticSystemPrompt, formatStepProgress } from './agentic-loop';
 import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from './morning-briefing';
 import { shouldOfferToolsForMessage } from '../shared/model-advisor';
+import { resolveCloudLLM } from '../shared/cloud-llm';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -1800,12 +1804,11 @@ export function makeSynthesisPromptCompact(searchContext: string, question: stri
  */
 export function buildSynthesisPrompt(searchContext: string, question: string): string {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
+  const cloud = resolveCloudLLM(settings);
   // When using cloud LLM the model is the cloud one — check that.
   // When using local Ollama, check the chat model.
-  const modelName = isCloudActive
-    ? (cloudCfg?.model || '')
+  const modelName = cloud.active
+    ? (cloud.config?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
   return isSmallModel(modelName)
     ? makeSynthesisPromptCompact(searchContext, question)
@@ -1818,10 +1821,9 @@ export function buildSynthesisPrompt(searchContext: string, question: string): s
  */
 function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolType: string): string {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
-  const modelName = isCloudActive
-    ? (cloudCfg?.model || '')
+  const cloud = resolveCloudLLM(settings);
+  const modelName = cloud.active
+    ? (cloud.config?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
   const small = isSmallModel(modelName);
 
@@ -1849,10 +1851,9 @@ function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolTy
  */
 function buildSearchContextForModel(sr: any): string {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
-  const modelName = isCloudActive
-    ? (cloudCfg?.model || '')
+  const cloud = resolveCloudLLM(settings);
+  const modelName = cloud.active
+    ? (cloud.config?.model || '')
     : (settings.chatModel || OLLAMA_CHAT_MODEL);
   const budget = isSmallModel(modelName) ? 1500 : 3000;
   return buildSearchContext(sr, budget);
@@ -1873,9 +1874,8 @@ async function synthesisStream(
   requestPermission?: any
 ): Promise<{ cancel: () => void }> {
   const settings = getSettings();
-  const cloudCfg = settings?.customLLM;
-  const isCloudActive = !!((settings?.useCustomLLM || cloudCfg?.enabled) && cloudCfg?.apiKey && cloudCfg?.model);
-  if (isCloudActive) {
+  const cloud = resolveCloudLLM(settings);
+  if (cloud.active && cloud.config) {
     // Only pass the last few messages as context — synthesis doesn't need full history
     // and long history can exceed provider context limits (especially free tiers).
     // Ensure even count so messages alternate user/assistant (some providers reject
@@ -1886,7 +1886,7 @@ async function synthesisStream(
     }
     const history = recentHistory.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
     return streamFromCustomLLM(
-      augmentedMessage, history, cloudCfg,
+      augmentedMessage, history, cloud.config,
       `You are answering from pre-fetched search results. Today is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}. DO NOT say you are unable to fetch information — the results are already provided. DO NOT fabricate or guess any facts, dates, odds, scores, or statistics not in the results. Summarize the key facts in 2-4 concise sentences.`,
       onChunk, onEnd, onError, signal
     );
@@ -2098,7 +2098,12 @@ export function isSmallModel(modelName: string): boolean {
 /** Select the appropriate system prompt based on model size. */
 export function getSystemPromptForModel(modelName: string, guidelines?: string): string {
   const base = isSmallModel(modelName) ? HOMEBOT_SYSTEM_PROMPT_COMPACT : HOMEBOT_SYSTEM_PROMPT;
-  return guidelines?.trim() ? `${base}\n\n## User Guidelines\n${guidelines.trim()}` : base;
+  // Skills catalogue: one line per skill, so the model learns what recipes exist
+  // without paying for a tool schema each. Empty when none are installed, so the
+  // prompt never advertises a feature with nothing behind it.
+  const catalogue = getSkillCatalogue();
+  const withSkills = catalogue ? `${base}\n\n${catalogue}` : base;
+  return guidelines?.trim() ? `${withSkills}\n\n## User Guidelines\n${guidelines.trim()}` : withSkills;
 }
 
 /**
@@ -2218,6 +2223,52 @@ function isSimpleGreeting(message: string): boolean {
 // Keep this in one place so both paths always stay in sync.
 // NOTE: Bare words like "function", "class", "api", "query" were removed because they
 // false-positive on normal conversation. Only language names and explicit coding verbs remain.
+/**
+ * Pending confirmation modals, keyed by id. Hoisted to module scope so surfaces
+ * outside the chat stream — notably the assistant bridge, which lets an external
+ * agent call HomeBot's tools — raise the SAME modal rather than growing a
+ * second, subtly different approval path.
+ */
+const pendingConfirmations = new Map<string, { resolve: (confirmed: boolean) => void }>();
+
+/** Resolve a pending confirmation. Called by the IPC response handler. */
+export function resolveConfirmation(confirmationId: string, confirmed: boolean): void {
+  const pending = pendingConfirmations.get(confirmationId);
+  if (pending) {
+    pending.resolve(confirmed);
+    pendingConfirmations.delete(confirmationId);
+  }
+}
+
+/**
+ * Ask the user to approve an action using the existing confirmation modal.
+ * Auto-declines after 60s — an unanswered prompt must never hang a tool call
+ * or, worse, resolve as approved.
+ */
+export function requestConfirmationFrom(
+  sender: Electron.WebContents,
+  message: string,
+  streamId?: string,
+): Promise<boolean> {
+  const confirmationId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingConfirmations.delete(confirmationId);
+      resolve(false);
+    }, 60000);
+    pendingConfirmations.set(confirmationId, {
+      resolve: (confirmed: boolean) => { clearTimeout(timeout); resolve(confirmed); },
+    });
+    try {
+      sender.send('homebot:confirmation-request', { confirmationId, message, streamId });
+    } catch {
+      clearTimeout(timeout);
+      pendingConfirmations.delete(confirmationId);
+      resolve(false);
+    }
+  });
+}
+
 const CODING_QUERY_PATTERN = /\b(write\s+(code|a\s+script|a\s+function|a\s+program)|create\s+(a\s+script|a\s+function|a\s+class|a\s+program)|generate\s+code|fix\s+(this\s+)?code|debug|refactor|optimise|optimize|implement|explain\s+this\s+code|review.*code|code.*review|algorithm|regex|(?:write|run)\s+(?:a\s+)?(?:sql|query)|script|bash|python|javascript|typescript|html|css|java(?!script)|c\+\+|golang|rust|react|\bcode\b)\b/i;
 
 // Wrapper function that routes to either Ollama or Custom LLM based on settings
@@ -2232,7 +2283,7 @@ export async function streamFromLLM(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; modelOverride?: string },
+  options?: { hasDocuments?: boolean; modelOverride?: string; conversationPrompt?: string; agenticMode?: boolean },
   onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
@@ -2250,13 +2301,31 @@ export async function streamFromLLM(
   // Build system prompt — compact variant for small models (<=3B)
   const activeModel = perRequestModel || perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
 
-  // Check if custom LLM is enabled and configured
-  if ((settings.useCustomLLM || settings.customLLM?.enabled) && settings.customLLM) {
-    const validation = validateCustomLLMConfig(settings.customLLM);
+  // Check if custom LLM is enabled and configured. resolveCloudLLM is the
+  // single gate for this decision — it also hydrates the API key from the
+  // per-provider vault (geminiApiKey / anthropicApiKey / openaiApiKey), which
+  // raw settings.customLLM may lack. Before this, the renderer hydrated for
+  // display but the router didn't: Settings showed Gemini configured while
+  // every chat silently ran on local qwen.
+  const cloudResolution = resolveCloudLLM(settings);
+  if (cloudResolution.intended && cloudResolution.config) {
+    const hydratedCloud = cloudResolution.config;
+    const validation = cloudResolution.active
+      ? validateCustomLLMConfig(hydratedCloud)
+      : {
+          valid: false,
+          // localOverride first: when uncensored mode deliberately routes to the
+          // local model, nothing is misconfigured, and the generic
+          // "not fully configured" text sent the user hunting for a broken
+          // setting that was fine. Say what actually happened.
+          error: cloudResolution.localOverride
+            || cloudResolution.misconfiguration
+            || 'Cloud LLM is not fully configured',
+        };
     if (validation.valid) {
-      const cloudModelForMeta = (settings.customLLM as any).model || activeModel;
+      const cloudModelForMeta = hydratedCloud.model || activeModel;
       onMeta?.({ model: cloudModelForMeta });
-      console.log(`[HomeBot] Using custom LLM: ${settings.customLLM.name} (${settings.customLLM.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
+      console.log(`[HomeBot] Using custom LLM: ${hydratedCloud.name} (${hydratedCloud.provider})${perConvModel ? ` [conv override: ${perConvModel}]` : ''}`);
 
       // Extract base64 images for cloud vision
       let cloudImageData: Array<{ base64: string; mimeType?: string }> | undefined;
@@ -2277,8 +2346,8 @@ export async function streamFromLLM(
       const controller = new AbortController();
       const history = getHistory(conversationId);
       const customConfig = perConvModel
-        ? { ...(settings.customLLM as import('../shared/types').CustomLLMConfig), model: perConvModel }
-        : settings.customLLM as import('../shared/types').CustomLLMConfig;
+        ? { ...hydratedCloud, model: perConvModel }
+        : hydratedCloud;
 
       // BUG FIX: Use the CLOUD model name for system prompt selection, not the local
       // Ollama model. Previously this used activeModel (phi4-mini) which triggered the
@@ -2402,8 +2471,9 @@ export async function streamFromLLM(
 
         console.warn(`[HomeBot] Cloud LLM unavailable (${cloudTarget}): ${errMsg} — falling back to local Ollama`);
         onChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
-        // Fall through to Ollama
-        streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options)
+        // Fall through to Ollama — forward onMeta so the model badge reports
+        // the local model that actually answered, not the cloud model that failed.
+        streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options, onMeta)
           .catch((ollamaErr: any) => onError(ollamaErr));
       };
 
@@ -2425,11 +2495,16 @@ export async function streamFromLLM(
         cancel: () => controller.abort()
       };
     } else {
-      // Silently fall back to Ollama if custom LLM isn't fully configured
-      // Only log once per session to avoid spamming
+      // The user turned cloud chat ON. Falling back silently is how a missing
+      // key looked like "Gemini answers as qwen" with no error anywhere —
+      // surface it in-chat once per session (same channel the cloud-API-error
+      // fallback already uses), and log every time.
+      console.warn(`[HomeBot] Cloud chat is on but not usable: ${validation.error} — using local Ollama`);
       if (!customLLMWarningShown) {
-        console.log(`[HomeBot] Custom LLM not ready: ${validation.error}. Using Ollama.`);
         customLLMWarningShown = true;
+        onChunk(`⚠️ ${validation.error} Using your local model for now.
+
+`);
       }
     }
   }
@@ -2585,7 +2660,7 @@ export async function streamFromOllamaWithTools(
   // model name (e.g. 'claude-sonnet-4-20250514'). This function ALWAYS talks to
   // local Ollama, so we must not forward a cloud model name — fall back to the
   // Ollama default instead.
-  const isCustomLLMActive = !!settings.useCustomLLM && !!settings.customLLM;
+  const isCustomLLMActive = resolveCloudLLM(settings).intended && !!settings.customLLM;
   // Per-conversation model override for local Ollama path
   const ollamaConvModel = MemoryManager.getConversation(conversationId)?.model?.trim();
   const perRequestModel = options?.modelOverride?.trim();
@@ -3205,31 +3280,12 @@ export async function streamFromOllamaWithTools(
   };
 }
 
-// Legacy streamFromOllama for backward compatibility (no tools)
-async function streamFromOllama(
-  message: string,
-  images: ImageAttachment[] | undefined,
-  conversationId: string,
-  onChunk: (text: string) => void,
-  onEnd: () => void,
-  onError: (err: any) => void,
-  requestConfirmation?: (msg: string) => Promise<boolean>,
-  options?: { conversationPrompt?: string; agenticMode?: boolean }
-): Promise<{ cancel: () => void }> {
-  return streamFromOllamaWithTools(
-    message,
-    images,
-    conversationId,
-    onChunk,
-    () => {}, // ignore tool calls
-    () => {}, // ignore tool results
-    onEnd,
-    onError,
-    requestConfirmation,
-    undefined,
-    options
-  );
-}
+// The legacy `streamFromOllama` wrapper was deleted deliberately. It forwarded
+// straight to streamFromOllamaWithTools — LOCAL ONLY — while both of its call
+// sites logged "Cloud LLM active" / "Falling back to cloud LLM...". Cloud
+// requests taking those paths silently ran on the local model with no model
+// badge. Use streamFromLLM, which routes cloud vs local and reports the model
+// that actually answered via onMeta.
 
 export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string) {
     // Initialize tools system
@@ -3261,44 +3317,21 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     }
     
     // Track pending confirmation requests
-    const pendingConfirmations = new Map<string, { resolve: (confirmed: boolean) => void }>();
+    // pendingConfirmations now lives at module scope (see requestConfirmationFrom).
 
     // Permission escalation is handled by the centralized `permissionRequester` module
     
     // Handle confirmation responses from renderer
     ipcMain.on('homebot:confirmation-response', (_event: IpcMainEvent, data: { confirmationId: string; confirmed: boolean }) => {
-      const pending = pendingConfirmations.get(data.confirmationId);
-      if (pending) {
-        pending.resolve(data.confirmed);
-        pendingConfirmations.delete(data.confirmationId);
-      }
+      resolveConfirmation(data.confirmationId, data.confirmed);
     });
 
     // Permission responses are handled by the `permissionRequester` module
     
     // Create confirmation requester for a specific event sender
     function createConfirmationRequester(sender: Electron.WebContents, streamId: string) {
-      return async (message: string): Promise<boolean> => {
-        const confirmationId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        
-        return new Promise<boolean>((resolve) => {
-          // Set a timeout to auto-reject after 60 seconds
-          const timeout = setTimeout(() => {
-            pendingConfirmations.delete(confirmationId);
-            resolve(false);
-          }, 60000);
-          
-          pendingConfirmations.set(confirmationId, {
-            resolve: (confirmed: boolean) => {
-              clearTimeout(timeout);
-              resolve(confirmed);
-            }
-          });
-          
-          // Send confirmation request to renderer
-          sender.send('homebot:confirmation-request', { confirmationId, message, streamId });
-        });
-      };
+      return (message: string): Promise<boolean> =>
+        requestConfirmationFrom(sender, message, streamId);
     }
 
     
@@ -4466,16 +4499,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           try { pushRouter('Agentic mode: multi-step request detected'); } catch (e) { safeCatch(e); }
         }
 
-        const cloudSettings = getSettings();
-        const cloudCfgPost = cloudSettings?.customLLM as any;
-        const cloudLLMActive = !!((cloudSettings.useCustomLLM || cloudCfgPost?.enabled) && cloudCfgPost?.apiKey && cloudCfgPost?.model);
+        const cloudLLMActive = resolveCloudLLM(getSettings()).active;
 
         if (useDirectOllama || cloudLLMActive) {
           if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Taking direct path:', cloudLLMActive ? 'cloud LLM active' : 'direct Ollama');
           try { pushRouter(cloudLLMActive ? 'Cloud LLM active — bypassing n8n' : 'Taking direct Ollama path'); } catch (e) { safeCatch(e); }
-          // Direct streaming (cloud LLM or local Ollama) - no n8n required
+          // Direct streaming (cloud LLM or local Ollama) - no n8n required.
+          // streamFromLLM, not the legacy streamFromOllama wrapper: the legacy
+          // wrapper can ONLY reach local Ollama, so this branch used to log
+          // "Cloud LLM active" and then answer from the local model anyway,
+          // with no model badge on stream-end.
           let ttfbLogged = false;
-          const handler = await streamFromOllama(
+          let directModel = '';
+          const handler = await streamFromLLM(
             enhancedMessage,
             request.images,
             convId,
@@ -4495,12 +4531,18 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                             console.log('[E2E-TRACE] stream-chunk (ollama)', { streamId, chunkLen: chunk?.length ?? 0, snippet: String(chunk).substring(0, 120) });
                           }
             },
+            (toolName, args) => {
+              try { event.sender.send('homebot:tool-call', { toolName, args, streamId }); } catch (e) { safeCatch(e); }
+            },
+            (result) => {
+              try { event.sender.send('homebot:tool-result', { result, streamId }); } catch (e) { safeCatch(e); }
+            },
             () => {
               // Add assistant response to history
               if (assistantResponse.trim()) {
                 addToHistory(convId, 'assistant', assistantResponse);
               }
-              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId, ...(directModel ? { model: directModel } : {}) }); } catch (e) { safeCatch(e); }
                           if (E2E) {
                             console.log('[E2E-TRACE] stream-end (ollama)', { streamId });
                           }
@@ -4515,12 +4557,16 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               activeStreams.delete(streamId);
             },
             requestConfirmation, // Pass confirmation requester
+            (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
             {
+              hasDocuments: !!(request.documents && request.documents.length > 0),
+              modelOverride: reqAny.modelOverride,
               conversationPrompt: isAgenticRequest
                 ? [reqAny.conversationPrompt, buildAgenticSystemPrompt()].filter(Boolean).join('\n\n')
                 : (reqAny.conversationPrompt || undefined),
               agenticMode: isAgenticRequest,
-            }
+            },
+            (meta) => { directModel = meta.model; }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           return;
@@ -5070,9 +5116,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               if (responseText.trim()) {
                 // When cloud LLM is active, let the LLM summarize tool results conversationally
-                const synthSettings = getSettings();
-                const synthCloud = synthSettings?.customLLM;
-                const synthCloudActive = !!((synthSettings?.useCustomLLM || synthCloud?.enabled) && synthCloud?.apiKey && synthCloud?.model);
+                const synthCloudActive = resolveCloudLLM(getSettings()).active;
 
                 if (synthCloudActive) {
                   const synthPrompt = `The user asked: "${enhancedMessage}"\n\nHere are the tool results:\n${responseText}\n\nSummarize these results in a clear, conversational response. Present the key information naturally. Do NOT dump raw data.`;
@@ -5272,12 +5316,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             }
         console.log('[HomeBot] n8n failed:', error?.message || error);
         try { pushRouter(`n8n failed: ${error?.message || String(error)}`); } catch (e) { safeCatch(e); }
-          const fallbackCloudActive = (() => { const s = getSettings(); return !!(s.useCustomLLM && s.customLLM && (s.customLLM as any).apiKey && (s.customLLM as any).model); })();
+          const fallbackCloudActive = resolveCloudLLM(getSettings()).active;
           if (useDirectOllama || fallbackCloudActive) {
           console.log('[HomeBot] Falling back to', fallbackCloudActive ? 'cloud LLM...' : 'direct Ollama...');
           try {
           let fallbackResponse = '';
-          const handler = await streamFromOllama(
+          let fallbackModel = '';
+          const handler = await streamFromLLM(
             reqAny.message,
             reqAny.images,
             convId,
@@ -5286,18 +5331,28 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               fallbackResponse += chunk;
               event.sender.send('homebot:stream-chunk', { chunk, streamId });
             },
+            (toolName, args) => {
+              try { event.sender.send('homebot:tool-call', { toolName, args, streamId }); } catch (e) { safeCatch(e); }
+            },
+            (result) => {
+              try { event.sender.send('homebot:tool-result', { result, streamId }); } catch (e) { safeCatch(e); }
+            },
             () => {
               if (fallbackResponse.trim()) {
                 addToHistory(convId, 'assistant', fallbackResponse);
               }
-              try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+              try { event.sender.send('homebot:stream-end', { streamId, ...(fallbackModel ? { model: fallbackModel } : {}) }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
             },
             (err: any) => {
               const hint = classifyError('Ollama error', err?.message || String(err));
               try { event.sender.send('homebot:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
               activeStreams.delete(streamId);
-            }
+            },
+            undefined,
+            (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
+            { modelOverride: reqAny.modelOverride },
+            (meta) => { fallbackModel = meta.model; }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
           } catch (ollamaError: any) {

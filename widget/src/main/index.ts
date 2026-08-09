@@ -14,6 +14,16 @@ import { detectGpuVram } from './moa';
 import { ensureN8nRunning } from './n8n-lifecycle';
 import { startSupervisorService, SupervisorServiceHandle } from './supervisor-service';
 import { registerTrustIpc } from './trust-ipc';
+import { registerTerminalIpc } from './terminal-ipc';
+import { registerWorkspaceIpc } from './workspace-ipc';
+import { startAssistantBridge, stopAssistantBridge } from './assistant-bridge';
+import { setAssistantBridgeProvider } from './custom-llm-client';
+import { requestConfirmationFrom } from './message-router';
+// Static import, NOT a runtime require(). electron-vite bundles the main
+// process into a single out/main/index.js, so a bare require('./morning-briefing')
+// resolves to a file that does not exist at runtime — which silently disabled
+// the startup briefing in every built app. See bundle-integrity.test.ts.
+import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from './morning-briefing';
 import { setBatchSummaryForwarder } from './tools';
 import { initScheduler } from './scheduler';
 import { restoreReminders } from './tools/reminder';
@@ -129,6 +139,11 @@ function pushMainLog(line: string) {
 // Apply a safe, idempotent ipcMain.handle patch (keeps behavior local and
 // testable via `applyIpcHandlePatch`). See `src/main/utils/ipc-handle-patch.ts`.
 import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
+// Static imports: electron-vite inlines these. A runtime require() of a
+// relative path is emitted verbatim and dies as MODULE_NOT_FOUND in the build.
+import { reloadSkills } from './skills';
+import { seedSkills } from './skills-seed';
+import { registerBrowserPanelIpc, destroyBrowserPanel } from './browser-panel';
 applyIpcHandlePatch();
 
 // E2E tests pass a custom userData directory via env var so Playwright doesn't
@@ -155,6 +170,17 @@ app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: HOMEBOT_DIRECT_OLLAMA=', process.env.HOMEBOT_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
+
+  // Write the shipped skills into userData/skills on first run (never
+  // overwrites), then load the catalogue so it is ready before the first
+  // message builds a system prompt.
+  try {
+    const seeded = seedSkills();
+    const skills = reloadSkills();
+    console.log(`[MAIN] Skills: ${skills.length} loaded${seeded ? ` (${seeded} seeded)` : ''}`);
+  } catch (e) {
+    console.error('[MAIN] Skill loading failed (non-fatal):', e);
+  }
 
   // Register custom protocol to serve generated images securely from sandbox
   const imgPath = require('path');
@@ -193,6 +219,15 @@ app.whenReady().then(async () => {
 
   // Create the main window FIRST for fast first-paint, then init tools in background
   mainWindow = createMainWindow();
+
+  // Browser side panel. Registered after the window exists because the view is
+  // attached to it; getMainWindow is passed as a getter rather than the window
+  // itself so a re-created window (macOS reactivate) still resolves.
+  try {
+    registerBrowserPanelIpc(() => getMainWindow());
+  } catch (e) {
+    console.error('[MAIN] Browser panel IPC registration failed (non-fatal):', e);
+  }
 
   // ── Baseline perf metric: total startup time ──────────────────────────
   // Record ms from process spawn to the renderer being ready (first usable
@@ -267,6 +302,34 @@ app.whenReady().then(async () => {
   // health and the CRM activity trail. Returns null status in E2E (handle is
   // a no-op there), which the panel renders as "supervision off".
   registerTrustIpc(() => supervisorHandle?.getStatus() ?? null);
+  // Interactive Terminal panel. Shares the destructive-command blocklist and
+  // home-directory sandbox with the LLM-facing terminal tool.
+  registerTerminalIpc();
+  // Explorer + code editor. Shares the home-directory sandbox with the
+  // LLM-facing filesystem tools (validatePath), so the two can never diverge.
+  registerWorkspaceIpc(() => getSettings()?.projectPath);
+
+  // Assistant bridge: exposes HomeBot's permission-gated tools to Claude Code
+  // over loopback MCP, so the subscription provider can act as a coding and
+  // filing assistant without ever bypassing the confirmation modal.
+  startAssistantBridge({
+    requestConfirmation: async (message: string) => {
+      // No window means no way to ask — refuse rather than assume consent.
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
+      return await requestConfirmationFrom(mainWindow.webContents, message);
+    },
+    onToolActivity: (info) => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('homebot:assistant-tool-activity', info);
+        }
+      } catch (e) { safeCatch(e); }
+    },
+  }).then((bridge) => {
+    // Hand the live endpoint to the LLM client via a hook rather than an import,
+    // so the client never pulls the tool registry into its import chain.
+    setAssistantBridgeProvider(() => ({ url: bridge.url, token: bridge.token }));
+  }).catch((e) => console.error('[MAIN] assistant bridge failed to start:', e));
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.
   setBatchSummaryForwarder((summary) => {
@@ -370,7 +433,6 @@ app.whenReady().then(async () => {
     // waiting for the user to type first. This is what makes HomeBot proactive.
     if (ollamaOnline && mainWindow && !mainWindow.isDestroyed()) {
       try {
-        const { shouldOfferBriefing, markBriefingDelivered, generateBriefing } = require('./morning-briefing');
         if (shouldOfferBriefing()) {
           markBriefingDelivered();
           generateBriefing().then((briefing: string | null) => {
@@ -486,6 +548,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+  try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
+  try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
   globalShortcut.unregisterAll();
   closeAllServiceWindows();
   if (supervisorHandle) supervisorHandle.stop();

@@ -20,6 +20,27 @@ interface ChatMessage {
   tool_call_id?: string;
 }
 
+/** Loopback MCP endpoint exposing HomeBot's permission-gated tools. */
+export interface AssistantBridgeRef {
+  url: string;
+  token: string;
+}
+
+/**
+ * Supplies the live bridge, set once by the main process at startup.
+ *
+ * A hook rather than a direct import of assistant-bridge: that module pulls in
+ * the whole tool registry (and Electron with it), which would drag a heavyweight
+ * import chain into every test that touches this client. Unset in tests, so the
+ * claude-code provider stays chat-only there unless a bridge is passed
+ * explicitly.
+ */
+let assistantBridgeProvider: (() => AssistantBridgeRef | null) | null = null;
+
+export function setAssistantBridgeProvider(fn: (() => AssistantBridgeRef | null) | null): void {
+  assistantBridgeProvider = fn;
+}
+
 interface StreamOptions {
   model: string;
   messages: ChatMessage[];
@@ -32,6 +53,8 @@ interface StreamOptions {
   onEnd: () => void;
   onError: (err: any) => void;
   signal?: AbortSignal;
+  /** When present, the claude-code provider gets HomeBot's gated toolset. */
+  assistantBridge?: AssistantBridgeRef;
 }
 
 // Model metadata database
@@ -79,9 +102,10 @@ const ANTHROPIC_MODELS: CustomModelInfo[] = [
  * No API key is involved; usage draws on the user's subscription limits.
  */
 const CLAUDE_CODE_MODELS: CustomModelInfo[] = [
-  { id: 'sonnet', name: 'Claude Sonnet (subscription)', description: 'Balanced speed and intelligence', provider: 'claude-code', costHint: 'Included in your plan' },
-  { id: 'opus', name: 'Claude Opus (subscription)', description: 'Most capable, best for hard tasks', provider: 'claude-code', costHint: 'Included in your plan' },
-  { id: 'haiku', name: 'Claude Haiku (subscription)', description: 'Fastest, lightest', provider: 'claude-code', costHint: 'Included in your plan' },
+  { id: 'haiku', name: 'Claude Haiku (subscription)', description: 'Fastest and lightest — quick questions', provider: 'claude-code', costHint: 'Lightest on your plan' },
+  { id: 'sonnet', name: 'Claude Sonnet (subscription)', description: 'Balanced speed and intelligence — a good default', provider: 'claude-code', costHint: 'Included in your plan' },
+  { id: 'opus', name: 'Claude Opus (subscription)', description: 'Most capable for complex coding and reasoning', provider: 'claude-code', costHint: 'Heavier on your plan' },
+  { id: 'fable', name: 'Claude Fable (subscription)', description: 'Highest capability — hardest problems, long tasks', provider: 'claude-code', costHint: 'Heaviest on your plan' },
 ];
 
 const OPENAI_MODELS: CustomModelInfo[] = [
@@ -725,8 +749,13 @@ function toClaudeCodeTranscript(messages: ChatMessage[]): { system: string; prom
  *    its tools, and clearing MCP servers cuts per-call context from ~32.8k
  *    tokens to ~780. Without those flags this is unusably expensive against
  *    subscription rate limits.
- *  - Tool calling is NOT supported here. Claude Code's tools are denied, so the
- *    caller's `tools` are ignored and onToolCall never fires. Chat only.
+ *  - Claude Code's OWN tools stay denied. Measured, not assumed: in -p mode it
+ *    executes them with `permission_denials: 0` — a non-interactive session has
+ *    no approval step, so allowing them would mean an assistant that touches
+ *    the machine unprompted. When an assistantBridge is supplied it instead
+ *    receives HomeBot's tools over loopback MCP, so every call runs through
+ *    assertPermission + the confirmation modal + the destructive blocklist.
+ *    Without a bridge this stays chat-only.
  *  - `--bare` would trim more, but it explicitly disables OAuth and forces an
  *    API key, defeating the entire point of this provider. Do not add it.
  */
@@ -745,6 +774,13 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
   const configuredPath = apiConfig.apiUrl?.trim();
   const bin = configuredPath || (process.platform === 'win32' ? 'claude.exe' : 'claude');
 
+  // Claude Code's native tools are ALWAYS denied. With a bridge, HomeBot's own
+  // gated tools are offered in their place over loopback MCP.
+  const bridge = options.assistantBridge ?? assistantBridgeProvider?.() ?? undefined;
+  const mcpServers = bridge
+    ? { homebot: { type: 'http', url: bridge.url, headers: { Authorization: `Bearer ${bridge.token}` } } }
+    : {};
+
   const args = [
     '-p',
     '--output-format', 'stream-json',
@@ -752,7 +788,7 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
     '--verbose',
     '--model', model || 'sonnet',
     '--disallowed-tools', CLAUDE_CODE_DENIED_TOOLS,
-    '--mcp-config', JSON.stringify({ mcpServers: {} }),
+    '--mcp-config', JSON.stringify({ mcpServers }),
   ];
   if (system.trim()) args.push('--system-prompt', system);
 

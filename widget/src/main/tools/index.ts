@@ -56,6 +56,7 @@ import { visionToolDefs, visionToolHandlers } from './vision';
 import { terminalToolDefs, terminalToolHandlers } from './terminal';
 import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
 import { automationToolDefs, automationToolHandlers } from './automation';
+import { skillToolDefs, skillToolHandlers } from './skills';
 import { crmToolDefs, crmToolHandlers } from './crm';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
@@ -586,9 +587,32 @@ export function respondToConfirmation(confirmId: string, confirmed: boolean): bo
 }
 
 /**
- * Initialize all built-in tools
+ * Guards against repeat initialization.
+ *
+ * initializeTools() is called from two places — index.ts at startup and
+ * message-router.ts when routing a message — and used to run fully both times:
+ * re-registering all 113 tools, re-running MCP discovery, and re-connecting
+ * every MCP server. In a real startup that meant two rounds of 15-second MCP
+ * connection timeouts before the first message could be handled.
+ *
+ * Registration itself is idempotent (the registry is keyed by name), so the
+ * duplicate work was wasted rather than wrong — but it was the single biggest
+ * avoidable chunk of startup latency.
  */
-export function initializeTools(): void {
+let toolsInitialized = false;
+
+/** Test seam: forget initialization so a suite can start from a clean registry. */
+export function __resetToolsInitForTest(): void {
+  toolsInitialized = false;
+}
+
+/**
+ * Initialize all built-in tools. Safe to call repeatedly — subsequent calls are
+ * a no-op unless `force` is set (e.g. to pick up newly configured MCP servers).
+ */
+export function initializeTools(force = false): void {
+  if (toolsInitialized && !force) return;
+  toolsInitialized = true;
   // Register file system tools
   for (const [name, tool] of Object.entries(fileSystemTools)) {
     registerTool(name, tool.definition, tool.handler);
@@ -748,6 +772,13 @@ export function initializeTools(): void {
   // Register codebase tools (grep, tree, analyze)
   for (const def of codebaseToolDefs) {
     const handler = codebaseToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register skill tools. One pair for ALL skills — see main/skills.ts for why
+  // skills are not registered as individual tools (SMALL_MODEL_MAX_TOOLS).
+  for (const def of skillToolDefs) {
+    const handler = skillToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

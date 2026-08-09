@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
+import SkillsSection from './SkillsSection';
 import TelemetryDashboard from './TelemetryDashboard';
 import PermissionHistory from './PermissionHistory';
 import TrustPanel from './TrustPanel';
@@ -679,6 +680,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const providerRequiresApiKey = selectedProvider !== 'custom' && !isClaudeCode;
   const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
   const isConnected = availableModels.length > 0;
+  // Settings only apply on Save. With no visible signal, a fully configured
+  // provider can sit unsaved while the app keeps using the previous one —
+  // which reads as "it isn't working" rather than "you haven't saved".
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(localSettings) !== JSON.stringify(buildLocalSettings(settings)),
+    [localSettings, settings],
+  );
 
   useEffect(() => {
     setAvailableModels([]);
@@ -774,15 +782,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         // Keep cloud configured and ready, but local remains the default
         // until the user explicitly turns on cloud chats.
         if (result.models.length > 0) {
-          setLocalSettings(prev => ({
-            ...prev,
-            customLLM: { 
-              ...(prev.customLLM || { ...defaultCustomLLM }), 
-              model: prev.customLLM?.model || result.models[0].id,
-              apiUrl,
-              enabled: true
-            }
-          }));
+          setLocalSettings(prev => {
+            // Only keep the existing selection if THIS provider offers it.
+            // Otherwise a model from the previous provider survives the switch
+            // (e.g. gemini-2.5-flash left selected under claude-code) and the
+            // request goes out naming a model the provider has never heard of.
+            const current = prev.customLLM?.model;
+            const stillValid = !!current && result.models.some((m: any) => m.id === current);
+            return {
+              ...prev,
+              customLLM: {
+                ...(prev.customLLM || { ...defaultCustomLLM }),
+                model: stillValid ? current : result.models[0].id,
+                apiUrl,
+                enabled: true
+              }
+            };
+          });
         }
       } else {
         throw new Error(result?.error || 'No models returned.');
@@ -805,7 +821,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         aria-modal="true"
         aria-label="Settings"
         onClick={e => e.stopPropagation()}
-        onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { onClose(); return; }
+          // Ctrl/Cmd+S saves. The Save bar lives at the bottom of the panel, so
+          // anything that pushes it out of view (a window taller than the
+          // desktop, an unusual display scale) made settings unsaveable with no
+          // way out. A keyboard path cannot be clipped.
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            handleSave();
+          }
+        }}
         tabIndex={-1}
       >
       <div className="settings-header">
@@ -1179,7 +1205,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </button>
         {openSections.cloud && <>
         <div className="setting-group">
-          <label className="setting-label">🔑 Code model — Cloud API (optional)</label>
+          <label className="setting-label">🔑 Coding questions only — Cloud API (optional)</label>
           <div className="api-key-row">
             <select
               className="setting-input provider-select"
@@ -1217,7 +1243,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               placeholder="Custom API base URL (e.g. http://localhost:8080/v1)"
             />
           )}
-          <small className="setting-hint">Paste an API key to route all coding queries to a cloud model. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-opus-4-20250514</code>). Leave blank to use local Ollama.</small>
+          <small className="setting-hint">This affects <strong>coding questions only</strong> — it is not your main chat model. To change the model that answers everything else, use <strong>Cloud API</strong> under <em>API Keys &amp; Cloud LLM</em> further down. The model name comes from the <em>Code model</em> field above (e.g. <code>gpt-4o</code>, <code>claude-sonnet-5</code>). Leave blank to use local Ollama.</small>
         </div>
         {/* Hardware Profile — applies safe model defaults for the card's VRAM */}
         <div className="setting-group">
@@ -1372,7 +1398,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {openSections.api_keys && <>
         {/* Custom LLM API Section - Simplified */}
         <div className="setting-group custom-llm-section">
-          <label className="setting-label">☁️ Cloud API (OpenAI, Anthropic, etc.)</label>
+          <label className="setting-label">☁️ Main chat model — Cloud API (OpenAI, Anthropic, Claude subscription…)</label>
           
           {/* Step 1: Provider Selection */}
           <div className="provider-row">
@@ -1497,7 +1523,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <small className="setting-hint">
               Runs on your own Claude Pro/Max subscription through the Claude Code CLI — no API key, no per-token billing.
               Requires Claude Code installed and signed in on this machine. Replies count against your plan's usage limits.
-              Chat only: HomeBot's tools and automations keep using your local model.
+              It can read and edit files, search your project and run commands — always through HomeBot's own permission
+              prompt, never Claude Code's unsupervised tools. Leave the path blank unless Claude Code isn't on your PATH.
             </small>
           )}
 
@@ -1538,7 +1565,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <span className={`status-dot ${localSettings.useCustomLLM ? 'active' : ''}`}></span>
               {localSettings.useCustomLLM
                 ? `Using ${localSettings.customLLM.model}`
-                : `Connected: ${localSettings.customLLM.model} is available when you choose it`}
+                : `${localSettings.customLLM.model} is connected but NOT in use — tick the box below, then Save.`}
             </div>
           )}
 
@@ -2341,6 +2368,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         )}
       </div>
 
+      {/* Skills — markdown recipes the assistant can follow */}
+      <SkillsSection />
+
       {/* Backup / Restore */}
       <div className="settings-section sp-backup-section">
         <h3 className="section-title">Backup & Restore</h3>
@@ -2584,8 +2614,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <button className="button button-cancel" onClick={handleCancel}>
           Cancel
         </button>
-        <button className="button button-save" onClick={handleSave}>
-          Save
+        <span className="settings-footer-hint">Ctrl+S</span>
+        <button className={`button button-save${hasUnsavedChanges ? ' has-changes' : ''}`} onClick={handleSave}>
+          {hasUnsavedChanges ? 'Save changes' : 'Save'}
         </button>
       </div>
       </div>

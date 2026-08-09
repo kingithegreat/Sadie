@@ -20,6 +20,8 @@ const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
 const QuizPanel = lazy(() => import("./components/QuizPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
+const TerminalPanel = lazy(() => import("./components/TerminalPanel"));
+const WorkspaceShell = lazy(() => import("./components/workspace/WorkspaceShell"));
 const TelemetryDashboard = lazy(() => import("./components/TelemetryDashboard"));
 const ShortcutsPanel = lazy(() => import("./components/ShortcutsPanel"));
 const NotificationHistory = lazy(() => import("./components/NotificationHistory"));
@@ -96,6 +98,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [notifHistoryOpen, setNotifHistoryOpen] = useState(false);
@@ -1126,13 +1130,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               currentModel={settings.chatModel || 'qwen2.5:7b'}
               customLLM={settings.customLLM}
               useCustomLLM={settings.useCustomLLM}
-              onModelChange={async (model: string, useCustom: boolean) => {
+              onModelChange={async (model: string, useCustom: boolean, provider?: string) => {
+                // Cloud picks must carry their provider. Saving only the id left configs
+                // like { provider: 'google-ai-studio', model: 'opus' } — Gemini's endpoint
+                // asked for a Claude model, which fails and silently drops to local.
+                // chatModel stays a LOCAL model for the same reason: it is the fallback,
+                // and overwriting it with a cloud id leaves nothing valid to fall back to.
                 const newSettings = {
                   ...settings,
-                  chatModel: model,
+                  ...(useCustom ? {} : { chatModel: model }),
                   useCustomLLM: useCustom,
                   ...(useCustom && settings.customLLM ? {
-                    customLLM: { ...settings.customLLM, model }
+                    customLLM: {
+                      ...settings.customLLM,
+                      model,
+                      provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
+                      enabled: true,
+                    }
                   } : {}),
                 };
                 setSettings(newSettings);
@@ -1240,6 +1254,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onSettingsClick={() => setSettingsOpen(true)}
         onToolsClick={() => setToolsOpen(true)}
         onRagClick={() => setRagPanelOpen(true)}
+        onTerminalClick={() => setTerminalOpen(true)}
+        onWorkspaceClick={() => setWorkspaceOpen(true)}
         onAnalyticsClick={() => setAnalyticsOpen(true)}
         onNotificationsClick={() => setNotifHistoryOpen(true)}
         notificationCount={notifHistory.length}
@@ -1277,13 +1293,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         useCustomLLM={settings.useCustomLLM}
         uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}
         vramGB={vramGB}
-        onModelChange={async (model: string, useCustom: boolean) => {
+        onModelChange={async (model: string, useCustom: boolean, provider?: string) => {
+          // Cloud picks must carry their provider. Saving only the id left configs
+          // like { provider: 'google-ai-studio', model: 'opus' } — Gemini's endpoint
+          // asked for a Claude model, which fails and silently drops to local.
+          // chatModel stays a LOCAL model for the same reason: it is the fallback,
+          // and overwriting it with a cloud id leaves nothing valid to fall back to.
           const newSettings = {
             ...settings,
-            chatModel: model,
+            ...(useCustom ? {} : { chatModel: model }),
             useCustomLLM: useCustom,
             ...(useCustom && settings.customLLM ? {
-              customLLM: { ...settings.customLLM, model }
+              customLLM: {
+                ...settings.customLLM,
+                model,
+                provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
+                enabled: true,
+              }
             } : {}),
           };
           setSettings(newSettings);
@@ -1425,6 +1451,28 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       <Suspense fallback={null}>
         <RagPanel isOpen={ragPanelOpen} onClose={() => setRagPanelOpen(false)} />
       </Suspense>
+
+      {/* Workspace — VS Code-shaped IDE: Explorer, tabbed editor, docked terminal */}
+      {workspaceOpen && (
+        <Suspense fallback={null}>
+          <WorkspaceShell open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* Terminal — runs in the configured project folder, sandboxed to home */}
+      {terminalOpen && (
+        <Suspense fallback={null}>
+          {/* onSendToChat is intentionally not wired yet: the chat input lives
+              inside InputBox/ChatInterface, not App, so routing an excerpt into
+              it needs a small lift of that state. The button hides itself until
+              then rather than pretending to work. */}
+          <TerminalPanel
+            open={terminalOpen}
+            onClose={() => setTerminalOpen(false)}
+            projectPath={settings?.projectPath}
+          />
+        </Suspense>
+      )}
 
       {/* Analytics Dashboard */}
       {analyticsOpen && (

@@ -150,9 +150,34 @@ function activateOffline(licenseKey: string): LicenseValidationResult | null {
   };
 }
 
+/**
+ * Owner override — `HOMEBOT_TIER=pro` (or `free`) forces the tier for this
+ * process, ahead of any license check.
+ *
+ * Two real needs, not one:
+ *  - pro:  the owner runs their own product daily and shouldn't have to buy a
+ *          licence from themselves, or keep a real key on a dev machine.
+ *  - free: the only way to actually SEE what a paying customer is blocked by.
+ *          Without it the paywall is untestable by the person who wrote it.
+ *
+ * Deliberately an environment variable and not a setting or a marker file.
+ * A file would reintroduce exactly the trivial offline bypass the HMAC +
+ * machine-fingerprint work above exists to stop; an in-app toggle would just
+ * be a "make me Pro" button. This is honest about what it is: an operator
+ * switch, not a security boundary. Anyone who can set an env var on their own
+ * machine can also edit the asar — a local Electron app cannot win that fight,
+ * which is why server-side validation stays the authority for real licences.
+ */
+function ownerOverrideTier(): Tier | null {
+  const raw = (process.env.HOMEBOT_TIER || '').trim().toLowerCase();
+  if (raw === 'pro') return 'pro';
+  if (raw === 'free') return 'free';
+  return null;
+}
+
 /** TierProvider — read at call time so an activation/expiry takes effect immediately. */
 export function getCurrentTier(): Tier {
-  return resolveTier(loadState().cache ?? null);
+  return ownerOverrideTier() ?? resolveTier(loadState().cache ?? null);
 }
 
 export function getLicenseStatus(): {
@@ -164,7 +189,10 @@ export function getLicenseStatus(): {
 } {
   const state = loadState();
   return {
-    tier: resolveTier(state.cache ?? null),
+    // Same override as getCurrentTier, or Settings would report "Free" while
+    // every gate behaves as Pro — the exact silent-disagreement bug that made
+    // the cloud-model badge lie about which model was answering.
+    tier: getCurrentTier(),
     hasLicense: !!state.licenseKey,
     lastValidatedAt: state.cache?.lastValidatedAt,
     expiresAt: state.cache?.expiresAt,
