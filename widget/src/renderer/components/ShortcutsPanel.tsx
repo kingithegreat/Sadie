@@ -40,10 +40,16 @@ const categories: ShortcutCategory[] = [
   {
     title: 'Panels',
     shortcuts: [
+      // Corrected to match the actual handler in App.tsx. This list was
+      // already wrong before the Web panel was removed — offset by one from
+      // Ctrl+2 onward, and it advertised a Web Services shortcut that was
+      // never bound to anything.
+      { keys: 'Ctrl + 0', action: 'Switch to Home' },
       { keys: 'Ctrl + 1', action: 'Switch to Chat' },
-      { keys: 'Ctrl + 2', action: 'Switch to Image Generator' },
-      { keys: 'Ctrl + 3', action: 'Switch to Document Viewer' },
-      { keys: 'Ctrl + 4', action: 'Switch to Web Services' },
+      { keys: 'Ctrl + 2', action: 'Switch to Automation' },
+      { keys: 'Ctrl + 3', action: 'Switch to Image Generator' },
+      { keys: 'Ctrl + 4', action: 'Switch to Document Viewer' },
+      { keys: 'Ctrl + 5', action: 'Switch to Quiz' },
     ],
   },
 ];

@@ -15,7 +15,6 @@ const FirstRunModal = lazy(() => import('./components/FirstRunModal'));
 const ConversationSidebar = lazy(() => import("./components/ConversationSidebar"));
 const AutomationCenter = lazy(() => import("./components/AutomationCenter").then(m => ({ default: m.AutomationCenter })));
 const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
-const WebServicesPanel = lazy(() => import("./components/WebServicesPanel"));
 const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
 const QuizPanel = lazy(() => import("./components/QuizPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
@@ -46,7 +45,7 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'web' | 'documents' | 'quiz' | 'dashboard';
+type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -1424,23 +1423,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             }
           }} />
         </Suspense>
-      ) : mode === 'quiz' ? (
+      ) : (
+        // Quiz is the final branch now. The Web Services panel used to be the
+        // catch-all `else`, which meant any unrecognised mode silently rendered
+        // it; quiz being terminal keeps the chain total without that surprise.
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <QuizPanel />
-        </Suspense>
-      ) : (
-        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <WebServicesPanel onSendToChat={(url: string, content: string) => {
-            const doc: DocumentAttachment = {
-              id: `web-${Date.now()}`,
-              filename: url,
-              mimeType: 'text/plain',
-              size: new Blob([content]).size,
-              data: btoa(new TextEncoder().encode(content).reduce((s, b) => s + String.fromCharCode(b), '')),
-            };
-            setMode('chat');
-            handleSendMessage(`I've fetched the web page "${url}". Please summarize this content.`, undefined, [doc]);
-          }} />
         </Suspense>
       )}
 

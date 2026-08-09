@@ -828,18 +828,11 @@ contextBridge.exposeInMainWorld('electron', electronAPI as unknown as ElectronAP
 contextBridge.exposeInMainWorld('homebotCapture', {
   log: (msg: string) => { try { pushRendererLog(msg); } catch (e) { safeCatch(e); } }
 });
-// Legacy compatibility stub: the current WebServicesPanel uses dedicated
-// BrowserWindows instead of <webview>, so do not touch __dirname here. In
-// sandboxed preloads bundled by Electron/Vite, __dirname is not guaranteed.
-contextBridge.exposeInMainWorld('_webviewPreload', null);
-// Expose web service controls for the launcher panel
-contextBridge.exposeInMainWorld('_webServices', {
-  open:   (id: string) => ipcRenderer.invoke('homebot:open-web-service', id),
-  status: ()           => ipcRenderer.invoke('homebot:web-service-status'),
-  openBrowse:     (url: string) => ipcRenderer.invoke('homebot:open-browse', url),
-  grabContent:    ()            => ipcRenderer.invoke('homebot:grab-browse-content'),
-  browseStatus:   ()            => ipcRenderer.invoke('homebot:browse-status'),
-});
+// The _webServices bridge and its _webviewPreload stub were removed with the
+// Web Services panel — they had exactly one consumer. The main-process
+// handlers (homebot:open-web-service etc.) stay: the ChatGPT/Claude/Gemini
+// login windows are still reachable, and the docked browser panel is the
+// in-app way to browse now.
 
 // Export types for TypeScript consumers
 // Re-export the type (forwarded from shared/types)
