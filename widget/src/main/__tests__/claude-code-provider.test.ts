@@ -216,3 +216,23 @@ describe('claude-code invocation flags', () => {
     return child.stdin.write.mock.calls.length > 0 && child.stdin.end.mock.calls.length > 0;
   }
 });
+
+describe('claude-code is not an HTTP provider (the "Invalid URL" class)', () => {
+  const { PROVIDER_API_URLS } = require('../custom-llm-client');
+
+  it('has NO entry in PROVIDER_API_URLS — and must never get one', () => {
+    // The Quiz panel showed "Invalid URL" because three features each did
+    //   cfg.apiUrl || PROVIDER_API_URLS[cfg.provider] || ''
+    // and then POSTed to it. claude-code is a CLI subprocess: it has no
+    // endpoint, so that resolved to ''. The fix routes those callers through
+    // generateFromCustomLLM instead. Adding a placeholder URL here would make
+    // the symptom disappear while sending requests into the void — this test
+    // exists to reject that shortcut.
+    expect(PROVIDER_API_URLS['claude-code']).toBeUndefined();
+  });
+
+  it('exposes a non-streaming generator so callers never hand-roll HTTP', () => {
+    const { generateFromCustomLLM } = require('../custom-llm-client');
+    expect(typeof generateFromCustomLLM).toBe('function');
+  });
+});
