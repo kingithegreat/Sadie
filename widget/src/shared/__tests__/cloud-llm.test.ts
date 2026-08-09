@@ -231,3 +231,33 @@ describe('uncensored mode overrides cloud', () => {
     expect(r.localOverride).toMatch(/uncensored/i);
   });
 });
+
+describe('the enabled-flag OR (why local picks must clear enabled)', () => {
+  // resolveCloudLLM treats EITHER flag as cloud intent:
+  //   intended = useCustomLLM || customLLM.enabled
+  // So any writer that turns useCustomLLM off while leaving enabled true has
+  // NOT switched to local — observed live as "i have quen selected" while
+  // every reply stayed badged opus. The header handlers in App.tsx therefore
+  // write symmetrically: cloud pick => enabled true, local pick => enabled
+  // false. These tests pin the resolver semantics that force that rule.
+
+  it('a still-enabled cloud config keeps cloud active even with useCustomLLM off', () => {
+    const r = resolveCloudLLM({
+      useCustomLLM: false,
+      customLLM: { provider: 'claude-code', model: 'opus', apiKey: '', enabled: true } as any,
+      anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
+    } as any);
+    expect(r.intended).toBe(true);
+    expect(r.active).toBe(true); // this is the trap the symmetric write avoids
+  });
+
+  it('local pick done right — enabled false — actually routes local', () => {
+    const r = resolveCloudLLM({
+      useCustomLLM: false,
+      customLLM: { provider: 'claude-code', model: 'opus', apiKey: '', enabled: false } as any,
+      anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
+    } as any);
+    expect(r.intended).toBe(false);
+    expect(r.active).toBe(false);
+  });
+});

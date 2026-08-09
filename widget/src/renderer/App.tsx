@@ -1140,13 +1140,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
                   ...settings,
                   ...(useCustom ? {} : { chatModel: model }),
                   useCustomLLM: useCustom,
-                  ...(useCustom && settings.customLLM ? {
-                    customLLM: {
-                      ...settings.customLLM,
-                      model,
-                      provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
-                      enabled: true,
-                    }
+                  // The switch must be SYMMETRIC. A cloud pick sets enabled: true; a local
+                  // pick must set it back to false, because the router treats a still-
+                  // enabled cloud config as 'use cloud' regardless of useCustomLLM. Without
+                  // this, once any cloud model was ever picked, choosing Qwen in the header
+                  // changed the label and nothing else — opus kept answering.
+                  ...(settings.customLLM ? {
+                    customLLM: useCustom
+                      ? {
+                          ...settings.customLLM,
+                          model,
+                          provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
+                          enabled: true,
+                        }
+                      : { ...settings.customLLM, enabled: false }
                   } : {}),
                 };
                 setSettings(newSettings);
@@ -1303,13 +1310,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             ...settings,
             ...(useCustom ? {} : { chatModel: model }),
             useCustomLLM: useCustom,
-            ...(useCustom && settings.customLLM ? {
-              customLLM: {
-                ...settings.customLLM,
-                model,
-                provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
-                enabled: true,
-              }
+            // The switch must be SYMMETRIC. A cloud pick sets enabled: true; a local
+            // pick must set it back to false, because the router treats a still-
+            // enabled cloud config as 'use cloud' regardless of useCustomLLM. Without
+            // this, once any cloud model was ever picked, choosing Qwen in the header
+            // changed the label and nothing else — opus kept answering.
+            ...(settings.customLLM ? {
+              customLLM: useCustom
+                ? {
+                    ...settings.customLLM,
+                    model,
+                    provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
+                    enabled: true,
+                  }
+                : { ...settings.customLLM, enabled: false }
             } : {}),
           };
           setSettings(newSettings);
