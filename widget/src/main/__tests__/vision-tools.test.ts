@@ -338,9 +338,11 @@ describe('ollamaGenerate — edge cases', () => {
 // ── visionToolDefs ────────────────────────────────────────────────────────
 
 describe('visionToolDefs shape', () => {
-  it('exports two tool definitions', async () => {
+  it('exports three tool definitions', async () => {
     const { visionToolDefs } = await import('../tools/vision');
-    expect(visionToolDefs).toHaveLength(2);
+    // look_at_browser joined vision_describe and vision_query — it answers
+    // questions about the OPEN browser page rather than a file on disk.
+    expect(visionToolDefs).toHaveLength(3);
     expect(visionToolDefs.map((d: any) => d.name)).toEqual(
       expect.arrayContaining(['vision_describe', 'vision_query'])
     );

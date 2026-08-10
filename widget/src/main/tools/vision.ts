@@ -20,7 +20,7 @@ import { assertPermission, getSettings } from '../config-manager';
 
 // ── Config helpers ─────────────────────────────────────────────────────────
 
-function getVisionConfig(): { ollamaUrl: string; visionModel: string } {
+export function getVisionConfig(): { ollamaUrl: string; visionModel: string } {
   try {
     // Static import (see line 19). A lazy require() here resolved to nothing
     // once electron-vite bundled the main process, so this always fell into
@@ -49,7 +49,7 @@ function isImageFile(filePath: string): boolean {
 
 // ── HTTP helper — POST JSON to Ollama /api/generate (non-streaming) ────────
 
-function ollamaGenerate(
+export function ollamaGenerate(
   ollamaUrl: string,
   body: Record<string, unknown>,
 ): Promise<string> {
@@ -162,6 +162,102 @@ async function analyseImage(rawPath: string, prompt: string): Promise<ToolResult
 
 // ── Tool definitions ───────────────────────────────────────────────────────
 
+/** PNG capture of the docked browser, supplied by the main process. */
+export interface BrowserCaptureResult {
+  success: boolean;
+  error?: string;
+  base64?: string;
+  url?: string;
+  title?: string;
+}
+
+let browserCaptureProvider: (() => Promise<BrowserCaptureResult>) | null = null;
+
+/** Wired once at startup so this module never imports Electron. */
+export function setBrowserCaptureProvider(fn: (() => Promise<BrowserCaptureResult>) | null): void {
+  browserCaptureProvider = fn;
+}
+
+/**
+ * look_at_browser — answer a question about whatever the docked browser is
+ * showing, in ONE tool call.
+ *
+ * The capture path existed since the browser panel shipped and was wired to
+ * nothing: an IPC channel no renderer called and no tool exposed, so the
+ * assistant could never actually look at a page. Found by auditing for the
+ * "capability with no surface" pattern this codebase keeps producing.
+ *
+ * Single call rather than capture-then-describe on purpose. A 7B model
+ * chaining two tools and passing a temp path between them fails often; one
+ * call that does both is the shape small models get right.
+ */
+export const lookAtBrowserDef: ToolDefinition = {
+  name: 'look_at_browser',
+  description:
+    'Look at the web page currently open in the browser panel and answer a question about it. '
+    + 'Use this when the user asks what a page says, what is on screen, or to read/summarise '
+    + 'the page they are viewing. Requires the browser panel to be open.',
+  category: 'vision',
+  parameters: {
+    type: 'object',
+    properties: {
+      question: {
+        type: 'string',
+        description: 'What to find out about the page. Defaults to a general description.',
+      },
+    },
+    required: [],
+  },
+};
+
+export const lookAtBrowserHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  // Injected at startup rather than imported. A relative runtime require()
+  // does NOT survive electron-vite bundling (the main process is inlined into
+  // one file and the require is emitted verbatim -> MODULE_NOT_FOUND), and a
+  // static import would drag Electron into every test that touches the tool
+  // registry. Same provider-hook shape as setAssistantBridgeProvider.
+  if (!browserCaptureProvider) {
+    return { success: false, error: 'The browser panel is not available in this context.' };
+  }
+  let capture: BrowserCaptureResult;
+  try {
+    capture = await browserCaptureProvider();
+  } catch (err: any) {
+    return { success: false, error: `Could not reach the browser panel: ${err?.message || err}` };
+  }
+
+  if (!capture?.success || !capture.base64) {
+    return { success: false, error: capture?.error || 'Could not capture the browser panel.' };
+  }
+
+  const question = String(args?.question || '').trim()
+    || 'Describe what this web page shows. Summarise the main content.';
+
+  const { ollamaUrl, visionModel } = getVisionConfig();
+  try {
+    const response = await ollamaGenerate(ollamaUrl, {
+      model: visionModel,
+      prompt: question,
+      images: [capture.base64],
+      stream: true,
+    });
+    return {
+      success: true,
+      result: {
+        url: capture.url,
+        title: capture.title,
+        model: visionModel,
+        response,
+      },
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Vision model error: ${err?.message || String(err)}. Is "${visionModel}" pulled in Ollama?`,
+    };
+  }
+};
+
 export const visionToolDefs: ToolDefinition[] = [
   {
     name: 'vision_describe',
@@ -202,11 +298,14 @@ export const visionToolDefs: ToolDefinition[] = [
     },
     category: 'vision',
   },
+  lookAtBrowserDef,
 ];
 
 // ── Tool handlers ──────────────────────────────────────────────────────────
 
 export const visionToolHandlers: Record<string, ToolHandler> = {
+  look_at_browser: lookAtBrowserHandler,
+
 
   vision_describe: async (args): Promise<ToolResult> => {
     const filePath = (args.file_path as string)?.trim();

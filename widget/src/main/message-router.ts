@@ -2130,6 +2130,16 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(crm|compan(y|ies)|contacts?|deals?|pipelines?|leads?|clients?|customers?|prospects?|invoices?)\b/.test(m)) cats.add('crm');
   if (/\b(document|pdf|docx?|summarize|parse|rag|index)\b/.test(m)) cats.add('document');
   if (/\b(image|picture|photo|draw|generate|paint|vision|screenshot|describe)\b/.test(m)) cats.add('vision');
+  // look_at_browser lives in the vision category, so questions about the OPEN
+  // PAGE must select it too — "what does this page say?" contains none of the
+  // words above, and without this the tool is unreachable to a small model in
+  // exactly the way the CRM tools were.
+  if (/\b(page|browser|website|web ?page|on screen|onscreen|this site)\b/.test(m)) cats.add('vision');
+  // Memory tools beyond remember/recall — forget, list_memories,
+  // get_conversation_history, save_conversation, clear_conversation_history —
+  // declare category 'memory', which nothing here produced. Only the two in
+  // the core set were ever offered; the rest were invisible.
+  if (/\b(remember|memor(y|ies)|forget|recall|note to self)\b/.test(m)) cats.add('memory');
   if (/\b(voice|speak|say|whisper|transcribe|speech)\b/.test(m)) cats.add('voice');
   if (/\b(git|commit|diff|branch|status|log)\b/.test(m)) cats.add('utility');
   if (/\b(code|script|python|javascript|run|execute)\b/.test(m)) cats.add('utility');
