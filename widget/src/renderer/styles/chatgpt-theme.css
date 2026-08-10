@@ -9252,3 +9252,52 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .changes-empty { opacity: 0.7; }
 .changes-note { color: var(--pro, #ffd479); }
 .changes-error { color: var(--danger, #ff6b6b); }
+
+/* ── Update banner ────────────────────────────────────────────────────────
+   Deliberately a strip, not a modal: an update is never urgent enough to
+   steal focus mid-sentence, which is how update prompts earn their
+   reputation. Sits above the header so it can never cover chat content. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  font-size: 13px;
+  background: var(--bg-panel, #1b1d22);
+  border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+}
+
+.update-text { flex: 1 1 auto; min-inline-size: 0; }
+.update-error { color: var(--danger, #ff6b6b); }
+
+.update-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.update-btn:hover { background: rgba(127, 127, 127, 0.16); }
+.update-btn:focus-visible { outline: 2px solid var(--accent, #4c8dff); outline-offset: 1px; }
+.update-btn.primary {
+  border-color: transparent;
+  background: var(--accent, #4c8dff);
+  color: #fff;
+  font-weight: 600;
+}
+
+.update-progress {
+  flex: 0 0 140px;
+  block-size: 6px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.25);
+  overflow: hidden;
+}
+.update-progress-fill {
+  block-size: 100%;
+  background: var(--accent, #4c8dff);
+  transition: inline-size 0.2s ease;
+}
