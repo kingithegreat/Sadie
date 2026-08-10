@@ -9135,3 +9135,120 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* ── Changes panel (review what HomeBot edited) ───────────────────────────
+   Read-only reviewer, not an editor. Diff colours are tinted BACKGROUNDS
+   rather than coloured text: red/green text on a dark ground fails contrast
+   for the exact readers who need it most, and a tint survives colour-blindness
+   because the +/- sign carries the same information. */
+.changes-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  block-size: 100%;
+}
+
+.changes-list {
+  flex: 0 0 auto;
+  max-block-size: 40%;
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.changes-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12.5px;
+  text-align: start;
+  cursor: pointer;
+}
+.changes-item:hover { background: rgba(127, 127, 127, 0.14); }
+.changes-item.active { background: rgba(127, 127, 127, 0.22); }
+.changes-item:focus-visible { outline: 2px solid var(--accent, #4c8dff); outline-offset: -2px; }
+
+.changes-item-name {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changes-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.changes-badge.created { background: rgba(80, 200, 140, 0.18); color: #63d19b; }
+.changes-badge.edited { background: rgba(120, 160, 255, 0.18); color: #8fb0ff; }
+
+.changes-item-time { flex: 0 0 auto; opacity: 0.55; font-size: 11px; }
+
+.changes-diff {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-block-start: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.changes-diff-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-panel, #1b1d22);
+  border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+.changes-diff-path { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.changes-stat { font-variant-numeric: tabular-nums; }
+.changes-stat.add { color: #63d19b; }
+.changes-stat.remove { color: #ff8f8f; }
+.changes-open {
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.changes-hunk { border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06)); }
+.changes-hunk-head { padding: 3px 10px; opacity: 0.5; font-size: 11px; }
+
+.changes-line { display: flex; gap: 0; white-space: pre; }
+.changes-line.add { background: rgba(80, 200, 140, 0.13); }
+.changes-line.remove { background: rgba(255, 120, 120, 0.13); }
+
+.changes-gutter {
+  flex: 0 0 auto;
+  inline-size: 40px;
+  padding-inline: 4px;
+  text-align: end;
+  opacity: 0.4;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.changes-sign { flex: 0 0 auto; inline-size: 14px; text-align: center; user-select: none; opacity: 0.8; }
+.changes-text { flex: 1 1 auto; padding-inline-end: 10px; }
+
+.changes-empty,
+.changes-note,
+.changes-error { padding: 10px; font-size: 12px; line-height: 1.5; }
+.changes-empty { opacity: 0.7; }
+.changes-note { color: var(--pro, #ffd479); }
+.changes-error { color: var(--danger, #ff6b6b); }

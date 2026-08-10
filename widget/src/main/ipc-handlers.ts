@@ -9,6 +9,8 @@ import axios from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
 import { reloadSkills, skillsDir, type Skill } from './skills';
+import { listChanges, getChange } from './file-change-log';
+import { diffText, toHunks } from '../../../src/diff/line-diff';
 import * as os from 'os';
 import * as https from 'https';
 import { spawn, execFile } from 'child_process';
@@ -2477,6 +2479,36 @@ EXAMPLE FORMAT:
       return { success: true, ...describeActiveModel(getSettings() as any) };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Could not resolve the active model.' };
+    }
+  });
+
+  // ---- File changes (review what HomeBot did) ---------------------------
+  ipcMain.handle('homebot:changes-list', async () => {
+    try {
+      return { success: true, changes: listChanges() };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not read the change log.' };
+    }
+  });
+
+  ipcMain.handle('homebot:changes-diff', async (_e, id: string) => {
+    try {
+      const change = getChange(String(id || ''));
+      if (!change) return { success: false, error: 'That change is no longer in the log.' };
+      const diff = diffText(change.before, change.after);
+      return {
+        success: true,
+        path: change.path,
+        tool: change.tool,
+        created: change.created,
+        at: change.at,
+        stats: diff.stats,
+        // Hunks, not the whole file: reviewing one changed line should not
+        // mean scrolling a thousand identical ones.
+        hunks: toHunks(diff, 3),
+      };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not build the diff.' };
     }
   });
 

@@ -339,6 +339,26 @@ export interface ElectronAPI {
   }>;
   skillsOpenFolder: () => Promise<{ success: boolean; dir?: string; error?: string }>;
 
+  /** Review surface: files HomeBot changed, newest first. */
+  changesList: () => Promise<{
+    success: boolean;
+    error?: string;
+    changes?: Array<{ id: string; path: string; tool: string; at: number; created: boolean }>;
+  }>;
+  changesDiff: (id: string) => Promise<{
+    success: boolean;
+    error?: string;
+    path?: string;
+    tool?: string;
+    created?: boolean;
+    stats?: { added: number; removed: number; approximate: boolean };
+    hunks?: Array<{
+      beforeStart: number;
+      afterStart: number;
+      lines: Array<{ type: 'equal' | 'add' | 'remove'; before: number | null; after: number | null; text: string }>;
+    }>;
+  }>;
+
   /** Router's answer to "which model replies right now?" — drives the header. */
   resolveActiveModel: () => Promise<{
     success: boolean;

@@ -16,7 +16,7 @@
 export type IconName =
   | 'refresh' | 'library' | 'tools' | 'terminal' | 'analytics' | 'bell'
   | 'settings' | 'menu' | 'close' | 'dashboard' | 'chat' | 'sparkle'
-  | 'image' | 'document' | 'globe' | 'stop' | 'send' | 'chevronDown';
+  | 'image' | 'document' | 'globe' | 'stop' | 'send' | 'chevronDown' | 'diff';
 
 interface IconProps {
   name: IconName;
@@ -41,6 +41,8 @@ const PATHS: Record<IconName, JSX.Element> = {
   sparkle: <><path d="M12 3v4" /><path d="M12 17v4" /><path d="M3 12h4" /><path d="M17 12h4" /><path d="m5.6 5.6 2.8 2.8" /><path d="m15.6 15.6 2.8 2.8" /><path d="m18.4 5.6-2.8 2.8" /><path d="m8.4 15.6-2.8 2.8" /></>,
   image: <><rect x="3" y="3" width="18" height="18" rx="2.5" /><circle cx="9" cy="9" r="1.6" /><path d="m21 15-4.6-4.6a2 2 0 0 0-2.8 0L3 21" /></>,
   document: <><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z" /><path d="M14 2v5h5" /></>,
+  // Two stacked rows with +/- marks — reads as "changes" at 20px.
+  diff: <><path d="M4 5h10" /><path d="M9 3v4" /><path d="M4 15h10" /><path d="M17 7l3 3-3 3" /></>,
   globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z" /></>,
   stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
   send: <><path d="m21 3-9 18-2.5-7.5L2 11Z" /><path d="M21 3 9.5 13.5" /></>,

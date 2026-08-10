@@ -340,6 +340,10 @@ const electronAPI: ElectronAPI = {
   resolveActiveModel: async (): Promise<any> =>
     await ipcRenderer.invoke('homebot:resolve-active-model'),
 
+  /** What HomeBot changed this session, and the diff for one change. */
+  changesList: async (): Promise<any> => await ipcRenderer.invoke('homebot:changes-list'),
+  changesDiff: async (id: string): Promise<any> => await ipcRenderer.invoke('homebot:changes-diff', id),
+
   skillsList: async (): Promise<any> => {
     return await ipcRenderer.invoke('homebot:skills-list');
   },
