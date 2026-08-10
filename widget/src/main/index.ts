@@ -144,7 +144,8 @@ import { applyIpcHandlePatch } from './utils/ipc-handle-patch';
 import { reloadSkills } from './skills';
 import { seedSkills } from './skills-seed';
 import { migrateLegacyUserDataIfNeeded } from './migrate-userdata';
-import { registerBrowserPanelIpc, destroyBrowserPanel } from './browser-panel';
+import { registerBrowserPanelIpc, destroyBrowserPanel, captureBrowserPage } from './browser-panel';
+import { setBrowserCaptureProvider } from './tools/vision';
 applyIpcHandlePatch();
 
 // E2E tests pass a custom userData directory via env var so Playwright doesn't
@@ -235,6 +236,9 @@ app.whenReady().then(async () => {
   // itself so a re-created window (macOS reactivate) still resolves.
   try {
     registerBrowserPanelIpc(() => getMainWindow());
+    // Let the look_at_browser tool reach the panel without importing it —
+    // a relative require there would not survive bundling.
+    setBrowserCaptureProvider(() => captureBrowserPage());
   } catch (e) {
     console.error('[MAIN] Browser panel IPC registration failed (non-fatal):', e);
   }

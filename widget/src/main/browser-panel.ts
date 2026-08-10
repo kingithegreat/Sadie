@@ -220,22 +220,43 @@ export function registerBrowserPanelIpc(getMainWindow: () => BrowserWindow | nul
   });
 
   /** A PNG of what the panel is currently showing — the "look at this page" path. */
-  ipcMain.handle(BROWSER_CHANNELS.CAPTURE, async () => {
-    try {
-      if (!view || view.webContents.isDestroyed()) return { success: false, error: 'The browser panel is not open.' };
-      const image = await view.webContents.capturePage();
-      if (image.isEmpty()) return { success: false, error: 'Nothing to capture yet.' };
-      return {
-        success: true,
-        base64: image.toPNG().toString('base64'),
-        mimeType: 'image/png',
-        url: view.webContents.getURL(),
-        title: view.webContents.getTitle(),
-      };
-    } catch (e) {
-      return { success: false, error: e instanceof Error ? e.message : String(e) };
+  ipcMain.handle(BROWSER_CHANNELS.CAPTURE, async () => captureBrowserPage());
+}
+
+export interface BrowserCapture {
+  success: boolean;
+  error?: string;
+  base64?: string;
+  mimeType?: string;
+  url?: string;
+  title?: string;
+}
+
+/**
+ * PNG of the live browser panel.
+ *
+ * Exported, not just wired to IPC, because the renderer is not the only caller
+ * that matters: the look_at_browser tool needs it so the assistant can answer
+ * "what does this page say?" — which was the point of building capture in the
+ * first place. It sat behind an IPC channel nothing called until now.
+ */
+export async function captureBrowserPage(): Promise<BrowserCapture> {
+  try {
+    if (!view || view.webContents.isDestroyed()) {
+      return { success: false, error: 'The browser panel is not open. Open it from the workspace first.' };
     }
-  });
+    const image = await view.webContents.capturePage();
+    if (image.isEmpty()) return { success: false, error: 'The page has not rendered anything yet.' };
+    return {
+      success: true,
+      base64: image.toPNG().toString('base64'),
+      mimeType: 'image/png',
+      url: view.webContents.getURL(),
+      title: view.webContents.getTitle(),
+    };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export function destroyBrowserPanel(): void {

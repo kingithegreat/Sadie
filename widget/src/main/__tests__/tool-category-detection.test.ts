@@ -74,3 +74,85 @@ describe('the category contract small models depend on', () => {
  * Real confirmation is a live run: ask "add a company called Test Ltd" on a
  * 7B model and check that it creates one instead of asking for details.
  */
+
+describe('vision covers the OPEN PAGE, not just image files', () => {
+  // look_at_browser is category 'vision'. The original vision pattern matched
+  // image/picture/photo/screenshot — none of which appear in "what does this
+  // page say?", so the tool would have shipped unreachable, exactly as the
+  // CRM tools were.
+  const cases = [
+    'what does this page say',
+    'summarise the page I have open',
+    'read this website for me',
+    'what is on screen right now',
+    'look at the browser',
+  ];
+  for (const m of cases) {
+    it(`routes "${m}" to vision`, () => {
+      expect(detectToolCategories(m)).toContain('vision');
+    });
+  }
+
+  it('still routes plain image questions to vision', () => {
+    expect(detectToolCategories('describe this picture')).toContain('vision');
+  });
+});
+
+describe('memory category was unreachable too', () => {
+  // remember/recall are in SMALL_MODEL_CORE_TOOLS so they always shipped, but
+  // forget, list_memories, get_conversation_history, save_conversation and
+  // clear_conversation_history are category 'memory' — which nothing produced.
+  const cases = ['forget what I told you', 'what do you remember about me', 'list my memories', 'make a note to self'];
+  for (const m of cases) {
+    it(`routes "${m}" to memory`, () => {
+      expect(detectToolCategories(m)).toContain('memory');
+    });
+  }
+
+  it('does not claim memory for unrelated messages', () => {
+    expect(detectToolCategories('what is the weather') ?? []).not.toContain('memory');
+  });
+});
+
+describe('no tool category may be unreachable (the gate)', () => {
+  /**
+   * The bug class this whole file exists for: a tool declares a category, no
+   * message can produce that category, getSmallModelTools therefore never adds
+   * it, and the feature is invisible to a 7B model forever. It shipped twice —
+   * CRM (found only because Aden tried it) and memory (found only by auditing).
+   *
+   * Reading the source rather than importing the registry is deliberate:
+   * initializeTools() drags Electron and the whole tool graph into the test
+   * process and hangs it. Regex over the source is crude but it cannot hang,
+   * and it fails loudly the moment someone adds a category with no route.
+   */
+  const fs = require('fs');
+  const path = require('path');
+
+  const toolsDir = path.resolve(__dirname, '..', 'tools');
+  const routerFile = path.resolve(__dirname, '..', 'message-router.ts');
+
+  /** Categories NOT expected to be reachable by intent, with the reason. */
+  const EXEMPT = new Map<string, string>([
+    // Nothing here yet. Add an entry only with a real justification — an empty
+    // map is the healthy state.
+  ]);
+
+  it('every category a tool declares can be produced by detectToolCategories', () => {
+    const declared = new Set<string>();
+    for (const f of fs.readdirSync(toolsDir)) {
+      if (!f.endsWith('.ts')) continue;
+      const src = fs.readFileSync(path.join(toolsDir, f), 'utf-8');
+      for (const m of src.matchAll(/category:\s*'([a-z-]+)'/g)) declared.add(m[1]);
+    }
+
+    const router = fs.readFileSync(routerFile, 'utf-8');
+    const producible = new Set(
+      [...router.matchAll(/cats\.add\('([a-z-]+)'\)/g)].map(m => m[1]),
+    );
+
+    const unreachable = [...declared].filter(c => !producible.has(c) && !EXEMPT.has(c));
+
+    expect(unreachable).toEqual([]);
+  });
+});
