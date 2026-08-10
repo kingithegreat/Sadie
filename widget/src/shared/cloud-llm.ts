@@ -34,6 +34,7 @@ export type CloudLLMSettingsSlice = Pick<
   | 'anthropicApiKey'
   | 'openaiApiKey'
   | 'geminiApiKey'
+  | 'moonshotApiKey'
   // Uncensored mode belongs to this decision, not beside it. It used to be read
   // only on the Ollama path, so with a cloud provider enabled the router went
   // to the cloud and never reached the line that honours it — the toggle was
@@ -53,12 +54,14 @@ const PROVIDER_KEY_FIELDS: Partial<Record<CustomLLMConfig['provider'], keyof Clo
   openai: 'openaiApiKey',
   'google-ai-studio': 'geminiApiKey',
   'google-gemini': 'geminiApiKey',
+  moonshot: 'moonshotApiKey',
 };
 
 /** Providers that authenticate without an API key:
- *  claude-code runs a local CLI on the user's subscription; custom endpoints
- *  may be unauthenticated local servers. */
-const KEYLESS_PROVIDERS: ReadonlySet<string> = new Set(['claude-code', 'custom']);
+ *  claude-code and codex both run a local CLI signed in to the user's own
+ *  subscription (Claude Max / ChatGPT), so there is no key to store; custom
+ *  endpoints may be unauthenticated local servers. */
+const KEYLESS_PROVIDERS: ReadonlySet<string> = new Set(['claude-code', 'codex', 'custom']);
 
 export interface ResolvedCloudLLM {
   /** The user turned cloud chat on (useCustomLLM or customLLM.enabled). */

@@ -330,3 +330,36 @@ describe('describeActiveModel — the header display contract', () => {
     expect(d.model).toBe('qwen2.5:7b');
   });
 });
+
+describe('subscription-CLI providers need no key', () => {
+  it('codex resolves active with no apiKey and no apiUrl', () => {
+    const r = resolveCloudLLM({
+      useCustomLLM: true,
+      customLLM: { provider: 'codex', model: 'default', apiUrl: '', apiKey: '', enabled: true } as any,
+      anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
+    } as any);
+    expect(r.active).toBe(true);
+    expect(r.misconfiguration).toBeNull();
+  });
+
+  it('moonshot hydrates its key from the vault like the other API providers', () => {
+    const r = resolveCloudLLM({
+      useCustomLLM: true,
+      customLLM: { provider: 'moonshot', model: 'kimi-k2.5', apiUrl: 'https://api.moonshot.ai/v1', apiKey: '', enabled: true } as any,
+      anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '',
+      moonshotApiKey: 'sk-vault-key',
+    } as any);
+    expect(r.active).toBe(true);
+    expect(r.config?.apiKey).toBe('sk-vault-key');
+  });
+
+  it('moonshot with no key anywhere is a surfaced misconfiguration, not a silent fallback', () => {
+    const r = resolveCloudLLM({
+      useCustomLLM: true,
+      customLLM: { provider: 'moonshot', model: 'kimi-k2.5', apiUrl: 'https://api.moonshot.ai/v1', apiKey: '', enabled: true } as any,
+      anthropicApiKey: '', openaiApiKey: '', geminiApiKey: '', moonshotApiKey: '',
+    } as any);
+    expect(r.active).toBe(false);
+    expect(r.misconfiguration).toMatch(/moonshot/i);
+  });
+});

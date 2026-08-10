@@ -236,3 +236,62 @@ describe('claude-code is not an HTTP provider (the "Invalid URL" class)', () => 
     expect(typeof generateFromCustomLLM).toBe('function');
   });
 });
+
+describe('codex provider (ChatGPT subscription via Codex CLI)', () => {
+  const { PROVIDER_API_URLS, validateCustomLLMConfig, getCuratedModels } = require('../custom-llm-client');
+
+  it('is keyless and endpoint-less, like claude-code', () => {
+    // Both are CLIs signed in to the user's own plan. A URL entry here would
+    // mean someone mistook it for an HTTP provider.
+    expect(PROVIDER_API_URLS['codex']).toBeUndefined();
+  });
+
+  it('validates with only a model — no apiUrl, no apiKey', () => {
+    const r = validateCustomLLMConfig({
+      name: 'Codex', provider: 'codex', model: 'default', apiUrl: '', apiKey: '', enabled: true,
+    });
+    expect(r.valid).toBe(true);
+  });
+
+  it('rejects a config with no model chosen', () => {
+    const r = validateCustomLLMConfig({
+      name: 'Codex', provider: 'codex', model: '', apiUrl: '', apiKey: '', enabled: true,
+    });
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/model/i);
+  });
+
+  it('offers a default option so a plan change cannot strand the user', () => {
+    const models = getCuratedModels?.({ provider: 'codex' })
+      ?? require('../custom-llm-client').getModelsForProvider?.({ provider: 'codex' });
+    if (models) {
+      expect(models.some((m: any) => m.id === 'default')).toBe(true);
+      expect(models.every((m: any) => m.provider === 'codex')).toBe(true);
+    }
+  });
+});
+
+describe('moonshot / Kimi provider', () => {
+  const { PROVIDER_API_URLS, validateCustomLLMConfig } = require('../custom-llm-client');
+
+  it('uses the OpenAI-compatible Moonshot base URL', () => {
+    expect(PROVIDER_API_URLS['moonshot']).toBe('https://api.moonshot.ai/v1');
+  });
+
+  it('requires an API key — unlike the subscription CLIs', () => {
+    const r = validateCustomLLMConfig({
+      name: 'Kimi', provider: 'moonshot', model: 'kimi-k2.5',
+      apiUrl: PROVIDER_API_URLS['moonshot'], apiKey: '', enabled: true,
+    });
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/key/i);
+  });
+
+  it('validates once a key is present', () => {
+    const r = validateCustomLLMConfig({
+      name: 'Kimi', provider: 'moonshot', model: 'kimi-k2.5',
+      apiUrl: PROVIDER_API_URLS['moonshot'], apiKey: 'sk-test', enabled: true,
+    });
+    expect(r.valid).toBe(true);
+  });
+});

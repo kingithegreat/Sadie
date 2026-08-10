@@ -108,6 +108,20 @@ const CLAUDE_CODE_MODELS: CustomModelInfo[] = [
   { id: 'fable', name: 'Claude Fable (subscription)', description: 'Highest capability — hardest problems, long tasks', provider: 'claude-code', costHint: 'Heaviest on your plan' },
 ];
 
+/**
+ * Models offered when the provider is `codex` — OpenAI's Codex CLI signed in
+ * with a ChatGPT account, so usage draws on the user's ChatGPT plan rather
+ * than a metered API key. Same idea as CLAUDE_CODE_MODELS above.
+ *
+ * `default` lets the CLI pick whatever the account is entitled to, which is
+ * the safest option when OpenAI rotates model names.
+ */
+const CODEX_MODELS: CustomModelInfo[] = [
+  { id: 'default', name: 'Codex default (subscription)', description: 'Whatever your ChatGPT plan provides — safest choice', provider: 'codex', costHint: 'Included in your plan' },
+  { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex (subscription)', description: 'Coding-tuned', provider: 'codex', costHint: 'Included in your plan' },
+  { id: 'gpt-5.1', name: 'GPT-5.1 (subscription)', description: 'General purpose', provider: 'codex', costHint: 'Included in your plan' },
+];
+
 const OPENAI_MODELS: CustomModelInfo[] = [
   { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', provider: 'openai', costHint: '~$5/1M in' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable', provider: 'openai', costHint: '~$0.15/1M in' },
@@ -196,6 +210,9 @@ export const PROVIDER_API_URLS: Record<string, string> = {
   cerebras: 'https://api.cerebras.ai/v1',
   sambanova: 'https://api.sambanova.ai/v1',
   together: 'https://api.together.xyz/v1',
+  // Kimi (Moonshot) speaks the OpenAI Chat Completions shape, so it needs no
+  // bespoke client — only a base URL and a key from platform.moonshot.ai.
+  moonshot: 'https://api.moonshot.ai/v1',
 };
 
 function trimTrailingSlash(url: string): string {
@@ -880,6 +897,146 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
   }
 }
 
+/**
+ * Stream from OpenAI's Codex CLI, signed in with a ChatGPT account so usage
+ * draws on the user's plan instead of a metered API key. Sibling of
+ * streamClaudeCode above.
+ *
+ * Two deliberate differences from the Claude path:
+ *
+ *  - No tool bridge. Codex has a known bug where `--json` output goes
+ *    malformed once MCP servers are active (openai/codex#15451), and a
+ *    corrupted stream is worse than no tools. Codex is chat-only until that
+ *    is fixed; Claude keeps HomeBot's gated tools.
+ *  - Text arrives per ITEM, not per token: the `--json` stream emits
+ *    `item.completed` events carrying a finished `agent_message`. So replies
+ *    land in one or two chunks rather than typing out. That is the CLI's
+ *    granularity, not a bug here.
+ */
+async function streamCodex(options: StreamOptions): Promise<void> {
+  const { apiConfig, messages, model, onChunk, onEnd, onError, signal } = options;
+
+  // Codex has no --system-prompt flag, so the system text is folded into the
+  // prompt body. toClaudeCodeTranscript already does exactly that shaping.
+  const { system, prompt } = toClaudeCodeTranscript(messages);
+  if (!prompt.trim()) {
+    onError(new Error('Nothing to send to Codex.'));
+    return;
+  }
+  const fullPrompt = system.trim() ? `${system.trim()}\n\n---\n\n${prompt}` : prompt;
+
+  // apiUrl doubles as an optional override for the CLI location.
+  const configuredPath = apiConfig.apiUrl?.trim();
+  const bin = configuredPath || (process.platform === 'win32' ? 'codex.cmd' : 'codex');
+
+  const args = [
+    'exec',
+    '--json',
+    // HomeBot chats are not necessarily inside a git repo; without this Codex
+    // refuses to run at all.
+    '--skip-git-repo-check',
+    // Don't leave session files behind for what is a chat turn.
+    '--ephemeral',
+  ];
+  // 'default' means "let the CLI choose what the plan allows" — pass nothing.
+  // Model ids come from CODEX_MODELS, never from user input.
+  if (model && model !== 'default') args.push('-m', model);
+  // Sandbox is left at the CLI default (read-only). HomeBot's own permission
+  // gate is the authority on side effects; a chat provider must not be able to
+  // write files on its own.
+  //
+  // '-' makes Codex read the PROMPT from stdin. That is the security-critical
+  // choice: on Windows the CLI installs as codex.cmd, and modern Node refuses
+  // to spawn .cmd without shell:true (spawn EINVAL — CVE-2024-27980). With a
+  // shell, anything in argv is concatenated unescaped, so a prompt containing
+  // & or | would execute commands. Sending the prompt over stdin keeps every
+  // untrusted byte off the command line; only our own literal flags remain.
+  args.push('-');
+
+  const needsShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin);
+
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(bin, args, { windowsHide: true, shell: needsShell });
+  } catch (err: any) {
+    onError(new Error(`Could not start Codex (${bin}): ${err?.message || err}`));
+    return;
+  }
+
+  // Write the prompt, then CLOSE stdin. Codex waits on stdin ("Reading
+  // additional input from stdin...") and never finishes the turn while the
+  // pipe is open — invisible from a terminal, where the shell had already
+  // closed it for us.
+  try {
+    child.stdin?.write(fullPrompt);
+    child.stdin?.end();
+  } catch (err: any) {
+    onError(new Error(`Could not send the prompt to Codex: ${err?.message || err}`));
+    return;
+  }
+
+  let ended = false;
+  const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
+  const safeError = (err: any) => { if (!ended) { ended = true; onError(err); } };
+
+  const onAbort = () => { try { child.kill(); } catch { /* already gone */ } };
+  signal?.addEventListener('abort', onAbort, { once: true });
+  const cleanup = () => signal?.removeEventListener('abort', onAbort);
+
+  let stdoutBuf = '';
+  let stderrBuf = '';
+  let sawText = false;
+
+  child.stdout?.on('data', (chunk: Buffer) => {
+    stdoutBuf += chunk.toString('utf8');
+    const lines = stdoutBuf.split('\n');
+    stdoutBuf = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      let evt: any;
+      try { evt = JSON.parse(trimmed); } catch { continue; }
+
+      // Assistant text lands as a completed item of type agent_message.
+      if (evt.type === 'item.completed' && evt.item?.type === 'agent_message') {
+        const text = typeof evt.item.text === 'string' ? evt.item.text : '';
+        if (text) { sawText = true; onChunk(text); }
+      } else if (evt.type === 'turn.failed' || evt.type === 'error') {
+        const msg = evt.error?.message || evt.message || 'Codex reported an error.';
+        safeError(new Error(String(msg)));
+      }
+    }
+  });
+
+  child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString('utf8'); });
+
+  child.on('error', (err: any) => {
+    cleanup();
+    safeError(new Error(
+      err?.code === 'ENOENT'
+        ? `Codex CLI not found (${bin}). Install it with: npm install -g @openai/codex`
+        : `Codex failed to start: ${err?.message || err}`,
+    ));
+  });
+
+  child.on('close', (code: number | null) => {
+    cleanup();
+    if (sawText) { safeEnd(); return; }
+    const detail = stderrBuf.trim().slice(0, 400);
+    if (code === 0) {
+      safeError(new Error(`Codex returned no output.${detail ? ` ${detail}` : ''}`));
+    } else {
+      // The most common first-run failure is simply not being signed in.
+      const hint = /not.*(logged|signed) in|auth/i.test(detail)
+        ? ' Run `codex login` once to sign in with your ChatGPT account.'
+        : '';
+      safeError(new Error(`Codex exited with code ${code}.${detail ? ` ${detail}` : ''}${hint}`));
+    }
+  });
+}
+
 function toGeminiContents(messages: ChatMessage[]): Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> {
   const out: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
   for (const msg of messages) {
@@ -994,6 +1151,7 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   // Claude Code is a local CLI — it has no /models endpoint and needs no apiUrl,
   // so answer before the apiUrl guard below.
   if (config?.provider === 'claude-code') return CLAUDE_CODE_MODELS;
+  if (config?.provider === 'codex') return CODEX_MODELS;
 
   if (!config || !config.apiUrl) {
     throw new Error('Enter an API URL to fetch models.');
@@ -1148,6 +1306,10 @@ export async function streamFromCustomLLM(
       streamClaudeCode(options);
       break;
 
+    case 'codex':
+      streamCodex(options);
+      break;
+
     case 'openai':
     case 'openrouter':
     case 'groq':
@@ -1189,6 +1351,15 @@ export function validateCustomLLMConfig(config?: CustomLLMConfig): { valid: bool
   if (config.provider === 'claude-code') {
     if (!config.model) {
       return { valid: false, error: 'Choose which Claude model to use' };
+    }
+    return { valid: true };
+  }
+
+  // Codex is the same shape: a local CLI signed in to a ChatGPT account, so
+  // no endpoint and no key. 'default' is always acceptable.
+  if (config.provider === 'codex') {
+    if (!config.model) {
+      return { valid: false, error: 'Choose which Codex model to use' };
     }
     return { valid: true };
   }

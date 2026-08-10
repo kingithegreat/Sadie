@@ -483,7 +483,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       // executable, not a URL, and would fail the protocol check below.
       // fetchAvailableCustomModels already special-cases it; this guard ran
       // first and rejected Connect with "API URL is required".
-      if (payload?.provider !== 'claude-code') {
+      // codex is the same shape as claude-code: a CLI, not an endpoint.
+      if (payload?.provider !== 'claude-code' && payload?.provider !== 'codex') {
         if (!payload?.apiUrl) {
           return { success: false, error: 'API URL is required' };
         }
