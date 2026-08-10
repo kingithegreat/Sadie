@@ -2121,6 +2121,13 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(reminder|remind|calendar|schedule|meeting|event|appointment)\b/.test(m)) cats.add('utility');
   if (/\b(process|task\s*manager|kill|cpu|ram|memory\s*usage)\b/.test(m)) cats.add('system');
   if (/\b(clipboard|copy|paste)\b/.test(m)) cats.add('utility');
+  // CRM had NO patterns here, and getSmallModelTools only adds category tools
+  // when a category matched — so crm_* was never offered to a small model for
+  // any message. Observed live: "add a company called Test Ltd" made the model
+  // ask what details to include, because it had no tool to create one with.
+  // Plurals matter: "show me my deals" is the natural phrasing and \bdeal\b
+  // does not match it — caught by the tests, not by reading the regex.
+  if (/\b(crm|compan(y|ies)|contacts?|deals?|pipelines?|leads?|clients?|customers?|prospects?|invoices?)\b/.test(m)) cats.add('crm');
   if (/\b(document|pdf|docx?|summarize|parse|rag|index)\b/.test(m)) cats.add('document');
   if (/\b(image|picture|photo|draw|generate|paint|vision|screenshot|describe)\b/.test(m)) cats.add('vision');
   if (/\b(voice|speak|say|whisper|transcribe|speech)\b/.test(m)) cats.add('voice');
