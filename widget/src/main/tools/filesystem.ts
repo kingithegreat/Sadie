@@ -11,6 +11,7 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, Ta
 import ExcelJS from 'exceljs';
 import * as mammoth from 'mammoth';
 import PDFDocument from 'pdfkit';
+import { captureBefore, recordChange } from '../file-change-log';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
@@ -839,6 +840,11 @@ export const writeFileHandler: ToolHandler = async (args, _context): Promise<Too
     return { success: false, error: validation.error };
   }
   
+  // Capture the prior content BEFORE writing so the change can be reviewed.
+  // Read here rather than inside the log so an unreadable file simply records
+  // as a creation instead of failing the write.
+  const prior = captureBefore(validation.resolved);
+
   try {
     // Ensure parent directory exists
     await fsPromises.mkdir(path.dirname(validation.resolved), { recursive: true });
@@ -848,6 +854,8 @@ export const writeFileHandler: ToolHandler = async (args, _context): Promise<Too
     } else {
       await fsPromises.writeFile(validation.resolved, args.content, 'utf-8');
     }
+
+    recordChange({ path: validation.resolved, before: prior.text, existed: prior.existed, tool: 'write_file' });
     
     // Log successful write
     return {
@@ -1219,6 +1227,10 @@ export const editFileHandler: ToolHandler = async (args, _context): Promise<Tool
       : content.replace(oldString, newString);
 
     await fsPromises.writeFile(fullPath, updated, 'utf-8');
+
+    // edit_file already holds the prior text — no second read needed. The file
+    // is known to exist here (checked above), so this is never a creation.
+    recordChange({ path: fullPath, before: content, existed: true, tool: 'edit_file' });
 
     const replacements = replaceAll ? content.split(oldString).length - 1 : 1;
     return {

@@ -7,6 +7,7 @@ const TerminalPanel = lazy(() => import('../TerminalPanel'));
 // Lazy: the browser panel is off by default, and its first render triggers an
 // attach in main — no reason to pay for either until it is actually opened.
 const BrowserPanel = lazy(() => import('./BrowserPanel'));
+const ChangesPanel = lazy(() => import('./ChangesPanel'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -26,7 +27,7 @@ interface OpenFile {
   language: string;
 }
 
-type SideView = 'explorer' | null;
+type SideView = 'explorer' | 'changes' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
@@ -148,6 +149,14 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
         ><Icon name="terminal" size={20} /></button>
         <button
           type="button"
+          className={`ws-activity-btn${sideView === 'changes' ? ' active' : ''}`}
+          title="Changes — what HomeBot edited"
+          aria-label="Changes"
+          aria-pressed={sideView === 'changes'}
+          onClick={() => setSideView(v => (v === 'changes' ? null : 'changes'))}
+        ><Icon name="diff" size={20} /></button>
+        <button
+          type="button"
           className={`ws-activity-btn${browserOpen ? ' active' : ''}`}
           title="Browser"
           aria-label="Toggle browser panel"
@@ -164,6 +173,18 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
         ><Icon name="chat" size={20} /></button>
       </nav>
 
+      {/* Sidebar */}
+      {sideView === 'changes' && (
+        <aside className="ws-sidebar" aria-label="Changes">
+          <div className="ws-sidebar-title">Changes</div>
+          <div className="ws-sidebar-root">What HomeBot edited this session</div>
+          <div className="ws-sidebar-body">
+            <Suspense fallback={<div className="tree-hint">Loading…</div>}>
+              <ChangesPanel onOpenFile={openFile} />
+            </Suspense>
+          </div>
+        </aside>
+      )}
       {/* Sidebar */}
       {sideView === 'explorer' && (
         <aside className="ws-sidebar" aria-label="Explorer">
