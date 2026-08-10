@@ -34,6 +34,7 @@ interface Settings {
   anthropicApiKey?: string;
   openaiApiKey?: string;
   geminiApiKey?: string;
+  moonshotApiKey?: string;
   stableHordeApiKey?: string;
   codeModel?: string;
   codeApiKey?: string;
@@ -116,6 +117,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         llm.apiKey = source.openaiApiKey;
       } else if ((llm.provider === 'google-ai-studio' || llm.provider === 'google-gemini') && source.geminiApiKey) {
         llm.apiKey = source.geminiApiKey;
+      } else if (llm.provider === 'moonshot' && source.moonshotApiKey) {
+        llm.apiKey = source.moonshotApiKey;
       }
     }
     return {
@@ -132,6 +135,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       anthropicApiKey: source.anthropicApiKey || '',
       openaiApiKey: source.openaiApiKey || '',
       geminiApiKey: source.geminiApiKey || '',
+      moonshotApiKey: source.moonshotApiKey || '',
       stableHordeApiKey: source.stableHordeApiKey || '',
       codeApiKey: source.codeApiKey || '',
       codeApiProvider: source.codeApiProvider || 'openai',
@@ -673,11 +677,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const selectedProvider = localSettings.customLLM?.provider || 'openai';
-  const curatedProviders = ['openai', 'anthropic', 'claude-code', 'groq', 'deepseek', 'google-ai-studio', 'google-gemini', 'huggingface', 'cerebras', 'sambanova', 'together'];
+  const curatedProviders = ['openai', 'anthropic', 'claude-code', 'codex', 'moonshot', 'groq', 'deepseek', 'google-ai-studio', 'google-gemini', 'huggingface', 'cerebras', 'sambanova', 'together'];
   const isCuratedProvider = curatedProviders.includes(selectedProvider);
-  // Claude Code runs locally on the user's own Claude subscription — no key, no endpoint.
+  // Claude Code and Codex both run locally against the user's own subscription
+  // (Claude Max / ChatGPT) — no key, no endpoint.
   const isClaudeCode = selectedProvider === 'claude-code';
-  const providerRequiresApiKey = selectedProvider !== 'custom' && !isClaudeCode;
+  const isSubscriptionCli = isClaudeCode || selectedProvider === 'codex';
+  const providerRequiresApiKey = selectedProvider !== 'custom' && !isSubscriptionCli;
   const hasApiKey = Boolean(localSettings.customLLM?.apiKey?.trim());
   const isConnected = availableModels.length > 0;
   // Settings only apply on Save. With no visible signal, a fully configured
@@ -750,7 +756,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     let apiUrl = defaultUrl || localSettings.customLLM?.apiUrl?.trim() || '';
 
     // Validate we have what we need (Claude Code is a local CLI — no URL to enter)
-    if (!apiUrl && provider !== 'claude-code') {
+    if (!apiUrl && provider !== 'claude-code' && provider !== 'codex') {
       setModelFetchError('Enter your API URL');
       return;
     }
