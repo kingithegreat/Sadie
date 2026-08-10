@@ -6,6 +6,7 @@ import {
   parseQuizBatch,
   dedupeQuestions,
   ParsedQuizQuestion,
+  buildAvoidClause,
 } from '../quiz/generate';
 
 const goodItem = {
@@ -154,5 +155,107 @@ describe('dedupeQuestions', () => {
   it('caps at the requested limit', () => {
     const out = dedupeQuestions([q('Q one is long enough?'), q('Q two is long enough?'), q('Q three is long enough?')], 2);
     expect(out).toHaveLength(2);
+  });
+});
+
+describe('duplicate questions in a finished quiz (live report 2026-08-10)', () => {
+  const q = (over: Partial<ParsedQuizQuestion> = {}): ParsedQuizQuestion => ({
+    type: 'multiple-choice',
+    question: 'What is a closure?',
+    code: '',
+    options: ['a', 'b', 'c', 'd'],
+    correctIndex: 0,
+    explanation: 'because',
+    ...over,
+  });
+
+  describe('dedupe key includes code', () => {
+    it('keeps code-output questions that share a stem but differ in code', () => {
+      // "What does this code print?" is the natural stem for EVERY code-output
+      // question. Keying on text alone deleted all but the first, starving the
+      // quiz of valid questions.
+      const out = dedupeQuestions([
+        q({ type: 'code-output', question: 'What output does this snippet produce?', code: 'print(2 ** 3)' }),
+        q({ type: 'code-output', question: 'What output does this snippet produce?', code: 'print(len("abc"))' }),
+      ]);
+      expect(out).toHaveLength(2);
+    });
+
+    it('still drops a genuine duplicate — same stem AND same code', () => {
+      const out = dedupeQuestions([
+        q({ type: 'code-output', question: 'What does this code print?', code: 'print(1)' }),
+        q({ type: 'code-output', question: 'What does this code print?', code: 'print(1)' }),
+      ]);
+      expect(out).toHaveLength(1);
+    });
+
+    it('ignores whitespace differences in code', () => {
+      const out = dedupeQuestions([
+        q({ question: 'Output?', code: 'a = 1\n  b = 2' }),
+        q({ question: 'Output?', code: 'a = 1    b = 2' }),
+      ]);
+      expect(out).toHaveLength(1);
+    });
+
+    it('text-only duplicates are still removed when there is no code', () => {
+      expect(dedupeQuestions([q(), q()])).toHaveLength(1);
+    });
+  });
+
+  describe('buildAvoidClause', () => {
+    it('is empty for the first batch, leaving that prompt untouched', () => {
+      expect(buildAvoidClause([])).toBe('');
+    });
+
+    it('lists what was already asked and forbids rephrasing', () => {
+      const clause = buildAvoidClause([q({ question: 'What is a closure?' })]);
+      expect(clause).toContain('What is a closure?');
+      expect(clause).toMatch(/do not repeat/i);
+      expect(clause).toMatch(/rephrase/i);
+    });
+
+    it('caps the list so a long quiz cannot flood a small model prompt', () => {
+      const many = Array.from({ length: 50 }, (_, i) => q({ question: `Question number ${i}?` }));
+      const clause = buildAvoidClause(many, 20);
+      expect(clause.split('\n').filter(l => l.startsWith('- '))).toHaveLength(20);
+      // Keeps the MOST RECENT, which are the ones a next batch is likeliest
+      // to echo.
+      expect(clause).toContain('Question number 49?');
+      expect(clause).not.toContain('Question number 0?');
+    });
+
+    it('skips blank questions rather than emitting empty bullets', () => {
+      expect(buildAvoidClause([q({ question: '   ' })])).toBe('');
+    });
+  });
+});
+
+describe('anti-parrot filter is exact, not a blanket ban on the stem', () => {
+  const codeQ = (code: string) => ({
+    type: 'code-output' as const,
+    question: 'What does this code print?',
+    code,
+    options: ['1', '2', '3', '4'],
+    correctIndex: 0,
+    explanation: 'x',
+  });
+
+  it('still rejects the example verbatim — text AND code', () => {
+    expect(dedupeQuestions([codeQ('print(2 ** 3)')])).toHaveLength(0);
+  });
+
+  it('accepts the same stem with genuinely different code', () => {
+    // Before: the stem was banned outright, so EVERY naturally-phrased
+    // code-output question was deleted and quizzes came back thin.
+    expect(dedupeQuestions([codeQ('print(len("abc"))')])).toHaveLength(1);
+  });
+
+  it('still rejects the other examples, which carry no code', () => {
+    const plain = (question: string) => ({
+      type: 'multiple-choice' as const,
+      question, code: '', options: ['a', 'b', 'c', 'd'], correctIndex: 0, explanation: 'x',
+    });
+    expect(dedupeQuestions([plain('Which keyword defines a function in Python?')])).toHaveLength(0);
+    expect(dedupeQuestions([plain('What is X?')])).toHaveLength(0);
   });
 });
