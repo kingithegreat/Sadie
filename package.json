@@ -6,7 +6,9 @@
   "scripts": {
     "smoke": "npx ts-node src/test.ts",
     "test": "npx jest",
-    "soak": "npx ts-node scripts/soak-test.ts"
+    "soak": "npx ts-node scripts/soak-test.ts",
+    "docs:check": "node scripts/check-docs-drift.mjs",
+    "docs:write": "node scripts/check-docs-drift.mjs --write"
   },
   "jest": {
     "preset": "ts-jest",
