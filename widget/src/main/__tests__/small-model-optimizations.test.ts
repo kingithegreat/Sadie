@@ -105,11 +105,21 @@ describe('isSmallModel', () => {
     expect(isSmallModel('phi3.5:3.8b')).toBe(true);
   });
 
-  it('rejects larger models', () => {
-    expect(isSmallModel('llama3.2:8b')).toBe(false);
-    expect(isSmallModel('dolphin-llama3:8b')).toBe(false);
-    expect(isSmallModel('qwen2.5:7b')).toBe(false);
+  it('treats 7B/8B as small — contract changed 2026-08-11', () => {
+    // Was asserting these are LARGE. Every local model actually in use is 7B,
+    // so the whole small-model path (compact prompt, 12-tool cap, 12-turn
+    // history) never applied to anything Aden runs. Bound raised 3B -> 9B by
+    // his decision.
+    expect(isSmallModel('llama3.2:8b')).toBe(true);
+    expect(isSmallModel('dolphin-llama3:8b')).toBe(true);
+    expect(isSmallModel('qwen2.5:7b')).toBe(true);
+  });
+
+  it('still rejects genuinely large and cloud models', () => {
+    expect(isSmallModel('codellama:13b')).toBe(false);
+    expect(isSmallModel('llama3.1:70b')).toBe(false);
     expect(isSmallModel('claude-sonnet-4-20250514')).toBe(false);
+    expect(isSmallModel('gpt-4o')).toBe(false);
   });
 
   it('detects known small family names', () => {
@@ -126,7 +136,8 @@ describe('isSmallModel', () => {
     expect(isSmallModel('dolphin-phi:2.7b')).toBe(true);
     // gemma2:2b
     expect(isSmallModel('gemma2:2b')).toBe(true);
-    expect(isSmallModel('gemma2:9b')).toBe(false);
+    // 9B is inside the bound now — the ceiling sits above it, not below.
+    expect(isSmallModel('gemma2:9b')).toBe(true);
   });
 
   it('does not mis-classify phi3.5 without mini suffix as small', () => {
@@ -145,7 +156,7 @@ describe('getSystemPromptForModel', () => {
   });
 
   it('uses verbose prompt for large models', () => {
-    const prompt = getSystemPromptForModel('llama3.2:8b');
+    const prompt = getSystemPromptForModel('codellama:13b');
     expect(prompt).not.toContain('TOOL EXAMPLES');
     expect(prompt).toContain('HONESTY');
   });

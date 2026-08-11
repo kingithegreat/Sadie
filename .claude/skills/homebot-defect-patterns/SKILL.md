@@ -164,3 +164,42 @@ to human terminal input, because it would reject `where python` and `help`.
 External agents (Claude Code) get HomeBot's tools over the loopback MCP bridge
 rather than their own — measured: in `-p` mode Claude Code runs its native
 tools with `permission_denials: 0`, i.e. no approval step exists.
+
+---
+
+## 6. A threshold that excludes every real value
+
+**Shape.** An optimisation path exists, is correct, is wired, and is covered by
+tests — and never runs, because the predicate that gates it excludes every
+value production actually uses. Unlike patterns 1–5 nothing is missing; a
+single constant is wrong.
+
+**The case.** `isSmallModel()` gated five separate optimisations: the compact
+system prompt (~425 vs ~2,000 tokens), `SMALL_MODEL_MAX_TOOLS = 12`, a 12-turn
+history window, a 1,500-char search budget, and long-reply trimming. The bound
+was **3B**. Every local model in use is **7B**. So all five were dead for every
+model the user runs — including the 12-tool cap, which exists precisely because
+a 7B chooses badly from ~85 tool schemas, and which is the most likely reason
+tool calling had been unreliable for a week.
+
+**Why the tests didn't help.** They *asserted the wrong bound*. Three suites
+explicitly declared `qwen2.5:7b` and `llama3.1:8b` to be large models. The
+tests were green, thorough, and encoding the bug.
+
+**Tell.** A feature described as "for small models" / "for slow connections" /
+"for large files" that nobody has seen fire. Ask what value actually trips it,
+then compare against what production really uses — not against the examples in
+the tests.
+
+**Rule.**
+1. For any threshold, print the classification for the *real* inputs
+   (`for (const m of installedModels) console.log(m, isSmall(m))`). One line,
+   and it settles it.
+2. When a threshold changes a deliberate contract, say so in the test rather
+   than flipping the assertion silently: record the date and the reason. A test
+   that once asserted the opposite is evidence someone chose it on purpose.
+3. Watch for stand-ins. Tests using an 8B model to mean "large" had to move to
+   a genuinely large one, or they would still pass while testing nothing.
+
+**Related.** Pattern 2 is "no surface"; this is "no matching input". Both ship
+green, and both are invisible until someone runs the real thing.

@@ -31,6 +31,7 @@ import { registerWebServicesHandlers, closeAllServiceWindows } from './web-servi
 import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import { logStartupTime } from './utils/perf-logger';
 import { installConsoleGate } from './utils/console-gate';
+import { initLogging, logStartup } from './utils/logger';
 import { shutdownMcpServers } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
@@ -172,6 +173,22 @@ app.whenReady().then(async () => {
   console.log('[MAIN] App ready, initializing...');
   console.log('[MAIN] Env check: HOMEBOT_DIRECT_OLLAMA=', process.env.HOMEBOT_DIRECT_OLLAMA, 'isE2E=', isE2E);
   pushMainLog('[MAIN] App ready');
+
+  // Revive the on-disk startup log. initLogging()/logStartup() have been
+  // exported, unit-tested and called by NOTHING since a refactor — the last
+  // line in startup.log on this machine is from 2026-01-23, and it still says
+  // "SADIE". The tests kept passing because they call the functions directly.
+  //
+  // That is why a failing assistant bridge left no trace anywhere durable: the
+  // only signal went to a console silenced in packaged builds, and the file
+  // that should have caught it had no writer. A subsystem that cannot say why
+  // it failed cannot be diagnosed from a user's machine.
+  try {
+    initLogging();
+    logStartup(`HomeBot ${app.getVersion()} starting — NODE_ENV=${process.env.NODE_ENV || 'development'}`);
+  } catch (e) {
+    safeCatch(e);
+  }
 
   // FIRST profile touch: rescue the pre-rename SADIE profile into this one.
   // Must run before anything reads or writes userData (settings, skills,
@@ -354,7 +371,29 @@ app.whenReady().then(async () => {
       // relative paths resolve somewhere the user never chose.
       cwd: (() => { try { return getSettings().projectPath || undefined; } catch { return undefined; } })(),
     }));
-  }).catch((e) => console.error('[MAIN] assistant bridge failed to start:', e));
+    // Record success where it can actually be read. A bridge that fails leaves
+    // the assistant with no HomeBot tools at all, which looks identical to
+    // "the tools worked and nothing was refused" from the model's side — the
+    // exact ambiguity that made a live test report a pass while proving
+    // nothing. console.* is silenced in packaged builds, so log to the buffer
+    // the diagnostics UI reads.
+    const okLine = `[MAIN] assistant bridge listening on ${bridge.url} (${CODING_TOOLS.length} tools)`;
+    console.log(okLine);
+    try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(okLine); } catch (e) { safeCatch(e); }
+    // Durable too: an in-memory buffer dies with the process, and the bridge's
+    // state is exactly what someone needs AFTER a bad session.
+    try { logStartup(okLine); } catch (e) { safeCatch(e); }
+  }).catch((e) => {
+    const failLine = `[MAIN] assistant bridge FAILED to start: ${e?.message || e} — the Claude provider will have no HomeBot tools`;
+    console.error(failLine);
+    try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(failLine); } catch (err) { safeCatch(err); }
+    try { logStartup(failLine); } catch (err) { safeCatch(err); }
+    // Register a provider that returns null, rather than leaving none at all.
+    // That is what lets the client tell "the bridge failed" apart from "this
+    // caller never wanted a bridge" — and so warn the user in chat instead of
+    // silently handing them an assistant with no tools.
+    setAssistantBridgeProvider(() => null);
+  });
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.
   setBatchSummaryForwarder((summary) => {
