@@ -72,7 +72,7 @@
     "cross-env": "^7.0.3",
     "css-loader": "^6.8.1",
     "electron": "42.8.1",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^26.15.7",
     "electron-reload": "^2.0.0-alpha.1",
     "electron-vite": "^5.0.0",
     "eslint": "^8.57.1",
@@ -132,10 +132,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
-      "sign": null,
-      "signAndEditExecutable": false,
-      "signingHashAlgorithms": []
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": true,
