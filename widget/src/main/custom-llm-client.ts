@@ -24,6 +24,22 @@ interface ChatMessage {
 export interface AssistantBridgeRef {
   url: string;
   token: string;
+  /**
+   * Fully-qualified MCP names of the tools the bridge exposes, e.g.
+   * `mcp__homebot__read_file`. Required because Claude Code gates MCP tools
+   * behind its OWN permission prompt, and headless mode has no channel to
+   * answer one — so without an explicit allow-list every call comes back
+   * "requested permissions ... but you haven't granted it yet" and the bridge
+   * is visible but unusable.
+   */
+  toolNames: string[];
+  /**
+   * Working directory for the CLI. Without it the spawn inherits Electron's
+   * cwd — the install directory in a packaged build — so Claude Code resolves
+   * project settings and any relative path against somewhere the user never
+   * chose. Set to their project folder.
+   */
+  cwd?: string;
 }
 
 /**
@@ -807,11 +823,25 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
     '--disallowed-tools', CLAUDE_CODE_DENIED_TOOLS,
     '--mcp-config', JSON.stringify({ mcpServers }),
   ];
+  // Pre-approve exactly the bridge's tools. Claude Code asks permission for
+  // MCP tools, and in headless mode there is nobody to ask — measured: -p runs
+  // report permission_denials: 0 because no approval channel exists at all. So
+  // every bridged call failed with "requested permissions ... but you haven't
+  // granted it yet", which is what a live test showed.
+  //
+  // Enumerated rather than a wildcard: this grants VISIBILITY to 18 named
+  // tools, not blanket MCP access. Authority still rests with HomeBot's own
+  // permission gate, which runs per call and raises the confirmation modal for
+  // anything destructive — so a pre-approval here cannot bypass it.
+  if (bridge?.toolNames?.length) {
+    args.push('--allowed-tools', ...bridge.toolNames);
+  }
+
   if (system.trim()) args.push('--system-prompt', system);
 
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(bin, args, { windowsHide: true });
+    child = spawn(bin, args, { windowsHide: true, cwd: bridge?.cwd || undefined });
   } catch (err: any) {
     onError(new Error(`Could not start Claude Code (${bin}): ${err?.message || err}`));
     return;

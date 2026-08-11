@@ -16,7 +16,7 @@ import { startSupervisorService, SupervisorServiceHandle } from './supervisor-se
 import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
-import { startAssistantBridge, stopAssistantBridge } from './assistant-bridge';
+import { startAssistantBridge, stopAssistantBridge, CODING_TOOLS } from './assistant-bridge';
 import { setAssistantBridgeProvider } from './custom-llm-client';
 import { requestConfirmationFrom } from './message-router';
 // Static import, NOT a runtime require(). electron-vite bundles the main
@@ -342,7 +342,18 @@ app.whenReady().then(async () => {
   }).then((bridge) => {
     // Hand the live endpoint to the LLM client via a hook rather than an import,
     // so the client never pulls the tool registry into its import chain.
-    setAssistantBridgeProvider(() => ({ url: bridge.url, token: bridge.token }));
+    // The MCP server is registered under the name `homebot`, so Claude Code
+    // sees each tool as mcp__homebot__<name>. Pass those explicitly — without
+    // them every bridged call is refused for want of a permission grant.
+    setAssistantBridgeProvider(() => ({
+      url: bridge.url,
+      token: bridge.token,
+      toolNames: CODING_TOOLS.map(t => `mcp__homebot__${t}`),
+      // Deterministic cwd. Otherwise the CLI inherits Electron's, which in a
+      // packaged build is the install directory — so project settings and
+      // relative paths resolve somewhere the user never chose.
+      cwd: (() => { try { return getSettings().projectPath || undefined; } catch { return undefined; } })(),
+    }));
   }).catch((e) => console.error('[MAIN] assistant bridge failed to start:', e));
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.
