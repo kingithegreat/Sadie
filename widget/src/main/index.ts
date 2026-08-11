@@ -367,6 +367,11 @@ app.whenReady().then(async () => {
     const failLine = `[MAIN] assistant bridge FAILED to start: ${e?.message || e} — the Claude provider will have no HomeBot tools`;
     console.error(failLine);
     try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(failLine); } catch (err) { safeCatch(err); }
+    // Register a provider that returns null, rather than leaving none at all.
+    // That is what lets the client tell "the bridge failed" apart from "this
+    // caller never wanted a bridge" — and so warn the user in chat instead of
+    // silently handing them an assistant with no tools.
+    setAssistantBridgeProvider(() => null);
   });
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.

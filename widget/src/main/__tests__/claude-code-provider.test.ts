@@ -337,3 +337,39 @@ describe('MCP scope containment (--strict-mcp-config)', () => {
     expect(names.length).toBeLessThanOrEqual(20);
   });
 });
+
+describe('a missing bridge must be visible, not silent', () => {
+  /**
+   * The failure that made a live test unfalsifiable: with no bridge,
+   * mcpServers is {} and --mcp-config registers NOTHING. The assistant then
+   * arrives with a system prompt describing read_file, grep_code and
+   * run_terminal_command — none of them callable — and reports "no permission
+   * errors", which reads as success.
+   *
+   * Source-read rather than imported: this module pulls Electron in, and an
+   * earlier version of these tests made the whole suite fail to load.
+   */
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.resolve(__dirname, '..', 'custom-llm-client.ts'), 'utf-8');
+
+  it('warns in chat when a bridge was expected but is missing', () => {
+    expect(src).toMatch(/tools are not connected to this assistant/i);
+  });
+
+  it('says what the assistant cannot do, not just that something failed', () => {
+    // "bridge unavailable" means nothing to a user; "cannot read files, search
+    // code, or run commands" tells them what changed.
+    expect(src).toMatch(/cannot read files, search code, or run commands/i);
+  });
+
+  it('only warns when a provider was registered — silence for callers that never wanted one', () => {
+    expect(src).toContain('const bridgeExpected = !!assistantBridgeProvider;');
+    expect(src).toContain('if (!bridge && bridgeExpected');
+  });
+
+  it('warns once per session, and re-arms when a provider is set again', () => {
+    expect(src).toContain('bridgeWarningShown = true;');
+    expect(src).toMatch(/setAssistantBridgeProvider[\s\S]{0,200}bridgeWarningShown = false;/);
+  });
+});
