@@ -190,6 +190,19 @@ export const rejectMediaJobDef: ToolDefinition = {
 const ok = (result: any): ToolResult => ({ success: true, result } as ToolResult);
 const err = (error: string): ToolResult => ({ success: false, error } as ToolResult);
 
+/**
+ * Not everything thrown is an Error.
+ *
+ * msedge-tts rejects with a bare string, so `e.message` is undefined and the
+ * user was told "Could not record the narration: undefined" — a message that
+ * names the stage and then says nothing at all. Found by running the pipeline
+ * for real; every mocked test passed.
+ */
+function errText(e: any): string {
+  if (typeof e === 'string') return e;
+  return e?.message || String(e ?? 'unknown error');
+}
+
 const createMediaJobHandler: ToolHandler = async (args) => {
   try {
     const job = createJob({
@@ -200,7 +213,7 @@ const createMediaJobHandler: ToolHandler = async (args) => {
     upsert(job);
     return ok(`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`);
   } catch (e: any) {
-    return err(`media_create_job failed: ${e.message}`);
+    return err(`media_create_job failed: ${errText(e)}`);
   }
 };
 
@@ -214,7 +227,7 @@ const listMediaJobsHandler: ToolHandler = async (args) => {
     }
     return ok(jobs.map(summarise).join('\n'));
   } catch (e: any) {
-    return err(`media_list_jobs failed: ${e.message}`);
+    return err(`media_list_jobs failed: ${errText(e)}`);
   }
 };
 
@@ -243,7 +256,7 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
     return ok(`"${moved.title}" → ${describeProgress(moved)}`);
   } catch (e: any) {
     // The state machine's messages already name the allowed next states.
-    return err(e.message);
+    return err(errText(e));
   }
 };
 
@@ -260,7 +273,7 @@ const approveMediaJobHandler: ToolHandler = async (args) => {
     upsert(moved);
     return ok(`Approved "${moved.title}". It can now be scheduled and published.`);
   } catch (e: any) {
-    return err(e.message);
+    return err(errText(e));
   }
 };
 
@@ -278,7 +291,7 @@ const rejectMediaJobHandler: ToolHandler = async (args) => {
       ? `Sent "${moved.title}" back for revision.`
       : `Rejected "${moved.title}".`);
   } catch (e: any) {
-    return err(e.message);
+    return err(errText(e));
   }
 };
 
@@ -336,7 +349,7 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
       script.text,
     ].join('\n'));
   } catch (e: any) {
-    return err(`Could not write the script: ${e.message}`);
+    return err(`Could not write the script: ${errText(e)}`);
   }
 };
 
@@ -393,7 +406,7 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
       `Recorded narration for "${updated.title}" (~${estimateSpokenSeconds(job.script)}s, ${kb} KB).\n${audio.path}`,
     );
   } catch (e: any) {
-    return err(`Could not record the narration: ${e.message}`);
+    return err(`Could not record the narration: ${errText(e)}`);
   }
 };
 
