@@ -55,7 +55,12 @@ let assistantBridgeProvider: (() => AssistantBridgeRef | null) | null = null;
 
 export function setAssistantBridgeProvider(fn: (() => AssistantBridgeRef | null) | null): void {
   assistantBridgeProvider = fn;
+  // A bridge arriving late should be able to re-announce itself if it drops.
+  bridgeWarningShown = false;
 }
+
+/** Once per session: warn in-chat when the assistant has no HomeBot tools. */
+let bridgeWarningShown = false;
 
 interface StreamOptions {
   model: string;
@@ -814,6 +819,29 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
     ? { homebot: { type: 'http', url: bridge.url, headers: { Authorization: `Bearer ${bridge.token}` } } }
     : {};
 
+  // No bridge means `--mcp-config {"mcpServers":{}}` — a VALID config that
+  // registers nothing. The assistant then arrives with a system prompt
+  // describing read_file, grep_code and run_terminal_command, and none of them
+  // callable. Observed live: it listed four unrelated tools and reported "no
+  // permission errors", which looks like success from every angle.
+  //
+  // Silence is the bug. Say it in the chat, once per session, the same way a
+  // cloud misconfiguration is surfaced — a crippled assistant the user cannot
+  // see is worse than one that admits it.
+  // Only when a bridge was EXPECTED. The main process registers a provider
+  // either way — returning null on failure — so "provider set but returns
+  // null" means it genuinely failed, while "no provider at all" is a caller
+  // that never wanted one (tests, or a non-Electron host) and stays quiet.
+  const bridgeExpected = !!assistantBridgeProvider;
+  if (!bridge && bridgeExpected && !bridgeWarningShown) {
+    bridgeWarningShown = true;
+    onChunk(
+      '⚠️ HomeBot\'s tools are not connected to this assistant, so it can only talk — '
+      + 'it cannot read files, search code, or run commands. The assistant bridge did not '
+      + 'start; check Diagnostics for the reason.\n\n',
+    );
+  }
+
   const args = [
     '-p',
     '--output-format', 'stream-json',
@@ -822,6 +850,17 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
     '--model', model || 'sonnet',
     '--disallowed-tools', CLAUDE_CODE_DENIED_TOOLS,
     '--mcp-config', JSON.stringify({ mcpServers }),
+    // Without this, Claude Code MERGES the user's own global MCP config into
+    // the session. Observed live: the assistant listed Gmail, Notion, Asana and
+    // Calendar among its tools — the user's personal claude.ai connectors,
+    // reachable with no involvement from HomeBot's permission gate. HomeBot's
+    // assistant must see HomeBot's gated tools and nothing else; inheriting a
+    // path to someone's email is not a feature we get to ship by accident.
+    //
+    // It also makes the bridge's state unambiguous: with strict mode on, the
+    // absence of mcp__homebot__* tools means the bridge did not attach, rather
+    // than being lost in a merged list.
+    '--strict-mcp-config',
   ];
   // Pre-approve exactly the bridge's tools. Claude Code asks permission for
   // MCP tools, and in headless mode there is nobody to ask — measured: -p runs

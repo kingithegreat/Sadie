@@ -573,8 +573,16 @@ describe('preProcessIntent', () => {
       expect(isSmallModel('gpt-4o-mini')).toBe(true);
     });
 
-    test('does NOT detect llama3.1:8b as small', () => {
-      expect(isSmallModel('llama3.1:8b')).toBe(false);
+    test('detects llama3.1:8b as small — contract changed 2026-08-11', () => {
+      // Was asserting 8B is large. The bound moved 3B -> 9B because every
+      // local model in use is 7B, so the compact prompt, 12-tool cap and
+      // 12-turn history never applied to anything actually running.
+      expect(isSmallModel('llama3.1:8b')).toBe(true);
+    });
+
+    test('does NOT detect a genuinely large local model as small', () => {
+      expect(isSmallModel('codellama:13b')).toBe(false);
+      expect(isSmallModel('llama3.1:70b')).toBe(false);
     });
 
     test('does NOT detect gpt-4 as small', () => {
