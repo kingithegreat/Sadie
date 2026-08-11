@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import { detectGpuVram } from './moa';
+import { checkKnownWebhooks } from './n8n-webhook-check';
 
 // Minimum free disk GB before showing a warning
 export const DISK_WARN_GB = 10;
@@ -63,6 +64,20 @@ export interface DiagnosticsResult {
   durationMs: number;
   /** ISO timestamp when diagnostics were run. */
   timestamp: string;
+  /**
+   * n8n workflows HomeBot depends on, and whether each is actually deployed.
+   *
+   * An undeployed workflow answers 404 and the calling feature falls back
+   * silently — indistinguishable from a broken feature, and invisible unless
+   * someone reads a console that packaged builds silence. Listed here so
+   * "not set up yet" is a state you can see rather than infer.
+   */
+  n8nWebhooks: Array<{
+    path: string;
+    powers: string;
+    status: 'available' | 'not_deployed' | 'n8n_unreachable' | 'error';
+    detail?: string;
+  }>;
 }
 
 // ── Disk ──────────────────────────────────────────────────────────────────────
@@ -181,6 +196,11 @@ export async function runDiagnostics(
     detectGpuVram().catch(() => ({ vramGB: null as number | null, gpuName: null as string | null, method: 'error' as const })),
   ]);
 
+  // Probed after the service checks: if n8n is down they all report
+  // n8n_unreachable, which is the honest answer — a workflow's own state
+  // cannot be known when the server hosting it is not answering.
+  const n8nWebhooks = await checkKnownWebhooks().catch(() => []);
+
   const freeGB = getFreeDiskGB(userDataPath);
   const disk = buildDiskInfo(freeGB);
   const permissions = checkWritePermissions(userDataPath);
@@ -199,5 +219,6 @@ export async function runDiagnostics(
     },
     durationMs: Date.now() - start,
     timestamp,
+    n8nWebhooks,
   };
 }

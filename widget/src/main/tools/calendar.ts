@@ -372,6 +372,10 @@ export const listCalendarEventsHandler: ToolHandler = async (args): Promise<Tool
     }
   }
 
+  // Set when the Google path could not be used, so the caller can say WHY
+  // rather than silently returning only local events.
+  let googleUnavailableReason: string | null = null;
+
   // 2. Try Google Calendar via n8n webhook if ICS not configured or returned nothing
   if (events.length === 0) {
     try {
@@ -381,7 +385,19 @@ export const listCalendarEventsHandler: ToolHandler = async (args): Promise<Tool
         source = 'google';
       }
     } catch (err) {
-      console.log('[Calendar] Google Calendar (n8n) unavailable:', (err as any)?.message?.slice(0, 80));
+      // A 404 here means the workflow was never imported, not that anything
+      // broke. Those looked identical in the log — "unavailable" on every
+      // startup, with no hint that the integration exists and could be turned
+      // on. Name which one it is so a person can act on it.
+      const status = (err as any)?.response?.status;
+      if (status === 404) {
+        googleUnavailableReason =
+          'Google Calendar is not set up: no n8n workflow is registered on /webhook/homebot/calendar. Import and activate it in n8n to switch it on.';
+        console.log('[Calendar] Google Calendar not set up (no workflow on /webhook/homebot/calendar) — using local events.');
+      } else {
+        googleUnavailableReason = `Google Calendar lookup failed: ${(err as any)?.message?.slice(0, 120)}`;
+        console.warn('[Calendar] Google Calendar (n8n) error:', (err as any)?.message?.slice(0, 120));
+      }
     }
   }
 
@@ -436,6 +452,10 @@ export const listCalendarEventsHandler: ToolHandler = async (args): Promise<Tool
   return {
     success: true,
     result: {
+      // Reported even when local events were found. The existing setup_hint
+      // only appears when the list is empty, so a user with local events was
+      // never told that Google Calendar exists and is simply not connected.
+      ...(googleUnavailableReason ? { google_status: googleUnavailableReason } : {}),
       events: limited,
       count: limited.length,
       days_ahead: daysAhead,
