@@ -2146,6 +2146,10 @@ export function detectToolCategories(message: string): string[] {
   // the automation tool was never offered. It worked only if the user happened
   // to say "schedule".
   if (/\b(automat(e|ion|ions|ed)|workflow|recurring|every (morning|day|hour|week)|daily|routine)\b/.test(m)) cats.add('utility');
+  // Media Studio — the video pipeline. Kept as its own category rather than
+  // folded into 'utility', which is already overloaded enough that 20+ tools
+  // contend for four slots.
+  if (/\b(video|videos|youtube|shorts?|script|scripts|channel|episode|thumbnail|narration|render|publish|upload)\b/.test(m)) cats.add('media');
   if (/\b(process|task\s*manager|kill|cpu|ram|memory\s*usage)\b/.test(m)) cats.add('system');
   if (/\b(clipboard|copy|paste)\b/.test(m)) cats.add('utility');
   // CRM had NO patterns here, and getSmallModelTools only adds category tools

@@ -286,6 +286,13 @@ export const DEFAULT_SETTINGS: Settings = {
     get_plans: true,
     search_contacts: true,
     add_contact: false,
+    // Media Studio — creating and listing is safe; approving or rejecting a
+    // video is a publishing decision, so both need explicit confirmation.
+    media_create_job: true,
+    media_list_jobs: true,
+    media_advance_job: true,
+    media_approve_job: false,
+    media_reject_job: false,
     // Git — read-only operations safe
     git_status: true,
     git_log: true,

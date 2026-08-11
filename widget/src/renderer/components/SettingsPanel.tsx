@@ -398,6 +398,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     git_log: 'View git commit history (safe).',
     git_diff: 'View file changes in git (safe).',
     git_branches: 'List git branches (safe).',
+    media_create_job: 'Start a new video in the Media Studio (safe — nothing is published).',
+    media_list_jobs: 'List videos and the stage each has reached (safe).',
+    media_advance_job: 'Move a video to its next pipeline stage. Cannot approve or publish.',
+    media_approve_job: 'Approve a finished video so it can be scheduled and published.',
+    media_reject_job: 'Reject a video, or send it back for another revision.',
     git_commit: 'Create a git commit. Modifies your repository.',
     // Process management
     list_processes: 'List running processes (safe).',
