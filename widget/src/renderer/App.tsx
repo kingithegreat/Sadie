@@ -18,6 +18,7 @@ const AutomationCenter = lazy(() => import("./components/AutomationCenter").then
 const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
 const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
 const QuizPanel = lazy(() => import("./components/QuizPanel"));
+const MediaStudioPanel = lazy(() => import("./components/MediaStudioPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
 const TerminalPanel = lazy(() => import("./components/TerminalPanel"));
@@ -46,7 +47,7 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard';
+type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -1426,6 +1427,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               console.error('[DocViewer] Failed to send to chat:', err);
             }
           }} />
+        </Suspense>
+      ) : mode === 'media' ? (
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <MediaStudioPanel />
         </Suspense>
       ) : (
         // Quiz is the final branch now. The Web Services panel used to be the
