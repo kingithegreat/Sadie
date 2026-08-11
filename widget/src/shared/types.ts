@@ -339,6 +339,13 @@ export interface ElectronAPI {
   }>;
   skillsOpenFolder: () => Promise<{ success: boolean; dir?: string; error?: string }>;
 
+  /** App updates — all three listeners return an unsubscribe function. */
+  onUpdateAvailable: (cb: (info: { version: string; releaseDate?: string }) => void) => () => void;
+  onUpdateProgress: (cb: (p: { percent: number; transferred?: number; total?: number }) => void) => () => void;
+  onUpdateDownloaded: (cb: () => void) => () => void;
+  downloadUpdate: () => Promise<any>;
+  installUpdate: () => Promise<any>;
+
   /** Review surface: files HomeBot changed, newest first. */
   changesList: () => Promise<{
     success: boolean;

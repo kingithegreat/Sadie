@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (155)** — `window.electron`
+**Preload methods (160)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1018,39 +1018,40 @@ browserReload             cancelStream              captureLogs               ca
 changesDiff               changesList               checkConnection           checkOllamaInstalled
 clearPermissionAudit      closeWindow               compactConversation       createAutomation
 createConversation        deleteAutomation          deleteConversation        deleteOllamaModel
-detectGpuVram             downloadOllama            executeImageGenerate      exportChat
-exportConversation        exportPermissionAudit     exportSettings            exportTelemetryConsent
-fetchPageContent          generateQuiz              generateQuizFromRag       generateTitle
-getAnalyticsSummary       getBatchSummaries         getConfigPath             getConversation
-getCrmActivity            getCrmDashboard           getEnv                    getGeneratedImage
-getMode                   getPerfAggregates         getPerfHistory            getSettings
-getSupervisorStatus       getUncensoredMode         getWidgetMode             hasPermission
-importSettings            invoke                    licenseActivate           licenseDeactivate
-licenseStatus             licenseValidate           listCustomLLMModels       listOllamaModels
-listTools                 loadAutomations           loadConversations         loadQuizProgress
-maximizeWindow            mcpAddServer              mcpGetStatus              mcpListServers
-mcpRemoveServer           mcpToggleServer           minimizeWindow            onAssistantToolActivity
-onBatchSummary            onBrowserState            onConfigRecovered         onConfirmationRequest
-onConversationCompacted   onHardwareProfileApplied  onHideWindow              onMessage
-onModelFallback           onOllamaDownloadProgress  onOllamaStatus            onPermissionRequest
-onProactiveBriefing       onPullModelProgress       onReminderFired           onShowWindow
-onStreamChunk             onStreamEnd               onStreamError             onSupervisorStatus
-onTerminalExit            onTerminalOutput          onTitleUpdated            onWidgetModeChanged
-openExternalUrl           openFile                  parseDocument             pullModel
-pullModelStream           ragClear                  ragIndex                  ragList
-readConsentLog            readDebugLogs             readPermissionAudit       readTelemetryEvents
-removeHideWindowListener  removeShowWindowListener  resetPermissions          resolveActiveModel
-restartApp                runAutomation             runDiagnostics            saveConversation
-saveQuizProgress          saveSettings              schedulerAdd              schedulerList
-schedulerRemove           schedulerToggle           sdCppSetup                sdCppStatus
-searchConversations       sendConfirmationResponse  sendMessage               sendPermissionResponse
-sendStreamMessage         setActiveConversation     setAlwaysOnTop            setUncensoredMode
-showInFolder              skillsList                skillsOpenFolder          startOllama
-startSpeechRecognition    subscribeToStream         summarizeWebContent       terminalClose
-terminalCreate            terminalKill              terminalRun               testN8nConnection
-toggleWidgetMode          ttsSpeak                  ttsStop                   updateAutomation
-updateMessage             workspaceList             workspaceRead             workspaceRoot
-workspaceSave             writeClipboard            writeDocument
+detectGpuVram             downloadOllama            downloadUpdate            executeImageGenerate
+exportChat                exportConversation        exportPermissionAudit     exportSettings
+exportTelemetryConsent    fetchPageContent          generateQuiz              generateQuizFromRag
+generateTitle             getAnalyticsSummary       getBatchSummaries         getConfigPath
+getConversation           getCrmActivity            getCrmDashboard           getEnv
+getGeneratedImage         getMode                   getPerfAggregates         getPerfHistory
+getSettings               getSupervisorStatus       getUncensoredMode         getWidgetMode
+hasPermission             importSettings            installUpdate             invoke
+licenseActivate           licenseDeactivate         licenseStatus             licenseValidate
+listCustomLLMModels       listOllamaModels          listTools                 loadAutomations
+loadConversations         loadQuizProgress          maximizeWindow            mcpAddServer
+mcpGetStatus              mcpListServers            mcpRemoveServer           mcpToggleServer
+minimizeWindow            onAssistantToolActivity   onBatchSummary            onBrowserState
+onConfigRecovered         onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied
+onHideWindow              onMessage                 onModelFallback           onOllamaDownloadProgress
+onOllamaStatus            onPermissionRequest       onProactiveBriefing       onPullModelProgress
+onReminderFired           onShowWindow              onStreamChunk             onStreamEnd
+onStreamError             onSupervisorStatus        onTerminalExit            onTerminalOutput
+onTitleUpdated            onUpdateAvailable         onUpdateDownloaded        onUpdateProgress
+onWidgetModeChanged       openExternalUrl           openFile                  parseDocument
+pullModel                 pullModelStream           ragClear                  ragIndex
+ragList                   readConsentLog            readDebugLogs             readPermissionAudit
+readTelemetryEvents       removeHideWindowListener  removeShowWindowListener  resetPermissions
+resolveActiveModel        restartApp                runAutomation             runDiagnostics
+saveConversation          saveQuizProgress          saveSettings              schedulerAdd
+schedulerList             schedulerRemove           schedulerToggle           sdCppSetup
+sdCppStatus               searchConversations       sendConfirmationResponse  sendMessage
+sendPermissionResponse    sendStreamMessage         setActiveConversation     setAlwaysOnTop
+setUncensoredMode         showInFolder              skillsList                skillsOpenFolder
+startOllama               startSpeechRecognition    subscribeToStream         summarizeWebContent
+terminalClose             terminalCreate            terminalKill              terminalRun
+testN8nConnection         toggleWidgetMode          ttsSpeak                  ttsStop
+updateAutomation          updateMessage             workspaceList             workspaceRead
+workspaceRoot             workspaceSave             writeClipboard            writeDocument
 ```
 
 **IPC channels, renderer → main (115)**
