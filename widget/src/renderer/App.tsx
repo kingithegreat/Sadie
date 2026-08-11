@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
+import UpdateBanner from './components/UpdateBanner';
 import { debug as logDebug } from '../shared/logger';
 import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
@@ -1276,6 +1277,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       </ErrorBoundary>
 
       {/* Status Indicator / Header */}
+      {/* Update notice — mounted above the header so it never covers chat. */}
+      <UpdateBanner />
+
       <StatusIndicator 
         connectionStatus={status} 
         onRefresh={async () => { try { const c = await window.electron.checkConnection?.(); if (c) { setStatus(c); if (c.n8n === 'online') setBackendDiagnostic(null); } } catch (e) { /* ignore */ } }} 

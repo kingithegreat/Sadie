@@ -640,8 +640,26 @@ export function acceptsSamplingParams(model: string): boolean {
   return true;
 }
 
+/**
+ * Usage from the most recent Anthropic call, for Diagnostics.
+ *
+ * `cacheRead > 0` is the only proof that prompt caching is actually working —
+ * a cache_control marker that silently never hits looks identical to no
+ * caching at all from the outside.
+ */
+export type AnthropicUsage = {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreation: number;
+  cacheRead: number;
+  stopReason: string | null;
+};
+let lastAnthropicUsage: AnthropicUsage | null = null;
+export function getLastAnthropicUsage(): AnthropicUsage | null { return lastAnthropicUsage; }
+
 async function streamAnthropic(options: StreamOptions): Promise<void> {
-  const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000,
+  const { apiConfig, messages, model, temperature = 0.7, maxTokens: requestedMaxTokens,
           tools, onChunk, onToolCall, onEnd, onError, signal } = options;
 
   const { system, messages: anthropicMessages } = toAnthropicMessages(messages);
@@ -649,7 +667,46 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
 
   // Undated alias as the fallback — a dated snapshot here eventually retires
   // and starts 404-ing for every user who never picked a model explicitly.
-  const resolvedModel = model || apiConfig.model || 'claude-sonnet-5';
+  //
+  // The guard is not paranoia: the dispatcher fills an empty model with
+  // 'gpt-3.5-turbo', so an Anthropic config that never had a model picked
+  // arrived here with an OpenAI ID and sent it straight to Anthropic, which
+  // rejects it. That also made the fallback on this line unreachable — it could
+  // never fire, because the string it checks for emptiness was already filled
+  // in with the wrong provider's default.
+  const requestedModel = model || apiConfig.model || '';
+  const resolvedModel = /claude/i.test(requestedModel) ? requestedModel : 'claude-sonnet-5';
+
+  // The old default was a flat 2000 — so a long code answer on Sonnet 5 was cut
+  // off at 2000 tokens and handed back looking finished, even though the model
+  // supports 64000. Take the ceiling from the metadata table we already keep,
+  // and treat an explicit caller value as a request that still cannot exceed
+  // what the model actually allows. Safe to be generous: this path streams, so
+  // a large ceiling costs nothing until it is used and never trips the
+  // non-streaming HTTP timeout.
+  const modelCeiling = getModelMetadata(resolvedModel).maxTokens;
+  const maxTokens = Math.max(1, Math.min(requestedMaxTokens ?? modelCeiling, modelCeiling));
+
+  // Prompt caching. Blocks render tools → system → messages, so ONE breakpoint
+  // at the end of the system block covers the tool schemas as well — that is
+  // the expensive part, since HomeBot ships dozens of them on every turn.
+  // Cache reads cost about a tenth of normal input.
+  //
+  // Below a model's minimum cacheable prefix (512–4096 tokens depending on the
+  // model) the marker is ignored rather than rejected, so it is always safe to
+  // send. Verify with cacheRead in the usage above rather than assuming.
+  const CACHE: any = { type: 'ephemeral' };
+  const systemBlocks = system
+    ? [{ type: 'text', text: system, cache_control: CACHE }]
+    : undefined;
+  // With no system prompt there is no block to mark, so fall back to the last
+  // tool — otherwise the schemas would go uncached on every request.
+  const cachedTools = anthropicTools && anthropicTools.length > 0
+    ? (systemBlocks
+        ? anthropicTools
+        : anthropicTools.map((t, i) =>
+            i === anthropicTools.length - 1 ? { ...t, cache_control: CACHE } : t))
+    : undefined;
 
   try {
     const response = await axios.post(
@@ -659,10 +716,10 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
         max_tokens: maxTokens,
         // Omitted entirely on models that reject sampling parameters (400).
         ...(acceptsSamplingParams(resolvedModel) ? { temperature } : {}),
-        system,
+        ...(systemBlocks ? { system: systemBlocks } : {}),
         messages: anthropicMessages,
         stream: true,
-        ...(anthropicTools && anthropicTools.length > 0 ? { tools: anthropicTools } : {})
+        ...(cachedTools ? { tools: cachedTools } : {})
       },
       {
         headers: {
@@ -694,10 +751,43 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
           try { parsed = JSON.parse(data); } catch { continue; }
 
           switch (parsed.type) {
+            case 'message_start': {
+              // Input-side usage, including the cache counters. This is the
+              // only place they appear.
+              const u = parsed.message?.usage || {};
+              lastAnthropicUsage = {
+                model: resolvedModel,
+                inputTokens: u.input_tokens || 0,
+                outputTokens: 0,
+                cacheCreation: u.cache_creation_input_tokens || 0,
+                cacheRead: u.cache_read_input_tokens || 0,
+                stopReason: null,
+              };
+              break;
+            }
             case 'content_block_start': {
               const cb = parsed.content_block;
               if (cb?.type === 'tool_use') {
                 toolBlocks.set(parsed.index, { id: cb.id, name: cb.name, jsonBuf: '' });
+              }
+              break;
+            }
+            case 'message_delta': {
+              // Output tokens and the stop reason arrive here, and nowhere else.
+              if (lastAnthropicUsage) {
+                lastAnthropicUsage.outputTokens = parsed.usage?.output_tokens || 0;
+                lastAnthropicUsage.stopReason = parsed.delta?.stop_reason ?? null;
+                const u = lastAnthropicUsage;
+                console.log(
+                  `[Custom LLM] Anthropic ${u.model}: in=${u.inputTokens} out=${u.outputTokens} ` +
+                  `cacheWrite=${u.cacheCreation} cacheRead=${u.cacheRead} stop=${u.stopReason}`
+                );
+              }
+              // A reply cut off at the token ceiling used to end mid-sentence
+              // and look finished. Say so instead of handing back a truncated
+              // answer as though it were complete.
+              if (parsed.delta?.stop_reason === 'max_tokens') {
+                onChunk(`\n\n_[Reply cut off at the ${maxTokens.toLocaleString()}-token limit for ${resolvedModel}.]_`);
               }
               break;
             }
@@ -721,6 +811,21 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
                 onToolCall({ id: block.id, name: block.name, arguments: input });
                 toolBlocks.delete(parsed.index);
               }
+              break;
+            }
+            case 'error': {
+              // Anthropic reports mid-stream failures — overloaded_error, a
+              // rate limit hit after the headers were already sent — as an SSE
+              // frame, not an HTTP status. With no case here they fell through
+              // to stream 'end', so the turn stopped early and the truncated
+              // answer looked like a clean short one. Surface it as the error
+              // it is. (Caught by HomeBot reviewing this file, not by me.)
+              const e = parsed.error || {};
+              const msg = e.message || e.type || 'Anthropic stream error';
+              console.error('[Custom LLM] Anthropic mid-stream error:', msg);
+              if (lastAnthropicUsage) lastAnthropicUsage.stopReason = `error:${e.type || 'unknown'}`;
+              ended = true;
+              onError(new Error(msg));
               break;
             }
             case 'message_stop':
