@@ -228,7 +228,17 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
       return err(`"${args.to}" is not a pipeline stage. From "${job.state}" you can go to: ${allowedNext(job.state).join(', ') || '(nowhere — terminal)'}.`);
     }
 
-    const moved = transition(job, to as MediaJobState, { by: 'chat', note: args.note ? String(args.note) : undefined });
+    // The kill switch is read from settings here rather than defaulted true,
+    // so "publishing is off" is a real user setting and not a flag a caller
+    // can forget. transition() refuses the publishing states without it.
+    const { getSettings } = await import('../config-manager');
+    const publishingEnabled = !!(getSettings() as any)?.mediaPublishingEnabled;
+
+    const moved = transition(job, to as MediaJobState, {
+      by: 'chat',
+      note: args.note ? String(args.note) : undefined,
+      publishingEnabled,
+    });
     upsert(moved);
     return ok(`"${moved.title}" → ${describeProgress(moved)}`);
   } catch (e: any) {

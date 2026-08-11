@@ -72,6 +72,8 @@ export interface MediaJob {
   renderPath?: string;
   /** YouTube video id, only ever set after publishing. */
   videoId?: string;
+  /** When the video actually went out. Set with videoId, never alone. */
+  publishedAt?: string;
   createdAt: string;
   updatedAt: string;
   history: MediaJobEvent[];
@@ -129,6 +131,19 @@ export function requiresHumanDecision(s: MediaJobState): boolean {
   return s === 'awaiting_approval';
 }
 
+/**
+ * States that put a video in front of the public, or queue it to be.
+ *
+ * The plan requires a kill switch for publishing. Entering either of these
+ * needs `publishingEnabled: true` passed explicitly, so the switch is
+ * fail-closed and cannot be forgotten by a new caller — the same shape as the
+ * approval gate, for the same reason: a guardrail that depends on every future
+ * caller remembering it is not a guardrail.
+ */
+export function isPublishingState(s: MediaJobState): boolean {
+  return s === 'scheduled' || s === 'published';
+}
+
 export class InvalidTransitionError extends Error {
   constructor(public readonly from: MediaJobState, public readonly to: MediaJobState) {
     super(
@@ -150,6 +165,12 @@ export interface TransitionOptions {
    * cannot approve its own work even if it asks for a legal transition.
    */
   humanDecision?: boolean;
+  /**
+   * The publishing kill switch. Required to enter `scheduled` or `published`.
+   * Absent or false means publishing is off, and the transition is refused —
+   * fail-closed, so a caller that never heard of the switch cannot publish.
+   */
+  publishingEnabled?: boolean;
   /** Injected in tests; defaults to now. */
   now?: () => Date;
 }
@@ -170,12 +191,57 @@ export function transition(job: MediaJob, to: MediaJobState, opts: TransitionOpt
     );
   }
 
+  if (isPublishingState(to) && !opts.publishingEnabled) {
+    throw new Error(
+      `Publishing is switched off, so "${job.title}" cannot move to ${to.replace(/_/g, ' ')}. ` +
+      `Turn publishing on in Settings to allow it.`,
+    );
+  }
+
+  // Idempotency. The plan requires that a retry cannot publish twice, and a
+  // retry is exactly what happens when a network call times out after the
+  // upload succeeded. The video id is the natural key: once a job has one, it
+  // is out, and re-entering a publishing state would mean a second upload.
+  if (isPublishingState(to) && job.videoId) {
+    throw new Error(
+      `"${job.title}" has already been published as ${job.videoId}. ` +
+      `Refusing to publish it again.`,
+    );
+  }
+
   const at = (opts.now?.() ?? new Date()).toISOString();
   return {
     ...job,
     state: to,
     updatedAt: at,
     history: [...job.history, { at, from: job.state, to, by: opts.by ?? 'system', note: opts.note }],
+  };
+}
+
+/**
+ * Record that a video actually went out, with the id the platform gave it.
+ *
+ * Separate from `transition` because publishing has a fact attached — the
+ * video id — and the id is what makes the operation idempotent. Calling this
+ * twice is refused rather than silently overwriting, so a retried publish
+ * cannot quietly replace the id of the copy already online.
+ */
+export function markPublished(
+  job: MediaJob,
+  videoId: string,
+  opts: TransitionOptions = {},
+): MediaJob {
+  const id = (videoId || '').trim();
+  if (!id) throw new Error('A published video needs the id the platform assigned it.');
+  if (job.videoId) {
+    throw new Error(`"${job.title}" is already published as ${job.videoId}.`);
+  }
+
+  const moved = transition(job, 'published', opts);
+  return {
+    ...moved,
+    videoId: id,
+    publishedAt: moved.updatedAt,
   };
 }
 

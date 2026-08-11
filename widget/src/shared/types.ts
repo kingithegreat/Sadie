@@ -220,6 +220,11 @@ export interface Settings {
   // First-run / telemetry
   firstRun?: boolean;
   telemetryEnabled?: boolean;
+  /**
+   * Media Studio publishing kill switch. Off by default — a fresh install
+   * cannot put a video on a channel until this is deliberately turned on.
+   */
+  mediaPublishingEnabled?: boolean;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
   // Per-tool permissions (keys are tool names)

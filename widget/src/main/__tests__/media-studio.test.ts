@@ -20,6 +20,7 @@ import {
   isFailureState,
   isValidState,
   describeProgress,
+  markPublished,
   requiresHumanDecision,
   InvalidTransitionError,
   type MediaJob,
@@ -118,8 +119,10 @@ describe('the happy path runs end to end', () => {
     ];
     for (const next of path) j = transition(j, next, { by: next });
     j = transition(j, 'approved', { by: 'aden', humanDecision: true });
-    j = transition(j, 'scheduled', { by: 'publisher' });
-    j = transition(j, 'published', { by: 'publisher' });
+    // Both publishing hops now require the kill switch to be on, which is what
+    // a real publisher passes once the user has enabled publishing.
+    j = transition(j, 'scheduled', { by: 'publisher', publishingEnabled: true });
+    j = transition(j, 'published', { by: 'publisher', publishingEnabled: true });
 
     expect(j.state).toBe('published');
     expect(j.history).toHaveLength(9);
@@ -180,5 +183,77 @@ describe('machine integrity', () => {
   it('classifies failure states correctly', () => {
     expect(isFailureState('blocked')).toBe(true);
     expect(isFailureState('published')).toBe(false);
+  });
+});
+
+/**
+ * Two guardrails the plan names explicitly and that had nothing behind them:
+ *
+ *   "Add idempotency so retries cannot accidentally publish duplicate videos."
+ *   "Build kill switches for scheduled publishing and individual workflows."
+ *
+ * Both are enforced in the machine rather than at a call site, for the same
+ * reason as the approval gate: a rule every future caller must remember is not
+ * a rule. Both fail closed — a caller that has never heard of the kill switch
+ * cannot publish.
+ */
+describe('the publishing kill switch', () => {
+  it('refuses to schedule when publishing is off', () => {
+    const j = jobAt('approved');
+    expect(() => transition(j, 'scheduled', { by: 'publisher' })).toThrow(/publishing is switched off/i);
+  });
+
+  it('refuses to publish when publishing is off', () => {
+    const j = jobAt('approved');
+    expect(() => transition(j, 'published', { by: 'publisher' })).toThrow(/publishing is switched off/i);
+  });
+
+  it('allows it when explicitly enabled', () => {
+    const j = transition(jobAt('approved'), 'scheduled', { by: 'publisher', publishingEnabled: true });
+    expect(j.state).toBe('scheduled');
+  });
+
+  it('does not block any non-publishing stage', () => {
+    // The switch must not turn into a general handbrake on the pipeline.
+    const j = transition(jobAt('script_draft'), 'script_qa', { by: 'qa' });
+    expect(j.state).toBe('script_qa');
+  });
+
+  it('is fail-closed — omitting the flag is the same as off', () => {
+    expect(() => transition(jobAt('approved'), 'published', {})).toThrow(/switched off/i);
+  });
+});
+
+describe('idempotent publishing', () => {
+  it('records the video id and when it went out', () => {
+    const j = markPublished(jobAt('approved'), 'yt_abc123', { publishingEnabled: true, by: 'publisher' });
+    expect(j.state).toBe('published');
+    expect(j.videoId).toBe('yt_abc123');
+    expect(j.publishedAt).toBe(j.updatedAt);
+  });
+
+  it('refuses a second publish of the same job', () => {
+    const first = markPublished(jobAt('approved'), 'yt_abc123', { publishingEnabled: true });
+    // The retry case: the upload succeeded, the response timed out, the caller
+    // tries again. It must not produce a second video.
+    expect(() => markPublished(first, 'yt_different', { publishingEnabled: true }))
+      .toThrow(/already published as yt_abc123/i);
+  });
+
+  it('refuses to re-enter a publishing state once a video id exists', () => {
+    const published = markPublished(jobAt('approved'), 'yt_abc123', { publishingEnabled: true });
+    const analysing = transition(published, 'analysing', { by: 'analytics' });
+    // Even a legal-looking route back must not republish.
+    expect(() => transition({ ...analysing, state: 'approved' }, 'scheduled', { publishingEnabled: true }))
+      .toThrow(/already been published/i);
+  });
+
+  it('requires the platform id, refusing an empty one', () => {
+    expect(() => markPublished(jobAt('approved'), '   ', { publishingEnabled: true }))
+      .toThrow(/needs the id/i);
+  });
+
+  it('still honours the kill switch', () => {
+    expect(() => markPublished(jobAt('approved'), 'yt_abc123')).toThrow(/switched off/i);
   });
 });

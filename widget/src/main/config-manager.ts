@@ -99,6 +99,11 @@ export interface Settings {
   // First-run and telemetry
   firstRun?: boolean;
   telemetryEnabled?: boolean;
+  /**
+   * Media Studio publishing kill switch. Off by default — a fresh install
+   * cannot put a video on a channel until this is deliberately turned on.
+   */
+  mediaPublishingEnabled?: boolean;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
 
@@ -191,6 +196,17 @@ export const DEFAULT_SETTINGS: Settings = {
   saveConversationHistory: true,
   hideOnBlur: false,
   permissionPromptTimeoutMs: 60000,
+
+  /**
+   * Media Studio publishing kill switch.
+   *
+   * Off by default, deliberately. The Media Studio plan's first guardrail is
+   * "never auto-publish without the configured human approval gate during
+   * initial operation" — so a fresh install cannot put anything on a channel
+   * even if every other stage is automated and approved. Turning this on is a
+   * conscious act.
+   */
+  mediaPublishingEnabled: false,
 
   // onboarding defaults
   firstRun: true,
