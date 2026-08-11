@@ -295,3 +295,45 @@ describe('moonshot / Kimi provider', () => {
     expect(r.valid).toBe(true);
   });
 });
+
+describe('MCP scope containment (--strict-mcp-config)', () => {
+  /**
+   * Live finding: the assistant listed Gmail, Notion, Asana and Calendar among
+   * its tools — the user's personal claude.ai connectors. Claude Code MERGES
+   * the global MCP config unless told not to, so HomeBot's assistant inherited
+   * a path to someone's email with no involvement from HomeBot's permission
+   * gate.
+   *
+   * Read from SOURCE rather than importing: assistant-bridge pulls the tool
+   * registry and Electron into the test process (it made this suite fail to
+   * load at all on the first attempt). Crude, but it cannot hang and it fails
+   * loudly if someone drops the flag.
+   */
+  const fs = require('fs');
+  const path = require('path');
+  const clientSrc = fs.readFileSync(path.resolve(__dirname, '..', 'custom-llm-client.ts'), 'utf-8');
+  const bridgeSrc = fs.readFileSync(path.resolve(__dirname, '..', 'assistant-bridge.ts'), 'utf-8');
+
+  it('passes --strict-mcp-config so global connectors are not inherited', () => {
+    expect(clientSrc).toContain('--strict-mcp-config');
+  });
+
+  it('the flag sits with --mcp-config, not somewhere it can be dropped', () => {
+    const mcpIdx = clientSrc.indexOf("'--mcp-config'");
+    const strictIdx = clientSrc.indexOf("'--strict-mcp-config'");
+    expect(mcpIdx).toBeGreaterThan(-1);
+    expect(strictIdx).toBeGreaterThan(mcpIdx);
+  });
+
+  it('the bridge exposes no personal-connector tools', () => {
+    const block = bridgeSrc.slice(bridgeSrc.indexOf('CODING_TOOLS = ['), bridgeSrc.indexOf('] as const'));
+    expect(block).not.toMatch(/gmail|asana|notion|calendar|figma|slack|drive/i);
+  });
+
+  it('the exposed set stays small enough to review by eye', () => {
+    const block = bridgeSrc.slice(bridgeSrc.indexOf('CODING_TOOLS = ['), bridgeSrc.indexOf('] as const'));
+    const names = block.match(/'[a-z_]+'/g) || [];
+    expect(names.length).toBeGreaterThan(5);
+    expect(names.length).toBeLessThanOrEqual(20);
+  });
+});

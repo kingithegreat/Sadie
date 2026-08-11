@@ -354,7 +354,20 @@ app.whenReady().then(async () => {
       // relative paths resolve somewhere the user never chose.
       cwd: (() => { try { return getSettings().projectPath || undefined; } catch { return undefined; } })(),
     }));
-  }).catch((e) => console.error('[MAIN] assistant bridge failed to start:', e));
+    // Record success where it can actually be read. A bridge that fails leaves
+    // the assistant with no HomeBot tools at all, which looks identical to
+    // "the tools worked and nothing was refused" from the model's side — the
+    // exact ambiguity that made a live test report a pass while proving
+    // nothing. console.* is silenced in packaged builds, so log to the buffer
+    // the diagnostics UI reads.
+    const okLine = `[MAIN] assistant bridge listening on ${bridge.url} (${CODING_TOOLS.length} tools)`;
+    console.log(okLine);
+    try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(okLine); } catch (e) { safeCatch(e); }
+  }).catch((e) => {
+    const failLine = `[MAIN] assistant bridge FAILED to start: ${e?.message || e} — the Claude provider will have no HomeBot tools`;
+    console.error(failLine);
+    try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(failLine); } catch (err) { safeCatch(err); }
+  });
   // Batch transparency: forward every tool-batch summary to the renderer so
   // the Trust panel can show what ran (and what was blocked) in real time.
   setBatchSummaryForwarder((summary) => {

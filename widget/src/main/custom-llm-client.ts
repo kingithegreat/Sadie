@@ -822,6 +822,17 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
     '--model', model || 'sonnet',
     '--disallowed-tools', CLAUDE_CODE_DENIED_TOOLS,
     '--mcp-config', JSON.stringify({ mcpServers }),
+    // Without this, Claude Code MERGES the user's own global MCP config into
+    // the session. Observed live: the assistant listed Gmail, Notion, Asana and
+    // Calendar among its tools — the user's personal claude.ai connectors,
+    // reachable with no involvement from HomeBot's permission gate. HomeBot's
+    // assistant must see HomeBot's gated tools and nothing else; inheriting a
+    // path to someone's email is not a feature we get to ship by accident.
+    //
+    // It also makes the bridge's state unambiguous: with strict mode on, the
+    // absence of mcp__homebot__* tools means the bridge did not attach, rather
+    // than being lost in a merged list.
+    '--strict-mcp-config',
   ];
   // Pre-approve exactly the bridge's tools. Claude Code asks permission for
   // MCP tools, and in headless mode there is nobody to ask — measured: -p runs
