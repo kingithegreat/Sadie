@@ -260,7 +260,66 @@ const rejectMediaJobHandler: ToolHandler = async (args) => {
   }
 };
 
+export const writeMediaScriptDef: ToolDefinition = {
+  name: 'media_write_script',
+  description:
+    'Research a video and write its narration script, using the model already configured. ' +
+    'Moves the job to script_draft and reports any problems found (over-length, unverified ' +
+    'claims). Does not approve or publish anything.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title' },
+    },
+    required: ['job'],
+  },
+};
+
+const writeMediaScriptHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err(`No media job matching "${args.job}".`);
+    if (job.state !== 'idea' && job.state !== 'researching' && job.state !== 'needs_revision') {
+      return err(`"${job.title}" is at ${describeProgress(job)} — scripting runs from idea, researching or needs_revision.`);
+    }
+
+    // Imported here rather than at module load: this pulls in the LLM client,
+    // and media.ts is loaded during tool registration at startup.
+    const { generateResearch, generateScript, checkScript, estimateSpokenSeconds } =
+      await import('../media-generate');
+
+    const research = await generateResearch(job);
+    const script = await generateScript(job, research.text);
+
+    // Record the work first, then move the job — so a failed transition never
+    // loses a script that cost real generation time.
+    let updated: MediaJob = {
+      ...job,
+      script: script.text,
+      sources: research.text.split('\n').filter(l => l.trim()).slice(0, 12),
+    };
+    if (updated.state !== 'researching') {
+      updated = transition(updated, 'researching', { by: 'script stage' });
+    }
+    updated = transition(updated, 'script_draft', { by: 'script stage', note: `written by ${script.via}` });
+    upsert(updated);
+
+    const problems = checkScript(updated, script.text);
+    const seconds = estimateSpokenSeconds(script.text);
+    return ok([
+      `Wrote a script for "${updated.title}" using ${script.via} (~${seconds}s spoken).`,
+      problems.length ? `Worth checking:\n- ${problems.join('\n- ')}` : 'No problems found.',
+      '',
+      script.text,
+    ].join('\n'));
+  } catch (e: any) {
+    return err(`Could not write the script: ${e.message}`);
+  }
+};
+
 export const mediaToolDefs: ToolDefinition[] = [
+  writeMediaScriptDef,
   createMediaJobDef,
   listMediaJobsDef,
   advanceMediaJobDef,
@@ -269,6 +328,7 @@ export const mediaToolDefs: ToolDefinition[] = [
 ];
 
 export const mediaToolHandlers: Record<string, ToolHandler> = {
+  media_write_script: writeMediaScriptHandler,
   media_create_job: createMediaJobHandler,
   media_list_jobs: listMediaJobsHandler,
   media_advance_job: advanceMediaJobHandler,
