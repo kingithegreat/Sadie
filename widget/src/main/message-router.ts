@@ -2075,8 +2075,12 @@ const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'moondream';
 const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
 
 /**
- * Returns true for models with <=3B parameters based on their name.
+ * Returns true for models at or below ~9B parameters, based on their name.
  * Small models get the compact system prompt to preserve usable context.
+ *
+ * The bound was raised from 3B to 9B; the docstring said 3B for long enough
+ * that a reader could reasonably conclude the 7B models in daily use took the
+ * full-size path. They do not — see the note in the body.
  */
 export function isSmallModel(modelName: string): boolean {
   const n = modelName.toLowerCase();
