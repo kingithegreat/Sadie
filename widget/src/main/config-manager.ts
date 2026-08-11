@@ -288,6 +288,7 @@ export const DEFAULT_SETTINGS: Settings = {
     add_contact: false,
     // Media Studio — creating and listing is safe; approving or rejecting a
     // video is a publishing decision, so both need explicit confirmation.
+    media_write_script: true,
     media_create_job: true,
     media_list_jobs: true,
     media_advance_job: true,
