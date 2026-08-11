@@ -2133,7 +2133,12 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(file|folder|directory|create|write|read|delete|move|copy|rename|save|open|desktop|documents|downloads)\b/.test(m)) cats.add('filesystem');
   if (/\b(search|google|look\s*up|web|browse|url|http|news|headline)\b/.test(m)) cats.add('web');
   if (/\b(email|mail|inbox|send|draft|compose)\b/.test(m)) cats.add('communication');
-  if (/\b(reminder|remind|calendar|schedule|meeting|event|appointment)\b/.test(m)) cats.add('utility');
+  // Plurals matter more than they look. This read
+  // `(reminder|calendar|schedule|meeting|event|appointment)` with a trailing
+  // \b, so "what meetings do I have tomorrow" — about as ordinary a calendar
+  // question as exists — matched NOTHING and returned no categories at all.
+  // The \b sits between "meeting" and "s", which is not a word boundary.
+  if (/\b(reminders?|remind|calendars?|schedules?|meetings?|events?|appointments?)\b/.test(m)) cats.add('utility');
   // "Build me an automation that…" is the headline feature of the Automation
   // Center, and it had no pattern here at all. create_automation is category
   // 'utility', which was only reachable via calendar/clipboard/git words — so
@@ -2162,7 +2167,9 @@ export function detectToolCategories(message: string): string[] {
   // declare category 'memory', which nothing here produced. Only the two in
   // the core set were ever offered; the rest were invisible.
   if (/\b(remember|memor(y|ies)|forget|recall|note to self)\b/.test(m)) cats.add('memory');
-  if (/\b(voice|speak|say|whisper|transcribe|speech)\b/.test(m)) cats.add('voice');
+  // "out loud" / "aloud" is how people actually ask for this — "read that back
+  // to me out loud" previously matched only 'filesystem', on the word "read".
+  if (/\b(voice|speaks?|say|said|whisper|transcribes?|speech|aloud|out loud|read (it|that|this) back)\b/.test(m)) cats.add('voice');
   if (/\b(git|commit|diff|branch|status|log)\b/.test(m)) cats.add('utility');
   if (/\b(code|script|python|javascript|run|execute)\b/.test(m)) cats.add('utility');
   if (/\b(terminal|shell|command|npm|yarn|pip|cargo|docker|make|build|test|lint|deploy)\b/.test(m)) cats.add('utility');
@@ -2902,7 +2909,10 @@ export async function streamFromOllamaWithTools(
     && shouldOfferToolsForMessage(message, { hasImages, hasDocuments });
   const tools = (modelSupportsTools && shouldOfferTools)
     ? (smallModel && !isAgentic
-      ? getSmallModelTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
+      // The message itself decides WHICH category tools get the few slots
+      // available — without it they were taken in registration order, so a
+      // request about stale deals was handed four CRM tools that create things.
+      ? getSmallModelTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories, query: message })
       : getFocusedOllamaTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories }))
     : undefined;
   

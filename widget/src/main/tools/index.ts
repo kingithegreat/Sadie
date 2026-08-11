@@ -202,13 +202,105 @@ export const SMALL_MODEL_MAX_TOOLS = 16;
  */
 export const SMALL_MODEL_CATEGORY_SLOTS = 4;
 
+/** Words too common to distinguish one tool from another. */
+const RANK_STOPWORDS = new Set([
+  'the', 'a', 'an', 'my', 'me', 'i', 'to', 'of', 'in', 'on', 'for', 'and', 'or',
+  'is', 'are', 'do', 'does', 'that', 'this', 'it', 'with', 'from', 'get', 'show',
+  'what', 'have', 'has', 'can', 'you', 'please', 'about', 'all', 'any', 'some',
+]);
+
+/**
+ * Crude suffix stripping so "automate", "automation" and "automated" collapse
+ * to one token. Without it, "automate my morning routine" scored zero against
+ * create_automation and the automation tool lost its slot to whatever was
+ * registered first.
+ */
+function stem(word: string): string {
+  return word
+    .replace(/(ation|ations|ing|ions|ion|ed|es|s)$/, '')
+    .replace(/(at|e)$/, '');
+}
+
+function tokenise(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z][a-z0-9]+/g) || [])
+    .filter(w => w.length > 2 && !RANK_STOPWORDS.has(w))
+    .map(stem)
+    .filter(w => w.length > 2);
+}
+
+/**
+ * Order candidate tools by how well they match the request text.
+ *
+ * A tool's name carries far more signal than its description — "stale" in
+ * crm_find_stale_deals is decisive, whereas a description mentioning "deals"
+ * matches every CRM tool — so name hits are weighted heavily and description
+ * hits act only as a tie-break. Stable: equal scores keep registry order, so
+ * behaviour without a query is exactly as before.
+ */
+/**
+ * Words users say mapped to words tools are named after.
+ *
+ * Purely lexical ranking cannot bridge a synonym: "what meetings do I have
+ * tomorrow" shares no token with list_calendar_events, so it scored zero and
+ * lost its slot to whatever was registered first. Kept deliberately small —
+ * this is a nudge for the handful of cases where the product's vocabulary and
+ * the user's differ, not a thesaurus.
+ */
+const QUERY_SYNONYMS: Record<string, string[]> = {
+  meeting: ['calendar', 'event'],
+  appointment: ['calendar', 'event'],
+  agenda: ['calendar', 'event'],
+  todo: ['task', 'reminder'],
+  note: ['memory', 'remember'],
+  picture: ['image'],
+  photo: ['image'],
+  shell: ['terminal', 'command'],
+  folder: ['directory'],
+  company: ['crm'],
+  client: ['crm', 'contact'],
+  customer: ['crm', 'contact'],
+};
+
+export function rankToolsByQuery(tools: ToolDefinition[], query: string): ToolDefinition[] {
+  const base = tokenise(query);
+  // Expand before stemming comparison so a synonym competes on equal terms.
+  const expanded = base.flatMap(w => [w, ...(QUERY_SYNONYMS[w] || []).map(stem)]);
+  const words = [...new Set(expanded)];
+  if (words.length === 0) return tools;
+
+  /**
+   * Two tokens count as the same concept when one is a prefix of the other.
+   * Exact equality is too brittle after stemming: "automate" reduces to
+   * "automat" and "automation" to "autom", so create_automation scored zero
+   * against "automate my morning routine".
+   */
+  const related = (a: string, b: string): boolean =>
+    a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)));
+
+  const score = (t: ToolDefinition): number => {
+    const nameWords = [...new Set(tokenise(t.name.replace(/_/g, ' ')))];
+    const descWords = [...new Set(tokenise(t.description || ''))];
+    let s = 0;
+    for (const w of words) {
+      if (nameWords.some(n => related(n, w))) s += 10;
+      else if (descWords.some(d => related(d, w))) s += 1;
+    }
+    return s;
+  };
+
+  return tools
+    .map((t, i) => ({ t, i, s: score(t) }))
+    .sort((a, b) => (b.s - a.s) || (a.i - b.i))
+    .map(x => x.t);
+}
+
 /**
  * Get a compact tool set for small models.
  * Starts with SMALL_MODEL_CORE_TOOLS, then adds category-specific tools
  * up to SMALL_MODEL_MAX_TOOLS.  This prevents a small model from drowning
  * in 80+ tool definitions that consume most of its context window.
  */
-export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
+export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; categories?: string[]; query?: string }): OllamaTool[] {
   let allTools = getAllToolDefinitions();
 
   if (options?.excludeDocumentTools) {
@@ -232,15 +324,36 @@ export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; c
     selectedNames.add(t.name);
   }
 
-  // Add category-specific tools not already in the core set
+  // Add category-specific tools not already in the core set, best-matching
+  // first.
+  //
+  // These were taken in REGISTRY order, which meant the four slots went to
+  // whichever tools happened to be registered earliest — never to the ones the
+  // request was about. "show me my deals that have gone stale" matched the crm
+  // category and received crm_create_company, crm_update_company,
+  // crm_search_companies and crm_create_contact: four CRM tools, none of which
+  // can answer it. A request matching two categories was worse still, because
+  // the first category alone consumed every slot: "summarise the PDF on my
+  // desktop" spent all four on filesystem tools and offered no document tool
+  // at all.
+  //
+  // Scoring against the request text fixes both. It is deliberately lexical —
+  // no embeddings, no model call — because this runs on every turn and the
+  // signal needed is only "which of these dozen tools shares words with what
+  // the user just said".
   if (wantsCategories) {
     const cats = new Set(options!.categories);
-    for (const t of allTools) {
+    const candidates = allTools.filter(
+      t => !selectedNames.has(t.name) && t.category && cats.has(t.category),
+    );
+    const ranked = options?.query
+      ? rankToolsByQuery(candidates, options.query)
+      : candidates;
+
+    for (const t of ranked) {
       if (selected.length >= SMALL_MODEL_MAX_TOOLS) break;
-      if (!selectedNames.has(t.name) && t.category && cats.has(t.category)) {
-        selected.push(t);
-        selectedNames.add(t.name);
-      }
+      selected.push(t);
+      selectedNames.add(t.name);
     }
 
     // Give unused category slots back to the core set rather than shipping a
