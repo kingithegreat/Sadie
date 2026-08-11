@@ -2134,6 +2134,13 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(search|google|look\s*up|web|browse|url|http|news|headline)\b/.test(m)) cats.add('web');
   if (/\b(email|mail|inbox|send|draft|compose)\b/.test(m)) cats.add('communication');
   if (/\b(reminder|remind|calendar|schedule|meeting|event|appointment)\b/.test(m)) cats.add('utility');
+  // "Build me an automation that…" is the headline feature of the Automation
+  // Center, and it had no pattern here at all. create_automation is category
+  // 'utility', which was only reachable via calendar/clipboard/git words — so
+  // on a local model the request routed to 'communication' (from "email") and
+  // the automation tool was never offered. It worked only if the user happened
+  // to say "schedule".
+  if (/\b(automat(e|ion|ions|ed)|workflow|recurring|every (morning|day|hour|week)|daily|routine)\b/.test(m)) cats.add('utility');
   if (/\b(process|task\s*manager|kill|cpu|ram|memory\s*usage)\b/.test(m)) cats.add('system');
   if (/\b(clipboard|copy|paste)\b/.test(m)) cats.add('utility');
   // CRM had NO patterns here, and getSmallModelTools only adds category tools

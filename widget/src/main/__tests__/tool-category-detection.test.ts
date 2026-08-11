@@ -156,3 +156,23 @@ describe('no tool category may be unreachable (the gate)', () => {
     expect(unreachable).toEqual([]);
   });
 });
+
+/**
+ * The Automation Center's headline feature — "build me an automation in the
+ * chat" — had no routing pattern. create_automation is category 'utility',
+ * reachable only via calendar/clipboard/git words, so a local model was never
+ * offered it unless the user happened to say "schedule".
+ */
+describe('automation requests reach the automation tools', () => {
+  const PROMPTS = [
+    'create an automation that summarises my email every morning',
+    'set up an automation to check the news daily',
+    'automate my morning routine',
+    'make a workflow that backs up my notes',
+    'something that runs every hour',
+  ];
+
+  it.each(PROMPTS)('"%s" routes to utility', (prompt) => {
+    expect(detectToolCategories(prompt)).toContain('utility');
+  });
+});
