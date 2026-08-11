@@ -28,7 +28,7 @@ export interface ToolDefinition {
   // e.g., a report generator may also require `write_file` permission.
   requiredPermissions?: string[];
   // Category for grouping tools
-  category?: 'filesystem' | 'system' | 'web' | 'utility' | 'voice' | 'memory' | 'document' | 'communication' | 'vision' | 'crm';
+  category?: 'filesystem' | 'system' | 'web' | 'utility' | 'voice' | 'memory' | 'document' | 'communication' | 'vision' | 'crm' | 'media';
 }
 
 export interface ToolCall {

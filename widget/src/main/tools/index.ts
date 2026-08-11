@@ -58,6 +58,7 @@ import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
 import { automationToolDefs, automationToolHandlers } from './automation';
 import { skillToolDefs, skillToolHandlers } from './skills';
 import { crmToolDefs, crmToolHandlers } from './crm';
+import { mediaToolDefs, mediaToolHandlers } from './media';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -960,6 +961,12 @@ export function initializeTools(force = false): void {
   // Register automation tools (Automation Center CRUD + fire from chat)
   for (const def of automationToolDefs) {
     const handler = automationToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register Media Studio tools (video pipeline + the human approval gate)
+  for (const def of mediaToolDefs) {
+    const handler = mediaToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

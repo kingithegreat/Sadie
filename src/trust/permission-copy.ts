@@ -131,6 +131,13 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   git_diff: { label: 'Read git changes', detail: 'Read uncommitted changes in a git repository.' },
   git_branches: { label: 'List git branches', detail: 'See the branches of a git repository.' },
   git_commit: { label: 'Make git commits', detail: 'Create a commit in a git repository on your computer.' },
+  // Media Studio — the video pipeline. Wording is about what happens to the
+  // video, not the pipeline stage, because that is what the decision is about.
+  media_create_job: { label: 'Start a video', detail: 'Add a new video to the Media Studio. Nothing is published.' },
+  media_list_jobs: { label: 'List your videos', detail: 'See videos in progress and the stage each has reached.' },
+  media_advance_job: { label: 'Move a video along', detail: 'Move a video to its next stage. Cannot approve or publish it.' },
+  media_approve_job: { label: 'Approve a video', detail: 'Approve a finished video so it can be scheduled and published.' },
+  media_reject_job: { label: 'Reject a video', detail: 'Reject a video, or send it back for another revision.' },
   // Processes
   list_processes: { label: 'List running programs', detail: 'See which programs are running on this computer.' },
   get_process_info: { label: 'Check a running program', detail: 'Read details about a running program.' },
