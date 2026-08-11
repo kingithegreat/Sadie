@@ -862,12 +862,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ) => {
     const { readJobs, writeJobs } = await import('./tools/media');
     const { transition, isValidState } = await import('./media-studio');
+    const { getSettings } = await import('./config-manager');
+    // Same kill switch as the chat path — the panel must not be a way around it.
+    const publishingEnabled = !!(getSettings() as any)?.mediaPublishingEnabled;
     const jobs = readJobs();
     const i = jobs.findIndex(j => j.id === id);
     if (i < 0) return { ok: false, error: 'That video is no longer in the list.' };
     if (!isValidState(to)) return { ok: false, error: `"${to}" is not a pipeline stage.` };
     try {
-      jobs[i] = transition(jobs[i], to as any, opts);
+      jobs[i] = transition(jobs[i], to as any, { ...opts, publishingEnabled });
       writeJobs(jobs);
       return { ok: true, job: jobs[i] };
     } catch (e: any) {

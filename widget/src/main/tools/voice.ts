@@ -78,6 +78,48 @@ function ensureCacheDir() {
 
 // ============= TOOL DEFINITIONS =============
 
+/**
+ * Render narration to a file without playing it.
+ *
+ * speakHandler needs a BrowserWindow because its job is to play audio through
+ * the renderer. The Media Studio needs the opposite: an audio file it can
+ * attach to a video, produced with no window, no playback, and no user
+ * present. Same Edge TTS engine, so narration matches the voice HomeBot
+ * already speaks with.
+ *
+ * Kept here rather than in the media code so there is one TTS integration
+ * rather than two drifting copies of the voice, rate and cache handling.
+ */
+export async function renderNarrationToFile(
+  text: string,
+  outPath: string,
+  opts?: { voice?: string; rate?: number; pitch?: number },
+): Promise<{ path: string; bytes: number }> {
+  const clean = (text || '').trim();
+  if (!clean) throw new Error('Nothing to narrate — the script is empty.');
+
+  const tts = await getTTS(opts?.voice);
+  const rate = opts?.rate ?? 0;
+  const pitch = opts?.pitch ?? 0;
+
+  await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+  await tts.toFile(outPath, clean, {
+    rate: rate >= 0 ? `+${rate}%` : `${rate}%`,
+    pitch: pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`,
+    volume: '100%',
+  } as any);
+
+  // msedge-tts appends its own extension in some versions; accept either.
+  const candidates = [outPath, `${outPath}.mp3`];
+  for (const c of candidates) {
+    try {
+      const st = await fs.promises.stat(c);
+      if (st.size > 0) return { path: c, bytes: st.size };
+    } catch { /* try the next candidate */ }
+  }
+  throw new Error('Text-to-speech produced no audio file.');
+}
+
 export const speakDef: ToolDefinition = {
   name: 'speak',
   description: 'Speak text aloud using text-to-speech. Use this to read responses to the user verbally.',

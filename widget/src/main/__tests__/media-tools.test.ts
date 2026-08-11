@@ -163,3 +163,34 @@ describe('the approval gate holds through the tool layer', () => {
     expect(gated).toEqual(['media_approve_job', 'media_reject_job']);
   });
 });
+
+describe('the narration stage', () => {
+  it('refuses a job with no script rather than narrating nothing', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_narrate', { job: 'Jonah' });
+    expect(res.success).toBe(false);
+    expect(String(res.error)).toMatch(/no script yet/i);
+  });
+
+  it('refuses at a stage where narration makes no sense', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    // Give it a script but leave it at idea.
+    const jobs = readJobs();
+    jobs[0].script = 'Some narration.';
+    require('../tools/media').writeJobs(jobs);
+
+    const res: any = await call('media_narrate', { job: 'Jonah' });
+    expect(res.success).toBe(false);
+    expect(String(res.error)).toMatch(/script_draft|script_qa/);
+  });
+
+  it('is offered for a narration request', () => {
+    const prompt = 'record the narration for that video';
+    const offered = getSmallModelTools({
+      categories: detectToolCategories(prompt), query: prompt,
+    }).map((t: any) => t.function?.name ?? t.name);
+    // "narration" is in the media routing pattern; without it this stage would
+    // exist and be unreachable.
+    expect(offered).toContain('media_narrate');
+  });
+});
