@@ -42,7 +42,13 @@ export const CODING_TOOLS = [
   // Editing
   'write_file', 'edit_file', 'create_directory',
   // Version control (read-only + commit; no push)
-  'git_status', 'git_diff', 'git_log', 'git_branches',
+  //
+  // git_commit was named in this comment and promised in the system prompt but
+  // never actually listed, so the bridged assistant could not commit and could
+  // not find out why — the tool was absent rather than denied, which no
+  // permission prompt can explain. It stays gated: git_commit defaults to false
+  // in config-manager, so listing it here makes it requestable, not automatic.
+  'git_status', 'git_diff', 'git_log', 'git_branches', 'git_commit',
   // Diffing
   'diff_text', 'diff_files',
   // Execution — gated by requiresConfirmation + the destructive blocklist
