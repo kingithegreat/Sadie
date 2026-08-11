@@ -16,7 +16,7 @@ jest.mock('electron', () => ({
   app: { getPath: () => tmpRoot },
 }));
 
-import { parseFrontmatter, loadSkills, reloadSkills, getSkill, getSkillCatalogue, skillsDir, matchSkills } from '../skills';
+import { parseFrontmatter, loadSkills, reloadSkills, getSkill, getSkillCatalogue, skillsDir, matchSkills, deriveDescription } from '../skills';
 
 function writeSkill(folder: string, content: string) {
   const dir = path.join(skillsDir(), folder);
@@ -215,5 +215,67 @@ describe('triggers + matchSkills (ported from the reconciled skills-loader)', ()
     writeSkill('cs', '---\nname: cs\ndescription: d\ntriggers: [Content Maturity]\n---\nbody');
     reloadSkills();
     expect(matchSkills('what is CONTENT MATURITY?')).not.toBeNull();
+  });
+});
+
+describe('metadata bugs HomeBot spotted in its own prompt (2026-08-11)', () => {
+  it('keeps a value that legitimately ENDS in a quote', () => {
+    // Reported as "descriptions truncated mid-sentence". The cause was not a
+    // length cap: the old /^['"]|['"]$/g stripped either end independently, so
+    // a when_to_use ending in a quoted example lost its closing quote and read
+    // as cut off.
+    const { meta } = parseFrontmatter(
+      '---\nname: d\nwhen_to_use: The user says "every morning", or "automatically"\n---\nbody',
+    );
+    expect(meta.when_to_use).toBe('The user says "every morning", or "automatically"');
+  });
+
+  it('still strips a genuinely quoted value', () => {
+    const { meta } = parseFrontmatter('---\nname: "quoted"\n---\nbody');
+    expect(meta.name).toBe('quoted');
+  });
+
+  it('does not strip a leading quote when there is no matching close', () => {
+    const { meta } = parseFrontmatter('---\nname: "unbalanced\n---\nbody');
+    expect(meta.name).toBe('"unbalanced');
+  });
+
+  describe('deriveDescription — section-dialect skills are no longer undescribed', () => {
+    it('uses the H1 title', () => {
+      expect(deriveDescription('# Publish Roblox Game — Go-Live Checklist\n\nSome prose.'))
+        .toBe('Publish Roblox Game — Go-Live Checklist');
+    });
+
+    it('falls back to the first prose sentence when there is no H1', () => {
+      expect(deriveDescription('Domain knowledge for going live. More detail follows.'))
+        .toBe('Domain knowledge for going live.');
+    });
+
+    it('skips bullets and headings when looking for prose', () => {
+      expect(deriveDescription('## Triggers\n- publish roblox\n\nReal description here.'))
+        .toBe('Real description here.');
+    });
+
+    it('caps a runaway first line rather than flooding the catalogue', () => {
+      const out = deriveDescription('x'.repeat(400));
+      expect(out.length).toBeLessThanOrEqual(160);
+      expect(out.endsWith('…')).toBe(true);
+    });
+
+    it('a real section-dialect skill gets a useful catalogue line', () => {
+      writeSkill('roblox', [
+        '# Publish Roblox Game — Go-Live Checklist',
+        '',
+        '## Triggers',
+        '- publish roblox',
+        '',
+        '## Context',
+        'Check the audience setting.',
+      ].join('\n'));
+      const s = reloadSkills().find(x => x.name === 'roblox')!;
+      expect(s.description).toBe('Publish Roblox Game — Go-Live Checklist');
+      expect(s.description).not.toMatch(/No description provided/);
+      expect(getSkillCatalogue()).toContain('Publish Roblox Game');
+    });
   });
 });
