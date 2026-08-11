@@ -259,6 +259,181 @@ export async function captureBrowserPage(): Promise<BrowserCapture> {
   }
 }
 
+/**
+ * Navigate the panel from the main process.
+ *
+ * The IPC handler above does this for the renderer; a tool call has no
+ * renderer to go through, and duplicating normalizeUrl + loadURL in the tool
+ * layer would be a second copy of the same rule.
+ */
+export async function navigateBrowserPanel(url: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const target = normalizeUrl(url);
+    if (!target) return { success: false, error: 'That does not look like a web address.' };
+    await ensureView().webContents.loadURL(target);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Read the page as text the model can reason about.
+ *
+ * A screenshot alone forces vision on every question, and the local vision
+ * model (moondream) is weak at reading UI. Text is cheaper, more accurate, and
+ * works on any model — so this is the default way to "see" a page, with the
+ * screenshot reserved for questions genuinely about layout or images.
+ *
+ * Runs in the page, so it sees what a person sees: rendered text, not source.
+ */
+export async function readBrowserPage(maxChars = 8000): Promise<
+  { success: true; url: string; title: string; text: string; truncated: boolean }
+  | { success: false; error: string }
+> {
+  if (!view || view.webContents.isDestroyed()) {
+    return { success: false, error: 'The browser panel is not open. Open it with the Browser button first.' };
+  }
+  try {
+    const text: string = await view.webContents.executeJavaScript(`
+      (function () {
+        // Strip the furniture people ignore, so the model reads the content.
+        const drop = ['script','style','noscript','svg','nav','footer','header','aside'];
+        const clone = document.body ? document.body.cloneNode(true) : null;
+        if (!clone) return '';
+        drop.forEach(function (sel) {
+          Array.prototype.slice.call(clone.querySelectorAll(sel)).forEach(function (n) { n.remove(); });
+        });
+        return (clone.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim();
+      })()
+    `);
+    const truncated = text.length > maxChars;
+    return {
+      success: true,
+      url: view.webContents.getURL(),
+      title: view.webContents.getTitle(),
+      text: truncated ? text.slice(0, maxChars) : text,
+      truncated,
+    };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * The interactive elements on the page, each with an index.
+ *
+ * This is what makes control possible without pixel coordinates: the model
+ * picks an index from a list it can read, rather than guessing where to click
+ * from a screenshot. Coordinate-guessing is where browser agents on small
+ * models fall apart.
+ */
+export async function listBrowserTargets(limit = 60): Promise<
+  { success: true; url: string; targets: Array<{ i: number; kind: string; label: string }> }
+  | { success: false; error: string }
+> {
+  if (!view || view.webContents.isDestroyed()) {
+    return { success: false, error: 'The browser panel is not open.' };
+  }
+  try {
+    const targets = await view.webContents.executeJavaScript(`
+      (function () {
+        var sel = 'a[href], button, input, textarea, select, [role=button], [role=link]';
+        var out = [];
+        var els = Array.prototype.slice.call(document.querySelectorAll(sel));
+        for (var i = 0; i < els.length && out.length < ${limit}; i++) {
+          var el = els[i];
+          var r = el.getBoundingClientRect();
+          // Only what a person could actually click right now.
+          if (r.width < 2 || r.height < 2) continue;
+          if (r.bottom < 0 || r.top > window.innerHeight) continue;
+          var st = window.getComputedStyle(el);
+          if (st.visibility === 'hidden' || st.display === 'none') continue;
+          var label = (el.getAttribute('aria-label') || el.innerText || el.value ||
+                       el.getAttribute('placeholder') || el.getAttribute('title') ||
+                       el.getAttribute('name') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+          if (!label) continue;
+          out.push({ i: out.length, kind: el.tagName.toLowerCase(), label: label });
+        }
+        return out;
+      })()
+    `);
+    return { success: true, url: view.webContents.getURL(), targets };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Click the nth element from listBrowserTargets, using the same ordering. */
+export async function clickBrowserTarget(index: number): Promise<{ success: boolean; error?: string; clicked?: string }> {
+  if (!view || view.webContents.isDestroyed()) {
+    return { success: false, error: 'The browser panel is not open.' };
+  }
+  try {
+    const res = await view.webContents.executeJavaScript(`
+      (function () {
+        var sel = 'a[href], button, input, textarea, select, [role=button], [role=link]';
+        var out = [];
+        var els = Array.prototype.slice.call(document.querySelectorAll(sel));
+        for (var i = 0; i < els.length; i++) {
+          var el = els[i];
+          var r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) continue;
+          if (r.bottom < 0 || r.top > window.innerHeight) continue;
+          var st = window.getComputedStyle(el);
+          if (st.visibility === 'hidden' || st.display === 'none') continue;
+          var label = (el.getAttribute('aria-label') || el.innerText || el.value ||
+                       el.getAttribute('placeholder') || el.getAttribute('title') ||
+                       el.getAttribute('name') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+          if (!label) continue;
+          out.push({ el: el, label: label });
+        }
+        var t = out[${Math.max(0, Math.floor(index))}];
+        if (!t) return { ok: false, error: 'No element with that number is on screen.' };
+        t.el.click();
+        return { ok: true, label: t.label };
+      })()
+    `);
+    return res?.ok ? { success: true, clicked: res.label } : { success: false, error: res?.error || 'Click failed.' };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Type into the nth target, firing the events frameworks listen for. */
+export async function typeIntoBrowserTarget(index: number, text: string): Promise<{ success: boolean; error?: string; into?: string }> {
+  if (!view || view.webContents.isDestroyed()) {
+    return { success: false, error: 'The browser panel is not open.' };
+  }
+  try {
+    const res = await view.webContents.executeJavaScript(`
+      (function () {
+        var els = Array.prototype.slice.call(document.querySelectorAll('input, textarea, [contenteditable=true]'))
+          .filter(function (el) {
+            var r = el.getBoundingClientRect();
+            return r.width > 2 && r.height > 2 && r.top <= window.innerHeight && r.bottom >= 0;
+          });
+        var el = els[${Math.max(0, Math.floor(index))}];
+        if (!el) return { ok: false, error: 'No text field with that number is on screen.' };
+        el.focus();
+        var value = ${JSON.stringify(text)};
+        if (el.isContentEditable) { el.textContent = value; }
+        else {
+          // React and friends listen for input/change, not assignment.
+          el.value = value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        var label = (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || 'the field');
+        return { ok: true, label: String(label).slice(0, 80) };
+      })()
+    `);
+    return res?.ok ? { success: true, into: res.label } : { success: false, error: res?.error || 'Typing failed.' };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export function destroyBrowserPanel(): void {
   try {
     if (attachedTo && !attachedTo.isDestroyed()) attachedTo.setBrowserView(null);

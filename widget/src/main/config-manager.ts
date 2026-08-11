@@ -304,6 +304,13 @@ export const DEFAULT_SETTINGS: Settings = {
     add_contact: false,
     // Media Studio — creating and listing is safe; approving or rejecting a
     // video is a publishing decision, so both need explicit confirmation.
+    // Browser control — reading the page is safe; clicking and typing act on
+    // real logged-in sessions and can spend money or send messages.
+    read_browser_page: true,
+    list_browser_targets: true,
+    click_browser_target: false,
+    type_in_browser: false,
+    navigate_browser: false,
     media_write_script: true,
     media_narrate: true,
     media_create_job: true,
