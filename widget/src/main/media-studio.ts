@@ -68,6 +68,10 @@ export interface MediaJob {
   sources?: string[];
   /** Absolute path to the recorded narration audio, once it exists. */
   narrationPath?: string;
+  /** Absolute path to the SRT subtitles generated alongside the narration. */
+  captionsPath?: string;
+  /** True spoken length, measured from the audio rather than estimated. */
+  durationSeconds?: number;
   /** Absolute path to a rendered file, once one exists. */
   renderPath?: string;
   /** YouTube video id, only ever set after publishing. */

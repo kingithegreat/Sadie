@@ -384,7 +384,6 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     // Imported lazily: voice.ts pulls in the TTS engine, and media.ts loads
     // during tool registration at startup.
     const { renderNarrationToFile } = await import('./voice');
-    const { estimateSpokenSeconds } = await import('../media-generate');
 
     const dir = mediaAssetsDir(job.id);
     const out = path.join(dir, 'narration.mp3');
@@ -392,9 +391,30 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
       voice: args.voice ? String(args.voice) : undefined,
     });
 
+    // Captions come from the script we already have, timed against the real
+    // audio length — no speech recognition, because we are not recovering
+    // unknown text, only its timing. Written next to the audio so the render
+    // stage finds them without a separate step anyone could forget.
+    const { buildCaptions } = await import('../media-captions');
+    const caps = buildCaptions(job.script, audio.bytes);
+    const srtPath = path.join(dir, 'captions.srt');
+    const vttPath = path.join(dir, 'captions.vtt');
+    try {
+      fs.writeFileSync(srtPath, caps.srt, 'utf8');
+      fs.writeFileSync(vttPath, caps.vtt, 'utf8');
+    } catch (e) {
+      // Captions are not worth losing a finished narration over.
+      console.error('[Media Studio] could not write captions:', e);
+    }
+
     // Record the audio before transitioning, so a failed transition cannot
     // discard a render that took real time.
-    let updated: MediaJob = { ...job, narrationPath: audio.path };
+    let updated: MediaJob = {
+      ...job,
+      narrationPath: audio.path,
+      captionsPath: fs.existsSync(srtPath) ? srtPath : undefined,
+      durationSeconds: Math.round(caps.durationSeconds),
+    };
     if (updated.state === 'script_draft') {
       updated = transition(updated, 'script_qa', { by: 'narration stage' });
     }
@@ -402,9 +422,13 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     upsert(updated);
 
     const kb = Math.round(audio.bytes / 1024);
-    return ok(
-      `Recorded narration for "${updated.title}" (~${estimateSpokenSeconds(job.script)}s, ${kb} KB).\n${audio.path}`,
-    );
+    // Report the MEASURED duration, not the word-count estimate — the estimate
+    // was only ever a stand-in until real audio existed.
+    return ok([
+      `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB.`,
+      `audio:    ${audio.path}`,
+      updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
+    ].join('\n'));
   } catch (e: any) {
     return err(`Could not record the narration: ${errText(e)}`);
   }
