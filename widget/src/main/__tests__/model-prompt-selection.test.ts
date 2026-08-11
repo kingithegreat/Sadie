@@ -28,18 +28,29 @@ describe('isSmallModel', () => {
     'gpt-3.5-turbo',
     'gpt-4o-mini',
     'o1-mini',
-  ];
-
-  // Models that are NOT small
-  const largeModels = [
+    // 7B/8B — the sizes actually in use; see the note on largeModels.
     'llama3.2:8b',
-    'llama3.1:70b',
     'mistral:7b',
-    'codellama:13b',
-    'deepseek-r1:14b',
     'dolphin-llama3:8b',
     'gemma:7b',
     'qwen2:7b',
+    'qwen2.5:7b',
+    'dolphin-mistral:7b',
+  ];
+
+  // Models that are NOT small.
+  //
+  // CONTRACT CHANGED 2026-08-11, deliberately, by Aden's decision. The bound
+  // was 3B, so 7B/8B models counted as large — and this list asserted that.
+  // But every local model actually in use is 7B, which meant the whole
+  // small-model design (compact prompt, 12-tool cap, 12-turn history, tighter
+  // search budget, long-reply trimming) never applied to a single model he
+  // runs. The 12-tool cap exists precisely because a 7B chooses badly from ~85
+  // tool schemas. The bound is now 9B; 7B/8B entries moved to smallModels.
+  const largeModels = [
+    'llama3.1:70b',
+    'codellama:13b',
+    'deepseek-r1:14b',
     'phi3:14b',
     'llama3.2',           // no explicit size tag → treat as normal
     '',
@@ -74,7 +85,7 @@ describe('getSystemPromptForModel', () => {
   });
 
   test('large model returns full prompt', () => {
-    const result = getSystemPromptForModel('llama3.1:8b');
+    const result = getSystemPromptForModel('codellama:13b');
     expect(result).toBe(HOMEBOT_SYSTEM_PROMPT);
   });
 
@@ -90,7 +101,7 @@ describe('getSystemPromptForModel', () => {
   });
 
   test('guidelines appended for large model', () => {
-    const result = getSystemPromptForModel('llama3.1:8b', 'Be concise.');
+    const result = getSystemPromptForModel('codellama:13b', 'Be concise.');
     expect(result).toContain(HOMEBOT_SYSTEM_PROMPT);
     expect(result).toContain('## User Guidelines');
     expect(result).toContain('Be concise.');
@@ -103,13 +114,13 @@ describe('getSystemPromptForModel', () => {
   });
 
   test('whitespace-only guidelines string is ignored', () => {
-    const result = getSystemPromptForModel('llama3.1:8b', '   \n  ');
+    const result = getSystemPromptForModel('codellama:13b', '   \n  ');
     expect(result).toBe(HOMEBOT_SYSTEM_PROMPT);
     expect(result).not.toContain('## User Guidelines');
   });
 
   test('undefined guidelines returns base prompt unchanged', () => {
     expect(getSystemPromptForModel('llama3.2:3b', undefined)).toBe(HOMEBOT_SYSTEM_PROMPT_COMPACT);
-    expect(getSystemPromptForModel('mistral:7b', undefined)).toBe(HOMEBOT_SYSTEM_PROMPT);
+    expect(getSystemPromptForModel('codellama:13b', undefined)).toBe(HOMEBOT_SYSTEM_PROMPT);
   });
 });

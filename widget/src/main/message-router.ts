@@ -2080,8 +2080,19 @@ const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
  */
 export function isSmallModel(modelName: string): boolean {
   const n = modelName.toLowerCase();
-  // Explicit small-size tags — covers integer sizes (:1b, :2b, :3b) AND decimal sizes (:1.5b, :2.7b, :0.5b)
-  if (/[:\-_]([0-3](\.[0-9]+)?b)\b/.test(n)) return true;
+  // Explicit small-size tags. The bound is 9B, not 3B.
+  //
+  // It WAS 3B, which meant none of this applied to the models actually in use:
+  // qwen2.5:7b, qwen2.5-coder:7b and dolphin-mistral:7b all took the full-size
+  // path. Five optimisations were dead as a result — the compact system prompt
+  // (~425 vs ~2,000 tokens), the 12-tool cap, the 12-turn history window, the
+  // 1,500-char search budget, and long-reply trimming. The 12-tool cap in
+  // particular exists precisely because a 7B model chooses badly from ~85 tool
+  // schemas, which is the likeliest reason tool calls have been unreliable.
+  //
+  // 9B is the ceiling: gemma2:9b and llama3.1:8b are included, while a 13B+
+  // model — which handles a full prompt comfortably — is not.
+  if (/[:\-_]([0-9](\.[0-9]+)?b)\b/.test(n)) return true;
   // Known small model families:
   //   phi-mini / phi3.5-mini — phi3 alone is NOT small (ships at 3.8b and 14b; only mini qualifies)
   //   gemma:2b / gemma2:2b

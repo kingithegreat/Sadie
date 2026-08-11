@@ -24,6 +24,22 @@ interface ChatMessage {
 export interface AssistantBridgeRef {
   url: string;
   token: string;
+  /**
+   * Fully-qualified MCP names of the tools the bridge exposes, e.g.
+   * `mcp__homebot__read_file`. Required because Claude Code gates MCP tools
+   * behind its OWN permission prompt, and headless mode has no channel to
+   * answer one — so without an explicit allow-list every call comes back
+   * "requested permissions ... but you haven't granted it yet" and the bridge
+   * is visible but unusable.
+   */
+  toolNames: string[];
+  /**
+   * Working directory for the CLI. Without it the spawn inherits Electron's
+   * cwd — the install directory in a packaged build — so Claude Code resolves
+   * project settings and any relative path against somewhere the user never
+   * chose. Set to their project folder.
+   */
+  cwd?: string;
 }
 
 /**
@@ -39,7 +55,12 @@ let assistantBridgeProvider: (() => AssistantBridgeRef | null) | null = null;
 
 export function setAssistantBridgeProvider(fn: (() => AssistantBridgeRef | null) | null): void {
   assistantBridgeProvider = fn;
+  // A bridge arriving late should be able to re-announce itself if it drops.
+  bridgeWarningShown = false;
 }
+
+/** Once per session: warn in-chat when the assistant has no HomeBot tools. */
+let bridgeWarningShown = false;
 
 interface StreamOptions {
   model: string;
@@ -619,8 +640,26 @@ export function acceptsSamplingParams(model: string): boolean {
   return true;
 }
 
+/**
+ * Usage from the most recent Anthropic call, for Diagnostics.
+ *
+ * `cacheRead > 0` is the only proof that prompt caching is actually working —
+ * a cache_control marker that silently never hits looks identical to no
+ * caching at all from the outside.
+ */
+export type AnthropicUsage = {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreation: number;
+  cacheRead: number;
+  stopReason: string | null;
+};
+let lastAnthropicUsage: AnthropicUsage | null = null;
+export function getLastAnthropicUsage(): AnthropicUsage | null { return lastAnthropicUsage; }
+
 async function streamAnthropic(options: StreamOptions): Promise<void> {
-  const { apiConfig, messages, model, temperature = 0.7, maxTokens = 2000,
+  const { apiConfig, messages, model, temperature = 0.7, maxTokens: requestedMaxTokens,
           tools, onChunk, onToolCall, onEnd, onError, signal } = options;
 
   const { system, messages: anthropicMessages } = toAnthropicMessages(messages);
@@ -628,7 +667,46 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
 
   // Undated alias as the fallback — a dated snapshot here eventually retires
   // and starts 404-ing for every user who never picked a model explicitly.
-  const resolvedModel = model || apiConfig.model || 'claude-sonnet-5';
+  //
+  // The guard is not paranoia: the dispatcher fills an empty model with
+  // 'gpt-3.5-turbo', so an Anthropic config that never had a model picked
+  // arrived here with an OpenAI ID and sent it straight to Anthropic, which
+  // rejects it. That also made the fallback on this line unreachable — it could
+  // never fire, because the string it checks for emptiness was already filled
+  // in with the wrong provider's default.
+  const requestedModel = model || apiConfig.model || '';
+  const resolvedModel = /claude/i.test(requestedModel) ? requestedModel : 'claude-sonnet-5';
+
+  // The old default was a flat 2000 — so a long code answer on Sonnet 5 was cut
+  // off at 2000 tokens and handed back looking finished, even though the model
+  // supports 64000. Take the ceiling from the metadata table we already keep,
+  // and treat an explicit caller value as a request that still cannot exceed
+  // what the model actually allows. Safe to be generous: this path streams, so
+  // a large ceiling costs nothing until it is used and never trips the
+  // non-streaming HTTP timeout.
+  const modelCeiling = getModelMetadata(resolvedModel).maxTokens;
+  const maxTokens = Math.max(1, Math.min(requestedMaxTokens ?? modelCeiling, modelCeiling));
+
+  // Prompt caching. Blocks render tools → system → messages, so ONE breakpoint
+  // at the end of the system block covers the tool schemas as well — that is
+  // the expensive part, since HomeBot ships dozens of them on every turn.
+  // Cache reads cost about a tenth of normal input.
+  //
+  // Below a model's minimum cacheable prefix (512–4096 tokens depending on the
+  // model) the marker is ignored rather than rejected, so it is always safe to
+  // send. Verify with cacheRead in the usage above rather than assuming.
+  const CACHE: any = { type: 'ephemeral' };
+  const systemBlocks = system
+    ? [{ type: 'text', text: system, cache_control: CACHE }]
+    : undefined;
+  // With no system prompt there is no block to mark, so fall back to the last
+  // tool — otherwise the schemas would go uncached on every request.
+  const cachedTools = anthropicTools && anthropicTools.length > 0
+    ? (systemBlocks
+        ? anthropicTools
+        : anthropicTools.map((t, i) =>
+            i === anthropicTools.length - 1 ? { ...t, cache_control: CACHE } : t))
+    : undefined;
 
   try {
     const response = await axios.post(
@@ -638,10 +716,10 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
         max_tokens: maxTokens,
         // Omitted entirely on models that reject sampling parameters (400).
         ...(acceptsSamplingParams(resolvedModel) ? { temperature } : {}),
-        system,
+        ...(systemBlocks ? { system: systemBlocks } : {}),
         messages: anthropicMessages,
         stream: true,
-        ...(anthropicTools && anthropicTools.length > 0 ? { tools: anthropicTools } : {})
+        ...(cachedTools ? { tools: cachedTools } : {})
       },
       {
         headers: {
@@ -673,10 +751,43 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
           try { parsed = JSON.parse(data); } catch { continue; }
 
           switch (parsed.type) {
+            case 'message_start': {
+              // Input-side usage, including the cache counters. This is the
+              // only place they appear.
+              const u = parsed.message?.usage || {};
+              lastAnthropicUsage = {
+                model: resolvedModel,
+                inputTokens: u.input_tokens || 0,
+                outputTokens: 0,
+                cacheCreation: u.cache_creation_input_tokens || 0,
+                cacheRead: u.cache_read_input_tokens || 0,
+                stopReason: null,
+              };
+              break;
+            }
             case 'content_block_start': {
               const cb = parsed.content_block;
               if (cb?.type === 'tool_use') {
                 toolBlocks.set(parsed.index, { id: cb.id, name: cb.name, jsonBuf: '' });
+              }
+              break;
+            }
+            case 'message_delta': {
+              // Output tokens and the stop reason arrive here, and nowhere else.
+              if (lastAnthropicUsage) {
+                lastAnthropicUsage.outputTokens = parsed.usage?.output_tokens || 0;
+                lastAnthropicUsage.stopReason = parsed.delta?.stop_reason ?? null;
+                const u = lastAnthropicUsage;
+                console.log(
+                  `[Custom LLM] Anthropic ${u.model}: in=${u.inputTokens} out=${u.outputTokens} ` +
+                  `cacheWrite=${u.cacheCreation} cacheRead=${u.cacheRead} stop=${u.stopReason}`
+                );
+              }
+              // A reply cut off at the token ceiling used to end mid-sentence
+              // and look finished. Say so instead of handing back a truncated
+              // answer as though it were complete.
+              if (parsed.delta?.stop_reason === 'max_tokens') {
+                onChunk(`\n\n_[Reply cut off at the ${maxTokens.toLocaleString()}-token limit for ${resolvedModel}.]_`);
               }
               break;
             }
@@ -700,6 +811,21 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
                 onToolCall({ id: block.id, name: block.name, arguments: input });
                 toolBlocks.delete(parsed.index);
               }
+              break;
+            }
+            case 'error': {
+              // Anthropic reports mid-stream failures — overloaded_error, a
+              // rate limit hit after the headers were already sent — as an SSE
+              // frame, not an HTTP status. With no case here they fell through
+              // to stream 'end', so the turn stopped early and the truncated
+              // answer looked like a clean short one. Surface it as the error
+              // it is. (Caught by HomeBot reviewing this file, not by me.)
+              const e = parsed.error || {};
+              const msg = e.message || e.type || 'Anthropic stream error';
+              console.error('[Custom LLM] Anthropic mid-stream error:', msg);
+              if (lastAnthropicUsage) lastAnthropicUsage.stopReason = `error:${e.type || 'unknown'}`;
+              ended = true;
+              onError(new Error(msg));
               break;
             }
             case 'message_stop':
@@ -798,6 +924,29 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
     ? { homebot: { type: 'http', url: bridge.url, headers: { Authorization: `Bearer ${bridge.token}` } } }
     : {};
 
+  // No bridge means `--mcp-config {"mcpServers":{}}` — a VALID config that
+  // registers nothing. The assistant then arrives with a system prompt
+  // describing read_file, grep_code and run_terminal_command, and none of them
+  // callable. Observed live: it listed four unrelated tools and reported "no
+  // permission errors", which looks like success from every angle.
+  //
+  // Silence is the bug. Say it in the chat, once per session, the same way a
+  // cloud misconfiguration is surfaced — a crippled assistant the user cannot
+  // see is worse than one that admits it.
+  // Only when a bridge was EXPECTED. The main process registers a provider
+  // either way — returning null on failure — so "provider set but returns
+  // null" means it genuinely failed, while "no provider at all" is a caller
+  // that never wanted one (tests, or a non-Electron host) and stays quiet.
+  const bridgeExpected = !!assistantBridgeProvider;
+  if (!bridge && bridgeExpected && !bridgeWarningShown) {
+    bridgeWarningShown = true;
+    onChunk(
+      '⚠️ HomeBot\'s tools are not connected to this assistant, so it can only talk — '
+      + 'it cannot read files, search code, or run commands. The assistant bridge did not '
+      + 'start; check Diagnostics for the reason.\n\n',
+    );
+  }
+
   const args = [
     '-p',
     '--output-format', 'stream-json',
@@ -806,12 +955,37 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
     '--model', model || 'sonnet',
     '--disallowed-tools', CLAUDE_CODE_DENIED_TOOLS,
     '--mcp-config', JSON.stringify({ mcpServers }),
+    // Without this, Claude Code MERGES the user's own global MCP config into
+    // the session. Observed live: the assistant listed Gmail, Notion, Asana and
+    // Calendar among its tools — the user's personal claude.ai connectors,
+    // reachable with no involvement from HomeBot's permission gate. HomeBot's
+    // assistant must see HomeBot's gated tools and nothing else; inheriting a
+    // path to someone's email is not a feature we get to ship by accident.
+    //
+    // It also makes the bridge's state unambiguous: with strict mode on, the
+    // absence of mcp__homebot__* tools means the bridge did not attach, rather
+    // than being lost in a merged list.
+    '--strict-mcp-config',
   ];
+  // Pre-approve exactly the bridge's tools. Claude Code asks permission for
+  // MCP tools, and in headless mode there is nobody to ask — measured: -p runs
+  // report permission_denials: 0 because no approval channel exists at all. So
+  // every bridged call failed with "requested permissions ... but you haven't
+  // granted it yet", which is what a live test showed.
+  //
+  // Enumerated rather than a wildcard: this grants VISIBILITY to 18 named
+  // tools, not blanket MCP access. Authority still rests with HomeBot's own
+  // permission gate, which runs per call and raises the confirmation modal for
+  // anything destructive — so a pre-approval here cannot bypass it.
+  if (bridge?.toolNames?.length) {
+    args.push('--allowed-tools', ...bridge.toolNames);
+  }
+
   if (system.trim()) args.push('--system-prompt', system);
 
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(bin, args, { windowsHide: true });
+    child = spawn(bin, args, { windowsHide: true, cwd: bridge?.cwd || undefined });
   } catch (err: any) {
     onError(new Error(`Could not start Claude Code (${bin}): ${err?.message || err}`));
     return;
