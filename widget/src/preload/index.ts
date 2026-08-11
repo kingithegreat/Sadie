@@ -724,6 +724,16 @@ const electronAPI: ElectronAPI = {
   schedulerToggle: async (id: string, enabled: boolean) => ipcRenderer.invoke('homebot:scheduler-toggle', id, enabled),
 
   // Licensing (Pro entitlement)
+  // ---- Media Studio (video pipeline) ----
+  mediaList: async () => ipcRenderer.invoke('homebot:media:list'),
+  mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
+    ipcRenderer.invoke('homebot:media:create', input),
+  mediaAdvance: async (id: string, to: string, note?: string) =>
+    ipcRenderer.invoke('homebot:media:advance', id, to, note),
+  mediaApprove: async (id: string, note?: string) =>
+    ipcRenderer.invoke('homebot:media:approve', id, note),
+  mediaReject: async (id: string, revise: boolean, note?: string) =>
+    ipcRenderer.invoke('homebot:media:reject', id, revise, note),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),

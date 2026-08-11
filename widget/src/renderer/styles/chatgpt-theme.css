@@ -9301,3 +9301,117 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   background: var(--accent, #4c8dff);
   transition: inline-size 0.2s ease;
 }
+
+/* ── Media Studio ────────────────────────────────────────────────────────────
+   The Content Command Center. It is a work surface, not a document, so state
+   is encoded in form as well as words: anything waiting on a human decision
+   carries a warm rail and sits at the top of the panel, because it is the only
+   thing in the pipeline that cannot move without the person reading this. */
+.media-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  overflow-y: auto;
+  min-height: 0;
+  color: var(--text-primary);
+}
+
+.ms-header h2 { margin: 0; font-size: 1.35rem; }
+.ms-sub { margin: .35rem 0 0; color: var(--text-secondary); font-size: .9rem; }
+
+.ms-error {
+  padding: .7rem .9rem;
+  border-radius: 6px;
+  background: oklch(45% 0.14 25 / 0.18);
+  border: 1px solid oklch(60% 0.16 25 / 0.5);
+  color: var(--text-primary);
+  font-size: .9rem;
+}
+
+.ms-new { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ms-input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  padding: .55rem .7rem;
+  border-radius: 6px;
+  border: 1px solid var(--bg-light);
+  background: var(--bg-dark);
+  color: var(--text-primary);
+}
+.ms-select {
+  padding: .55rem .6rem;
+  border-radius: 6px;
+  border: 1px solid var(--bg-light);
+  background: var(--bg-dark);
+  color: var(--text-primary);
+}
+
+.ms-empty { color: var(--text-muted); font-size: .92rem; }
+
+.ms-section { display: flex; flex-direction: column; gap: .6rem; }
+.ms-section h3 {
+  margin: 0;
+  font-size: .78rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ms-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+
+.ms-job {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: .75rem;
+  align-items: center;
+  padding: .7rem .9rem;
+  border-radius: 8px;
+  background: var(--bg-dark);
+  border: 1px solid var(--bg-light);
+}
+/* The queue's whole purpose: what needs a person is visibly different. */
+.ms-section--attention .ms-job { border-left: 3px solid oklch(78% 0.15 85); }
+
+.ms-job-main { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.ms-job-title { font-weight: 600; overflow-wrap: anywhere; }
+.ms-job-format { font-size: .75rem; color: var(--text-muted); }
+
+.ms-state {
+  font-size: .74rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: .2em .55em;
+  border-radius: 999px;
+  border: 1px solid var(--bg-light);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.ms-state--attention { border-color: oklch(78% 0.15 85); color: oklch(85% 0.12 85); }
+.ms-state--bad       { border-color: oklch(65% 0.17 25); color: oklch(78% 0.14 25); }
+.ms-state--done      { border-color: oklch(70% 0.14 150); color: oklch(80% 0.12 150); }
+
+.ms-job-actions { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
+.ms-job-terminal { font-size: .8rem; color: var(--text-muted); }
+
+.ms-btn {
+  padding: .4rem .7rem;
+  border-radius: 6px;
+  border: 1px solid var(--bg-light);
+  background: var(--bg-medium);
+  color: var(--text-primary);
+  font-size: .85rem;
+  cursor: pointer;
+}
+.ms-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.ms-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ms-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
+.ms-btn--primary { background: var(--accent-primary); border-color: var(--accent-primary); color: var(--text-inverse); }
+.ms-btn--approve { border-color: oklch(70% 0.14 150); color: oklch(82% 0.12 150); }
+.ms-btn--reject  { border-color: oklch(65% 0.17 25);  color: oklch(78% 0.14 25); }
+
+@media (max-width: 640px) {
+  .ms-job { grid-template-columns: 1fr; align-items: start; }
+  .ms-job-actions { justify-content: flex-start; }
+}

@@ -445,6 +445,18 @@ export interface ElectronAPI {
   schedulerToggle?: (id: string, enabled: boolean) => Promise<{ success: boolean; job?: ScheduledJob; error?: string } | GateBlockedResponse>;
 
   // Licensing (Pro entitlement — Lemon Squeezy backed)
+  // ---- Media Studio ----
+  // Every mutation returns { ok, job } or { ok: false, error } so the panel can
+  // show the state machine's own refusal text rather than inventing one.
+  mediaList?: () => Promise<any[]>;
+  mediaCreate?: (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
+    Promise<{ ok: boolean; job?: any; error?: string }>;
+  mediaAdvance?: (id: string, to: string, note?: string) =>
+    Promise<{ ok: boolean; job?: any; error?: string }>;
+  mediaApprove?: (id: string, note?: string) =>
+    Promise<{ ok: boolean; job?: any; error?: string }>;
+  mediaReject?: (id: string, revise: boolean, note?: string) =>
+    Promise<{ ok: boolean; job?: any; error?: string }>;
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
   licenseValidate?: () => Promise<LicenseActionResult>;

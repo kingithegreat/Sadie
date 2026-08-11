@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (160)** — `window.electron`
+**Preload methods (165)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1030,31 +1030,33 @@ licenseActivate           licenseDeactivate         licenseStatus             li
 listCustomLLMModels       listOllamaModels          listTools                 loadAutomations
 loadConversations         loadQuizProgress          maximizeWindow            mcpAddServer
 mcpGetStatus              mcpListServers            mcpRemoveServer           mcpToggleServer
-minimizeWindow            onAssistantToolActivity   onBatchSummary            onBrowserState
-onConfigRecovered         onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied
-onHideWindow              onMessage                 onModelFallback           onOllamaDownloadProgress
-onOllamaStatus            onPermissionRequest       onProactiveBriefing       onPullModelProgress
-onReminderFired           onShowWindow              onStreamChunk             onStreamEnd
-onStreamError             onSupervisorStatus        onTerminalExit            onTerminalOutput
-onTitleUpdated            onUpdateAvailable         onUpdateDownloaded        onUpdateProgress
-onWidgetModeChanged       openExternalUrl           openFile                  parseDocument
-pullModel                 pullModelStream           ragClear                  ragIndex
-ragList                   readConsentLog            readDebugLogs             readPermissionAudit
-readTelemetryEvents       removeHideWindowListener  removeShowWindowListener  resetPermissions
-resolveActiveModel        restartApp                runAutomation             runDiagnostics
-saveConversation          saveQuizProgress          saveSettings              schedulerAdd
-schedulerList             schedulerRemove           schedulerToggle           sdCppSetup
-sdCppStatus               searchConversations       sendConfirmationResponse  sendMessage
-sendPermissionResponse    sendStreamMessage         setActiveConversation     setAlwaysOnTop
-setUncensoredMode         showInFolder              skillsList                skillsOpenFolder
-startOllama               startSpeechRecognition    subscribeToStream         summarizeWebContent
-terminalClose             terminalCreate            terminalKill              terminalRun
-testN8nConnection         toggleWidgetMode          ttsSpeak                  ttsStop
-updateAutomation          updateMessage             workspaceList             workspaceRead
-workspaceRoot             workspaceSave             writeClipboard            writeDocument
+mediaAdvance              mediaApprove              mediaCreate               mediaList
+mediaReject               minimizeWindow            onAssistantToolActivity   onBatchSummary
+onBrowserState            onConfigRecovered         onConfirmationRequest     onConversationCompacted
+onHardwareProfileApplied  onHideWindow              onMessage                 onModelFallback
+onOllamaDownloadProgress  onOllamaStatus            onPermissionRequest       onProactiveBriefing
+onPullModelProgress       onReminderFired           onShowWindow              onStreamChunk
+onStreamEnd               onStreamError             onSupervisorStatus        onTerminalExit
+onTerminalOutput          onTitleUpdated            onUpdateAvailable         onUpdateDownloaded
+onUpdateProgress          onWidgetModeChanged       openExternalUrl           openFile
+parseDocument             pullModel                 pullModelStream           ragClear
+ragIndex                  ragList                   readConsentLog            readDebugLogs
+readPermissionAudit       readTelemetryEvents       removeHideWindowListener  removeShowWindowListener
+resetPermissions          resolveActiveModel        restartApp                runAutomation
+runDiagnostics            saveConversation          saveQuizProgress          saveSettings
+schedulerAdd              schedulerList             schedulerRemove           schedulerToggle
+sdCppSetup                sdCppStatus               searchConversations       sendConfirmationResponse
+sendMessage               sendPermissionResponse    sendStreamMessage         setActiveConversation
+setAlwaysOnTop            setUncensoredMode         showInFolder              skillsList
+skillsOpenFolder          startOllama               startSpeechRecognition    subscribeToStream
+summarizeWebContent       terminalClose             terminalCreate            terminalKill
+terminalRun               testN8nConnection         toggleWidgetMode          ttsSpeak
+ttsStop                   updateAutomation          updateMessage             workspaceList
+workspaceRead             workspaceRoot             workspaceSave             writeClipboard
+writeDocument
 ```
 
-**IPC channels, renderer → main (115)**
+**IPC channels, renderer → main (120)**
 
 ```
 homebot:__e2e_get_router_logs         homebot:__e2e_invoke_tool_batch
@@ -1089,32 +1091,34 @@ homebot:list-tools                    homebot:load-automations
 homebot:load-conversations            homebot:load-quiz-progress
 homebot:mcp-add-server                homebot:mcp-get-status
 homebot:mcp-list-servers              homebot:mcp-remove-server
-homebot:mcp-toggle-server             homebot:message
-homebot:n8n-test-connection           homebot:open-browse
-homebot:open-external-url             homebot:open-file
-homebot:open-web-service              homebot:parse-document
-homebot:permission-response           homebot:pull-model
-homebot:pull-model-stream             homebot:rag-clear
-homebot:rag-index                     homebot:rag-list
-homebot:read-consent-log              homebot:read-debug-logs
-homebot:read-permission-audit         homebot:read-telemetry-events
-homebot:reset-permissions             homebot:resolve-active-model
-homebot:restart-app                   homebot:run-automation
-homebot:run-diagnostics               homebot:save-conversation
-homebot:save-quiz-progress            homebot:save-settings
-homebot:scheduler-add                 homebot:scheduler-list
-homebot:scheduler-remove              homebot:scheduler-toggle
-homebot:sd-cpp:setup                  homebot:sd-cpp:status
-homebot:search-conversations          homebot:set-active-conversation
-homebot:set-always-on-top             homebot:set-uncensored-mode
-homebot:show-in-folder                homebot:skills-list
-homebot:skills-open-folder            homebot:start-ollama
-homebot:start-speech-recognition      homebot:stream-cancel
-homebot:stream-message                homebot:summarize-web-content
-homebot:toggle-widget-mode            homebot:tts-speak
-homebot:tts-stop                      homebot:update-automation
-homebot:update-message                homebot:web-service-status
-homebot:write-document
+homebot:mcp-toggle-server             homebot:media:advance
+homebot:media:approve                 homebot:media:create
+homebot:media:list                    homebot:media:reject
+homebot:message                       homebot:n8n-test-connection
+homebot:open-browse                   homebot:open-external-url
+homebot:open-file                     homebot:open-web-service
+homebot:parse-document                homebot:permission-response
+homebot:pull-model                    homebot:pull-model-stream
+homebot:rag-clear                     homebot:rag-index
+homebot:rag-list                      homebot:read-consent-log
+homebot:read-debug-logs               homebot:read-permission-audit
+homebot:read-telemetry-events         homebot:reset-permissions
+homebot:resolve-active-model          homebot:restart-app
+homebot:run-automation                homebot:run-diagnostics
+homebot:save-conversation             homebot:save-quiz-progress
+homebot:save-settings                 homebot:scheduler-add
+homebot:scheduler-list                homebot:scheduler-remove
+homebot:scheduler-toggle              homebot:sd-cpp:setup
+homebot:sd-cpp:status                 homebot:search-conversations
+homebot:set-active-conversation       homebot:set-always-on-top
+homebot:set-uncensored-mode           homebot:show-in-folder
+homebot:skills-list                   homebot:skills-open-folder
+homebot:start-ollama                  homebot:start-speech-recognition
+homebot:stream-cancel                 homebot:stream-message
+homebot:summarize-web-content         homebot:toggle-widget-mode
+homebot:tts-speak                     homebot:tts-stop
+homebot:update-automation             homebot:update-message
+homebot:web-service-status            homebot:write-document
 ```
 
 **IPC channels, main → renderer (29)**

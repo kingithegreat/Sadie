@@ -19,8 +19,8 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
-  mode?: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard') => void;
+  mode?: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media';
+  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media') => void;
   currentModel?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
@@ -59,8 +59,8 @@ interface HeaderModelProps {
 }
 
 interface ModeSwitcherProps {
-  mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard') => void;
+  mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media';
+  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media') => void;
 }
 
 interface HeaderActionsProps {
@@ -303,6 +303,7 @@ const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
       <button className={`mode-btn ${mode === 'image' ? 'active' : ''}`} onClick={() => onModeChange('image')} title="Image Mode">🎨 Image</button>
       <button className={`mode-btn ${mode === 'documents' ? 'active' : ''}`} onClick={() => onModeChange('documents')} title="Document Viewer">📄 Docs</button>
       <button className={`mode-btn ${mode === 'quiz' ? 'active' : ''}`} onClick={() => onModeChange('quiz')} title="Learn to Code">🧠 Quiz</button>
+      <button className={`mode-btn ${mode === 'media' ? 'active' : ''}`} onClick={() => onModeChange('media')} title="Media Studio">🎬 Studio</button>
     </div>
   );
 };

@@ -832,6 +832,58 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
 
+  // ── Media Studio ──────────────────────────────────────────────────────────
+  // The renderer drives the pipeline through the same state machine the chat
+  // tools use, so the approval gate cannot be bypassed by going via the UI.
+  ipcMain.handle('homebot:media:list', async () => {
+    const { readJobs } = await import('./tools/media');
+    return readJobs();
+  });
+
+  ipcMain.handle('homebot:media:create', async (_e, input: any) => {
+    const { readJobs, writeJobs } = await import('./tools/media');
+    const { createJob } = await import('./media-studio');
+    try {
+      const job = createJob({
+        title: String(input?.title || ''),
+        format: input?.format === 'long' ? 'long' : 'short',
+        brief: input?.brief ? String(input.brief) : undefined,
+      });
+      writeJobs([...readJobs(), job]);
+      return { ok: true, job };
+    } catch (e: any) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  /** Shared by advance/approve/reject so the transition rules live in one place. */
+  const applyMediaTransition = async (
+    id: string, to: string, opts: { humanDecision?: boolean; note?: string; by: string },
+  ) => {
+    const { readJobs, writeJobs } = await import('./tools/media');
+    const { transition, isValidState } = await import('./media-studio');
+    const jobs = readJobs();
+    const i = jobs.findIndex(j => j.id === id);
+    if (i < 0) return { ok: false, error: 'That video is no longer in the list.' };
+    if (!isValidState(to)) return { ok: false, error: `"${to}" is not a pipeline stage.` };
+    try {
+      jobs[i] = transition(jobs[i], to as any, opts);
+      writeJobs(jobs);
+      return { ok: true, job: jobs[i] };
+    } catch (e: any) {
+      return { ok: false, error: e.message };
+    }
+  };
+
+  ipcMain.handle('homebot:media:advance', async (_e, id: string, to: string, note?: string) =>
+    applyMediaTransition(id, to, { by: 'studio', note }));
+
+  ipcMain.handle('homebot:media:approve', async (_e, id: string, note?: string) =>
+    applyMediaTransition(id, 'approved', { by: 'human', humanDecision: true, note }));
+
+  ipcMain.handle('homebot:media:reject', async (_e, id: string, revise: boolean, note?: string) =>
+    applyMediaTransition(id, revise ? 'needs_revision' : 'rejected', { by: 'human', humanDecision: true, note }));
+
   // ── Comprehensive first-run diagnostics ───────────────────────────────────
   // Runs disk-space, service-reachability, write-permissions, and GPU checks
   // in parallel. All checks are non-destructive and safe to call at any time.
