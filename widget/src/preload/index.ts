@@ -344,6 +344,29 @@ const electronAPI: ElectronAPI = {
   changesList: async (): Promise<any> => await ipcRenderer.invoke('homebot:changes-list'),
   changesDiff: async (id: string): Promise<any> => await ipcRenderer.invoke('homebot:changes-diff', id),
 
+  /**
+   * App updates. main has checked, downloaded and installed updates since the
+   * updater shipped — but no preload method or renderer listener existed, so a
+   * user was never told an update was available and had no way to install one.
+   */
+  onUpdateAvailable: (cb: (info: { version: string; releaseDate?: string }) => void): (() => void) => {
+    const l = (_e: any, info: any) => cb(info);
+    ipcRenderer.on('homebot:update-available', l);
+    return () => ipcRenderer.removeListener('homebot:update-available', l);
+  },
+  onUpdateProgress: (cb: (p: { percent: number; transferred?: number; total?: number }) => void): (() => void) => {
+    const l = (_e: any, p: any) => cb(p);
+    ipcRenderer.on('homebot:update-progress', l);
+    return () => ipcRenderer.removeListener('homebot:update-progress', l);
+  },
+  onUpdateDownloaded: (cb: () => void): (() => void) => {
+    const l = () => cb();
+    ipcRenderer.on('homebot:update-downloaded', l);
+    return () => ipcRenderer.removeListener('homebot:update-downloaded', l);
+  },
+  downloadUpdate: async (): Promise<any> => await ipcRenderer.invoke('homebot:download-update'),
+  installUpdate: async (): Promise<any> => await ipcRenderer.invoke('homebot:install-update'),
+
   skillsList: async (): Promise<any> => {
     return await ipcRenderer.invoke('homebot:skills-list');
   },
