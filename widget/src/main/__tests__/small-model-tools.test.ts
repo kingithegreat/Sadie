@@ -81,7 +81,15 @@ describe('getSmallModelTools', () => {
     expect(small.length).toBeLessThan(all.length);
   });
 
-  it('SMALL_MODEL_MAX_TOOLS is 12', () => {
-    expect(SMALL_MODEL_MAX_TOOLS).toBe(12);
+  // Was `expect(SMALL_MODEL_MAX_TOOLS).toBe(12)` — a tautology restating the
+  // constant. It protected nothing, and it passed happily through the entire
+  // period the cap sat BELOW the core-tool count, which silently disabled
+  // category routing altogether. Pinned to the properties that matter instead:
+  // the cap must stay small enough to help a small model, and large enough
+  // that the category tools it bounds can actually fit.
+  // See small-model-category-routing.test.ts.
+  it('the cap is small, but not so small it disables category routing', () => {
+    expect(SMALL_MODEL_MAX_TOOLS).toBeGreaterThan(12);
+    expect(SMALL_MODEL_MAX_TOOLS).toBeLessThanOrEqual(20);
   });
 });
