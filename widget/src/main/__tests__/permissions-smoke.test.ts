@@ -64,7 +64,18 @@ describe('CI smoke - permissions', () => {
       { name: 'write_file', arguments: { path: 'Desktop/SmokeTest/report.txt', content: 'smoke' } }
     ];
 
-    const results = await executeToolBatch(calls as any, { executionId: 'ci-smoke' } as any);
+    // write_file requires confirmation, and the real chat path always supplies
+    // a confirmation callback (message-router passes requestConfirmation into
+    // every tool context it builds). This ran without one and still expected
+    // success, which quietly asserted the old fail-open: executeTool used to
+    // skip the confirmation block entirely when no callback was present, so a
+    // confirm-required tool ran unconfirmed. Supplying one here matches
+    // production and keeps the check meaningful — see
+    // confirmation-fail-closed.test.ts for the refusal case.
+    const results = await executeToolBatch(
+      calls as any,
+      { executionId: 'ci-smoke', requestConfirmation: async () => true } as any,
+    );
 
     // Should have executed both calls successfully
     expect(Array.isArray(results)).toBe(true);

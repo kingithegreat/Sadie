@@ -307,7 +307,26 @@ export async function executeTool(
 
   // Check if confirmation is required
   console.log(`[HomeBot Tools] requiresConfirmation=${tool.definition.requiresConfirmation}, hasCallback=${!!context.requestConfirmation}`);
-  if (tool.definition.requiresConfirmation && context.requestConfirmation) {
+  if (tool.definition.requiresConfirmation) {
+    // No way to ask means no consent, so refuse rather than proceed.
+    //
+    // This read `requiresConfirmation && context.requestConfirmation`, so a
+    // caller that supplied no callback skipped the whole block and the tool
+    // ran unconfirmed — fail-open, three lines below a permission check whose
+    // own comment says "fail closed". Unattended callers are exactly the ones
+    // that omit the callback: the morning briefing logs hasCallback=false on
+    // every start, and scheduled automations run with nobody present to ask.
+    // assistant-bridge.ts also documents that every call through executeTool
+    // enforces assertPermission + requestConfirmation, which this made untrue.
+    if (!context.requestConfirmation) {
+      console.warn(`[HomeBot Tools] ${call.name} needs confirmation but this run cannot ask — refusing`);
+      try { logTelemetryEvent('tool_call', { tool: call.name, outcome: 'no_confirmation_channel', duration_ms: 0 }); } catch (_e) {}
+      return {
+        success: false,
+        error: `${call.name} needs your confirmation, and this run has no way to ask for it (it started without a user present). Run it from chat instead.`,
+      };
+    }
+
     const confirmMessage = formatConfirmationMessage(call.name, call.arguments);
     console.log(`[HomeBot Tools] Requesting confirmation: ${confirmMessage}`);
     const confirmed = await context.requestConfirmation(confirmMessage);
