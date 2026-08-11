@@ -85,7 +85,12 @@ export function parseFrontmatter(md: string): { meta: Record<string, string | st
     if (list) {
       meta[key] = list[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
     } else {
-      meta[key] = value.replace(/^['"]|['"]$/g, '');
+      // Strip only a MATCHED surrounding pair. The old /^['"]|['"]$/g stripped
+      // either end independently, so a value legitimately ENDING in a quote —
+      // e.g. `The user says "every morning", or "automatically"` — lost its
+      // closing quote and read as truncated mid-sentence.
+      const quoted = /^(['"])([\s\S]*)\1$/.exec(value);
+      meta[key] = quoted ? quoted[2] : value;
     }
   }
   return { meta, body: match[2].trim() };
@@ -118,6 +123,23 @@ function sectionText(body: string, heading: string): string {
   return out.trim();
 }
 
+/**
+ * First useful sentence of a skill body, for skills with no frontmatter
+ * description. Prefers the H1 title, then the first non-heading prose line.
+ */
+export function deriveDescription(body: string): string {
+  const lines = body.split(/\r?\n/).map(l => l.trim());
+
+  const h1 = lines.find(l => /^#\s+\S/.test(l));
+  if (h1) return h1.replace(/^#\s+/, '').replace(/\s*[—-]\s*$/, '').trim();
+
+  const prose = lines.find(l => l && !l.startsWith('#') && !l.startsWith('-') && !l.startsWith('*'));
+  if (!prose) return 'No description provided.';
+
+  const sentence = prose.split(/(?<=\.)\s/)[0];
+  return sentence.length > 160 ? sentence.slice(0, 157).trimEnd() + '…' : sentence;
+}
+
 function readSkill(dir: string, source: Skill['source']): Skill | null {
   const file = path.join(dir, 'SKILL.md');
   try {
@@ -129,7 +151,12 @@ function readSkill(dir: string, source: Skill['source']): Skill | null {
     // rather than vanishing silently — a silent skip is unexplainable to a user
     // staring at a folder they just created.
     const name = String(meta.name || path.basename(dir)).trim();
-    const description = String(meta.description || '').trim();
+    // Skills written in the section dialect carry no frontmatter, so they used
+    // to list as "No description provided." — which costs catalogue tokens and
+    // tells the model nothing about when to use them. Derive one from the H1
+    // or the first line of prose instead; an accurate summary beats a
+    // placeholder, and omitting the skill entirely would hide real workflows.
+    const description = String(meta.description || '').trim() || deriveDescription(body);
     if (!name || !body) return null;
 
     // Triggers: frontmatter list wins; a "## Triggers" section is the
