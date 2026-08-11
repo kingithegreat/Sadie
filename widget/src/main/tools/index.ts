@@ -174,12 +174,38 @@ const SMALL_MODEL_CORE_TOOLS = new Set([
   'list_processes',
 ]);
 
-export const SMALL_MODEL_MAX_TOOLS = 12;
+/**
+ * Total tools a small model may see.
+ *
+ * This was 12 while SMALL_MODEL_CORE_TOOLS held 14 entries, and the two
+ * numbers were never compared. The consequences were invisible and total:
+ * the core loop pushed all 14, so the category loop's
+ * `if (selected.length >= SMALL_MODEL_MAX_TOOLS) break` fired on its FIRST
+ * iteration, every time, for every request. No category tool was ever added
+ * for any small model — the entire intent-routing path was dead code — and
+ * slice(0, 12) then silently discarded two core tools as well.
+ *
+ * The cap is now 16: enough for all 12 prioritised core tools plus the
+ * reserved category slots below. Same class of bug as the isSmallModel bound
+ * sitting at 3B while every model in use was 7B — a limit that reads as
+ * conservative tuning while actually disabling the feature it bounds.
+ */
+export const SMALL_MODEL_MAX_TOOLS = 16;
+
+/**
+ * Slots held back for tools matching the request's detected categories.
+ *
+ * Without a reservation the core set consumes the entire budget and a CRM or
+ * vision request arrives with no CRM or vision tool attached — the model then
+ * improvises an answer instead of calling anything, which reads as the model
+ * being weak rather than the tool never being offered.
+ */
+export const SMALL_MODEL_CATEGORY_SLOTS = 4;
 
 /**
  * Get a compact tool set for small models.
  * Starts with SMALL_MODEL_CORE_TOOLS, then adds category-specific tools
- * up to SMALL_MODEL_MAX_TOOLS.  This prevents a 3B model from drowning
+ * up to SMALL_MODEL_MAX_TOOLS.  This prevents a small model from drowning
  * in 80+ tool definitions that consume most of its context window.
  */
 export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
@@ -189,22 +215,39 @@ export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; c
     allTools = allTools.filter(t => !DOCUMENT_TOOL_NAMES.includes(t.name));
   }
 
-  // Core tools first (order-preserving)
+  const wantsCategories = !!(options?.categories && options.categories.length > 0);
+  // Hold slots back only when there is something to put in them.
+  const coreBudget = wantsCategories
+    ? Math.max(0, SMALL_MODEL_MAX_TOOLS - SMALL_MODEL_CATEGORY_SLOTS)
+    : SMALL_MODEL_MAX_TOOLS;
+
+  const coreTools = allTools.filter(t => SMALL_MODEL_CORE_TOOLS.has(t.name));
+
+  // Core tools first (order-preserving), bounded so categories can still fit.
   const selected: ToolDefinition[] = [];
   const selectedNames = new Set<string>();
-  for (const t of allTools) {
-    if (SMALL_MODEL_CORE_TOOLS.has(t.name)) {
-      selected.push(t);
-      selectedNames.add(t.name);
-    }
+  for (const t of coreTools) {
+    if (selected.length >= coreBudget) break;
+    selected.push(t);
+    selectedNames.add(t.name);
   }
 
   // Add category-specific tools not already in the core set
-  if (options?.categories && options.categories.length > 0) {
-    const cats = new Set(options.categories);
+  if (wantsCategories) {
+    const cats = new Set(options!.categories);
     for (const t of allTools) {
       if (selected.length >= SMALL_MODEL_MAX_TOOLS) break;
       if (!selectedNames.has(t.name) && t.category && cats.has(t.category)) {
+        selected.push(t);
+        selectedNames.add(t.name);
+      }
+    }
+
+    // Give unused category slots back to the core set rather than shipping a
+    // shorter list than the budget allows.
+    for (const t of coreTools) {
+      if (selected.length >= SMALL_MODEL_MAX_TOOLS) break;
+      if (!selectedNames.has(t.name)) {
         selected.push(t);
         selectedNames.add(t.name);
       }
