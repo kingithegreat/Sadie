@@ -133,6 +133,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   git_commit: { label: 'Make git commits', detail: 'Create a commit in a git repository on your computer.' },
   // Media Studio — the video pipeline. Wording is about what happens to the
   // video, not the pipeline stage, because that is what the decision is about.
+  media_narrate: { label: 'Record narration', detail: 'Turn a video script into an audio file using the built-in voice. Nothing is uploaded.' },
   media_write_script: { label: 'Write a video script', detail: 'Research a video and write its narration using your configured model.' },
   media_create_job: { label: 'Start a video', detail: 'Add a new video to the Media Studio. Nothing is published.' },
   media_list_jobs: { label: 'List your videos', detail: 'See videos in progress and the stage each has reached.' },

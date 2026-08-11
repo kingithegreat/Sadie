@@ -66,6 +66,8 @@ export interface MediaJob {
   script?: string;
   /** Sources gathered by the research stage — kept for attribution. */
   sources?: string[];
+  /** Absolute path to the recorded narration audio, once it exists. */
+  narrationPath?: string;
   /** Absolute path to a rendered file, once one exists. */
   renderPath?: string;
   /** YouTube video id, only ever set after publishing. */

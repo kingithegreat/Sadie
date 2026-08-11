@@ -82,6 +82,18 @@ function findJob(idOrTitle: string): MediaJob | undefined {
     ?? jobs.find(j => j.title.toLowerCase().includes(needle));
 }
 
+/**
+ * Per-job asset folder. Under userData rather than temp, because a rendered
+ * narration is work product that should survive a reboot — temp is swept.
+ */
+function mediaAssetsDir(jobId: string): string {
+  try {
+    return path.join(app.getPath('userData'), 'media-assets', jobId);
+  } catch {
+    return path.join(process.env.TEMP || '/tmp', 'homebot-media-assets', jobId);
+  }
+}
+
 function summarise(j: MediaJob): string {
   return `${j.title} [${j.format}] — ${describeProgress(j)} (id: ${j.id})`;
 }
@@ -318,8 +330,66 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
   }
 };
 
+export const narrateMediaJobDef: ToolDefinition = {
+  name: 'media_narrate',
+  description:
+    'Record the narration for a video whose script is ready, using the same voice HomeBot ' +
+    'speaks with. Produces an audio file and moves the job to media_production. No account ' +
+    'or API key is needed.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title' },
+      voice: { type: 'string', description: 'Optional voice name; defaults to HomeBot\'s configured voice' },
+    },
+    required: ['job'],
+  },
+};
+
+const narrateMediaJobHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err(`No media job matching "${args.job}".`);
+    if (!job.script?.trim()) {
+      return err(`"${job.title}" has no script yet — run media_write_script first.`);
+    }
+    if (job.state !== 'script_draft' && job.state !== 'script_qa') {
+      return err(`"${job.title}" is at ${describeProgress(job)} — narration runs from script_draft or script_qa.`);
+    }
+
+    // Imported lazily: voice.ts pulls in the TTS engine, and media.ts loads
+    // during tool registration at startup.
+    const { renderNarrationToFile } = await import('./voice');
+    const { estimateSpokenSeconds } = await import('../media-generate');
+
+    const dir = mediaAssetsDir(job.id);
+    const out = path.join(dir, 'narration.mp3');
+    const audio = await renderNarrationToFile(job.script, out, {
+      voice: args.voice ? String(args.voice) : undefined,
+    });
+
+    // Record the audio before transitioning, so a failed transition cannot
+    // discard a render that took real time.
+    let updated: MediaJob = { ...job, narrationPath: audio.path };
+    if (updated.state === 'script_draft') {
+      updated = transition(updated, 'script_qa', { by: 'narration stage' });
+    }
+    updated = transition(updated, 'media_production', { by: 'narration stage' });
+    upsert(updated);
+
+    const kb = Math.round(audio.bytes / 1024);
+    return ok(
+      `Recorded narration for "${updated.title}" (~${estimateSpokenSeconds(job.script)}s, ${kb} KB).\n${audio.path}`,
+    );
+  } catch (e: any) {
+    return err(`Could not record the narration: ${e.message}`);
+  }
+};
+
 export const mediaToolDefs: ToolDefinition[] = [
   writeMediaScriptDef,
+  narrateMediaJobDef,
   createMediaJobDef,
   listMediaJobsDef,
   advanceMediaJobDef,
@@ -329,6 +399,7 @@ export const mediaToolDefs: ToolDefinition[] = [
 
 export const mediaToolHandlers: Record<string, ToolHandler> = {
   media_write_script: writeMediaScriptHandler,
+  media_narrate: narrateMediaJobHandler,
   media_create_job: createMediaJobHandler,
   media_list_jobs: listMediaJobsHandler,
   media_advance_job: advanceMediaJobHandler,
