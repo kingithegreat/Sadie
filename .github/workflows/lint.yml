@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       # --ignore-scripts: lint needs only the JS eslint toolchain, not the
       # native/electron postinstall — keeps this job fast and flake-free.
       - name: Install widget dependencies
