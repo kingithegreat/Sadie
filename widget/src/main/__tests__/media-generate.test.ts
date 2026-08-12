@@ -22,6 +22,7 @@ jest.mock('../config-manager', () => ({
 import axios from 'axios';
 import {
   generateText,
+  generateResearch,
   estimateSpokenSeconds,
   checkScript,
 } from '../media-generate';
@@ -90,5 +91,72 @@ describe('checks that run before anything is rendered', () => {
 
   it('reports an empty script rather than treating it as fine', () => {
     expect(checkScript(short, '').join(' ')).toMatch(/empty/i);
+  });
+});
+
+/**
+ * Research through n8n.
+ *
+ * The plan's first content guardrail is "never fabricate quotations or
+ * citations", and asking a model to recall facts is the operation that invents
+ * them. Fetching real pages turns the job into summarising a source. But the
+ * workflow is optional — a video must never be blocked because an integration
+ * nobody installed is missing — so the fallback matters as much as the feature.
+ */
+describe('research prefers n8n, and survives without it', () => {
+  const job = createJob({ title: 'One-Minute Bible: Jonah', brief: 'the storm' });
+
+  it('uses fetched sources when the workflow answers', async () => {
+    post.mockImplementation(async (url: string) => {
+      if (String(url).includes('/webhook/homebot/media-research')) {
+        return {
+          status: 200,
+          data: {
+            text: 'Jonah is a book of the Hebrew Bible, four chapters long.',
+            sources: [{ title: 'Book of Jonah', url: 'https://example.org/jonah' }],
+          },
+        };
+      }
+      return { data: { response: 'A summary drawn from the source material.' } };
+    });
+
+    const res = await generateResearch(job);
+    expect(res.via).toMatch(/n8n research/);
+    // Attribution travels with the brief — a claim is only checkable if its
+    // origin does.
+    expect(res.text).toMatch(/Sources:/);
+    expect(res.text).toMatch(/example\.org\/jonah/);
+  });
+
+  it('falls back to the model when the workflow is not deployed', async () => {
+    post.mockImplementation(async (url: string) => {
+      if (String(url).includes('/webhook/')) return { status: 404, data: '' };
+      return { data: { response: 'Model-only research.' } };
+    });
+
+    const res = await generateResearch(job);
+    expect(res.text).toBe('Model-only research.');
+    expect(res.via).not.toMatch(/n8n/);
+  });
+
+  it('falls back when n8n is unreachable rather than failing the video', async () => {
+    post.mockImplementation(async (url: string) => {
+      if (String(url).includes('/webhook/')) throw Object.assign(new Error('ECONNREFUSED'), { code: 'ECONNREFUSED' });
+      return { data: { response: 'Model-only research.' } };
+    });
+
+    await expect(generateResearch(job)).resolves.toMatchObject({ text: 'Model-only research.' });
+  });
+
+  it('falls back when the workflow answers with nothing useful', async () => {
+    // A deployed-but-empty result is worse than none: it would produce a script
+    // grounded in silence.
+    post.mockImplementation(async (url: string) => {
+      if (String(url).includes('/webhook/')) return { status: 200, data: { text: '   ', sources: [] } };
+      return { data: { response: 'Model-only research.' } };
+    });
+
+    const res = await generateResearch(job);
+    expect(res.via).not.toMatch(/n8n/);
   });
 });

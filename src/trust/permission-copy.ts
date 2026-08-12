@@ -138,6 +138,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   click_browser_target: { label: 'Click in the browser', detail: 'Click a link or button in the browser panel, using your logged-in sessions.' },
   type_in_browser: { label: 'Type in the browser', detail: 'Type text into a field on the page in the browser panel.' },
   navigate_browser: { label: 'Open a web page', detail: 'Open a web address in the browser panel.' },
+  media_setup_research: { label: 'Set up video research', detail: 'Add a workflow to your n8n so video scripts are written from real fetched sources.' },
   media_narrate: { label: 'Record narration', detail: 'Turn a video script into an audio file using the built-in voice. Nothing is uploaded.' },
   media_write_script: { label: 'Write a video script', detail: 'Research a video and write its narration using your configured model.' },
   media_create_job: { label: 'Start a video', detail: 'Add a new video to the Media Studio. Nothing is published.' },

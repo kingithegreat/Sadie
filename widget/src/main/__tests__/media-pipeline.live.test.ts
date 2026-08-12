@@ -21,7 +21,17 @@ jest.mock('../mcp-client', () => ({
 jest.mock('electron', () => ({
   app: {
     isPackaged: false,
-    getPath: jest.fn(() => require('os').tmpdir()),
+    // Point at the REAL userData when running live, so the pipeline uses the
+    // provider actually configured in the app. Mocking this to tmpdir meant the
+    // run read an empty settings file and silently fell back to Ollama — it
+    // was testing the default, not the setup.
+    getPath: jest.fn((name?: string) => {
+      if (process.env.HOMEBOT_LIVE === '1' && name === 'userData') {
+        const path = require('path');
+        return path.join(process.env.APPDATA || require('os').homedir(), 'HomeBot');
+      }
+      return require('os').tmpdir();
+    }),
     getAppPath: jest.fn(() => require('os').tmpdir()),
   },
   ipcMain: { on: jest.fn(), handle: jest.fn() },
@@ -58,6 +68,13 @@ maybe('the pipeline, end to end, on real services', () => {
     expect(created.success).toBe(true);
 
     // --- research + script, on whichever model is configured ---
+    // Say which provider this run will actually use, so a result can never be
+    // attributed to the wrong model.
+    const { getSettings } = await import('../config-manager');
+    const s: any = getSettings();
+    // eslint-disable-next-line no-console
+    console.log(`provider: useCustomLLM=${s?.useCustomLLM} ${s?.customLLM?.provider ?? '(local)'} / ${s?.customLLM?.model ?? s?.chatModel ?? 'ollama'}`);
+
     const scripted: any = await call('media_write_script', { job: 'Jonah' });
     // eslint-disable-next-line no-console
     console.log('\n--- media_write_script ---\n', scripted.success ? scripted.result : scripted.error);

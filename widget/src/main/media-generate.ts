@@ -24,6 +24,7 @@ import axios from 'axios';
 import { getSettings } from './config-manager';
 import { resolveCloudLLM } from '../shared/cloud-llm';
 import { generateFromCustomLLM } from './custom-llm-client';
+import { MEDIA_RESEARCH_PATH } from './n8n-media-workflows';
 import type { MediaJob } from './media-studio';
 
 /** Where the text came from, so a caller can say so rather than guess. */
@@ -113,8 +114,71 @@ const TARGET_WORDS: Record<string, string> = {
   long: 'about 800-1200 words, which is roughly 6-9 minutes read aloud',
 };
 
-/** Research brief for a job at the researching stage. */
+/**
+ * Ask the n8n research workflow for real sources.
+ *
+ * Returns null when the workflow is not deployed, n8n is down, or it comes
+ * back empty — every one of which is a reason to fall back, not to fail. A
+ * video should never be blocked because an optional integration is missing.
+ */
+async function researchViaN8n(topic: string): Promise<{ text: string; sources: string[] } | null> {
+  try {
+    const settings: any = getSettings();
+    const base = (settings?.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
+    const res = await axios.post(
+      `${base}/webhook/${MEDIA_RESEARCH_PATH}`,
+      { topic },
+      { timeout: 25_000, validateStatus: () => true },
+    );
+    if (res.status !== 200) return null;
+
+    const data: any = Array.isArray(res.data) ? res.data[0] : res.data;
+    const text = String(data?.text || '').trim();
+    const sources: string[] = Array.isArray(data?.sources)
+      ? data.sources.map((s: any) => `${s.title || ''} — ${s.url || ''}`.trim()).filter(Boolean)
+      : [];
+    if (!text) return null;
+    return { text, sources };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Research brief for a job at the researching stage.
+ *
+ * Prefers the n8n workflow, because summarising fetched text is a different
+ * and far safer job than asking a model to recall facts — the plan's first
+ * content guardrail is "never fabricate quotations or citations", and recall
+ * is the operation that invents them. Falls back to the model when the
+ * workflow is not deployed.
+ */
 export async function generateResearch(job: MediaJob): Promise<GeneratedText> {
+  const topic = [job.title, job.brief].filter(Boolean).join(' — ');
+
+  const fetched = await researchViaN8n(topic);
+  if (fetched) {
+    const summarised = await generateText(
+      RESEARCH_SYSTEM,
+      [
+        `Working title: ${job.title}`,
+        job.brief ? `Brief: ${job.brief}` : '',
+        '',
+        'Source material gathered from the web:',
+        fetched.text,
+        '',
+        'Summarise ONLY what the source material supports. Mark anything it does',
+        'not clearly support with UNVERIFIED.',
+      ].filter(Boolean).join('\n'),
+    );
+    return {
+      // Keep the source list with the brief: the plan requires attribution, and
+      // a claim is only checkable if its origin travels with it.
+      text: [summarised.text, '', 'Sources:', ...fetched.sources].join('\n'),
+      via: `${summarised.via} + n8n research`,
+    };
+  }
+
   const prompt = [
     `Working title: ${job.title}`,
     job.brief ? `Brief: ${job.brief}` : '',

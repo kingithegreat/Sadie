@@ -49,6 +49,7 @@ export interface WebhookCheck {
 export const KNOWN_WEBHOOKS: Array<{ path: string; powers: string }> = [
   { path: 'homebot/calendar', powers: 'Google Calendar events in chat and the morning briefing' },
   { path: 'homebot/chat', powers: 'routing chat through an n8n workflow' },
+  { path: 'homebot/media-research', powers: 'real sources for Media Studio scripts, instead of the model recalling facts' },
 ];
 
 const PROBE_TIMEOUT_MS = 4000;
