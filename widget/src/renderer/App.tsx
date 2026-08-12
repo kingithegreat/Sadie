@@ -1438,9 +1438,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // the Workspace and finding an icon in its activity bar — two levels
         // deep, with nothing on the main screen suggesting a browser existed.
         // Closing it returns to chat rather than leaving a blank mode.
-        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <BrowserPanel onClose={() => setMode('chat')} />
-        </Suspense>
+        // Wrapped: .browser-panel is styled for the Workspace GRID (grid-row: 1,
+        // width clamped to ~34vw), so dropped into a mode it renders as a narrow
+        // column in the corner. The wrapper gives it a full-size context.
+        <div className="browser-mode">
+          <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+            <BrowserPanel onClose={() => setMode('chat')} />
+          </Suspense>
+        </div>
       ) : (
         // Quiz is the final branch now. The Web Services panel used to be the
         // catch-all `else`, which meant any unrecognised mode silently rendered

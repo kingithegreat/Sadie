@@ -9415,3 +9415,21 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   .ms-job { grid-template-columns: 1fr; align-items: start; }
   .ms-job-actions { justify-content: flex-start; }
 }
+
+/* Browser as a full mode.
+   .browser-panel is authored for the Workspace grid — grid-row: 1 and an
+   inline-size clamped to about a third of the viewport — so used as a mode it
+   renders as a narrow column in the corner. This wrapper gives it a full-size
+   context and overrides only the two properties that assume a grid. */
+.browser-mode {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+.browser-mode > .browser-panel {
+  grid-row: auto;
+  inline-size: 100%;
+  block-size: 100%;
+  border-inline-start: none;
+}
