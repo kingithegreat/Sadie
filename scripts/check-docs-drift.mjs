@@ -139,7 +139,12 @@ function main() {
   const { handled, pushed } = extractChannels(walk(MAIN_DIR));
   const expected = buildIndex({ methods, handled, pushed });
 
-  const doc = readFileSync(DOC, 'utf-8');
+  // Normalised on read: the index below is generated with \n, but git checks
+  // this file out with \r\n on Windows, so a raw comparison reports drift on
+  // every fresh checkout. The developer then runs docs:write, gets a diff git
+  // normalises away to nothing, and learns to ignore the guard — which is
+  // worse than not having one.
+  const doc = readFileSync(DOC, 'utf-8').replace(/\r\n/g, '\n');
   const hasBlock = doc.includes(BEGIN) && doc.includes(END);
 
   const next = hasBlock
