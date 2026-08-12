@@ -48,9 +48,24 @@ jobs:
 
       - name: Fix Electron sandbox permissions
         if: runner.os == 'Linux'
+        # Best-effort. chrome-sandbox is not always present after npm ci here,
+        # and this step used to `set -e` the whole job on the missing path --
+        # so this workflow died in setup on every run and never once reached a
+        # test. An advisory check that reports on nothing is worse than no
+        # check: it reads as a known-red you learn to scroll past.
+        #
+        # The sharded widget-e2e workflow runs Electron on ubuntu without this
+        # step at all, so it is not a prerequisite. If the sandbox genuinely
+        # matters the tests below will say so, loudly and for the right reason.
         run: |
-          sudo chown root:root widget/node_modules/electron/dist/chrome-sandbox
-          sudo chmod 4755 widget/node_modules/electron/dist/chrome-sandbox
+          SANDBOX=widget/node_modules/electron/dist/chrome-sandbox
+          if [ -f "$SANDBOX" ]; then
+            sudo chown root:root "$SANDBOX"
+            sudo chmod 4755 "$SANDBOX"
+            echo "sandbox: permissions set"
+          else
+            echo "sandbox: $SANDBOX absent — continuing (tests run with --no-sandbox)"
+          fi
 
       - name: Install Playwright browsers
         run: npm run e2e:install --prefix widget
