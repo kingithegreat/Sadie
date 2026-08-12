@@ -2149,7 +2149,12 @@ export function detectToolCategories(message: string): string[] {
   // Media Studio — the video pipeline. Kept as its own category rather than
   // folded into 'utility', which is already overloaded enough that 20+ tools
   // contend for four slots.
-  if (/\b(video|videos|youtube|shorts?|script|scripts|channel|episode|thumbnail|narration|render|publish|upload)\b/.test(m)) cats.add('media');
+  // "media studio" is matched as a phrase because bare "media" would drag in
+  // every mention of social media. Naming the panel is the most direct way a
+  // user can ask for it, and it routed to 'web' — on the word "research" —
+  // which offered no media tool at all.
+  if (/\b(video|videos|youtube|shorts?|script|scripts|channel|episode|thumbnail|narration|captions?|voice-?over|render|publish|upload)\b/.test(m)
+    || /media\s*studio/.test(m)) cats.add('media');
   if (/\b(process|task\s*manager|kill|cpu|ram|memory\s*usage)\b/.test(m)) cats.add('system');
   if (/\b(clipboard|copy|paste)\b/.test(m)) cats.add('utility');
   // CRM had NO patterns here, and getSmallModelTools only adds category tools
