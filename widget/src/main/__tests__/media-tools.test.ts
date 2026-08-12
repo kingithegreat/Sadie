@@ -57,6 +57,25 @@ describe('a video request reaches the Media Studio', () => {
     expect(detectToolCategories(prompt)).toContain('media');
   });
 
+  it.each([
+    'enable web research for the media studio',
+    'open the media studio',
+    'add captions to that',
+    'redo the voiceover',
+  ])('"%s" routes to media too', (prompt) => {
+    // Naming the panel is the most direct way to ask for it, and it used to
+    // route on "research" to 'web' — offering no media tool at all.
+    expect(detectToolCategories(prompt)).toContain('media');
+  });
+
+  it.each([
+    'write a social media post about the launch',
+    'schedule a social media update',
+  ])('"%s" does not', (prompt) => {
+    // The reason "media studio" is matched as a phrase and bare "media" is not.
+    expect(detectToolCategories(prompt)).not.toContain('media');
+  });
+
   it('a small model is offered a media tool for a video request', () => {
     const prompt = 'what videos are waiting for approval';
     const offered = getSmallModelTools({
