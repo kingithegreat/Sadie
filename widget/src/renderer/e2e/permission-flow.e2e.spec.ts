@@ -172,6 +172,10 @@ test('no permission modal when permissions already allowed', async () => {
 
   const res: any = await invoke;
   expect(res.ok).toBe(true);
+  // The batch envelope is ok even when a call inside it failed, which is how
+  // this test used to report a confusing "file missing" instead of the actual
+  // refusal. Assert the call itself.
+  expect(res.result?.[0]?.success).toBe(true);
 
   // Verify the report file was created
   const reportPath = path.join(tmp, 'Desktop', 'TestNBA', 'report.txt');

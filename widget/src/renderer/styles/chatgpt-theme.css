@@ -1874,7 +1874,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  /* 100 put this UNDER .app-header (300), so the header covered the top of the
+     dialog — including its ✕. The button rendered, reported visible and
+     enabled, and could not be clicked, because elementFromPoint at its centre
+     returned .app-header. Escape or a click outside were the only ways to
+     close Settings.
+
+     1000 is this file's documented floor for modals (see the workspace-shell
+     note: header 300, full-view shells 500, modals and toasts from 1000). */
+  z-index: 1000;
   animation: fadeOverlay 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -4493,13 +4501,25 @@ body {
 
 /* ===================== Safety & Debugging Helpers ===================== */
 /* Clamp common overlays below the onboarding modal to avoid accidental stacking
-   If an overlay truly needs to be above onboarding, explicitly add `.force-top`. */
+   If an overlay truly needs to be above onboarding, explicitly add `.force-top`.
+
+   The clamp was 200, which is BELOW .app-header (300) — so it did not just
+   keep these under onboarding, it put every one of them under the app header.
+   The header then covered the top strip of each: the settings dialog's ✕ could
+   not be clicked at all (elementFromPoint at its centre returned .app-header),
+   and .confirmation-overlay — the permission dialog, designed at 1000 — was
+   dragged down with it, so part of the prompt that authorises tool calls sat
+   under the header too.
+
+   1000 keeps the stated intent (onboarding is 9000, still well above) while
+   respecting this file's own layering: header 300, full-view shells 500,
+   modals and toasts from 1000. */
 .settings-overlay,
 .confirmation-overlay,
 .sidebar-backdrop,
 .conversation-sidebar,
 .drop-overlay {
-  z-index: 200 !important;
+  z-index: 1000 !important;
   background: rgba(0, 0, 0, 0.45) !important;
 }
 

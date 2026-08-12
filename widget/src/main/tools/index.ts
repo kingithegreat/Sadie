@@ -29,7 +29,7 @@ import {
   ToolCall
 } from './types';
 import { fileSystemTools } from './filesystem';
-import { assertPermission } from '../config-manager';
+import { assertPermission, hasStandingConsent } from '../config-manager';
 import { systemToolDefs, systemToolHandlers } from './system';
 import { webToolDefs, webToolHandlers } from './web';
 import { voiceToolDefs, voiceToolHandlers } from './voice';
@@ -433,7 +433,15 @@ export async function executeTool(
     // every start, and scheduled automations run with nobody present to ask.
     // assistant-bridge.ts also documents that every call through executeTool
     // enforces assertPermission + requestConfirmation, which this made untrue.
-    if (!context.requestConfirmation) {
+    // ...unless the user already said yes, standing. "Always allow" is consent
+    // given in advance; refusing it would mean a scheduled automation can never
+    // touch a tool the user explicitly allowed, which is most of the point of
+    // the Automation Center. hasStandingConsent only counts a permission the
+    // user MOVED to allowed — a tool that ships allowed (run_terminal_command)
+    // still refuses here, so the dangerous case stays closed.
+    const standing = hasStandingConsent(call.name);
+
+    if (!context.requestConfirmation && !standing) {
       console.warn(`[HomeBot Tools] ${call.name} needs confirmation but this run cannot ask — refusing`);
       try { logTelemetryEvent('tool_call', { tool: call.name, outcome: 'no_confirmation_channel', duration_ms: 0 }); } catch (_e) {}
       return {
@@ -444,7 +452,12 @@ export async function executeTool(
 
     const confirmMessage = formatConfirmationMessage(call.name, call.arguments);
     console.log(`[HomeBot Tools] Requesting confirmation: ${confirmMessage}`);
-    const confirmed = await context.requestConfirmation(confirmMessage);
+    // Reached with standing consent and no channel to ask on — proceeding is
+    // the point of the standing grant, and calling a callback that is not
+    // there would throw.
+    const confirmed = context.requestConfirmation
+      ? await context.requestConfirmation(confirmMessage)
+      : true;
 
     if (!confirmed) {
       console.log(`[HomeBot Tools] User cancelled operation`);
