@@ -1,7 +1,31 @@
 import { test, expect } from '@playwright/test';
 process.env.HOMEBOT_E2E = 'true';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
+
+/**
+ * A throwaway profile pointing the app at this spec's mock server.
+ *
+ * Without one the app uses the real user profile, and the stored ollamaUrl
+ * wins over the OLLAMA_URL env var. On a dev box that points at a running
+ * Ollama so the send goes through; on CI there is none, the app shows "Ollama
+ * Offline", no /api/chat POST is ever made, and the recorded request is
+ * undefined. The test was passing here for a reason that had nothing to do
+ * with what it asserts.
+ */
+function seedProfile(ollamaUrl: string) {
+  const dir = path.join(os.tmpdir(), `homebot-e2e-sysprompt-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+  fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'config', 'user-settings.json'),
+    JSON.stringify({ firstRun: false, theme: 'dark', ollamaUrl }, null, 2),
+    'utf-8',
+  );
+  return dir;
+}
 
 async function completeFirstRunWizardIfVisible(page: any) {
   const firstRunHeader = page.getByText('Welcome to HomeBot');
@@ -82,7 +106,7 @@ test('conversation system prompt is sent to model (prepended)', async () => {
     HOMEBOT_E2E_BYPASS_MOCK: '1',
     HOMEBOT_DIRECT_OLLAMA: '1',
     NODE_ENV: 'test'
-  });
+  }, seedProfile(base));
   await waitForAppReady(page);
 
   // Ensure first-run modal (if any) is dismissed so we can interact with main UI
@@ -138,8 +162,13 @@ test('conversation system prompt is sent to model (prepended)', async () => {
     console.log('[E2E-DEBUG] failed to read debug logs', String(e));
   }
 
-  // Wait a short time for the renderer -> main -> /api/chat POST to be made
-  await page.waitForTimeout(600);
+  // Wait for the renderer -> main -> /api/chat POST to actually arrive rather
+  // than sleeping a fixed 600ms: a CI runner is slower than a dev box, so the
+  // fixed wait made the result depend on the machine.
+  const postDeadline = Date.now() + 15_000;
+  while (!(server as any)._lastApiChat && Date.now() < postDeadline) {
+    await page.waitForTimeout(200);
+  }
 
   // Grab the captured /api/chat request body from the mock server
   const recorded = (server as any)._lastApiChat;

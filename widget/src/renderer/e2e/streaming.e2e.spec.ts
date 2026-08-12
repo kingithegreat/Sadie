@@ -1,9 +1,42 @@
 import { test, expect } from '@playwright/test';
 // Ensure we force E2E mock behavior in tests
 process.env.HOMEBOT_E2E = 'true';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { startMockUpstream } from './mockUpstream';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
+
+/**
+ * A throwaway profile pointing the app at a given Ollama URL.
+ *
+ * Without one the app uses the real user profile, whose stored ollamaUrl beats
+ * the OLLAMA_URL env var. On a machine running Ollama the send succeeds; on CI
+ * it does not, and the assistant message is an "Ollama Offline" card rather
+ * than the streamed answer the assertion reads.
+ */
+function seedProfile(ollamaUrl: string) {
+  const dir = path.join(os.tmpdir(), `homebot-e2e-streaming-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+  fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'config', 'user-settings.json'),
+    JSON.stringify({
+      firstRun: false,
+      theme: 'dark',
+      ollamaUrl,
+      // The mock advertises exactly one model in /api/tags. Uncensored mode is
+      // ON by default and would pick dolphin-mistral:7b, which the mock does
+      // not serve, so the app reports Ollama unreachable before it ever
+      // streams — and the fallback under test never runs.
+      uncensoredMode: false,
+      chatModel: 'mock-model',
+      ollamaModel: 'mock-model',
+    }, null, 2),
+    'utf-8',
+  );
+  return dir;
+}
 
 async function completeFirstRunWizardIfVisible(page: any) {
   const firstRunHeader = page.getByText('Welcome to HomeBot');
@@ -32,7 +65,7 @@ test('streams chunks to UI', async () => {
     HOMEBOT_E2E_BYPASS_MOCK: '0',
     HOMEBOT_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
-  });
+  }, seedProfile(upstream.baseUrl));
   await waitForAppReady(page);
   await completeFirstRunWizardIfVisible(page);
 
@@ -117,7 +150,7 @@ test('cancel stops stream', async () => {
     HOMEBOT_E2E_BYPASS_MOCK: '0',
     HOMEBOT_DIRECT_OLLAMA: '0',
     NODE_ENV: 'test',
-  });
+  }, seedProfile(upstream.baseUrl));
   await waitForAppReady(page);
   await completeFirstRunWizardIfVisible(page);
 
@@ -303,10 +336,11 @@ test('falls back to non-stream final text on stream init error', async () => {
     OPENAI_ENDPOINT: `${base}/mock-sse`,
     PROXY_RETRY_ENABLED: 'false',
     HOMEBOT_E2E: '1',
+    OLLAMA_URL: base,
     HOMEBOT_E2E_BYPASS_MOCK: '1',
     HOMEBOT_DIRECT_OLLAMA: '1',
     NODE_ENV: 'test',
-  });
+  }, seedProfile(base));
   await waitForAppReady(page);
 
   // If the first-run modal is visible (fresh profile), finish setup so the test can interact with the main UI

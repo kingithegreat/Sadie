@@ -2887,6 +2887,18 @@ export async function streamFromOllamaWithTools(
     if (ragSnippet) {
       messages.push({ role: 'system', content: ragSnippet });
     }
+
+  // ── Uncensored mode: drop OUR framing, keep the user's own instructions ──
+  // Both branches above are gated on !uncensoredModeEnabled, so with uncensored
+  // mode on nothing was sent as a system message at all — and convPrompt was
+  // computed a hundred lines up and silently thrown away.
+  //
+  // Suppressing HomeBot's own prompt is the point of uncensored mode. Silently
+  // discarding what the USER typed into Chat guidelines for this conversation
+  // is not: they wrote it, for this chat, and it just stopped applying. And
+  // uncensoredMode ships as TRUE, so this was the default experience.
+  } else if (convPrompt) {
+    messages.push({ role: 'system', content: convPrompt });
   }
 
   // Only send the most recent N messages — older turns are already in the digest
