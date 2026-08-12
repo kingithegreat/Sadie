@@ -374,6 +374,28 @@ export function assertPermission(toolName: string, defaultValue: boolean = false
   return defaultValue;
 }
 
+/**
+ * Has the user granted this tool standing permission — "Always allow"?
+ *
+ * Only true when the stored permission is `true` AND the shipped default is
+ * not, i.e. the user moved it. That distinction is the whole point. A run with
+ * no way to ask must refuse a tool that needs confirmation, but "Always allow"
+ * is consent already given, and refusing it means a scheduled automation can
+ * never write a file the user explicitly allowed.
+ *
+ * Checking `permissions[name] === true` alone would not do: run_terminal_command
+ * requires confirmation and ships defaulting to true, so that test would let an
+ * unattended run execute arbitrary shell commands — reopening the fail-open
+ * hole this pairs with. A tool that ships allowed gets no standing consent from
+ * merely staying allowed; the user has to have chosen it.
+ */
+export function hasStandingConsent(toolName: string): boolean {
+  const settings = getSettings();
+  const granted = settings?.permissions?.[toolName] === true;
+  const shippedAllowed = (DEFAULT_SETTINGS.permissions as Record<string, boolean> | undefined)?.[toolName] === true;
+  return granted && !shippedAllowed;
+}
+
 export function getSettingsPath(): string {
   const userDataPath = app.getPath('userData');
   const path = join(userDataPath, 'config', 'user-settings.json');
