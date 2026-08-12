@@ -133,6 +133,11 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   git_commit: { label: 'Make git commits', detail: 'Create a commit in a git repository on your computer.' },
   // Media Studio — the video pipeline. Wording is about what happens to the
   // video, not the pipeline stage, because that is what the decision is about.
+  read_browser_page: { label: 'Read the open page', detail: 'Read the text of the page in the browser panel.' },
+  list_browser_targets: { label: 'See what is on the page', detail: 'List the links, buttons and fields visible in the browser panel.' },
+  click_browser_target: { label: 'Click in the browser', detail: 'Click a link or button in the browser panel, using your logged-in sessions.' },
+  type_in_browser: { label: 'Type in the browser', detail: 'Type text into a field on the page in the browser panel.' },
+  navigate_browser: { label: 'Open a web page', detail: 'Open a web address in the browser panel.' },
   media_narrate: { label: 'Record narration', detail: 'Turn a video script into an audio file using the built-in voice. Nothing is uploaded.' },
   media_write_script: { label: 'Write a video script', detail: 'Research a video and write its narration using your configured model.' },
   media_create_job: { label: 'Start a video', detail: 'Add a new video to the Media Studio. Nothing is published.' },

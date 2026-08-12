@@ -190,6 +190,19 @@ export const rejectMediaJobDef: ToolDefinition = {
 const ok = (result: any): ToolResult => ({ success: true, result } as ToolResult);
 const err = (error: string): ToolResult => ({ success: false, error } as ToolResult);
 
+/**
+ * Not everything thrown is an Error.
+ *
+ * msedge-tts rejects with a bare string, so `e.message` is undefined and the
+ * user was told "Could not record the narration: undefined" — a message that
+ * names the stage and then says nothing at all. Found by running the pipeline
+ * for real; every mocked test passed.
+ */
+function errText(e: any): string {
+  if (typeof e === 'string') return e;
+  return e?.message || String(e ?? 'unknown error');
+}
+
 const createMediaJobHandler: ToolHandler = async (args) => {
   try {
     const job = createJob({
@@ -200,7 +213,7 @@ const createMediaJobHandler: ToolHandler = async (args) => {
     upsert(job);
     return ok(`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`);
   } catch (e: any) {
-    return err(`media_create_job failed: ${e.message}`);
+    return err(`media_create_job failed: ${errText(e)}`);
   }
 };
 
@@ -214,7 +227,7 @@ const listMediaJobsHandler: ToolHandler = async (args) => {
     }
     return ok(jobs.map(summarise).join('\n'));
   } catch (e: any) {
-    return err(`media_list_jobs failed: ${e.message}`);
+    return err(`media_list_jobs failed: ${errText(e)}`);
   }
 };
 
@@ -243,7 +256,7 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
     return ok(`"${moved.title}" → ${describeProgress(moved)}`);
   } catch (e: any) {
     // The state machine's messages already name the allowed next states.
-    return err(e.message);
+    return err(errText(e));
   }
 };
 
@@ -260,7 +273,7 @@ const approveMediaJobHandler: ToolHandler = async (args) => {
     upsert(moved);
     return ok(`Approved "${moved.title}". It can now be scheduled and published.`);
   } catch (e: any) {
-    return err(e.message);
+    return err(errText(e));
   }
 };
 
@@ -278,7 +291,7 @@ const rejectMediaJobHandler: ToolHandler = async (args) => {
       ? `Sent "${moved.title}" back for revision.`
       : `Rejected "${moved.title}".`);
   } catch (e: any) {
-    return err(e.message);
+    return err(errText(e));
   }
 };
 
@@ -336,7 +349,7 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
       script.text,
     ].join('\n'));
   } catch (e: any) {
-    return err(`Could not write the script: ${e.message}`);
+    return err(`Could not write the script: ${errText(e)}`);
   }
 };
 
@@ -371,7 +384,6 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     // Imported lazily: voice.ts pulls in the TTS engine, and media.ts loads
     // during tool registration at startup.
     const { renderNarrationToFile } = await import('./voice');
-    const { estimateSpokenSeconds } = await import('../media-generate');
 
     const dir = mediaAssetsDir(job.id);
     const out = path.join(dir, 'narration.mp3');
@@ -379,9 +391,30 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
       voice: args.voice ? String(args.voice) : undefined,
     });
 
+    // Captions come from the script we already have, timed against the real
+    // audio length — no speech recognition, because we are not recovering
+    // unknown text, only its timing. Written next to the audio so the render
+    // stage finds them without a separate step anyone could forget.
+    const { buildCaptions } = await import('../media-captions');
+    const caps = buildCaptions(job.script, audio.bytes);
+    const srtPath = path.join(dir, 'captions.srt');
+    const vttPath = path.join(dir, 'captions.vtt');
+    try {
+      fs.writeFileSync(srtPath, caps.srt, 'utf8');
+      fs.writeFileSync(vttPath, caps.vtt, 'utf8');
+    } catch (e) {
+      // Captions are not worth losing a finished narration over.
+      console.error('[Media Studio] could not write captions:', e);
+    }
+
     // Record the audio before transitioning, so a failed transition cannot
     // discard a render that took real time.
-    let updated: MediaJob = { ...job, narrationPath: audio.path };
+    let updated: MediaJob = {
+      ...job,
+      narrationPath: audio.path,
+      captionsPath: fs.existsSync(srtPath) ? srtPath : undefined,
+      durationSeconds: Math.round(caps.durationSeconds),
+    };
     if (updated.state === 'script_draft') {
       updated = transition(updated, 'script_qa', { by: 'narration stage' });
     }
@@ -389,11 +422,15 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     upsert(updated);
 
     const kb = Math.round(audio.bytes / 1024);
-    return ok(
-      `Recorded narration for "${updated.title}" (~${estimateSpokenSeconds(job.script)}s, ${kb} KB).\n${audio.path}`,
-    );
+    // Report the MEASURED duration, not the word-count estimate — the estimate
+    // was only ever a stand-in until real audio existed.
+    return ok([
+      `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB.`,
+      `audio:    ${audio.path}`,
+      updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
+    ].join('\n'));
   } catch (e: any) {
-    return err(`Could not record the narration: ${e.message}`);
+    return err(`Could not record the narration: ${errText(e)}`);
   }
 };
 

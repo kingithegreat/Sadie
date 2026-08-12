@@ -18,15 +18,30 @@ jest.mock('electron', () => ({
   },
 }));
 
-// Mock fs and os for temp file handling
+// Mock fs and os for temp file handling.
+// statSync reports a non-empty file: voice.ts verifies the rendered audio
+// actually exists and has bytes before announcing it as speech, so a mock
+// without statSync makes every call fall through to the Web Speech fallback.
 jest.mock('fs', () => ({
   existsSync: jest.fn().mockReturnValue(true),
   mkdirSync: jest.fn(),
   unlinkSync: jest.fn(),
+  rmdirSync: jest.fn(),
+  statSync: jest.fn().mockReturnValue({ size: 42_000 }),
 }));
 
-// Mock msedge-tts
-const mockToFile = jest.fn().mockResolvedValue(undefined);
+// Mock msedge-tts.
+//
+// toFile resolves with { audioFilePath } in msedge-tts 2.x and writes
+// audio.mp3 into the DIRECTORY it is given — 1.x took a file path and returned
+// nothing. The mock returns the 2.x shape, and voice.ts now verifies the
+// result exists and is non-empty, so a render that silently produced nothing
+// is reported instead of being announced as speech.
+const mockToFile = jest.fn().mockImplementation(async (dir: string) => ({
+  audioFilePath: `${dir}/audio.mp3`,
+  metadataFilePath: null,
+  requestId: 'test',
+}));
 const mockSetMetadata = jest.fn().mockResolvedValue(undefined);
 const mockGetVoices = jest.fn().mockResolvedValue([
   { ShortName: 'en-US-AvaNeural', FriendlyName: 'Microsoft Ava (Natural)', Locale: 'en-US', Gender: 'Female' },

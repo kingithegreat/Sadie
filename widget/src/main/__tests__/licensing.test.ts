@@ -26,6 +26,12 @@ describe('main-process licensing wiring', () => {
     mkdirSync(temp, { recursive: true });
     delete process.env.LEMONSQUEEZY_API_KEY;
     delete process.env.LEMONSQUEEZY_STORE_ID;
+    // The owner override. Set as a persistent USER environment variable on the
+    // dev machine to unlock Pro, it leaked into the test process and turned
+    // every "defaults to Free" assertion Pro — locally only, so CI stayed green
+    // while the suite failed on the machine that set it. A test about default
+    // tier must not depend on whose computer it runs on.
+    delete process.env.HOMEBOT_TIER;
   });
 
   afterAll(() => {

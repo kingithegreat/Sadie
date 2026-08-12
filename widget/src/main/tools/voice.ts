@@ -102,18 +102,28 @@ export async function renderNarrationToFile(
   const rate = opts?.rate ?? 0;
   const pitch = opts?.pitch ?? 0;
 
-  await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-  await tts.toFile(outPath, clean, {
+  // msedge-tts 2.x takes a DIRECTORY and writes audio.mp3 inside it, returning
+  // { audioFilePath }. 1.x took a file path. Passing a file path to 2.x makes
+  // it try to open "<yourfile.mp3>/audio.mp3" and fail with ENOENT.
+  const dir = outPath.toLowerCase().endsWith('.mp3') ? path.dirname(outPath) : outPath;
+  // Sync fs, matching ensureCacheDir above. fs.promises is a separate object
+  // that this module's existing test mock does not provide, and reaching for
+  // it made every speak call fall through to the Web Speech fallback.
+  fs.mkdirSync(dir, { recursive: true });
+
+  const res: any = await tts.toFile(dir, clean, {
     rate: rate >= 0 ? `+${rate}%` : `${rate}%`,
     pitch: pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`,
     volume: '100%',
   } as any);
 
-  // msedge-tts appends its own extension in some versions; accept either.
-  const candidates = [outPath, `${outPath}.mp3`];
+  // Trust the returned path when given, but still stat it: a path to an empty
+  // file would otherwise be reported as a successful narration.
+  const candidates = [res?.audioFilePath, path.join(dir, 'audio.mp3'), outPath]
+    .filter(Boolean) as string[];
   for (const c of candidates) {
     try {
-      const st = await fs.promises.stat(c);
+      const st = fs.statSync(c);
       if (st.size > 0) return { path: c, bytes: st.size };
     } catch { /* try the next candidate */ }
   }
@@ -198,27 +208,24 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
 
     ensureCacheDir();
 
-    // Generate audio with Edge TTS
-    const tts = await getTTS();
-    const audioFile = path.join(TTS_CACHE_DIR, `homebot-${Date.now()}.mp3`);
-
     // Build SSML rate/pitch prosody
     const rate = typeof args.rate === 'number' ? args.rate : 0;
     const pitch = typeof args.pitch === 'number' ? args.pitch : 0;
     const volume = Math.max(0, Math.min(1, args.volume ?? 1.0));
 
-    const rateStr = rate >= 0 ? `+${rate}%` : `${rate}%`;
-    const pitchStr = pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`;
-
-    await tts.toFile(audioFile, text, {
-      rate: rateStr,
-      pitch: pitchStr,
-      volume: `${Math.round(volume * 100)}%`,
-    } as any);
+    // msedge-tts 2.x writes audio.mp3 into a DIRECTORY and returns its path;
+    // 1.x took a file path. Reuse the shared helper so speaking and narrating
+    // cannot drift apart on this again.
+    const rendered = await renderNarrationToFile(
+      text,
+      path.join(TTS_CACHE_DIR, `homebot-${Date.now()}`),
+      { voice: args.voice ? String(args.voice) : undefined, rate, pitch },
+    );
+    const audioFileOut = rendered.path;
 
     // Play in renderer via HTML5 Audio
     // Windows paths need file:///C:/... (three slashes)
-    const normalized = audioFile.replace(/\\/g, '/');
+    const normalized = audioFileOut.replace(/\\/g, '/');
     const fileUrl = normalized.startsWith('/') ? `file://${normalized}` : `file:///${normalized}`;
     await mainWindow.webContents.executeJavaScript(`
       (function() {
@@ -238,8 +245,13 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
       })()
     `);
 
-    // Clean up temp file after a delay
-    setTimeout(() => { try { fs.unlinkSync(audioFile); } catch {} }, 120000);
+    // Clean up temp file after a delay. 2.x writes into a per-call directory,
+    // so remove the directory rather than leaving an empty one behind on every
+    // spoken reply.
+    setTimeout(() => {
+      try { fs.unlinkSync(audioFileOut); } catch {}
+      try { fs.rmdirSync(path.dirname(audioFileOut)); } catch {}
+    }, 120000);
 
     return {
       success: true,

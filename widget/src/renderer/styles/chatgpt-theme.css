@@ -9415,3 +9415,55 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   .ms-job { grid-template-columns: 1fr; align-items: start; }
   .ms-job-actions { justify-content: flex-start; }
 }
+
+/* Browser as a full mode.
+   .browser-panel is authored for the Workspace grid — grid-row: 1 and an
+   inline-size clamped to about a third of the viewport — so used as a mode it
+   renders as a narrow column in the corner. This wrapper gives it a full-size
+   context and overrides only the two properties that assume a grid. */
+.browser-mode {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+.browser-mode > .browser-panel {
+  grid-row: auto;
+  inline-size: 100%;
+  block-size: 100%;
+  border-inline-start: none;
+}
+
+/* Mode panels absorb leftover height, as .chat-interface already does. Correct
+   in itself — a panel should own the space below the header — but measurement
+   says it is NOT the cause of the tall header, so this is not the fix:
+
+     chat   → .app-header 134px
+     Studio → .app-header 451px of a 779px window, panel left with 211px
+
+   Applying flex: 1 1 0% here changed the panel's flex value and moved nothing,
+   which rules out free-space distribution: the 451px is the header's own
+   content in non-chat modes, above and below the mode switcher. Cause not yet
+   found; measured with e2e/layout-probe. */
+.app-container > .media-studio,
+.app-container > .browser-mode {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The tall-header bug, measured with e2e/layout-probe.
+   .app-header is a grid. Outside chat it was being stretched to 451px of a
+   779px window, and grid's default align-content spread that extra height
+   BETWEEN the rows: its three children stayed 59/32/30px in every mode while
+   the 4px gaps became 110px. So the symptom was injected space, not bigger
+   content.
+   align-content: start pins the rows to the top so the header keeps its
+   content height whatever the parent gives it; align-self: start stops the
+   parent handing it that height in the first place. */
+.app-header {
+  align-content: start;
+}
+.app-container > .app-header {
+  align-self: start;
+}

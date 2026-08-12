@@ -252,7 +252,15 @@ app.whenReady().then(async () => {
   // attached to it; getMainWindow is passed as a getter rather than the window
   // itself so a re-created window (macOS reactivate) still resolves.
   try {
-    registerBrowserPanelIpc(() => getMainWindow());
+    // `mainWindow`, not `getMainWindow` — this read `() => getMainWindow()`,
+    // which does not exist in this file. Being inside an arrow made it lazy, so
+    // nothing failed at startup or at type-check; the ReferenceError surfaced
+    // only when someone actually opened the browser panel, as
+    // "getMainWindow is not defined" in the panel's error bar. Found by taking
+    // a screenshot of the running app — every unit test and the e2e mode test
+    // passed, because the mode test asserts a button gets an `active` class and
+    // a mode whose panel fails to attach still gets one.
+    registerBrowserPanelIpc(() => mainWindow);
     // Let the look_at_browser tool reach the panel without importing it —
     // a relative require there would not survive bundling.
     setBrowserCaptureProvider(() => captureBrowserPage());

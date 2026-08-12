@@ -19,6 +19,7 @@ const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
 const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
 const QuizPanel = lazy(() => import("./components/QuizPanel"));
 const MediaStudioPanel = lazy(() => import("./components/MediaStudioPanel"));
+const BrowserPanel = lazy(() => import("./components/workspace/BrowserPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
 const TerminalPanel = lazy(() => import("./components/TerminalPanel"));
@@ -47,7 +48,7 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media';
+type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -1432,6 +1433,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <MediaStudioPanel />
         </Suspense>
+      ) : mode === 'browser' ? (
+        // The same panel the Workspace uses. It was reachable only by opening
+        // the Workspace and finding an icon in its activity bar — two levels
+        // deep, with nothing on the main screen suggesting a browser existed.
+        // Closing it returns to chat rather than leaving a blank mode.
+        // Wrapped: .browser-panel is styled for the Workspace GRID (grid-row: 1,
+        // width clamped to ~34vw), so dropped into a mode it renders as a narrow
+        // column in the corner. The wrapper gives it a full-size context.
+        <div className="browser-mode">
+          <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+            <BrowserPanel onClose={() => setMode('chat')} />
+          </Suspense>
+        </div>
       ) : (
         // Quiz is the final branch now. The Web Services panel used to be the
         // catch-all `else`, which meant any unrecognised mode silently rendered
