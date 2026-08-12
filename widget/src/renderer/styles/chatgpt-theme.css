@@ -9433,3 +9433,21 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   block-size: 100%;
   border-inline-start: none;
 }
+
+/* Mode panels absorb leftover height, as .chat-interface already does. Correct
+   in itself — a panel should own the space below the header — but measurement
+   says it is NOT the cause of the tall header, so this is not the fix:
+
+     chat   → .app-header 134px
+     Studio → .app-header 451px of a 779px window, panel left with 211px
+
+   Applying flex: 1 1 0% here changed the panel's flex value and moved nothing,
+   which rules out free-space distribution: the 451px is the header's own
+   content in non-chat modes, above and below the mode switcher. Cause not yet
+   found; measured with e2e/layout-probe. */
+.app-container > .media-studio,
+.app-container > .browser-mode {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+}
