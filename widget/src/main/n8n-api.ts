@@ -524,22 +524,64 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
 /**
  * Deploy the Media Studio research workflow if it is not already there.
  *
- * Same shape as ensureWebFetchWorkflow: idempotent by name, activate, and
- * restart only when there is no API key (REST activation registers the webhook
- * live; the file-based path needs a restart to pick it up).
+ * Idempotent by name: import, activate, and restart only when there is no API
+ * key (REST activation registers the webhook live; the CLI path needs a
+ * restart to pick it up).
+ *
+ * Reports success only after the webhook actually answers. That is not
+ * belt-and-braces — the CLI path cannot activate a workflow at all on current
+ * n8n, so without this check the function returns `deployed: true` for a
+ * workflow that will never serve a request. Verified against n8n 1.122.5:
+ *
+ *   n8n import:workflow  ->  "Deactivating workflow. Remember to activate later."
+ *   n8n update:workflow --active=true
+ *     -> SQLITE_CONSTRAINT: FOREIGN KEY constraint failed
+ *
+ * The constraint is workflow_entity.activeVersionId -> workflow_history.versionId.
+ * Activating writes activeVersionId, and a CLI-imported workflow has no
+ * workflow_history row for it to point at. Nothing we can pass to the CLI
+ * fixes that (--projectId and --userId were both tried; ownership is not the
+ * problem — the imported rows are correctly shared to the personal project).
+ *
+ * So on an instance with no API key this now fails honestly, and says what
+ * would fix it, instead of reporting a deployment that did not happen.
  */
 export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean; reason?: string }> {
+  const { MEDIA_RESEARCH_PATH, buildMediaResearchWorkflowJson } = await import('./n8n-media-workflows');
+  const { checkWebhook } = await import('./n8n-webhook-check');
+  const verify = () => checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
+
   try {
     const existing = await listWorkflows();
-    if (existing.some(w => w.name.includes('Media Research'))) {
-      return { deployed: false, reason: 'already exists' };
+    const already = existing.some(w => w.name.includes('Media Research'));
+
+    if (!already) {
+      const id = await importWorkflow(buildMediaResearchWorkflowJson());
+      // Activation failure must not mask a successful import, and must not be
+      // reported as the final word — the webhook check below decides.
+      await activateWorkflow(id).catch((e) => {
+        console.warn('[n8n-api] Media Research activate failed:', e?.message || e);
+      });
+      if (!hasApiKey()) await restartN8n();
+      console.log('[n8n-api] Media Research workflow imported, id:', id);
     }
-    const { buildMediaResearchWorkflowJson } = await import('./n8n-media-workflows');
-    const id = await importWorkflow(buildMediaResearchWorkflowJson());
-    await activateWorkflow(id);
-    if (!hasApiKey()) await restartN8n();
-    console.log('[n8n-api] Media Research workflow deployed, id:', id);
-    return { deployed: true };
+
+    const check = await verify();
+    if (check.status === 'available') return { deployed: true };
+
+    if (check.status === 'n8n_unreachable') {
+      return { deployed: false, reason: check.detail };
+    }
+    return {
+      deployed: false,
+      reason: already
+        ? 'The workflow is in n8n but is not switched on, so its webhook does not answer. '
+          + 'Open n8n, find "HomeBot: Media Research" and toggle Active — or add an n8n API key '
+          + 'in HomeBot Settings, which lets HomeBot activate it directly.'
+        : 'The workflow imported but n8n would not switch it on from the command line. '
+          + 'Open n8n and toggle "HomeBot: Media Research" to Active — or add an n8n API key '
+          + 'in HomeBot Settings so HomeBot can activate it directly.',
+    };
   } catch (e) {
     return { deployed: false, reason: e instanceof Error ? e.message : String(e) };
   }
