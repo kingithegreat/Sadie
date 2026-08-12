@@ -9507,3 +9507,26 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   max-width: 22rem;
   height: 2rem;
 }
+
+/* Toasts must not consume a grid row.
+   .app-container is `grid-template-rows: auto auto 1fr auto`, sized for
+   titlebar / header / content / footer. .toast-container is a real child, so
+   whenever a toast was on screen it TOOK row 1 and shifted everything down one:
+   the header landed in the 1fr row (measured at 451px instead of 134px) and the
+   mode panel dropped into the trailing auto row at the bottom of the window.
+   Both symptoms, one cause — the earlier align-content fix only stopped the
+   header from looking stretched.
+   Taking the overlay out of flow puts every real row back where the template
+   intends. pointer-events is restored on the toasts themselves so they stay
+   dismissable. */
+.app-container > .toast-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.app-container > .toast-container > * {
+  pointer-events: auto;
+}
