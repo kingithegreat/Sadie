@@ -151,16 +151,28 @@ describe('the approval gate holds through the tool layer', () => {
     expect(readJobs()[0].state).toBe('needs_revision');
   });
 
-  it('both approval tools require confirmation', () => {
+  it('both approval tools require confirmation, and the routine ones do not', () => {
     // These are publishing decisions; they must not run unattended. The
     // fail-closed change to executeTool means a run with no way to ask now
     // refuses outright.
+    //
+    // Asserted as two invariants rather than an exact list: the previous
+    // version pinned the gated set to exactly the two approval tools, so
+    // adding any other gated tool (media_setup_research, which writes a
+    // workflow into the user's n8n) failed a test about APPROVAL. A test
+    // should break when its own subject changes, not when a neighbour does.
     const { mediaToolDefs } = require('../tools/media');
-    const gated = mediaToolDefs
-      .filter((d: any) => d.requiresConfirmation)
-      .map((d: any) => d.name)
-      .sort();
-    expect(gated).toEqual(['media_approve_job', 'media_reject_job']);
+    const gated = new Set(
+      mediaToolDefs.filter((d: any) => d.requiresConfirmation).map((d: any) => d.name),
+    );
+    expect(gated.has('media_approve_job')).toBe(true);
+    expect(gated.has('media_reject_job')).toBe(true);
+
+    // Creating, listing and advancing must stay ungated — prompting on the
+    // routine ones is how a confirmation stops meaning anything.
+    for (const name of ['media_create_job', 'media_list_jobs', 'media_advance_job']) {
+      expect(gated.has(name)).toBe(false);
+    }
   });
 });
 

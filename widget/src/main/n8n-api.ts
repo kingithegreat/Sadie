@@ -521,6 +521,30 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
 /**
  * Deploy the web-fetch workflow to n8n if it doesn't already exist.
  */
+/**
+ * Deploy the Media Studio research workflow if it is not already there.
+ *
+ * Same shape as ensureWebFetchWorkflow: idempotent by name, activate, and
+ * restart only when there is no API key (REST activation registers the webhook
+ * live; the file-based path needs a restart to pick it up).
+ */
+export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean; reason?: string }> {
+  try {
+    const existing = await listWorkflows();
+    if (existing.some(w => w.name.includes('Media Research'))) {
+      return { deployed: false, reason: 'already exists' };
+    }
+    const { buildMediaResearchWorkflowJson } = await import('./n8n-media-workflows');
+    const id = await importWorkflow(buildMediaResearchWorkflowJson());
+    await activateWorkflow(id);
+    if (!hasApiKey()) await restartN8n();
+    console.log('[n8n-api] Media Research workflow deployed, id:', id);
+    return { deployed: true };
+  } catch (e) {
+    return { deployed: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function ensureWebFetchWorkflow(): Promise<void> {
   const existing = await listWorkflows();
   if (existing.some(w => w.name.includes('Web Fetch'))) {

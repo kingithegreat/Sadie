@@ -434,9 +434,46 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
   }
 };
 
+export const setupMediaResearchDef: ToolDefinition = {
+  name: 'media_setup_research',
+  description:
+    'Deploy the Media Studio research workflow to n8n, so scripts are written from real ' +
+    'fetched sources instead of the model recalling facts. Optional — without it the ' +
+    'research stage still works, just from the model alone. Also reports whether it is ' +
+    'already deployed.',
+  category: 'media',
+  requiresConfirmation: true,
+  parameters: { type: 'object', properties: {}, required: [] },
+};
+
+const setupMediaResearchHandler: ToolHandler = async () => {
+  try {
+    const { checkWebhook, describeWebhookStatus } = await import('../n8n-webhook-check');
+    const { MEDIA_RESEARCH_PATH } = await import('../n8n-media-workflows');
+
+    const before = await checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
+    if (before.status === 'available') return ok('The research workflow is already deployed and answering.');
+    if (before.status === 'n8n_unreachable') return err(describeWebhookStatus(before));
+
+    const { ensureMediaResearchWorkflow } = await import('../n8n-api');
+    const res = await ensureMediaResearchWorkflow();
+    if (!res.deployed) return err(`Could not deploy the research workflow: ${res.reason ?? 'unknown reason'}`);
+
+    // Verify rather than assume: importing and activating can both succeed
+    // while the webhook is still not registered until n8n reloads.
+    const after = await checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
+    return ok(after.status === 'available'
+      ? 'Research workflow deployed and answering. Scripts will now be written from fetched sources.'
+      : `Deployed, but the webhook is not answering yet (${after.status}). It usually registers once n8n reloads.`);
+  } catch (e: any) {
+    return err(`Could not set up the research workflow: ${errText(e)}`);
+  }
+};
+
 export const mediaToolDefs: ToolDefinition[] = [
   writeMediaScriptDef,
   narrateMediaJobDef,
+  setupMediaResearchDef,
   createMediaJobDef,
   listMediaJobsDef,
   advanceMediaJobDef,
@@ -447,6 +484,7 @@ export const mediaToolDefs: ToolDefinition[] = [
 export const mediaToolHandlers: Record<string, ToolHandler> = {
   media_write_script: writeMediaScriptHandler,
   media_narrate: narrateMediaJobHandler,
+  media_setup_research: setupMediaResearchHandler,
   media_create_job: createMediaJobHandler,
   media_list_jobs: listMediaJobsHandler,
   media_advance_job: advanceMediaJobHandler,
