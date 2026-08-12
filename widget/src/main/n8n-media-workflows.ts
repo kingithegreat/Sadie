@@ -93,11 +93,29 @@ if (!html) return [{ json: { topic: $('Build query').first().json.topic || '', s
 const strip = (s) => s.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&#x27;/g, "'")
   .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\\s+/g, ' ').trim();
 
+// DuckDuckGo hands back its own redirect wrapper, not the destination:
+//   //duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FJonah
+// Citing that would defeat the point of collecting sources at all — the
+// person approving a script needs to see it came from Wikipedia, and needs a
+// link they can actually open. So unwrap it back to the real destination.
+const unwrap = (u) => {
+  let s = String(u).replace(/&amp;/g, '&');
+  const m = /[?&]uddg=([^&]+)/.exec(s);
+  if (m) { try { s = decodeURIComponent(m[1]); } catch (e) { /* keep as-is */ } }
+  if (s.slice(0, 2) === '//') s = 'https:' + s;
+  return s;
+};
+
 const sources = [];
+const seen = {};
 const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\\s\\S]*?)<\\/a>/g;
 let m;
 while ((m = linkRe.exec(html)) && sources.length < 8) {
-  sources.push({ url: m[1], title: strip(m[2]) });
+  const url = unwrap(m[1]);
+  // Two results from one site add no corroboration.
+  if (seen[url]) continue;
+  seen[url] = true;
+  sources.push({ url, title: strip(m[2]) });
 }
 const snippets = [];
 const snipRe = /<a[^>]+class="result__snippet"[^>]*>([\\s\\S]*?)<\\/a>/g;
