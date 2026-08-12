@@ -222,3 +222,45 @@ describe('verifyN8nConnection', () => {
     expect(res.error).toContain('401');
   });
 });
+
+/**
+ * Deploy guards.
+ *
+ * The guards are "import unless a workflow by this name already exists", and
+ * they read a FAILED listing as "none exist". Every launch where Docker was
+ * not ready yet imported another copy — Aden's n8n ended up with six copies of
+ * "HomeBot: Web Fetch" and four of "System Health Check".
+ */
+describe('not knowing is not the same as knowing there are none', () => {
+  const { ensureWebFetchWorkflow, ensureMediaResearchWorkflow } = require('../n8n-api');
+
+  const failListing = () =>
+    mockExecFile.mockImplementation((_c: string, _a: string[], _o: any, cb: any) =>
+      cb(Object.assign(new Error('Cannot connect to the Docker daemon'), { code: 1 }), '', 'daemon not running'));
+
+  test('listWorkflows still reports an empty list, for callers that only read', async () => {
+    failListing();
+    await expect(listWorkflows()).resolves.toEqual([]);
+  });
+
+  test('ensureWebFetchWorkflow imports nothing when it cannot read the list', async () => {
+    failListing();
+    await ensureWebFetchWorkflow();
+    // Every docker call is a failed list attempt; none is an import.
+    const importCalls = mockExecFile.mock.calls.filter(
+      ([, args]: any) => Array.isArray(args) && args.some((a: string) => String(a).includes('import:workflow')),
+    );
+    expect(importCalls).toHaveLength(0);
+  });
+
+  test('ensureMediaResearchWorkflow says so rather than importing on a guess', async () => {
+    failListing();
+    const res = await ensureMediaResearchWorkflow();
+    expect(res.deployed).toBe(false);
+    expect(String(res.reason)).toMatch(/could not read/i);
+    const importCalls = mockExecFile.mock.calls.filter(
+      ([, args]: any) => Array.isArray(args) && args.some((a: string) => String(a).includes('import:workflow')),
+    );
+    expect(importCalls).toHaveLength(0);
+  });
+});

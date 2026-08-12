@@ -370,7 +370,17 @@ db.close();
   console.log('[n8n-api] Deleted workflow', workflowId);
 }
 
-export async function listWorkflows(): Promise<Array<{ id: string; name: string }>> {
+/**
+ * Like listWorkflows, but returns null when the list could not be READ, as
+ * opposed to an empty array when n8n genuinely has no workflows.
+ *
+ * The difference matters, and losing it left real damage. The deploy guards
+ * are "import unless a workflow by this name already exists", and they read
+ * a failed listing as "none exist" — so every launch where the CLI was not
+ * ready yet imported another copy. Aden's n8n ended up holding six copies of
+ * "HomeBot: Web Fetch" and four of "System Health Check".
+ */
+async function tryListWorkflows(): Promise<Array<{ id: string; name: string }> | null> {
   if (hasApiKey()) {
     try {
       const res = await apiRequest<{ data?: Array<{ id: string | number; name: string }> }>('GET', '/workflows?limit=200');
@@ -388,9 +398,14 @@ export async function listWorkflows(): Promise<Array<{ id: string; name: string 
         const [id, ...nameParts] = l.split('|');
         return { id: id.trim(), name: nameParts.join('|').trim() };
       });
-  } catch {
-    return [];
+  } catch (e: any) {
+    console.warn('[n8n-api] Could not list workflows:', e?.message || e);
+    return null;
   }
+}
+
+export async function listWorkflows(): Promise<Array<{ id: string; name: string }>> {
+  return (await tryListWorkflows()) ?? [];
 }
 
 /**
@@ -552,7 +567,12 @@ export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean
   const verify = () => checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
 
   try {
-    const existing = await listWorkflows();
+    const existing = await tryListWorkflows();
+    if (existing === null) {
+      // Not "there are none" — we could not tell. Importing on a guess is how
+      // duplicates accumulate in the user's n8n.
+      return { deployed: false, reason: 'Could not read the workflow list from n8n, so nothing was imported.' };
+    }
     const already = existing.some(w => w.name.includes('Media Research'));
 
     if (!already) {
@@ -588,7 +608,13 @@ export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean
 }
 
 export async function ensureWebFetchWorkflow(): Promise<void> {
-  const existing = await listWorkflows();
+  const existing = await tryListWorkflows();
+  if (existing === null) {
+    // Runs at startup, when Docker is often not up yet. Treating that as "no
+    // workflows exist" is what put six copies of this workflow in Aden's n8n.
+    console.warn('[n8n-api] Could not read the workflow list; skipping Web Fetch deploy rather than risking a duplicate');
+    return;
+  }
   if (existing.some(w => w.name.includes('Web Fetch'))) {
     console.log('[n8n-api] Web Fetch workflow already exists, skipping deploy');
     return;
