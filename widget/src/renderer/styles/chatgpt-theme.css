@@ -9451,3 +9451,19 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   min-height: 0;
   overflow-y: auto;
 }
+
+/* The tall-header bug, measured with e2e/layout-probe.
+   .app-header is a grid. Outside chat it was being stretched to 451px of a
+   779px window, and grid's default align-content spread that extra height
+   BETWEEN the rows: its three children stayed 59/32/30px in every mode while
+   the 4px gaps became 110px. So the symptom was injected space, not bigger
+   content.
+   align-content: start pins the rows to the top so the header keeps its
+   content height whatever the parent gives it; align-self: start stops the
+   parent handing it that height in the first place. */
+.app-header {
+  align-content: start;
+}
+.app-container > .app-header {
+  align-self: start;
+}
