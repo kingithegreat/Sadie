@@ -26,6 +26,11 @@ interface MediaJob {
   format: 'short' | 'long';
   state: MediaJobState;
   brief?: string;
+  script?: string;
+  /** Set once narration has been recorded; absolute path to the MP3. */
+  narrationPath?: string;
+  /** Measured from the audio, not estimated from word count. */
+  durationSeconds?: number;
   createdAt: string;
   updatedAt: string;
   history: MediaJobEvent[];
@@ -60,6 +65,16 @@ export const MediaStudioPanel: React.FC = () => {
   const [jobs, setJobs] = useState<MediaJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * What the busy job is doing, in the user's words.
+   *
+   * Writing a script or recording narration takes 30–60s on a local model.
+   * With only a disabled button to look at, that is indistinguishable from a
+   * click that did nothing — the panel has to say it is working, and say what
+   * it is working on.
+   */
+  const [busyLabel, setBusyLabel] = useState<string>('');
+  const [done, setDone] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [format, setFormat] = useState<'short' | 'long'>('short');
 
@@ -77,17 +92,29 @@ export const MediaStudioPanel: React.FC = () => {
   useEffect(() => { refresh(); }, [refresh]);
 
   /** Every mutation reports the state machine's own refusal text verbatim. */
-  const run = async (id: string, fn: () => Promise<any>) => {
-    setBusy(id); setError(null);
+  const run = async (id: string, fn: () => Promise<any>, label = '') => {
+    setBusy(id); setBusyLabel(label); setError(null); setDone(null);
     try {
       const res = await fn();
       if (res && res.ok === false) setError(res.error || 'That move was refused.');
+      else if (res && res.message) setDone(String(res.message).split('\n')[0]);
       await refresh();
     } catch (e: any) {
       setError(e?.message || 'Something went wrong.');
     } finally {
-      setBusy(null);
+      setBusy(null); setBusyLabel('');
     }
+  };
+
+  /** Stages that call a model or the TTS service — the slow ones. */
+  const stageAction = (j: MediaJob): { label: string; action: 'script' | 'narrate' } | null => {
+    if (j.state === 'idea' || j.state === 'researching' || j.state === 'needs_revision') {
+      return { label: 'Write script', action: 'script' };
+    }
+    if (j.state === 'script_draft' || j.state === 'script_qa') {
+      return { label: 'Record narration', action: 'narrate' };
+    }
+    return null;
   };
 
   const create = async () => {
@@ -105,11 +132,33 @@ export const MediaStudioPanel: React.FC = () => {
     <li key={j.id} className="ms-job">
       <div className="ms-job-main">
         <span className="ms-job-title">{j.title}</span>
-        <span className="ms-job-format">{j.format === 'long' ? 'long-form' : 'short'}</span>
+        <span className="ms-job-format">
+          {j.format === 'long' ? 'long-form' : 'short'}
+          {j.durationSeconds ? ` · ${j.durationSeconds}s recorded` : ''}
+        </span>
+        {/* Hearing the narration is the only way to judge it. file:// works
+            because the renderer loads from disk in this app. */}
+        {j.narrationPath && (
+          <audio
+            className="ms-audio"
+            controls
+            preload="none"
+            src={`file:///${j.narrationPath.replace(/\\/g, '/')}`}
+          />
+        )}
       </div>
-      <span className={stateClass(j.state)}>{label(j.state)}</span>
+      <span className={stateClass(j.state)}>
+        {busy === j.id ? (busyLabel || 'Working…') : label(j.state)}
+      </span>
       <div className="ms-job-actions">
-        {showApproval ? (
+        {/* Working state comes first: while a stage runs, the only honest thing
+            to show is that it is running and roughly how long it takes. */}
+        {busy === j.id ? (
+          <span className="ms-working" role="status" aria-live="polite">
+            <span className="ms-spinner" aria-hidden="true" />
+            {busyLabel || 'Working'} — this can take up to a minute
+          </span>
+        ) : showApproval ? (
           <>
             <button
               className="ms-btn ms-btn--approve"
@@ -127,11 +176,21 @@ export const MediaStudioPanel: React.FC = () => {
               onClick={() => run(j.id, () => api()?.mediaReject?.(j.id, false))}
             >Reject</button>
           </>
+        ) : stageAction(j) ? (
+          // The stage that does real work, rather than only changing state.
+          <button
+            className="ms-btn ms-btn--primary"
+            onClick={() => {
+              const a = stageAction(j)!;
+              run(j.id, () => api()?.mediaRun?.(j.id, a.action), a.label);
+            }}
+          >
+            {stageAction(j)!.label}
+          </button>
         ) : NEXT_STAGE[j.state] ? (
           <button
             className="ms-btn"
-            disabled={busy === j.id}
-            onClick={() => run(j.id, () => api()?.mediaAdvance?.(j.id, NEXT_STAGE[j.state]!))}
+            onClick={() => run(j.id, () => api()?.mediaAdvance?.(j.id, NEXT_STAGE[j.state]!), 'Moving')}
           >
             Move to {label(NEXT_STAGE[j.state]!)}
           </button>
@@ -152,6 +211,7 @@ export const MediaStudioPanel: React.FC = () => {
       </header>
 
       {error && <div className="ms-error" role="alert">{error}</div>}
+      {done && <div className="ms-done" role="status">{done}</div>}
 
       <div className="ms-new">
         <input

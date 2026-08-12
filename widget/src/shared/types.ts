@@ -458,6 +458,8 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
+  mediaRun?: (id: string, action: 'script' | 'narrate') =>
+    Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaReject?: (id: string, revise: boolean, note?: string) =>

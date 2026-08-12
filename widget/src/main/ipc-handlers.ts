@@ -878,6 +878,27 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   };
 
+  // Run a long stage (script, narration) from the panel.
+  //
+  // These take 30-60s on a local model. Without a way to start them from the
+  // UI the panel could only shuffle states, so the user pressed a button, saw
+  // a state change, and had no idea whether any work had happened.
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string) => {
+    const { mediaToolHandlers, readJobs } = await import('./tools/media');
+    const job = readJobs().find(j => j.id === id);
+    if (!job) return { ok: false, error: 'That video is no longer in the list.' };
+
+    const tool = action === 'narrate' ? 'media_narrate' : 'media_write_script';
+    try {
+      const res: any = await mediaToolHandlers[tool]({ job: job.id }, { executionId: `panel-${action}` } as any);
+      return res?.success
+        ? { ok: true, message: String(res.result ?? '') }
+        : { ok: false, error: String(res?.error ?? 'That stage failed.') };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
   ipcMain.handle('homebot:media:advance', async (_e, id: string, to: string, note?: string) =>
     applyMediaTransition(id, to, { by: 'studio', note }));
 

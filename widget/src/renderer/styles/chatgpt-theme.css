@@ -9467,3 +9467,43 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .app-container > .app-header {
   align-self: start;
 }
+
+/* Media Studio: working state and playback.
+   A stage that calls a local model takes 30-60s. A disabled button is
+   indistinguishable from a click that did nothing, so the row says what it is
+   doing and roughly how long it takes. */
+.ms-working {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .85rem;
+  color: var(--text-secondary);
+}
+.ms-spinner {
+  width: .85rem;
+  height: .85rem;
+  border-radius: 50%;
+  border: 2px solid var(--bg-light);
+  border-top-color: var(--accent-primary);
+  animation: ms-spin .8s linear infinite;
+  flex: none;
+}
+@keyframes ms-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ms-spinner { animation-duration: 3s; }
+}
+
+.ms-done {
+  padding: .6rem .9rem;
+  border-radius: 6px;
+  background: oklch(45% 0.10 150 / 0.16);
+  border: 1px solid oklch(60% 0.12 150 / 0.45);
+  font-size: .88rem;
+}
+
+.ms-audio {
+  margin-top: .4rem;
+  width: 100%;
+  max-width: 22rem;
+  height: 2rem;
+}
