@@ -73,4 +73,21 @@ describe('overlay layering', () => {
     // The header being high is not itself the bug — modals being lower was.
     expect(effectiveZ('.app-header')).toBeGreaterThan(1);
   });
+
+  it('modals are excluded from the content-row rule, so they stay position:fixed', () => {
+    // `.app-container > *:not(.app-header)…` sets position:relative and is
+    // (0,4,0) — it beat each overlay's own (0,1,0) `position: fixed`, so a
+    // modal was laid out as a GRID ROW of the app container. The settings
+    // overlay measured top:39 height:740 in a 779px viewport: it covered the
+    // content row only, left the header row exposed and clickable behind an
+    // open modal, and dimmed everything except that one bar.
+    //
+    // Asserted on the selector rather than the outcome because the outcome is
+    // only observable in a real browser; the e2e visual probe covers that.
+    const rule = /\.app-container\s*>\s*\*((?::not\([^)]*\))+)\s*\{[^}]*position\s*:\s*relative/m.exec(css);
+    expect(rule).not.toBeNull();
+    for (const modal of ['.settings-overlay', '.confirmation-overlay', '.first-run-overlay']) {
+      expect(rule![1]).toContain(`:not(${modal})`);
+    }
+  });
 });

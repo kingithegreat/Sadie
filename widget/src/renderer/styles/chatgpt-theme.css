@@ -165,8 +165,14 @@ body {
   position: relative;
 }
 
-/* Ensure content rows stack below the header so model dropdown is never clipped */
-.app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar) {
+/* Ensure content rows stack below the header so model dropdown is never clipped.
+   Modals are excluded: this rule is (0,4,0) and beats their own (0,1,0)
+   `position: fixed`, so they were being laid out as GRID ROWS of the app
+   container instead of covering the viewport. The settings overlay measured
+   top:39 height:740 in a 779px viewport — it covered the content row and left
+   the header row exposed, so the header stayed clickable behind an open modal
+   and the backdrop dimmed everything except the one bar it sat below. */
+.app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar):not(.settings-overlay):not(.confirmation-overlay):not(.first-run-overlay):not(.sidebar-backdrop):not(.drop-overlay) {
   position: relative;
   z-index: 1;
 }
