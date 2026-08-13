@@ -2848,12 +2848,58 @@ export async function streamFromOllamaWithTools(
   
   // Check if we have images - use vision model if so (vision models typically don't support tools)
   const hasImages = images && images.length > 0;
+
+  /**
+   * Will this turn carry tools? Decided BEFORE the model is picked, because it
+   * has to be.
+   *
+   * uncensoredMode ships ON, which selects dolphin-mistral:7b — and Ollama
+   * refuses any request carrying a tools array for it:
+   *
+   *   400  "registry.ollama.ai/library/dolphin-mistral:7b does not support tools"
+   *
+   * Checked directly against both installed models with the same prompt:
+   * dolphin 400s, qwen2.5:7b returns tool_calls
+   * ({"name":"media_create_job","title":"Jonah and the Storm"}). So on a
+   * DEFAULT install every tool in HomeBot was unreachable from chat — the
+   * whole Media Studio, filesystem, automations, all of it — and the failure
+   * was invisible, because the request simply errored and the non-stream
+   * fallback answered without tools.
+   *
+   * Uncensored mode exists so CONVERSATION is not refused. It was never meant
+   * to disable the assistant's ability to act. When a turn actually needs
+   * tools, the tool-capable chat model runs it.
+   */
+  /**
+   * ...and a second gate, upstream of the model, was closed for most of the app.
+   *
+   * shouldOfferToolsForMessage only recognises filesystem, terminal, organiser
+   * and web-plus-live-data phrasing. "Make me a short video about Jonah" is
+   * none of those, so NO tools were offered — measured: `tools=0` in the
+   * router log for exactly that request. Everything routed by category rather
+   * than by those four patterns was unreachable from chat: the Media Studio,
+   * CRM, the browser, automations.
+   *
+   * detectToolCategories already knows the request is about media. If the
+   * router can name a category, the tools of that category are what the turn
+   * is for — so a matched category opens the gate too.
+   */
+  const intentCategories = detectToolCategories(message);
+  const willUseTools = !hasImages
+    && !isSimpleGreeting(message)
+    && !isSynthesisCall
+    && (shouldOfferToolsForMessage(message, { hasImages, hasDocuments: options?.hasDocuments ?? false })
+      || intentCategories.length > 0);
+
   // Select model: vision > uncensored > code > normal
-  const baseChatModel = uncensoredModeEnabled ? preferredUncensoredModel
+  const baseChatModel = (uncensoredModeEnabled && !willUseTools) ? preferredUncensoredModel
     : (isCodingQuery ? preferredCodeModel : preferredChatModel);
   const chatModel = baseChatModel || preferredChatModel;
   const model = hasImages ? preferredVisionModel : chatModel;
   if (isCodingQuery) console.log(`[HomeBot] Coding query detected — using code model: ${model}`);
+  if (uncensoredModeEnabled && willUseTools) {
+    console.log(`[HomeBot] Uncensored mode is on, but this turn needs tools — using ${model}, which supports them`);
+  }
   onMeta?.({ model });
 
   // Extract base64 image data for Ollama
@@ -3022,10 +3068,10 @@ export async function streamFromOllamaWithTools(
   // and offering tools causes it to redundantly call web_search, blowing the context.
   // For small models, use the compact core-tool set instead of all 80+ tools.
   const isAgentic = options?.agenticMode === true;
-  const intentCategories = detectToolCategories(message);
-  const shouldOfferTools = !skipToolsForGreeting
-    && !isSynthesisCall
-    && shouldOfferToolsForMessage(message, { hasImages, hasDocuments });
+  // One decision, made above where the model choice also needs it. Computing
+  // it twice is how the model came to be picked as if no tools were coming
+  // while tools were in fact offered.
+  const shouldOfferTools = willUseTools;
   const tools = (modelSupportsTools && shouldOfferTools)
     ? (smallModel && !isAgentic
       // The message itself decides WHICH category tools get the few slots
