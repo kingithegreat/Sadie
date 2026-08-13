@@ -172,7 +172,18 @@ body {
    top:39 height:740 in a 779px viewport — it covered the content row and left
    the header row exposed, so the header stayed clickable behind an open modal
    and the backdrop dimmed everything except the one bar it sat below. */
-.app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar):not(.settings-overlay):not(.confirmation-overlay):not(.first-run-overlay):not(.sidebar-backdrop):not(.conversation-sidebar):not(.drop-overlay) {
+/* Every exclusion here is an element that must NOT become a grid item.
+   .app-container is `grid-template-rows: auto auto 1fr auto`; anything left in
+   flow claims a track and shifts every row below it.
+
+   This list is the only mechanism that works. A later, more targeted rule does
+   NOT win: each :not() contributes the specificity of its argument, so this
+   selector is (0,12,0), while `.app-container > .toast-container` is (0,2,0).
+   848f519 tried to fix the toast row that way and the declaration was silently
+   overridden — measured with overlay-cascade-probe, which reported
+   `.toast-container position=relative` months after the "fix". Add the class
+   here as well as writing its own positioned rule. */
+.app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar):not(.settings-overlay):not(.confirmation-overlay):not(.first-run-overlay):not(.sidebar-backdrop):not(.conversation-sidebar):not(.drop-overlay):not(.toast-container):not(.floating-feature-buttons) {
   position: relative;
   z-index: 1;
 }
@@ -7932,8 +7943,29 @@ body {
 }
 
 /* ── Floating Feature Buttons (Voice + Screen Capture) ── */
+/* These two buttons are the ONLY entry point to either feature: setVoiceOpen is
+   called from here and nowhere else, and captureScreen has exactly one caller.
+   cabbb06 replaced this whole block with `display: none` during a responsive
+   pass, which took both features off the product — while leaving the media
+   queries below still tuning `right`/`bottom`/`gap` for a flex container that
+   never rendered.
+   pointer-events is none on the container and auto on .fab-btn so the empty
+   column never swallows clicks meant for the chat underneath. */
 .floating-feature-buttons {
-  display: none;
+  position: absolute;
+  /* Must clear .input-container, which measures 91px tall with a single-line
+     composer. At the original 90px the lower button overlapped it by 17px —
+     which is the collision the responsive pass "fixed" by hiding the whole
+     container. One value at every width, so the three media queries below can
+     no longer drift out of agreement with it; floating-features.e2e asserts
+     the buttons never intersect the composer. */
+  bottom: 120px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 50;
+  pointer-events: none;
 }
 
 .fab-btn {
@@ -8075,7 +8107,6 @@ body {
 
   .floating-feature-buttons {
     right: 10px;
-    bottom: 80px;
   }
 
   .fab-btn {
@@ -8189,7 +8220,6 @@ body {
   }
 
   .floating-feature-buttons {
-    bottom: 75px;
     gap: 8px;
   }
 
@@ -8254,7 +8284,6 @@ body {
 
   .floating-feature-buttons {
     right: 8px;
-    bottom: 70px;
     gap: 6px;
   }
 
