@@ -5870,7 +5870,22 @@ body {
 }
 
 /* ── Toast notifications ── */
-[data-theme="light"] .toast {
+/* `.toast-item`, not `.toast`. There is no element with class `toast` anywhere
+   in the app — ToastContainer renders .toast-container > .toast-item, with
+   .toast-icon / .toast-message / .toast-close inside. So this override matched
+   nothing and light mode kept the dark-theme `.toast-item` background:
+
+     background  oklch(0.09 …)   near-black
+     color       oklch(0.18 …)   near-black   (var(--text-primary), light theme)
+
+   Measured on a real toast fired through the IPC path. Every notification in
+   light mode — which is the default — was dark text on a dark panel. The fix
+   was sitting right here the whole time, aimed one class name to the left.
+
+   A selector that matches nothing looks exactly like a selector that is
+   satisfied; nothing goes red either way. Same shape as the toast fix that lost
+   a specificity contest and the `:not()` blocklist above. */
+[data-theme="light"] .toast-item {
   background: oklch(100% 0 0);
   border-color: oklch(0% 0 0 / 0.08);
   box-shadow: 0 4px 16px oklch(55% 0.05 250 / 0.12);
