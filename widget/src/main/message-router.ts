@@ -2326,6 +2326,93 @@ export function requestConfirmationFrom(
 
 const CODING_QUERY_PATTERN = /\b(write\s+(code|a\s+script|a\s+function|a\s+program)|create\s+(a\s+script|a\s+function|a\s+class|a\s+program)|generate\s+code|fix\s+(this\s+)?code|debug|refactor|optimise|optimize|implement|explain\s+this\s+code|review.*code|code.*review|algorithm|regex|(?:write|run)\s+(?:a\s+)?(?:sql|query)|script|bash|python|javascript|typescript|html|css|java(?!script)|c\+\+|golang|rust|react|\bcode\b)\b/i;
 
+/**
+ * A streaming failure is not always a dead model — recover with one non-stream call.
+ *
+ * Ollama can fail to open a stream and still answer a normal request: a
+ * transient 5xx, a proxy that mangles chunked responses, a connection reset
+ * mid-handshake. Asking once more without `stream` turns a red error card into
+ * an answer.
+ *
+ * Shared deliberately. This recovery already existed for the n8n path, and the
+ * direct-Ollama path — the one a local-model user is actually on — had a copy
+ * of the surrounding handler that never got it. Two near-identical branches
+ *600 lines apart, one of them fixed. So both now call this, and the e2e test
+ * asserts the real thing rather than a simulated chunk.
+ *
+ * Returns the recovered text, or null when there is nothing usable. Throws
+ * only if the request itself fails, which the caller treats as "no recovery".
+ */
+async function recoverWithoutStreaming(opts: {
+  conversationId: string;
+  message: string;
+  modelOverride?: string;
+}): Promise<string | null> {
+  const history = getHistory(opts.conversationId).slice(-10).map(h => ({ role: h.role, content: h.content }));
+  const model = (typeof opts.modelOverride === 'string' && opts.modelOverride.trim())
+    || (uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL);
+  const small = isSmallModel(model);
+
+  const body: any = {
+    model,
+    // Uncensored mode suppresses HomeBot's own framing here too, matching the
+    // streaming path.
+    messages: uncensoredModeEnabled
+      ? [...history, { role: 'user', content: opts.message }]
+      : [{ role: 'system', content: HOMEBOT_SYSTEM_PROMPT }, ...history, { role: 'user', content: opts.message }],
+    stream: false,
+    options: small
+      ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
+      : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 },
+  };
+
+  const res = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/chat`, body, { timeout: DEFAULT_TIMEOUT });
+  const raw = res?.data?.message?.content || (res?.data && JSON.stringify(res.data));
+  const text = sanitizeUserFacingAssistantText(String(raw || ''));
+  return text || null;
+}
+
+/**
+ * Try the non-stream recovery, and emit either the answer or the original
+ * error. Owns the whole "stream died" outcome so the two call sites cannot
+ * drift apart again.
+ */
+async function finishFailedStream(opts: {
+  sender: Electron.WebContents;
+  streamId: string;
+  conversationId: string;
+  message: string;
+  modelOverride?: string;
+  err: any;
+  errorLabel: string;
+}): Promise<void> {
+  const { sender, streamId, err, errorLabel } = opts;
+  try {
+    const recovered = await recoverWithoutStreaming(opts);
+    if (recovered) {
+      // The recovered answer is part of the conversation; without this the
+      // next turn is asked to continue from a gap.
+      addToHistory(opts.conversationId, 'assistant', recovered);
+      try { sender.send('homebot:stream-chunk', { chunk: recovered, streamId }); } catch (e) { safeCatch(e); }
+      try { sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
+      activeStreams.delete(streamId);
+      console.log('[HomeBot] stream failed, non-stream recovery succeeded');
+      return;
+    }
+    console.log('[HomeBot] stream failed, non-stream recovery returned nothing');
+  } catch (recoveryErr: any) {
+    console.log('[HomeBot] stream failed, non-stream recovery also failed:', recoveryErr?.message || recoveryErr);
+  }
+
+  const hint = classifyError(errorLabel, err?.message || String(err));
+  try {
+    sender.send('homebot:stream-error', {
+      error: true, message: errorLabel, details: err?.message || err, streamId, recoveryHint: hint,
+    });
+  } catch (e) { safeCatch(e); }
+  activeStreams.delete(streamId);
+}
+
 // Wrapper function that routes to either Ollama or Custom LLM based on settings
 export async function streamFromLLM(
   message: string,
@@ -4619,12 +4706,22 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               activeStreams.delete(streamId);
             },
             (err) => {
-              const hint = classifyError('Ollama error', err?.message || String(err));
-              try { event.sender.send('homebot:stream-error', { error: true, message: 'Ollama error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); }
-                          if (E2E) {
-                            console.log('[E2E-TRACE] stream-error (ollama)', { streamId, error: err?.message || err });
-                          }
-              activeStreams.delete(streamId);
+              // Recover before giving up. This branch used to go straight to
+              // stream-error while the n8n branch below tried a non-stream
+              // call first — so the path a local-model user is actually on was
+              // the one without recovery.
+              if (E2E) {
+                console.log('[E2E-TRACE] stream-error (ollama)', { streamId, error: err?.message || err });
+              }
+              void finishFailedStream({
+                sender: event.sender,
+                streamId,
+                conversationId: convId,
+                message: reqAny.message,
+                modelOverride: reqAny.modelOverride,
+                err,
+                errorLabel: 'Ollama error',
+              });
             },
             requestConfirmation, // Pass confirmation requester
             (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
@@ -5258,41 +5355,19 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 activeStreams.delete(streamId);
               },
               (err) => {
-                // Try a non-streaming fallback when the streaming connection errors mid-flight
-                (async () => {
-                  console.log('[HomeBot] direct stream onError: attempting non-stream fallback...');
-                  try {
-                    const fbHistory = getHistory(convId).slice(-10).map(h => ({ role: h.role, content: h.content }));
-                    const fbModel = (typeof reqAny.modelOverride === 'string' && reqAny.modelOverride.trim())
-                      || (uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL);
-                    const fbSmall = isSmallModel(fbModel);
-                    const fallbackBody: any = {
-                      model: fbModel,
-                      messages: uncensoredModeEnabled
-                        ? [ ...fbHistory, { role: 'user', content: reqAny.message } ]
-                        : [ { role: 'system', content: HOMEBOT_SYSTEM_PROMPT }, ...fbHistory, { role: 'user', content: reqAny.message } ],
-                      stream: false,
-                      options: fbSmall
-                        ? { num_ctx: 4096, temperature: 0.6, repeat_penalty: 1.3, num_predict: 512 }
-                        : { num_ctx: 8192, temperature: 0.7, repeat_penalty: 1.15, top_p: 0.9, num_predict: 1024 }
-                    };
-                    const fallbackRes = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/chat`, fallbackBody, { timeout: DEFAULT_TIMEOUT });
-                    const rawFinalText = fallbackRes?.data?.message?.content || (fallbackRes?.data && JSON.stringify(fallbackRes.data));
-                    const finalText = sanitizeUserFacingAssistantText(String(rawFinalText || ''));
-                    if (finalText) {
-                      try { event.sender.send('homebot:stream-chunk', { chunk: finalText, streamId }); } catch (e) { safeCatch(e); }
-                    }
-                    try { event.sender.send('homebot:stream-end', { streamId }); } catch (e) { safeCatch(e); }
-                    activeStreams.delete(streamId);
-                    console.log('[HomeBot] direct stream fallback: succeeded');
-                    return;
-                  } catch (fallbackErr: any) {
-                    console.log('[HomeBot] direct stream fallback: failed', fallbackErr?.message || fallbackErr);
-                    { const hint = classifyError('Ollama streaming error', err?.message || String(err));
-                    try { event.sender.send('homebot:stream-error', { error: true, message: 'Ollama streaming error', details: err?.message || err, streamId, recoveryHint: hint }); } catch (e) { safeCatch(e); } }
-                    activeStreams.delete(streamId);
-                  }
-                })();
+                // Same recovery as the direct branch above — one implementation,
+                // because this one having it and that one not is the whole bug.
+                // This copy also used to send stream-end after an EMPTY recovery,
+                // finishing the message with no content and no error.
+                void finishFailedStream({
+                  sender: event.sender,
+                  streamId,
+                  conversationId: convId,
+                  message: reqAny.message,
+                  modelOverride: reqAny.modelOverride,
+                  err,
+                  errorLabel: 'Ollama streaming error',
+                });
               },
               requestConfirmation,
               (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
@@ -5486,19 +5561,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       }
     });
 
-    // Test helper: trigger a simulated non-stream fallback for a given streamId (E2E only)
-    ipcMain.handle('homebot:__e2e_trigger_fallback', async (event: IpcMainInvokeEvent, payload: { streamId: string; finalText?: string }) => {
-      const e2eEnabled = Boolean(isE2E) || process.env.NODE_ENV === 'test';
-      if (!e2eEnabled) return { ok: false, error: 'E2E_ONLY' };
-      console.log('[E2E-TRACE] __e2e_trigger_fallback invoked, HOMEBOT_E2E=', process.env.HOMEBOT_E2E, 'NODE_ENV=', process.env.NODE_ENV);
-      try {
-        const { streamId, finalText } = payload || {} as any;
-        if (!streamId) return { ok: false, error: 'MISSING_STREAM_ID' };
-        event.sender.send('homebot:stream-chunk', { chunk: finalText || 'final-fallback', streamId });
-        event.sender.send('homebot:stream-end', { streamId });
-        return { ok: true };
-      } catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
-    });
+    // homebot:__e2e_trigger_fallback used to live here: it synthesised a
+    // stream-chunk so the fallback e2e test could "observe" a recovery. The
+    // test passed for years while the direct path had no recovery at all —
+    // the helper WAS the feature, as far as the suite could tell. The test now
+    // asserts the real non-stream retry, so this is gone rather than left as
+    // shipped IPC surface that only exists to make a test pass.
+
     // Test helper: invoke a tool batch via main and exercise the permission escalation flow (E2E only)
     ipcMain.handle('homebot:__e2e_invoke_tool_batch', async (event: IpcMainInvokeEvent, payload: { calls: any[]; streamId?: string }) => {
       try {

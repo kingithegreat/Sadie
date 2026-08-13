@@ -277,6 +277,7 @@ test('handles upstream error', async () => {
 });
 
 test('falls back to non-stream final text on stream init error', async () => {
+  const chatRequests: Array<{ stream: boolean; model?: string }> = [];
   // Server that fails streaming requests but returns a non-stream final message
   const server = await (async () => {
     const http = await import('http');
@@ -297,9 +298,10 @@ test('falls back to non-stream final text on stream init error', async () => {
             let body = '';
             for await (const chunk of req) body += chunk.toString();
             const parsed = body ? JSON.parse(body) : {};
-            // Debugging: log incoming request to verify what the app sent
-            // eslint-disable-next-line no-console
-            console.log('[E2E-MOCK-SERVER] /api/chat received', { parsed: parsed });
+            // Recorded so the test can assert the recovery actually happened —
+            // a streaming attempt followed by a non-streaming one — rather than
+            // inferring it from the rendered text alone.
+            chatRequests.push({ stream: parsed.stream === true, model: parsed.model });
             if (parsed.stream === true) {
               res.writeHead(500, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ error: 'streaming failure' }));
@@ -352,37 +354,23 @@ test('falls back to non-stream final text on stream init error', async () => {
 
   const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
 
-  // Wait for the assistant to finish and contain the final fallback text
-  // Simulate the fallback via a test-only IPC helper so the test is deterministic
-  // Wait for the renderer to have assigned a message id and be in a streaming/active state
-  await expect(assistant).toHaveAttribute('data-message-id', /.+/, { timeout: 10000 });
-  const msgId = await assistant.getAttribute('data-message-id');
-  // Invoke the test-only IPC helper and verify it reported success
-  const res = await page.evaluate(async (id) => {
-    // Try a few times to invoke the test-only handler in case main hasn't registered it yet
-    for (let i = 0; i < 5; i++) {
-      try {
-        // @ts-ignore - test hook
-        const r = await (window as any).electron.invoke('homebot:__e2e_trigger_fallback', { streamId: id, finalText: 'final-fallback' });
-        return r;
-      } catch (e) {
-        const s = String(e || '');
-        if (s.includes('No handler registered') || s.includes('E2E_ONLY')) {
-          await new Promise((r) => setTimeout(r, 200));
-          continue;
-        }
-        return { ok: false, error: s };
-      }
-    }
-    return { ok: false, error: 'NO_HANDLER' };
-  }, msgId);
-  // Ensure the IPC handler actually ran and returned ok
-  // eslint-disable-next-line no-console
-  console.log('[E2E-TRACE] __e2e_trigger_fallback response', res);
-  expect(res && res.ok).toBe(true);
-  // The fallback successfully delivered the text — assert it rendered as a normal finished message.
-  await expect(assistant).toContainText('final-fallback', { timeout: 10000 });
+  // The app's OWN recovery, not a simulated one.
+  //
+  // This used to fire a test-only IPC (homebot:__e2e_trigger_fallback) that
+  // synthesised a chunk, so it passed while the real recovery did nothing —
+  // measured: exactly one POST, stream=true, and no retry. It was also flaky,
+  // because the synthetic chunk raced the real stream-error, and the renderer
+  // correctly ignores a chunk once a message has errored.
+  //
+  // The mock above is already built for the real thing: it 500s the streaming
+  // request and answers 'final-fallback' to a non-stream one. So just wait for
+  // the answer to arrive.
+  await expect(assistant).toContainText('final-fallback', { timeout: 20000 });
   await expect(assistant).toHaveAttribute('data-state', 'finished', { timeout: 5000 });
+
+  // Both halves of the recovery actually happened: the stream was attempted,
+  // and a non-stream request followed it.
+  expect(chatRequests.map(r => r.stream)).toEqual([true, false]);
 
   await app.close();
   await new Promise<void>((r) => server.close(() => r()));
