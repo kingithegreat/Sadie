@@ -74,12 +74,44 @@ function upsert(job: MediaJob): void {
   writeJobs(jobs);
 }
 
+/**
+ * What a model says when it means "the one we have been talking about".
+ *
+ * Driving the pipeline from chat, the second turn is "Write the script for
+ * IT". The model passes that through verbatim, no title matched, and the whole
+ * chain stopped at the first stage with a job sitting right there.
+ */
+const VAGUE_JOB_REFERENCES = new Set([
+  '', 'it', 'that', 'this', 'the video', 'the job', 'the short', 'my video', 'current', 'latest',
+]);
+
+/** Most recently touched — what "it" means when more than one job is open. */
+function mostRecent(jobs: MediaJob[]): MediaJob {
+  return [...jobs].sort((a, b) => {
+    const at = (j: MediaJob) => j.history[j.history.length - 1]?.at ?? '';
+    return at(b).localeCompare(at(a));
+  })[0];
+}
+
 function findJob(idOrTitle: string): MediaJob | undefined {
   const jobs = readJobs();
+  if (!jobs.length) return undefined;
   const needle = (idOrTitle || '').trim().toLowerCase();
-  return jobs.find(j => j.id.toLowerCase() === needle)
-    ?? jobs.find(j => j.title.toLowerCase() === needle)
-    ?? jobs.find(j => j.title.toLowerCase().includes(needle));
+
+  const exact = jobs.find(j => j.id.toLowerCase() === needle)
+    ?? jobs.find(j => j.title.toLowerCase() === needle);
+  if (exact) return exact;
+
+  // With one job in flight a pronoun is unambiguous; with several, the one
+  // most recently worked on is what a person means.
+  if (VAGUE_JOB_REFERENCES.has(needle)) {
+    return jobs.length === 1 ? jobs[0] : mostRecent(jobs);
+  }
+
+  // Guarded: `includes('')` is true for every title, so an empty argument used
+  // to select the first job silently.
+  if (!needle) return undefined;
+  return jobs.find(j => j.title.toLowerCase().includes(needle));
 }
 
 /**

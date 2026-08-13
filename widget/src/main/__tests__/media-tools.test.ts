@@ -260,3 +260,38 @@ describe('category slots are shared, not won outright', () => {
     expect(offered.filter((n: string) => n.startsWith('media_')).length).toBeGreaterThan(1);
   });
 });
+
+/**
+ * "it" has to resolve, or the pipeline cannot be driven by conversation.
+ *
+ * Turn two of a real chat is "Write the script for it." The model passes that
+ * word through verbatim; nothing matched; the chain stopped at the first stage
+ * with a job sitting right there.
+ */
+describe('referring to a job the way a person does', () => {
+  it.each(['it', 'that', 'the video', ''])('resolves %j to the only job', async (ref) => {
+    await call('media_create_job', { title: 'One-Minute Bible: Jonah' });
+    const res: any = await call('media_advance_job', { job: ref, to: 'researching' });
+    expect(res.success).toBe(true);
+    expect(readJobs()[0].state).toBe('researching');
+  });
+
+  it('picks the most recently worked-on job when several are open', async () => {
+    await call('media_create_job', { title: 'First' });
+    await call('media_create_job', { title: 'Second' });
+    // Touch the first one so it becomes the one under discussion.
+    await call('media_advance_job', { job: 'First', to: 'researching' });
+
+    const res: any = await call('media_advance_job', { job: 'it', to: 'script_draft' });
+    expect(res.success).toBe(true);
+    expect(readJobs().find(j => j.title === 'First')!.state).toBe('script_draft');
+    expect(readJobs().find(j => j.title === 'Second')!.state).toBe('idea');
+  });
+
+  it('still reports a genuinely unknown title rather than guessing', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_advance_job', { job: 'a video about penguins', to: 'researching' });
+    expect(res.success).toBe(false);
+    expect(String(res.error)).toMatch(/no media job/i);
+  });
+});
