@@ -352,10 +352,38 @@ export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; c
       ? rankToolsByQuery(candidates, options.query)
       : candidates;
 
+    // Round-robin across the matched categories, best tool of each first.
+    //
+    // Ranking alone still starved a category, because scoring is lexical and
+    // one word can dominate it. "make the video file for Jonah" matches media,
+    // filesystem and utility; "file" is a NAME match for the filesystem tools
+    // (+10 each) while media_render only matches "video" in its description
+    // (+1), so all four slots went to filesystem and the request about a video
+    // was offered no media tool at all.
+    //
+    // Taking the best of each category in turn guarantees every category the
+    // request matched is represented, and the leftover slots still go by
+    // score. The category order is the ranked order of first appearance, so
+    // the strongest match is still served first.
+    const byCategory = new Map<string, ToolDefinition[]>();
     for (const t of ranked) {
-      if (selected.length >= SMALL_MODEL_MAX_TOOLS) break;
-      selected.push(t);
-      selectedNames.add(t.name);
+      const key = t.category as string;
+      const list = byCategory.get(key);
+      if (list) list.push(t);
+      else byCategory.set(key, [t]);
+    }
+
+    let placedOne = true;
+    while (placedOne && selected.length < SMALL_MODEL_MAX_TOOLS) {
+      placedOne = false;
+      for (const list of byCategory.values()) {
+        if (selected.length >= SMALL_MODEL_MAX_TOOLS) break;
+        const next = list.shift();
+        if (!next) continue;
+        selected.push(next);
+        selectedNames.add(next.name);
+        placedOne = true;
+      }
     }
 
     // Give unused category slots back to the core set rather than shipping a
