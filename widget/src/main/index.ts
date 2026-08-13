@@ -604,8 +604,13 @@ app.whenReady().then(async () => {
   if (!isE2E && process.env.NODE_ENV !== 'test') {
     try {
       initAutoUpdater(mainWindow);
-      ipcMain.on('homebot:download-update', () => downloadUpdate());
-      ipcMain.on('homebot:install-update', () => installUpdate());
+      // handle, not on: the preload bridge reaches these with
+      // ipcRenderer.invoke (preload/index.ts downloadUpdate/installUpdate),
+      // and invoke is never answered by an ipcMain.on registration. Wired to
+      // `on`, both UpdateBanner buttons rejected and no user could take an
+      // update. Guarded by ipc-invoke-contract.test.ts.
+      ipcMain.handle('homebot:download-update', () => downloadUpdate());
+      ipcMain.handle('homebot:install-update', () => installUpdate());
       console.log('[MAIN] Auto-updater initialized');
     } catch (e) {
       console.error('[MAIN] Auto-updater init error:', e);
