@@ -99,6 +99,23 @@ jobs:
       #
       # TODO: find the last handle and drop the flag. Until then the tests do
       # gate, which is the point -- they previously did not run here at all.
+      # Point TEMP at a directory under the home directory, spelled the long
+      # way. The main-process file tools only permit paths inside HOME_DIR
+      # (process.env.HOME || USERPROFILE), and the suite writes its fixtures to
+      # os.tmpdir(). On a dev box those coincide. On the GitHub Windows runner
+      # TEMP is the 8.3 short form C:\Users\RUNNER~1\... while USERPROFILE is
+      # C:\Users\runneradmin, so path.relative() sees '..' and every file
+      # operation is denied.
+      - name: Point TEMP inside the home directory
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:USERPROFILE 'homebot-test-tmp'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          "TEMP=$tmp" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TMP=$tmp"  | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "USERPROFILE=$env:USERPROFILE"
+          Write-Host "TEMP now=$tmp"
+
       - name: Unit tests
         working-directory: widget
         run: npx jest --config=jest.config.ts --runInBand --no-coverage --forceExit
