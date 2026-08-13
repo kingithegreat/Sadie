@@ -2939,6 +2939,7 @@ export async function streamFromOllamaWithTools(
   const chatGuidelines = settings.chatGuidelines?.trim();
   const systemPromptWithGuidelines = getSystemPromptForModel(model, chatGuidelines);
   const skillContext = (!uncensoredModeEnabled) ? matchSkills(message) : null;
+
   const rawDigest = conversationDigest.get(conversationId);
   const digest = rawDigest && smallModel
     ? rawDigest.slice(-SMALL_MODEL_DIGEST_CHARS)

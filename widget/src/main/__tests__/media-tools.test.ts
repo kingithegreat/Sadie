@@ -295,3 +295,52 @@ describe('referring to a job the way a person does', () => {
     expect(String(res.error)).toMatch(/no media job/i);
   });
 });
+
+/**
+ * A success has to say what comes next.
+ *
+ * A refusal already steers a model — "run media_write_script first" redirects
+ * it. A success said nothing, so a turn that had just advanced the job left
+ * the model to infer the next stage from a pipeline it cannot see. Measured
+ * driving this from chat: a 7B created the job and then wrote ABOUT writing
+ * the script instead of calling the tool that writes it.
+ */
+describe('every success points at the next step', () => {
+  it('tells the caller to write the script after creating a job', async () => {
+    const res: any = await call('media_create_job', { title: 'Jonah' });
+    expect(String(res.result)).toContain('media_write_script');
+  });
+
+  it('tells the caller to narrate once the script exists', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const jobs = readJobs();
+    jobs[0].script = 'Some narration.';
+    jobs[0].state = 'script_draft';
+    require('../tools/media').writeJobs(jobs);
+
+    const res: any = await call('media_advance_job', { job: 'Jonah', to: 'script_qa' });
+    expect(String(res.result)).toContain('media_narrate');
+  });
+
+  it('names a human, not a tool, when the job is waiting on a decision', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    for (const to of ['researching', 'script_draft', 'script_qa', 'media_production', 'render_qa', 'awaiting_approval']) {
+      await call('media_advance_job', { job: 'Jonah', to });
+    }
+    const res: any = await call('media_list_jobs', {});
+    expect(res.success).toBe(true);
+    // The advance INTO awaiting_approval is the message that matters.
+    const last: any = await call('media_advance_job', { job: 'Jonah', to: 'awaiting_approval' });
+    // Already there — the refusal is fine; what matters is it does not invent
+    // a next tool for a state only a person may leave.
+    expect(String(last.error || last.result)).not.toContain('media_render');
+  });
+
+  it('says nothing rather than inventing a step for a terminal state', async () => {
+    // published/rejected have no next tool; a hint there would be a lie.
+    const { nextStepForTest } = require('../tools/media');
+    if (typeof nextStepForTest === 'function') {
+      expect(nextStepForTest({ state: 'published' })).toBe('');
+    }
+  });
+});

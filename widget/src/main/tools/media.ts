@@ -115,6 +115,48 @@ function findJob(idOrTitle: string): MediaJob | undefined {
 }
 
 /**
+ * The step after this one, named as the tool that performs it.
+ *
+ * Refusals already steer a model — "run media_write_script first" is enough to
+ * redirect it. Successes said nothing, so a turn that had just advanced the
+ * job left the model to infer the next stage from a pipeline it cannot see.
+ * Measured driving this from chat: a 7B created the job and then wrote about
+ * writing the script rather than calling the tool that writes it.
+ *
+ * One function, so the hint cannot drift away from the state machine the way a
+ * sentence copied into six success messages would.
+ */
+function nextStepFor(job: MediaJob): string {
+  switch (job.state) {
+    case 'idea':
+    case 'researching':
+      return 'Next: write the script — media_write_script.';
+    case 'script_draft':
+    case 'script_qa':
+      return 'Next: record the narration — media_narrate.';
+    case 'media_production':
+      return 'Next: render the video — media_render.';
+    case 'render_qa':
+      return 'Next: watch it, then approve with media_approve_job (or send it back with media_reject_job).';
+    case 'awaiting_approval':
+      return 'Waiting on a person: media_approve_job or media_reject_job. Nothing else may move it.';
+    case 'needs_revision':
+      return 'Next: revise the script — media_write_script.';
+    case 'approved':
+    case 'scheduled':
+      return 'Publishing is a human decision and is switched off by default.';
+    default:
+      return '';
+  }
+}
+
+/** Append the next step to a success message, when there is one to give. */
+function withNextStep(lines: string[], job: MediaJob): string {
+  const next = nextStepFor(job);
+  return (next ? [...lines, '', next] : lines).join('\n');
+}
+
+/**
  * Per-job asset folder. Under userData rather than temp, because a rendered
  * narration is work product that should survive a reboot — temp is swept.
  */
@@ -243,7 +285,7 @@ const createMediaJobHandler: ToolHandler = async (args) => {
       brief: args.brief ? String(args.brief) : undefined,
     });
     upsert(job);
-    return ok(`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`);
+    return ok(withNextStep([`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`], job));
   } catch (e: any) {
     return err(`media_create_job failed: ${errText(e)}`);
   }
@@ -285,7 +327,7 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
       publishingEnabled,
     });
     upsert(moved);
-    return ok(`"${moved.title}" → ${describeProgress(moved)}`);
+    return ok(withNextStep([`"${moved.title}" → ${describeProgress(moved)}`], moved));
   } catch (e: any) {
     // The state machine's messages already name the allowed next states.
     return err(errText(e));
@@ -374,12 +416,12 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
 
     const problems = checkScript(updated, script.text);
     const seconds = estimateSpokenSeconds(script.text);
-    return ok([
+    return ok(withNextStep([
       `Wrote a script for "${updated.title}" using ${script.via} (~${seconds}s spoken).`,
       problems.length ? `Worth checking:\n- ${problems.join('\n- ')}` : 'No problems found.',
       '',
       script.text,
-    ].join('\n'));
+    ], updated));
   } catch (e: any) {
     return err(`Could not write the script: ${errText(e)}`);
   }
@@ -456,11 +498,11 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     const kb = Math.round(audio.bytes / 1024);
     // Report the MEASURED duration, not the word-count estimate — the estimate
     // was only ever a stand-in until real audio existed.
-    return ok([
+    return ok(withNextStep([
       `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB.`,
       `audio:    ${audio.path}`,
       updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
-    ].join('\n'));
+    ], updated));
   } catch (e: any) {
     return err(`Could not record the narration: ${errText(e)}`);
   }
@@ -617,11 +659,11 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     upsert(updated);
 
     const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
-    return ok([
+    return ok(withNextStep([
       `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${visualNote ? `, ${visualNote}` : ''}.`,
       `video: ${rendered.path}`,
       'Watch it before approving; nothing publishes on its own.',
-    ].join('\n'));
+    ], updated));
   } catch (e: any) {
     return err(`Could not render the video: ${errText(e)}`);
   }
