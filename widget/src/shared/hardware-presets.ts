@@ -139,3 +139,75 @@ export function recommendedModelIdsForVram(vramGB: number | null): string[] {
   const rec = recommendModelsForVram(vramGB);
   return Array.from(new Set([rec.chat.id, rec.coder.id, rec.fallback.id]));
 }
+
+// ---------------------------------------------------------------------------
+// Setup-path recommendation (first run)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum VRAM before local AI is worth suggesting to someone who does not
+ * know what any of this means. Below this the 3B models still run, but slowly
+ * enough that a first-time user concludes the app is broken rather than small.
+ */
+export const LOCAL_VIABLE_MIN_VRAM = 4;
+
+export type SetupPathId = 'local' | 'cloud';
+
+export interface SetupPathRecommendation {
+  /** Which card to badge as recommended. */
+  recommended: SetupPathId;
+  /**
+   * One sentence, in the words a non-technical person would use. Shown under
+   * the two choices, so it must explain the trade-off without naming Ollama,
+   * VRAM tiers, or model parameter counts.
+   */
+  reason: string;
+  /** True when detection has not produced a reading yet or failed outright. */
+  uncertain: boolean;
+}
+
+/**
+ * Which setup path to recommend, from a raw VRAM reading.
+ *
+ * This exists because the first screen asks a brand-new user the single
+ * hardest question in the app — "local or cloud?" — and until now answered it
+ * with "runs on your GPU", which is a question, not an answer. The app can
+ * detect the graphics card, so it should have an opinion.
+ *
+ * The bias is deliberately toward LOCAL wherever the machine can take it:
+ * local needs no account, no card, no API key and no trust in a third party,
+ * which for a non-technical user beats a stronger model behind a signup form.
+ * Cloud is recommended only when local would genuinely disappoint.
+ */
+export function recommendSetupPath(vramGB: number | null | undefined): SetupPathRecommendation {
+  if (vramGB === null || vramGB === undefined || Number.isNaN(vramGB)) {
+    return {
+      recommended: 'cloud',
+      reason:
+        "We couldn't find a graphics card we recognise, so the online option is the safer place to start. You can switch to running it on this PC later.",
+      uncertain: true,
+    };
+  }
+
+  if (vramGB < LOCAL_VIABLE_MIN_VRAM) {
+    return {
+      recommended: 'cloud',
+      reason: `Your graphics card has about ${Math.round(vramGB)}GB of memory, which is a little small for running AI on this PC — it would be slow. The online option is free to start and works right away.`,
+      uncertain: false,
+    };
+  }
+
+  if (vramGB < PROFILE_8GB_MIN) {
+    return {
+      recommended: 'local',
+      reason: `Your graphics card has about ${Math.round(vramGB)}GB of memory, so this PC can run AI on its own — no account and no card needed. It will be a bit slower and briefer than the online option.`,
+      uncertain: false,
+    };
+  }
+
+  return {
+    recommended: 'local',
+    reason: `Your graphics card has about ${Math.round(vramGB)}GB of memory, which is plenty. Running on this PC keeps everything private, costs nothing, and needs no account.`,
+    uncertain: false,
+  };
+}

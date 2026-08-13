@@ -4348,6 +4348,35 @@ body {
 }
 .wizard-path-card:hover { border-color: var(--accent-primary, #4a6cf7); }
 .wizard-path-card.selected { border-color: var(--accent-primary, #4a6cf7); background: rgba(74,108,247,0.08); }
+/* Recommended path — the app has detected the graphics card and has an opinion.
+   A quiet outline plus a badge, not a colour flood: the other card must still
+   read as a real choice, because the recommendation is advice and the user may
+   have reasons we cannot see (metered connection, privacy, no card details). */
+.wizard-path-card { position: relative; }
+.wizard-path-card.recommended {
+  border-color: var(--accent-success, #3fb950);
+}
+.wizard-path-card.recommended:not(.selected) {
+  background: rgba(63, 185, 80, 0.06);
+}
+.wizard-path-badge {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  white-space: nowrap;
+  background: var(--accent-success, #3fb950); color: #08130b;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.2px;
+  padding: 2px 10px; border-radius: 999px;
+}
+/* Why the badge is where it is, in the user's own words. */
+.wizard-path-advice {
+  margin: 14px 0 0; font-size: 13px; line-height: 1.5;
+  color: var(--text-secondary); text-align: center;
+}
+/* Nobody should stall on this screen. */
+.wizard-path-reassure {
+  margin: 8px 0 0; font-size: 12px;
+  color: var(--text-tertiary, var(--text-secondary)); text-align: center; opacity: 0.85;
+}
+
 .wizard-path-icon { font-size: 32px; }
 .wizard-path-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
 

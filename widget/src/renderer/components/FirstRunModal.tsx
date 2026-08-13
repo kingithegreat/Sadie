@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { Settings, CustomLLMConfig } from '../../shared/types';
-import { recommendModelsForVram } from '../../shared/hardware-presets';
+import { recommendModelsForVram, recommendSetupPath } from '../../shared/hardware-presets';
 import { assessModelDownloadFit, type ModelDownloadFit } from '../../shared/model-download-fit';
 
 type Step = 'welcome' | 'setup' | 'done';
@@ -105,6 +105,14 @@ export default function FirstRunModal({
   const [modelPullIndex, setModelPullIndex] = useState(0);
   const [gpuInfo, setGpuInfo] = useState<{ vramGB: number | null; gpuName: string | null } | null>(null);
   const [diskWarning, setDiskWarning] = useState<string | null>(null);
+  // Which path to badge. Recomputed as detection lands; before that it returns
+  // the uncertain/cloud default, which renders no badge and no advice line.
+  const pathAdvice = recommendSetupPath(gpuInfo?.vramGB ?? null);
+  // One flag for the badge AND the explanation, so they can never disagree.
+  // recommendSetupPath returns a cloud default for unknown hardware — correct
+  // as a fallback, but badging it would present a guess as a finding, and the
+  // first thing a beginner sees would be advice we cannot actually support.
+  const showRecommendation = !!gpuInfo && !pathAdvice.uncertain;
   const [diskOk, setDiskOk] = useState<boolean>(true);
   const [modelDiskFit, setModelDiskFit] = useState<ModelDownloadFit | null>(null);
   const pullCancelledRef = useRef(false);
@@ -149,6 +157,23 @@ export default function FirstRunModal({
       }
     } catch { /* non-critical */ }
   }, []);
+
+  // Detect the graphics card as soon as the wizard opens, not when the user
+  // picks the local path.
+  //
+  // The welcome screen asks a brand-new user the hardest question in the app —
+  // run it on this PC, or online? — and used to answer it with "runs on your
+  // GPU", which is a question, not an answer. Detection already existed, but it
+  // fired inside runLocalSetup(), i.e. only after they had committed to local,
+  // so it could never inform the one choice it was most needed for.
+  //
+  // Deliberately not awaited: detectGpuVram shells out to nvidia-smi with a 5s
+  // timeout and then falls back to Ollama's API, so blocking on it here would
+  // stall the first screen on a machine that has neither. The cards render at
+  // once and the recommendation appears when the reading lands.
+  useEffect(() => {
+    detectHardware();
+  }, [detectHardware]);
 
   const checkModelsAndPull = useCallback(async () => {
     setLocalPhase('checking-models');
@@ -382,28 +407,48 @@ export default function FirstRunModal({
               <div className="wizard-icon">✨</div>
               <h1 className="first-run-title">Welcome to HomeBot</h1>
               <p className="first-run-subtitle">
-                Your private AI desktop assistant. Choose how you'd like to power the AI:
+                Your private AI desktop assistant. Where should it think?
               </p>
               <div className="wizard-path-cards">
                 <button
                   type="button"
-                  className={`wizard-path-card${setupPath === 'local' ? ' selected' : ''}`}
+                  className={`wizard-path-card${setupPath === 'local' ? ' selected' : ''}${showRecommendation && pathAdvice.recommended === 'local' ? ' recommended' : ''}`}
                   onClick={() => enterSetupStep('local')}
                 >
+                  {showRecommendation && pathAdvice.recommended === 'local' && (
+                    <span className="wizard-path-badge">Recommended for your PC</span>
+                  )}
                   <span className="wizard-path-icon">🖥️</span>
-                  <strong>Local (Ollama)</strong>
-                  <span className="wizard-path-desc">100% private, runs on your GPU. Free forever.</span>
+                  <strong>On this PC</strong>
+                  <span className="wizard-path-desc">
+                    Private — nothing leaves your computer. Free forever, no account needed.
+                  </span>
                 </button>
                 <button
                   type="button"
-                  className={`wizard-path-card${setupPath === 'cloud' ? ' selected' : ''}`}
+                  className={`wizard-path-card${setupPath === 'cloud' ? ' selected' : ''}${showRecommendation && pathAdvice.recommended === 'cloud' ? ' recommended' : ''}`}
                   onClick={() => enterSetupStep('cloud')}
                 >
+                  {showRecommendation && pathAdvice.recommended === 'cloud' && (
+                    <span className="wizard-path-badge">Recommended for your PC</span>
+                  )}
                   <span className="wizard-path-icon">☁️</span>
-                  <strong>Cloud API</strong>
-                  <span className="wizard-path-desc">Instant setup. GPT-4o, Claude, Gemini, free tiers available.</span>
+                  <strong>Online</strong>
+                  <span className="wizard-path-desc">
+                    Faster and smarter, works on any computer. Needs a free account with a provider.
+                  </span>
                 </button>
               </div>
+              {/* The reason the app has an opinion. Only shown once detection
+                  has actually produced a reading — an "unknown hardware"
+                  disclaimer on the first screen would worry a beginner more
+                  than the missing recommendation helps them. */}
+              {gpuInfo && !pathAdvice.uncertain && (
+                <p className="wizard-path-advice">{pathAdvice.reason}</p>
+              )}
+              <p className="wizard-path-reassure">
+                Not sure? Pick either — you can change it later in Settings.
+              </p>
             </div>
           )}
 

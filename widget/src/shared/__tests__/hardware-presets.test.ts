@@ -17,6 +17,8 @@ import {
   recommendModelsForVram,
   recommendModelsForProfile,
   recommendedModelIdsForVram,
+  recommendSetupPath,
+  LOCAL_VIABLE_MIN_VRAM,
   HARDWARE_PRESETS,
   PROFILE_8GB_MIN,
   PROFILE_16GB_MIN,
@@ -181,5 +183,57 @@ describe('recommendedModelIdsForVram', () => {
       const ids = recommendedModelIdsForVram(v as number | null);
       expect(ids.length).toBe(new Set(ids).size);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recommendSetupPath — the first screen's recommendation
+// ---------------------------------------------------------------------------
+
+describe('recommendSetupPath', () => {
+  it('recommends cloud when the GPU cannot be detected', () => {
+    for (const v of [null, undefined, NaN]) {
+      const r = recommendSetupPath(v as any);
+      expect(r.recommended).toBe('cloud');
+      expect(r.uncertain).toBe(true);
+    }
+  });
+
+  it('recommends cloud when the card is too small to be worth it', () => {
+    const r = recommendSetupPath(LOCAL_VIABLE_MIN_VRAM - 1);
+    expect(r.recommended).toBe('cloud');
+    expect(r.uncertain).toBe(false);
+  });
+
+  it('recommends local as soon as the card is viable', () => {
+    // The bias is deliberate: local needs no account, no card and no API key,
+    // which for a non-technical user beats a better model behind a signup form.
+    expect(recommendSetupPath(LOCAL_VIABLE_MIN_VRAM).recommended).toBe('local');
+    expect(recommendSetupPath(PROFILE_8GB_MIN).recommended).toBe('local');
+    expect(recommendSetupPath(24).recommended).toBe('local');
+  });
+
+  it('warns that a viable-but-small card will be slower', () => {
+    const small = recommendSetupPath(LOCAL_VIABLE_MIN_VRAM);
+    const big = recommendSetupPath(24);
+    expect(small.reason).toMatch(/slower|briefer/i);
+    expect(big.reason).not.toMatch(/slower/i);
+  });
+
+  it('always gives a reason, and never in jargon', () => {
+    // This screen is the one place a total beginner cannot be allowed to
+    // stall. If any of these words reach it, the copy has regressed.
+    const jargon = /VRAM|Ollama|API|GPU|\d+B|quantis|parameter/i;
+    for (const v of [null, 2, 4, 6, 8, 12, 24]) {
+      const r = recommendSetupPath(v as any);
+      expect(r.reason.length).toBeGreaterThan(20);
+      expect(r.reason).not.toMatch(jargon);
+      expect(['local', 'cloud']).toContain(r.recommended);
+    }
+  });
+
+  it('quotes the real card size back to the user when it knows it', () => {
+    expect(recommendSetupPath(8).reason).toContain('8GB');
+    expect(recommendSetupPath(2).reason).toContain('2GB');
   });
 });
