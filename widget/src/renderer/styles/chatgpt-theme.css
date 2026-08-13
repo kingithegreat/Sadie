@@ -9595,3 +9595,42 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .app-container > .toast-container > * {
   pointer-events: auto;
 }
+
+/* ── Tooltip ──────────────────────────────────────────────────────────────
+   Hover help that also appears on keyboard focus. The anchor is inline-flex
+   so wrapping a button does not change its layout — this primitive gets
+   dropped around existing controls, and it must not move them. */
+.tooltip-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.tooltip-bubble {
+  position: absolute;
+  z-index: 2000;                 /* above panels and the sidebar */
+  pointer-events: none;          /* never eat a click meant for the control */
+  white-space: nowrap;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--text-primary, #eef);
+  background: var(--bg-elevated, #1b2033);
+  border: 1px solid var(--border-light, #333);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  animation: tooltip-in 90ms ease-out;
+}
+/* Long help wraps rather than running off-screen. */
+.tooltip-bubble.tooltip-wrap { white-space: normal; width: max-content; }
+
+.tooltip-top    { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+.tooltip-bottom { top: calc(100% + 6px);    left: 50%; transform: translateX(-50%); }
+.tooltip-left   { right: calc(100% + 6px);  top: 50%;  transform: translateY(-50%); }
+.tooltip-right  { left: calc(100% + 6px);   top: 50%;  transform: translateY(-50%); }
+
+@keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-bubble { animation: none; }
+}
