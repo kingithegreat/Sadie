@@ -536,10 +536,13 @@ body {
   opacity: 0.8;
 }
 
+/* Portalled to document.body and positioned by useAnchoredPosition — see
+   anchoredOverlay.tsx. It was `position: absolute; top: 60px; right: 16px`
+   inside .app-header (overflow: hidden), which clipped it to 0px of visible
+   height. No `top`/`right` here: JS owns the coordinates now, and a CSS offset
+   on top of them shifts the panel off its anchor. */
 .backend-popover {
-  position: absolute;
-  top: 60px;
-  right: 16px;
+  position: fixed;
   min-width: min(320px, 90vw);
   max-width: min(520px, 95vw);
   max-height: 40vh;
@@ -1186,10 +1189,11 @@ body {
   position: relative;
 }
 
+/* Portalled and positioned by useAnchoredPosition — see anchoredOverlay.tsx.
+   Was `position: absolute; bottom: 100%`, which .messages-container clipped
+   whenever the message sat near the top of the scroller. */
 .reaction-picker {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
+  position: fixed;
   display: flex;
   gap: 2px;
   padding: 4px;
@@ -4046,6 +4050,12 @@ body {
   position: fixed;
   z-index: 10000;
   min-width: 180px;
+  /* The conversation menu carries ~14 items and ran the full height of the
+     window, leaving Delete flush against the bottom edge. Bounding the height
+     also makes ContextMenu's own viewport clamp reliable, since it clamps
+     against the measured height. */
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
   background: oklch(10% 0.008 250 / 0.95);
   -webkit-backdrop-filter: blur(24px) saturate(1.3);
   backdrop-filter: blur(24px) saturate(1.3);

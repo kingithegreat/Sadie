@@ -1,5 +1,6 @@
 import Icon from './Icon';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { OverlayPortal, anchoredStyle, useAnchoredPosition, useDismissOnOutside } from './anchoredOverlay';
 import Tooltip from './Tooltip';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
@@ -96,59 +97,81 @@ const BackendBadge: React.FC<BackendBadgeProps> = ({
   onDismissDiagnostic,
   onRefresh,
   onToggleDetail
-}) => (
-  <div className="backend-badge" title="Automations are offline — HomeBot will answer on this PC instead">
-    <span className="backend-text">Backend offline</span>
-    <button
-      type="button"
-      className="backend-retry"
-      onClick={() => {
-        try { (window as any).homebotCapture?.log('[Renderer] Retry connection (backend badge)'); } catch (e) {}
-        onRefresh();
-      }}
-      aria-label="Retry connection"
-    >
-      ↻
-    </button>
-    {backendDiagnostic && (
-      <>
-        <button
-          type="button"
-          className="backend-detail"
-          onClick={() => onToggleDetail(true)}
-          title="Details"
-        >
-          ⋯
-        </button>
-        {detailOpen && (
-          <div className="backend-popover" role="dialog" aria-label="HomeBot backend diagnostic">
-            <pre className="backend-popover-text">{backendDiagnostic}</pre>
-            <div className="backend-popover-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  onCopyDiagnostic?.(backendDiagnostic);
-                  onToggleDetail(false);
-                }}
+}) => {
+  // The diagnostic panel is portalled out of the header. It has to be: the
+  // badge sits at `bottom: -24px` inside .app-header, which is overflow:hidden,
+  // and the panel was another 60px below that — measured at 320x55 with 0px
+  // visible. Nobody could ever read it. That is the worst possible place for
+  // this bug, since this panel only appears when something is already broken.
+  const detailRef = useRef<HTMLButtonElement | null>(null);
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const pos = useAnchoredPosition(detailRef, popRef, detailOpen, 'bottom', [backendDiagnostic]);
+  useDismissOnOutside(detailOpen, () => onToggleDetail(false), [popRef, detailRef]);
+
+  return (
+    <div className="backend-badge" title="Automations are offline — HomeBot will answer on this PC instead">
+      <span className="backend-text">Backend offline</span>
+      <button
+        type="button"
+        className="backend-retry"
+        onClick={() => {
+          try { (window as any).homebotCapture?.log('[Renderer] Retry connection (backend badge)'); } catch (e) {}
+          onRefresh();
+        }}
+        aria-label="Retry connection"
+      >
+        ↻
+      </button>
+      {backendDiagnostic && (
+        <>
+          <button
+            ref={detailRef}
+            type="button"
+            className="backend-detail"
+            onClick={() => onToggleDetail(!detailOpen)}
+            aria-expanded={detailOpen}
+            aria-label="Show technical details"
+          >
+            ⋯
+          </button>
+          {detailOpen && (
+            <OverlayPortal>
+              <div
+                ref={popRef}
+                className="backend-popover"
+                role="dialog"
+                aria-label="HomeBot backend diagnostic"
+                style={anchoredStyle(pos)}
               >
-                Copy
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onToggleDetail(false);
-                  onDismissDiagnostic?.();
-                }}
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-      </>
-    )}
-  </div>
-);
+                <pre className="backend-popover-text">{backendDiagnostic}</pre>
+                <div className="backend-popover-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onCopyDiagnostic?.(backendDiagnostic);
+                      onToggleDetail(false);
+                    }}
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleDetail(false);
+                      onDismissDiagnostic?.();
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </OverlayPortal>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
 
 interface OllamaBadgeProps {
   onRefresh: () => void;
