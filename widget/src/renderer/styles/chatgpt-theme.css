@@ -176,13 +176,29 @@ body {
    .app-container is `grid-template-rows: auto auto 1fr auto`; anything left in
    flow claims a track and shifts every row below it.
 
-   This list is the only mechanism that works. A later, more targeted rule does
-   NOT win: each :not() contributes the specificity of its argument, so this
-   selector is (0,12,0), while `.app-container > .toast-container` is (0,2,0).
-   848f519 tried to fix the toast row that way and the declaration was silently
-   overridden — measured with overlay-cascade-probe, which reported
-   `.toast-container position=relative` months after the "fix". Add the class
-   here as well as writing its own positioned rule. */
+   A later, more targeted rule does NOT win: each :not() contributes the
+   specificity of its argument, so this selector is (0,12,0), while
+   `.app-container > .toast-container` is (0,2,0). 848f519 tried to fix the
+   toast row that way and the declaration was silently overridden — measured
+   with overlay-cascade-probe, which reported `.toast-container
+   position=relative` months after the "fix". If an element stays a child of
+   .app-container, its class must be added here as well as given its own
+   positioned rule.
+
+   THE OTHER MECHANISM, and the one to prefer for overlays: leave the subtree.
+   An element portalled to document.body is not a child of .app-container, so
+   this selector cannot match it at any specificity and no exclusion is needed.
+   Thirteen overlays now do that via components/anchoredOverlay.tsx — every
+   `position: fixed` class in the app except the five already listed here.
+   Sweeping the live cascade found 13 of 18 captured, several of them added
+   long after this rule was written and silently broken from birth.
+
+   Which is the point: this list is a blocklist, so anything new is captured by
+   DEFAULT and fails silently — nothing goes red when a rule loses a specificity
+   contest. It is the right tool for an element that must genuinely stay in this
+   subtree (.floating-feature-buttons is positioned relative to the app frame,
+   so it belongs here). For anything that merely needs to float above the app,
+   portal it and do not extend this list. */
 .app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar):not(.settings-overlay):not(.confirmation-overlay):not(.first-run-overlay):not(.sidebar-backdrop):not(.conversation-sidebar):not(.drop-overlay):not(.toast-container):not(.floating-feature-buttons) {
   position: relative;
   z-index: 1;
