@@ -44,6 +44,55 @@ jobs:
       - name: Build (if configured)
         run: npm run build --if-present
 
+  # The `build` job above runs at the REPO ROOT. Root tsconfig covers only
+  # root src/, root jest's roots is root src/, and the root package has no
+  # lint or build script -- so `--if-present` silently skipped both. It never
+  # touched widget/, which is the actual Electron app: 181 test files and
+  # ~2,780 tests, of which CI ran exactly one (via permissions-smoke.yml).
+  #
+  # This job is that gate. Kept separate from `build` so a widget failure is
+  # distinguishable at a glance from a root failure.
+  widget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+
+      # --ignore-scripts: electron-builder's postinstall pulls platform binaries
+      # we do not need to typecheck or unit-test, and it is slow.
+      - name: Install
+        working-directory: widget
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        working-directory: widget
+        run: npx tsc --noEmit
+
+      # --forceExit is deliberate and NOT hiding a failure: every test passes.
+      # The suite finishes in ~45s and then does not release the process. Two
+      # causes were found and fixed (a setInterval cleared only on Electron's
+      # 'before-quit', which never fires under Jest; and initializeMcpServers
+      # spawning real child processes from the developer's own MCP config) --
+      # that took it from ~86s to ~45s and removed six handles. At least one
+      # handle remains, isolated to src/main but not attributable by
+      # --detectOpenHandles. Without --forceExit this job would hang until the
+      # runner timeout.
+      #
+      # TODO: find the last handle and drop the flag. Until then the tests do
+      # gate, which is the point -- they previously did not run here at all.
+      - name: Unit tests
+        working-directory: widget
+        run: npx jest --config=jest.config.ts --runInBand --no-coverage --forceExit
+
+      - name: Build
+        working-directory: widget
+        run: npm run build
+
   duplicate-export-guard:
     # Mechanical check for parallel-build collisions (e.g. two incompatible
     # cosmetics systems in a sibling project) and scaffold-vs-integration
