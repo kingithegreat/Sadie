@@ -79,7 +79,16 @@ jobs:
 
       # --ignore-scripts: electron-builder's postinstall pulls platform binaries
       # we do not need to typecheck or unit-test, and it is slow.
-      - name: Install
+      # BOTH packages. widget/src/main/tools/crm.ts imports
+      # ../../../../src/crm/store -- a ROOT file -- and that file does
+      # require('better-sqlite3'), which Node resolves from the root package.
+      # Installing only widget/ leaves ten CRM and email tests failing on a
+      # module that is present in widget's tree but not where the importer
+      # looks for it.
+      - name: Install (root)
+        run: npm ci --ignore-scripts
+
+      - name: Install (widget)
         working-directory: widget
         run: npm ci --ignore-scripts
 
@@ -89,8 +98,9 @@ jobs:
       # better-sqlite3's own build, and the CRM store is file-backed sqlite --
       # without this, ten CRM and email tests fail on require().
       - name: Build native modules against Node
-        working-directory: widget
-        run: npm rebuild better-sqlite3
+        run: |
+          npm rebuild better-sqlite3
+          cd widget && npm rebuild better-sqlite3
 
       - name: Typecheck
         working-directory: widget
