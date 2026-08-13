@@ -344,3 +344,66 @@ describe('every success points at the next step', () => {
     }
   });
 });
+
+/**
+ * Nothing ever deleted a video's files.
+ *
+ * A minute of 1080x1920 is 10-20MB before the scene images, and the Media
+ * Studio had no cleanup, no cap, and no way to even see what it was holding —
+ * found while answering "where does HomeBot store video". Reported rather than
+ * enforced: deleting a person's work to save disk is not a tool's decision.
+ */
+describe('disk the Media Studio is holding', () => {
+  it('shows a total, so it is at least visible', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_list_jobs', {});
+    expect(res.success).toBe(true);
+    // No assets on a fresh job, so no total — the line only appears when
+    // there is something to report.
+    expect(String(res.result)).toContain('Jonah');
+  });
+
+  it('deletes a job and says what it freed', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_delete_job', { job: 'Jonah' });
+    expect(res.success).toBe(true);
+    expect(String(res.result)).toMatch(/Deleted "Jonah"/);
+    expect(readJobs()).toHaveLength(0);
+  });
+
+  it('can drop the record and keep the files', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_delete_job', { job: 'Jonah', keepFiles: true });
+    expect(res.success).toBe(true);
+    expect(String(res.result)).toMatch(/still on disk/);
+    expect(readJobs()).toHaveLength(0);
+  });
+
+  it('needs confirmation, because it cannot be undone', () => {
+    const { mediaToolDefs } = require('../tools/media');
+    const def = mediaToolDefs.find((d: any) => d.name === 'media_delete_job');
+    expect(def.requiresConfirmation).toBe(true);
+  });
+
+  it('reports an unknown job rather than deleting something else', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_delete_job', { job: 'a video about penguins' });
+    expect(res.success).toBe(false);
+    expect(readJobs()).toHaveLength(1);
+  });
+
+  it('leaves the record alone if the files cannot be removed', async () => {
+    // Stranding files with no record pointing at them is worse than keeping
+    // both: nothing would ever find them again.
+    await call('media_create_job', { title: 'Jonah' });
+    const fsMod = require('fs');
+    const spy = jest.spyOn(fsMod, 'rmSync').mockImplementation(() => { throw new Error('locked'); });
+    try {
+      const res: any = await call('media_delete_job', { job: 'Jonah' });
+      expect(res.success).toBe(false);
+      expect(readJobs()).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

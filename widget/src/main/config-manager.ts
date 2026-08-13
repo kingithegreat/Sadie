@@ -314,6 +314,8 @@ export const DEFAULT_SETTINGS: Settings = {
     media_write_script: true,
     media_narrate: true,
     media_render: true,
+    // Destructive and irreversible, so it also carries requiresConfirmation.
+    media_delete_job: false,
     media_setup_research: false,
     media_create_job: true,
     media_list_jobs: true,

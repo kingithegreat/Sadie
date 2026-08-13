@@ -168,8 +168,42 @@ function mediaAssetsDir(jobId: string): string {
   }
 }
 
+/**
+ * Bytes a job is holding on disk.
+ *
+ * Nothing ever deletes these. A minute of 1080x1920 is 10-20MB before the
+ * scene images, so a channel that ships weekly quietly accumulates gigabytes
+ * in AppData with no cap, no cleanup and — until now — no way to even see it.
+ * Reported rather than enforced: a rendered video is work product, and
+ * deleting a person's work to save disk is not a decision a tool should make
+ * on its own.
+ */
+function assetsSizeBytes(jobId: string): number {
+  const dir = mediaAssetsDir(jobId);
+  let total = 0;
+  const walk = (d: string) => {
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else { try { total += fs.statSync(full).size; } catch { /* vanished mid-walk */ } }
+    }
+  };
+  walk(dir);
+  return total;
+}
+
+function humanSize(bytes: number): string {
+  if (bytes <= 0) return '0 KB';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function summarise(j: MediaJob): string {
-  return `${j.title} [${j.format}] — ${describeProgress(j)} (id: ${j.id})`;
+  const size = assetsSizeBytes(j.id);
+  const disk = size > 0 ? ` — ${humanSize(size)} on disk` : '';
+  return `${j.title} [${j.format}] — ${describeProgress(j)}${disk} (id: ${j.id})`;
 }
 
 // ---- Tool definitions ----
@@ -299,7 +333,12 @@ const listMediaJobsHandler: ToolHandler = async (args) => {
     if (jobs.length === 0) {
       return ok(filter ? `No videos are at "${filter}".` : 'No videos in the Media Studio yet.');
     }
-    return ok(jobs.map(summarise).join('\n'));
+    // Total at the end, because nothing else in the app shows what the Media
+    // Studio is holding and it only ever grows.
+    const total = jobs.reduce((sum, j) => sum + assetsSizeBytes(j.id), 0);
+    const lines = jobs.map(summarise);
+    if (total > 0) lines.push('', `${humanSize(total)} across ${jobs.length} video(s). media_delete_job frees a job's files.`);
+    return ok(lines.join('\n'));
   } catch (e: any) {
     return err(`media_list_jobs failed: ${errText(e)}`);
   }
@@ -721,7 +760,65 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
   }
 };
 
+const deleteMediaJobDef: ToolDefinition = {
+  name: 'media_delete_job',
+  description:
+    'Delete a video from the Media Studio and remove its files — narration, captions, scene ' +
+    'images and the rendered video. Irreversible. Use to free disk space once a video has ' +
+    'been published or abandoned.',
+  category: 'media',
+  requiresConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title' },
+      keepFiles: { type: 'boolean', description: 'Remove the job from the list but leave its files on disk. Default false.' },
+    },
+    required: ['job'],
+  },
+};
+
+const deleteMediaJobHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err(`No media job matching "${args.job}".`);
+
+    const freed = assetsSizeBytes(job.id);
+    const keepFiles = Boolean(args.keepFiles);
+
+    if (!keepFiles) {
+      const dir = mediaAssetsDir(job.id);
+      // Containment: only ever remove a directory that is genuinely inside the
+      // media-assets root and named for this job. A tool that deletes
+      // recursively must not be one bad id away from removing something else.
+      const root = path.dirname(mediaAssetsDir('probe'));
+      const resolved = path.resolve(dir);
+      const rel = path.relative(path.resolve(root), resolved);
+      const contained = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+      if (!contained) {
+        return err(`Refusing to delete ${resolved}: it is not inside the media assets folder.`);
+      }
+      try {
+        fs.rmSync(resolved, { recursive: true, force: true });
+      } catch (e: any) {
+        // The record is left alone on purpose — removing it while the files
+        // survive would strand them with nothing pointing at them.
+        return err(`Could not remove the files for "${job.title}": ${errText(e)}`);
+      }
+    }
+
+    writeJobs(readJobs().filter(j => j.id !== job.id));
+
+    return ok(keepFiles
+      ? `Removed "${job.title}" from the Media Studio. Its ${humanSize(freed)} of files are still on disk.`
+      : `Deleted "${job.title}" and freed ${humanSize(freed)}.`);
+  } catch (e: any) {
+    return err(`Could not delete the job: ${errText(e)}`);
+  }
+};
+
 export const mediaToolDefs: ToolDefinition[] = [
+  deleteMediaJobDef,
   writeMediaScriptDef,
   narrateMediaJobDef,
   renderMediaJobDef,
@@ -743,4 +840,5 @@ export const mediaToolHandlers: Record<string, ToolHandler> = {
   media_advance_job: advanceMediaJobHandler,
   media_approve_job: approveMediaJobHandler,
   media_reject_job: rejectMediaJobHandler,
+  media_delete_job: deleteMediaJobHandler,
 };
