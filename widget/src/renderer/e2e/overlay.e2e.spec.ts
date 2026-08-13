@@ -115,3 +115,43 @@ test('no open overlay is trapped inside a clipping container', async () => {
   expect(trapped).toEqual([]);
   await app.close();
 });
+
+test('a toast floats in the corner and does not push the page down', async () => {
+  const { app, page } = await open('homebot-e2e-toast-');
+
+  const headerBefore = Math.round((await page.locator('.app-header').boundingBox())!.y);
+
+  // Fired from the MAIN process, so this travels the real IPC path into real
+  // React state — not an element injected into the DOM.
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send(
+      'homebot:model-fallback', { from: 'llama3', to: 'phi3' }
+    );
+  });
+  await page.waitForTimeout(800);
+
+  const toast = page.locator('.toast-container');
+  await expect(toast).toBeVisible();
+
+  const info = await toast.evaluate((el) => ({
+    portalled: el.parentElement === document.body,
+    position: getComputedStyle(el).position,
+    right: Math.round(el.getBoundingClientRect().right),
+    top: Math.round(el.getBoundingClientRect().top),
+    viewportWidth: window.innerWidth,
+    headerTop: Math.round(document.querySelector('.app-header')!.getBoundingClientRect().top),
+  }));
+
+  // Out of .app-container, so the (0,10,0) blanket rule cannot force it back
+  // into flow — which is what beat the old `.app-container > .toast-container`
+  // override and made every toast shift the UI down by its own height.
+  expect(info.portalled).toBe(true);
+  expect(info.position).toBe('fixed');
+  // Pinned to the top-right, 16px in.
+  expect(info.viewportWidth - info.right).toBeLessThan(24);
+  expect(info.top).toBeLessThan(24);
+  // The point of the whole thing: the page must not move.
+  expect(info.headerTop).toBe(headerBefore);
+
+  await app.close();
+});

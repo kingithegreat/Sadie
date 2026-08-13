@@ -9585,26 +9585,23 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 
 /* Toasts must not consume a grid row.
    .app-container is `grid-template-rows: auto auto 1fr auto`, sized for
-   titlebar / header / content / footer. .toast-container is a real child, so
-   whenever a toast was on screen it TOOK row 1 and shifted everything down one:
-   the header landed in the 1fr row (measured at 451px instead of 134px) and the
-   mode panel dropped into the trailing auto row at the bottom of the window.
-   Both symptoms, one cause — the earlier align-content fix only stopped the
-   header from looking stretched.
-   Taking the overlay out of flow puts every real row back where the template
-   intends. pointer-events is restored on the toasts themselves so they stay
-   dismissable. */
-.app-container > .toast-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 60;
-  pointer-events: none;
-}
-.app-container > .toast-container > * {
-  pointer-events: auto;
-}
+   titlebar / header / content / footer. .toast-container was a real child, so
+   whenever a toast was on screen it TOOK row 1 and shifted everything down one.
+
+   There used to be a `.app-container > .toast-container { position: absolute }`
+   rule here to fix that, and it worked when it was written. The blanket
+   `.app-container > *:not(...)` rule further up was added later at (0,10,0) and
+   silently beat it — that override is only (0,2,0) — so the fix quietly stopped
+   applying while its comment went on claiming otherwise. Measured before this
+   change: the header sat at y=37 normally and y=83 with a toast up, so the
+   whole UI jolted 46px on every "Copied to clipboard" and back again when it
+   expired.
+
+   ToastContainer now portals to document.body, which puts it out of
+   .app-container entirely, so no descendant rule can reach it and the base
+   `.toast-container { position: fixed }` above applies as written. The old
+   override is deleted rather than given more specificity: another rule can
+   always outrank it later, and this is the second time that has happened. */
 
 /* ── Tooltip ──────────────────────────────────────────────────────────────
    Hover help that also appears on keyboard focus. The anchor is inline-flex

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface Toast {
   id: string;
@@ -15,12 +16,28 @@ interface ToastContainerProps {
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
   if (toasts.length === 0) return null;
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container it was
+  // matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // which is (0,10,0) and beat BOTH `.toast-container`'s own `position: fixed`
+  // (0,1,0) and the `.app-container > .toast-container` override (0,2,0) that
+  // had been written specifically to fix this. So toasts were laid out in flow:
+  // measured, the header dropped from y=37 to y=83 the moment one appeared, and
+  // sprang back when it expired — the whole UI jolting 46px on every "Copied to
+  // clipboard".
+  //
+  // Out of .app-container, the blocklist cannot match and `position: fixed`
+  // applies as written.
+  return createPortal(
     <div className="toast-container" data-testid="toast-container" aria-live="polite">
       {toasts.map(t => (
         <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
       ))}
-    </div>
+    </div>,
+    document.body
   );
 };
 
