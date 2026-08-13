@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
+import { dismissFirstRun } from './helpers/firstRun';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -31,11 +32,7 @@ async function open(prefix: string) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
   await waitForAppReady(page);
-  const skip = page.getByRole('button', { name: /Skip setup/i });
-  if (await skip.count()) {
-    await skip.click();
-    await page.waitForTimeout(400);
-  }
+  await dismissFirstRun(page);
   return { app, page };
 }
 
