@@ -753,8 +753,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           }
         } catch (e) {}
 
-        // Use the human-readable message from classifyError when available
-        const errorText = payload.message || (typeof payload.error === 'string' ? payload.error : undefined) || 'Stream error';
+        // Use the human-readable message from classifyError when available.
+        //
+        // It says "when available" and then did not use it: payload.message is
+        // the RAW internal label — 'Upstream error (n8n unavailable)',
+        // 'Streaming error' — which is what classifyError takes as INPUT, not
+        // what it produces for a reader. Those strings have to keep their
+        // product names because the classifier matches on them, so the friendly
+        // text has to be preferred here instead.
+        const errorText =
+          payload.recoveryHint?.userMessage ||
+          payload.message ||
+          (typeof payload.error === 'string' ? payload.error : undefined) ||
+          'Something went wrong.';
 
         setMessages(prev => {
           return prev.map(m => {
