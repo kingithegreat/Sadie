@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from '../Icon';
 import FileTree from './FileTree';
 import CodeEditor from './CodeEditor';
@@ -127,7 +128,17 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
 
   if (!open) return null;
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container this was
+  // matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // which is (0,10,0) and beats this overlay's own `position: fixed`. The panel
+  // was therefore laid out as a page row instead of covering the window. That
+  // rule is a blocklist — it excludes the handful of overlays someone
+  // remembered to name, and silently captures every one they did not.
+  return createPortal((
     <div className="workspace-shell" role="region" aria-label="Workspace">
       {/* Activity bar */}
       <nav className="ws-activity" aria-label="Activity bar">
@@ -270,5 +281,5 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
         {dirty && <span className="ws-status-item ws-status-dirty">Unsaved</span>}
       </footer>
     </div>
-  );
+  ), document.body);
 }

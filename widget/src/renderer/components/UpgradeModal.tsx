@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { UpgradePrompt } from '../../shared/types';
 
 /**
@@ -11,6 +12,24 @@ export function UpgradeModal({
   prompt: UpgradePrompt | null;
   onClose: () => void;
 }) {
+  // Escape closes, like every other overlay in the app. This one already had a
+  // clearly labelled "Not now", so it was never a trap — but a modal that
+  // ignores Escape is a small surprise, and the rest no longer do.
+  //
+  // Not portalled, unlike the other .hb-modal-overlay user (PermissionModal):
+  // this renders inside a mode panel rather than as a direct child of
+  // .app-container, so the blanket `.app-container > *:not(...)` rule does not
+  // reach it, and .image-generator/.automation-center set only `overflow-y`,
+  // which position:fixed escapes on its own.
+  useEffect(() => {
+    if (!prompt) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [prompt, onClose]);
+
   if (!prompt) return null;
 
   return (

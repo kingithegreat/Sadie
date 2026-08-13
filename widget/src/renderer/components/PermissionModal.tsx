@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   describePermission,
   resolveHumanReason,
@@ -113,7 +114,17 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
   const described = missingPermissions.map(describePermission);
   const humanReason = resolveHumanReason(reason);
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container (Suspense and
+  // ErrorBoundary render no DOM node of their own, so nesting inside them does
+  // not change this) it was matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // at (0,10,0), which beats this overlay's own `position: fixed`. Swept against
+  // the live cascade, 13 of the app's 18 position:fixed classes were captured
+  // that way — only the 5 named in that rule's :not() list survived.
+  return createPortal((
     <div data-role="permission-modal" className="hb-modal-overlay">
       <div
         ref={cardRef}
@@ -163,5 +174,5 @@ export default function PermissionModal({ open, missingPermissions, reason, requ
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }

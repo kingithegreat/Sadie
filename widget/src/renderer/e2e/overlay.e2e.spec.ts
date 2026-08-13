@@ -155,3 +155,166 @@ test('a toast floats in the corner and does not push the page down', async () =>
 
   await app.close();
 });
+
+/**
+ * The full-window panels. Each of these is authored as `position: fixed` and
+ * each was being laid out as a page row instead, because the blanket
+ * `.app-container > *:not(...)` rule is (0,10,0) and their own rule is (0,1,0).
+ *
+ * .settings-overlay is in that rule's :not() list and so was always correct —
+ * it is included here deliberately as the control case. The rule is a blocklist:
+ * it works for the handful of overlays someone remembered to name and silently
+ * captures every one they did not.
+ */
+const PANELS = [
+  { label: 'Workspace', sel: '.workspace-shell' },
+  { label: 'Analytics', sel: '.td-overlay' },
+  { label: 'Notifications', sel: '.notification-history-overlay' },
+];
+
+for (const p of PANELS) {
+  test(`${p.label} opens as a real overlay and closes with Escape`, async () => {
+    const { app, page } = await open(`homebot-e2e-${p.label.toLowerCase()}-`);
+
+    const headerBefore = Math.round((await page.locator('.app-header').boundingBox())!.y);
+
+    const btn = page.locator(`[aria-label="${p.label}"]`).first();
+    await expect(btn).toBeVisible();
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    const panel = page.locator(p.sel).first();
+    await expect(panel).toBeVisible();
+
+    const info = await panel.evaluate((el) => ({
+      portalled: el.parentElement === document.body,
+      position: getComputedStyle(el).position,
+      rect: el.getBoundingClientRect().toJSON(),
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+      headerTop: Math.round(document.querySelector('.app-header')!.getBoundingClientRect().top),
+    }));
+
+    expect(info.portalled).toBe(true);
+    expect(info.position).toBe('fixed');
+    // It must actually cover the window, not sit in a row of it.
+    expect(Math.round(info.rect.width)).toBe(info.viewport.w);
+    expect(Math.round(info.rect.height)).toBe(info.viewport.h);
+    expect(Math.round(info.rect.top)).toBe(0);
+    // ...and opening it must not move the page underneath.
+    expect(info.headerTop).toBe(headerBefore);
+
+    // A panel that fills the window must have an exit that is not one specific
+    // button. Analytics had only a Close button, which was survivable while it
+    // was an inert page row and became a trap once it genuinely covered things.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    await expect(page.locator(p.sel)).toHaveCount(0);
+
+    await app.close();
+  });
+}
+
+/**
+ * The two overlays reachable only by keyboard or by IPC. Both are direct
+ * children of .app-container — Suspense and ErrorBoundary render no DOM node of
+ * their own, so nesting inside them does not change that — and both were
+ * therefore captured by the blanket rule.
+ *
+ * The permission modal is the one that matters most here: it is the security
+ * prompt asking whether HomeBot may touch your files, and a prompt laid out as
+ * a page row rather than a modal is a prompt people answer without reading.
+ */
+test('the keyboard shortcuts panel covers the window', async () => {
+  const { app, page } = await open('homebot-e2e-shortcuts-');
+  const headerBefore = Math.round((await page.locator('.app-header').boundingBox())!.y);
+
+  await page.keyboard.press('Control+/');
+  await page.waitForTimeout(500);
+
+  const panel = page.locator('.shortcuts-overlay').first();
+  await expect(panel).toBeVisible();
+  const info = await panel.evaluate((el) => ({
+    portalled: el.parentElement === document.body,
+    position: getComputedStyle(el).position,
+    w: Math.round(el.getBoundingClientRect().width),
+    vw: window.innerWidth,
+    headerTop: Math.round(document.querySelector('.app-header')!.getBoundingClientRect().top),
+  }));
+  expect(info.portalled).toBe(true);
+  expect(info.position).toBe('fixed');
+  expect(info.w).toBe(info.vw);
+  expect(info.headerTop).toBe(headerBefore);
+
+  await app.close();
+});
+
+test('the permission prompt renders as a modal, not a page row', async () => {
+  const { app, page } = await open('homebot-e2e-perm-');
+  const headerBefore = Math.round((await page.locator('.app-header').boundingBox())!.y);
+
+  // Real IPC from the main process, through the real preload bridge.
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('homebot:permission-request', {
+      requestId: 'e2e-1',
+      missingPermissions: ['files.write'],
+      reason: 'Save a report to your Documents folder',
+    });
+  });
+  await page.waitForTimeout(700);
+
+  const modal = page.locator('.hb-modal-overlay').first();
+  await expect(modal).toBeVisible();
+  const info = await modal.evaluate((el) => ({
+    portalled: el.parentElement === document.body,
+    position: getComputedStyle(el).position,
+    w: Math.round(el.getBoundingClientRect().width),
+    h: Math.round(el.getBoundingClientRect().height),
+    vw: window.innerWidth,
+    vh: window.innerHeight,
+    headerTop: Math.round(document.querySelector('.app-header')!.getBoundingClientRect().top),
+  }));
+  expect(info.portalled).toBe(true);
+  expect(info.position).toBe('fixed');
+  expect(info.w).toBe(info.vw);
+  expect(info.h).toBe(info.vh);
+  expect(info.headerTop).toBe(headerBefore);
+
+  await app.close();
+});
+
+test('conversation search replaces the sidebar without falling into the page flow', async () => {
+  const { app, page } = await open('homebot-e2e-search-');
+  const headerBefore = Math.round((await page.locator('.app-header').boundingBox())!.y);
+
+  const burger = page.locator('.menu-btn, [aria-label*="menu" i]').first();
+  await burger.click();
+  await page.waitForTimeout(500);
+
+  // The sidebar swaps its own root for this panel, which is how the panel lost
+  // the `.conversation-sidebar` exemption in the blanket rule's :not() list.
+  const searchBtn = page.locator('[aria-label*="search" i], .search-btn, .sidebar-search').first();
+  test.skip(!(await searchBtn.count()), 'no search trigger in the sidebar');
+  await searchBtn.click();
+  await page.waitForTimeout(500);
+
+  const panel = page.locator('.conversation-search-overlay').first();
+  await expect(panel).toBeVisible();
+  const info = await panel.evaluate((el) => ({
+    portalled: el.parentElement === document.body,
+    position: getComputedStyle(el).position,
+    w: Math.round(el.getBoundingClientRect().width),
+    vw: window.innerWidth,
+    headerTop: Math.round(document.querySelector('.app-header')!.getBoundingClientRect().top),
+  }));
+  expect(info.portalled).toBe(true);
+  expect(info.position).toBe('fixed');
+  expect(info.headerTop).toBe(headerBefore);
+
+  // Escape returns to the conversation list — a search box without Escape is
+  // the least expected thing in the app.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  await expect(page.locator('.conversation-search-overlay')).toHaveCount(0);
+
+  await app.close();
+});

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ShortcutsPanelProps {
   open: boolean;
@@ -66,7 +67,17 @@ const ShortcutsPanel: React.FC<ShortcutsPanelProps> = ({ open, onClose }) => {
 
   if (!open) return null;
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container (Suspense and
+  // ErrorBoundary render no DOM node of their own, so nesting inside them does
+  // not change this) it was matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // at (0,10,0), which beats this overlay's own `position: fixed`. Swept against
+  // the live cascade, 13 of the app's 18 position:fixed classes were captured
+  // that way — only the 5 named in that rule's :not() list survived.
+  return createPortal((
     <div className="shortcuts-overlay" data-testid="shortcuts-overlay" onClick={onClose}>
       <div className="shortcuts-panel" onClick={e => e.stopPropagation()}>
         <div className="shortcuts-header">
@@ -98,7 +109,7 @@ const ShortcutsPanel: React.FC<ShortcutsPanelProps> = ({ open, onClose }) => {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 };
 
 export default ShortcutsPanel;

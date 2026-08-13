@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 interface SearchResult {
   conversationId: string;
@@ -15,6 +16,17 @@ interface ConversationSearchProps {
 }
 
 const ConversationSearch: React.FC<ConversationSearchProps> = ({ onSelectConversation, onClose }) => {
+  // Escape closes and returns to the conversation list. This panel replaces the
+  // sidebar entirely and fills the window, and Escape is the most expected key
+  // there is in a search box — it had none.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -90,7 +102,19 @@ const ConversationSearch: React.FC<ConversationSearchProps> = ({ onSelectConvers
     return '⬇️';
   };
 
-  return (
+  // Portalled to document.body. ConversationSidebar SWAPS ITS OWN ROOT for this
+  // component when search is open — it returns <ConversationSearch/> instead of
+  // the sidebar — and ErrorBoundary/Suspense render no DOM node, so this becomes
+  // a direct child of .app-container. The sidebar is named in the blanket rule's
+  // :not() list; .conversation-search-overlay is not, so swapping roots silently
+  // dropped the exemption and the panel was laid out as a page row:
+  //
+  //   .app-container > *:not(.app-header):not(...) {
+  //     position: relative; z-index: 1; }   /* (0,10,0) beats (0,1,0) */
+  //
+  // Exactly the trap a blocklist sets: the exemption is attached to a class
+  // name, not to what the element is for.
+  return createPortal((
     <div className="conversation-search-overlay">
       <div className="conversation-search-panel">
         <div className="search-header">
@@ -169,7 +193,7 @@ const ConversationSearch: React.FC<ConversationSearchProps> = ({ onSelectConvers
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 };
 
 export default ConversationSearch;

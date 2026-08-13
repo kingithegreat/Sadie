@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { PermissionAuditEntry } from '../../shared/types';
 
 interface PermissionHistoryProps {
@@ -80,6 +81,18 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
     return () => { cancelled = true; };
   }, [open]);
 
+  // Escape closes. A panel that fills the window and can only be dismissed with
+  // the mouse is unusable by keyboard. This mattered less while the blanket
+  // .app-container rule laid these out as inert page rows; now that they
+  // genuinely cover everything, no-Escape is a trap.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
   if (!open) return null;
 
   const clear = async () => {
@@ -112,7 +125,17 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
     }
   };
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container this was
+  // matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // which is (0,10,0) and beats this overlay's own `position: fixed`. The panel
+  // was therefore laid out as a page row instead of covering the window. That
+  // rule is a blocklist — it excludes the handful of overlays someone
+  // remembered to name, and silently captures every one they did not.
+  return createPortal((
     <div className="notification-history-overlay" onClick={onClose} data-role="permission-history">
       <div
         className="notification-history-panel"
@@ -170,5 +193,5 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }

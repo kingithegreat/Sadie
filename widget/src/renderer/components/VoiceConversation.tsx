@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { resolveVoiceEngine, whisperTranscribeOnce } from '../utils/speech';
 import '../styles/voice-conversation.css';
 
@@ -153,11 +154,33 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
     setContinuousMode(prev => !prev);
   }, []);
 
+  // Escape closes. A panel that fills the window and can only be dismissed with
+  // the mouse is unusable by keyboard. This mattered less while the blanket
+  // .app-container rule laid these out as inert page rows; now that they
+  // genuinely cover everything, no-Escape is a trap.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
   if (!open) return null;
 
   const micDisabled = state === 'thinking' || state === 'speaking' || state === 'listening';
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container (Suspense and
+  // ErrorBoundary render no DOM node of their own, so nesting inside them does
+  // not change this) it was matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // at (0,10,0), which beats this overlay's own `position: fixed`. Swept against
+  // the live cascade, 13 of the app's 18 position:fixed classes were captured
+  // that way — only the 5 named in that rule's :not() list survived.
+  return createPortal((
     <div className="voice-conversation-overlay" onClick={onClose}>
       <div
         className="voice-conversation-panel"
@@ -251,7 +274,7 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
         {error && <div className="voice-error">{error}</div>}
       </div>
     </div>
-  );
+  ), document.body);
 };
 
 /* ── SVG Icons ── */

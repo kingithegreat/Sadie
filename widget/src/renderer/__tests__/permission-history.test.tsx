@@ -40,10 +40,15 @@ const sampleEvents = [
 ];
 
 describe('PermissionHistory — open/closed', () => {
+  // The panel portals to document.body so the blanket `.app-container > *`
+  // rule cannot lay it out as a page row (see PermissionHistory.tsx), which
+  // puts it outside RTL's `container`. `container.firstChild` is therefore null
+  // whether it is open or not — it would pass this test vacuously — so the
+  // closed state is asserted against the document instead.
   test('renders nothing when open=false', () => {
     setup();
-    const { container } = render(<PermissionHistory open={false} onClose={jest.fn()} />);
-    expect(container.firstChild).toBeNull();
+    render(<PermissionHistory open={false} onClose={jest.fn()} />);
+    expect(document.querySelector('[data-role="permission-history"]')).toBeNull();
   });
 
   test('renders the dialog when open=true', async () => {
@@ -93,9 +98,9 @@ describe('PermissionHistory — entries', () => {
 
   test('shows newest entries first', async () => {
     setup({ readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }) });
-    const { container } = render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
     await screen.findByText('write file');
-    const items = container.querySelectorAll('.notif-item');
+    const items = document.querySelectorAll('.notif-item');
     expect(items).toHaveLength(3);
     // Last recorded (delete_file) should be first in the list.
     expect(items[0].textContent).toContain('delete file');
