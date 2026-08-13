@@ -53,6 +53,74 @@ export function timelineFromCues(
 }
 
 /**
+ * Merge adjacent cues into scenes of roughly `targetSeconds`.
+ *
+ * Captions land every 2-3 seconds. Cutting the picture that often is frantic
+ * to watch and generates three times the images for no gain — grouping into
+ * ~5s scenes is closer to how a short is actually edited, and cuts generation
+ * cost proportionally. The last group absorbs any remainder rather than
+ * leaving a sliver on screen for half a second.
+ */
+export function groupCues(
+  cues: Array<{ startMs: number; endMs: number; text?: string }>,
+  targetSeconds = 5,
+): Array<{ startMs: number; endMs: number; text: string; cueIndexes: number[] }> {
+  if (!cues.length) return [];
+  const targetMs = Math.max(1000, targetSeconds * 1000);
+  const out: Array<{ startMs: number; endMs: number; text: string; cueIndexes: number[] }> = [];
+
+  let current = { startMs: cues[0].startMs, endMs: cues[0].endMs, text: cues[0].text ?? '', cueIndexes: [0] };
+  for (let i = 1; i < cues.length; i++) {
+    const c = cues[i];
+    if (c.endMs - current.startMs <= targetMs) {
+      current.endMs = c.endMs;
+      current.text = `${current.text} ${c.text ?? ''}`.trim();
+      current.cueIndexes.push(i);
+    } else {
+      out.push(current);
+      current = { startMs: c.startMs, endMs: c.endMs, text: c.text ?? '', cueIndexes: [i] };
+    }
+  }
+  out.push(current);
+
+  // A trailing scene shorter than a second reads as a glitch; fold it back.
+  if (out.length > 1 && out[out.length - 1].endMs - out[out.length - 1].startMs < 1000) {
+    const last = out.pop()!;
+    const prev = out[out.length - 1];
+    prev.endMs = last.endMs;
+    prev.text = `${prev.text} ${last.text}`.trim();
+    prev.cueIndexes.push(...last.cueIndexes);
+  }
+  return out;
+}
+
+/**
+ * A concat-demuxer script for a sequence of stills.
+ *
+ * The demuxer is used rather than a filter_complex chain because the number of
+ * segments is data, not a constant — 21 cues means 21 inputs, and a filter
+ * graph built by string concatenation at that size is where this would start
+ * failing in ways nobody can read.
+ *
+ * Two quirks it has to respect: paths are single-quoted with forward slashes
+ * (with `'` escaped), and the FINAL entry must be repeated without a duration
+ * or ffmpeg drops the last segment's screen time entirely.
+ */
+export function buildConcatFileContent(segments: Segment[]): string {
+  const usable = segments.filter(s => s.imagePath);
+  if (!usable.length) return '';
+  const line = (p: string) => `file '${p.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`;
+  const rows: string[] = ['ffconcat version 1.0'];
+  for (const s of usable) {
+    rows.push(line(s.imagePath!));
+    rows.push(`duration ${((s.endMs - s.startMs) / 1000).toFixed(3)}`);
+  }
+  // Repeated deliberately — see above.
+  rows.push(line(usable[usable.length - 1].imagePath!));
+  return rows.join('\n') + '\n';
+}
+
+/**
  * ffmpeg's filter syntax treats `:` as an argument separator and `\` as an
  * escape, so a Windows path like C:\Users\... inside a filter value has to be
  * written C\:/Users/... — backslashes flipped, the drive colon escaped.
@@ -177,8 +245,65 @@ export function buildRenderArgs(opts: {
 
   args.push('-vf', filters.join(','));
   args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
+  // Forced at the encoder, not just in the filter chain. A JPEG input is
+  // full-range, so the encoder picked yuvj420p — the deprecated variant that
+  // renders washed out on some players — even with format=yuv420p filtered.
+  args.push('-pix_fmt', 'yuv420p');
   args.push('-c:a', 'aac', '-b:a', '128k');
   // The image input loops forever; the audio decides when the video ends.
+  args.push('-shortest', '-movflags', '+faststart');
+  args.push(opts.outputPath);
+  return args;
+}
+
+/**
+ * Arguments for a multi-scene render, driven by a concat script.
+ *
+ * No zoompan here: with a cut every few seconds the motion comes from the
+ * edit, and zoompan applied across a concatenated stream restarts its ramp on
+ * the whole timeline rather than per image, which looks like a drift that
+ * never arrives.
+ */
+export function buildTimelineRenderArgs(opts: {
+  concatPath: string;
+  audioPath: string;
+  outputPath: string;
+  shape: VideoShape;
+  captionsPath?: string | null;
+  fps?: number;
+  subtitleStyle?: string;
+}): string[] {
+  const { w, h } = dimensionsFor(opts.shape);
+  const fps = opts.fps ?? 30;
+  const args: string[] = ['-y'];
+
+  // -safe 0 because the script holds absolute paths.
+  args.push('-f', 'concat', '-safe', '0', '-i', opts.concatPath);
+  args.push('-i', opts.audioPath);
+
+  const filters: string[] = [
+    // Normalise the frame rate BEFORE burning captions, not with an output -r.
+    // Concat stills arrive with one frame per scene and irregular timestamps;
+    // an output -r re-times the frames AFTER the subtitle filter has already
+    // drawn them, so the burned pixels land at the wrong moment. Measured: cue
+    // 1 still on screen at 6s when it should have ended at 3.17s, while the
+    // pictures cut on time.
+    `fps=${fps}`,
+    `scale=${w}:${h}:force_original_aspect_ratio=increase`,
+    `crop=${w}:${h}`,
+  ];
+  if (opts.captionsPath) {
+    const style = opts.subtitleStyle ?? defaultSubtitleStyle(opts.shape);
+    filters.push(`subtitles='${escapeFilterPath(opts.captionsPath)}':force_style='${style}'`);
+  }
+  filters.push('format=yuv420p');
+
+  args.push('-vf', filters.join(','));
+  args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
+  // See buildRenderArgs: generated scenes arrive as JPEG/PNG and the encoder
+  // otherwise settles on full-range yuvj420p.
+  args.push('-pix_fmt', 'yuv420p');
+  args.push('-c:a', 'aac', '-b:a', '128k');
   args.push('-shortest', '-movflags', '+faststart');
   args.push(opts.outputPath);
   return args;
@@ -236,13 +361,17 @@ export async function renderVideo(opts: {
   captionsPath?: string | null;
   durationSeconds: number;
   zoom?: boolean;
+  /** Concat script for a multi-scene render; a single still is used when absent. */
+  concatPath?: string | null;
 }): Promise<RenderResult> {
   if (!fs.existsSync(opts.audioPath)) {
     throw new Error(`No narration audio at ${opts.audioPath}`);
   }
   fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
 
-  const args = buildRenderArgs(opts);
+  const args = opts.concatPath
+    ? buildTimelineRenderArgs({ ...opts, concatPath: opts.concatPath })
+    : buildRenderArgs(opts);
   await new Promise<void>((resolve, reject) => {
     execFile(opts.ffmpeg, args, { timeout: 15 * 60_000, maxBuffer: 1024 * 1024 * 16 }, (err, _out, stderr) => {
       if (err) {

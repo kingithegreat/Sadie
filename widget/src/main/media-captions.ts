@@ -149,6 +149,38 @@ export function toVtt(cues: Cue[]): string {
   return `WEBVTT\n\n${body}`;
 }
 
+/**
+ * Read cues back out of an .srt.
+ *
+ * The render stage needs the timings to decide when the picture changes, and
+ * the .srt on disk is the authority — it is what the burned-in captions are
+ * actually generated from. Re-deriving the timing from the script would risk
+ * the visuals drifting out of step with the words on screen.
+ */
+export function parseSrtCues(srt: string): Cue[] {
+  const cues: Cue[] = [];
+  // Blocks are separated by a blank line; tolerate CRLF and stray whitespace.
+  const blocks = srt.replace(/\r\n/g, '\n').trim().split(/\n{2,}/);
+  const timeRe = /(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/;
+
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const timeLineIdx = lines.findIndex(l => timeRe.test(l));
+    if (timeLineIdx === -1) continue;
+    const m = timeRe.exec(lines[timeLineIdx])!;
+    const ms = (h: string, mi: string, s: string, milli: string) =>
+      Number(h) * 3600000 + Number(mi) * 60000 + Number(s) * 1000 + Number(milli);
+    const text = lines.slice(timeLineIdx + 1).join(' ').replace(/\s+/g, ' ').trim();
+    cues.push({
+      index: cues.length + 1,
+      startMs: ms(m[1], m[2], m[3], m[4]),
+      endMs: ms(m[5], m[6], m[7], m[8]),
+      text,
+    });
+  }
+  return cues;
+}
+
 /** Everything a caller needs from a script plus the audio it produced. */
 export function buildCaptions(script: string, audioBytes: number): {
   cues: Cue[];

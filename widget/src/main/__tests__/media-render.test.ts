@@ -16,6 +16,9 @@ import {
   staticTimeline,
   timelineFromCues,
   toAssUnits,
+  groupCues,
+  buildConcatFileContent,
+  buildTimelineRenderArgs,
 } from '../media-render';
 
 /** The -vf value, which is where every interesting decision ends up. */
@@ -171,5 +174,111 @@ describe('building the ffmpeg command', () => {
 
   it('overwrites, so a retry after a failed render is not blocked', () => {
     expect(buildRenderArgs(base)[0]).toBe('-y');
+  });
+});
+
+describe('grouping cues into scenes', () => {
+  const cues = [
+    { startMs: 0, endMs: 2000, text: 'one' },
+    { startMs: 2000, endMs: 4000, text: 'two' },
+    { startMs: 4000, endMs: 6000, text: 'three' },
+    { startMs: 6000, endMs: 11000, text: 'four' },
+  ];
+
+  it('merges adjacent cues up to the target length', () => {
+    // A cut every 2s is frantic to watch and generates 3x the images for no gain.
+    const scenes = groupCues(cues, 5);
+    expect(scenes.length).toBeLessThan(cues.length);
+    expect(scenes[0].startMs).toBe(0);
+    expect(scenes[0].text).toContain('one');
+  });
+
+  it('covers the whole timeline with no gaps', () => {
+    const scenes = groupCues(cues, 5);
+    expect(scenes[0].startMs).toBe(0);
+    expect(scenes[scenes.length - 1].endMs).toBe(11000);
+    for (let i = 1; i < scenes.length; i++) {
+      expect(scenes[i].startMs).toBe(scenes[i - 1].endMs);
+    }
+  });
+
+  it('folds a sliver of a final scene into the one before it', () => {
+    // Half a second of a new picture at the end reads as a glitch.
+    const withSliver = [...cues, { startMs: 11000, endMs: 11200, text: 'blip' }];
+    const scenes = groupCues(withSliver, 5);
+    const last = scenes[scenes.length - 1];
+    expect(last.endMs).toBe(11200);
+    expect(last.text).toContain('blip');
+    expect(last.endMs - last.startMs).toBeGreaterThan(1000);
+  });
+
+  it('handles an empty script without throwing', () => {
+    expect(groupCues([], 5)).toEqual([]);
+  });
+});
+
+describe('the concat script', () => {
+  const segs = [
+    { startMs: 0, endMs: 2500, imagePath: 'C:\\a\\one.png' },
+    { startMs: 2500, endMs: 6000, imagePath: 'C:\\a\\two.png' },
+  ];
+
+  it('uses forward slashes and quotes each path', () => {
+    expect(buildConcatFileContent(segs)).toContain("file 'C:/a/one.png'");
+  });
+
+  it('gives each segment its own duration', () => {
+    const s = buildConcatFileContent(segs);
+    expect(s).toContain('duration 2.500');
+    expect(s).toContain('duration 3.500');
+  });
+
+  it('repeats the last file, or ffmpeg drops its screen time', () => {
+    const lines = buildConcatFileContent(segs).trim().split('\n');
+    expect(lines[lines.length - 1]).toBe("file 'C:/a/two.png'");
+  });
+
+  it('is empty when no scene has an image, so the caller falls back', () => {
+    expect(buildConcatFileContent([{ startMs: 0, endMs: 1000, imagePath: null }])).toBe('');
+  });
+});
+
+describe('the multi-scene command', () => {
+  const tl = {
+    concatPath: 'C:\\a\\scenes.txt',
+    audioPath: 'C:\\a\\narration.mp3',
+    outputPath: 'C:\\a\\video.mp4',
+    shape: 'short' as const,
+  };
+
+  it('reads the script with -safe 0, because the paths are absolute', () => {
+    const args = buildTimelineRenderArgs(tl);
+    expect(args).toContain('concat');
+    expect(args[args.indexOf('-safe') + 1]).toBe('0');
+  });
+
+  it('normalises the frame rate inside the filter chain, before the burn', () => {
+    // An output -r re-times frames AFTER the subtitle filter has drawn them,
+    // so the burned captions land at the wrong moment while the pictures cut
+    // on time. Measured on a real render: cue 1 still on screen at 6s when it
+    // should have ended at 3.17s.
+    const args = buildTimelineRenderArgs(tl);
+    const f = args[args.indexOf('-vf') + 1];
+    expect(f.startsWith('fps=30')).toBe(true);
+    expect(args).not.toContain('-r');
+    // Order matters: the rate must settle before subtitles are drawn.
+    expect(f.indexOf('fps=')).toBeLessThan(f.indexOf('subtitles=') === -1 ? Infinity : f.indexOf('subtitles='));
+  });
+
+  it('does not drift the picture when the edit already cuts', () => {
+    const args = buildTimelineRenderArgs(tl);
+    expect(args[args.indexOf('-vf') + 1]).not.toContain('zoompan');
+  });
+
+  it('still burns captions and ends in a playable pixel format', () => {
+    const args = buildTimelineRenderArgs({ ...tl, captionsPath: 'C:\\a\\c.srt' });
+    const f = args[args.indexOf('-vf') + 1];
+    expect(f).toContain('subtitles=');
+    expect(f.endsWith('format=yuv420p')).toBe(true);
   });
 });

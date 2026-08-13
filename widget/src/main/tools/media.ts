@@ -481,8 +481,14 @@ const renderMediaJobDef: ToolDefinition = {
     type: 'object',
     properties: {
       job: { type: 'string', description: 'Job id or title' },
-      image: { type: 'string', description: 'Optional background image path; a plain backdrop is generated if omitted' },
-      zoom: { type: 'boolean', description: 'Slow zoom on the background. Default true.' },
+      image: { type: 'string', description: 'Optional single background image path' },
+      visuals: {
+        type: 'string',
+        enum: ['scenes', 'plain'],
+        description: "'scenes' (default) generates a picture per scene from the script; 'plain' uses one backdrop",
+      },
+      style: { type: 'string', description: 'Optional art direction for generated scenes' },
+      zoom: { type: 'boolean', description: 'Slow zoom, single-image renders only. Default true.' },
     },
     required: ['job'],
   },
@@ -516,13 +522,55 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
 
     const dir = mediaAssetsDir(job.id);
     const out = path.join(dir, 'video.mp4');
+    const shape = job.format === 'long' ? 'long' : 'short';
+    const captionsPath = job.captionsPath && fs.existsSync(job.captionsPath) ? job.captionsPath : null;
+
+    // A picture per scene, unless asked for a plain backdrop or handed a
+    // single image. Best-effort: every failure here degrades the look and
+    // none of them stops the video being made.
+    let concatPath: string | null = null;
+    let visualNote = '';
+    const wantScenes = String(args.visuals ?? 'scenes') === 'scenes' && !image;
+    if (wantScenes && captionsPath) {
+      const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
+      const { generateSceneImages, fillMissingImages } = await import('../media-visuals');
+      const { parseSrtCues } = await import('../media-captions');
+
+      const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
+      const scenes = groupCues(cues, 5);
+      if (scenes.length) {
+        const { w, h } = dimensionsFor(shape);
+        const images = await generateSceneImages({
+          scenes,
+          videoTitle: job.title,
+          outDir: path.join(dir, 'scenes'),
+          // Generators cap at 1024; the renderer scales and crops to fill.
+          width: Math.min(w, 1024),
+          height: Math.min(h, 1024),
+          style: args.style ? String(args.style) : undefined,
+        });
+        const filled = fillMissingImages(images);
+        const made = filled.filter(Boolean).length;
+        if (made) {
+          const timeline = timelineFromCues(scenes, i => filled[i]);
+          concatPath = path.join(dir, 'scenes.txt');
+          fs.writeFileSync(concatPath, buildConcatFileContent(timeline), 'utf8');
+          const failed = images.filter(i => !i.path).length;
+          visualNote = `${scenes.length} scenes` + (failed ? `, ${failed} image(s) failed and reuse a neighbour` : '');
+        } else {
+          visualNote = 'scene images all failed — rendered on the plain backdrop';
+        }
+      }
+    }
+
     const rendered = await renderVideo({
       ffmpeg,
       audioPath: job.narrationPath,
       outputPath: out,
-      shape: job.format === 'long' ? 'long' : 'short',
+      shape,
       imagePath: image,
-      captionsPath: job.captionsPath && fs.existsSync(job.captionsPath) ? job.captionsPath : null,
+      captionsPath,
+      concatPath,
       durationSeconds: job.durationSeconds || 60,
       zoom: args.zoom === undefined ? true : Boolean(args.zoom),
     });
@@ -538,7 +586,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
 
     const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
     return ok([
-      `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s.`,
+      `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${visualNote ? `, ${visualNote}` : ''}.`,
       `video: ${rendered.path}`,
       'Watch it before approving; nothing publishes on its own.',
     ].join('\n'));

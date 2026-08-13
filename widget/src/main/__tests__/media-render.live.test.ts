@@ -85,7 +85,7 @@ maybe('rendering a real video', () => {
     const narrated: any = await call('media_narrate', { job: 'Render check' });
     expect(narrated.success).toBe(true);
 
-    const rendered: any = await call('media_render', { job: 'Render check' });
+    const rendered: any = await call('media_render', { job: 'Render check', visuals: 'plain' });
     // eslint-disable-next-line no-console
     console.log('--- media_render ---\n', rendered.success ? rendered.result : rendered.error);
     expect(rendered.success).toBe(true);
@@ -114,6 +114,45 @@ maybe('rendering a real video', () => {
     console.log(`video: ${video.width}x${video.height} ${video.codec_name}/${audio.codec_name} `
       + `${seconds.toFixed(1)}s, ${(Number(info.format.size) / 1024 / 1024).toFixed(1)} MB`);
     expect(seconds).toBeGreaterThan((job.durationSeconds || 10) * 0.8);
+  });
+
+  it('renders scene images into a multi-cut video', async () => {
+    // The upgrade the timeline existed for. Image generation is real here —
+    // it is the part most likely to fail in the wild, so it is the part worth
+    // running for real. The video must come out either way.
+    const ffmpeg = await findFfmpeg();
+    if (!ffmpeg) throw new Error('No ffmpeg found.');
+
+    await call('media_create_job', { title: 'Scene check', format: 'short' });
+    const jobs = readJobs();
+    const j = jobs.find(x => x.title === 'Scene check')!;
+    j.script = 'A storm rose over the open sea at night. '
+      + 'The sailors threw the cargo overboard to lighten the ship. '
+      + 'Below deck, one man slept through all of it.';
+    j.state = 'script_draft';
+    require('../tools/media').writeJobs(jobs);
+
+    expect((await call('media_narrate', { job: 'Scene check' }) as any).success).toBe(true);
+
+    const rendered: any = await call('media_render', { job: 'Scene check', visuals: 'scenes' });
+    // eslint-disable-next-line no-console
+    console.log('--- media_render (scenes) ---\n', rendered.success ? rendered.result : rendered.error);
+    expect(rendered.success).toBe(true);
+
+    const done = readJobs().find(x => x.title === 'Scene check')!;
+    const info = await ffprobe(ffmpeg, done.renderPath!);
+    const video = info.streams.find((s: any) => s.codec_type === 'video');
+    expect(video.width).toBe(1080);
+    expect(video.height).toBe(1920);
+    expect(Number(info.format.duration)).toBeGreaterThan(5);
+
+    // Whatever the generator managed, the scenes directory records it, so a
+    // person can look at what was produced and swap one by hand.
+    const sceneDir = path.join(path.dirname(done.renderPath!), 'scenes');
+    if (fs.existsSync(sceneDir)) {
+      // eslint-disable-next-line no-console
+      console.log('scene images:', fs.readdirSync(sceneDir).join(', ') || '(none)');
+    }
   });
 
   it('says what to install when ffmpeg is missing, and leaves the job alone', async () => {
