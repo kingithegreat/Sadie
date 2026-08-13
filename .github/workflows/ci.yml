@@ -143,6 +143,42 @@ jobs:
         working-directory: widget
         run: npm run build
 
+      # Overlay clipping is invisible to Jest. jsdom does no layout and paints
+      # nothing, so four overlays (tooltip, backend diagnostic popover, reaction
+      # picker, right-click menu) shipped either invisible or laid out as page
+      # rows with every unit test green. Only a real renderer can see it, so the
+      # guard for that class of bug has to run here.
+      #
+      # Scoped deliberately to the two overlay specs: they take ~25s and need no
+      # app state. The other 13 e2e specs are NOT run by this job — they cover
+      # flows (streaming, permissions, persistence) that want a longer, separate
+      # gate, and adding them here without knowing their CI behaviour would make
+      # this job red for reasons unrelated to the change under review.
+      # `npm ci --ignore-scripts` above also skipped electron's own postinstall,
+      # which is what downloads the Electron binary. Jest never needed it; the
+      # e2e specs launch the real app, so fetch it now rather than widening the
+      # install for every job.
+      - name: Fetch Electron binary
+        working-directory: widget
+        run: node node_modules/electron/install.js
+
+      - name: E2E — floating overlays are not clipped
+        working-directory: widget
+        run: npx playwright test overlay.e2e tooltip.e2e --reporter=line
+        env:
+          NODE_ENV: test
+          HOMEBOT_E2E: '1'
+
+      - name: Upload e2e artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlay-e2e-artifacts
+          path: |
+            widget/test-results/
+            widget/playwright-report/
+          retention-days: 7
+
   duplicate-export-guard:
     # Mechanical check for parallel-build collisions (e.g. two incompatible
     # cosmetics systems in a sibling project) and scaffold-vs-integration
