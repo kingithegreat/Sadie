@@ -607,7 +607,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const wantScenes = String(args.visuals ?? 'scenes') === 'scenes' && !image;
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
-      const { generateSceneImages, fillMissingImages } = await import('../media-visuals');
+      const { generateSceneImages, fillMissingImages, seedForVideo } = await import('../media-visuals');
       const { parseSrtCues } = await import('../media-captions');
 
       const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
@@ -622,6 +622,9 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
           width: Math.min(w, 1024),
           height: Math.min(h, 1024),
           style: args.style ? String(args.style) : undefined,
+          // One seed for the whole video, derived from its identity, so the
+          // scenes look like each other and a re-render reproduces them.
+          seed: seedForVideo(job.id),
         });
         const filled = fillMissingImages(images);
         const made = filled.filter(Boolean).length;

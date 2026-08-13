@@ -1248,6 +1248,10 @@ export const imageGenerateDef: ToolDefinition = {
         description: '"local" (SD/ComfyUI only), "cloud" (Pollinations free → DALL-E), or "hybrid" (local first, then Pollinations, default)',
         enum: ['local', 'cloud', 'hybrid'],
         default: 'hybrid'
+      },
+      seed: {
+        type: 'number',
+        description: 'Optional. Reusing one seed across several prompts keeps the results consistent with each other.'
       }
     },
     required: ['prompt']
@@ -1338,12 +1342,17 @@ function httpGetBuffer(urlStr: string, timeoutMs = 30000): Promise<Buffer> {
 let _pollinationsLastFailAt = 0;
 const POLLINATIONS_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
 
-async function tryPollinations(prompt: string, width: number, height: number): Promise<string | null> {
+async function tryPollinations(prompt: string, width: number, height: number, seedOverride?: number): Promise<string | null> {
   // Skip quickly if we recently saw a failure
   if (Date.now() - _pollinationsLastFailAt < POLLINATIONS_BACKOFF_MS) return null;
 
   try {
-    const seed = Math.floor(Math.random() * 1e9);
+    // A caller-supplied seed keeps a SET of images consistent with each other:
+    // the Media Studio renders one video from several prompts, and with a
+    // random seed each one came back in a different style — the same ship as a
+    // different vessel from shot to shot. Same seed, different prompt, related
+    // palette and composition.
+    const seed = seedOverride ?? Math.floor(Math.random() * 1e9);
     const encodedPrompt = encodeURIComponent(prompt);
     const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true`;
     const buf = await httpGetBuffer(url, 60000);
@@ -1584,6 +1593,9 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     const height = Math.min(Math.max(64, Number(args.height) || 512), 1024);
     const steps = Math.min(Math.max(1, Number(args.steps) || 20), 50);
     const backend = String(args.backend || 'hybrid');
+    // Optional, and only honoured by backends that take one. Used by the Media
+    // Studio so every scene of one video shares a look.
+    const seed = Number.isFinite(Number(args.seed)) ? Number(args.seed) : undefined;
 
     let image_base64: string | null = null;
     let source = '';
@@ -1604,7 +1616,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
 
     if (!image_base64 && backend !== 'local') {
       // Try Pollinations.ai — free, no API key required
-      image_base64 = await tryPollinations(prompt, width, height);
+      image_base64 = await tryPollinations(prompt, width, height, seed);
       if (image_base64) { source = 'pollinations'; }
     }
 
@@ -1623,7 +1635,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     if (!image_base64 && backend !== 'local') {
       // Retry Pollinations once more with backoff reset in case it was a transient failure
       _pollinationsLastFailAt = 0;
-      image_base64 = await tryPollinations(prompt, width, height);
+      image_base64 = await tryPollinations(prompt, width, height, seed);
       if (image_base64) { source = 'pollinations'; }
     }
 
