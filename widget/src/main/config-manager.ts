@@ -313,6 +313,7 @@ export const DEFAULT_SETTINGS: Settings = {
     navigate_browser: false,
     media_write_script: true,
     media_narrate: true,
+    media_render: true,
     media_setup_research: false,
     media_create_job: true,
     media_list_jobs: true,

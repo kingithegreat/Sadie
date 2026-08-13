@@ -470,9 +470,87 @@ const setupMediaResearchHandler: ToolHandler = async () => {
   }
 };
 
+const renderMediaJobDef: ToolDefinition = {
+  name: 'media_render',
+  description:
+    'Render a narrated job into an actual video file: the narration audio over a background ' +
+    'image with the captions burned in, sized for the format. Moves the job to render_qa. ' +
+    'Needs ffmpeg installed; says so plainly if it is missing.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title' },
+      image: { type: 'string', description: 'Optional background image path; a plain backdrop is generated if omitted' },
+      zoom: { type: 'boolean', description: 'Slow zoom on the background. Default true.' },
+    },
+    required: ['job'],
+  },
+};
+
+const renderMediaJobHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err(`No media job matching "${args.job}".`);
+    if (!job.narrationPath || !fs.existsSync(job.narrationPath)) {
+      return err(`"${job.title}" has no narration audio yet — run media_narrate first.`);
+    }
+    if (job.state !== 'media_production') {
+      return err(`"${job.title}" is at ${describeProgress(job)} — rendering runs from media_production.`);
+    }
+
+    const {
+      findFfmpeg, renderVideo, FFMPEG_MISSING_MESSAGE,
+    } = await import('../media-render');
+
+    const ffmpeg = await findFfmpeg();
+    // Not an error in the job's sense: nothing is wrong with the video, a tool
+    // is missing from the machine. Leave the job where it is so rendering can
+    // simply be retried once ffmpeg is there.
+    if (!ffmpeg) return err(FFMPEG_MISSING_MESSAGE);
+
+    const image = args.image ? String(args.image) : null;
+    if (image && !fs.existsSync(image)) {
+      return err(`No image at ${image}.`);
+    }
+
+    const dir = mediaAssetsDir(job.id);
+    const out = path.join(dir, 'video.mp4');
+    const rendered = await renderVideo({
+      ffmpeg,
+      audioPath: job.narrationPath,
+      outputPath: out,
+      shape: job.format === 'long' ? 'long' : 'short',
+      imagePath: image,
+      captionsPath: job.captionsPath && fs.existsSync(job.captionsPath) ? job.captionsPath : null,
+      durationSeconds: job.durationSeconds || 60,
+      zoom: args.zoom === undefined ? true : Boolean(args.zoom),
+    });
+
+    // Record the file before transitioning, so a failed transition cannot
+    // discard a render that took real minutes.
+    const updated = transition(
+      { ...job, renderPath: rendered.path },
+      'render_qa',
+      { by: 'render stage' },
+    );
+    upsert(updated);
+
+    const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
+    return ok([
+      `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s.`,
+      `video: ${rendered.path}`,
+      'Watch it before approving; nothing publishes on its own.',
+    ].join('\n'));
+  } catch (e: any) {
+    return err(`Could not render the video: ${errText(e)}`);
+  }
+};
+
 export const mediaToolDefs: ToolDefinition[] = [
   writeMediaScriptDef,
   narrateMediaJobDef,
+  renderMediaJobDef,
   setupMediaResearchDef,
   createMediaJobDef,
   listMediaJobsDef,
@@ -484,6 +562,7 @@ export const mediaToolDefs: ToolDefinition[] = [
 export const mediaToolHandlers: Record<string, ToolHandler> = {
   media_write_script: writeMediaScriptHandler,
   media_narrate: narrateMediaJobHandler,
+  media_render: renderMediaJobHandler,
   media_setup_research: setupMediaResearchHandler,
   media_create_job: createMediaJobHandler,
   media_list_jobs: listMediaJobsHandler,
