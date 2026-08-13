@@ -2324,11 +2324,21 @@ try {
     }
   }
 
-  // Start scheduled automations on boot (with a delay to let the app settle)
-  setTimeout(startAutomationSchedule, 5000);
+  // Start scheduled automations on boot (with a delay to let the app settle).
+  // Also unref'd — same reasoning as the resync timer below.
+  const scheduleBootTimer = setTimeout(startAutomationSchedule, 5000);
+  (scheduleBootTimer as any).unref?.();
 
-  // Re-sync schedules every 60s to pick up CRUD changes
+  // Re-sync schedules every 60s to pick up CRUD changes.
+  //
+  // unref'd so it cannot hold the process open on its own. In the real app the
+  // Electron event loop keeps us alive, so this changes nothing there — but any
+  // test that calls registerIpcHandlers() inherits a live 60s timer with no way
+  // to clear it (the clearInterval below hangs off 'before-quit', which never
+  // fires under Jest). That kept the whole widget suite from exiting: the tests
+  // finished in ~86s and the runner then hung indefinitely.
   const scheduleResyncTimer = setInterval(startAutomationSchedule, 60_000);
+  (scheduleResyncTimer as any).unref?.();
 
   app.on?.('before-quit', () => {
     clearInterval(scheduleResyncTimer);
