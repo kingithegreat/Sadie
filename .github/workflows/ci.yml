@@ -83,6 +83,15 @@ jobs:
         working-directory: widget
         run: npm ci --ignore-scripts
 
+      # --ignore-scripts above skips electron-builder's install-app-deps, which
+      # is slow and rebuilds native modules against ELECTRON's ABI. Jest runs on
+      # plain Node, so that is the wrong ABI anyway. But it also skips
+      # better-sqlite3's own build, and the CRM store is file-backed sqlite --
+      # without this, ten CRM and email tests fail on require().
+      - name: Build native modules against Node
+        working-directory: widget
+        run: npm rebuild better-sqlite3
+
       - name: Typecheck
         working-directory: widget
         run: npx tsc --noEmit
