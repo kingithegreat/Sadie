@@ -35,7 +35,9 @@ npx jest --config jest.config.ts --no-coverage
 npm run e2e
 ```
 
-**Expected**: 120 suites, 1,872 tests, 0 failures.
+**Expected**: 181 suites, ~2,780 tests, 0 failures. _(Verified 2026-08-13. The previous figure — 120 suites / 1,872 tests — was ~900 tests stale, so the gate could not actually be failed by anyone reading it.)_
+
+> The suite runs in ~45s but does not release the process afterwards, so add `--forceExit` when scripting it. Two causes were found and fixed; at least one handle remains, isolated to `src/main` and not attributable by `--detectOpenHandles`. Every test passes — the flag is about teardown, not failures.
 
 ### 2. Security Validation
 
