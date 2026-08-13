@@ -141,6 +141,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   media_setup_research: { label: 'Set up video research', detail: 'Add a workflow to your n8n so video scripts are written from real fetched sources.' },
   media_narrate: { label: 'Record narration', detail: 'Turn a video script into an audio file using the built-in voice. Nothing is uploaded.' },
   media_write_script: { label: 'Write a video script', detail: 'Research a video and write its narration using your configured model.' },
+  media_render: { label: 'Render a video', detail: 'Combine the narration, captions and a background into a video file on your machine. Nothing is uploaded.' },
   media_create_job: { label: 'Start a video', detail: 'Add a new video to the Media Studio. Nothing is published.' },
   media_list_jobs: { label: 'List your videos', detail: 'See videos in progress and the stage each has reached.' },
   media_advance_job: { label: 'Move a video along', detail: 'Move a video to its next stage. Cannot approve or publish it.' },

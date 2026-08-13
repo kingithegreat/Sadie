@@ -2385,9 +2385,20 @@ async function finishFailedStream(opts: {
   modelOverride?: string;
   err: any;
   errorLabel: string;
+  /** What the stream already delivered, if anything. */
+  streamedSoFar?: string;
 }): Promise<void> {
   const { sender, streamId, err, errorLabel } = opts;
   try {
+    // Only recover a stream that delivered NOTHING. The renderer appends
+    // chunks, so sending a full answer after a partial one would concatenate
+    // the two into a garbled message — the user would read the first half of
+    // one reply followed by the whole of another. A stream that died
+    // mid-sentence keeps what it had and reports the error, as before.
+    if (opts.streamedSoFar && opts.streamedSoFar.trim()) {
+      console.log('[HomeBot] stream failed after partial output — not recovering, would duplicate');
+      throw err;
+    }
     const recovered = await recoverWithoutStreaming(opts);
     if (recovered) {
       // The recovered answer is part of the conversation; without this the
@@ -4721,6 +4732,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 modelOverride: reqAny.modelOverride,
                 err,
                 errorLabel: 'Ollama error',
+                streamedSoFar: assistantResponse,
               });
             },
             requestConfirmation, // Pass confirmation requester
@@ -5367,6 +5379,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   modelOverride: reqAny.modelOverride,
                   err,
                   errorLabel: 'Ollama streaming error',
+                  streamedSoFar: llmAssistantResponse,
                 });
               },
               requestConfirmation,
