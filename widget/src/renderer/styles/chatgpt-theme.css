@@ -17,9 +17,16 @@
   --accent-dark:    oklch(48% 0.16 250);
   --accent-muted:   oklch(65% 0.18 250 / 0.15);
 
-  /* Named brand tokens (hex for compatibility) */
-  --homebot-blue-500: #0088FF;
-  --homebot-blue-700: #0055CC;
+  /* Named brand tokens (hex for compatibility).
+     Nudged off the fully-saturated #0088FF, which is within a hair of the
+     default Windows link blue and read as a system colour rather than ours.
+     Same blue family, a little more indigo and a little less electric, and now
+     a three-stop scale so the logo tile and the gradient buttons are lit from
+     the same source. --homebot-blue-500 keeps its name and its role, so the
+     seven rules already using it need no edit. */
+  --homebot-blue-300: #5FB0FF;
+  --homebot-blue-500: #1E83F7;
+  --homebot-blue-700: #0A56D6;
   --homebot-navy: #0a1628;
 
   /* ── Text — softer primaries to reduce eye strain ── */
@@ -283,6 +290,48 @@ body {
   white-space: nowrap;
   color: var(--text-primary);
   text-transform: uppercase;
+}
+
+/* ── Icons in the chat surface ───────────────────────────────────────────────
+   .hb-icon itself is defined once, further down, as `display: block` — correct
+   for the chrome buttons it was written for, which hold an icon and nothing
+   else. The chat controls added later pair an icon WITH a label, and a block
+   icon in a plain button puts the label on its own line. So those buttons lay
+   themselves out as flex rows instead of relying on the icon being inline. */
+.message-action-btn,
+.code-copy-btn,
+.send-button,
+.attach-button,
+.voice-button,
+.context-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+/* The voice button's elapsed-time counter, which used to be text beside 🎤. */
+.voice-timer {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.hb-icon-spin {
+  animation: hb-icon-spin 900ms linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes hb-icon-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hb-icon-spin { animation-duration: 2.4s; }
+}
+
+.hb-logo {
+  flex-shrink: 0;
+  display: block;
 }
 
 /* Logo in header */
@@ -2126,23 +2175,32 @@ body {
   flex-shrink: 0;
 }
 
+/* The lockup: mark + name, in live text.
+   This used to be HomeBotLogo.png — a raster with a baked-in white background,
+   which on the dark theme read as a white slab dropped into the middle of the
+   chat. The translucent white plate, the blur and the inset highlight that used
+   to be here were all doing one job: making that slab look like it belonged.
+   None of it is needed once the lockup takes its colours from the theme. */
 .welcome-logo {
-  max-width: min(320px, 60vw);
-  max-height: min(200px, 25vh);
-  height: auto;
-  object-fit: contain;
   margin-bottom: var(--spacing-md);
-  flex-shrink: 1;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.06),
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  padding: 16px 24px;
+  flex-shrink: 0;
+}
+
+.hb-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.42em;
+}
+
+.hb-wordmark-text {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.hb-wordmark-accent {
+  color: var(--homebot-blue-500);
 }
 
 .welcome-title {
@@ -2346,6 +2404,13 @@ body {
 .token-counter-bar {
   display: flex;
   justify-content: flex-end;
+  /* Without this the pill is stretched to the full height of its grid row.
+     The row is `auto` and absorbs slack from the track below it, so the pill's
+     height depended on how tall the chat content happened to be — and
+     border-radius: var(--radius-full) turned a 60px-tall pill into a large
+     grey disc. It only became obvious when the welcome block got shorter, but
+     the pill was never in control of its own height. */
+  align-items: center;
   padding: 0 var(--spacing-md);
   background: transparent;
 }
@@ -9615,7 +9680,10 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
    dismissable. */
 .app-container > .toast-container {
   position: absolute;
-  top: 0;
+  /* Clear the titlebar (37px measured) rather than starting at 0. While the
+     overlay was stuck in flow this was invisible; once it genuinely floated,
+     every toast landed on top of the window controls and the app name. */
+  top: 44px;
   left: 0;
   right: 0;
   z-index: 60;
@@ -9663,4 +9731,125 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 @keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .tooltip-bubble { animation: none; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   DEPTH PASS
+
+   The app was reading flat: a near-black field, surfaces filled with one solid
+   colour, and nothing suggesting a light source. Everything below adds depth
+   without changing a single dimension — no size, spacing or position is touched,
+   only background, border and shadow. That is deliberate: layout here is grid
+   rows that shift each other when disturbed, so a cosmetic pass has no business
+   near them.
+
+   Appended rather than edited in place so each rule layers over the base it
+   refines, and so the whole pass can be removed by deleting one block.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ambient ground ────────────────────────────────────────────────────────
+   Two very low-alpha washes in the brand hue, so the dark field has a direction
+   to it instead of being uniformly black. background-image only, so the base
+   background-color keeps doing its job underneath. */
+.app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(65% 0.18 250 / 0.09), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(70% 0.13 215 / 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Let the wash through the chat surface: --bg-chat and --bg-main are within a
+   percent of each other, so nothing changes except that the ground shows. */
+.chat-interface {
+  background-color: transparent;
+}
+
+/* ── Surfaces ──────────────────────────────────────────────────────────────
+   A top-lit gradient and a one-pixel inner highlight along the top edge. This
+   is what separates a surface that looks placed on the page from one that looks
+   painted onto it. */
+.daily-card,
+.automation-card,
+.template-card {
+  background-image: linear-gradient(180deg, oklch(100% 0 0 / 0.05), oklch(100% 0 0 / 0.012));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.07),
+    0 6px 20px oklch(0% 0 0 / 0.26);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.daily-card:hover,
+.automation-card:hover,
+.template-card:hover {
+  border-color: oklch(100% 0 0 / 0.13);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.09),
+    0 10px 28px oklch(0% 0 0 / 0.34);
+  transform: translateY(-1px);
+}
+
+/* ── The active mode ───────────────────────────────────────────────────────
+   The current tab was distinguished only by a slightly lighter fill. Giving it
+   the brand colour makes it the one obviously-lit thing in the header. */
+.mode-btn.active {
+  background-image: linear-gradient(180deg, oklch(65% 0.18 250 / 0.22), oklch(65% 0.18 250 / 0.10));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.12),
+    0 2px 10px oklch(65% 0.18 250 / 0.22);
+}
+
+/* ── The composer, when you are in it ──────────────────────────────────────
+   A focus state on the panel as a whole rather than only the textarea, so the
+   thing you are typing into is visibly live. */
+.input-box:focus-within {
+  border-color: oklch(65% 0.18 250 / 0.45);
+  box-shadow:
+    0 0 0 1px oklch(65% 0.18 250 / 0.22),
+    0 8px 32px oklch(65% 0.18 250 / 0.14);
+}
+
+/* Send stays quiet until it can actually do something, then it lights up. */
+.send-button:not(:disabled) {
+  background-image: linear-gradient(180deg, var(--homebot-blue-300), var(--homebot-blue-500));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.22),
+    0 2px 10px oklch(55% 0.2 255 / 0.32);
+  color: #fff;
+}
+
+.send-button:not(:disabled):hover {
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.28),
+    0 4px 16px oklch(55% 0.2 255 / 0.45);
+}
+
+/* ── Light theme ───────────────────────────────────────────────────────────
+   The same moves inverted: on white, depth comes from shadow rather than from
+   an inner highlight, and the washes have to be far weaker to stay tasteful. */
+[data-theme="light"] .app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(65% 0.18 250 / 0.07), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(70% 0.13 215 / 0.05), transparent 60%);
+}
+
+[data-theme="light"] .daily-card,
+[data-theme="light"] .automation-card,
+[data-theme="light"] .template-card {
+  background-image: linear-gradient(180deg, oklch(100% 0 0 / 0.9), oklch(100% 0 0 / 0.55));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.9),
+    0 4px 16px oklch(30% 0.02 250 / 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-card,
+  .automation-card,
+  .template-card {
+    transition: none;
+  }
+  .daily-card:hover,
+  .automation-card:hover,
+  .template-card:hover {
+    transform: none;
+  }
 }
