@@ -181,7 +181,13 @@ export async function runDiagnostics(
   input: DiagnosticsInput,
   userDataPath: string
 ): Promise<DiagnosticsResult> {
-  const start = Date.now();
+  // performance.now(), not Date.now(): this is a DURATION, and Date.now() has
+  // whole-millisecond resolution. When every probe short-circuits — nothing
+  // listening on any port — the whole run finishes inside a single millisecond
+  // and durationMs comes back as 0, which reads as "did not run" rather than
+  // "ran and was instant". That is exactly what happened the first time this
+  // suite ran on a CI machine faster than a dev laptop.
+  const start = performance.now();
   const timestamp = new Date().toISOString();
 
   const ollamaBase = (input.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
@@ -217,7 +223,7 @@ export async function runDiagnostics(
       gpuName: gpuResult.gpuName ?? null,
       profile: vramToProfile(vramGB),
     },
-    durationMs: Date.now() - start,
+    durationMs: Math.round((performance.now() - start) * 100) / 100,
     timestamp,
     n8nWebhooks,
   };
