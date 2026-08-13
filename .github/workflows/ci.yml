@@ -53,7 +53,21 @@ jobs:
   # This job is that gate. Kept separate from `build` so a widget failure is
   # distinguishable at a glance from a root failure.
   widget:
-    runs-on: ubuntu-latest
+    # windows-latest, not ubuntu. HomeBot ships Windows-only -- electron-builder
+    # targets `win`/`nsis`, predist runs a PowerShell script, and
+    # preflight-and-build-release.yml already builds on Windows.
+    #
+    # It is also the only platform these tests pass on, and they say so:
+    # filesystem.test.ts notes "All test files live inside os.tmpdir() which is
+    # under HOME_DIR on Windows". The main-process tools refuse any path outside
+    # the home directory, and on Linux os.tmpdir() is /tmp -- outside
+    # /home/runner. The first run of this job on ubuntu failed 92 tests across
+    # 10 suites for exactly that reason.
+    #
+    # Testing a Windows-only product on Linux was always a partial signal, so
+    # this matches the runner to the product rather than rewriting ten suites to
+    # be portable to a platform HomeBot does not ship to.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
