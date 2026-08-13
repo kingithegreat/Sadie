@@ -172,7 +172,7 @@ body {
    top:39 height:740 in a 779px viewport — it covered the content row and left
    the header row exposed, so the header stayed clickable behind an open modal
    and the backdrop dimmed everything except the one bar it sat below. */
-.app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar):not(.settings-overlay):not(.confirmation-overlay):not(.first-run-overlay):not(.sidebar-backdrop):not(.drop-overlay) {
+.app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar):not(.settings-overlay):not(.confirmation-overlay):not(.first-run-overlay):not(.sidebar-backdrop):not(.conversation-sidebar):not(.drop-overlay) {
   position: relative;
   z-index: 1;
 }
@@ -4526,6 +4526,16 @@ body {
 .conversation-sidebar,
 .drop-overlay {
   z-index: 1000 !important;
+}
+
+/* The dim belongs to the things that ARE backdrops. .conversation-sidebar was
+   in this list too, which forced a translucent black over the drawer's own
+   --bg-sidebar: toasts and chat content behind it showed straight through the
+   conversation list. A panel is not a scrim. */
+.settings-overlay,
+.confirmation-overlay,
+.sidebar-backdrop,
+.drop-overlay {
   background: rgba(0, 0, 0, 0.45) !important;
 }
 
