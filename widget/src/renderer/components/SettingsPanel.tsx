@@ -58,6 +58,8 @@ interface Settings {
   moaAggregator?: string;
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
   defaultLocation?: string;
+  /** The Media Studio publishing kill switch — see media-studio.ts. */
+  mediaPublishingEnabled?: boolean;
 }
 
 interface SettingsPanelProps {
@@ -1827,6 +1829,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }
           />
           <small className="setting-hint">Without a key, generation uses the anonymous queue (~60-120 s). A free registered key drops this to ~10-20 s.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">🎬 Media Studio</label>
+          <small className="setting-hint sp-hint-mb">
+            HomeBot never uploads a video anywhere. This only controls whether a video is
+            allowed to move into the Scheduled and Published stages, which is how you record
+            that you have posted one yourself.
+          </small>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={!!localSettings.mediaPublishingEnabled}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, mediaPublishingEnabled: e.target.checked })
+              }
+            />
+            <span>Allow videos to reach Scheduled and Published</span>
+          </label>
+          <small className="setting-hint">
+            Off by default. While it is off, moving a video into either stage is refused.
+          </small>
         </div>
 
         <div className="setting-group">
