@@ -1,5 +1,6 @@
 import Icon from './Icon';
 import React, { useState, useEffect } from 'react';
+import Tooltip from './Tooltip';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
 
@@ -96,7 +97,7 @@ const BackendBadge: React.FC<BackendBadgeProps> = ({
   onRefresh,
   onToggleDetail
 }) => (
-  <div className="backend-badge" title="HomeBot backend (n8n) is offline">
+  <div className="backend-badge" title="Automations are offline — HomeBot will answer on this PC instead">
     <span className="backend-text">Backend offline</span>
     <button
       type="button"
@@ -186,7 +187,7 @@ const OllamaBadge: React.FC<OllamaBadgeProps> = ({ onRefresh }) => {
   };
 
   return (
-    <div className="backend-badge ollama-badge" role="alert" title="Ollama is offline">
+    <div className="backend-badge ollama-badge" role="alert" title="The AI on this PC is not running">
       <span className="backend-text">{result === 'done' ? 'Ollama starting…' : 'Ollama offline'}</span>
       <button
         type="button"
@@ -297,14 +298,30 @@ const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
 
   return (
     <div className="mode-switcher">
-      <button className={`mode-btn ${mode === 'dashboard' ? 'active' : ''}`} onClick={() => onModeChange('dashboard')} title="Dashboard">📊 Home</button>
-      <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => onModeChange('chat')} title="Chat Mode">💬 Chat</button>
-      <button className={`mode-btn ${mode === 'automation' ? 'active' : ''}`} onClick={() => onModeChange('automation')} title="Automation Mode">🛠 Automation</button>
-      <button className={`mode-btn ${mode === 'image' ? 'active' : ''}`} onClick={() => onModeChange('image')} title="Image Mode">🎨 Image</button>
-      <button className={`mode-btn ${mode === 'documents' ? 'active' : ''}`} onClick={() => onModeChange('documents')} title="Document Viewer">📄 Docs</button>
-      <button className={`mode-btn ${mode === 'quiz' ? 'active' : ''}`} onClick={() => onModeChange('quiz')} title="Learn to Code">🧠 Quiz</button>
-      <button className={`mode-btn ${mode === 'media' ? 'active' : ''}`} onClick={() => onModeChange('media')} title="Media Studio">🎬 Studio</button>
-      <button className={`mode-btn ${mode === 'browser' ? 'active' : ''}`} onClick={() => onModeChange('browser')} title="Browser">🌐 Browser</button>
+      <Tooltip content="Overview of what HomeBot can do right now" placement="bottom">
+        <button className={`mode-btn ${mode === 'dashboard' ? 'active' : ''}`} onClick={() => onModeChange('dashboard')}>📊 Home</button>
+      </Tooltip>
+      <Tooltip content="Talk to the AI" placement="bottom">
+        <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => onModeChange('chat')}>💬 Chat</button>
+      </Tooltip>
+      <Tooltip content="Build tasks HomeBot can repeat for you" placement="bottom">
+        <button className={`mode-btn ${mode === 'automation' ? 'active' : ''}`} onClick={() => onModeChange('automation')}>🛠 Automation</button>
+      </Tooltip>
+      <Tooltip content="Generate pictures from a description" placement="bottom">
+        <button className={`mode-btn ${mode === 'image' ? 'active' : ''}`} onClick={() => onModeChange('image')}>🎨 Image</button>
+      </Tooltip>
+      <Tooltip content="Read your files and ask questions about them" placement="bottom">
+        <button className={`mode-btn ${mode === 'documents' ? 'active' : ''}`} onClick={() => onModeChange('documents')}>📄 Docs</button>
+      </Tooltip>
+      <Tooltip content="Practise coding with questions generated for you" placement="bottom">
+        <button className={`mode-btn ${mode === 'quiz' ? 'active' : ''}`} onClick={() => onModeChange('quiz')}>🧠 Quiz</button>
+      </Tooltip>
+      <Tooltip content="Turn a script into a narrated video" placement="bottom">
+        <button className={`mode-btn ${mode === 'media' ? 'active' : ''}`} onClick={() => onModeChange('media')}>🎬 Studio</button>
+      </Tooltip>
+      <Tooltip content="Browse the web inside HomeBot" placement="bottom">
+        <button className={`mode-btn ${mode === 'browser' ? 'active' : ''}`} onClick={() => onModeChange('browser')}>🌐 Browser</button>
+      </Tooltip>
     </div>
   );
 };
