@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import Tooltip from './Tooltip';
 import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 import { recommendedModelIdsForVram } from '../../shared/hardware-presets';
 import { assessModelDownloadFit } from '../../shared/model-download-fit';
@@ -369,7 +370,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   return (
     <div className={`model-selector ${locked ? 'locked' : ''}`} ref={dropdownRef}>
       <div className="model-selector-row">
-        <button className="model-nav-btn" onClick={handlePrevModel} disabled={locked} title="Previous model" aria-label="Previous model">◀</button>
+        <Tooltip content="Switch to the previous model">
+          <button className="model-nav-btn" onClick={handlePrevModel} disabled={locked} aria-label="Previous model">◀</button>
+        </Tooltip>
 
         <button
           ref={buttonRef}
@@ -395,7 +398,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           </div>
         </button>
 
-        <button className="model-nav-btn" onClick={handleNextModel} disabled={locked} title="Next model" aria-label="Next model">▶</button>
+        <Tooltip content="Switch to the next model">
+          <button className="model-nav-btn" onClick={handleNextModel} disabled={locked} aria-label="Next model">▶</button>
+        </Tooltip>
       </div>
 
       {locked && (
@@ -415,14 +420,16 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         >
           <div className="model-dropdown-header">
             <span>Models</span>
-            <button
-              className="add-custom-button"
-              type="button"
-              onClick={() => { setIsOpen(false); onConfigureCustom(); }}
-              title="Add custom API (OpenAI, Claude, etc.)"
-            >
-              + Cloud API
-            </button>
+            <Tooltip content="Connect an online service like OpenAI, Claude or Gemini" placement="bottom">
+              <button
+                className="add-custom-button"
+                type="button"
+                onClick={() => { setIsOpen(false); onConfigureCustom(); }}
+                aria-label="Connect an online AI service"
+              >
+                + Cloud API
+              </button>
+            </Tooltip>
           </div>
 
           <div className="model-list">
