@@ -520,14 +520,58 @@ export const setupMediaResearchDef: ToolDefinition = {
   parameters: { type: 'object', properties: {}, required: [] },
 };
 
+/**
+ * Ask the deployed workflow one real question and check it answers with sources.
+ *
+ * A ping only proves something is registered on the path. This workflow
+ * answered pings perfectly while returning an empty brief for every real
+ * query, because the source it scraped served the n8n container a bot-check
+ * page instead of results — so "deployed and answering" was true and useless
+ * for the entire life of the feature.
+ *
+ * One query costs a couple of seconds at setup time and is the difference
+ * between a health check and a health claim.
+ */
+async function researchActuallyReturnsSources(): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const axios = (await import('axios')).default;
+    const { MEDIA_RESEARCH_PATH } = await import('../n8n-media-workflows');
+    const { getSettings } = await import('../config-manager');
+    const base = String((getSettings() as any)?.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
+
+    const res = await axios.post(
+      `${base}/webhook/${MEDIA_RESEARCH_PATH}`,
+      { topic: 'Book of Jonah' },
+      { timeout: 45_000, validateStatus: () => true },
+    );
+    if (res.status !== 200) return { ok: false, detail: `the webhook answered HTTP ${res.status}` };
+
+    const data: any = Array.isArray(res.data) ? res.data[0] : res.data;
+    const sources = Array.isArray(data?.sources) ? data.sources : [];
+    const text = String(data?.text || '').trim();
+    if (!sources.length || !text) {
+      return { ok: false, detail: `it returned ${sources.length} sources and ${text.length} characters of text` };
+    }
+    return { ok: true, detail: `a test query returned ${sources.length} sources` };
+  } catch (e: any) {
+    return { ok: false, detail: errText(e) };
+  }
+}
+
 const setupMediaResearchHandler: ToolHandler = async () => {
   try {
     const { checkWebhook, describeWebhookStatus } = await import('../n8n-webhook-check');
     const { MEDIA_RESEARCH_PATH } = await import('../n8n-media-workflows');
 
     const before = await checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
-    if (before.status === 'available') return ok('The research workflow is already deployed and answering.');
     if (before.status === 'n8n_unreachable') return err(describeWebhookStatus(before));
+
+    if (before.status === 'available') {
+      const proof = await researchActuallyReturnsSources();
+      return proof.ok
+        ? ok(`The research workflow is already deployed and working — ${proof.detail}`)
+        : err(`The research workflow is deployed but returns nothing usable: ${proof.detail}`);
+    }
 
     const { ensureMediaResearchWorkflow } = await import('../n8n-api');
     const res = await ensureMediaResearchWorkflow();
@@ -536,9 +580,14 @@ const setupMediaResearchHandler: ToolHandler = async () => {
     // Verify rather than assume: importing and activating can both succeed
     // while the webhook is still not registered until n8n reloads.
     const after = await checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
-    return ok(after.status === 'available'
-      ? 'Research workflow deployed and answering. Scripts will now be written from fetched sources.'
-      : `Deployed, but the webhook is not answering yet (${after.status}). It usually registers once n8n reloads.`);
+    if (after.status !== 'available') {
+      return ok(`Deployed, but the webhook is not answering yet (${after.status}). It usually registers once n8n reloads.`);
+    }
+
+    const proof = await researchActuallyReturnsSources();
+    return proof.ok
+      ? ok(`Research workflow deployed and working — ${proof.detail}. Scripts will now be written from fetched sources.`)
+      : err(`Deployed and answering, but it returns nothing usable: ${proof.detail}`);
   } catch (e: any) {
     return err(`Could not set up the research workflow: ${errText(e)}`);
   }
