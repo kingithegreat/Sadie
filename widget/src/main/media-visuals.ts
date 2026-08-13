@@ -33,9 +33,37 @@ const RETRY_GAP_MS = Number(process.env.HOMEBOT_SCENE_RETRY_GAP_MS ?? 1500);
  */
 export function buildScenePrompt(sceneText: string, videoTitle: string, style?: string): string {
   const cleaned = sceneText.replace(/\s+/g, ' ').trim().slice(0, 240);
-  const look = style?.trim()
-    || 'cinematic digital painting, dramatic lighting, muted earthy palette, no text, no watermark, no letters';
+  const look = style?.trim() || DEFAULT_LOOK;
   return `${cleaned} — illustration for "${videoTitle}". ${look}`;
+}
+
+/**
+ * The house style, held identical across every scene of a video.
+ *
+ * Each scene is generated independently, so without a shared anchor the same
+ * subject came back as a different thing shot to shot — one tall ship, then a
+ * visibly different tall ship. Naming the medium, the light and the palette
+ * pins the parts that must not change; the scene text supplies what does.
+ */
+const DEFAULT_LOOK = 'cinematic digital painting, dramatic side lighting, muted earthy palette, '
+  + 'consistent art direction, film still, no text, no watermark, no letters';
+
+/**
+ * A seed that is stable for one video and different between videos.
+ *
+ * Same seed with different prompts keeps composition and palette related,
+ * which is what makes a sequence read as one piece. Derived from the video's
+ * own identity so a re-render reproduces the same look rather than rolling
+ * fresh visuals every time.
+ */
+export function seedForVideo(identity: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < identity.length; i++) {
+    h ^= identity.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // Positive, and inside the range the backends accept.
+  return Math.abs(h) % 1_000_000_000;
 }
 
 export interface SceneImage {
@@ -58,8 +86,10 @@ export async function generateSceneImages(opts: {
   width: number;
   height: number;
   style?: string;
+  /** Held identical across the scenes of one video, so they look related. */
+  seed?: number;
   /** Injected in tests; defaults to the real image_generate handler. */
-  generate?: (prompt: string, width: number, height: number) => Promise<{ base64: string; source?: string } | null>;
+  generate?: (prompt: string, width: number, height: number, seed?: number) => Promise<{ base64: string; source?: string } | null>;
   onProgress?: (done: number, total: number) => void;
 }): Promise<SceneImage[]> {
   const generate = opts.generate ?? defaultGenerator;
@@ -71,7 +101,7 @@ export async function generateSceneImages(opts: {
   const runOne = async (i: number) => {
     const prompt = buildScenePrompt(opts.scenes[i].text, opts.videoTitle, opts.style);
     try {
-      const img = await generate(prompt, opts.width, opts.height);
+      const img = await generate(prompt, opts.width, opts.height, opts.seed);
       if (img?.base64) {
         const file = path.join(opts.outDir, `scene-${String(i).padStart(2, '0')}.png`);
         fs.writeFileSync(file, Buffer.from(img.base64, 'base64'));
@@ -142,9 +172,9 @@ export function fillMissingImages(images: SceneImage[]): Array<string | null> {
   return out;
 }
 
-async function defaultGenerator(prompt: string, width: number, height: number) {
+async function defaultGenerator(prompt: string, width: number, height: number, seed?: number) {
   const { imageGenerateHandler } = await import('./tools/web');
-  const res: any = await imageGenerateHandler({ prompt, width, height }, { executionId: 'media-visuals' } as any);
+  const res: any = await imageGenerateHandler({ prompt, width, height, seed }, { executionId: 'media-visuals' } as any);
   if (!res?.success) throw new Error(res?.error || 'image_generate failed');
   const base64 = res.result?.image_base64;
   if (!base64) return null;

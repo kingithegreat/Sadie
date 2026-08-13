@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import type { ChatMessage } from '../types';
+import { getCloudContextLimit } from '../../shared/model-context';
 
 interface TokenCounterProps {
   messages: ChatMessage[];
@@ -42,6 +43,14 @@ const MODEL_CONTEXT: Record<string, number> = {
 
 function getContextLimit(model: string): number {
   if (MODEL_CONTEXT[model]) return MODEL_CONTEXT[model];
+
+  // Cloud models first. The table above is Ollama-only and its fuzzy match
+  // compares against `key.split(':')[0]`, which no Claude or GPT id can match
+  // — so every cloud model fell through to the 8192 default below. On Opus 5
+  // (1M window) the counter read ~100% full within a couple of turns.
+  const cloud = getCloudContextLimit(model);
+  if (cloud) return cloud;
+
   // Fuzzy match: check if any key is a prefix of the model name
   for (const key of Object.keys(MODEL_CONTEXT)) {
     if (model.startsWith(key.split(':')[0])) return MODEL_CONTEXT[key];

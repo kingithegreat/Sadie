@@ -74,12 +74,86 @@ function upsert(job: MediaJob): void {
   writeJobs(jobs);
 }
 
+/**
+ * What a model says when it means "the one we have been talking about".
+ *
+ * Driving the pipeline from chat, the second turn is "Write the script for
+ * IT". The model passes that through verbatim, no title matched, and the whole
+ * chain stopped at the first stage with a job sitting right there.
+ */
+const VAGUE_JOB_REFERENCES = new Set([
+  '', 'it', 'that', 'this', 'the video', 'the job', 'the short', 'my video', 'current', 'latest',
+]);
+
+/** Most recently touched — what "it" means when more than one job is open. */
+function mostRecent(jobs: MediaJob[]): MediaJob {
+  return [...jobs].sort((a, b) => {
+    const at = (j: MediaJob) => j.history[j.history.length - 1]?.at ?? '';
+    return at(b).localeCompare(at(a));
+  })[0];
+}
+
 function findJob(idOrTitle: string): MediaJob | undefined {
   const jobs = readJobs();
+  if (!jobs.length) return undefined;
   const needle = (idOrTitle || '').trim().toLowerCase();
-  return jobs.find(j => j.id.toLowerCase() === needle)
-    ?? jobs.find(j => j.title.toLowerCase() === needle)
-    ?? jobs.find(j => j.title.toLowerCase().includes(needle));
+
+  const exact = jobs.find(j => j.id.toLowerCase() === needle)
+    ?? jobs.find(j => j.title.toLowerCase() === needle);
+  if (exact) return exact;
+
+  // With one job in flight a pronoun is unambiguous; with several, the one
+  // most recently worked on is what a person means.
+  if (VAGUE_JOB_REFERENCES.has(needle)) {
+    return jobs.length === 1 ? jobs[0] : mostRecent(jobs);
+  }
+
+  // Guarded: `includes('')` is true for every title, so an empty argument used
+  // to select the first job silently.
+  if (!needle) return undefined;
+  return jobs.find(j => j.title.toLowerCase().includes(needle));
+}
+
+/**
+ * The step after this one, named as the tool that performs it.
+ *
+ * Refusals already steer a model — "run media_write_script first" is enough to
+ * redirect it. Successes said nothing, so a turn that had just advanced the
+ * job left the model to infer the next stage from a pipeline it cannot see.
+ * Measured driving this from chat: a 7B created the job and then wrote about
+ * writing the script rather than calling the tool that writes it.
+ *
+ * One function, so the hint cannot drift away from the state machine the way a
+ * sentence copied into six success messages would.
+ */
+function nextStepFor(job: MediaJob): string {
+  switch (job.state) {
+    case 'idea':
+    case 'researching':
+      return 'Next: write the script — media_write_script.';
+    case 'script_draft':
+    case 'script_qa':
+      return 'Next: record the narration — media_narrate.';
+    case 'media_production':
+      return 'Next: render the video — media_render.';
+    case 'render_qa':
+      return 'Next: watch it, then approve with media_approve_job (or send it back with media_reject_job).';
+    case 'awaiting_approval':
+      return 'Waiting on a person: media_approve_job or media_reject_job. Nothing else may move it.';
+    case 'needs_revision':
+      return 'Next: revise the script — media_write_script.';
+    case 'approved':
+    case 'scheduled':
+      return 'Publishing is a human decision and is switched off by default.';
+    default:
+      return '';
+  }
+}
+
+/** Append the next step to a success message, when there is one to give. */
+function withNextStep(lines: string[], job: MediaJob): string {
+  const next = nextStepFor(job);
+  return (next ? [...lines, '', next] : lines).join('\n');
 }
 
 /**
@@ -211,7 +285,7 @@ const createMediaJobHandler: ToolHandler = async (args) => {
       brief: args.brief ? String(args.brief) : undefined,
     });
     upsert(job);
-    return ok(`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`);
+    return ok(withNextStep([`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`], job));
   } catch (e: any) {
     return err(`media_create_job failed: ${errText(e)}`);
   }
@@ -253,7 +327,7 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
       publishingEnabled,
     });
     upsert(moved);
-    return ok(`"${moved.title}" → ${describeProgress(moved)}`);
+    return ok(withNextStep([`"${moved.title}" → ${describeProgress(moved)}`], moved));
   } catch (e: any) {
     // The state machine's messages already name the allowed next states.
     return err(errText(e));
@@ -342,12 +416,12 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
 
     const problems = checkScript(updated, script.text);
     const seconds = estimateSpokenSeconds(script.text);
-    return ok([
+    return ok(withNextStep([
       `Wrote a script for "${updated.title}" using ${script.via} (~${seconds}s spoken).`,
       problems.length ? `Worth checking:\n- ${problems.join('\n- ')}` : 'No problems found.',
       '',
       script.text,
-    ].join('\n'));
+    ], updated));
   } catch (e: any) {
     return err(`Could not write the script: ${errText(e)}`);
   }
@@ -424,11 +498,11 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     const kb = Math.round(audio.bytes / 1024);
     // Report the MEASURED duration, not the word-count estimate — the estimate
     // was only ever a stand-in until real audio existed.
-    return ok([
+    return ok(withNextStep([
       `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB.`,
       `audio:    ${audio.path}`,
       updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
-    ].join('\n'));
+    ], updated));
   } catch (e: any) {
     return err(`Could not record the narration: ${errText(e)}`);
   }
@@ -446,14 +520,58 @@ export const setupMediaResearchDef: ToolDefinition = {
   parameters: { type: 'object', properties: {}, required: [] },
 };
 
+/**
+ * Ask the deployed workflow one real question and check it answers with sources.
+ *
+ * A ping only proves something is registered on the path. This workflow
+ * answered pings perfectly while returning an empty brief for every real
+ * query, because the source it scraped served the n8n container a bot-check
+ * page instead of results — so "deployed and answering" was true and useless
+ * for the entire life of the feature.
+ *
+ * One query costs a couple of seconds at setup time and is the difference
+ * between a health check and a health claim.
+ */
+async function researchActuallyReturnsSources(): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const axios = (await import('axios')).default;
+    const { MEDIA_RESEARCH_PATH } = await import('../n8n-media-workflows');
+    const { getSettings } = await import('../config-manager');
+    const base = String((getSettings() as any)?.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
+
+    const res = await axios.post(
+      `${base}/webhook/${MEDIA_RESEARCH_PATH}`,
+      { topic: 'Book of Jonah' },
+      { timeout: 45_000, validateStatus: () => true },
+    );
+    if (res.status !== 200) return { ok: false, detail: `the webhook answered HTTP ${res.status}` };
+
+    const data: any = Array.isArray(res.data) ? res.data[0] : res.data;
+    const sources = Array.isArray(data?.sources) ? data.sources : [];
+    const text = String(data?.text || '').trim();
+    if (!sources.length || !text) {
+      return { ok: false, detail: `it returned ${sources.length} sources and ${text.length} characters of text` };
+    }
+    return { ok: true, detail: `a test query returned ${sources.length} sources` };
+  } catch (e: any) {
+    return { ok: false, detail: errText(e) };
+  }
+}
+
 const setupMediaResearchHandler: ToolHandler = async () => {
   try {
     const { checkWebhook, describeWebhookStatus } = await import('../n8n-webhook-check');
     const { MEDIA_RESEARCH_PATH } = await import('../n8n-media-workflows');
 
     const before = await checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
-    if (before.status === 'available') return ok('The research workflow is already deployed and answering.');
     if (before.status === 'n8n_unreachable') return err(describeWebhookStatus(before));
+
+    if (before.status === 'available') {
+      const proof = await researchActuallyReturnsSources();
+      return proof.ok
+        ? ok(`The research workflow is already deployed and working — ${proof.detail}`)
+        : err(`The research workflow is deployed but returns nothing usable: ${proof.detail}`);
+    }
 
     const { ensureMediaResearchWorkflow } = await import('../n8n-api');
     const res = await ensureMediaResearchWorkflow();
@@ -462,9 +580,14 @@ const setupMediaResearchHandler: ToolHandler = async () => {
     // Verify rather than assume: importing and activating can both succeed
     // while the webhook is still not registered until n8n reloads.
     const after = await checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
-    return ok(after.status === 'available'
-      ? 'Research workflow deployed and answering. Scripts will now be written from fetched sources.'
-      : `Deployed, but the webhook is not answering yet (${after.status}). It usually registers once n8n reloads.`);
+    if (after.status !== 'available') {
+      return ok(`Deployed, but the webhook is not answering yet (${after.status}). It usually registers once n8n reloads.`);
+    }
+
+    const proof = await researchActuallyReturnsSources();
+    return proof.ok
+      ? ok(`Research workflow deployed and working — ${proof.detail}. Scripts will now be written from fetched sources.`)
+      : err(`Deployed and answering, but it returns nothing usable: ${proof.detail}`);
   } catch (e: any) {
     return err(`Could not set up the research workflow: ${errText(e)}`);
   }
@@ -533,7 +656,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const wantScenes = String(args.visuals ?? 'scenes') === 'scenes' && !image;
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
-      const { generateSceneImages, fillMissingImages } = await import('../media-visuals');
+      const { generateSceneImages, fillMissingImages, seedForVideo } = await import('../media-visuals');
       const { parseSrtCues } = await import('../media-captions');
 
       const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
@@ -548,6 +671,9 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
           width: Math.min(w, 1024),
           height: Math.min(h, 1024),
           style: args.style ? String(args.style) : undefined,
+          // One seed for the whole video, derived from its identity, so the
+          // scenes look like each other and a re-render reproduces them.
+          seed: seedForVideo(job.id),
         });
         const filled = fillMissingImages(images);
         const made = filled.filter(Boolean).length;
@@ -585,11 +711,11 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     upsert(updated);
 
     const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
-    return ok([
+    return ok(withNextStep([
       `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${visualNote ? `, ${visualNote}` : ''}.`,
       `video: ${rendered.path}`,
       'Watch it before approving; nothing publishes on its own.',
-    ].join('\n'));
+    ], updated));
   } catch (e: any) {
     return err(`Could not render the video: ${errText(e)}`);
   }

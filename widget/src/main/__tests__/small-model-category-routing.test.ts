@@ -109,3 +109,56 @@ describe('a detected category actually reaches the model', () => {
       .toBeGreaterThanOrEqual(getSmallModelTools().length);
   });
 });
+
+/**
+ * Synonyms are looked up before stemming, or they do not fire at all.
+ *
+ * rankToolsByQuery expanded tokenise(query), which had ALREADY stemmed. The
+ * stemmer strips a trailing "e", so "make" arrived as "mak" and
+ * QUERY_SYNONYMS["make"] was never consulted. The cost was that a pipeline
+ * could not be started from its most natural request: "Make me a short video
+ * about Jonah" offered media_write_script and media_narrate and NOT
+ * media_create_job — every media tool except the one that starts a job.
+ *
+ * Two of the original entries were dead the same way: "meeting" stems to
+ * "meet", "picture" to "pictur".
+ */
+describe('query synonyms survive the stemmer', () => {
+  const { rankToolsByQuery } = require('../tools');
+
+  const tool = (name: string, description = ''): any => ({
+    name, description, category: 'test', parameters: { type: 'object', properties: {} },
+  });
+
+  it('maps "make" onto the tools named "create"', () => {
+    const ranked = rankToolsByQuery(
+      [tool('thing_write_script'), tool('thing_narrate'), tool('thing_create_job')],
+      'Make me a short video about Jonah and the storm.',
+    ).map((t: any) => t.name);
+    expect(ranked[0]).toBe('thing_create_job');
+  });
+
+  it.each(['build', 'start', 'add', 'new'])('and "%s" as well', (verb) => {
+    const ranked = rankToolsByQuery(
+      [tool('thing_list'), tool('thing_create')],
+      `${verb} a thing`,
+    ).map((t: any) => t.name);
+    expect(ranked[0]).toBe('thing_create');
+  });
+
+  it('revives "meeting", which stemmed to "meet" and never matched', () => {
+    const ranked = rankToolsByQuery(
+      [tool('list_processes'), tool('add_calendar_event')],
+      'what meetings do I have tomorrow',
+    ).map((t: any) => t.name);
+    expect(ranked[0]).toBe('add_calendar_event');
+  });
+
+  it('still ranks on the words actually used when no synonym applies', () => {
+    const ranked = rankToolsByQuery(
+      [tool('thing_create'), tool('thing_delete')],
+      'delete the thing',
+    ).map((t: any) => t.name);
+    expect(ranked[0]).toBe('thing_delete');
+  });
+});
