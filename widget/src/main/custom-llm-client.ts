@@ -558,6 +558,47 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
  * - tool (tool_result) messages are grouped into user content arrays.
  * - assistant messages with tool_calls are converted to tool_use content arrays.
  */
+/**
+ * A second cache breakpoint, on the conversation itself.
+ *
+ * The first one sits at the end of the system block and covers tools + system
+ * — the static prefix. Everything after it was re-read at full price on every
+ * turn, and in an agentic loop that is the part that grows: each round adds an
+ * assistant tool_use and a tool_result, so by round five the uncached portion
+ * dwarfs the schemas the first breakpoint saves.
+ *
+ * The marker goes on the SECOND-TO-LAST message. That makes the cached prefix
+ * "everything except the turn we are adding", which is exactly the part that
+ * will repeat next time; the newest message stays uncached because it has
+ * never been seen before. Next turn the marker moves forward and the older
+ * prefix is still a prefix, so it still hits.
+ *
+ * Anthropic allows four breakpoints. This brings the total to two.
+ */
+export function withConversationCacheBreakpoint(msgs: any[], cacheControl: any): any[] {
+  // Below three messages there is no repeating prefix worth marking, and the
+  // minimum cacheable length would ignore it anyway.
+  if (!Array.isArray(msgs) || msgs.length < 3) return msgs;
+
+  const index = msgs.length - 2;
+  const target = msgs[index];
+  if (!target) return msgs;
+
+  const blocks = Array.isArray(target.content)
+    ? target.content.map((b: any) => (typeof b === 'string' ? { type: 'text', text: b } : { ...b }))
+    : [{ type: 'text', text: String(target.content ?? '') }];
+
+  const last = blocks[blocks.length - 1];
+  // An empty text block is rejected outright, so a message with no content is
+  // left exactly as it was rather than marked.
+  if (!last || (last.type === 'text' && !String(last.text || '').trim())) return msgs;
+
+  blocks[blocks.length - 1] = { ...last, cache_control: cacheControl };
+  const copy = msgs.slice();
+  copy[index] = { ...target, content: blocks };
+  return copy;
+}
+
 function toAnthropicMessages(messages: ChatMessage[]): { system: string; messages: any[] } {
   const rawSystem = messages.find(m => m.role === 'system')?.content || '';
   const system = typeof rawSystem === 'string' ? rawSystem : rawSystem.map(b => b.text || '').join('\n');
@@ -717,7 +758,7 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
         // Omitted entirely on models that reject sampling parameters (400).
         ...(acceptsSamplingParams(resolvedModel) ? { temperature } : {}),
         ...(systemBlocks ? { system: systemBlocks } : {}),
-        messages: anthropicMessages,
+        messages: withConversationCacheBreakpoint(anthropicMessages, CACHE),
         stream: true,
         ...(cachedTools ? { tools: cachedTools } : {})
       },
