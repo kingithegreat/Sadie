@@ -60,7 +60,7 @@ describe('retry flow (renderer)', () => {
     await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument());
 
     // The Retry button should now be visible
-    const retryBtn = screen.getByText('↻ Retry');
+    const retryBtn = screen.getByRole('button', { name: /retry/i });
     expect(retryBtn).toBeInTheDocument();
 
     // Clear mock to track the retry call
@@ -96,7 +96,7 @@ describe('retry flow (renderer)', () => {
     await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
 
     // Retry should NOT be present
-    expect(screen.queryByText('↻ Retry')).toBeNull();
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
   });
 
   test('retrying a document-attached turn asks for reattach instead of resending a marker-only request', async () => {
@@ -119,12 +119,12 @@ describe('retry flow (renderer)', () => {
     const sendMock = (window as any).electron.sendStreamMessage as jest.Mock;
     sendMock.mockClear();
 
-    fireEvent.click(screen.getByText('↻ Retry'));
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
 
     await waitFor(() => {
       expect(screen.getByText('This request included a document attachment. Please reattach the document and send it again.')).toBeInTheDocument();
     });
     expect(sendMock).not.toHaveBeenCalled();
-    expect(screen.queryByText('↻ Retry')).toBeNull();
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
   });
 });

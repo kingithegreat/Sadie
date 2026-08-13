@@ -110,7 +110,7 @@ describe('stream end and error handling (renderer)', () => {
     await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
     // Retry button should appear for errored messages
-    expect(screen.getByText('↻ Retry')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
 
     // Message should no longer grow after error - simulate another chunk and ensure final text unchanged
     act(() => { chunkHandler?.({ streamId, chunk: 'more' }); });

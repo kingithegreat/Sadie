@@ -7,6 +7,7 @@ import ActionConfirmation from "./components/ActionConfirmation";
 import PermissionModal from './components/PermissionModal';
 import { ToastContainer, useToasts } from './components/ToastContainer';
 import ModelSelector from './components/ModelSelector';
+import Logo from './components/Logo';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Lazy-load panels that aren't visible on first render
@@ -1157,6 +1158,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {widgetMode && (
         <div className="widget-titlebar">
           <div className="widget-titlebar-brand">
+            <Logo className="header-logo" size={22} />
             <span className={`widget-status-dot${status.ollama === 'offline' ? ' disconnected' : ''}`} />
             <h1>HomeBot</h1>
           </div>
@@ -1241,6 +1243,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {!widgetMode && (
         <div className="widget-titlebar expanded-titlebar">
           <div className="widget-titlebar-brand">
+            <Logo className="header-logo" size={22} />
             <span className={`widget-status-dot${status.ollama === 'offline' ? ' disconnected' : ''}`} />
             <h1>HomeBot</h1>
           </div>
