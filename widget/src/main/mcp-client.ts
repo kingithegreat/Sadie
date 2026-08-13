@@ -152,6 +152,22 @@ export function saveMcpConfig(config: McpServersFile): void {
 export async function initializeMcpServers(
   registerTool: (name: string, definition: any, handler: any) => void
 ): Promise<void> {
+  // Never spawn real MCP servers from a unit test.
+  //
+  // loadMcpConfig() reads the developer's actual config out of userData, so on
+  // a machine with MCP servers configured this function spawned every one of
+  // them — real child processes and pipes — from any test that reached
+  // registerMessageRouter(). Those handles kept Jest alive forever after the
+  // suite had already passed. CI never saw it because a clean runner has no
+  // MCP config, which is exactly why it went unnoticed.
+  //
+  // JEST_WORKER_ID is set only by Jest, so this cannot affect the real app or
+  // the Playwright E2E runs (which drive a genuinely launched Electron app and
+  // *should* connect their servers).
+  if (process.env.JEST_WORKER_ID !== undefined) {
+    return;
+  }
+
   const { servers } = loadMcpConfig();
   const enabled = servers.filter(s => s.enabled !== false);
 

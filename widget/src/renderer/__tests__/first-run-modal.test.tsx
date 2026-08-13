@@ -66,8 +66,8 @@ describe('FirstRunModal — open/closed', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.getByText('Local (Ollama)')).toBeInTheDocument();
-    expect(screen.getByText('Cloud API')).toBeInTheDocument();
+    expect(screen.getByText('On this PC')).toBeInTheDocument();
+    expect(screen.getByText('Online')).toBeInTheDocument();
   });
 
   test('renders Skip setup button', () => {
@@ -84,7 +84,7 @@ describe('FirstRunModal — local path', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     expect(screen.getByText('Local Setup')).toBeInTheDocument();
   });
@@ -94,7 +94,7 @@ describe('FirstRunModal — local path', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     // Wait for async checkOllama
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
@@ -106,7 +106,7 @@ describe('FirstRunModal — local path', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     expect(screen.getByText(/Test GPU/)).toBeInTheDocument();
@@ -117,7 +117,7 @@ describe('FirstRunModal — local path', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     await act(async () => {
@@ -133,7 +133,7 @@ describe('FirstRunModal — cloud path', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Cloud API'));
+      fireEvent.click(screen.getByText('Online'));
     });
     expect(screen.getByText('Cloud Setup')).toBeInTheDocument();
     expect(screen.getByText('Groq')).toBeInTheDocument();
@@ -146,7 +146,7 @@ describe('FirstRunModal — cloud path', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Cloud API'));
+      fireEvent.click(screen.getByText('Online'));
     });
     const input = screen.getByPlaceholderText('Paste your API key');
     fireEvent.change(input, { target: { value: 'sk-test-123' } });
@@ -163,7 +163,7 @@ describe('FirstRunModal — cloud path', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Cloud API'));
+      fireEvent.click(screen.getByText('Online'));
     });
     const input = screen.getByPlaceholderText('Paste your API key');
     fireEvent.change(input, { target: { value: 'sk-test-123' } });
@@ -182,7 +182,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     await act(async () => {
@@ -201,7 +201,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     await act(async () => {
@@ -220,7 +220,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     await act(async () => {
@@ -242,7 +242,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={onClose} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     await act(async () => {
@@ -260,7 +260,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={onSave} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Cloud API'));
+      fireEvent.click(screen.getByText('Online'));
     });
     const input = screen.getByPlaceholderText('Paste your API key');
     fireEvent.change(input, { target: { value: 'sk-test-key' } });
@@ -286,7 +286,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
     );
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Cloud API'));
+      fireEvent.click(screen.getByText('Online'));
     });
 
     const input = screen.getByPlaceholderText('Paste your API key');
@@ -337,7 +337,7 @@ describe('FirstRunModal — wizard navigation', () => {
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Local (Ollama)'));
+      fireEvent.click(screen.getByText('On this PC'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     expect(screen.getByText('Back')).toBeInTheDocument();
@@ -353,5 +353,74 @@ describe('FirstRunModal — wizard navigation', () => {
     );
     const dots = document.querySelectorAll('.wizard-dot');
     expect(dots.length).toBe(3);
+  });
+});
+
+describe('FirstRunModal — hardware-aware path recommendation', () => {
+  // The regression this guards: the welcome screen used to ask a brand-new
+  // user "local or cloud?" and answer it with "runs on your GPU". Detection
+  // existed but ran inside runLocalSetup(), i.e. only AFTER the user had
+  // already chosen local, so it could never inform the choice.
+
+  const renderWizard = async (vramGB: number | null) => {
+    (window as any).electron = makeMockElectron();
+    (window as any).electron.detectGpuVram = jest.fn().mockResolvedValue(
+      vramGB === null ? { success: false } : { success: true, vramGB, gpuName: 'Test GPU' }
+    );
+    const utils = render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    // Let the fire-and-forget detection settle.
+    await act(async () => { await Promise.resolve(); });
+    return utils;
+  };
+
+  test('detects the GPU on open, before any path is chosen', async () => {
+    await renderWizard(12);
+    // Still on the welcome step — nothing has been clicked.
+    expect(screen.getByText('Welcome to HomeBot')).toBeInTheDocument();
+    expect((window as any).electron.detectGpuVram).toHaveBeenCalled();
+  });
+
+  test('recommends running on this PC when the card is capable', async () => {
+    await renderWizard(12);
+    const badges = screen.getAllByText('Recommended for your PC');
+    expect(badges).toHaveLength(1);
+    // The badge must sit on the local card, not merely exist somewhere.
+    expect(badges[0].closest('button')).toHaveTextContent('On this PC');
+  });
+
+  test('recommends online when the card is too small to be worth it', async () => {
+    await renderWizard(2);
+    const badges = screen.getAllByText('Recommended for your PC');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].closest('button')).toHaveTextContent('Online');
+  });
+
+  test('explains the recommendation in plain words, quoting the real card size', async () => {
+    await renderWizard(8);
+    expect(screen.getByText(/8GB/)).toBeInTheDocument();
+    // No jargon may reach this screen.
+    expect(screen.queryByText(/VRAM/i)).toBeNull();
+    expect(screen.queryByText(/Ollama/i)).toBeNull();
+  });
+
+  test('shows no recommendation at all when the GPU cannot be read', async () => {
+    await renderWizard(null);
+    // Better to say nothing than to guess at someone's hardware — and an
+    // "unknown hardware" disclaimer would worry a beginner more than the
+    // missing badge helps them.
+    expect(screen.queryByText('Recommended for your PC')).toBeNull();
+    // The screen still works: both choices present, plus the reassurance.
+    expect(screen.getByText('On this PC')).toBeInTheDocument();
+    expect(screen.getByText(/you can change it later/i)).toBeInTheDocument();
+  });
+
+  test('never leaves the user without a way forward', async () => {
+    await renderWizard(2);
+    // Both paths remain clickable regardless of which one is recommended —
+    // the badge is advice, and the user may have reasons we cannot see.
+    expect(screen.getByText('On this PC').closest('button')).toBeEnabled();
+    expect(screen.getByText('Online').closest('button')).toBeEnabled();
   });
 });
