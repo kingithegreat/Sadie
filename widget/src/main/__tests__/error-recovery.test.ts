@@ -44,7 +44,7 @@ describe('classifyError', () => {
     const hint = classifyError('Ollama error', 'connect ECONNREFUSED 127.0.0.1:11434');
     expect(hint.service).toBe('ollama');
     expect(hint.action).toBe('start-ollama');
-    expect(hint.userMessage).toContain('ollama serve');
+    expect(hint.userMessage).toMatch(/isn't running|not running/i);
   });
 
   test('detects Ollama ECONNRESET', () => {
@@ -56,7 +56,7 @@ describe('classifyError', () => {
   test('detects both services unavailable', () => {
     const hint = classifyError('Both n8n and Ollama unavailable', 'ECONNREFUSED');
     expect(hint.service).toBe('ollama');
-    expect(hint.userMessage).toContain('Ollama');
+    expect(hint.userMessage).toMatch(/can't reach|cannot reach/i);
     expect(hint.action).toBe('start-ollama');
   });
 
@@ -66,7 +66,7 @@ describe('classifyError', () => {
     expect(hint.action).toBe('pull-model');
     expect(hint.model).toBe('qwen2.5:7b');
     expect(hint.actionLabel).toContain('Pull');
-    expect(hint.userMessage).toContain('ollama pull');
+    expect(hint.userMessage).toMatch(/download/i);
   });
 
   test('detects model not found without specific model name', () => {
@@ -77,7 +77,7 @@ describe('classifyError', () => {
   test('detects n8n upstream error', () => {
     const hint = classifyError('Upstream error (n8n unavailable)', 'probe:502');
     expect(hint.service).toBe('n8n');
-    expect(hint.userMessage).toContain('n8n');
+    expect(hint.userMessage).toMatch(/automations/i);
     expect(hint.action).toBe('retry');
   });
 
@@ -85,7 +85,7 @@ describe('classifyError', () => {
     const hint = classifyError('Request timed out', 'ETIMEDOUT');
     expect(hint.service).toBe('unknown');
     expect(hint.action).toBe('retry');
-    expect(hint.userMessage).toContain('timed out');
+    expect(hint.userMessage).toMatch(/too long/i);
   });
 
   test('detects cloud rate limit errors', () => {
@@ -93,7 +93,7 @@ describe('classifyError', () => {
     expect(hint.service).toBe('unknown');
     expect(hint.action).toBe('check-settings');
     expect(hint.actionLabel).toBe('Settings');
-    expect(hint.userMessage).toContain('cloud provider');
+    expect(hint.userMessage).toMatch(/online AI service/i);
   });
 
   test('returns generic retry for unknown errors', () => {
@@ -126,5 +126,39 @@ describe('classifyError', () => {
     const valid = ['ollama', 'n8n', 'model', 'unknown'];
     const hint = classifyError('random error');
     expect(valid).toContain(hint.service);
+  });
+});
+
+describe('classifyError — plain language guarantee', () => {
+  // The renderer draws a StartOllamaButton / PullModelButton directly beneath
+  // these messages, so a shell command in the text is both jargon AND redundant
+  // with the button under it. This guard is the point of the whole change: the
+  // previous assertions REQUIRED "ollama serve" and "ollama pull", so the jargon
+  // was pinned in place by the tests meant to protect the behaviour.
+  const JARGON =
+    /(^|[^a-z])(ollama|n8n|backend|vram|api|localhost|econn[a-z]*|stderr|npm|cli|serve)([^a-z]|$)/i;
+
+  const SAMPLES = [
+    'ECONNREFUSED connecting to ollama',
+    'both services unavailable',
+    'model "qwen2.5:7b" not found (404)',
+    'n8n upstream failure',
+    'ETIMEDOUT',
+    'Cloud API error (OPENAI gpt-4o): status code 429',
+    'something entirely unexpected',
+  ];
+
+  test.each(SAMPLES)('no jargon reaches the user for: %s', (input) => {
+    const hint = classifyError(input);
+    expect(hint.userMessage).not.toMatch(JARGON);
+    expect(hint.userMessage.length).toBeGreaterThan(15);
+  });
+
+  test('every hint offers a way forward', () => {
+    for (const input of SAMPLES) {
+      const hint = classifyError(input);
+      expect(hint.action).toBeTruthy();
+      expect(hint.actionLabel).toBeTruthy();
+    }
   });
 });

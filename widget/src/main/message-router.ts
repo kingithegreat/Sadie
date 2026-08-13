@@ -652,7 +652,9 @@ function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
     return {
       success: false,
       error: true,
-      message: 'Connection refused by backend.',
+      // Was "Connection refused by backend." — a reader who does not know
+      // what a backend is learns nothing and is told to do nothing.
+      message: "HomeBot couldn't reach the AI. It may still be starting up — try again in a moment.",
       details: error.message,
       response: 'NETWORK_ERROR'
     };
@@ -661,7 +663,7 @@ function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
     return {
       success: false,
       error: true,
-      message: 'Request timed out.',
+      message: 'That took too long to answer. The model may still be loading — try again in a moment.',
       details: error.message,
       response: 'TIMEOUT'
     };
@@ -669,7 +671,7 @@ function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
   return {
     success: false,
     error: true,
-    message: 'Unknown error occurred.',
+    message: 'Something went wrong. Trying again usually fixes it.',
     details: error.message,
     response: 'UNKNOWN_ERROR'
   };
@@ -696,7 +698,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('both') && combined.includes('unavailable')) {
     return {
       service: 'ollama',
-      userMessage: 'Both n8n and Ollama are unreachable. Make sure Ollama is running (ollama serve).',
+      userMessage: "HomeBot can't reach the AI on this PC. Start it below, then send your message again.",
       action: 'start-ollama',
       actionLabel: 'Retry',
     };
@@ -709,8 +711,8 @@ export function classifyError(message: string, details?: string): RecoveryHint {
     return {
       service: 'model',
       userMessage: model
-        ? `Model "${model}" is not installed. Pull it with: ollama pull ${model}`
-        : 'The requested model is not installed.',
+        ? `The ${model} model hasn't been downloaded yet. Download it below — it only needs doing once.`
+        : "That AI model hasn't been downloaded yet. You can pick a different one in Settings.",
       action: model ? 'pull-model' : 'check-settings',
       actionLabel: model ? `Pull ${model}` : 'Settings',
       model: model || undefined,
@@ -722,7 +724,10 @@ export function classifyError(message: string, details?: string): RecoveryHint {
       (combined.includes('ollama') && (combined.includes('unavailable') || combined.includes('error')))) {
     return {
       service: 'ollama',
-      userMessage: 'Ollama is not running. Start it with: ollama serve',
+      // The renderer draws a StartOllamaButton directly beneath this. Telling
+      // someone to open a terminal, next to a button that does it for them, is
+      // the worst of both.
+      userMessage: "The AI on this PC isn't running. Start it below, then send your message again.",
       action: 'start-ollama',
       actionLabel: 'Retry',
     };
@@ -732,7 +737,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('n8n') || combined.includes('upstream')) {
     return {
       service: 'n8n',
-      userMessage: 'n8n workflows are unavailable — HomeBot will use local Ollama instead.',
+      userMessage: 'Automations are unavailable right now — HomeBot will answer using the AI on this PC instead.',
       action: 'retry',
       actionLabel: 'Retry with Ollama',
     };
@@ -742,7 +747,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('timeout') || combined.includes('etimedout') || combined.includes('timed out')) {
     return {
       service: 'unknown',
-      userMessage: 'The request timed out. The model may be loading — try again in a moment.',
+      userMessage: 'That took too long to answer. The model may still be starting up — try again in a moment.',
       action: 'retry',
       actionLabel: 'Retry',
     };
@@ -754,7 +759,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
       combined.includes('forbidden') || combined.includes('authentication')) {
     return {
       service: 'unknown',
-      userMessage: 'The cloud provider rejected the request. Check your API key, quota, billing, and model access in Settings.',
+      userMessage: 'The online AI service refused the request. That is usually the key, the billing, or a usage limit — check Settings.',
       action: 'check-settings',
       actionLabel: 'Settings',
     };
@@ -2848,12 +2853,58 @@ export async function streamFromOllamaWithTools(
   
   // Check if we have images - use vision model if so (vision models typically don't support tools)
   const hasImages = images && images.length > 0;
+
+  /**
+   * Will this turn carry tools? Decided BEFORE the model is picked, because it
+   * has to be.
+   *
+   * uncensoredMode ships ON, which selects dolphin-mistral:7b — and Ollama
+   * refuses any request carrying a tools array for it:
+   *
+   *   400  "registry.ollama.ai/library/dolphin-mistral:7b does not support tools"
+   *
+   * Checked directly against both installed models with the same prompt:
+   * dolphin 400s, qwen2.5:7b returns tool_calls
+   * ({"name":"media_create_job","title":"Jonah and the Storm"}). So on a
+   * DEFAULT install every tool in HomeBot was unreachable from chat — the
+   * whole Media Studio, filesystem, automations, all of it — and the failure
+   * was invisible, because the request simply errored and the non-stream
+   * fallback answered without tools.
+   *
+   * Uncensored mode exists so CONVERSATION is not refused. It was never meant
+   * to disable the assistant's ability to act. When a turn actually needs
+   * tools, the tool-capable chat model runs it.
+   */
+  /**
+   * ...and a second gate, upstream of the model, was closed for most of the app.
+   *
+   * shouldOfferToolsForMessage only recognises filesystem, terminal, organiser
+   * and web-plus-live-data phrasing. "Make me a short video about Jonah" is
+   * none of those, so NO tools were offered — measured: `tools=0` in the
+   * router log for exactly that request. Everything routed by category rather
+   * than by those four patterns was unreachable from chat: the Media Studio,
+   * CRM, the browser, automations.
+   *
+   * detectToolCategories already knows the request is about media. If the
+   * router can name a category, the tools of that category are what the turn
+   * is for — so a matched category opens the gate too.
+   */
+  const intentCategories = detectToolCategories(message);
+  const willUseTools = !hasImages
+    && !isSimpleGreeting(message)
+    && !isSynthesisCall
+    && (shouldOfferToolsForMessage(message, { hasImages, hasDocuments: options?.hasDocuments ?? false })
+      || intentCategories.length > 0);
+
   // Select model: vision > uncensored > code > normal
-  const baseChatModel = uncensoredModeEnabled ? preferredUncensoredModel
+  const baseChatModel = (uncensoredModeEnabled && !willUseTools) ? preferredUncensoredModel
     : (isCodingQuery ? preferredCodeModel : preferredChatModel);
   const chatModel = baseChatModel || preferredChatModel;
   const model = hasImages ? preferredVisionModel : chatModel;
   if (isCodingQuery) console.log(`[HomeBot] Coding query detected — using code model: ${model}`);
+  if (uncensoredModeEnabled && willUseTools) {
+    console.log(`[HomeBot] Uncensored mode is on, but this turn needs tools — using ${model}, which supports them`);
+  }
   onMeta?.({ model });
 
   // Extract base64 image data for Ollama
@@ -3022,10 +3073,10 @@ export async function streamFromOllamaWithTools(
   // and offering tools causes it to redundantly call web_search, blowing the context.
   // For small models, use the compact core-tool set instead of all 80+ tools.
   const isAgentic = options?.agenticMode === true;
-  const intentCategories = detectToolCategories(message);
-  const shouldOfferTools = !skipToolsForGreeting
-    && !isSynthesisCall
-    && shouldOfferToolsForMessage(message, { hasImages, hasDocuments });
+  // One decision, made above where the model choice also needs it. Computing
+  // it twice is how the model came to be picked as if no tools were coming
+  // while tools were in fact offered.
+  const shouldOfferTools = willUseTools;
   const tools = (modelSupportsTools && shouldOfferTools)
     ? (smallModel && !isAgentic
       // The message itself decides WHICH category tools get the few slots

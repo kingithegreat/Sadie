@@ -911,9 +911,12 @@ export function MessageBubble({
                              message.recoveryHint.service === 'n8n' ? '⚙️' : '⚠️'}
                           </span>
                           <span className="error-recovery-title">
-                            {message.recoveryHint.service === 'ollama' ? 'Ollama Offline' :
-                             message.recoveryHint.service === 'model' ? 'Model Missing' :
-                             message.recoveryHint.service === 'n8n' ? 'n8n Unavailable' : 'Error'}
+                            {/* Plain titles. "Ollama Offline" and "n8n Unavailable"
+                                name products the user never installed knowingly —
+                                HomeBot sets both up on their behalf. */}
+                            {message.recoveryHint.service === 'ollama' ? 'AI not running' :
+                             message.recoveryHint.service === 'model' ? 'Model not downloaded' :
+                             message.recoveryHint.service === 'n8n' ? 'Automations unavailable' : 'Something went wrong'}
                           </span>
                         </div>
                         <p className="error-recovery-message">

@@ -42,7 +42,10 @@ npm run e2e
 ### 2. Security Validation
 
 ```bash
-# Dependency audit
+# Dependency audit. Expected: 6 (2 moderate, 4 high) — every one of them is a
+# RECORDED, ACCEPTED decision. See SECURITY-AUDIT.md before changing anything,
+# and never run `npm audit fix --force`: it would downgrade exceljs a major
+# version to silence an advisory that cannot fire in this codebase.
 npm audit
 
 # Package integrity scan

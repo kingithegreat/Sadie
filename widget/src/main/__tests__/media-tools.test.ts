@@ -225,3 +225,38 @@ describe('the narration stage', () => {
     expect(offered).toContain('media_narrate');
   });
 });
+
+/**
+ * Every category the request matched gets a seat at the table.
+ *
+ * Ranking alone was not enough. Scoring is lexical, so one word can dominate
+ * it: "make the video file for Jonah" matches media, filesystem and utility,
+ * and "file" is a NAME match for the filesystem tools (+10 each) while the
+ * media tools only match "video" in their descriptions (+1). All four category
+ * slots went to filesystem, and a request plainly about a video was offered no
+ * media tool at all — the same starvation the earlier ranking change was meant
+ * to fix, with a different winner.
+ */
+describe('category slots are shared, not won outright', () => {
+  const offeredFor = (query: string) =>
+    getSmallModelTools({ categories: detectToolCategories(query), query })
+      .map((t: any) => t.function?.name ?? t.name);
+
+  it('offers a media tool for a video request that also mentions a file', () => {
+    const query = 'make the video file for Jonah';
+    // The premise: this really does match several categories.
+    expect(detectToolCategories(query).length).toBeGreaterThan(1);
+    expect(offeredFor(query).some((n: string) => n.startsWith('media_'))).toBe(true);
+  });
+
+  it('still offers the filesystem tools the same request asked about', () => {
+    // Sharing must not just move the starvation onto another category.
+    const offered = offeredFor('make the video file for Jonah');
+    expect(offered.some((n: string) => ['write_file', 'read_file', 'list_directory'].includes(n))).toBe(true);
+  });
+
+  it('gives a single-category request its pick, as before', () => {
+    const offered = offeredFor('what videos are waiting for approval');
+    expect(offered.filter((n: string) => n.startsWith('media_')).length).toBeGreaterThan(1);
+  });
+});
