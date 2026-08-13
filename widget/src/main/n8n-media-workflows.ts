@@ -7,14 +7,23 @@
  *
  * The reason is the plan's own first content guardrail: "never fabricate
  * biblical quotations, citations or historical claims." The research stage
- * currently asks the model to recall facts, which is precisely the operation
+ * otherwise asks the model to recall facts, which is precisely the operation
  * that invents them. Fetching real pages and handing the model actual text
  * changes the job from recall to summarising a source — and the sources are
  * kept for attribution, which the plan also requires.
  *
- * n8n is the right home for it: it already owns outbound HTTP with an SSRF
- * guard (see buildWebFetchWorkflowJson), it retries, and the user can open the
- * workflow and see exactly where a claim came from.
+ * SOURCE: Wikipedia's API, not a search-engine scrape.
+ *
+ * The first version scraped html.duckduckgo.com. It worked when tested from
+ * the host and returned nothing at all in production, because DuckDuckGo
+ * serves datacenter addresses an "anomaly" bot-check page instead of results —
+ * verified by running the same fetch inside the n8n container and counting
+ * zero result links. A source that only works from a developer's laptop is not
+ * a source.
+ *
+ * Wikipedia's API answers the container happily, needs no key, returns real
+ * article titles and stable canonical URLs, and for a scripture or history
+ * channel it is the more defensible citation anyway.
  *
  * Deployment is optional by design. If the workflow is absent the research
  * stage falls back to the model, and n8n-webhook-check reports it as
@@ -26,11 +35,19 @@ import { randomUUID } from 'crypto';
 export const MEDIA_RESEARCH_PATH = 'homebot/media-research';
 
 /**
- * Webhook → DuckDuckGo HTML search → strip to text → respond.
+ * Wikipedia asks every API client to identify itself, and enforces it: an
+ * anonymous request is answered with 403 and a pointer to the robot policy.
+ */
+const WIKI_USER_AGENT = 'HomeBot/1.0 (https://github.com/kingithegreat/Sadie) n8n-media-research';
+
+/** How many articles to gather. Enough for corroboration, few enough to stay short. */
+const ARTICLE_COUNT = 4;
+
+/**
+ * Webhook → Wikipedia search → fetch intros → respond with text + sources.
  *
- * Deliberately a plain HTML endpoint with no API key: the plan asks for a
- * free/local option wherever practical, and a research stage that needs a paid
- * search key would simply go unused.
+ * Two HTTP calls rather than one per article: the extracts endpoint takes
+ * several page ids at once, so a four-source brief costs two requests.
  */
 export function buildMediaResearchWorkflowJson(): object {
   const versionId = randomUUID();
@@ -62,7 +79,11 @@ export function buildMediaResearchWorkflowJson(): object {
 if (!topic || $json.body?.action === 'ping') {
   return [{ json: { ping: true, topic: '' } }];
 }
-return [{ json: { topic, url: 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(topic) } }];`,
+const q = encodeURIComponent(topic);
+return [{ json: {
+  topic,
+  url: 'https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${ARTICLE_COUNT}&srsearch=' + q,
+} }];`,
         },
         id: randomUUID(),
         name: 'Build query',
@@ -73,10 +94,16 @@ return [{ json: { topic, url: 'https://html.duckduckgo.com/html/?q=' + encodeURI
       {
         parameters: {
           url: '={{ $json.url }}',
-          options: { timeout: 15000, redirect: { redirect: {} } },
+          // Wikipedia's API returns 403 without a descriptive User-Agent —
+          // "Please set a user-agent and respect our robot policy". n8n's HTTP
+          // node does not send one, so the first version of this got a 403 and
+          // an empty brief. Read out of the failed execution, not guessed.
+          sendHeaders: true,
+          headerParameters: { parameters: [{ name: 'User-Agent', value: WIKI_USER_AGENT }] },
+          options: { timeout: 15000 },
         },
         id: randomUUID(),
-        name: 'Fetch results',
+        name: 'Search',
         type: 'n8n-nodes-base.httpRequest',
         typeVersion: 4.2,
         position: [650, 300],
@@ -86,51 +113,73 @@ return [{ json: { topic, url: 'https://html.duckduckgo.com/html/?q=' + encodeURI
       },
       {
         parameters: {
-          jsCode: `const html = typeof $json.data === 'string' ? $json.data : (typeof $json.body === 'string' ? $json.body : '');
-if (!html) return [{ json: { topic: $('Build query').first().json.topic || '', sources: [], text: '' } }];
+          jsCode: `const topic = $('Build query').first().json.topic || '';
+if (!topic) return [{ json: { ping: true } }];
 
-// Result titles and their snippets, in DuckDuckGo's HTML layout.
-const strip = (s) => s.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&#x27;/g, "'")
-  .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\\s+/g, ' ').trim();
+const hits = $json?.query?.search || [];
+if (!hits.length) return [{ json: { topic, pageids: '', titles: [] } }];
 
-// DuckDuckGo hands back its own redirect wrapper, not the destination:
-//   //duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FJonah
-// Citing that would defeat the point of collecting sources at all — the
-// person approving a script needs to see it came from Wikipedia, and needs a
-// link they can actually open. So unwrap it back to the real destination.
-const unwrap = (u) => {
-  let s = String(u).replace(/&amp;/g, '&');
-  const m = /[?&]uddg=([^&]+)/.exec(s);
-  if (m) { try { s = decodeURIComponent(m[1]); } catch (e) { /* keep as-is */ } }
-  if (s.slice(0, 2) === '//') s = 'https:' + s;
-  return s;
-};
+// Titles are kept alongside the ids so a citation can name the article even
+// if the extract for it comes back empty.
+return [{ json: {
+  topic,
+  pageids: hits.map(h => h.pageid).join('|'),
+  titles: hits.map(h => h.title),
+  url: 'https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&format=json&pageids='
+    + hits.map(h => h.pageid).join('%7C'),
+} }];`,
+        },
+        id: randomUUID(),
+        name: 'Pick articles',
+        type: 'n8n-nodes-base.code',
+        typeVersion: 2,
+        position: [850, 300],
+      },
+      {
+        parameters: {
+          url: '={{ $json.url }}',
+          // Wikipedia's API returns 403 without a descriptive User-Agent —
+          // "Please set a user-agent and respect our robot policy". n8n's HTTP
+          // node does not send one, so the first version of this got a 403 and
+          // an empty brief. Read out of the failed execution, not guessed.
+          sendHeaders: true,
+          headerParameters: { parameters: [{ name: 'User-Agent', value: WIKI_USER_AGENT }] },
+          options: { timeout: 15000 },
+        },
+        id: randomUUID(),
+        name: 'Fetch extracts',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [1050, 300],
+        continueOnFail: true,
+      },
+      {
+        parameters: {
+          jsCode: `const picked = $('Pick articles').first().json;
+const topic = picked.topic || '';
+if (!topic) return [{ json: { ping: true, topic: '', sources: [], text: '' } }];
 
+const pages = $json?.query?.pages || {};
 const sources = [];
-const seen = {};
-const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\\s\\S]*?)<\\/a>/g;
-let m;
-while ((m = linkRe.exec(html)) && sources.length < 8) {
-  const url = unwrap(m[1]);
-  // Two results from one site add no corroboration.
-  if (seen[url]) continue;
-  seen[url] = true;
-  sources.push({ url, title: strip(m[2]) });
+const parts = [];
+
+for (const key of Object.keys(pages)) {
+  const p = pages[key];
+  if (!p || !p.title) continue;
+  // Canonical article URL: stable, and a person can open it and check the claim.
+  const url = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(String(p.title).replace(/ /g, '_'));
+  sources.push({ title: p.title, url });
+  const extract = String(p.extract || '').replace(/\\s+/g, ' ').trim();
+  if (extract) parts.push(p.title + ': ' + extract);
 }
-const snippets = [];
-const snipRe = /<a[^>]+class="result__snippet"[^>]*>([\\s\\S]*?)<\\/a>/g;
-while ((m = snipRe.exec(html)) && snippets.length < 8) {
-  const t = strip(m[1]);
-  if (t) snippets.push(t);
-}
-const text = snippets.join('\\n');
-return [{ json: { topic: $('Build query').first().json.topic || '', sources, text } }];`,
+
+return [{ json: { topic, sources, text: parts.join('\\n\\n') } }];`,
         },
         id: randomUUID(),
         name: 'Extract',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [850, 300],
+        position: [1250, 300],
       },
       {
         parameters: { options: {} },
@@ -138,13 +187,15 @@ return [{ json: { topic: $('Build query').first().json.topic || '', sources, tex
         name: 'Respond',
         type: 'n8n-nodes-base.respondToWebhook',
         typeVersion: 1,
-        position: [1050, 300],
+        position: [1450, 300],
       },
     ],
     connections: {
       Webhook: { main: [[{ node: 'Build query', type: 'main', index: 0 }]] },
-      'Build query': { main: [[{ node: 'Fetch results', type: 'main', index: 0 }]] },
-      'Fetch results': { main: [[{ node: 'Extract', type: 'main', index: 0 }]] },
+      'Build query': { main: [[{ node: 'Search', type: 'main', index: 0 }]] },
+      Search: { main: [[{ node: 'Pick articles', type: 'main', index: 0 }]] },
+      'Pick articles': { main: [[{ node: 'Fetch extracts', type: 'main', index: 0 }]] },
+      'Fetch extracts': { main: [[{ node: 'Extract', type: 'main', index: 0 }]] },
       Extract: { main: [[{ node: 'Respond', type: 'main', index: 0 }]] },
     },
     settings: { executionOrder: 'v1' },
