@@ -7,9 +7,9 @@
  * generic "Something went wrong" banner.
  *
  * Scenarios covered:
- *   1. Ollama offline  — 🔌 icon, "Ollama Offline" title, "▶ Start Ollama" button
- *   2. Model missing   — 📦 icon, "Model Missing" title, "📦 Pull <model>" button
- *   3. n8n unavailable — ⚙️ icon, "n8n Unavailable" title, ↻ retry button
+ *   1. Ollama offline  — 🔌 icon, "AI not running" title, "▶ Start Ollama" button
+ *   2. Model missing   — 📦 icon, "Model not downloaded" title, "📦 Pull <model>" button
+ *   3. n8n unavailable — ⚙️ icon, "Automations unavailable" title, ↻ retry button
  *   4. No hint         — falls back to generic "Something went wrong" card
  *   5. Start Ollama success → startOllama IPC called, success label shown
  *   6. Pull Model success   → pullModel IPC called with correct model name, success label
@@ -92,7 +92,7 @@ describe('error recovery UX — inline recovery card', () => {
   beforeEach(() => { (window as any).electron = undefined; });
 
   // 1 ────────────────────────────────────────────────────────────────────────
-  test('Ollama offline hint shows 🔌 icon, "Ollama Offline" title, and Start Ollama button', async () => {
+  test('Ollama offline hint shows 🔌 icon, "AI not running" title, and Start Ollama button', async () => {
     await triggerRecoveryCard({
       service: 'ollama',
       userMessage: 'Ollama is not running. Start it with: ollama serve',
@@ -100,7 +100,7 @@ describe('error recovery UX — inline recovery card', () => {
       actionLabel: 'Retry',
     });
 
-    await waitFor(() => expect(screen.getByText('Ollama Offline')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('AI not running')).toBeInTheDocument());
     expect(screen.getByText('🔌')).toBeInTheDocument();
     expect(screen.getByText('Ollama is not running. Start it with: ollama serve')).toBeInTheDocument();
     // StartOllamaButton renders "▶ Start Ollama"
@@ -110,7 +110,7 @@ describe('error recovery UX — inline recovery card', () => {
   });
 
   // 2 ────────────────────────────────────────────────────────────────────────
-  test('Model missing hint shows 📦 icon, "Model Missing" title, and Pull button', async () => {
+  test('Model missing hint shows 📦 icon, "Model not downloaded" title, and Pull button', async () => {
     await triggerRecoveryCard({
       service: 'model',
       userMessage: 'Model "mistral" is not installed.',
@@ -119,7 +119,7 @@ describe('error recovery UX — inline recovery card', () => {
       model: 'mistral',
     });
 
-    await waitFor(() => expect(screen.getByText('Model Missing')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Model not downloaded')).toBeInTheDocument());
     // The 📦 icon in the card header (service icon)
     expect(screen.getAllByText('📦').length).toBeGreaterThan(0);
     expect(screen.getByText('Model "mistral" is not installed.')).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe('error recovery UX — inline recovery card', () => {
   });
 
   // 3 ────────────────────────────────────────────────────────────────────────
-  test('n8n unavailable hint shows ⚙️ icon, "n8n Unavailable" title, and Retry button', async () => {
+  test('n8n unavailable hint shows ⚙️ icon, "Automations unavailable" title, and Retry button', async () => {
     await triggerRecoveryCard({
       service: 'n8n',
       userMessage: 'The n8n automation service is unavailable.',
@@ -139,7 +139,7 @@ describe('error recovery UX — inline recovery card', () => {
       actionLabel: 'Retry',
     });
 
-    await waitFor(() => expect(screen.getByText('n8n Unavailable')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Automations unavailable')).toBeInTheDocument());
     // The header Settings button used to also render ⚙️, which is why this was
     // scoped to "at least one". Chrome now uses SVG icons, so the only ⚙️ left
     // is the recovery card's own — emoji in message content is intentional.
@@ -265,7 +265,7 @@ describe('error recovery UX — inline recovery card', () => {
 
     await waitFor(() => {
       expect(screen.getByText('partial response')).toBeInTheDocument();
-      expect(screen.getByText('Ollama Offline')).toBeInTheDocument();
+      expect(screen.getByText('AI not running')).toBeInTheDocument();
       expect(screen.getByText('Connection reset mid-stream.')).toBeInTheDocument();
     });
   });
