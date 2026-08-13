@@ -44,6 +44,105 @@ jobs:
       - name: Build (if configured)
         run: npm run build --if-present
 
+  # The `build` job above runs at the REPO ROOT. Root tsconfig covers only
+  # root src/, root jest's roots is root src/, and the root package has no
+  # lint or build script -- so `--if-present` silently skipped both. It never
+  # touched widget/, which is the actual Electron app: 181 test files and
+  # ~2,780 tests, of which CI ran exactly one (via permissions-smoke.yml).
+  #
+  # This job is that gate. Kept separate from `build` so a widget failure is
+  # distinguishable at a glance from a root failure.
+  widget:
+    # windows-latest, not ubuntu. HomeBot ships Windows-only -- electron-builder
+    # targets `win`/`nsis`, predist runs a PowerShell script, and
+    # preflight-and-build-release.yml already builds on Windows.
+    #
+    # It is also the only platform these tests pass on, and they say so:
+    # filesystem.test.ts notes "All test files live inside os.tmpdir() which is
+    # under HOME_DIR on Windows". The main-process tools refuse any path outside
+    # the home directory, and on Linux os.tmpdir() is /tmp -- outside
+    # /home/runner. The first run of this job on ubuntu failed 92 tests across
+    # 10 suites for exactly that reason.
+    #
+    # Testing a Windows-only product on Linux was always a partial signal, so
+    # this matches the runner to the product rather than rewriting ten suites to
+    # be portable to a platform HomeBot does not ship to.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+
+      # --ignore-scripts: electron-builder's postinstall pulls platform binaries
+      # we do not need to typecheck or unit-test, and it is slow.
+      # BOTH packages. widget/src/main/tools/crm.ts imports
+      # ../../../../src/crm/store -- a ROOT file -- and that file does
+      # require('better-sqlite3'), which Node resolves from the root package.
+      # Installing only widget/ leaves ten CRM and email tests failing on a
+      # module that is present in widget's tree but not where the importer
+      # looks for it.
+      - name: Install (root)
+        run: npm ci --ignore-scripts
+
+      - name: Install (widget)
+        working-directory: widget
+        run: npm ci --ignore-scripts
+
+      # --ignore-scripts above skips electron-builder's install-app-deps, which
+      # is slow and rebuilds native modules against ELECTRON's ABI. Jest runs on
+      # plain Node, so that is the wrong ABI anyway. But it also skips
+      # better-sqlite3's own build, and the CRM store is file-backed sqlite --
+      # without this, ten CRM and email tests fail on require().
+      - name: Build native modules against Node
+        run: |
+          npm rebuild better-sqlite3
+          cd widget && npm rebuild better-sqlite3
+
+      - name: Typecheck
+        working-directory: widget
+        run: npx tsc --noEmit
+
+      # --forceExit is deliberate and NOT hiding a failure: every test passes.
+      # The suite finishes in ~45s and then does not release the process. Two
+      # causes were found and fixed (a setInterval cleared only on Electron's
+      # 'before-quit', which never fires under Jest; and initializeMcpServers
+      # spawning real child processes from the developer's own MCP config) --
+      # that took it from ~86s to ~45s and removed six handles. At least one
+      # handle remains, isolated to src/main but not attributable by
+      # --detectOpenHandles. Without --forceExit this job would hang until the
+      # runner timeout.
+      #
+      # TODO: find the last handle and drop the flag. Until then the tests do
+      # gate, which is the point -- they previously did not run here at all.
+      # Point TEMP at a directory under the home directory, spelled the long
+      # way. The main-process file tools only permit paths inside HOME_DIR
+      # (process.env.HOME || USERPROFILE), and the suite writes its fixtures to
+      # os.tmpdir(). On a dev box those coincide. On the GitHub Windows runner
+      # TEMP is the 8.3 short form C:\Users\RUNNER~1\... while USERPROFILE is
+      # C:\Users\runneradmin, so path.relative() sees '..' and every file
+      # operation is denied.
+      - name: Point TEMP inside the home directory
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:USERPROFILE 'homebot-test-tmp'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          "TEMP=$tmp" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TMP=$tmp"  | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "USERPROFILE=$env:USERPROFILE"
+          Write-Host "TEMP now=$tmp"
+
+      - name: Unit tests
+        working-directory: widget
+        run: npx jest --config=jest.config.ts --runInBand --no-coverage --forceExit
+
+      - name: Build
+        working-directory: widget
+        run: npm run build
+
   duplicate-export-guard:
     # Mechanical check for parallel-build collisions (e.g. two incompatible
     # cosmetics systems in a sibling project) and scaffold-vs-integration

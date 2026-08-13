@@ -652,7 +652,9 @@ function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
     return {
       success: false,
       error: true,
-      message: 'Connection refused by backend.',
+      // Was "Connection refused by backend." — a reader who does not know
+      // what a backend is learns nothing and is told to do nothing.
+      message: "HomeBot couldn't reach the AI. It may still be starting up — try again in a moment.",
       details: error.message,
       response: 'NETWORK_ERROR'
     };
@@ -661,7 +663,7 @@ function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
     return {
       success: false,
       error: true,
-      message: 'Request timed out.',
+      message: 'That took too long to answer. The model may still be loading — try again in a moment.',
       details: error.message,
       response: 'TIMEOUT'
     };
@@ -669,7 +671,7 @@ function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
   return {
     success: false,
     error: true,
-    message: 'Unknown error occurred.',
+    message: 'Something went wrong. Trying again usually fixes it.',
     details: error.message,
     response: 'UNKNOWN_ERROR'
   };
@@ -696,7 +698,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('both') && combined.includes('unavailable')) {
     return {
       service: 'ollama',
-      userMessage: 'Both n8n and Ollama are unreachable. Make sure Ollama is running (ollama serve).',
+      userMessage: "HomeBot can't reach the AI on this PC. Start it below, then send your message again.",
       action: 'start-ollama',
       actionLabel: 'Retry',
     };
@@ -709,8 +711,8 @@ export function classifyError(message: string, details?: string): RecoveryHint {
     return {
       service: 'model',
       userMessage: model
-        ? `Model "${model}" is not installed. Pull it with: ollama pull ${model}`
-        : 'The requested model is not installed.',
+        ? `The ${model} model hasn't been downloaded yet. Download it below — it only needs doing once.`
+        : "That AI model hasn't been downloaded yet. You can pick a different one in Settings.",
       action: model ? 'pull-model' : 'check-settings',
       actionLabel: model ? `Pull ${model}` : 'Settings',
       model: model || undefined,
@@ -722,7 +724,10 @@ export function classifyError(message: string, details?: string): RecoveryHint {
       (combined.includes('ollama') && (combined.includes('unavailable') || combined.includes('error')))) {
     return {
       service: 'ollama',
-      userMessage: 'Ollama is not running. Start it with: ollama serve',
+      // The renderer draws a StartOllamaButton directly beneath this. Telling
+      // someone to open a terminal, next to a button that does it for them, is
+      // the worst of both.
+      userMessage: "The AI on this PC isn't running. Start it below, then send your message again.",
       action: 'start-ollama',
       actionLabel: 'Retry',
     };
@@ -732,7 +737,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('n8n') || combined.includes('upstream')) {
     return {
       service: 'n8n',
-      userMessage: 'n8n workflows are unavailable — HomeBot will use local Ollama instead.',
+      userMessage: 'Automations are unavailable right now — HomeBot will answer using the AI on this PC instead.',
       action: 'retry',
       actionLabel: 'Retry with Ollama',
     };
@@ -742,7 +747,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('timeout') || combined.includes('etimedout') || combined.includes('timed out')) {
     return {
       service: 'unknown',
-      userMessage: 'The request timed out. The model may be loading — try again in a moment.',
+      userMessage: 'That took too long to answer. The model may still be starting up — try again in a moment.',
       action: 'retry',
       actionLabel: 'Retry',
     };
@@ -754,7 +759,7 @@ export function classifyError(message: string, details?: string): RecoveryHint {
       combined.includes('forbidden') || combined.includes('authentication')) {
     return {
       service: 'unknown',
-      userMessage: 'The cloud provider rejected the request. Check your API key, quota, billing, and model access in Settings.',
+      userMessage: 'The online AI service refused the request. That is usually the key, the billing, or a usage limit — check Settings.',
       action: 'check-settings',
       actionLabel: 'Settings',
     };
