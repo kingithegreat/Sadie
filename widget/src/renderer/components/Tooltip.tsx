@@ -1,4 +1,5 @@
-import { cloneElement, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { cloneElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactElement, ReactNode } from 'react';
 
 /**
@@ -24,6 +25,17 @@ import type { ReactElement, ReactNode } from 'react';
  *
  * Deliberately unconditional about one thing: it renders nothing at all when
  * `content` is empty, rather than an empty bubble.
+ *
+ * The bubble is PORTALLED to document.body and positioned fixed, not absolutely
+ * positioned beside the trigger. It has to be: the first version drew correctly
+ * — right size, opacity 1, z-index 2000 — and was invisible anyway, because
+ * three ancestors clip it (.mode-switcher overflow:auto, .app-header
+ * overflow:hidden, and a wrapper div overflow:hidden). Nothing absolutely
+ * positioned escapes overflow:hidden, whatever its z-index.
+ *
+ * No unit test could have caught that: jsdom does no layout and paints nothing.
+ * It took driving the real app and looking at a screenshot. ModelSelector
+ * portals its dropdown for the same reason.
  */
 
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
@@ -48,6 +60,9 @@ export default function Tooltip({
   disabled = false,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const bubbleRef = useRef<HTMLSpanElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = useId();
   const tooltipId = `tt-${id}`;
@@ -96,12 +111,37 @@ export default function Tooltip({
     return () => document.removeEventListener('keydown', onKey, true);
   }, [open, hide]);
 
+  // Measure after paint so the bubble's own size is known, then clamp into the
+  // viewport — a portalled bubble is no longer bounded by its parent, so it can
+  // run off the window edge if left unchecked.
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) return;
+    const a = anchorRef.current.getBoundingClientRect();
+    const b = bubbleRef.current?.getBoundingClientRect();
+    const w = b?.width ?? 0;
+    const h = b?.height ?? 0;
+    const GAP = 6;
+    let top: number;
+    let left: number;
+    switch (placement) {
+      case 'bottom': top = a.bottom + GAP; left = a.left + a.width / 2 - w / 2; break;
+      case 'left':   top = a.top + a.height / 2 - h / 2; left = a.left - w - GAP; break;
+      case 'right':  top = a.top + a.height / 2 - h / 2; left = a.right + GAP; break;
+      default:       top = a.top - h - GAP; left = a.left + a.width / 2 - w / 2;
+    }
+    const PAD = 8;
+    left = Math.max(PAD, Math.min(left, window.innerWidth - w - PAD));
+    top = Math.max(PAD, Math.min(top, window.innerHeight - h - PAD));
+    setPos({ top, left });
+  }, [open, placement, content]);
+
   if (disabled || !content) return children;
 
   const describedBy = open ? tooltipId : undefined;
 
   return (
     <span
+      ref={anchorRef}
       className="tooltip-anchor"
       onMouseEnter={() => show(false)}
       onMouseLeave={hide}
@@ -113,11 +153,20 @@ export default function Tooltip({
       {/* aria-describedby only while open: pointing at an element that is not
           in the DOM would leave a dangling reference for assistive tech. */}
       {describedBy ? cloneElement(children, { 'aria-describedby': describedBy } as Partial<unknown>) : children}
-      {open && (
-        <span role="tooltip" id={tooltipId} className={`tooltip-bubble tooltip-${placement}`}>
-          {content}
-        </span>
-      )}
+      {open &&
+        createPortal(
+          <span
+            ref={bubbleRef}
+            role="tooltip"
+            id={tooltipId}
+            className={`tooltip-bubble tooltip-${placement}`}
+            // Hidden until measured, so it never flashes at 0,0 first.
+            style={pos ? { top: pos.top, left: pos.left } : { opacity: 0, top: -9999, left: -9999 }}
+          >
+            {content}
+          </span>,
+          document.body
+        )}
     </span>
   );
 }

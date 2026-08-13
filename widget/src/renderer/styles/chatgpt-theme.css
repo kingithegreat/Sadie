@@ -9606,7 +9606,12 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   align-items: center;
 }
 .tooltip-bubble {
-  position: absolute;
+  /* fixed, and portalled to <body> by Tooltip.tsx. Absolute positioning drew
+     the bubble correctly and it was still invisible: .app-header and
+     .mode-switcher clip with overflow:hidden/auto, and nothing absolutely
+     positioned escapes that, however high the z-index. Offsets are computed
+     against the trigger's rect in JS and clamped to the viewport. */
+  position: fixed;
   z-index: 2000;                 /* above panels and the sidebar */
   pointer-events: none;          /* never eat a click meant for the control */
   white-space: nowrap;
@@ -9625,10 +9630,6 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 /* Long help wraps rather than running off-screen. */
 .tooltip-bubble.tooltip-wrap { white-space: normal; width: max-content; }
 
-.tooltip-top    { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
-.tooltip-bottom { top: calc(100% + 6px);    left: 50%; transform: translateX(-50%); }
-.tooltip-left   { right: calc(100% + 6px);  top: 50%;  transform: translateY(-50%); }
-.tooltip-right  { left: calc(100% + 6px);   top: 50%;  transform: translateY(-50%); }
 
 @keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
