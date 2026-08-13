@@ -15,8 +15,8 @@ function makeTempProfile() {
 async function completeFirstRunWizard(page: any, opts: { optInTelemetry?: boolean } = {}) {
   await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
   const modal = page.locator('.first-run-modal');
-  // Choose Local path
-  await modal.getByRole('button', { name: /Local \(Ollama\)/i }).click();
+  // Choose the run-on-this-PC path
+  await modal.getByRole('button', { name: /On this PC/i }).click();
   await expect(page.getByText('Local Setup')).toBeVisible({ timeout: 5000 });
   // Advance to done
   await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
@@ -36,9 +36,12 @@ test.describe('First-run onboarding and config persistence', () => {
     // FirstRun wizard should be visible
     await expect(page.getByText('Welcome to HomeBot')).toBeVisible();
 
-    // Path selection cards should be visible
-    await expect(page.getByText('Local (Ollama)')).toBeVisible();
-    await expect(page.getByText('Cloud API')).toBeVisible();
+    // Path selection cards should be visible. The labels are deliberately
+    // plain — "Local (Ollama)" named an implementation detail at a beginner on
+    // the very first screen. If these ever revert to a product name, that is a
+    // regression to fail on, not an assertion to quietly update.
+    await expect(page.getByText('On this PC')).toBeVisible();
+    await expect(page.getByText('Online', { exact: true })).toBeVisible();
 
     // Complete via local path
     await completeFirstRunWizard(page);
