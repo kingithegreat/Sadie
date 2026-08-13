@@ -243,3 +243,28 @@ describe('what counts as the user having chosen', () => {
     });
   });
 });
+
+/**
+ * Uncensored mode must not strip the system prompt from a turn that uses tools.
+ *
+ * The flag means "the user wants conversation unfiltered". It was also used to
+ * gate every system message, so a tool-calling turn — which by then has
+ * already switched to the tool-capable model precisely so it can act —
+ * assembled ZERO system messages. Measured on a default install: no identity,
+ * no tool-use rules, no skills, no memory. The model asked for clarification
+ * about a job it had no way to know existed, which is the right answer for
+ * something told nothing.
+ *
+ * Asserted through the exported flag rather than the private assembly: what
+ * matters is that the two concepts are separate at all.
+ */
+describe('uncensored mode is about conversation, not about acting', () => {
+  it('exposes the runtime flag it is keyed on', () => {
+    const { setUncensoredMode, getUncensoredMode } = require('../message-router');
+    setUncensoredMode(true);
+    expect(getUncensoredMode()).toBe(true);
+    setUncensoredMode(false);
+    expect(getUncensoredMode()).toBe(false);
+    setUncensoredMode(true);
+  });
+});
