@@ -26,22 +26,22 @@ const statusSrc = fs.readFileSync(
 const specSrc = fs.readFileSync(
   path.join(renderer, 'e2e', 'mode-switching.e2e.spec.ts'), 'utf-8');
 
-/** Visible labels of the real mode buttons, e.g. "Home", "Chat", "Docs". */
+/**
+ * Visible labels of the real mode buttons, e.g. "Home", "Chat", "Docs".
+ *
+ * These used to be scraped out of eight hand-written <button> elements, which
+ * needed two separate guards against the onClick arrow's '>' being mistaken for
+ * the start of the label. They now come from the single MODES table the switcher
+ * maps over, so the parse is a plain read of that table — if it ever stops
+ * finding entries, the count assertion below fails rather than the suite quietly
+ * comparing two empty lists.
+ */
 function renderedModeLabels(): string[] {
+  const table = /const MODES:[\s\S]*?\n\];/.exec(statusSrc)?.[0] ?? '';
   const labels: string[] = [];
-  // Take the whole element first — the tag carries onClick and title
-  // attributes between the className and the visible text, so a single
-  // greedy capture picks those up as if they were the label.
-  const buttons = statusSrc.match(/<button className=\{`mode-btn[\s\S]*?<\/button>/g) || [];
-  for (const btn of buttons) {
-    // Exclude '>' from the capture. The onClick arrow (`() =>`) contains one,
-    // so a capture that allows '>' starts matching there and swallows the
-    // handler and title as if they were the label.
-    const text = />([^<>]*)<\/button>/.exec(btn)?.[1] ?? '';
-    // Drop the leading emoji, keep the word: "📊 Home" → "Home".
-    const label = text.replace(/[^\x20-\x7E]/g, '').trim();
-    if (label) labels.push(label);
-  }
+  const re = /label:\s*'([^']+)'/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(table))) labels.push(m[1]);
   return labels;
 }
 

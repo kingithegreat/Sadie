@@ -1,4 +1,5 @@
 import Icon from './Icon';
+import type { IconName } from './Icon';
 import React, { useState, useEffect } from 'react';
 import Tooltip from './Tooltip';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
@@ -59,9 +60,11 @@ interface HeaderModelProps {
   vramGB?: number | null;
 }
 
+type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
+
 interface ModeSwitcherProps {
-  mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser') => void;
+  mode: AppMode;
+  onModeChange?: (mode: AppMode) => void;
 }
 
 interface HeaderActionsProps {
@@ -291,6 +294,25 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
   </div>
 );
 
+/**
+ * The modes, in the order they appear.
+ *
+ * A list rather than eight near-identical JSX blocks: the previous form made
+ * every mode a place to get one of `mode ===`, the onClick argument and the
+ * label out of step with each other, and the emoji in front of each label was
+ * the last row of chrome not drawn from the icon set.
+ */
+const MODES: { id: AppMode; label: string; icon: IconName; tip: string }[] = [
+  { id: 'dashboard', label: 'Home', icon: 'dashboard', tip: 'Overview of what HomeBot can do right now' },
+  { id: 'chat', label: 'Chat', icon: 'chat', tip: 'Talk to the AI' },
+  { id: 'automation', label: 'Automation', icon: 'tools', tip: 'Build tasks HomeBot can repeat for you' },
+  { id: 'image', label: 'Image', icon: 'image', tip: 'Generate pictures from a description' },
+  { id: 'documents', label: 'Docs', icon: 'document', tip: 'Read your files and ask questions about them' },
+  { id: 'quiz', label: 'Quiz', icon: 'quiz', tip: 'Practise coding with questions generated for you' },
+  { id: 'media', label: 'Studio', icon: 'video', tip: 'Turn a script into a narrated video' },
+  { id: 'browser', label: 'Browser', icon: 'globe', tip: 'Browse the web inside HomeBot' },
+];
+
 const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
   if (!onModeChange) {
     return null;
@@ -298,30 +320,18 @@ const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
 
   return (
     <div className="mode-switcher">
-      <Tooltip content="Overview of what HomeBot can do right now" placement="bottom">
-        <button className={`mode-btn ${mode === 'dashboard' ? 'active' : ''}`} onClick={() => onModeChange('dashboard')}>📊 Home</button>
-      </Tooltip>
-      <Tooltip content="Talk to the AI" placement="bottom">
-        <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => onModeChange('chat')}>💬 Chat</button>
-      </Tooltip>
-      <Tooltip content="Build tasks HomeBot can repeat for you" placement="bottom">
-        <button className={`mode-btn ${mode === 'automation' ? 'active' : ''}`} onClick={() => onModeChange('automation')}>🛠 Automation</button>
-      </Tooltip>
-      <Tooltip content="Generate pictures from a description" placement="bottom">
-        <button className={`mode-btn ${mode === 'image' ? 'active' : ''}`} onClick={() => onModeChange('image')}>🎨 Image</button>
-      </Tooltip>
-      <Tooltip content="Read your files and ask questions about them" placement="bottom">
-        <button className={`mode-btn ${mode === 'documents' ? 'active' : ''}`} onClick={() => onModeChange('documents')}>📄 Docs</button>
-      </Tooltip>
-      <Tooltip content="Practise coding with questions generated for you" placement="bottom">
-        <button className={`mode-btn ${mode === 'quiz' ? 'active' : ''}`} onClick={() => onModeChange('quiz')}>🧠 Quiz</button>
-      </Tooltip>
-      <Tooltip content="Turn a script into a narrated video" placement="bottom">
-        <button className={`mode-btn ${mode === 'media' ? 'active' : ''}`} onClick={() => onModeChange('media')}>🎬 Studio</button>
-      </Tooltip>
-      <Tooltip content="Browse the web inside HomeBot" placement="bottom">
-        <button className={`mode-btn ${mode === 'browser' ? 'active' : ''}`} onClick={() => onModeChange('browser')}>🌐 Browser</button>
-      </Tooltip>
+      {MODES.map(({ id, label, icon, tip }) => (
+        <Tooltip key={id} content={tip} placement="bottom">
+          <button
+            className={`mode-btn ${mode === id ? 'active' : ''}`}
+            onClick={() => onModeChange(id)}
+            aria-current={mode === id ? 'page' : undefined}
+          >
+            <Icon name={icon} size={15} />
+            <span>{label}</span>
+          </button>
+        </Tooltip>
+      ))}
     </div>
   );
 };
