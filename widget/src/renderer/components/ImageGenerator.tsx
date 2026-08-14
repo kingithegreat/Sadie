@@ -1,4 +1,24 @@
 import React, { useState, useEffect } from 'react';
+
+/**
+ * One plain sentence about a finished image.
+ *
+ * `metadata` is `{ prompt, width, height, steps, seed, model }`, where `model`
+ * is really the backend that produced it. Whether it was made on this PC is the
+ * one fact a privacy-minded person actually wants back, so it leads.
+ */
+function describeImage(m: { width?: number; height?: number; model?: string } | null): string {
+  if (!m) return '';
+  const source = String(m.model || '').toLowerCase();
+  const onThisPc = /sd-?cpp|automatic|comfy|local/.test(source);
+  const where = source
+    ? onThisPc
+      ? 'Made on this PC — it never left your computer.'
+      : 'Made online.'
+    : 'Done.';
+  const size = m.width && m.height ? ` ${m.width} × ${m.height} pixels.` : '';
+  return `${where}${size}`;
+}
 import { isGateBlocked } from '../../shared/upgrade';
 import type { UpgradePrompt } from '../../shared/types';
 import UpgradeModal from './UpgradeModal';
@@ -120,49 +140,62 @@ const ImageGenerator: React.FC = () => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="resolution">Resolution:</label>
+            <label htmlFor="resolution">Size:</label>
+            {/* The pixel dimensions stay as the value — they are what the
+                backend needs — but the label says what the choice means to
+                someone who does not think in pixels. */}
             <select id="resolution" value={resolution} onChange={(e) => setResolution(e.target.value)}>
-              <option value="256x256">256x256</option>
-              <option value="512x512">512x512</option>
-              <option value="1024x1024">1024x1024</option>
+              <option value="256x256">Small — fastest</option>
+              <option value="512x512">Medium — recommended</option>
+              <option value="1024x1024">Large — slowest, most detail</option>
             </select>
           </div>
 
           <div className="form-group">
-            <label htmlFor="backend">Backend:</label>
+            {/* Was "Backend:" with "Hybrid (local first) / Local only / Cloud
+                only (free)". Three words a non-technical person does not have,
+                for a choice that is really about privacy vs. needing internet. */}
+            <label htmlFor="backend">Where to make it:</label>
             <select id="backend" value={backend} onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}>
-              <option value="hybrid">Hybrid (local first)</option>
-              <option value="local">Local only</option>
-              <option value="cloud">Cloud only (free)</option>
+              <option value="hybrid">Best available</option>
+              <option value="local">Only on this PC — private</option>
+              <option value="cloud">Online — free, no account</option>
             </select>
           </div>
         </div>
 
         {backend === 'local' && sdCppStatus && !sdCppStatus.ready && (
           <div className="sd-cpp-setup">
+            {/* "Missing: sd.exe" and "Missing: model file" name two files the
+                reader has never heard of and cannot act on. What they need is
+                what it costs them and what to do — and, since this route is a
+                manual download, the fact that there is a free alternative that
+                works right now. */}
             <div className="setup-status">
               <span className="status-dot red" />
-              <span>Local generation not set up</span>
+              <span>Making images on this PC needs a one-time setup</span>
               <span className="setup-detail">
-                {!sdCppStatus.hasBinary && ' Missing: sd.exe'}
-                {!sdCppStatus.hasModel && ' Missing: model file'}
+                It is free, but it means downloading two files by hand. You can
+                use “Online — free, no account” instead and start straight away.
               </span>
             </div>
             <div className="setup-actions">
               <button type="button" className="setup-btn" onClick={handleSetupSDCpp}>
-                Setup Guide
+                Show me how
               </button>
               <button type="button" className="setup-btn secondary" onClick={refreshStatus}>
-                Refresh
+                I've done it — check again
               </button>
             </div>
             {setupInfo && (
               <div className="setup-instructions">
-                <strong>Setup steps:</strong>
+                <strong>What to do:</strong>
                 <ol>
                   {setupInfo.map((step, i) => <li key={i}>{step}</li>)}
                 </ol>
-                <p className="setup-note">After placing the files, click Refresh to detect them.</p>
+                <p className="setup-note">
+                  Once both files are in place, choose “I've done it — check again”.
+                </p>
               </div>
             )}
           </div>
@@ -172,7 +205,7 @@ const ImageGenerator: React.FC = () => {
           <div className="sd-cpp-setup">
             <div className="setup-status">
               <span className="status-dot green" />
-              <span>Local generation ready (stable-diffusion.cpp)</span>
+              <span>Ready — images will be made on this PC and never leave it</span>
             </div>
           </div>
         )}
@@ -199,8 +232,19 @@ const ImageGenerator: React.FC = () => {
             <button type="button" onClick={() => setGeneratedImage(null)} aria-label="Clear image">Clear</button>
             <a href={generatedImage} download={`homebot-image-${Date.now()}.png`} className="btn-download">Download</a>
           </div>
+          {/* Was a raw `JSON.stringify(metadata, null, 2)` dumped into a <pre>.
+              Nobody outside this repo can read that, and it was the only thing
+              shown about a finished image. The facts a person actually wants —
+              where it was made and how big it is — are now a sentence, and the
+              JSON is still one click away for when something needs debugging. */}
           {metadata && (
-            <pre className="image-metadata">{JSON.stringify(metadata, null, 2)}</pre>
+            <div className="image-metadata">
+              <p className="image-made-summary">{describeImage(metadata)}</p>
+              <details>
+                <summary>Technical details</summary>
+                <pre>{JSON.stringify(metadata, null, 2)}</pre>
+              </details>
+            </div>
           )}
         </div>
       )}

@@ -8,18 +8,23 @@ const STEPS: Step[] = ['welcome', 'setup', 'done'];
 
 type SetupPath = 'local' | 'cloud' | null;
 
-const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint?: string }[] = [
-  { id: 'groq', name: 'Groq', freeHint: 'Free tier available' },
-  { id: 'openrouter', name: 'OpenRouter', freeHint: 'Free models available' },
-  { id: 'google-ai-studio', name: 'Google AI Studio', freeHint: 'Free tier' },
-  { id: 'google-gemini', name: 'Google Gemini Native', freeHint: 'Free tier' },
-  { id: 'anthropic', name: 'Anthropic' },
-  { id: 'openai', name: 'OpenAI' },
-  { id: 'deepseek', name: 'DeepSeek' },
-  { id: 'cerebras', name: 'Cerebras', freeHint: 'Free tier' },
-  { id: 'sambanova', name: 'SambaNova', freeHint: 'Free tier' },
-  { id: 'together', name: 'Together AI' },
-  { id: 'huggingface', name: 'Hugging Face', freeHint: 'Free inference' },
+// `signupUrl` is where a key is actually obtained. Without it this step asked
+// for something the reader has never heard of and gave them nowhere to get it —
+// the hardest stop in the app, on one of the two paths off the very first
+// screen. SettingsPanel already links out this way in five places; the wizard,
+// which is the one place a first-time user lands, was the exception.
+const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint?: string; signupUrl?: string }[] = [
+  { id: 'groq', name: 'Groq', freeHint: 'Free tier available', signupUrl: 'https://console.groq.com/keys' },
+  { id: 'openrouter', name: 'OpenRouter', freeHint: 'Free models available', signupUrl: 'https://openrouter.ai/keys' },
+  { id: 'google-ai-studio', name: 'Google AI Studio', freeHint: 'Free tier', signupUrl: 'https://aistudio.google.com/app/apikey' },
+  { id: 'google-gemini', name: 'Google Gemini Native', freeHint: 'Free tier', signupUrl: 'https://aistudio.google.com/app/apikey' },
+  { id: 'anthropic', name: 'Anthropic', signupUrl: 'https://console.anthropic.com/settings/keys' },
+  { id: 'openai', name: 'OpenAI', signupUrl: 'https://platform.openai.com/api-keys' },
+  { id: 'deepseek', name: 'DeepSeek', signupUrl: 'https://platform.deepseek.com/api_keys' },
+  { id: 'cerebras', name: 'Cerebras', freeHint: 'Free tier', signupUrl: 'https://cloud.cerebras.ai/' },
+  { id: 'sambanova', name: 'SambaNova', freeHint: 'Free tier', signupUrl: 'https://cloud.sambanova.ai/apis' },
+  { id: 'together', name: 'Together AI', signupUrl: 'https://api.together.ai/settings/api-keys' },
+  { id: 'huggingface', name: 'Hugging Face', freeHint: 'Free inference', signupUrl: 'https://huggingface.co/settings/tokens' },
 ];
 
 const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
@@ -121,6 +126,7 @@ export default function FirstRunModal({
 
   // Cloud path state
   const [cloudProvider, setCloudProvider] = useState<CustomLLMConfig['provider']>('groq');
+  const selectedCloudProvider = CLOUD_PROVIDERS.find(p => p.id === cloudProvider);
   const [cloudApiKey, setCloudApiKey] = useState('');
   const [cloudTesting, setCloudTesting] = useState(false);
   const [cloudOk, setCloudOk] = useState<boolean | null>(null);
@@ -599,8 +605,17 @@ export default function FirstRunModal({
 
           {step === 'setup' && setupPath === 'cloud' && (
             <div className="wizard-step">
-              <h2 className="wizard-step-title">Cloud Setup</h2>
-              <p className="wizard-step-desc">Pick a provider and paste your API key. Free tiers are marked.</p>
+              {/* "Pick a provider and paste your API key. Free tiers are
+                  marked." was three insider words in one sentence, with no way
+                  to get the thing being asked for. Say what these companies are,
+                  what a key is in ordinary words, and link straight to the page
+                  that issues one. */}
+              <h2 className="wizard-step-title">Connect an AI service</h2>
+              <p className="wizard-step-desc">
+                These companies run the AI for you. Pick one, make a free account, and it
+                gives you a long password called a key — paste that below. The ones marked
+                “free” don’t ask for a card.
+              </p>
 
               <div className="wizard-cloud-provider-grid">
                 {CLOUD_PROVIDERS.map(p => (
@@ -616,10 +631,22 @@ export default function FirstRunModal({
                 ))}
               </div>
 
+              {/* Only shown once a provider is chosen, so it points at one
+                  specific page rather than asking the reader to choose again. */}
+              {selectedCloudProvider?.signupUrl && (
+                <p className="wizard-step-desc wizard-install-hint">
+                  No key yet?{' '}
+                  <a href={selectedCloudProvider.signupUrl} target="_blank" rel="noopener noreferrer">
+                    Get one from {selectedCloudProvider.name}
+                  </a>
+                  {' '}— it opens in your browser, then come back and paste it here.
+                </p>
+              )}
+
               <input
                 type="password"
                 className="first-run-input"
-                placeholder="Paste your API key"
+                placeholder="Paste the key from your account page"
                 value={cloudApiKey}
                 onChange={e => { setCloudApiKey(e.target.value); setCloudOk(null); setCloudModel(''); }}
                 onKeyDown={e => { if (e.key === 'Enter' && cloudApiKey.trim()) testCloudConnection(); }}

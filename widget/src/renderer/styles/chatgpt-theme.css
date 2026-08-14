@@ -9702,3 +9702,92 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 @media (prefers-reduced-motion: reduce) {
   .tooltip-bubble { animation: none; }
 }
+
+/* ── Confirm before destroying something ──────────────────────────────────
+   Used by ConfirmDestructive.tsx. Deliberately plain: this appears when the
+   user is about to lose data, so it should read like a question, not an alert
+   the eye slides off.
+
+   Portalled to document.body, so the `.app-container > *:not(...)` blocklist
+   near the top of this file cannot reach it and no exclusion is needed. */
+.confirm-destructive-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;              /* above .context-menu (10000) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: oklch(0% 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.confirm-destructive {
+  width: min(440px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 22px 24px 18px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--bg-card, oklch(12% 0.01 250));
+  box-shadow: 0 16px 48px oklch(0% 0 0 / 0.45);
+  color: var(--text-primary);
+}
+
+.confirm-destructive-title {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.confirm-destructive-body {
+  margin-bottom: 18px;
+  color: var(--text-secondary, oklch(70% 0 0));
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.confirm-destructive-body p { margin: 0 0 8px; }
+.confirm-destructive-body p:last-child { margin-bottom: 0; }
+
+.confirm-destructive-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-destructive-actions button {
+  padding: 8px 16px;
+  border-radius: var(--radius-md, 10px);
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+/* Cancel is the safe default, so it gets the calm treatment and the focus. */
+.confirm-destructive-cancel {
+  border-color: var(--border-medium);
+  background: transparent;
+  color: var(--text-primary);
+}
+.confirm-destructive-cancel:hover { background: oklch(100% 0 0 / 0.06); }
+
+/* The destructive one is clearly marked but not the visual default. */
+.confirm-destructive-confirm {
+  background: oklch(55% 0.20 25);
+  color: oklch(100% 0 0);
+  font-weight: 600;
+}
+.confirm-destructive-confirm:hover { background: oklch(48% 0.20 25); }
+
+.confirm-destructive-cancel:focus-visible,
+.confirm-destructive-confirm:focus-visible {
+  outline: 2px solid oklch(70% 0.15 250);
+  outline-offset: 2px;
+}
+
+[data-theme="light"] .confirm-destructive {
+  background: oklch(100% 0 0);
+  border-color: oklch(0% 0 0 / 0.10);
+}
+[data-theme="light"] .confirm-destructive-cancel:hover { background: oklch(0% 0 0 / 0.05); }

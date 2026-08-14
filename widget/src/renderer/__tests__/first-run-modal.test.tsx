@@ -135,8 +135,51 @@ describe('FirstRunModal — cloud path', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Online'));
     });
-    expect(screen.getByText('Cloud Setup')).toBeInTheDocument();
+    expect(screen.getByText('Connect an AI service')).toBeInTheDocument();
     expect(screen.getByText('Groq')).toBeInTheDocument();
+  });
+
+  /**
+   * The step used to say "Pick a provider and paste your API key. Free tiers
+   * are marked." and offered no way to obtain one — no link, nothing. Someone
+   * who picks Online and has never heard of an API key cannot proceed, and the
+   * only exits are Back or Skip. SettingsPanel had linked out like this in five
+   * places for months; the wizard, the one screen every new user sees, did not.
+   *
+   * Asserts the affordance (a reachable link to the chosen provider) rather
+   * than the wording, so the copy can keep improving.
+   */
+  test('offers a way to actually get a key', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Online'));
+    });
+
+    const link = screen.getByRole('link', { name: /get one from/i }) as HTMLAnchorElement;
+    expect(link).toBeInTheDocument();
+    expect(link.href).toMatch(/^https:\/\//);
+    // Opening in the same window would destroy the half-finished wizard.
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toContain('noopener');
+  });
+
+  test('the key link follows the provider you picked', async () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Online'));
+    });
+    // Default is Groq; switching must not leave the link pointing at it.
+    const before = (screen.getByRole('link', { name: /get one from/i }) as HTMLAnchorElement).href;
+    await act(async () => {
+      fireEvent.click(screen.getByText('OpenAI'));
+    });
+    const after = (screen.getByRole('link', { name: /get one from/i }) as HTMLAnchorElement).href;
+    expect(after).not.toBe(before);
+    expect(after).toContain('openai.com');
   });
 
   test('Test Connection calls listCustomLLMModels', async () => {
@@ -148,7 +191,7 @@ describe('FirstRunModal — cloud path', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Online'));
     });
-    const input = screen.getByPlaceholderText('Paste your API key');
+    const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'sk-test-123' } });
     await act(async () => {
       fireEvent.click(screen.getByText('Test Connection'));
@@ -165,7 +208,7 @@ describe('FirstRunModal — cloud path', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Online'));
     });
-    const input = screen.getByPlaceholderText('Paste your API key');
+    const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'sk-test-123' } });
     await act(async () => {
       fireEvent.click(screen.getByText('Test Connection'));
@@ -262,7 +305,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Online'));
     });
-    const input = screen.getByPlaceholderText('Paste your API key');
+    const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'sk-test-key' } });
     await act(async () => {
       fireEvent.click(screen.getByText('Test Connection'));
@@ -289,7 +332,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
       fireEvent.click(screen.getByText('Online'));
     });
 
-    const input = screen.getByPlaceholderText('Paste your API key');
+    const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'sk-test-key' } });
 
     await act(async () => {

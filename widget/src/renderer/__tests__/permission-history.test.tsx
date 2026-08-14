@@ -108,15 +108,53 @@ describe('PermissionHistory — entries', () => {
 });
 
 describe('PermissionHistory — actions', () => {
-  test('Clear all calls clearPermissionAudit and empties the list', async () => {
+  // "Clear all" wipes the on-disk record of every permission decision. It used
+  // to do that on a single click, which is what this test asserted. It now asks
+  // first, so the assertion moves to the flow rather than the immediate call.
+  test('Clear all asks before wiping the log, then clears it', async () => {
     const { clearPermissionAudit } = setup({
       readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }),
     });
     render(<PermissionHistory open={true} onClose={jest.fn()} />);
-    const clearBtn = await screen.findByText('Clear all');
-    fireEvent.click(clearBtn);
+    fireEvent.click(await screen.findByText('Clear all'));
+
+    // Nothing destroyed yet, and the dialog says how much is at stake.
+    expect(clearPermissionAudit).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`${sampleEvents.length} permission`, 'i'))).toBeInTheDocument();
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+
+    // The confirming button names the consequence, not "OK".
+    fireEvent.click(screen.getByText('Delete the history'));
     await waitFor(() => expect(clearPermissionAudit).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/No permission requests recorded yet/i)).toBeInTheDocument();
+  });
+
+  test('cancelling the confirmation leaves the log alone', async () => {
+    const { clearPermissionAudit } = setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    fireEvent.click(await screen.findByText('Clear all'));
+    fireEvent.click(await screen.findByText('Cancel'));
+
+    // The whole point: backing out must destroy nothing and keep the entries.
+    expect(clearPermissionAudit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByText(/No permission requests recorded yet/i)).toBeNull();
+  });
+
+  test('Escape cancels rather than confirming', async () => {
+    const { clearPermissionAudit } = setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    fireEvent.click(await screen.findByText('Clear all'));
+    await screen.findByRole('alertdialog');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(clearPermissionAudit).not.toHaveBeenCalled();
   });
 
   test('Clear all button is hidden when there are no entries', async () => {
