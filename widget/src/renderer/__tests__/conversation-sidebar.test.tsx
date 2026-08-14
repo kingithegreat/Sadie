@@ -152,39 +152,48 @@ describe('ConversationSidebar — conversation list', () => {
 });
 
 describe('ConversationSidebar — delete', () => {
-  test('calls onDeleteConversation when delete button is clicked (confirmed)', async () => {
+  // Deleting used to go through the browser's native confirm() — a blocking OS
+  // dialog that says only "Delete this conversation?" and never mentions that
+  // the messages go with it. It now uses the app's own dialog, which names the
+  // conversation and counts what is lost.
+  test('asks first, naming the conversation and what goes with it', async () => {
     setupElectron({ c1: CONV_A });
     const onDeleteConversation = jest.fn();
     await act(async () => {
       render(<ConversationSidebar {...defaultProps} onDeleteConversation={onDeleteConversation} />);
     });
-    await act(async () => {
-      fireEvent.click(screen.getByTitle('Delete'));
-    });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+
+    expect(onDeleteConversation).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+
+    await act(async () => { fireEvent.click(screen.getByText('Delete it')); });
     expect(onDeleteConversation).toHaveBeenCalledWith('c1');
   });
 
-  test('removes conversation from list on delete', async () => {
+  test('removes conversation from list once confirmed', async () => {
     setupElectron({ c1: CONV_A });
     await act(async () => { render(<ConversationSidebar {...defaultProps} />); });
-    await act(async () => {
-      fireEvent.click(screen.getByTitle('Delete'));
-    });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+    await act(async () => { fireEvent.click(screen.getByText('Delete it')); });
     expect(screen.queryByText('Chat about TypeScript')).toBeNull();
   });
 
-  test('does NOT delete when confirm is cancelled', async () => {
-    (window.confirm as jest.Mock).mockReturnValueOnce(false);
+  test('does NOT delete when cancelled', async () => {
     setupElectron({ c1: CONV_A });
     const onDeleteConversation = jest.fn();
     await act(async () => {
       render(<ConversationSidebar {...defaultProps} onDeleteConversation={onDeleteConversation} />);
     });
-    await act(async () => {
-      fireEvent.click(screen.getByTitle('Delete'));
-    });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+    // Must actually click Cancel. Without this the test passes merely because
+    // the click no longer deletes immediately, which is not what it claims.
+    await act(async () => { fireEvent.click(screen.getByText('Cancel')); });
+
     expect(onDeleteConversation).not.toHaveBeenCalled();
     expect(screen.getByText('Chat about TypeScript')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
 

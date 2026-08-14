@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useConfirmDestructive } from './ConfirmDestructive';
 import TelemetryConsentModal from './TelemetryConsentModal';
 import Tooltip from './Tooltip';
 import SkillsSection from './SkillsSection';
@@ -186,6 +187,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       recommendedFor: ['4gb', '8gb', '16gb+']
     },
   ];
+
+  const [confirmDialog, confirmDestructive] = useConfirmDestructive();
 
   const [localSettings, setLocalSettings] = useState<Settings>(buildLocalSettings(settings));
   const [uncensoredMode, setUncensoredMode] = useState(false);
@@ -826,6 +829,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   return (
     <div className="settings-overlay" role="presentation" onClick={onClose}>
+      {confirmDialog}
       <div
         ref={panelRef}
         className="settings-panel"
@@ -1969,15 +1973,29 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="setting-group">
           <button
             className="button button-secondary"
-            onClick={async () => {
-              // Reset permissions to defaults by calling a dedicated IPC to avoid ambiguity
-              const result = await (window as any).electron.resetPermissions();
-              if (result) {
-                const newPerms = (result as any).permissions || {};
-                setPermissions(newPerms);
-                setLocalSettings({ ...localSettings, permissions: newPerms } as any);
-              }
-            }}
+            // Discards every permission the user has granted, immediately, on
+            // one click. "Reset to defaults" sounds tidy and reversible; it is
+            // neither — anything granted via "Always allow" has to be granted
+            // again, one prompt at a time, as HomeBot next needs it.
+            onClick={() => confirmDestructive({
+              title: 'Undo every permission you have given HomeBot?',
+              body: (
+                <p>
+                  HomeBot goes back to asking before it does anything —
+                  {' '}<strong>including things you already said yes to</strong>. Nothing is
+                  deleted, but you will be asked again as each one comes up.
+                </p>
+              ),
+              confirmLabel: 'Reset them',
+              onConfirm: async () => {
+                const result = await (window as any).electron.resetPermissions();
+                if (result) {
+                  const newPerms = (result as any).permissions || {};
+                  setPermissions(newPerms);
+                  setLocalSettings({ ...localSettings, permissions: newPerms } as any);
+                }
+              },
+            })}
           >
             Reset permissions to defaults
           </button>

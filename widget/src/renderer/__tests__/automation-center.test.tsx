@@ -196,7 +196,9 @@ describe('AutomationCenter — automation controls', () => {
     expect(runAutomation).toHaveBeenCalledWith({ id: 'a1' });
   });
 
-  test('🗑 delete button removes automation from list', async () => {
+  // 🗑 sits a few pixels from ▶ Run and used to delete outright on one click.
+  // It now asks first, so these tests drive the confirmation.
+  test('🗑 delete button asks first, then removes the automation', async () => {
     setupElectron({
       loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
     });
@@ -204,7 +206,28 @@ describe('AutomationCenter — automation controls', () => {
     await act(async () => {
       fireEvent.click(screen.getByTitle('Delete'));
     });
+
+    // Still there — and the dialog names it and says the change is permanent.
+    expect(screen.getByText('Daily Backup')).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+
+    await act(async () => { fireEvent.click(screen.getByText('Delete it')); });
     expect(screen.queryByText('Daily Backup')).toBeNull();
+  });
+
+  test('cancelling the delete keeps the automation', async () => {
+    const deleteAutomation = jest.fn().mockResolvedValue({ success: true });
+    setupElectron({
+      loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
+      deleteAutomation,
+    });
+    await act(async () => { render(<AutomationCenter />); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+    await act(async () => { fireEvent.click(screen.getByText('Cancel')); });
+
+    expect(deleteAutomation).not.toHaveBeenCalled();
+    expect(screen.getByText('Daily Backup')).toBeInTheDocument();
   });
 
   test('shows error when toggleAutomation throws', async () => {
@@ -225,9 +248,8 @@ describe('AutomationCenter — automation controls', () => {
       deleteAutomation: jest.fn().mockRejectedValue(new Error('del err')),
     });
     await act(async () => { render(<AutomationCenter />); });
-    await act(async () => {
-      fireEvent.click(screen.getByTitle('Delete'));
-    });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+    await act(async () => { fireEvent.click(screen.getByText('Delete it')); });
     expect(screen.getByText('Failed to delete automation')).toBeInTheDocument();
   });
 });

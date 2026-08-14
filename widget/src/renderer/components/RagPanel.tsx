@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useConfirmDestructive } from './ConfirmDestructive';
 
 interface RagDoc {
   doc_id: string;
@@ -12,8 +13,8 @@ interface RagPanelProps {
 }
 
 const RagPanel: React.FC<RagPanelProps> = ({ isOpen, onClose }) => {
+  const [confirmDialog, confirm] = useConfirmDestructive();
   const [docs, setDocs] = useState<RagDoc[]>([]);
-  const [totalChunks, setTotalChunks] = useState(0);
   const [loading, setLoading] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,10 +26,8 @@ const RagPanel: React.FC<RagPanelProps> = ({ isOpen, onClose }) => {
       const resp = await window.electron.ragList?.();
       if (resp?.success && resp.result) {
         setDocs(resp.result.documents ?? []);
-        setTotalChunks(resp.result.total_chunks ?? 0);
       } else {
         setDocs([]);
-        setTotalChunks(0);
         if (resp?.error) setError(resp.error);
       }
     } catch (err: any) {
@@ -48,10 +47,6 @@ const RagPanel: React.FC<RagPanelProps> = ({ isOpen, onClose }) => {
       const resp = await window.electron.ragClear?.(docId);
       if (resp?.success) {
         setDocs(prev => prev.filter(d => d.doc_id !== docId));
-        setTotalChunks(prev => {
-          const removed = resp.result?.removed_chunks ?? 0;
-          return Math.max(0, prev - removed);
-        });
       } else {
         setError(resp?.error ?? 'Failed to remove document');
       }
@@ -66,6 +61,7 @@ const RagPanel: React.FC<RagPanelProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="rag-panel-overlay" onClick={onClose}>
+      {confirmDialog}
       <div
         className="rag-panel"
         onClick={e => e.stopPropagation()}
@@ -73,14 +69,14 @@ const RagPanel: React.FC<RagPanelProps> = ({ isOpen, onClose }) => {
         aria-label="RAG index panel"
       >
         <div className="rag-panel-header">
-          <span>📚 RAG Index</span>
+          <span>📚 Documents HomeBot can read</span>
           <button className="rag-panel-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <div className="rag-panel-meta">
           {loading
             ? 'Loading…'
-            : `${docs.length} document${docs.length !== 1 ? 's' : ''} · ${totalChunks} chunk${totalChunks !== 1 ? 's' : ''}`
+            : `${docs.length} document${docs.length !== 1 ? 's' : ''} HomeBot can read`
           }
         </div>
 
@@ -100,14 +96,30 @@ const RagPanel: React.FC<RagPanelProps> = ({ isOpen, onClose }) => {
             <li key={doc.doc_id} className="rag-doc-item">
               <div className="rag-doc-info">
                 <span className="rag-doc-name" title={doc.doc_id}>{doc.filename}</span>
-                <span className="rag-doc-chunks">{doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''}</span>
+                {/* was "{n} chunks" — an indexer implementation detail */}
+                <span className="rag-doc-chunks">Indexed</span>
               </div>
               <button
                 className="rag-doc-remove"
                 title="Remove from index"
                 aria-label={`Remove ${doc.filename}`}
                 disabled={removing === doc.doc_id}
-                onClick={() => handleRemove(doc.doc_id)}
+                /* A bare ✕ at the end of a row reads as "hide this", not
+                   "un-teach HomeBot this document". Say which file, and say
+                   plainly that the file itself is safe — that is the thing
+                   someone is actually afraid of when clicking it. */
+                onClick={() => confirm({
+                  title: `Stop HomeBot using “${doc.filename}”?`,
+                  body: (
+                    <p>
+                      HomeBot will no longer look inside this document when answering.
+                      <strong> Your file is not deleted</strong> — it stays exactly where it
+                      is, and you can add it again later.
+                    </p>
+                  ),
+                  confirmLabel: 'Remove it',
+                  onConfirm: () => handleRemove(doc.doc_id),
+                })}
               >
                 {removing === doc.doc_id ? '…' : '✕'}
               </button>

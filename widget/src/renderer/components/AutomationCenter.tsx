@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useConfirmDestructive } from './ConfirmDestructive';
 import type { SavedAutomation, UpgradePrompt } from '../../shared/types';
 import { UpgradeModal } from './UpgradeModal';
 
@@ -84,6 +85,7 @@ const TEMPLATE_AUTOMATIONS: AutomationTemplate[] = [
 ];
 
 export const AutomationCenter: React.FC = () => {
+  const [confirmDialog, confirm] = useConfirmDestructive();
   const [automations, setAutomations] = useState<SavedAutomation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -279,6 +281,7 @@ export const AutomationCenter: React.FC = () => {
 
   return (
     <div className="automation-center">
+      {confirmDialog}
       <header className="automation-header">
         <h1>Automation Center</h1>
         <p>Create reusable workflows that chain HomeBot's tools together</p>
@@ -595,10 +598,24 @@ export const AutomationCenter: React.FC = () => {
                 >
                   {runningId === auto.id ? '⏳' : '▶'}
                 </button>
+                {/* This sits directly beside ▶ Run, and used to delete a saved
+                    automation outright on one click of a bare 🗑. Nothing about
+                    the icon says the automation is gone for good, and the two
+                    buttons are a few pixels apart. */}
                 <button
                   type="button"
                   className="btn-icon btn-danger"
-                  onClick={() => handleDelete(auto.id)}
+                  onClick={() => confirm({
+                    title: `Delete “${auto.name}”?`,
+                    body: (
+                      <p>
+                        The automation and its steps are removed for good. Anything it
+                        already produced is untouched. <strong>This cannot be undone.</strong>
+                      </p>
+                    ),
+                    confirmLabel: 'Delete it',
+                    onConfirm: () => handleDelete(auto.id),
+                  })}
                   title="Delete"
                   aria-label={`Delete ${auto.name}`}
                   disabled={runningId === auto.id}
