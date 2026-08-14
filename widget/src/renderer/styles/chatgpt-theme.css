@@ -9734,6 +9734,76 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   .tooltip-bubble { animation: none; }
 }
 
+/* ── Delete confirmation (Automation Center) ───────────────────────────────
+   Fixed, not absolute: .app-container is a grid, and an absolutely-positioned
+   child of it is still subject to the blanket `position: relative` rule near
+   the top of this file. This dialog is mounted inside the panel, so it takes
+   itself out of that argument entirely. */
+.automation-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: oklch(0% 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.automation-confirm {
+  width: min(420px, 100%);
+  padding: 22px 24px;
+  border-radius: 14px;
+  background: var(--bg-panel);
+  border: 1px solid oklch(100% 0 0 / 0.1);
+  box-shadow: 0 24px 60px oklch(0% 0 0 / 0.5);
+}
+
+.automation-confirm h3 {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.automation-confirm p {
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.automation-confirm-blocked {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: oklch(60% 0.2 25 / 0.12);
+  border: 1px solid oklch(60% 0.2 25 / 0.3);
+  color: var(--text-primary) !important;
+}
+
+.automation-confirm .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.automation-confirm .btn-danger {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid oklch(60% 0.2 25 / 0.45);
+  background: oklch(55% 0.2 25 / 0.9);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.automation-confirm .btn-danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
    DEPTH PASS
 

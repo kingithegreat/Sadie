@@ -703,7 +703,18 @@ export interface ElectronAPI {
   loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
   createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
   updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
-  deleteAutomation?: (data: { id: string }) => Promise<{ success: boolean }>;
+  /**
+   * Removes the automation and the n8n workflow it deployed. Without `force`
+   * this refuses when the workflow cannot be deleted, keeping the automation so
+   * the workflow is never left running with nothing pointing at it; `warning`
+   * reports a workflow that outlived a forced delete.
+   */
+  deleteAutomation?: (data: { id: string; force?: boolean }) => Promise<{
+    success: boolean;
+    error?: string;
+    warning?: string;
+    n8nWorkflowId?: string;
+  }>;
   runAutomation?: (data: { id: string }) => Promise<{ success: boolean; result?: string; error?: string }>;
   testN8nConnection?: (data: { baseUrl?: string; apiKey?: string }) => Promise<{ reachable: boolean; authenticated: boolean | null; error?: string }>;
 }
