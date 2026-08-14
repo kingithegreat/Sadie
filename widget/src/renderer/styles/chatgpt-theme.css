@@ -303,6 +303,7 @@ body {
 .send-button,
 .attach-button,
 .voice-button,
+.mode-btn,
 .context-menu-item {
   display: inline-flex;
   align-items: center;
