@@ -31,7 +31,7 @@ describe('copy full response button', () => {
     // The footer should contain a Copy button
     const copyBtn = screen.getByRole('button', { name: /copy response/i });
     expect(copyBtn).toBeInTheDocument();
-    expect(copyBtn.textContent).toContain('📋 Copy');
+    expect(copyBtn.textContent).toContain('Copy');
   });
 
   test('does NOT show Copy button when streaming', () => {
@@ -63,7 +63,7 @@ describe('copy full response button', () => {
     const copyBtn = screen.getByRole('button', { name: /copy response/i });
     fireEvent.click(copyBtn);
 
-    await waitFor(() => expect(screen.getByText('✓ Copied')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Copied')).toBeInTheDocument());
   });
 
   test('does NOT show Copy button for user messages', () => {
