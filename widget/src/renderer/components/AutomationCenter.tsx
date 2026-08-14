@@ -101,9 +101,13 @@ export const AutomationCenter: React.FC = () => {
   const [formUseN8n, setFormUseN8n] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [n8nOnline, setN8nOnline] = useState(false);
+  const [n8nBase, setN8nBase] = useState('http://localhost:5678');
   const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(null);
   const [isPro, setIsPro] = useState(true); // assume unlocked until status resolves
   const [checkoutUrl, setCheckoutUrl] = useState('homebot://upgrade');
+  const [pendingDelete, setPendingDelete] = useState<SavedAutomation | null>(null);
+  const [deleteBlocked, setDeleteBlocked] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
@@ -130,6 +134,19 @@ export const AutomationCenter: React.FC = () => {
   useEffect(() => {
     window.electron?.checkConnection?.().then((status: any) => {
       setN8nOnline(status?.n8n === 'online');
+    }).catch(() => {});
+  }, []);
+
+  /**
+   * Where n8n actually is. These two buttons used to open a hardcoded
+   * http://localhost:5678, so anyone running n8n on another port or host was
+   * sent to the wrong place — while the deploy path a few lines away in main
+   * read the setting correctly.
+   */
+  useEffect(() => {
+    window.electron?.getSettings?.().then((s: any) => {
+      const url = (s?.n8nUrl || '').trim().replace(/\/+$/, '');
+      if (url) setN8nBase(url);
     }).catch(() => {});
   }, []);
 
@@ -215,13 +232,45 @@ export const AutomationCenter: React.FC = () => {
     }
   }, [checkoutUrl]);
 
+  /**
+   * Deleting is irreversible and the button sits beside Run, so it asks first.
+   * The prompt names the automation and says whether an n8n workflow goes with
+   * it, because those are the two things that decide whether you meant it.
+   */
   const handleDelete = useCallback(async (id: string) => {
+    const auto = automations.find(a => a.id === id);
+    if (!auto) return;
+    setPendingDelete(auto);
+  }, [automations]);
+
+  const confirmDelete = useCallback(async (force: boolean) => {
+    const auto = pendingDelete;
+    if (!auto) return;
+    setDeleting(true);
+    setError(null);
     try {
-      await window.electron?.deleteAutomation?.({ id });
-      setAutomations(prev => prev.filter(a => a.id !== id));
+      const result = await window.electron?.deleteAutomation?.({ id: auto.id, force });
+      if (result && result.success === false) {
+        // The main process kept the automation on purpose — surface why, and
+        // offer the override rather than leaving the user stuck.
+        setError(result.error || 'Failed to delete automation');
+        setDeleteBlocked(true);
+        return;
+      }
+      if (result?.warning) setError(result.warning);
+      setAutomations(prev => prev.filter(a => a.id !== auto.id));
+      setPendingDelete(null);
+      setDeleteBlocked(false);
     } catch {
       setError('Failed to delete automation');
+    } finally {
+      setDeleting(false);
     }
+  }, [pendingDelete]);
+
+  const cancelDelete = useCallback(() => {
+    setPendingDelete(null);
+    setDeleteBlocked(false);
   }, []);
 
   const startEdit = useCallback((auto: SavedAutomation) => {
@@ -299,6 +348,43 @@ export const AutomationCenter: React.FC = () => {
 
       <UpgradeModal prompt={upgradePrompt} onClose={() => setUpgradePrompt(null)} />
 
+      {pendingDelete && (
+        <div className="automation-confirm-backdrop" role="presentation" onClick={cancelDelete}>
+          <div
+            className="automation-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="automation-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="automation-confirm-title">Delete “{pendingDelete.name}”?</h3>
+            <p>
+              {pendingDelete.n8nWebhookUrl
+                ? 'This removes the automation and the n8n workflow it deployed. It cannot be undone.'
+                : 'This cannot be undone.'}
+            </p>
+            {deleteBlocked && (
+              <p className="automation-confirm-blocked">
+                The n8n workflow could not be removed. Deleting anyway leaves it running in n8n.
+              </p>
+            )}
+            <div className="form-actions">
+              <button type="button" className="btn-secondary" onClick={cancelDelete} disabled={deleting}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={() => confirmDelete(deleteBlocked)}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : deleteBlocked ? 'Delete anyway' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="automation-error">
           <span>{error}</span>
@@ -325,7 +411,7 @@ export const AutomationCenter: React.FC = () => {
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => window.electron?.openExternalUrl?.('http://localhost:5678/credentials')}
+              onClick={() => window.electron?.openExternalUrl?.(`${n8nBase}/credentials`)}
               title="Manage API keys, OAuth tokens, and service credentials in n8n"
             >
               🔑 Credentials
@@ -333,7 +419,7 @@ export const AutomationCenter: React.FC = () => {
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => window.electron?.openExternalUrl?.('http://localhost:5678')}
+              onClick={() => window.electron?.openExternalUrl?.(n8nBase)}
               title="Open n8n workflow editor"
             >
               ⚙ n8n Dashboard
