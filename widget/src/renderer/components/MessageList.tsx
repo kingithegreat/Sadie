@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import type { ChatMessage } from "../types";
 import { MessageBubble } from "./MessageBubble";
 import { getDailyQuote, getDailyJoke } from '../../shared/daily-content';
-import homebotLogoUrl from '../assets/HomeBotLogo.png';
+import { Wordmark } from './Logo';
 
 export function MessageList({
   messages,
@@ -52,7 +52,7 @@ export function MessageList({
     const joke = getDailyJoke();
     return (
       <div className="welcome-container">
-        <img src={homebotLogoUrl} alt="HomeBot" className="welcome-logo" />
+        <Wordmark size={64} className="welcome-logo" />
         <h2 className="welcome-title">Hello! I'm HomeBot</h2>
         <p className="welcome-subtitle">
           Your friendly local AI assistant. I can help you with questions, create folders, move files, and more. What would you like to do today?

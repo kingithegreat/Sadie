@@ -1,5 +1,7 @@
 import Icon from './Icon';
+import type { IconName } from './Icon';
 import React, { useState, useEffect } from 'react';
+import Tooltip from './Tooltip';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import ModelSelector from './ModelSelector';
 
@@ -58,9 +60,11 @@ interface HeaderModelProps {
   vramGB?: number | null;
 }
 
+type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
+
 interface ModeSwitcherProps {
-  mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser') => void;
+  mode: AppMode;
+  onModeChange?: (mode: AppMode) => void;
 }
 
 interface HeaderActionsProps {
@@ -73,6 +77,7 @@ interface HeaderActionsProps {
   onRefresh: () => void;
   onSettingsClick: () => void;
   onToolsClick?: () => void;
+  onExportChat?: () => void;
 }
 
 const UncensoredToggle: React.FC<UncensoredToggleProps> = ({ uncensoredMode, onToggle }) => (
@@ -96,7 +101,7 @@ const BackendBadge: React.FC<BackendBadgeProps> = ({
   onRefresh,
   onToggleDetail
 }) => (
-  <div className="backend-badge" title="HomeBot backend (n8n) is offline">
+  <div className="backend-badge" title="Automations are offline — HomeBot will answer on this PC instead">
     <span className="backend-text">Backend offline</span>
     <button
       type="button"
@@ -186,7 +191,7 @@ const OllamaBadge: React.FC<OllamaBadgeProps> = ({ onRefresh }) => {
   };
 
   return (
-    <div className="backend-badge ollama-badge" role="alert" title="Ollama is offline">
+    <div className="backend-badge ollama-badge" role="alert" title="The AI on this PC is not running">
       <span className="backend-text">{result === 'done' ? 'Ollama starting…' : 'Ollama offline'}</span>
       <button
         type="button"
@@ -290,6 +295,25 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
   </div>
 );
 
+/**
+ * The modes, in the order they appear.
+ *
+ * A list rather than eight near-identical JSX blocks: the previous form made
+ * every mode a place to get one of `mode ===`, the onClick argument and the
+ * label out of step with each other, and the emoji in front of each label was
+ * the last row of chrome not drawn from the icon set.
+ */
+const MODES: { id: AppMode; label: string; icon: IconName; tip: string }[] = [
+  { id: 'dashboard', label: 'Home', icon: 'dashboard', tip: 'Overview of what HomeBot can do right now' },
+  { id: 'chat', label: 'Chat', icon: 'chat', tip: 'Talk to the AI' },
+  { id: 'automation', label: 'Automation', icon: 'tools', tip: 'Build tasks HomeBot can repeat for you' },
+  { id: 'image', label: 'Image', icon: 'image', tip: 'Generate pictures from a description' },
+  { id: 'documents', label: 'Docs', icon: 'document', tip: 'Read your files and ask questions about them' },
+  { id: 'quiz', label: 'Quiz', icon: 'quiz', tip: 'Practise coding with questions generated for you' },
+  { id: 'media', label: 'Studio', icon: 'video', tip: 'Turn a script into a narrated video' },
+  { id: 'browser', label: 'Browser', icon: 'globe', tip: 'Browse the web inside HomeBot' },
+];
+
 const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
   if (!onModeChange) {
     return null;
@@ -297,14 +321,18 @@ const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
 
   return (
     <div className="mode-switcher">
-      <button className={`mode-btn ${mode === 'dashboard' ? 'active' : ''}`} onClick={() => onModeChange('dashboard')} title="Dashboard">📊 Home</button>
-      <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => onModeChange('chat')} title="Chat Mode">💬 Chat</button>
-      <button className={`mode-btn ${mode === 'automation' ? 'active' : ''}`} onClick={() => onModeChange('automation')} title="Automation Mode">🛠 Automation</button>
-      <button className={`mode-btn ${mode === 'image' ? 'active' : ''}`} onClick={() => onModeChange('image')} title="Image Mode">🎨 Image</button>
-      <button className={`mode-btn ${mode === 'documents' ? 'active' : ''}`} onClick={() => onModeChange('documents')} title="Document Viewer">📄 Docs</button>
-      <button className={`mode-btn ${mode === 'quiz' ? 'active' : ''}`} onClick={() => onModeChange('quiz')} title="Learn to Code">🧠 Quiz</button>
-      <button className={`mode-btn ${mode === 'media' ? 'active' : ''}`} onClick={() => onModeChange('media')} title="Media Studio">🎬 Studio</button>
-      <button className={`mode-btn ${mode === 'browser' ? 'active' : ''}`} onClick={() => onModeChange('browser')} title="Browser">🌐 Browser</button>
+      {MODES.map(({ id, label, icon, tip }) => (
+        <Tooltip key={id} content={tip} placement="bottom">
+          <button
+            className={`mode-btn ${mode === id ? 'active' : ''}`}
+            onClick={() => onModeChange(id)}
+            aria-current={mode === id ? 'page' : undefined}
+          >
+            <Icon name={icon} size={15} />
+            <span>{label}</span>
+          </button>
+        </Tooltip>
+      ))}
     </div>
   );
 };
@@ -318,7 +346,8 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
   onWorkspaceClick,
   onRefresh,
   onSettingsClick,
-  onToolsClick
+  onToolsClick,
+  onExportChat,
 }) => (
   <div className="header-actions">
     <button
@@ -343,6 +372,11 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
         {notificationCount > 0 && <span className="notif-badge">{notificationCount > 9 ? '9+' : notificationCount}</span>}
       </button>
     )}
+    {onExportChat && (
+      <button onClick={onExportChat} className="header-btn" title="Export this chat as Markdown" aria-label="Export chat">
+        <Icon name="download" />
+      </button>
+    )}
     <button onClick={onSettingsClick} className="header-btn" title="Settings" aria-label="Settings"><Icon name="settings" /></button>
   </div>
 );
@@ -352,7 +386,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onRefresh,
   onSettingsClick,
   onMenuClick,
-  onExportChat: _onExportChat,
+  onExportChat,
   onToolsClick,
   onRagClick,
   onTerminalClick,
@@ -440,6 +474,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         onRefresh={onRefresh}
         onSettingsClick={onSettingsClick}
         onToolsClick={onToolsClick}
+        onExportChat={onExportChat}
       />
 
       {/* Backend offline banner — shown below header inline */}

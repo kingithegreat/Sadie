@@ -147,3 +147,51 @@ describe('retrying what failed', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+/**
+ * A video should look like one video.
+ *
+ * Each scene is generated independently, so with a random seed the same
+ * subject came back as a visibly different thing shot to shot — one tall
+ * ship, then another tall ship. Holding the seed and the style anchor
+ * constant across a video pins composition and palette; the scene text still
+ * supplies what changes.
+ */
+describe('keeping the scenes of one video consistent', () => {
+  const { seedForVideo } = require('../media-visuals');
+
+  it('gives every scene of a video the same seed', async () => {
+    const dir = tmp();
+    const seen: Array<number | undefined> = [];
+    await generateSceneImages({
+      scenes: [{ text: 'a' }, { text: 'b' }, { text: 'c' }],
+      videoTitle: 'T', outDir: dir, width: 64, height: 64, seed: 4242,
+      generate: async (_p, _w, _h, seed) => { seen.push(seed); return { base64: PNG_1PX }; },
+    });
+    expect(seen).toEqual([4242, 4242, 4242]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is stable for one video and different between videos', () => {
+    // Stable so a re-render reproduces the look rather than rolling fresh
+    // visuals; different so two videos are not twins.
+    expect(seedForVideo('media_123')).toBe(seedForVideo('media_123'));
+    expect(seedForVideo('media_123')).not.toBe(seedForVideo('media_124'));
+  });
+
+  it('produces a seed the backends will accept', () => {
+    for (const id of ['media_1', 'media_999999', 'x', '']) {
+      const s = seedForVideo(id);
+      expect(Number.isInteger(s)).toBe(true);
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThan(1_000_000_000);
+    }
+  });
+
+  it('pins medium, light and palette in the default look', () => {
+    const p = buildScenePrompt('a storm at sea', 'Jonah');
+    expect(p).toMatch(/cinematic|painting/i);
+    expect(p).toMatch(/lighting/i);
+    expect(p).toMatch(/palette/i);
+  });
+});

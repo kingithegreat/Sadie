@@ -88,7 +88,63 @@ const CASES: Array<{ prompt: string; needsOneOf: string[] }> = [
   // Email.
   { prompt: 'draft an email to Sam about the invoice',
     needsOneOf: ['email_draft', 'email_send'] },
+
+  // Media. Added after the whole category turned out to be unreachable from
+  // chat for the life of the feature — the gate below covered seven of the
+  // eleven categories detectToolCategories can emit, and this was one of the
+  // four it missed.
+  { prompt: 'make me a short video about Jonah and the storm',
+    needsOneOf: ['media_create_job'] },
+  { prompt: 'what videos are waiting for approval',
+    needsOneOf: ['media_list_jobs'] },
+
+  // Filesystem.
+  { prompt: 'create a file on my desktop called notes.txt',
+    needsOneOf: ['write_file'] },
+
+  // System. ("what is using all my memory" reads as system to a human and
+  // routes to `memory` — the completeness check below caught that.)
+  { prompt: 'which processes are using the most cpu',
+    needsOneOf: ['list_processes', 'get_system_info'] },
+
+  // The three below are all category 'system', which the completeness check
+  // already counted as covered by the case above — so a whole category could
+  // be "covered" while the tools inside it stayed unreachable. Coverage is per
+  // category; reachability is per tool.
+  //
+  // "screenshot" is the single most specific word a user can type for the
+  // screenshot tool, and it routed to 'vision' alone: the request offered the
+  // three vision tools and never the one that takes a screenshot.
+  { prompt: 'take a screenshot and tell me what is on my screen',
+    needsOneOf: ['screenshot'] },
+  // Arithmetic matched no pattern at all, so the turn went out with no
+  // categories and the model answered from its own head.
+  { prompt: 'what is 15% of 240',
+    needsOneOf: ['calculate'] },
+  // "open" routes to 'filesystem', so asking to open an application offered
+  // file tools and never launch_app.
+  { prompt: 'open spotify for me',
+    needsOneOf: ['launch_app'] },
+
+  // Web.
+  { prompt: 'search the web for the latest on the election',
+    needsOneOf: ['web_search'] },
 ];
+
+/**
+ * Every category the router can name must have a case above.
+ *
+ * The list of cases was hand-written and drifted behind the router: media,
+ * filesystem, system and web had no coverage, and media was unreachable from
+ * chat for the entire life of the Media Studio without a single test failing.
+ * A gate that covers seven of eleven categories reports on the seven.
+ */
+const CATEGORIES_WITH_A_CASE = new Set<string>();
+for (const c of CASES) {
+  for (const cat of require('../message-router').detectToolCategories(c.prompt)) {
+    CATEGORIES_WITH_A_CASE.add(cat);
+  }
+}
 
 describe('the ranking is actually wired into production', () => {
   it('message-router passes the message as the ranking query', () => {
@@ -101,6 +157,34 @@ describe('the ranking is actually wired into production', () => {
     const src = fs.readFileSync(
       path.resolve(__dirname, '..', 'message-router.ts'), 'utf-8');
     expect(src).toMatch(/getSmallModelTools\(\{[^}]*query:\s*message/);
+  });
+});
+
+describe('the gate covers every category the router can produce', () => {
+  it('has at least one case for each', () => {
+    // Read the categories out of the router rather than keeping a second list
+    // here: a list that must agree with the source and is never compared is
+    // how this drifted in the first place.
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '..', 'message-router.ts'), 'utf-8');
+    const emitted = [...new Set(
+      [...src.matchAll(/cats\.add\('([a-z]+)'\)/g)].map(m => m[1]),
+    )].sort();
+
+    // If this finds nothing the assertion below is checking nothing.
+    expect(emitted.length).toBeGreaterThan(5);
+
+    const uncovered = emitted.filter(c => !CATEGORIES_WITH_A_CASE.has(c));
+    if (uncovered.length) {
+      throw new Error(
+        `No reachability case exercises: ${uncovered.join(', ')}.
+` +
+        `  A category with no case can be unreachable from chat and still pass this suite —
+` +
+        `  which is exactly what happened to 'media'. Add a plausible request for each.`,
+      );
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
+import Icon from "./Icon";
 import type { ChatMessage } from "../types";
 import homebotChatAvatarUrl from '../assets/HomeBotChatAvatar.png';
 import userChatAvatarUrl from '../assets/UserChatAvatar.png';
@@ -174,7 +175,7 @@ function CodeBlock({ language, children }: { language: string; children: string 
       <div className="code-block-header">
         <span className="code-block-lang">{language || 'code'}</span>
         <button className="code-copy-btn" onClick={handleCopy}>
-          {copied ? '✓ Copied' : '📋 Copy'}
+          <Icon name={copied ? 'check' : 'copy'} /> {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       <pre className="code-block-pre">
@@ -679,29 +680,29 @@ export function MessageBubble({
   const buildContextItems = useCallback((): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
     if (message.content) {
-      items.push({ label: 'Copy', icon: '📋', action: () => {
+      items.push({ label: 'Copy', icon: <Icon name="copy" />, action: () => {
         window.electron?.writeClipboard?.(message.content!);
       }});
     }
     if (isUser && onEdit && message.id) {
-      items.push({ label: 'Edit', icon: '✏️', action: () => {
+      items.push({ label: 'Edit', icon: <Icon name="pencil" />, action: () => {
         setEditDraft(message.content || '');
         setEditing(true);
         setTimeout(() => editRef.current?.focus(), 50);
       }});
     }
     if (onBookmark && message.id) {
-      items.push({ label: message.bookmarked ? 'Remove bookmark' : 'Bookmark', icon: message.bookmarked ? '★' : '☆', action: () => onBookmark(message.id!) });
+      items.push({ label: message.bookmarked ? 'Remove bookmark' : 'Bookmark', icon: <Icon name={message.bookmarked ? 'starFilled' : 'star'} />, action: () => onBookmark(message.id!) });
     }
     if (isAssistant && message.content) {
-      items.push({ label: speaking ? 'Stop speaking' : 'Speak', icon: '🔊', action: () => {
+      items.push({ label: speaking ? 'Stop speaking' : 'Speak', icon: <Icon name={speaking ? 'stop' : 'speak'} />, action: () => {
         if (speaking) { window.electron?.ttsStop?.(); setSpeaking(false); }
         else { setSpeaking(true); window.electron?.ttsSpeak?.(message.content!).then(() => setSpeaking(false)).catch(() => setSpeaking(false)); }
       }});
     }
     if (isAssistant && state === 'finished' && message.id) {
       items.push({ divider: true, label: '', action: () => {} });
-      items.push({ label: 'Regenerate', icon: '↻', action: () => onRetry(message.id!) });
+      items.push({ label: 'Regenerate', icon: <Icon name="refresh" />, action: () => onRetry(message.id!) });
     }
     return items;
   }, [message, isAssistant, state, speaking, onRetry, onBookmark]);
@@ -883,7 +884,7 @@ export function MessageBubble({
                       onClick={() => onCancel(message.id!)}
                       aria-label="Stop generating"
                     >
-                      ⏹ Stop
+                      <Icon name="stop" /> Stop
                     </button>
                   </>
                 )}
@@ -934,7 +935,7 @@ export function MessageBubble({
                               className="message-action-btn"
                               onClick={() => onRetry(message.id!)}
                             >
-                              ↻ {message.recoveryHint.actionLabel || 'Retry'}
+                              <Icon name="refresh" /> {message.recoveryHint.actionLabel || 'Retry'}
                             </button>
                           )}
                         </div>
@@ -947,7 +948,7 @@ export function MessageBubble({
                             className="message-action-btn"
                             onClick={() => onRetry(message.id!)}
                           >
-                            ↻ Retry
+                            <Icon name="refresh" /> Retry
                           </button>
                         </div>
                         {message.error && (
@@ -988,21 +989,21 @@ export function MessageBubble({
                       onClick={() => onRetry(message.id!)}
                       aria-label="Regenerate response"
                     >
-                      ↻ Regenerate
+                      <Icon name="refresh" /> Regenerate
                     </button>
                     <button
                       className="message-action-btn copy-msg-btn"
                       onClick={handleCopyMessage}
                       aria-label="Copy response"
                     >
-                      {copiedMsg ? '✓ Copied' : '📋 Copy'}
+                      <Icon name={copiedMsg ? 'check' : 'copy'} /> {copiedMsg ? 'Copied' : 'Copy'}
                     </button>
                     <button
                       className={`message-action-btn speak-btn${speaking ? ' speaking' : ''}`}
                       onClick={handleSpeak}
                       aria-label={speaking ? 'Stop speaking' : 'Speak response'}
                     >
-                      {speaking ? '⏹ Stop' : '🔊 Speak'}
+                      <Icon name={speaking ? 'stop' : 'speak'} /> {speaking ? 'Stop' : 'Speak'}
                     </button>
                   </>
                 )}

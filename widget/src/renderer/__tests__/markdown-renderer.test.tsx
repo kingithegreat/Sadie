@@ -36,7 +36,7 @@ describe('MessageBubble markdown renderer', () => {
     const codeEl = container.querySelector('.code-block-pre code');
     expect(codeEl?.textContent).toContain('print("hello")');
     // Copy buttons present (code block copy + response copy)
-    const copyBtns = screen.getAllByText('📋 Copy');
+    const copyBtns = screen.getAllByRole('button', { name: /copy/i });
     expect(copyBtns.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -54,11 +54,11 @@ describe('MessageBubble markdown renderer', () => {
     render(<MessageBubble message={makeMsg({ content })} onCancel={noop} onRetry={noop} />);
 
     // There may be multiple copy buttons (code block + response copy); find the one inside the code block
-    const codeBlockCopyBtns = screen.getAllByText('📋 Copy');
+    const codeBlockCopyBtns = screen.getAllByRole('button', { name: /copy/i });
     fireEvent.click(codeBlockCopyBtns[0]);
 
     await waitFor(() => expect(writeClipboard).toHaveBeenCalledWith('const x = 1;'));
-    expect(screen.getByText('✓ Copied')).toBeInTheDocument();
+    expect(screen.getByText('Copied')).toBeInTheDocument();
   });
 
   test('renders bold text', () => {

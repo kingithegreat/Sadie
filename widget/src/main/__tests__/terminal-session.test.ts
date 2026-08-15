@@ -2,7 +2,14 @@
  * terminal-session.test.ts — interactive terminal sessions for the panel.
  *
  * child_process is mocked so nothing is ever really executed. Paths are real
- * (home dir + this repo) because the sandbox check consults the filesystem.
+ * because the sandbox check consults the filesystem.
+ *
+ * The "valid directory inside home" is CREATED under os.homedir() rather than
+ * borrowed from process.cwd(). Using the repo's own path only works when the
+ * repo happens to sit under the developer's home directory -- true at
+ * C:\Users\<user>\Desktop\sadie, false on a CI runner that checks out to
+ * D:\a\Sadie\Sadie, where the sandbox correctly rejected it and two tests
+ * failed for a reason that had nothing to do with terminal sessions.
  */
 
 // `exec` must be present even though this suite never calls it: importing
@@ -11,6 +18,7 @@
 jest.mock('child_process', () => ({ spawn: jest.fn(), exec: jest.fn() }));
 
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -27,6 +35,12 @@ import {
 
 const mockSpawn = spawn as unknown as jest.Mock;
 const HOME = os.homedir();
+
+// A directory that is genuinely inside the sandbox, on any machine.
+const INSIDE_HOME = fs.mkdtempSync(path.join(HOME, 'homebot-term-test-'));
+afterAll(() => {
+  try { fs.rmSync(INSIDE_HOME, { recursive: true, force: true }); } catch { /* best effort */ }
+});
 
 function fakeChild() {
   const child: any = new EventEmitter();
@@ -56,8 +70,8 @@ describe('session lifecycle', () => {
   });
 
   test('honours a valid cwd inside home', () => {
-    const s = createSession(process.cwd());
-    expect(s.cwd.toLowerCase()).toBe(path.resolve(process.cwd()).toLowerCase());
+    const s = createSession(INSIDE_HOME);
+    expect(s.cwd.toLowerCase()).toBe(path.resolve(INSIDE_HOME).toLowerCase());
   });
 
   test('falls back to home for a path outside the sandbox rather than refusing to open', () => {
@@ -98,7 +112,7 @@ describe('built-ins', () => {
   test('cd changes the session cwd and persists for later commands', () => {
     const { id } = createSession(HOME);
     const c = collect();
-    const target = path.resolve(process.cwd());
+    const target = path.resolve(INSIDE_HOME);
     runCommand(id, `cd ${target}`, c.handlers);
     expect(mockSpawn).not.toHaveBeenCalled();
     expect(getSession(id)!.cwd.toLowerCase()).toBe(target.toLowerCase());

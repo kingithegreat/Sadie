@@ -249,6 +249,11 @@ function tokenise(text: string): string[] {
  * the user's differ, not a thesaurus.
  */
 const QUERY_SYNONYMS: Record<string, string[]> = {
+  // "open spotify" is how people ask to start an application, and `open` alone
+  // ranked open_url and the file tools ahead of launch_app. Safe because
+  // launch_app is only ever a candidate once the router has already decided the
+  // message is about an application — "open the file" never reaches it.
+  open: ['launch'],
   meeting: ['calendar', 'event'],
   appointment: ['calendar', 'event'],
   agenda: ['calendar', 'event'],
@@ -261,13 +266,86 @@ const QUERY_SYNONYMS: Record<string, string[]> = {
   company: ['crm'],
   client: ['crm', 'contact'],
   customer: ['crm', 'contact'],
+
+  // Verbs for starting something. Every entry above maps a noun to a domain;
+  // none mapped the words people actually use to BEGIN a thing, and tool names
+  // overwhelmingly say "create".
+  //
+  // The cost was that a pipeline could not be started from its most natural
+  // request. "Make me a short video about Jonah and the storm" offered
+  // media_write_script and media_narrate and NOT media_create_job — the model
+  // was asked to start a job with every tool except the one that starts jobs.
+  // Same shape for create_automation, crm_create_company, and anything else
+  // whose entry point is named "create".
+  //
+  // Semantic ranking was measured as an alternative and does not fix this: on
+  // that sentence media_create_job did not reach the top three, because every
+  // media tool is "about video" and the one distinguishing word washes out of
+  // a whole-sentence embedding. It also costs ~4s per tool to embed.
+  make: ['create'],
+  build: ['create'],
+  start: ['create'],
+  new: ['create'],
+  add: ['create'],
 };
 
+/**
+ * The synonym table, reachable by whatever form the user typed.
+ *
+ * Keyed by both the written word and its stem, because the query can arrive
+ * either way: "make" needs the literal key, "meetings" only ever matches
+ * through stem("meeting") = "meet". Keying one way alone leaves half the
+ * table dead, which is how it was.
+ */
+const SYNONYMS_BY_FORM: Map<string, string[]> = (() => {
+  const m = new Map<string, string[]>();
+  for (const [word, mapped] of Object.entries(QUERY_SYNONYMS)) {
+    m.set(word, mapped);
+    const s = stem(word);
+    if (s.length > 2 && !m.has(s)) m.set(s, mapped);
+  }
+  return m;
+})();
+
+function synonymsFor(word: string): string[] {
+  return SYNONYMS_BY_FORM.get(word) ?? SYNONYMS_BY_FORM.get(stem(word)) ?? [];
+}
+
 export function rankToolsByQuery(tools: ToolDefinition[], query: string): ToolDefinition[] {
-  const base = tokenise(query);
-  // Expand before stemming comparison so a synonym competes on equal terms.
-  const expanded = base.flatMap(w => [w, ...(QUERY_SYNONYMS[w] || []).map(stem)]);
-  const words = [...new Set(expanded)];
+  // Synonyms are looked up on the RAW word, then everything is stemmed.
+  //
+  // This used to expand tokenise(query), which had already stemmed — and the
+  // stemmer strips a trailing "e", so "make" arrived as "mak" and
+  // QUERY_SYNONYMS["make"] never fired. "Make me a short video" therefore
+  // never reached media_create_job, and the model was offered every media tool
+  // except the one that starts a job. Two of the original entries were dead
+  // the same way: "meeting" stems to "meet", "picture" to "pictur".
+  const raw = (query.toLowerCase().match(/[a-z][a-z0-9]+/g) || [])
+    .filter(w => w.length > 2 && !RANK_STOPWORDS.has(w));
+
+  // Signals that are not words.
+  //
+  // The tokeniser above only sees /[a-z][a-z0-9]+/, so "what is 15% of 240"
+  // arrives with NOTHING to rank on — every token is a digit, a symbol or a
+  // stopword. rankToolsByQuery then returns the candidates untouched and the
+  // category's four slots go in registry order, which placed `calculate` sixth
+  // of the twelve tools in 'system'. So the most unambiguous arithmetic request
+  // a user can type offered no calculator.
+  //
+  // An expression is as clear a signal for that tool as the word itself. This
+  // is the same job the synonym table does — turning what the user typed into
+  // something a tool name can match — for input that is not made of words.
+  const derived: string[] = [];
+  if (/\d\s*(?:[+\-*/×÷^]|plus\b|minus\b|times\b|divided by)\s*\d/.test(query)
+    || /\d+\s*%\s*of\b/.test(query)) {
+    derived.push('calculate');
+  }
+
+  const words = [...new Set(
+    [...raw, ...derived].flatMap(w => [w, ...synonymsFor(w)])
+      .map(stem)
+      .filter(w => w.length > 2),
+  )];
   if (words.length === 0) return tools;
 
   /**

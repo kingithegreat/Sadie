@@ -2161,6 +2161,21 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(video|videos|youtube|shorts?|script|scripts|channel|episode|thumbnail|narration|captions?|voice-?over|render|publish|upload)\b/.test(m)
     || /media\s*studio/.test(m)) cats.add('media');
   if (/\b(process|task\s*manager|kill|cpu|ram|memory\s*usage)\b/.test(m)) cats.add('system');
+  // Arithmetic produced NO category at all, so a turn asking one went out with
+  // no tools and the model did the sum in its head — which is exactly where a
+  // local model is least reliable. Digits alone are not enough of a signal
+  // (dates, versions, quantities), so this wants an operator, a percentage, or
+  // an explicit ask.
+  if (/\b(calculate|calculation|convert|how much is|what(?:'s| is) \d)\b/.test(m)
+    || /\d\s*(?:[+\-*/×÷^]|plus|minus|times|divided by)\s*\d/.test(m)
+    || /\d+\s*%\s*of\b/.test(m)) cats.add('system');
+  // "open chrome" matched 'filesystem' on the word "open", so every natural way
+  // to ask HomeBot to start an application offered file tools and never
+  // launch_app.
+  if (/\b(launch|open|start|run)\s+(?:the\s+)?(?:app\s+|application\s+|program\s+)?[a-z0-9][\w.+-]*\b/.test(m)
+    && /\b(launch|app|application|program|spotify|chrome|firefox|edge|notepad|calculator|explorer|vscode|code|discord|slack|steam|outlook|word|excel)\b/.test(m)) {
+    cats.add('system');
+  }
   if (/\b(clipboard|copy|paste)\b/.test(m)) cats.add('utility');
   // CRM had NO patterns here, and getSmallModelTools only adds category tools
   // when a category matched — so crm_* was never offered to a small model for
@@ -2171,6 +2186,12 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(crm|compan(y|ies)|contacts?|deals?|pipelines?|leads?|clients?|customers?|prospects?|invoices?)\b/.test(m)) cats.add('crm');
   if (/\b(document|pdf|docx?|summarize|parse|rag|index)\b/.test(m)) cats.add('document');
   if (/\b(image|picture|photo|draw|generate|paint|vision|screenshot|describe)\b/.test(m)) cats.add('vision');
+  // "screenshot" is the most specific word a user can type for the screenshot
+  // tool, and the line above claimed it for 'vision' alone — so the request
+  // offered vision_describe, vision_query and look_at_browser, and never the
+  // tool that actually takes a picture of the screen. It belongs to both: you
+  // take the shot with one category and ask about it with the other.
+  if (/\b(screenshot|screen\s*grab|capture (my|the) screen)\b/.test(m)) cats.add('system');
   // look_at_browser lives in the vision category, so questions about the OPEN
   // PAGE must select it too — "what does this page say?" contains none of the
   // words above, and without this the tool is unreachable to a small model in
@@ -2940,23 +2961,45 @@ export async function streamFromOllamaWithTools(
 
   const messages: ChatMessage[] = [];
 
+  /**
+   * Is THIS turn an uncensored one?
+   *
+   * The flag means "the user wants conversation unfiltered". It was also used
+   * to strip every system message, and a turn that carries tools has already
+   * switched to the tool-capable model — so it was being stripped of the
+   * prompt that tells it what it is and that it should act, while running on a
+   * model chosen precisely so it could act.
+   *
+   * Measured before this: a tool-calling turn on a default install assembled
+   * ZERO system messages. No identity, no tool-use rules, no skills, no
+   * memory, no document context. Asked "write the script for it" with a job
+   * in the store, the model replied "could you provide more details about
+   * what kind of content this script is for" — which is the right answer for
+   * something told nothing at all.
+   *
+   * So uncensored applies to conversation turns, which is what it was for.
+   * A turn that uses tools gets the normal framing.
+   */
+  const uncensoredThisTurn = uncensoredModeEnabled && !willUseTools;
+
   // Gather optional context fragments (used by both paths)
   const chatGuidelines = settings.chatGuidelines?.trim();
   const systemPromptWithGuidelines = getSystemPromptForModel(model, chatGuidelines);
-  const skillContext = (!uncensoredModeEnabled) ? matchSkills(message) : null;
+  const skillContext = (!uncensoredThisTurn) ? matchSkills(message) : null;
+
   const rawDigest = conversationDigest.get(conversationId);
   const digest = rawDigest && smallModel
     ? rawDigest.slice(-SMALL_MODEL_DIGEST_CHARS)
     : rawDigest;
 
   let recalled: string | null = null;
-  if (!uncensoredModeEnabled && !isSynthesisCall) {
+  if (!uncensoredThisTurn && !isSynthesisCall) {
     recalled = await recallMemory(message).catch(() => null);
     memorizeIfUseful(message).catch(() => {});
   }
 
   let ragSnippet: string | null = null;
-  if (!isSynthesisCall && !uncensoredModeEnabled) {
+  if (!isSynthesisCall && !uncensoredThisTurn) {
     try {
       // Pre-warm embedding cache so the synchronous ragSearch can use it
       await ragSearchWarmup(message).catch(() => {});
@@ -2974,7 +3017,7 @@ export async function streamFromOllamaWithTools(
   // Multiple system messages confuse 3B models — they lose track of which
   // instructions matter, waste tokens on role/formatting overhead, and split
   // attention.  One focused message keeps the model on-task.
-  if (smallModel && !uncensoredModeEnabled) {
+  if (smallModel && !uncensoredThisTurn) {
     const parts: string[] = [];
     // Primary identity / behaviour rules — always present
     parts.push(systemPromptWithGuidelines);
@@ -3002,7 +3045,7 @@ export async function streamFromOllamaWithTools(
     messages.push({ role: 'system', content: parts.join('\n\n') });
 
   // ── Large models: keep separate system messages (they handle it well) ───
-  } else if (!uncensoredModeEnabled) {
+  } else if (!uncensoredThisTurn) {
     if (convPrompt) {
       messages.push({ role: 'system', content: convPrompt });
     }
@@ -3048,6 +3091,13 @@ export async function streamFromOllamaWithTools(
   // uncensoredMode ships as TRUE, so this was the default experience.
   } else if (convPrompt) {
     messages.push({ role: 'system', content: convPrompt });
+  }
+
+  if (process.env.HOMEBOT_DEBUG_PROMPT === '1') {
+    console.log('[PROMPT-DEBUG] system messages: ' + JSON.stringify(
+      messages.filter(m => m.role === 'system').map(m => String(m.content).slice(0, 160)),
+    ));
+    console.log('[PROMPT-DEBUG] uncensored=' + uncensoredModeEnabled + ' smallModel=' + smallModel + ' cats=' + JSON.stringify(intentCategories));
   }
 
   // Only send the most recent N messages — older turns are already in the digest

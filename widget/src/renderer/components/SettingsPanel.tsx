@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import TelemetryConsentModal from './TelemetryConsentModal';
+import Tooltip from './Tooltip';
 import SkillsSection from './SkillsSection';
 import TelemetryDashboard from './TelemetryDashboard';
 import PermissionHistory from './PermissionHistory';
@@ -57,6 +58,8 @@ interface Settings {
   moaAggregator?: string;
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
   defaultLocation?: string;
+  /** The Media Studio publishing kill switch — see media-studio.ts. */
+  mediaPublishingEnabled?: boolean;
 }
 
 interface SettingsPanelProps {
@@ -1685,19 +1688,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
                 <button type="button" className={`model-card ${gpuInfo.recommendation?.preset === 'balanced' ? 'active' : ''}`} style={{ flex: '1 1 auto', minWidth: '120px', padding: '8px 12px' }}
-                  title="Good mix of reasoning, coding, and general knowledge (needs 8+ GB VRAM)"
+                  title="A good all-rounder — reasoning, coding and general questions"
                   onClick={() => setLocalSettings({ ...localSettings, moaProposers: ['qwen2.5:7b', 'qwen2.5-coder:7b'], moaAggregator: 'gemma4:e4b' })}>
                   <div className="model-card-label">{'⚖️'} Balanced</div>
                   <p className="model-card-desc">16+ GB GPUs</p>
                 </button>
                 <button type="button" className={`model-card ${gpuInfo.recommendation?.preset === 'codeHeavy' ? 'active' : ''}`} style={{ flex: '1 1 auto', minWidth: '120px', padding: '8px 12px' }}
-                  title="Optimised for programming and debugging tasks (needs 10+ GB VRAM)"
+                  title="Tuned for writing and fixing code"
                   onClick={() => setLocalSettings({ ...localSettings, moaProposers: ['qwen2.5-coder:7b', 'qwen2.5:7b'], moaAggregator: 'gemma4:e4b' })}>
                   <div className="model-card-label">{'💻'} Code-focused</div>
                   <p className="model-card-desc">16+ GB GPUs</p>
                 </button>
                 <button type="button" className={`model-card ${gpuInfo.recommendation?.preset === 'lightweight' ? 'active' : ''}`} style={{ flex: '1 1 auto', minWidth: '120px', padding: '8px 12px' }}
-                  title="Minimum MoA setup — two small proposers with capable aggregator (needs 8+ GB VRAM)"
+                  title="The lightest option — smaller models, easier on your graphics card"
                   onClick={() => setLocalSettings({ ...localSettings, moaProposers: ['qwen2.5:7b', 'qwen2.5-coder:7b'], moaAggregator: 'qwen2.5:7b' })}>
                   <div className="model-card-label">{'🪶'} Lightweight</div>
                   <p className="model-card-desc">10+ GB GPUs</p>
@@ -1826,6 +1829,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             }
           />
           <small className="setting-hint">Without a key, generation uses the anonymous queue (~60-120 s). A free registered key drops this to ~10-20 s.</small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">🎬 Media Studio</label>
+          <small className="setting-hint sp-hint-mb">
+            HomeBot never uploads a video anywhere. This only controls whether a video is
+            allowed to move into the Scheduled and Published stages, which is how you record
+            that you have posted one yourself.
+          </small>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={!!localSettings.mediaPublishingEnabled}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, mediaPublishingEnabled: e.target.checked })
+              }
+            />
+            <span>Allow videos to reach Scheduled and Published</span>
+          </label>
+          <small className="setting-hint">
+            Off by default. While it is off, moving a video into either stage is refused.
+          </small>
         </div>
 
         <div className="setting-group">
@@ -2532,8 +2557,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   <div className="perf-row-title">{title}</div>
                   {stat.count > 0 ? (
                     <div className="perf-badges">
-                      <span className="perf-badge perf-badge-p50" title="50th percentile (median)">p50 {stat.p50_ms} ms</span>
-                      <span className="perf-badge perf-badge-p95" title="95th percentile">p95 {stat.p95_ms} ms</span>
+                      <span className="perf-badge perf-badge-p50" title="The typical result — half of runs were faster">p50 {stat.p50_ms} ms</span>
+                      <span className="perf-badge perf-badge-p95" title="A slow run — only 1 in 20 was slower than this">p95 {stat.p95_ms} ms</span>
                       <span className="perf-badge-meta">avg {stat.avg_ms} · min {stat.min_ms} · max {stat.max_ms} · n={stat.count}</span>
                     </div>
                   ) : (
@@ -2557,7 +2582,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   {advice.overall !== 'unknown' && (
                     <div
                       className={`perf-health perf-health-${advice.overall}`}
-                      title="Overall performance health based on p95 startup and first-token latency"
+                      title="How healthy HomeBot is, based on how long it takes to start and to begin replying"
                       style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 8px', fontSize: 13, fontWeight: 600 }}
                     >
                       <span
@@ -2574,7 +2599,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     </ul>
                   )}
                   <Row title="Startup" stat={perfStats!.startup} series={startupSeries} />
-                  <Row title="First token (TTFT)" stat={perfStats!.firstToken} series={firstTokenSeries} />
+                  <Row title="How long until the reply starts appearing" stat={perfStats!.firstToken} series={firstTokenSeries} />
                 </div>
               );
             })()}
@@ -2613,9 +2638,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <button type="button" className="button button-cancel" style={{ marginTop: 8 }} onClick={() => { void runSystemCheck(); }} disabled={sysCheckLoading}>
               {sysCheckLoading ? 'Checking\u2026' : (sysCheck ? 'Re-run system check' : 'Run system check')}
             </button>
-            <button type="button" className="button button-cancel" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => { void copySupportReport(); }} title="Copy a diagnostics snapshot (performance + system check + environment) to the clipboard">
-              {reportCopied ? '\u2713 Copied' : '\ud83d\udccb Copy support report'}
-            </button>
+            <Tooltip content="Copy a summary of how HomeBot is running, to paste into a support message">
+              <button type="button" className="button button-cancel" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => { void copySupportReport(); }}>
+                {reportCopied ? '\u2713 Copied' : '\ud83d\udccb Copy support report'}
+              </button>
+            </Tooltip>
           </div>
         </>}
 

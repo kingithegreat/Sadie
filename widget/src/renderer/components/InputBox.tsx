@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ImageAttachment, DocumentAttachment } from '../../shared/types';
 import { IMAGE_LIMITS } from '../../shared/constants';
 import { resizeImageFile } from '../utils/imageUtils';
+import Tooltip from './Tooltip';
+import Icon from './Icon';
 import { resolveVoiceEngine, whisperTranscribeOnce, type RecordingController } from '../utils/speech';
 
 // Web Speech API types
@@ -613,34 +615,47 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
           <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden-file-input" aria-label="Attach images" onChange={handleFileChange} />
           <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple className="hidden-file-input" aria-label="Attach documents" onChange={handleDocChange} />
           <input ref={ragInputRef} type="file" accept="*" className="hidden-file-input" aria-label="Index file for RAG" onChange={handleRagFileChange} />
-          <button className="attach-button" title="Attach images" onClick={handleAttachClick}>📷</button>
-          <button className="attach-button" title="Attach documents (PDF, Word, Text)" onClick={handleDocAttachClick}>📄</button>
-          <button
-            className="attach-button rag-index-button"
-            title="Index file for RAG — ask questions about any document"
-            onClick={() => ragInputRef.current?.click()}
-            disabled={ragStatus === 'indexing'}
-          >{ragStatus === 'indexing' ? '⏳' : '📎'}</button>
+          <Tooltip content="Attach images">
+            <button className="attach-button" aria-label="Attach images to this message" onClick={handleAttachClick}><Icon name="image" /></button>
+          </Tooltip>
+          <Tooltip content="Attach documents — PDF, Word or text">
+            <button className="attach-button" aria-label="Attach documents — PDF, Word or text" onClick={handleDocAttachClick}><Icon name="document" /></button>
+          </Tooltip>
+          <Tooltip content="Add a file HomeBot can answer questions about">
+            <button
+              className="attach-button rag-index-button"
+              aria-label="Add a file HomeBot can answer questions about"
+              onClick={() => ragInputRef.current?.click()}
+              disabled={ragStatus === 'indexing'}
+            ><Icon name={ragStatus === 'indexing' ? 'spinner' : 'paperclip'} className={ragStatus === 'indexing' ? 'hb-icon-spin' : undefined} /></button>
+          </Tooltip>
           {speechSupported && (
             <>
-              <button 
-                className={`voice-button ${isListening ? 'listening voice-btn-active voice-pulse' : 'voice-btn-idle'}`} 
-                title={isListening ? `Stop listening (${listenTimer}s) — Ctrl+Shift+V` : 'Voice input — Ctrl+Shift+V'} 
+              <button
+                className={`voice-button ${isListening ? 'listening voice-btn-active voice-pulse' : 'voice-btn-idle'}`}
+                title={isListening ? `Stop listening (${listenTimer}s) — Ctrl+Shift+V` : 'Voice input — Ctrl+Shift+V'}
+                aria-label={isListening ? `Stop listening — ${listenTimer} seconds elapsed` : 'Voice input'}
                 onClick={toggleVoiceInput}
               >
-                {isListening ? `🎤 ${listenTimer}s` : '🎤'}
+                <Icon name="mic" />
+                {isListening ? <span className="voice-timer">{listenTimer}s</span> : null}
               </button>
               <button
                 className={`attach-button ${voiceAutoSend ? 'voice-auto-active' : ''}`}
                 title={voiceAutoSend ? 'Auto-send after voice: ON' : 'Auto-send after voice: OFF'}
+                aria-label={voiceAutoSend ? 'Auto-send after voice is on' : 'Auto-send after voice is off'}
+                aria-pressed={voiceAutoSend}
                 onClick={() => setVoiceAutoSend(v => !v)}
-                style={{ fontSize: '11px', padding: '2px 4px', minWidth: 0 }}
+                style={{ padding: '2px 4px', minWidth: 0 }}
               >
-                {voiceAutoSend ? '⚡' : '⏸'}
+                <Icon name={voiceAutoSend ? 'zap' : 'pause'} />
               </button>
             </>
           )}
-          <button className="send-button" onClick={handleSend} disabled={!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0}>Send</button>
+          <button className="send-button" onClick={handleSend} disabled={!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0}>
+            <Icon name="send" />
+            <span>Send</span>
+          </button>
         </div>
       </div>
 
@@ -649,7 +664,9 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
           {attachedImages.map((img) => (
             <div key={img.id} className="image-preview" title={img.filename ?? 'image'}>
               {img.url && <img src={img.url} alt={img.filename} className="image-thumb" />}
-              <button className="remove-image" onClick={() => removeAttachment(img.id)} title="Remove image" aria-label={`Remove ${img.filename}`}>✕</button>
+              <Tooltip content="Remove image">
+                <button className="remove-image" onClick={() => removeAttachment(img.id)} aria-label={`Remove ${img.filename}`}><Icon name="close" /></button>
+              </Tooltip>
             </div>
           ))}
         </div>
@@ -668,7 +685,9 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
                 <div className="document-filename">{doc.filename}</div>
                 <div className="document-size">{(doc.size / 1024).toFixed(1)} KB</div>
               </div>
-              <button className="remove-document" onClick={() => removeDocument(doc.id)} title="Remove document">✕</button>
+              <Tooltip content="Remove document">
+                <button className="remove-document" onClick={() => removeDocument(doc.id)} aria-label={`Remove ${doc.filename}`}><Icon name="close" /></button>
+              </Tooltip>
             </div>
           ))}
         </div>

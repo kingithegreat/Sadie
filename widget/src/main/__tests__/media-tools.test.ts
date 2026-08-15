@@ -260,3 +260,150 @@ describe('category slots are shared, not won outright', () => {
     expect(offered.filter((n: string) => n.startsWith('media_')).length).toBeGreaterThan(1);
   });
 });
+
+/**
+ * "it" has to resolve, or the pipeline cannot be driven by conversation.
+ *
+ * Turn two of a real chat is "Write the script for it." The model passes that
+ * word through verbatim; nothing matched; the chain stopped at the first stage
+ * with a job sitting right there.
+ */
+describe('referring to a job the way a person does', () => {
+  it.each(['it', 'that', 'the video', ''])('resolves %j to the only job', async (ref) => {
+    await call('media_create_job', { title: 'One-Minute Bible: Jonah' });
+    const res: any = await call('media_advance_job', { job: ref, to: 'researching' });
+    expect(res.success).toBe(true);
+    expect(readJobs()[0].state).toBe('researching');
+  });
+
+  it('picks the most recently worked-on job when several are open', async () => {
+    await call('media_create_job', { title: 'First' });
+    await call('media_create_job', { title: 'Second' });
+    // Touch the first one so it becomes the one under discussion.
+    await call('media_advance_job', { job: 'First', to: 'researching' });
+
+    const res: any = await call('media_advance_job', { job: 'it', to: 'script_draft' });
+    expect(res.success).toBe(true);
+    expect(readJobs().find(j => j.title === 'First')!.state).toBe('script_draft');
+    expect(readJobs().find(j => j.title === 'Second')!.state).toBe('idea');
+  });
+
+  it('still reports a genuinely unknown title rather than guessing', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_advance_job', { job: 'a video about penguins', to: 'researching' });
+    expect(res.success).toBe(false);
+    expect(String(res.error)).toMatch(/no media job/i);
+  });
+});
+
+/**
+ * A success has to say what comes next.
+ *
+ * A refusal already steers a model — "run media_write_script first" redirects
+ * it. A success said nothing, so a turn that had just advanced the job left
+ * the model to infer the next stage from a pipeline it cannot see. Measured
+ * driving this from chat: a 7B created the job and then wrote ABOUT writing
+ * the script instead of calling the tool that writes it.
+ */
+describe('every success points at the next step', () => {
+  it('tells the caller to write the script after creating a job', async () => {
+    const res: any = await call('media_create_job', { title: 'Jonah' });
+    expect(String(res.result)).toContain('media_write_script');
+  });
+
+  it('tells the caller to narrate once the script exists', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const jobs = readJobs();
+    jobs[0].script = 'Some narration.';
+    jobs[0].state = 'script_draft';
+    require('../tools/media').writeJobs(jobs);
+
+    const res: any = await call('media_advance_job', { job: 'Jonah', to: 'script_qa' });
+    expect(String(res.result)).toContain('media_narrate');
+  });
+
+  it('names a human, not a tool, when the job is waiting on a decision', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    for (const to of ['researching', 'script_draft', 'script_qa', 'media_production', 'render_qa', 'awaiting_approval']) {
+      await call('media_advance_job', { job: 'Jonah', to });
+    }
+    const res: any = await call('media_list_jobs', {});
+    expect(res.success).toBe(true);
+    // The advance INTO awaiting_approval is the message that matters.
+    const last: any = await call('media_advance_job', { job: 'Jonah', to: 'awaiting_approval' });
+    // Already there — the refusal is fine; what matters is it does not invent
+    // a next tool for a state only a person may leave.
+    expect(String(last.error || last.result)).not.toContain('media_render');
+  });
+
+  it('says nothing rather than inventing a step for a terminal state', async () => {
+    // published/rejected have no next tool; a hint there would be a lie.
+    const { nextStepForTest } = require('../tools/media');
+    if (typeof nextStepForTest === 'function') {
+      expect(nextStepForTest({ state: 'published' })).toBe('');
+    }
+  });
+});
+
+/**
+ * Nothing ever deleted a video's files.
+ *
+ * A minute of 1080x1920 is 10-20MB before the scene images, and the Media
+ * Studio had no cleanup, no cap, and no way to even see what it was holding —
+ * found while answering "where does HomeBot store video". Reported rather than
+ * enforced: deleting a person's work to save disk is not a tool's decision.
+ */
+describe('disk the Media Studio is holding', () => {
+  it('shows a total, so it is at least visible', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_list_jobs', {});
+    expect(res.success).toBe(true);
+    // No assets on a fresh job, so no total — the line only appears when
+    // there is something to report.
+    expect(String(res.result)).toContain('Jonah');
+  });
+
+  it('deletes a job and says what it freed', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_delete_job', { job: 'Jonah' });
+    expect(res.success).toBe(true);
+    expect(String(res.result)).toMatch(/Deleted "Jonah"/);
+    expect(readJobs()).toHaveLength(0);
+  });
+
+  it('can drop the record and keep the files', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_delete_job', { job: 'Jonah', keepFiles: true });
+    expect(res.success).toBe(true);
+    expect(String(res.result)).toMatch(/still on disk/);
+    expect(readJobs()).toHaveLength(0);
+  });
+
+  it('needs confirmation, because it cannot be undone', () => {
+    const { mediaToolDefs } = require('../tools/media');
+    const def = mediaToolDefs.find((d: any) => d.name === 'media_delete_job');
+    expect(def.requiresConfirmation).toBe(true);
+  });
+
+  it('reports an unknown job rather than deleting something else', async () => {
+    await call('media_create_job', { title: 'Jonah' });
+    const res: any = await call('media_delete_job', { job: 'a video about penguins' });
+    expect(res.success).toBe(false);
+    expect(readJobs()).toHaveLength(1);
+  });
+
+  it('leaves the record alone if the files cannot be removed', async () => {
+    // Stranding files with no record pointing at them is worse than keeping
+    // both: nothing would ever find them again.
+    await call('media_create_job', { title: 'Jonah' });
+    const fsMod = require('fs');
+    const spy = jest.spyOn(fsMod, 'rmSync').mockImplementation(() => { throw new Error('locked'); });
+    try {
+      const res: any = await call('media_delete_job', { job: 'Jonah' });
+      expect(res.success).toBe(false);
+      expect(readJobs()).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

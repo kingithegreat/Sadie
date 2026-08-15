@@ -146,7 +146,7 @@ describe('error recovery UX — inline recovery card', () => {
     expect(screen.getAllByText('⚙️').length).toBeGreaterThan(0);
     expect(screen.getByText('The n8n automation service is unavailable.')).toBeInTheDocument();
     // The generic ↻ Retry button in the recovery card actions
-    expect(screen.getByText('↻ Retry')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
     expect(screen.queryByText('Something went wrong')).toBeNull();
   });
 
@@ -157,7 +157,7 @@ describe('error recovery UX — inline recovery card', () => {
     await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument());
     expect(screen.queryByText('Ollama Offline')).toBeNull();
     expect(screen.queryByText('Model Missing')).toBeNull();
-    expect(screen.getByText('↻ Retry')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
   });
 
   // 5 ────────────────────────────────────────────────────────────────────────

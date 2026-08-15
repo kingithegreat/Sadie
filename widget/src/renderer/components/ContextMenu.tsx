@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useCallback } from 'react';
 
 export interface ContextMenuItem {
   label: string;
-  icon?: string;
+  /** A node rather than a string so callers can pass an <Icon/>; plain text and
+   *  emoji still work unchanged. */
+  icon?: React.ReactNode;
   action: () => void;
   disabled?: boolean;
   divider?: boolean;
