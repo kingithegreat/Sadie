@@ -12,9 +12,22 @@ function makeTempProfile() {
   return base;
 }
 
+/**
+ * Every locator here is scoped to `.first-run-modal`, never to the page.
+ *
+ * On a machine where a GPU is detected, App.tsx raises a 10-second toast:
+ * "…HomeBot has set itself up to run well on this PC — nothing for you to do."
+ * getByText is case-insensitive and substring-matching, so an unscoped
+ * getByText('On this PC') matched BOTH the wizard's own path button and that
+ * toast, and Playwright's strict mode failed on the ambiguity.
+ *
+ * It depended on timing, so these specs passed run on their own and failed in a
+ * full suite — which is what "1 flaky" in the run summary had been for a while.
+ * Scoping removes the race rather than retrying through it.
+ */
 async function completeFirstRunWizard(page: any, opts: { optInTelemetry?: boolean } = {}) {
-  await expect(page.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
   const modal = page.locator('.first-run-modal');
+  await expect(modal.getByText('Welcome to HomeBot')).toBeVisible({ timeout: 15000 });
   // Choose the run-on-this-PC path
   await modal.getByRole('button', { name: /On this PC/i }).click();
   await expect(page.getByText('Local Setup')).toBeVisible({ timeout: 5000 });
@@ -25,7 +38,7 @@ async function completeFirstRunWizard(page: any, opts: { optInTelemetry?: boolea
   // and finishing the done step, not asserting which outcome the machine
   // earned, so it anchors on the telemetry consent control — present in both.
   await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
-  await expect(page.getByText(/You're all set!|Ready when you are/)).toBeVisible({ timeout: 5000 });
+  await expect(modal.getByText(/You're all set!|Ready when you are/)).toBeVisible({ timeout: 5000 });
   await expect(modal.locator('.wizard-telemetry-consent')).toBeVisible({ timeout: 5000 });
   if (opts.optInTelemetry) {
     await modal.locator('.wizard-telemetry-consent input[type="checkbox"]').check();
@@ -40,14 +53,18 @@ test.describe('First-run onboarding and config persistence', () => {
     await waitForAppReady(page);
 
     // FirstRun wizard should be visible
-    await expect(page.getByText('Welcome to HomeBot')).toBeVisible();
+    const modal = page.locator('.first-run-modal');
+    await expect(modal.getByText('Welcome to HomeBot')).toBeVisible();
 
     // Path selection cards should be visible. The labels are deliberately
     // plain — "Local (Ollama)" named an implementation detail at a beginner on
     // the very first screen. If these ever revert to a product name, that is a
     // regression to fail on, not an assertion to quietly update.
-    await expect(page.getByText('On this PC')).toBeVisible();
-    await expect(page.getByText('Online', { exact: true })).toBeVisible();
+    //
+    // Scoped to the modal: unscoped, "On this PC" also matches the hardware
+    // toast (see the helper above).
+    await expect(modal.getByText('On this PC')).toBeVisible();
+    await expect(modal.getByText('Online', { exact: true })).toBeVisible();
 
     // Complete via local path
     await completeFirstRunWizard(page);
