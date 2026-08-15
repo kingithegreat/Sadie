@@ -22,7 +22,7 @@ export type IconName =
   | 'paperclip' | 'mic' | 'copy' | 'check' | 'pencil' | 'speak'
   | 'zap' | 'pause' | 'star' | 'starFilled' | 'spinner'
   // Mode switcher — the last row of the chrome still wearing emoji.
-  | 'video' | 'quiz';
+  | 'video' | 'quiz' | 'download';
 
 /** Shared by both star states so the outline and the filled one are one shape. */
 const STAR = 'M12 3.6l2.6 5.35 5.9.86-4.27 4.16 1.01 5.87L12 17.03l-5.24 2.81 1.01-5.87L3.5 9.81l5.9-.86z';
@@ -72,6 +72,7 @@ const PATHS: Record<IconName, JSX.Element> = {
   video: <><rect x="3" y="6" width="12.5" height="12" rx="2.5" /><path d="m15.5 10.8 4.3-2.7a.8.8 0 0 1 1.2.7v6.4a.8.8 0 0 1-1.2.7l-4.3-2.7z" /></>,
   // A question in a circle, for the practice-questions mode.
   quiz: <><circle cx="12" cy="12" r="9" /><path d="M9.7 9.4a2.4 2.4 0 0 1 4.7.8c0 1.6-2.4 2.1-2.4 3.6" /><path d="M12 17.3v.01" /></>,
+  download: <><path d="M12 3.5v11" /><path d="m7.75 10.25 4.25 4.25 4.25-4.25" /><path d="M4.5 17v1.5A2.5 2.5 0 0 0 7 21h10a2.5 2.5 0 0 0 2.5-2.5V17" /></>,
 };
 
 export default function Icon({ name, size = 18, className, label }: IconProps) {
