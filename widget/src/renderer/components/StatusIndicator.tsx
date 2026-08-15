@@ -77,6 +77,7 @@ interface HeaderActionsProps {
   onRefresh: () => void;
   onSettingsClick: () => void;
   onToolsClick?: () => void;
+  onExportChat?: () => void;
 }
 
 const UncensoredToggle: React.FC<UncensoredToggleProps> = ({ uncensoredMode, onToggle }) => (
@@ -345,7 +346,8 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
   onWorkspaceClick,
   onRefresh,
   onSettingsClick,
-  onToolsClick
+  onToolsClick,
+  onExportChat,
 }) => (
   <div className="header-actions">
     <button
@@ -370,6 +372,11 @@ const HeaderActions: React.FC<HeaderActionsProps> = ({
         {notificationCount > 0 && <span className="notif-badge">{notificationCount > 9 ? '9+' : notificationCount}</span>}
       </button>
     )}
+    {onExportChat && (
+      <button onClick={onExportChat} className="header-btn" title="Export this chat as Markdown" aria-label="Export chat">
+        <Icon name="download" />
+      </button>
+    )}
     <button onClick={onSettingsClick} className="header-btn" title="Settings" aria-label="Settings"><Icon name="settings" /></button>
   </div>
 );
@@ -379,7 +386,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onRefresh,
   onSettingsClick,
   onMenuClick,
-  onExportChat: _onExportChat,
+  onExportChat,
   onToolsClick,
   onRagClick,
   onTerminalClick,
@@ -467,6 +474,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         onRefresh={onRefresh}
         onSettingsClick={onSettingsClick}
         onToolsClick={onToolsClick}
+        onExportChat={onExportChat}
       />
 
       {/* Backend offline banner — shown below header inline */}
