@@ -681,6 +681,12 @@ export const AutomationCenter: React.FC = () => {
                 >
                   {runningId === auto.id ? '⏳' : '▶'}
                 </button>
+                {/* #159's own confirmation flow handles this: handleDelete sets
+                    pendingDelete, and its dialog also says whether an n8n
+                    workflow goes with the automation — which the generic
+                    ConfirmDestructive cannot know. Theirs is better informed for
+                    this one control, so it wins; the shared primitive still
+                    covers the other seven. */}
                 <button
                   type="button"
                   className="btn-icon btn-danger"

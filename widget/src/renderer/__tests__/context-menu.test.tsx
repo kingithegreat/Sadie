@@ -4,6 +4,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ContextMenu, useContextMenu } from '../components/ContextMenu';
 import type { ContextMenuItem } from '../components/ContextMenu';
 
+// The menu is portalled to document.body so no clipping ancestor can trap it
+// (see anchoredOverlay.tsx / ContextMenu.tsx), which puts it outside RTL's
+// `container`. Menu queries therefore go through `document`; queries for the
+// message body itself still use `container`.
 describe('ContextMenu', () => {
   const noop = () => {};
 
@@ -23,8 +27,8 @@ describe('ContextMenu', () => {
       { divider: true, label: '', action: noop },
       { label: 'Below', action: noop },
     ];
-    const { container } = render(<ContextMenu x={0} y={0} items={items} onClose={noop} />);
-    expect(container.querySelector('[role="separator"]')).not.toBeNull();
+    render(<ContextMenu x={0} y={0} items={items} onClose={noop} />);
+    expect(document.querySelector('[role="separator"]')).not.toBeNull();
   });
 
   test('calls action and onClose when item clicked', () => {
@@ -66,16 +70,16 @@ describe('ContextMenu', () => {
     const items: ContextMenuItem[] = [
       { label: 'Copy', icon: '📋', action: noop },
     ];
-    const { container } = render(<ContextMenu x={0} y={0} items={items} onClose={noop} />);
-    expect(container.querySelector('.context-menu-icon')).not.toBeNull();
-    expect(container.querySelector('.context-menu-icon')?.textContent).toBe('📋');
+    render(<ContextMenu x={0} y={0} items={items} onClose={noop} />);
+    expect(document.querySelector('.context-menu-icon')).not.toBeNull();
+    expect(document.querySelector('.context-menu-icon')?.textContent).toBe('📋');
   });
 
   test('has correct role attributes', () => {
     const items: ContextMenuItem[] = [{ label: 'Action', action: noop }];
-    const { container } = render(<ContextMenu x={0} y={0} items={items} onClose={noop} />);
-    expect(container.querySelector('[role="menu"]')).not.toBeNull();
-    expect(container.querySelector('[role="menuitem"]')).not.toBeNull();
+    render(<ContextMenu x={0} y={0} items={items} onClose={noop} />);
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(document.querySelector('[role="menuitem"]')).not.toBeNull();
   });
 });
 

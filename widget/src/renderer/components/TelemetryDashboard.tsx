@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 
 type Tab = 'overview' | 'tools' | 'events' | 'conversations';
 
@@ -99,12 +100,41 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
     return `${h}h ${m}m`;
   }, [events]);
 
+  // Escape closes. This panel only had a Close button, which was survivable
+  // while the blanket .app-container rule was laying it out as a page row —
+  // it never actually covered anything. Now that it is portalled and genuinely
+  // fills the window, "one specific button or nothing" is a trap, so Escape and
+  // a backdrop click both dismiss it like every other overlay here.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const tabClass = (t: Tab) => `td-tab ${tab === t ? 'td-tab-active' : ''}`;
 
-  return (
-    <div className="td-overlay" data-testid="analytics-overlay">
+  // Portalled to document.body. As a direct child of .app-container this was
+  // matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // which is (0,10,0) and beats this overlay's own `position: fixed`. The panel
+  // was therefore laid out as a page row instead of covering the window. That
+  // rule is a blocklist — it excludes the handful of overlays someone
+  // remembered to name, and silently captures every one they did not.
+  return createPortal((
+    <div
+      className="td-overlay"
+      data-testid="analytics-overlay"
+      // Backdrop only — a click that started inside the panel must not close it.
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="td-container">
         {/* Header */}
         <div className="td-header">
@@ -321,5 +351,5 @@ export default function TelemetryDashboard({ open, onClose }: { open: boolean; o
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }

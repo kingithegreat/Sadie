@@ -4,6 +4,7 @@ process.env.HOMEBOT_E2E = 'true';
 import { startMockUpstream } from './mockUpstream';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
+import { dismissFirstRun } from './helpers/firstRun';
 
 test('generates a document summary via streaming', async () => {
   // Start a deterministic mock upstream that emits a few chunks
@@ -23,8 +24,18 @@ test('generates a document summary via streaming', async () => {
   // Gate test on canonical readiness
   await waitForAppReady(page);
 
-  // Send a summarize request through the chat UI
+  // The first-run modal covers the composer on any profile that has not been
+  // through onboarding — which is every CI runner. Without this the fill lands
+  // on an unreachable input, Send stays disabled, and the click below waits the
+  // full 30s for an element it can never reach. That single timeout has failed
+  // this shard on ubuntu and macOS for 28 consecutive runs, taking the whole
+  // e2e gate red with it while the other 10 tests in the shard passed.
+  //
+  // It passed on a developer machine the entire time, because that profile
+  // already had firstRun:false saved. The test was describing one computer.
+  await dismissFirstRun(page);
 
+  // Send a summarize request through the chat UI
   await page.getByLabel('Message HomeBot').fill('Summarize: The quick brown fox jumped over the lazy dog.');
   await page.locator('button.send-button').click();
 

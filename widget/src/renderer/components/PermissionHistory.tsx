@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useConfirmDestructive } from './ConfirmDestructive';
 import type { PermissionAuditEntry } from '../../shared/types';
 
 interface PermissionHistoryProps {
@@ -42,6 +44,9 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
   const [allowed, setAllowed] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  // Must sit above the `if (!open) return null` below — hooks cannot run
+  // conditionally, and this component early-returns.
+  const [confirmDialog, confirm] = useConfirmDestructive();
 
   useEffect(() => {
     if (!open) return;
@@ -80,6 +85,18 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
     return () => { cancelled = true; };
   }, [open]);
 
+  // Escape closes. A panel that fills the window and can only be dismissed with
+  // the mouse is unusable by keyboard. This mattered less while the blanket
+  // .app-container rule laid these out as inert page rows; now that they
+  // genuinely cover everything, no-Escape is a trap.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
   if (!open) return null;
 
   const clear = async () => {
@@ -112,7 +129,19 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
     }
   };
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container this was
+  // matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // which is (0,10,0) and beats this overlay's own `position: fixed`. The panel
+  // was therefore laid out as a page row instead of covering the window. That
+  // rule is a blocklist — it excludes the handful of overlays someone
+  // remembered to name, and silently captures every one they did not.
+  return createPortal((
+    <>
+      {confirmDialog}
     <div className="notification-history-overlay" onClick={onClose} data-role="permission-history">
       <div
         className="notification-history-panel"
@@ -126,7 +155,29 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
           <div className="notification-history-actions">
             <button className="notif-clear-btn" onClick={doExport}>Export</button>
             {entries.length > 0 && (
-              <button className="notif-clear-btn" onClick={clear}>Clear all</button>
+              /* This wipes the on-disk audit log — the record of everything
+                 HomeBot was ever allowed to do. It used to happen on one click
+                 of a button labelled "Clear all", with no warning and no count. */
+              <button
+                className="notif-clear-btn"
+                onClick={() => confirm({
+                  title: `Delete the record of ${entries.length} permission ${entries.length === 1 ? 'decision' : 'decisions'}?`,
+                  body: (
+                    <>
+                      <p>
+                        This is the log of what HomeBot has asked to do and what you
+                        allowed. Deleting it does not change any permission — it only
+                        removes the history.
+                      </p>
+                      <p><strong>It cannot be undone.</strong> Use Export first if you want to keep a copy.</p>
+                    </>
+                  ),
+                  confirmLabel: 'Delete the history',
+                  onConfirm: clear,
+                })}
+              >
+                Clear all
+              </button>
             )}
             <button className="close-btn" onClick={onClose} aria-label="Close permission history">×</button>
           </div>
@@ -170,5 +221,6 @@ export default function PermissionHistory({ open, onClose }: PermissionHistoryPr
         </div>
       </div>
     </div>
-  );
+    </>
+  ), document.body);
 }

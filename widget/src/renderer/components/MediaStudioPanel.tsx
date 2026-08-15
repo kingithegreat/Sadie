@@ -13,6 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 
@@ -67,6 +68,7 @@ function stateClass(s: MediaJobState): string {
 }
 
 export const MediaStudioPanel: React.FC = () => {
+  const [confirmDialog, confirm] = useConfirmDestructive();
   const [jobs, setJobs] = useState<MediaJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -206,10 +208,26 @@ export const MediaStudioPanel: React.FC = () => {
               disabled={busy === j.id}
               onClick={() => run(j.id, () => api()?.mediaReject?.(j.id, true))}
             >Send back</button>
+            {/* `rejected` is deliberately terminal in the state machine — "a
+                rejected idea is closed, not silently revived" (media-studio.ts).
+                That is a reasonable product decision, but it sits one button
+                away from "Send back", which IS recoverable, and nothing on
+                screen said which was which. So: ask, and name the difference. */}
             <button
               className="ms-btn ms-btn--reject"
               disabled={busy === j.id}
-              onClick={() => run(j.id, () => api()?.mediaReject?.(j.id, false))}
+              onClick={() => confirm({
+                title: `Reject “${j.title || 'this video'}” for good?`,
+                body: (
+                  <p>
+                    Rejecting closes this video permanently — it cannot be reopened or
+                    picked back up later. If you want changes instead, use
+                    {' '}<strong>Send back</strong>, which returns it for another pass.
+                  </p>
+                ),
+                confirmLabel: 'Reject it',
+                onConfirm: () => run(j.id, () => api()?.mediaReject?.(j.id, false)),
+              })}
             >Reject</button>
           </>
         ) : stageAction(j) ? (
@@ -239,6 +257,7 @@ export const MediaStudioPanel: React.FC = () => {
 
   return (
     <div className="media-studio">
+      {confirmDialog}
       <header className="ms-header">
         <h2>Media Studio</h2>
         <p className="ms-sub">

@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen } from '@testing-library/react';
 import { MessageBubble } from '../components/MessageBubble';
 import type { ChatMessage } from '../types';
 
@@ -41,15 +41,18 @@ describe('MessageBubble — reactions', () => {
     expect(container.querySelector('.reaction-add-btn')).toBeNull();
   });
 
+  // The picker is portalled to document.body so the message scroller cannot clip
+  // it (see anchoredOverlay.tsx), which puts it outside RTL's `container`.
+  // Queried by role instead: that holds whether or not it is portalled, and it
+  // asserts the menu semantics a keyboard user actually depends on.
   test('clicking + shows the reaction picker', () => {
     const { container } = render(
       <MessageBubble message={makeFinishedAssistantMsg()} onCancel={noop} onRetry={noop} onReact={noop} />
     );
     const addBtn = container.querySelector('.reaction-add-btn')!;
     fireEvent.click(addBtn);
-    const picker = container.querySelector('.reaction-picker');
-    expect(picker).not.toBeNull();
-    expect(picker!.querySelectorAll('.reaction-option').length).toBe(6);
+    const picker = screen.getByRole('menu', { name: /Choose a reaction/i });
+    expect(picker.querySelectorAll('.reaction-option').length).toBe(6);
   });
 
   test('clicking an emoji calls onReact and hides picker', () => {
@@ -58,10 +61,10 @@ describe('MessageBubble — reactions', () => {
       <MessageBubble message={makeFinishedAssistantMsg()} onCancel={noop} onRetry={noop} onReact={onReact} />
     );
     fireEvent.click(container.querySelector('.reaction-add-btn')!);
-    const options = container.querySelectorAll('.reaction-option');
+    const options = screen.getAllByRole('menuitem');
     fireEvent.click(options[0]); // first emoji 👍
     expect(onReact).toHaveBeenCalledWith('a1', '👍');
-    expect(container.querySelector('.reaction-picker')).toBeNull();
+    expect(screen.queryByRole('menu', { name: /Choose a reaction/i })).toBeNull();
   });
 
   test('existing reactions display as pills', () => {

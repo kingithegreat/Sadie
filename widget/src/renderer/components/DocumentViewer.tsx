@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useConfirmDestructive } from './ConfirmDestructive';
 
 export interface DocViewerProps {
   onSendToChat?: (filePath: string, content: string) => void;
@@ -21,6 +22,7 @@ const SUPPORTED_EXTENSIONS = [
 ];
 
 const DocumentViewer: React.FC<DocViewerProps> = ({ onSendToChat }) => {
+  const [confirmDialog, confirm] = useConfirmDestructive();
   const [doc, setDoc] = useState<DocumentState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -190,12 +192,20 @@ const DocumentViewer: React.FC<DocViewerProps> = ({ onSendToChat }) => {
     }
   };
 
+  const closeDoc = () => {
+    setDoc(null);
+    setError(null);
+    setSaveMsg(null);
+    setRagStatus('idle');
+  };
+
   const renderSpreadsheet = (content: string) => {
     const sections = content.split(/^## Sheet: /m).filter(Boolean);
     return sections.map((section, si) => {
       const lines = section.split('\n');
       const sheetName = lines[0]?.trim() || `Sheet ${si + 1}`;
       const rows = lines.slice(1).filter(l => l.trim());
+
       return (
         <div key={si} className="doc-sheet">
           <h3 className="doc-sheet-name">{sheetName}</h3>
@@ -225,6 +235,7 @@ const DocumentViewer: React.FC<DocViewerProps> = ({ onSendToChat }) => {
       onDragOver={e => e.preventDefault()}
       onDrop={handleDrop}
     >
+      {confirmDialog}
       <header className="doc-header">
         <h1>Document Viewer</h1>
         <div className="doc-actions">
@@ -267,7 +278,31 @@ const DocumentViewer: React.FC<DocViewerProps> = ({ onSendToChat }) => {
             </>
           )}
           {doc && (
-            <button className="doc-btn doc-btn-close" onClick={() => { setDoc(null); setError(null); setSaveMsg(null); setRagStatus('idle'); }}>
+            /* `doc.dirty` was already tracked and already drives the Save
+               button — Close just ignored it, so edits to the user's own file
+               vanished with no prompt. Ask only when there is something to
+               lose; a clean document still closes on one click. */
+            <button
+              className="doc-btn doc-btn-close"
+              onClick={() => {
+                if (doc.dirty) {
+                  confirm({
+                    title: `Close “${doc.fileName}” without saving?`,
+                    body: (
+                      <p>
+                        You have changes that have not been saved.
+                        <strong> They will be lost.</strong> Cancel, then choose Save if
+                        you want to keep them.
+                      </p>
+                    ),
+                    confirmLabel: 'Close without saving',
+                    onConfirm: closeDoc,
+                  });
+                  return;
+                }
+                closeDoc();
+              }}
+            >
               Close
             </button>
           )}

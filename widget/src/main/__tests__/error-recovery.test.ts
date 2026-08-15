@@ -96,6 +96,60 @@ describe('classifyError', () => {
     expect(hint.userMessage).toMatch(/online AI service/i);
   });
 
+  /**
+   * The test above passes and proved nothing, because it calls classifyError the
+   * way NO production path ever does.
+   *
+   * Both call sites hard-code the label: finishFailedStream is invoked with
+   * `errorLabel: 'Ollama error'` (message-router.ts:4816) and
+   * `'Ollama streaming error'` (:5461), and there are only those two. The cloud
+   * text always arrives as `details`, never as `message`.
+   *
+   * classifyError joins them — `${message} ${details}` — so `combined` contains
+   * the words "ollama" and "error" for EVERY failure, which makes the
+   * connection-refused branch match unconditionally and return before the cloud
+   * branch is ever reached.
+   *
+   * Net effect for a user on a cloud provider: a rejected key, an exhausted
+   * quota or a 429 all render "The AI on this PC isn't running. Start it below",
+   * with a Start Ollama button. They press it, are told Ollama is running, retry,
+   * and fail identically — with the actual fix (Settings → key/billing) never
+   * mentioned.
+   *
+   * These tests call it with the arguments production actually produces.
+   */
+  describe('cloud failures, called the way production calls it', () => {
+    const CLOUD_CASES: Array<[string, string]> = [
+      ['rate limit', 'Cloud API error (OPENAI gpt-4o): Request failed with status code 429'],
+      ['bad key', 'Cloud API error (ANTHROPIC claude): Request failed with status code 401 unauthorized'],
+      ['out of quota', 'Cloud API error (OPENAI gpt-4o): insufficient_quota'],
+      ['forbidden', 'Cloud API error (GROQ llama): Request failed with status code 403 forbidden'],
+    ];
+
+    test.each(CLOUD_CASES)('%s is not blamed on the local AI', (_name, details) => {
+      for (const label of ['Ollama error', 'Ollama streaming error']) {
+        const hint = classifyError(label, details);
+        expect(hint.action).toBe('check-settings');
+        expect(hint.actionLabel).toBe('Settings');
+        expect(hint.userMessage).toMatch(/online AI service/i);
+        // The specific trap: never offer to start a local service that is not
+        // the thing that failed.
+        expect(hint.action).not.toBe('start-ollama');
+        expect(hint.userMessage).not.toMatch(/on this PC/i);
+      }
+    });
+  });
+
+  test('a genuine local connection failure is still blamed on the local AI', () => {
+    // The reordering must not cost us the case the branch exists for.
+    for (const details of ['connect ECONNREFUSED 127.0.0.1:11434', 'socket hang up ECONNRESET']) {
+      const hint = classifyError('Ollama error', details);
+      expect(hint.service).toBe('ollama');
+      expect(hint.action).toBe('start-ollama');
+      expect(hint.userMessage).toMatch(/on this PC/i);
+    }
+  });
+
   test('returns generic retry for unknown errors', () => {
     const hint = classifyError('Something unexpected happened', 'weird error');
     expect(hint.service).toBe('unknown');

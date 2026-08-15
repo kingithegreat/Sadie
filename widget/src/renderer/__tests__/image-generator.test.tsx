@@ -46,14 +46,18 @@ describe('ImageGenerator — initial render', () => {
     expect(screen.getByLabelText(/Style/i)).toBeInTheDocument();
   });
 
-  test('renders Resolution select', () => {
+  // These two were labelled "Resolution:" and "Backend:". Both are now phrased
+  // for someone who does not think in pixels or know what a backend is, so the
+  // queries follow the label the user actually reads. The stable ids (#resolution,
+  // #backend) and the option VALUES are unchanged, so nothing downstream moves.
+  test('renders the size select', () => {
     render(<ImageGenerator />);
-    expect(screen.getByLabelText(/Resolution/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Size/i)).toBeInTheDocument();
   });
 
-  test('renders Backend select', () => {
+  test('renders the where-to-make-it select', () => {
     render(<ImageGenerator />);
-    expect(screen.getByLabelText(/Backend/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Where to make it/i)).toBeInTheDocument();
   });
 });
 
@@ -224,14 +228,14 @@ describe('ImageGenerator — select controls', () => {
 
   test('resolution can be changed to 1024x1024', () => {
     render(<ImageGenerator />);
-    const select = screen.getByLabelText(/Resolution/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Size/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '1024x1024' } });
     expect(select.value).toBe('1024x1024');
   });
 
   test('backend can be changed to local', () => {
     render(<ImageGenerator />);
-    const select = screen.getByLabelText(/Backend/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Where to make it/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: 'local' } });
     expect(select.value).toBe('local');
   });
@@ -244,7 +248,7 @@ describe('ImageGenerator — select controls', () => {
       target: { value: 'a dog' },
     });
     fireEvent.change(screen.getByLabelText(/Style/i), { target: { value: 'cartoon' } });
-    fireEvent.change(screen.getByLabelText(/Resolution/i), { target: { value: '256x256' } });
+    fireEvent.change(screen.getByLabelText(/Size/i), { target: { value: '256x256' } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Generate Image/i }));
     });
@@ -252,5 +256,46 @@ describe('ImageGenerator — select controls', () => {
     expect(payload.style).toBe('cartoon');
     expect(payload.resolution).toBe('256x256');
     expect(payload.prompt).toBe('a dog');
+  });
+});
+
+/**
+ * The wording above will keep changing; what must not come back is the
+ * vocabulary. The panel is for people who do not know what a backend, a
+ * resolution in pixels, or an .exe is — so assert the absence of the words
+ * rather than the presence of any particular replacement.
+ *
+ * Deliberately checks rendered text, not source: the previous copy was
+ * assembled from option labels and a status line, and a grep of this directory
+ * for the old strings found nothing at all while five tests still depended on
+ * them.
+ */
+describe('ImageGenerator — stays readable for a non-technical user', () => {
+  const BANNED = [
+    'backend',
+    'resolution',
+    'sd.exe',
+    'stable-diffusion',
+    'stable diffusion',
+    'gguf',
+    'binary',
+    'model file',
+    'CPU offload',
+    'VRAM',
+  ];
+
+  test('no insider vocabulary in the visible panel', () => {
+    const { container } = render(<ImageGenerator />);
+    const shown = (container.textContent || '').toLowerCase();
+    const found = BANNED.filter((w) => shown.includes(w.toLowerCase()));
+    expect(found).toEqual([]);
+  });
+
+  test('the privacy-relevant choice is stated in plain words', () => {
+    render(<ImageGenerator />);
+    // Whether an image leaves the computer is the one thing worth being
+    // unambiguous about.
+    expect(screen.getByText(/Only on this PC/i)).toBeInTheDocument();
+    expect(screen.getByText(/Online — free, no account/i)).toBeInTheDocument();
   });
 });

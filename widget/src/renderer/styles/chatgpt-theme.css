@@ -2719,7 +2719,11 @@ body {
 
 /* ── Toast Notifications ── */
 .toast-container {
-  position: fixed; top: 16px; right: 16px; z-index: 10000;
+  /* 44px, not 16px, so a toast clears the titlebar rather than covering the
+     window controls and the app name. Measured: titlebar bottom at 37px, toast
+     top now 44. #155 found this on the in-flow version; it applies just the
+     same once ToastContainer portals to document.body. */
+  position: fixed; top: 44px; right: 16px; z-index: 10000;
   display: flex; flex-direction: column; gap: 8px; pointer-events: none;
   max-width: 380px;
 }
@@ -4123,6 +4127,12 @@ body {
   position: fixed;
   z-index: 10000;
   min-width: 180px;
+  /* The conversation menu carries ~14 items and ran the full height of the
+     window, leaving Delete flush against the bottom edge. Bounding it also
+     makes ContextMenu's own viewport clamp reliable, since that clamps against
+     the measured height. */
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
   background: oklch(10% 0.008 250 / 0.95);
   -webkit-backdrop-filter: blur(24px) saturate(1.3);
   backdrop-filter: blur(24px) saturate(1.3);
@@ -5910,7 +5920,12 @@ body {
 }
 
 /* ── Toast notifications ── */
-[data-theme="light"] .toast {
+/* `.toast-item`, not `.toast`. Nothing in the app has class `toast` —
+   ToastContainer renders .toast-container > .toast-item. So this override
+   matched nothing and light mode kept the dark panel: background oklch(0.09),
+   text oklch(0.18). Measured lightness gap 0.09 -> 0.82 after the fix. Every
+   notification in the default theme was dark text on a dark box. */
+[data-theme="light"] .toast-item {
   background: oklch(100% 0 0);
   border-color: oklch(0% 0 0 / 0.08);
   box-shadow: 0 4px 16px oklch(55% 0.05 250 / 0.12);
@@ -9668,7 +9683,14 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   height: 2rem;
 }
 
-/* Toasts must not consume a grid row.
+/* [DEAD as of the portal change — kept, not deleted, because deleting it has
+   now caused the same merge conflict twice. ToastContainer portals to
+   document.body, so `.app-container > .toast-container` matches nothing. The
+   rule that actually applies is `.toast-container` further up, which carries
+   the 44px measured below. If you are reading this while adding a toast rule,
+   add it there.]
+
+   Toasts must not consume a grid row.
    .app-container is `grid-template-rows: auto auto 1fr auto`, sized for
    titlebar / header / content / footer. .toast-container is a real child, so
    whenever a toast was on screen it TOOK row 1 and shifted everything down one:
@@ -9803,6 +9825,216 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   opacity: 0.6;
   cursor: default;
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   DEPTH PASS
+
+   The app was reading flat: a near-black field, surfaces filled with one solid
+   colour, and nothing suggesting a light source. Everything below adds depth
+   without changing a single dimension — no size, spacing or position is touched,
+   only background, border and shadow. That is deliberate: layout here is grid
+   rows that shift each other when disturbed, so a cosmetic pass has no business
+   near them.
+
+   Appended rather than edited in place so each rule layers over the base it
+   refines, and so the whole pass can be removed by deleting one block.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ambient ground ────────────────────────────────────────────────────────
+   Two very low-alpha washes in the brand hue, so the dark field has a direction
+   to it instead of being uniformly black. background-image only, so the base
+   background-color keeps doing its job underneath. */
+.app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(65% 0.18 250 / 0.09), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(70% 0.13 215 / 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Let the wash through the chat surface: --bg-chat and --bg-main are within a
+   percent of each other, so nothing changes except that the ground shows. */
+.chat-interface {
+  background-color: transparent;
+}
+
+/* ── Surfaces ──────────────────────────────────────────────────────────────
+   A top-lit gradient and a one-pixel inner highlight along the top edge. This
+   is what separates a surface that looks placed on the page from one that looks
+   painted onto it. */
+.daily-card,
+.automation-card,
+.template-card {
+  background-image: linear-gradient(180deg, oklch(100% 0 0 / 0.05), oklch(100% 0 0 / 0.012));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.07),
+    0 6px 20px oklch(0% 0 0 / 0.26);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.daily-card:hover,
+.automation-card:hover,
+.template-card:hover {
+  border-color: oklch(100% 0 0 / 0.13);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.09),
+    0 10px 28px oklch(0% 0 0 / 0.34);
+  transform: translateY(-1px);
+}
+
+/* ── The active mode ───────────────────────────────────────────────────────
+   The current tab was distinguished only by a slightly lighter fill. Giving it
+   the brand colour makes it the one obviously-lit thing in the header. */
+.mode-btn.active {
+  background-image: linear-gradient(180deg, oklch(65% 0.18 250 / 0.22), oklch(65% 0.18 250 / 0.10));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.12),
+    0 2px 10px oklch(65% 0.18 250 / 0.22);
+}
+
+/* ── The composer, when you are in it ──────────────────────────────────────
+   A focus state on the panel as a whole rather than only the textarea, so the
+   thing you are typing into is visibly live. */
+.input-box:focus-within {
+  border-color: oklch(65% 0.18 250 / 0.45);
+  box-shadow:
+    0 0 0 1px oklch(65% 0.18 250 / 0.22),
+    0 8px 32px oklch(65% 0.18 250 / 0.14);
+}
+
+/* Send stays quiet until it can actually do something, then it lights up. */
+.send-button:not(:disabled) {
+  background-image: linear-gradient(180deg, var(--homebot-blue-300), var(--homebot-blue-500));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.22),
+    0 2px 10px oklch(55% 0.2 255 / 0.32);
+  color: #fff;
+}
+
+.send-button:not(:disabled):hover {
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.28),
+    0 4px 16px oklch(55% 0.2 255 / 0.45);
+}
+
+/* ── Light theme ───────────────────────────────────────────────────────────
+   The same moves inverted: on white, depth comes from shadow rather than from
+   an inner highlight, and the washes have to be far weaker to stay tasteful. */
+[data-theme="light"] .app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(65% 0.18 250 / 0.07), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(70% 0.13 215 / 0.05), transparent 60%);
+}
+
+[data-theme="light"] .daily-card,
+[data-theme="light"] .automation-card,
+[data-theme="light"] .template-card {
+  background-image: linear-gradient(180deg, oklch(100% 0 0 / 0.9), oklch(100% 0 0 / 0.55));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.9),
+    0 4px 16px oklch(30% 0.02 250 / 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-card,
+  .automation-card,
+  .template-card {
+    transition: none;
+  }
+  .daily-card:hover,
+  .automation-card:hover,
+  .template-card:hover {
+    transform: none;
+  }
+}
+
+/* ── Confirm before destroying something ──────────────────────────────────
+   Used by ConfirmDestructive.tsx. Deliberately plain: this appears when the
+   user is about to lose data, so it should read like a question, not an alert
+   the eye slides off.
+
+   Portalled to document.body, so the `.app-container > *:not(...)` blocklist
+   near the top of this file cannot reach it and no exclusion is needed. */
+.confirm-destructive-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;              /* above .context-menu (10000) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: oklch(0% 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.confirm-destructive {
+  width: min(440px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 22px 24px 18px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--bg-card, oklch(12% 0.01 250));
+  box-shadow: 0 16px 48px oklch(0% 0 0 / 0.45);
+  color: var(--text-primary);
+}
+
+.confirm-destructive-title {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.confirm-destructive-body {
+  margin-bottom: 18px;
+  color: var(--text-secondary, oklch(70% 0 0));
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.confirm-destructive-body p { margin: 0 0 8px; }
+.confirm-destructive-body p:last-child { margin-bottom: 0; }
+
+.confirm-destructive-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-destructive-actions button {
+  padding: 8px 16px;
+  border-radius: var(--radius-md, 10px);
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+/* Cancel is the safe default, so it gets the calm treatment and the focus. */
+.confirm-destructive-cancel {
+  border-color: var(--border-medium);
+  background: transparent;
+  color: var(--text-primary);
+}
+.confirm-destructive-cancel:hover { background: oklch(100% 0 0 / 0.06); }
+
+/* The destructive one is clearly marked but not the visual default. */
+.confirm-destructive-confirm {
+  background: oklch(55% 0.20 25);
+  color: oklch(100% 0 0);
+  font-weight: 600;
+}
+.confirm-destructive-confirm:hover { background: oklch(48% 0.20 25); }
+
+.confirm-destructive-cancel:focus-visible,
+.confirm-destructive-confirm:focus-visible {
+  outline: 2px solid oklch(70% 0.15 250);
+  outline-offset: 2px;
+}
+
+[data-theme="light"] .confirm-destructive {
+  background: oklch(100% 0 0);
+  border-color: oklch(0% 0 0 / 0.10);
+}
+[data-theme="light"] .confirm-destructive-cancel:hover { background: oklch(0% 0 0 / 0.05); }
 
 /* ════════════════════════════════════════════════════════════════════════════
    DEPTH PASS

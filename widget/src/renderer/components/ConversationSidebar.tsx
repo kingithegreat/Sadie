@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useConfirmDestructive } from './ConfirmDestructive';
 import ConversationSearch from './ConversationSearch';
 import { ContextMenu, useContextMenu } from './ContextMenu';
 
@@ -31,6 +32,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   onNewConversation,
   onDeleteConversation
 }) => {
+  const [confirmDialog, confirmDestructive] = useConfirmDestructive();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -121,11 +123,27 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this conversation?')) {
-      onDeleteConversation(id);
-      // Remove from local state
-      setConversations(prev => prev.filter(c => c.id !== id));
-    }
+    // Was the browser's native confirm(): a blocking OS dialog that looks
+    // nothing like the app, says only "Delete this conversation?", and does not
+    // mention that the messages go with it.
+    const conv = conversations.find(c => c.id === id);
+    const count = conv?.messageCount ?? 0;
+    confirmDestructive({
+      title: `Delete “${conv?.title || 'this conversation'}”?`,
+      body: (
+        <p>
+          {count > 0
+            ? <>All {count} message{count === 1 ? '' : 's'} in it go too. </>
+            : <>The conversation goes too. </>}
+          <strong>This cannot be undone.</strong> Export it first if you want to keep a copy.
+        </p>
+      ),
+      confirmLabel: 'Delete it',
+      onConfirm: () => {
+        onDeleteConversation(id);
+        setConversations(prev => prev.filter(c => c.id !== id));
+      },
+    });
   };
 
   const handleExport = async (id: string, e: React.MouseEvent, format: 'markdown' | 'json' | 'docx' | 'pdf' = 'markdown') => {
@@ -337,6 +355,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   return (
     <>
+      {confirmDialog}
       {/* Backdrop */}
       <div className="sidebar-backdrop" onClick={onClose} />
       

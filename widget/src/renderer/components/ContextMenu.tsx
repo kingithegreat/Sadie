@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface ContextMenuItem {
   label: string;
@@ -52,11 +53,23 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     }
   }, [x, y]);
 
-  return (
+  // Portalled to document.body, and it must be. As a child of .app-container it
+  // was matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // which is (0,9,0) and so beat this menu's own (0,1,0) `position: fixed`. The
+  // menu was therefore laid out as a GRID ROW of the app container: measured at
+  // 1202x556 and 117px away from the click, instead of a small panel under the
+  // cursor. That rule is a blocklist — every overlay has to remember to add
+  // itself to the :not() chain, and this one never did. Leaving the tree
+  // entirely is the fix that cannot be forgotten next time.
+  return createPortal(
     <div
       ref={menuRef}
       className="context-menu"
-      style={{ top: y, left: x }}
+      style={{ position: 'fixed', top: y, left: x }}
       role="menu"
     >
       {items.map((item, i) =>
@@ -78,7 +91,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           </button>
         ),
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

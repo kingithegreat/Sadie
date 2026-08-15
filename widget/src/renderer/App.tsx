@@ -369,11 +369,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }]);
     });
 
-    // One-time toast when the main process auto-detects VRAM and applies a hardware profile
+    // One-time toast when the main process auto-detects VRAM and applies a
+    // hardware profile.
+    //
+    // This is one of the first things a new user ever sees, and it used to read
+    // "GPU detected (NVIDIA GeForce RTX 2050): 4 GB VRAM — 4 GB model profile
+    // applied automatically." Three pieces of vocabulary (GPU, VRAM, model
+    // profile) and no answer to the only question the reader has, which is
+    // whether they need to do anything. They do not — so say that.
     const hwUnsub = window.electron.onHardwareProfileApplied?.((data) => {
-      const label = data.profile === '4gb' ? '4 GB' : data.profile === '8gb' ? '8 GB' : '16 GB+';
-      const gpu = data.gpuName ? ` (${data.gpuName})` : '';
-      addToast(`GPU detected${gpu}: ${data.vramGB} GB VRAM — ${label} model profile applied automatically.`, 'info', 10000);
+      const gpu = data.gpuName ? `Found your graphics card (${data.gpuName}). ` : '';
+      addToast(
+        `${gpu}HomeBot has set itself up to run well on this PC — nothing for you to do. You can change this in Settings.`,
+        'info',
+        10000
+      );
     });
 
     // One-time toast when the main process finds an existing-but-corrupt

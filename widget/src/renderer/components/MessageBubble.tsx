@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
+import { OverlayPortal, anchoredStyle, useAnchoredPosition, useDismissOnOutside } from "./anchoredOverlay";
 import Icon from "./Icon";
 import type { ChatMessage } from "../types";
 import homebotChatAvatarUrl from '../assets/HomeBotChatAvatar.png';
@@ -655,21 +656,19 @@ export function MessageBubble({
   const [speaking, setSpeaking] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const reactionPickerRef = useRef<HTMLDivElement>(null);
+  const reactionBtnRef = useRef<HTMLButtonElement>(null);
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState('');
   const editRef = useRef<HTMLTextAreaElement>(null);
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
 
-  useEffect(() => {
-    if (!showReactionPicker) return;
-    const handler = (e: MouseEvent) => {
-      if (reactionPickerRef.current && !reactionPickerRef.current.contains(e.target as Node)) {
-        setShowReactionPicker(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showReactionPicker]);
+  const reactionPos = useAnchoredPosition(reactionBtnRef, reactionPickerRef, showReactionPicker, 'top');
+  // Dismissal now counts the trigger button as "inside". The old handler only
+  // checked the picker, so a mousedown on `+` closed the picker and the click
+  // that followed reopened it — the button could never close what it opened.
+  // Closing on scroll matters too: the picker is portalled, so once the message
+  // list scrolls under it, it is stranded away from its own message.
+  useDismissOnOutside(showReactionPicker, () => setShowReactionPicker(false), [reactionPickerRef, reactionBtnRef]);
 
   const timestamp = message.createdAt
     ? new Date(message.createdAt).toLocaleString(undefined, {
@@ -1028,28 +1027,41 @@ export function MessageBubble({
               </button>
             )
           ))}
+          {/* Portalled: the picker opens above its button, and .messages-container
+              scrolls (overflow: auto), so on any message near the top of the
+              scroller it was clipped to nothing. */}
           <div className="reaction-picker-wrapper">
             <button
+              ref={reactionBtnRef}
               className="reaction-add-btn"
               onClick={() => setShowReactionPicker(prev => !prev)}
+              aria-expanded={showReactionPicker}
               aria-label="Add reaction"
             >
               +
             </button>
             {showReactionPicker && (
-              <div className="reaction-picker" ref={reactionPickerRef} role="menu" aria-label="Choose a reaction">
-                {['👍', '👎', '❤️', '😂', '🎉', '🤔'].map(emoji => (
-                  <button
-                    key={emoji}
-                    className="reaction-option"
-                    role="menuitem"
-                    onClick={() => { onReact(message.id!, emoji); setShowReactionPicker(false); }}
-                    aria-label={emoji}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
+              <OverlayPortal>
+                <div
+                  className="reaction-picker"
+                  ref={reactionPickerRef}
+                  role="menu"
+                  aria-label="Choose a reaction"
+                  style={anchoredStyle(reactionPos)}
+                >
+                  {['👍', '👎', '❤️', '😂', '🎉', '🤔'].map(emoji => (
+                    <button
+                      key={emoji}
+                      className="reaction-option"
+                      role="menuitem"
+                      onClick={() => { onReact(message.id!, emoji); setShowReactionPicker(false); }}
+                      aria-label={emoji}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </OverlayPortal>
             )}
           </div>
         </div>

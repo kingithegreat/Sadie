@@ -719,6 +719,36 @@ export function classifyError(message: string, details?: string): RecoveryHint {
     };
   }
 
+  // A cloud provider refusing the request — checked BEFORE the Ollama branch
+  // below, and this order is load-bearing.
+  //
+  // Both callers hard-code the label: finishFailedStream is invoked with
+  // `errorLabel: 'Ollama error'` and `'Ollama streaming error'`, and there are
+  // only those two call sites. `combined` is `${message} ${details}`, so the
+  // words "ollama" and "error" are present for EVERY failure that reaches here,
+  // whichever service actually failed. With the Ollama branch first it matched
+  // unconditionally and returned before this one was ever reached.
+  //
+  // So a rejected key, an exhausted quota or a 429 all rendered "The AI on this
+  // PC isn't running. Start it below", with a Start Ollama button. The user
+  // pressed it, was told Ollama was running, retried, and failed identically —
+  // and the actual fix (Settings → key or billing) was never mentioned.
+  //
+  // The existing unit test passed throughout because it called
+  // classifyError('Cloud API error …') with the cloud text as the FIRST
+  // argument, which no production path does.
+  if (combined.includes('cloud api error') || combined.includes('status code 429') ||
+      combined.includes('rate limit') || combined.includes('quota') ||
+      combined.includes('insufficient_quota') || combined.includes('unauthorized') ||
+      combined.includes('forbidden') || combined.includes('authentication')) {
+    return {
+      service: 'unknown',
+      userMessage: 'The online AI service refused the request. That is usually the key, the billing, or a usage limit — check Settings.',
+      action: 'check-settings',
+      actionLabel: 'Settings',
+    };
+  }
+
   // Ollama connection refused / reset
   if (combined.includes('econnrefused') || combined.includes('econnreset') ||
       (combined.includes('ollama') && (combined.includes('unavailable') || combined.includes('error')))) {
@@ -753,17 +783,8 @@ export function classifyError(message: string, details?: string): RecoveryHint {
     };
   }
 
-  if (combined.includes('cloud api error') || combined.includes('status code 429') ||
-      combined.includes('rate limit') || combined.includes('quota') ||
-      combined.includes('insufficient_quota') || combined.includes('unauthorized') ||
-      combined.includes('forbidden') || combined.includes('authentication')) {
-    return {
-      service: 'unknown',
-      userMessage: 'The online AI service refused the request. That is usually the key, the billing, or a usage limit — check Settings.',
-      action: 'check-settings',
-      actionLabel: 'Settings',
-    };
-  }
+  // (The cloud-provider branch used to sit here, after the Ollama check that
+  // always matched first. It now runs above, where it can actually be reached.)
 
   return {
     service: 'unknown',

@@ -59,10 +59,10 @@ test('does not call ragList when isOpen=false', () => {
 
 // ─── open state + header ──────────────────────────────────────────────────────
 
-test('renders RAG Index header when open', async () => {
+test('renders the header when open', async () => {
   setup();
   await waitFor(() => {
-    expect(screen.getByText(/RAG Index/)).toBeInTheDocument();
+    expect(screen.getByText(/Documents HomeBot can read/)).toBeInTheDocument();
   });
 });
 
@@ -100,11 +100,11 @@ test('shows document count and chunk count after load', async () => {
   (window as any).electron.ragList = makeRagList([defaultDoc], 3);
   setup();
   await waitFor(() => {
-    expect(screen.getByText(/1 document · 3 chunks/)).toBeInTheDocument();
+    expect(screen.getByText(/1 document HomeBot can read/)).toBeInTheDocument();
   });
 });
 
-test('uses singular for 1 chunk', async () => {
+test('uses singular for one document', async () => {
   (window as any).electron.ragList = makeRagList(
     [{ doc_id: 'x', filename: 'a.txt', chunk_count: 1 }],
     1
@@ -114,8 +114,9 @@ test('uses singular for 1 chunk', async () => {
     const meta = screen.getByText(/1 document/);
     expect(meta.textContent).toMatch(/1 document\b/);
     expect(meta.textContent).not.toMatch(/1 documents/);
-    expect(meta.textContent).toMatch(/1 chunk/);
-    expect(meta.textContent).not.toMatch(/1 chunks/);
+    // "chunks" is how the indexer stores a file, not anything the reader can
+    // act on, so the panel no longer mentions them.
+    expect(meta.textContent).not.toMatch(/chunk/i);
   });
 });
 
@@ -138,24 +139,15 @@ test('renders document filenames', async () => {
   });
 });
 
-test('renders per-doc chunk counts', async () => {
+test('shows each document as indexed, without exposing chunk counts', async () => {
   (window as any).electron.ragList = makeRagList([defaultDoc], 3);
   setup();
   await waitFor(() => {
-    expect(screen.getByText('3 chunks')).toBeInTheDocument();
+    expect(screen.getByText('Indexed')).toBeInTheDocument();
   });
+  expect(screen.queryByText(/chunk/i)).toBeNull();
 });
 
-test('renders singular chunk label for 1 chunk', async () => {
-  (window as any).electron.ragList = makeRagList(
-    [{ doc_id: 'x', filename: 'solo.txt', chunk_count: 1 }],
-    1
-  );
-  setup();
-  await waitFor(() => {
-    expect(screen.getByText('1 chunk')).toBeInTheDocument();
-  });
-});
 
 test('renders remove buttons for each doc', async () => {
   (window as any).electron.ragList = makeRagList([defaultDoc, secondDoc], 10);
@@ -218,6 +210,9 @@ test('calls ragClear with correct docId when remove clicked', async () => {
   setup();
   const removeBtn = await screen.findByRole('button', { name: /Remove notes\.txt/i });
   await act(async () => { fireEvent.click(removeBtn); });
+  // Removing a document now asks first — it un-teaches HomeBot a file the user
+  // deliberately gave it.
+  await act(async () => { fireEvent.click(await screen.findByText('Remove it')); });
   expect((window as any).electron.ragClear).toHaveBeenCalledWith('doc-1');
 });
 
@@ -230,6 +225,8 @@ test('remove button shows ellipsis and is disabled while removing', async () => 
   setup();
   const removeBtn = await screen.findByRole('button', { name: /Remove notes\.txt/i });
   act(() => { fireEvent.click(removeBtn); });
+  // Confirm first — removal no longer happens on the click itself.
+  await act(async () => { fireEvent.click(await screen.findByText('Remove it')); });
   await waitFor(() => {
     expect(removeBtn).toBeDisabled();
   });
@@ -244,21 +241,30 @@ test('remove success filters doc from list', async () => {
   setup();
   const removeBtn = await screen.findByRole('button', { name: /Remove notes\.txt/i });
   await act(async () => { fireEvent.click(removeBtn); });
+  // Removing a document now asks first — it un-teaches HomeBot a file the user
+  // deliberately gave it.
+  await act(async () => { fireEvent.click(await screen.findByText('Remove it')); });
   await waitFor(() => {
     expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
     expect(screen.getByText('report.pdf')).toBeInTheDocument();
   });
 });
 
-test('remove success decrements totalChunks', async () => {
+test('remove success updates the document list', async () => {
   (window as any).electron.ragList = makeRagList([defaultDoc], 10);
   (window as any).electron.ragClear = makeRagClear(3);
   setup();
   const removeBtn = await screen.findByRole('button', { name: /Remove notes\.txt/i });
   await act(async () => { fireEvent.click(removeBtn); });
+  // Removing a document now asks first — it un-teaches HomeBot a file the user
+  // deliberately gave it.
+  await act(async () => { fireEvent.click(await screen.findByText('Remove it')); });
+  // The document is gone from the list, and with the only one removed the panel
+  // falls back to its empty state.
   await waitFor(() => {
-    expect(screen.getByText(/7 chunks/)).toBeInTheDocument();
+    expect(screen.queryByText('notes.txt')).toBeNull();
   });
+  expect(screen.getByText(/No documents indexed yet/i)).toBeInTheDocument();
 });
 
 test('remove shows error from resp.error when success=false', async () => {
@@ -270,6 +276,9 @@ test('remove shows error from resp.error when success=false', async () => {
   setup();
   const removeBtn = await screen.findByRole('button', { name: /Remove notes\.txt/i });
   await act(async () => { fireEvent.click(removeBtn); });
+  // Removing a document now asks first — it un-teaches HomeBot a file the user
+  // deliberately gave it.
+  await act(async () => { fireEvent.click(await screen.findByText('Remove it')); });
   await waitFor(() => {
     expect(screen.getByText('Cannot remove document')).toBeInTheDocument();
   });
@@ -283,6 +292,9 @@ test('remove shows error when ragClear throws', async () => {
   setup();
   const removeBtn = await screen.findByRole('button', { name: /Remove notes\.txt/i });
   await act(async () => { fireEvent.click(removeBtn); });
+  // Removing a document now asks first — it un-teaches HomeBot a file the user
+  // deliberately gave it.
+  await act(async () => { fireEvent.click(await screen.findByText('Remove it')); });
   await waitFor(() => {
     expect(screen.getByText('Clear failed')).toBeInTheDocument();
   });

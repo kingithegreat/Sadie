@@ -25,6 +25,10 @@ function makeUserMsg(overrides: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
+// The menu is portalled to document.body so no clipping ancestor can trap it
+// (see anchoredOverlay.tsx / ContextMenu.tsx), which puts it outside RTL's
+// `container`. Menu queries therefore go through `document`; queries for the
+// message body itself still use `container`.
 describe('MessageBubble — message editing', () => {
   test('context menu has Edit option for user messages when onEdit provided', () => {
     const { container } = render(
@@ -32,7 +36,7 @@ describe('MessageBubble — message editing', () => {
     );
     const wrapper = container.querySelector('.message-wrapper')!;
     fireEvent.contextMenu(wrapper);
-    const menuItems = container.querySelectorAll('.context-menu-item');
+    const menuItems = document.querySelectorAll('.context-menu-item');
     const labels = Array.from(menuItems).map(el => el.textContent);
     expect(labels.some(l => l?.includes('Edit'))).toBe(true);
   });
@@ -43,7 +47,7 @@ describe('MessageBubble — message editing', () => {
     );
     const wrapper = container.querySelector('.message-wrapper')!;
     fireEvent.contextMenu(wrapper);
-    const menuItems = container.querySelectorAll('.context-menu-item');
+    const menuItems = document.querySelectorAll('.context-menu-item');
     const labels = Array.from(menuItems).map(el => el.textContent);
     expect(labels.some(l => l?.includes('Edit'))).toBe(false);
   });
@@ -54,7 +58,7 @@ describe('MessageBubble — message editing', () => {
     );
     const wrapper = container.querySelector('.message-wrapper')!;
     fireEvent.contextMenu(wrapper);
-    const editItem = Array.from(container.querySelectorAll('.context-menu-item')).find(el => el.textContent?.includes('Edit'));
+    const editItem = Array.from(document.querySelectorAll('.context-menu-item')).find(el => el.textContent?.includes('Edit'));
     fireEvent.click(editItem!);
     const textarea = container.querySelector('.message-edit-textarea') as HTMLTextAreaElement;
     expect(textarea).not.toBeNull();
@@ -68,7 +72,7 @@ describe('MessageBubble — message editing', () => {
     );
     // Open edit mode via context menu
     fireEvent.contextMenu(container.querySelector('.message-wrapper')!);
-    const editItem = Array.from(container.querySelectorAll('.context-menu-item')).find(el => el.textContent?.includes('Edit'));
+    const editItem = Array.from(document.querySelectorAll('.context-menu-item')).find(el => el.textContent?.includes('Edit'));
     fireEvent.click(editItem!);
     // Change content
     const textarea = container.querySelector('.message-edit-textarea') as HTMLTextAreaElement;
@@ -85,7 +89,7 @@ describe('MessageBubble — message editing', () => {
       <MessageBubble message={makeUserMsg()} onCancel={noop} onRetry={noop} onEdit={onEdit} />
     );
     fireEvent.contextMenu(container.querySelector('.message-wrapper')!);
-    const editItem = Array.from(container.querySelectorAll('.context-menu-item')).find(el => el.textContent?.includes('Edit'));
+    const editItem = Array.from(document.querySelectorAll('.context-menu-item')).find(el => el.textContent?.includes('Edit'));
     fireEvent.click(editItem!);
     expect(container.querySelector('.message-edit-textarea')).not.toBeNull();
     // Click cancel

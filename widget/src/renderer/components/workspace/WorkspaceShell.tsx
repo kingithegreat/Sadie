@@ -1,4 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { useConfirmDestructive } from '../ConfirmDestructive';
+import { createPortal } from 'react-dom';
 import Icon from '../Icon';
 import FileTree from './FileTree';
 import CodeEditor from './CodeEditor';
@@ -32,6 +34,7 @@ type SideView = 'explorer' | 'changes' | null;
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
 export default function WorkspaceShell({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [confirmDialog, confirm] = useConfirmDestructive();
   const [root, setRoot] = useState('');
   const [sideView, setSideView] = useState<SideView>('explorer');
   const [files, setFiles] = useState<OpenFile[]>([]);
@@ -127,8 +130,19 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
 
   if (!open) return null;
 
-  return (
+  // Portalled to document.body. As a direct child of .app-container this was
+  // matched by the blanket rule in chatgpt-theme.css:
+  //
+  //   .app-container > *:not(.app-header):not(.widget-titlebar)... {
+  //     position: relative; z-index: 1; }
+  //
+  // which is (0,10,0) and beats this overlay's own `position: fixed`. The panel
+  // was therefore laid out as a page row instead of covering the window. That
+  // rule is a blocklist — it excludes the handful of overlays someone
+  // remembered to name, and silently captures every one they did not.
+  return createPortal((
     <div className="workspace-shell" role="region" aria-label="Workspace">
+      {confirmDialog}
       {/* Activity bar */}
       <nav className="ws-activity" aria-label="Activity bar">
         <button
@@ -211,11 +225,33 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
             >
               <span className="ws-tab-name">{f.name}</span>
               {f.content !== f.original && <span className="ws-tab-dirty" aria-label="Unsaved changes">●</span>}
+              {/* The ● beside the name already says "unsaved", and Escape
+                  already refuses to leave the workspace while dirty — but this
+                  ✕ closed the tab regardless, discarding edits to a real file
+                  on one click. Only asks when there is something to lose. */}
               <button
                 type="button"
                 className="ws-tab-close"
                 aria-label={`Close ${f.name}`}
-                onClick={(e) => { e.stopPropagation(); closeTab(f.path); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (f.content !== f.original) {
+                    confirm({
+                      title: `Close “${f.name}” without saving?`,
+                      body: (
+                        <p>
+                          You have changes to this file that have not been saved.
+                          <strong> They will be lost.</strong> Cancel, then press
+                          Ctrl+S if you want to keep them.
+                        </p>
+                      ),
+                      confirmLabel: 'Close without saving',
+                      onConfirm: () => closeTab(f.path),
+                    });
+                    return;
+                  }
+                  closeTab(f.path);
+                }}
               >✕</button>
             </div>
           ))}
@@ -270,5 +306,5 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
         {dirty && <span className="ws-status-item ws-status-dirty">Unsaved</span>}
       </footer>
     </div>
-  );
+  ), document.body);
 }

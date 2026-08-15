@@ -40,10 +40,15 @@ const sampleEvents = [
 ];
 
 describe('PermissionHistory — open/closed', () => {
+  // The panel portals to document.body so the blanket `.app-container > *`
+  // rule cannot lay it out as a page row (see PermissionHistory.tsx), which
+  // puts it outside RTL's `container`. `container.firstChild` is therefore null
+  // whether it is open or not — it would pass this test vacuously — so the
+  // closed state is asserted against the document instead.
   test('renders nothing when open=false', () => {
     setup();
-    const { container } = render(<PermissionHistory open={false} onClose={jest.fn()} />);
-    expect(container.firstChild).toBeNull();
+    render(<PermissionHistory open={false} onClose={jest.fn()} />);
+    expect(document.querySelector('[data-role="permission-history"]')).toBeNull();
   });
 
   test('renders the dialog when open=true', async () => {
@@ -93,9 +98,9 @@ describe('PermissionHistory — entries', () => {
 
   test('shows newest entries first', async () => {
     setup({ readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }) });
-    const { container } = render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
     await screen.findByText('write file');
-    const items = container.querySelectorAll('.notif-item');
+    const items = document.querySelectorAll('.notif-item');
     expect(items).toHaveLength(3);
     // Last recorded (delete_file) should be first in the list.
     expect(items[0].textContent).toContain('delete file');
@@ -103,15 +108,53 @@ describe('PermissionHistory — entries', () => {
 });
 
 describe('PermissionHistory — actions', () => {
-  test('Clear all calls clearPermissionAudit and empties the list', async () => {
+  // "Clear all" wipes the on-disk record of every permission decision. It used
+  // to do that on a single click, which is what this test asserted. It now asks
+  // first, so the assertion moves to the flow rather than the immediate call.
+  test('Clear all asks before wiping the log, then clears it', async () => {
     const { clearPermissionAudit } = setup({
       readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }),
     });
     render(<PermissionHistory open={true} onClose={jest.fn()} />);
-    const clearBtn = await screen.findByText('Clear all');
-    fireEvent.click(clearBtn);
+    fireEvent.click(await screen.findByText('Clear all'));
+
+    // Nothing destroyed yet, and the dialog says how much is at stake.
+    expect(clearPermissionAudit).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`${sampleEvents.length} permission`, 'i'))).toBeInTheDocument();
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+
+    // The confirming button names the consequence, not "OK".
+    fireEvent.click(screen.getByText('Delete the history'));
     await waitFor(() => expect(clearPermissionAudit).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/No permission requests recorded yet/i)).toBeInTheDocument();
+  });
+
+  test('cancelling the confirmation leaves the log alone', async () => {
+    const { clearPermissionAudit } = setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    fireEvent.click(await screen.findByText('Clear all'));
+    fireEvent.click(await screen.findByText('Cancel'));
+
+    // The whole point: backing out must destroy nothing and keep the entries.
+    expect(clearPermissionAudit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByText(/No permission requests recorded yet/i)).toBeNull();
+  });
+
+  test('Escape cancels rather than confirming', async () => {
+    const { clearPermissionAudit } = setup({
+      readPermissionAudit: jest.fn().mockResolvedValue({ success: true, events: sampleEvents }),
+    });
+    render(<PermissionHistory open={true} onClose={jest.fn()} />);
+    fireEvent.click(await screen.findByText('Clear all'));
+    await screen.findByRole('alertdialog');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(clearPermissionAudit).not.toHaveBeenCalled();
   });
 
   test('Clear all button is hidden when there are no entries', async () => {
