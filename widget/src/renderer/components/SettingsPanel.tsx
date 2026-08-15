@@ -61,6 +61,8 @@ interface Settings {
   defaultLocation?: string;
   /** The Media Studio publishing kill switch — see media-studio.ts. */
   mediaPublishingEnabled?: boolean;
+  /** Whether chats are written to disk — see shared/types.ts. */
+  saveConversationHistory?: boolean;
 }
 
 interface SettingsPanelProps {
@@ -1854,6 +1856,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </label>
           <small className="setting-hint">
             Off by default. While it is off, moving a video into either stage is refused.
+          </small>
+        </div>
+
+        <div className="setting-group">
+          <label className="setting-label">🔒 Privacy</label>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={localSettings.saveConversationHistory !== false}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, saveConversationHistory: e.target.checked })
+              }
+            />
+            <span>Save my conversations to this PC</span>
+          </label>
+          <small className="setting-hint">
+            On by default, so you can reopen past chats. Turn it off and new conversations stay
+            in the window only — nothing further is written to disk. Chats already saved are
+            left alone; delete those from the conversation list.
           </small>
         </div>
 
