@@ -454,6 +454,15 @@ export interface ElectronAPI {
   // Every mutation returns { ok, job } or { ok: false, error } so the panel can
   // show the state machine's own refusal text rather than inventing one.
   mediaList?: () => Promise<any[]>;
+  mediaParseFeed?: (url: string) => Promise<{
+    ok: boolean;
+    feed?: {
+      showTitle: string;
+      showDescription: string;
+      episodes: Array<{ title: string; summary: string; published: string; duration: string }>;
+    };
+    error?: string;
+  }>;
   mediaCreate?: (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>

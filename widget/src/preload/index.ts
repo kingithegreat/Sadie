@@ -726,6 +726,7 @@ const electronAPI: ElectronAPI = {
   // Licensing (Pro entitlement)
   // ---- Media Studio (video pipeline) ----
   mediaList: async () => ipcRenderer.invoke('homebot:media:list'),
+  mediaParseFeed: async (url: string) => ipcRenderer.invoke('homebot:media:parse-feed', url),
   mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>

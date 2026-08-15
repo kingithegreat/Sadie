@@ -840,6 +840,25 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     return readJobs();
   });
 
+  // List a podcast feed's episodes so the panel can offer "make a recap of
+  // this one". Read-only: nothing is created until the user picks an episode,
+  // which then goes through the ordinary homebot:media:create path — a
+  // feed-sourced video faces the same approval gate as everything else.
+  ipcMain.handle('homebot:media:parse-feed', async (_e, url: string) => {
+    const { fetchFeedXml, parsePodcastFeed } = await import('./podcast-feed');
+    try {
+      const xml = await fetchFeedXml(String(url || ''));
+      const feed = parsePodcastFeed(xml, 10);
+      return { ok: true, feed };
+    } catch (e: any) {
+      // parse/fetch errors here are already written for a person; pass through.
+      const msg = e?.code === 'ECONNABORTED'
+        ? 'That feed took too long to answer. Check the link, or try again in a minute.'
+        : (e?.message || 'Could not read that feed.');
+      return { ok: false, error: msg };
+    }
+  });
+
   ipcMain.handle('homebot:media:create', async (_e, input: any) => {
     const { readJobs, writeJobs } = await import('./tools/media');
     const { createJob } = await import('./media-studio');

@@ -13,6 +13,8 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { episodeToJobInput } from '../../shared/podcast-recap';
+import type { FeedEpisode } from '../../shared/podcast-recap';
 
 type MediaJobState =
   | 'idea' | 'researching' | 'script_draft' | 'script_qa' | 'media_production'
@@ -20,6 +22,9 @@ type MediaJobState =
   | 'analysing' | 'blocked' | 'failed' | 'needs_revision' | 'rejected';
 
 interface MediaJobEvent { at: string; from: string; to: string; by: string; note?: string }
+
+/** What homebot:media:parse-feed returns — see main/podcast-feed.ts. */
+interface ParsedFeedView { showTitle: string; showDescription: string; episodes: FeedEpisode[] }
 interface MediaJob {
   id: string;
   title: string;
@@ -77,6 +82,13 @@ export const MediaStudioPanel: React.FC = () => {
   const [done, setDone] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [format, setFormat] = useState<'short' | 'long'>('short');
+  // "From a podcast…" — collapsed until asked for, so the ordinary create row
+  // stays as simple as it was.
+  const [feedOpen, setFeedOpen] = useState(false);
+  const [feedUrl, setFeedUrl] = useState('');
+  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [feed, setFeed] = useState<ParsedFeedView | null>(null);
 
   const api = () => (window as any).electron;
 
@@ -122,6 +134,30 @@ export const MediaStudioPanel: React.FC = () => {
     if (!t) return;
     await run('new', () => api()?.mediaCreate?.({ title: t, format }));
     setTitle('');
+  };
+
+  const loadFeed = async () => {
+    const u = feedUrl.trim();
+    if (!u) return;
+    setFeedLoading(true);
+    setFeedError(null);
+    setFeed(null);
+    try {
+      const res = await api()?.mediaParseFeed?.(u);
+      if (res?.ok && res.feed) setFeed(res.feed);
+      else setFeedError(res?.error || 'Could not read that feed.');
+    } catch (e: any) {
+      setFeedError(e?.message || 'Could not read that feed.');
+    } finally {
+      setFeedLoading(false);
+    }
+  };
+
+  /** One episode → one ordinary job, via the shared composition. */
+  const createFromEpisode = async (ep: FeedEpisode) => {
+    await run('new', () => api()?.mediaCreate?.(
+      episodeToJobInput(feed?.showTitle || 'this podcast', ep),
+    ));
   };
 
   const awaiting = jobs.filter(j => j.state === 'awaiting_approval');
@@ -234,6 +270,67 @@ export const MediaStudioPanel: React.FC = () => {
         <button className="ms-btn ms-btn--primary" onClick={create} disabled={!title.trim() || busy === 'new'}>
           Add video
         </button>
+      </div>
+
+      {/* A second source: recap an episode of a podcast. Ported from the
+          ideamake pipeline — the feed's episode notes become the job's brief,
+          so the script stage works from what the episode actually says instead
+          of model recall. The job it creates is ordinary: same state machine,
+          same approval gate. */}
+      <div className="ms-feed">
+        {!feedOpen ? (
+          <button type="button" className="ms-btn" onClick={() => setFeedOpen(true)}>
+            From a podcast…
+          </button>
+        ) : (
+          <>
+            <div className="ms-feed-row">
+              <input
+                className="ms-input"
+                placeholder="Paste a podcast feed link (ends in .rss or .xml, or labelled “RSS”)"
+                value={feedUrl}
+                onChange={e => setFeedUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') loadFeed(); }}
+                aria-label="Podcast feed link"
+              />
+              <button
+                className="ms-btn ms-btn--primary"
+                onClick={loadFeed}
+                disabled={!feedUrl.trim() || feedLoading}
+              >
+                {feedLoading ? 'Looking…' : 'Show episodes'}
+              </button>
+              <button
+                type="button"
+                className="ms-btn"
+                onClick={() => { setFeedOpen(false); setFeed(null); setFeedError(null); }}
+                aria-label="Close podcast section"
+              >✕</button>
+            </div>
+            {feedError && <div className="ms-error" role="alert">{feedError}</div>}
+            {feed && (
+              <ul className="ms-feed-episodes" aria-label={`Episodes of ${feed.showTitle}`}>
+                {feed.episodes.map((ep, i) => (
+                  <li key={i} className="ms-feed-episode">
+                    <div className="ms-feed-ep-main">
+                      <span className="ms-feed-ep-title">{ep.title}</span>
+                      <span className="ms-feed-ep-meta">
+                        {[ep.published, ep.duration && `${ep.duration} long`].filter(Boolean).join(' · ')}
+                      </span>
+                    </div>
+                    <button
+                      className="ms-btn ms-btn--primary"
+                      disabled={busy === 'new'}
+                      onClick={() => createFromEpisode(ep)}
+                    >
+                      Make a recap
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
       </div>
 
       {jobs.length === 0 && (
