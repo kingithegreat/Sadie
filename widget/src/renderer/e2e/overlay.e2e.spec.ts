@@ -133,6 +133,7 @@ test('a toast floats in the corner and does not push the page down', async () =>
   const info = await toast.evaluate((el) => ({
     portalled: el.parentElement === document.body,
     position: getComputedStyle(el).position,
+    left: Math.round(el.getBoundingClientRect().left),
     right: Math.round(el.getBoundingClientRect().right),
     top: Math.round(el.getBoundingClientRect().top),
     viewportWidth: window.innerWidth,
@@ -144,9 +145,19 @@ test('a toast floats in the corner and does not push the page down', async () =>
   // override and made every toast shift the UI down by its own height.
   expect(info.portalled).toBe(true);
   expect(info.position).toBe('fixed');
-  // Pinned to the top-right, 16px in.
-  expect(info.viewportWidth - info.right).toBeLessThan(24);
-  expect(info.top).toBeLessThan(24);
+  // Pinned near the top-right. NOT `< 24`: the first version asserted the CSS
+  // inset value (16px) plus a little, passed on the dev machine, and failed on
+  // the CI runner at 44px — scrollbar and window-chrome differences between
+  // machines land inside a tolerance that tight. That is the "test suite
+  // describes one computer" trap, in a test written the same week the lesson
+  // was recorded. What this guard actually exists to catch is the toast being
+  // laid out as a full-width page row (left ≈ 0, width ≈ viewport), so assert
+  // the distinguishing facts and leave the exact inset to the CSS:
+  expect(info.viewportWidth - info.right).toBeLessThan(120); // near the right edge
+  // The distinguishing fact vs. the page-row failure (left ≈ 0, full width):
+  // a ≤380px toast hugging the right edge starts well past the midline.
+  expect(info.left).toBeGreaterThan(info.viewportWidth * 0.5);
+  expect(info.top).toBeLessThan(120); // near the top
   // The point of the whole thing: the page must not move.
   expect(info.headerTop).toBe(headerBefore);
 
