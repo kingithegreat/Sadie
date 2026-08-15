@@ -249,6 +249,11 @@ function tokenise(text: string): string[] {
  * the user's differ, not a thesaurus.
  */
 const QUERY_SYNONYMS: Record<string, string[]> = {
+  // "open spotify" is how people ask to start an application, and `open` alone
+  // ranked open_url and the file tools ahead of launch_app. Safe because
+  // launch_app is only ever a candidate once the router has already decided the
+  // message is about an application — "open the file" never reaches it.
+  open: ['launch'],
   meeting: ['calendar', 'event'],
   appointment: ['calendar', 'event'],
   agenda: ['calendar', 'event'],
@@ -317,8 +322,27 @@ export function rankToolsByQuery(tools: ToolDefinition[], query: string): ToolDe
   // the same way: "meeting" stems to "meet", "picture" to "pictur".
   const raw = (query.toLowerCase().match(/[a-z][a-z0-9]+/g) || [])
     .filter(w => w.length > 2 && !RANK_STOPWORDS.has(w));
+
+  // Signals that are not words.
+  //
+  // The tokeniser above only sees /[a-z][a-z0-9]+/, so "what is 15% of 240"
+  // arrives with NOTHING to rank on — every token is a digit, a symbol or a
+  // stopword. rankToolsByQuery then returns the candidates untouched and the
+  // category's four slots go in registry order, which placed `calculate` sixth
+  // of the twelve tools in 'system'. So the most unambiguous arithmetic request
+  // a user can type offered no calculator.
+  //
+  // An expression is as clear a signal for that tool as the word itself. This
+  // is the same job the synonym table does — turning what the user typed into
+  // something a tool name can match — for input that is not made of words.
+  const derived: string[] = [];
+  if (/\d\s*(?:[+\-*/×÷^]|plus\b|minus\b|times\b|divided by)\s*\d/.test(query)
+    || /\d+\s*%\s*of\b/.test(query)) {
+    derived.push('calculate');
+  }
+
   const words = [...new Set(
-    raw.flatMap(w => [w, ...synonymsFor(w)])
+    [...raw, ...derived].flatMap(w => [w, ...synonymsFor(w)])
       .map(stem)
       .filter(w => w.length > 2),
   )];

@@ -107,6 +107,25 @@ const CASES: Array<{ prompt: string; needsOneOf: string[] }> = [
   { prompt: 'which processes are using the most cpu',
     needsOneOf: ['list_processes', 'get_system_info'] },
 
+  // The three below are all category 'system', which the completeness check
+  // already counted as covered by the case above — so a whole category could
+  // be "covered" while the tools inside it stayed unreachable. Coverage is per
+  // category; reachability is per tool.
+  //
+  // "screenshot" is the single most specific word a user can type for the
+  // screenshot tool, and it routed to 'vision' alone: the request offered the
+  // three vision tools and never the one that takes a screenshot.
+  { prompt: 'take a screenshot and tell me what is on my screen',
+    needsOneOf: ['screenshot'] },
+  // Arithmetic matched no pattern at all, so the turn went out with no
+  // categories and the model answered from its own head.
+  { prompt: 'what is 15% of 240',
+    needsOneOf: ['calculate'] },
+  // "open" routes to 'filesystem', so asking to open an application offered
+  // file tools and never launch_app.
+  { prompt: 'open spotify for me',
+    needsOneOf: ['launch_app'] },
+
   // Web.
   { prompt: 'search the web for the latest on the election',
     needsOneOf: ['web_search'] },
