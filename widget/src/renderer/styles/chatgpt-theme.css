@@ -10188,3 +10188,11 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   white-space: nowrap;
 }
 .ms-feed-ep-meta { font-size: 0.75rem; color: var(--text-secondary, oklch(65% 0 0)); }
+
+/* ── One-click local image setup progress (ImageGenerator) ── */
+.setup-progress {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary, oklch(70% 0 0));
+}
+.setup-progress--error { color: oklch(60% 0.19 25); }
