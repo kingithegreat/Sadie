@@ -440,6 +440,16 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:sd-cpp:setup');
   },
 
+  sdCppAutoSetup: async () => {
+    return await ipcRenderer.invoke('homebot:sd-cpp:auto-setup');
+  },
+
+  onSdCppSetupProgress: (cb: (p: { phase: string; note: string; receivedMB?: number; totalMB?: number | null }) => void) => {
+    const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('homebot:sd-cpp:setup-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:sd-cpp:setup-progress', listener);
+  },
+
   getEnv: async (): Promise<{ isE2E: boolean; isPackagedBuild: boolean; isReleaseBuild: boolean; userDataPath: string }> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_ENV);
   },
