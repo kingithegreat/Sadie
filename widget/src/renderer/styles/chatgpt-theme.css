@@ -10156,3 +10156,35 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
     transform: none;
   }
 }
+
+/* ── Media Studio: "From a podcast…" (feed → recap, ported from ideamake) ── */
+.ms-feed { margin: 8px 0 4px; }
+.ms-feed-row { display: flex; gap: 8px; align-items: center; }
+.ms-feed-row .ms-input { flex: 1; }
+.ms-feed-episodes {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md, 10px);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.ms-feed-episode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-light, oklch(100% 0 0 / 0.06));
+}
+.ms-feed-episode:last-child { border-bottom: none; }
+.ms-feed-ep-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-feed-ep-title {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-feed-ep-meta { font-size: 0.75rem; color: var(--text-secondary, oklch(65% 0 0)); }

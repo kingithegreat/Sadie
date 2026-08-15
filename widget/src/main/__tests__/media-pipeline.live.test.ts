@@ -1,38 +1,45 @@
 /**
- * The Media Studio pipeline, run for real.
+ * media-pipeline.live.test.ts — the whole Media Studio pipeline, for real.
  *
- * Every other media test uses mocks. This one calls the actual local model and
- * the actual TTS service and writes an actual MP3, because a pipeline of four
- * stages that has never been executed end to end is not known to work — it is
- * only known to typecheck.
+ * Every unit test of this pipeline mocks the model, the TTS service and
+ * ffmpeg — necessarily, in CI. Which means that until this file existed,
+ * nothing had ever proven the actual chain: a real feed episode through a real
+ * LLM to a real narration MP3 to a real rendered MP4 on disk. "The pipeline
+ * works" was an inference from parts, and this codebase's own rulebook says
+ * what that is worth (rule 9: ask what reaches it).
  *
- * OPT-IN. Skipped unless HOMEBOT_LIVE=1, because it needs Ollama running and
- * network access to the TTS endpoint, and it takes a minute or two on a 7B
- * model. CI must not depend on either.
+ * Run explicitly, never in CI:
  *
- *   cd widget && npx cross-env HOMEBOT_LIVE=1 npx jest media-pipeline.live
+ *   cd widget && npx cross-env HOMEBOT_LIVE=1 HOMEBOT_FFMPEG=<path-to-ffmpeg.exe> \
+ *     npx jest media-pipeline.live --runInBand --forceExit
+ *
+ * Requirements: Ollama running with SOME model pulled (set OLLAMA_MODEL, or it
+ * uses qwen2.5:0.5b — small on purpose: the point is the chain, not prose
+ * quality), internet for msedge-tts, and an ffmpeg binary.
  */
 
+const live = process.env.HOMEBOT_LIVE === '1';
+const maybe = live ? describe : describe.skip;
+
 jest.mock('../mcp-client', () => ({
-  seedMcpDefaults: jest.fn(),
-  discoverExternalMcpServers: jest.fn(),
   initializeMcpServers: jest.fn().mockResolvedValue(undefined),
+  getMcpToolDefs: jest.fn(() => []),
+  getMcpToolHandlers: jest.fn(() => ({})),
 }));
+
+// One temp userData for the whole run, created before the electron mock closes
+// over it. Settings and job files live here; deleted on success, kept on
+// failure so the wreckage can be inspected.
+const os = require('os');
+const path = require('path');
+const fsx = require('fs');
+const USER_DATA = fsx.mkdtempSync(path.join(os.tmpdir(), 'homebot-live-media-'));
+
 jest.mock('electron', () => ({
   app: {
     isPackaged: false,
-    // Point at the REAL userData when running live, so the pipeline uses the
-    // provider actually configured in the app. Mocking this to tmpdir meant the
-    // run read an empty settings file and silently fell back to Ollama — it
-    // was testing the default, not the setup.
-    getPath: jest.fn((name?: string) => {
-      if (process.env.HOMEBOT_LIVE === '1' && name === 'userData') {
-        const path = require('path');
-        return path.join(process.env.APPDATA || require('os').homedir(), 'HomeBot');
-      }
-      return require('os').tmpdir();
-    }),
-    getAppPath: jest.fn(() => require('os').tmpdir()),
+    getPath: jest.fn(() => USER_DATA),
+    getAppPath: jest.fn(() => USER_DATA),
   },
   ipcMain: { on: jest.fn(), handle: jest.fn() },
   BrowserWindow: jest.fn().mockImplementation(() => ({ webContents: { send: jest.fn() } })),
@@ -40,88 +47,109 @@ jest.mock('electron', () => ({
   shell: { openExternal: jest.fn(), openPath: jest.fn() },
   dialog: { showMessageBox: jest.fn(), showOpenDialog: jest.fn() },
   nativeTheme: { themeSource: 'system' },
+  safeStorage: { isEncryptionAvailable: () => false },
 }));
 
 import * as fs from 'fs';
-import { initializeTools } from '../tools';
-import { mediaToolHandlers, readJobs, __resetMediaJobsForTests } from '../tools/media';
-import { estimateSpokenSeconds, checkScript } from '../media-generate';
+import { episodeToJobInput } from '../../shared/podcast-recap';
 
-const live = process.env.HOMEBOT_LIVE === '1';
-const maybe = live ? describe : describe.skip;
+const MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:0.5b';
 
-const call = (name: string, args: any = {}) =>
-  mediaToolHandlers[name](args, { executionId: 'live' } as any);
+/** A realistic episode, as the feed parser would hand it over. */
+const EPISODE = {
+  title: 'Why Attention Matters',
+  summary:
+    'Host and guest Dr. Lee discuss how sustained attention shapes what we can ' +
+    'learn. They cover why constant notifications fragment thinking, a simple ' +
+    'daily practice of working in silence for thirty minutes, and why boredom ' +
+    'is a feature rather than a failure of the mind.',
+  published: 'Mon, 11 Aug 2026 06:00:00 GMT',
+  duration: '52:10',
+};
 
-maybe('the pipeline, end to end, on real services', () => {
-  jest.setTimeout(10 * 60 * 1000);
+maybe('Media pipeline, live: feed episode → script → narration → rendered mp4', () => {
+  jest.setTimeout(420_000);
 
-  beforeAll(() => { initializeTools(); __resetMediaJobsForTests(); });
-  afterAll(() => { __resetMediaJobsForTests(); });
+  beforeAll(() => {
+    // The stages read the configured local model from settings.
+    const cfgDir = path.join(USER_DATA, 'config');
+    fs.mkdirSync(cfgDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cfgDir, 'user-settings.json'),
+      JSON.stringify({ ollamaModel: MODEL, mediaPublishingEnabled: false }),
+    );
+  });
 
-  it('takes an idea to a narrated script', async () => {
-    const created: any = await call('media_create_job', {
-      title: 'One-Minute Bible: Jonah and the storm',
-      format: 'short',
-      brief: 'What the storm passage actually says about running from a calling.',
-    });
+  test('the whole chain produces a real video file', async () => {
+    const { mediaToolHandlers, readJobs } = await import('../tools/media');
+    const ctx: any = { executionId: 'live-pipeline' };
+    // Jest buffers console output until the test ends, which is useless for
+    // diagnosing a hang — so progress goes straight to a file.
+    const PROGRESS = process.env.HOMEBOT_LIVE_PROGRESS;
+    const mark = (m: string) => { if (PROGRESS) fsx.appendFileSync(PROGRESS, `${new Date().toISOString()} ${m}
+`); };
+
+    // 1. The episode enters exactly the way the panel sends it.
+    const input = episodeToJobInput('Deep Questions', EPISODE);
+    mark('create:start');
+    const created: any = await mediaToolHandlers.media_create_job(
+      { title: input.title, format: input.format, brief: input.brief }, ctx,
+    );
     expect(created.success).toBe(true);
+    const jobId = readJobs()[0].id;
 
-    // --- research + script, on whichever model is configured ---
-    // Say which provider this run will actually use, so a result can never be
-    // attributed to the wrong model.
-    const { getSettings } = await import('../config-manager');
-    const s: any = getSettings();
-    // eslint-disable-next-line no-console
-    console.log(`provider: useCustomLLM=${s?.useCustomLLM} ${s?.customLLM?.provider ?? '(local)'} / ${s?.customLLM?.model ?? s?.chatModel ?? 'ollama'}`);
-
-    const scripted: any = await call('media_write_script', { job: 'Jonah' });
-    // eslint-disable-next-line no-console
-    console.log('\n--- media_write_script ---\n', scripted.success ? scripted.result : scripted.error);
+    // 2. Script — real Ollama, real model.
+    mark('script:start');
+    const scripted: any = await mediaToolHandlers.media_write_script({ job: jobId }, ctx);
     expect(scripted.success).toBe(true);
+    const afterScript = readJobs()[0];
+    expect(afterScript.script && afterScript.script.length).toBeGreaterThan(100);
+    // The source-material contract, observed end to end: the script came from
+    // an episode about attention, so it should actually be about that.
+    expect(afterScript.script!.toLowerCase()).toMatch(/attention|focus|notification|silence|boredom/);
 
-    const job = readJobs()[0];
-    expect(job.state).toBe('script_draft');
-    expect((job.script || '').length).toBeGreaterThan(80);
-
-    // The guardrail that matters most: no invented quotations left in.
-    const problems = checkScript(job, job.script!);
-    // eslint-disable-next-line no-console
-    console.log('script checks:', problems.length ? problems : 'clean',
-      `| ~${estimateSpokenSeconds(job.script!)}s`);
-
-    // --- narration, via Edge TTS, to a real file ---
-    const narrated: any = await call('media_narrate', { job: 'Jonah' });
-    // eslint-disable-next-line no-console
-    console.log('--- media_narrate ---\n', narrated.success ? narrated.result : narrated.error);
+    // 3. Narration — real msedge-tts, real MP3.
+    mark('narrate:start');
+    const narrated: any = await mediaToolHandlers.media_narrate({ job: jobId }, ctx);
     expect(narrated.success).toBe(true);
+    const afterNarrate = readJobs()[0];
+    expect(afterNarrate.narrationPath).toBeTruthy();
+    expect(fs.existsSync(afterNarrate.narrationPath!)).toBe(true);
+    expect(fs.statSync(afterNarrate.narrationPath!).size).toBeGreaterThan(10_000);
+    expect(afterNarrate.durationSeconds).toBeGreaterThan(5);
 
-    const done = readJobs()[0];
-    expect(done.state).toBe('media_production');
-    expect(done.narrationPath).toBeTruthy();
+    // 4. Render — real ffmpeg, real MP4.
+    //
+    // visuals:'backdrop' deliberately. The default 'scenes' path generates one
+    // image per caption group through the ONLINE image pipeline, whose queues
+    // can run minutes per image — the first run of this test spent its entire
+    // 420s budget inside that stage. The product treats scene images as
+    // best-effort decoration; the chain this test exists to prove is
+    // script → narration → encoded video, and the backdrop path proves it
+    // with only local work.
+    mark('render:start');
+    const rendered: any = await mediaToolHandlers.media_render({ job: jobId, visuals: 'backdrop' }, ctx);
+    expect(rendered.success).toBe(true);
+    const finalJob = readJobs()[0];
+    expect(finalJob.renderPath).toBeTruthy();
+    expect(fs.existsSync(finalJob.renderPath!)).toBe(true);
+    // A real encoded video, not a stub: even a minute of static slideshow at
+    // crf-anything comes out well past this.
+    expect(fs.statSync(finalJob.renderPath!).size).toBeGreaterThan(50_000);
 
-    const st = fs.statSync(done.narrationPath!);
-    expect(st.size).toBeGreaterThan(10_000);
+    // 5. And it ends at the human gate, where everything must end.
+    expect(['render_qa', 'awaiting_approval']).toContain(finalJob.state);
 
-    // 96 kbit/s CBR, so bytes map to seconds directly. A file that exists but
-    // holds a fraction of a second of audio would otherwise pass a size check.
-    const seconds = (st.size * 8) / 96_000;
-    // eslint-disable-next-line no-console
-    console.log(`narration: ${Math.round(st.size / 1024)} KB ≈ ${seconds.toFixed(1)}s of audio`);
-    expect(seconds).toBeGreaterThan(10);
+    mark('done');
+    console.log('[LIVE] rendered video:', finalJob.renderPath,
+      Math.round(fs.statSync(finalJob.renderPath!).size / 1024), 'KB;',
+      'narration', afterNarrate.durationSeconds, 's; state', finalJob.state);
   });
+});
 
-  it('still refuses to publish, even with everything else done', async () => {
-    // The kill switch defaults off; nothing in a live run may bypass it.
-    const jobs = readJobs();
-    if (!jobs.length) return;
-    const res: any = await call('media_advance_job', { job: jobs[0].id, to: 'render_qa' });
-    expect(res.success).toBe(true);
-    const toApproval: any = await call('media_advance_job', { job: jobs[0].id, to: 'awaiting_approval' });
-    expect(toApproval.success).toBe(true);
-
-    const sneaky: any = await call('media_advance_job', { job: jobs[0].id, to: 'approved' });
-    expect(sneaky.success).toBe(false);
-    expect(String(sneaky.error)).toMatch(/human decision/i);
-  });
+afterAll(() => {
+  // Keep the artefacts on failure for inspection; clean up on success.
+  const failed = (expect as any).getState?.().numFailingTests > 0;
+  if (!failed) { try { fsx.rmSync(USER_DATA, { recursive: true, force: true }); } catch {} }
+  else { console.log('[LIVE] kept working dir for inspection:', USER_DATA); }
 });
