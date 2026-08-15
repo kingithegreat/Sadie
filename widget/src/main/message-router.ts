@@ -188,7 +188,7 @@ function estimateSizeFromBase64(base64?: string) {
 
 function validateImages(images?: any[]) {
   if (!images || !Array.isArray(images) || images.length === 0) return { ok: true };
-  if (images.length > MAX_IMAGES) return { ok: false, code: 'IMAGE_LIMIT_EXCEEDED', message: `Too many images (max ${MAX_IMAGES}).` };
+  if (images.length > MAX_IMAGES) return { ok: false, code: 'IMAGE_LIMIT_EXCEEDED', message: `That's more pictures than I can look at in one message — the most is ${MAX_IMAGES}. Send the rest in a follow-up.` };
 
   let total = 0;
   for (const img of images) {
@@ -196,9 +196,18 @@ function validateImages(images?: any[]) {
     if (typeof img.size === 'number') size = img.size;
     else if (typeof img.data === 'string') size = estimateSizeFromBase64(img.data);
     // if size still zero, we can't validate confidently; treat as ok
-    if (size > MAX_PER_IMAGE) return { ok: false, code: 'IMAGE_LIMIT_EXCEEDED', message: `Image ${img.filename || ''} exceeds per-image limit (${MAX_PER_IMAGE} bytes).` };
+    if (size > MAX_PER_IMAGE) {
+      // "exceeds per-image limit (10485760 bytes)" told the user nothing they
+      // could act on. Megabytes, the name of the file, and what to do next.
+      const mb = (size / (1024 * 1024)).toFixed(1);
+      const capMb = Math.round(MAX_PER_IMAGE / (1024 * 1024));
+      return { ok: false, code: 'IMAGE_LIMIT_EXCEEDED', message: `${img.filename ? `“${img.filename}”` : 'That picture'} is too big to send (about ${mb} MB — the limit is ${capMb} MB). A smaller screenshot, or the same image saved as JPG, will go through.` };
+    }
     total += size;
-    if (total > MAX_TOTAL) return { ok: false, code: 'IMAGE_LIMIT_EXCEEDED', message: `Total attachments exceed ${MAX_TOTAL} bytes.` };
+    if (total > MAX_TOTAL) {
+      const capMb = Math.round(MAX_TOTAL / (1024 * 1024));
+      return { ok: false, code: 'IMAGE_LIMIT_EXCEEDED', message: `Together those pictures are more than I can take in one message (the limit is ${capMb} MB). Send fewer at once and they’ll go through.` };
+    }
   }
   return { ok: true };
 }
@@ -3446,6 +3455,11 @@ export async function streamFromOllamaWithTools(
                 const result = { success: false, error: 'User declined permission request' } as any;
                 onToolResult(result);
                 messages.push({ role: 'tool', content: JSON.stringify(result) });
+                // Saying nothing here left the chat hanging mid-thought: the
+                // user declined, the stream just ended, and the message they
+                // sent appeared to have been swallowed. Declining is a normal
+                // move and deserves a normal reply.
+                onChunk('Okay — I won’t do that. Nothing was changed. If you change your mind, just ask again.');
                 safeEnd('permission-denied');
                 return;
               }
@@ -3474,6 +3488,7 @@ export async function streamFromOllamaWithTools(
               const result = { success: false, error: `Missing permissions: ${missing.join(', ')}` } as any;
               onToolResult(result);
               messages.push({ role: 'tool', content: JSON.stringify(result) });
+              onChunk('That needs a permission I don’t have, so I stopped. You can allow it in Settings → Privacy & Permissions, then ask again.');
               safeEnd('permission-denied');
               return;
             }

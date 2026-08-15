@@ -731,7 +731,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate') =>
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render') =>
     ipcRenderer.invoke('homebot:media:run', id, action),
   mediaApprove: async (id: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note),

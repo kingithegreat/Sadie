@@ -907,7 +907,13 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
 
-    const tool = action === 'narrate' ? 'media_narrate' : 'media_write_script';
+    // 'render' was missing here, which made rendering chat-only: the panel
+    // could write a script and record narration, then had no button for the
+    // one step that actually produces the video. A panel-first workflow that
+    // dead-ends before the deliverable is not a workflow.
+    const tool = action === 'render' ? 'media_render'
+      : action === 'narrate' ? 'media_narrate'
+      : 'media_write_script';
     try {
       const res: any = await mediaToolHandlers[tool]({ job: job.id }, { executionId: `panel-${action}` } as any);
       return res?.success
@@ -2162,7 +2168,12 @@ try {
         enrichedMessage += `\n\n--- Running Processes (pre-gathered) ---\n${procStr}`;
       } catch (e: any) { console.log('[Automation] pre-gather list_processes failed:', e?.message); }
       try {
-        const ollamaBase = process.env.OLLAMA_URL || getSettings().ollamaUrl || 'http://localhost:11434';
+        // 127.0.0.1, never localhost: on a machine with Docker Desktop, its
+        // model runner binds 0.0.0.0:11434 with an EMPTY model store and wins
+        // the IPv6 race for `localhost` — every model reads as "not found"
+        // while the real Ollama sits on 127.0.0.1 with them all installed.
+        // Found live on Aden's machine; media-generate.ts already dodged it.
+        const ollamaBase = process.env.OLLAMA_URL || getSettings().ollamaUrl || 'http://127.0.0.1:11434';
         const tagsRes = await axios.get(`${ollamaBase}/api/tags`, { timeout: 5000 });
         enrichedMessage += `\n\n--- Installed Ollama Models (pre-gathered) ---\n${JSON.stringify(tagsRes.data?.models?.map((m: any) => ({ name: m.name, size: m.size })) || [], null, 2)}`;
       } catch (e: any) { console.log('[Automation] pre-gather ollama tags failed:', e?.message); }
@@ -2220,7 +2231,8 @@ try {
 
       if (!resultText) {
         // ── Ollama agentic tool-calling loop ──
-        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://localhost:11434';
+        // 127.0.0.1, never localhost — see the note on the sibling above.
+        const ollamaBase = process.env.OLLAMA_URL || settings.ollamaUrl || 'http://127.0.0.1:11434';
         const ollamaModel = process.env.OLLAMA_MODEL || settings.chatModel || 'qwen2.5:7b';
 
         // Quick reachability check before committing to 120s timeout

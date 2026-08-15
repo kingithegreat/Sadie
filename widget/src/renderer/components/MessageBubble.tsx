@@ -619,7 +619,9 @@ function PullModelButton({ model }: { model: string }) {
         style={{ padding: '4px 12px' }}
       >
         {pulling ? `Pulling ${model}...` : `📦 Pull ${model}`}
-        {result === 'failed' && !diskMsg && <span style={{ color: 'var(--warning-color, #f59e0b)', marginLeft: '4px' }}>failed</span>}
+        {/* The single word "failed" answered none of the three questions a
+            stuck person asks (what happened / whose fault / what now). */}
+        {result === 'failed' && !diskMsg && <span style={{ color: 'var(--warning-color, #f59e0b)', marginLeft: '4px' }}>couldn’t download — check the internet connection and click to try again</span>}
       </button>
       {diskMsg && (
         <span style={{ color: 'var(--warning-color, #f59e0b)', fontSize: '11px', marginLeft: '4px', alignSelf: 'center' }}>

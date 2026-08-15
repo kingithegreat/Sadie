@@ -112,7 +112,7 @@ describe('FirstRunModal — local path', () => {
     expect(screen.getByText(/Test GPU/)).toBeInTheDocument();
   });
 
-  test('Next advances to done step', async () => {
+  test('Next advances to done and celebrates when the local AI actually came up', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
@@ -123,6 +123,43 @@ describe('FirstRunModal — local path', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Next'));
     });
+    // In this mocked run the local check genuinely succeeds, so the
+    // celebration is earned. The dishonest branch is tested below, where the
+    // cloud path reaches done with nothing configured at all.
+    expect(screen.getByText("You're all set!")).toBeInTheDocument();
+  });
+
+  test('done is HONEST when nothing was actually configured', async () => {
+    const electron = makeMockElectron();
+    (window as any).electron = electron;
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    // Online, then straight past the key step with the field left empty — the
+    // path the audit flagged: Next stays enabled on an empty field, and the
+    // old done step then claimed "You're all set!" over a configuration that
+    // does not exist.
+    await act(async () => { fireEvent.click(screen.getByText('Online')); });
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+
+    expect(screen.queryByText("You're all set!")).toBeNull();
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument();
+    expect(screen.getByText(/finish setting up any time from Settings/i)).toBeInTheDocument();
+  });
+
+  test('done DOES celebrate when the cloud key actually tested OK', async () => {
+    const electron = makeMockElectron();
+    (window as any).electron = electron;
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => { fireEvent.click(screen.getByText('Online')); });
+    fireEvent.change(screen.getByPlaceholderText('Paste the key from your account page'), {
+      target: { value: 'sk-test-123' },
+    });
+    await act(async () => { fireEvent.click(screen.getByText('Test Connection')); });
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    // A tested, working key is a real success and gets said as one.
     expect(screen.getByText("You're all set!")).toBeInTheDocument();
   });
 });

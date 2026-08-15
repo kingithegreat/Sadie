@@ -2627,6 +2627,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
 
           <div className="setting-group">
+            <label className="setting-label">\ud83d\ude80 First-time setup</label>
+            <small className="setting-hint">
+              Choose again where HomeBot's thinking happens \u2014 on this PC or online \u2014 or
+              finish a setup you skipped. Nothing you have already configured is lost.
+            </small>
+            {/* "Skip setup" on the welcome screen used to be a one-way door:
+                someone who skipped before understanding the choice had no way
+                back to it, ever. This is the way back. */}
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('homebot:reopen-first-run'));
+                onClose?.();
+              }}
+            >
+              Run first-time setup again
+            </button>
+          </div>
+          <div className="setting-group">
             <label className="setting-label">\ud83e\ude7a System check</label>
             <small className="setting-hint">Re-run the first-run environment checks on demand: disk space, Ollama / n8n / Qdrant reachability, write permissions, and detected GPU.</small>
             {sysCheckError && <div className="perf-empty">{sysCheckError}</div>}

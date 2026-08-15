@@ -290,7 +290,7 @@ const QuizPanel: React.FC = () => {
                 onChange={e => setCustomTopic(e.target.value)}
               />
               <p className="quiz-source-hint">
-                Questions will be generated from your indexed documents. Drop study notes into the RAG panel first.
+                Questions come from notes you have given HomeBot. To add some: open Chat and drag your notes file into the message box — HomeBot reads it, and can quiz you on it here.
               </p>
             </div>
           )}
