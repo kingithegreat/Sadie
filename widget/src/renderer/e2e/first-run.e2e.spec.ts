@@ -18,9 +18,15 @@ async function completeFirstRunWizard(page: any, opts: { optInTelemetry?: boolea
   // Choose the run-on-this-PC path
   await modal.getByRole('button', { name: /On this PC/i }).click();
   await expect(page.getByText('Local Setup')).toBeVisible({ timeout: 5000 });
-  // Advance to done
+  // Advance to done. The heading there is now HONEST: "You're all set!" only
+  // when the local AI actually came up, "Ready when you are" otherwise — and
+  // whether it comes up differs by platform on CI runners (the Windows E2E
+  // stub reports it ready; linux/mac do not). This helper's job is reaching
+  // and finishing the done step, not asserting which outcome the machine
+  // earned, so it anchors on the telemetry consent control — present in both.
   await modal.getByRole('button', { name: /Next|Continue anyway/i }).click();
-  await expect(page.getByText("You're all set!")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/You're all set!|Ready when you are/)).toBeVisible({ timeout: 5000 });
+  await expect(modal.locator('.wizard-telemetry-consent')).toBeVisible({ timeout: 5000 });
   if (opts.optInTelemetry) {
     await modal.locator('.wizard-telemetry-consent input[type="checkbox"]').check();
   }
