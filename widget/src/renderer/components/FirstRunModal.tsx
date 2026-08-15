@@ -130,6 +130,11 @@ export default function FirstRunModal({
   const [cloudApiKey, setCloudApiKey] = useState('');
   const [cloudTesting, setCloudTesting] = useState(false);
   const [cloudOk, setCloudOk] = useState<boolean | null>(null);
+  // What the "done" step is allowed to claim. Cloud counts only when the key
+  // actually tested OK; local counts only when the local AI came up.
+  const setupComplete =
+    (setupPath === 'cloud' && cloudOk === true) ||
+    (setupPath === 'local' && localPhase === 'ready');
   const [cloudModel, setCloudModel] = useState('');
 
   useEffect(() => { setDraft(settings); }, [settings]);
@@ -675,10 +680,19 @@ export default function FirstRunModal({
 
           {step === 'done' && (
             <div className="wizard-step">
-              <div className="wizard-icon">🎉</div>
-              <h2 className="wizard-step-title">You're all set!</h2>
+              {/* "You're all set!" used to appear no matter what happened —
+                  including straight after Skip, or after the cloud step with
+                  nothing entered. A claim of success when nothing was set up
+                  costs the app the user's trust in the first minute; say what
+                  is actually true instead. */}
+              <div className="wizard-icon">{setupComplete ? '🎉' : '👋'}</div>
+              <h2 className="wizard-step-title">
+                {setupComplete ? "You're all set!" : 'Ready when you are'}
+              </h2>
               <p className="wizard-step-desc">
-                Try asking HomeBot anything — check the weather, search the web, read files, or just chat.
+                {setupComplete
+                  ? 'Try asking HomeBot anything — check the weather, search the web, read files, or just chat.'
+                  : 'Nothing was set up yet — that’s fine. HomeBot will use whatever it can find on this PC, and you can finish setting up any time from Settings.'}
               </p>
               <div className="wizard-suggestions">
                 <span className="wizard-suggestion-chip">What's the weather?</span>

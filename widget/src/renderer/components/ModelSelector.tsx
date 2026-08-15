@@ -529,10 +529,14 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
               </>
             )}
 
-            {/* No models at all */}
+            {/* No models at all. This used to read "No models found. Is Ollama
+                running?" — a question the user cannot answer, in vocabulary
+                they never chose. Say what is true and what to do. */}
             {installedModelInfos.length === 0 && !customLLM?.enabled && (
               <div className="model-option-empty">
-                No models found. Is Ollama running?
+                No AI models are available yet. Use the ▶ Start button at the top of
+                the window to launch the AI on this PC, or add an online service in
+                Settings.
               </div>
             )}
 

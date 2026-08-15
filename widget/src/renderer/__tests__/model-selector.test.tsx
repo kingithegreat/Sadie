@@ -139,11 +139,11 @@ describe('ModelSelector — dropdown', () => {
     expect(screen.getByText(/Available to Download/)).toBeInTheDocument();
   });
 
-  test('shows no-models message when Ollama is offline', async () => {
+  test('the empty state offers an action rather than a question', async () => {
     mockListOllamaModels.mockResolvedValue({ success: false, models: [] });
     await renderSelector();
     await act(async () => { fireEvent.click(getMainBtn()); });
-    expect(screen.getByText(/No models found/)).toBeInTheDocument();
+    expect(screen.getByText(/No AI models are available yet/)).toBeInTheDocument();
   });
 });
 

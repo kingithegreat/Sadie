@@ -306,6 +306,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // show first-run onboarding modal if enabled
   const [firstRunOpen, setFirstRunOpen] = useState(false);
 
+  // "Skip setup" used to be a one-way door: the wizard never came back, and a
+  // person who skipped before understanding what setup does had no path to it
+  // except reinstalling. Settings raises this event to reopen it on demand.
+  useEffect(() => {
+    const reopen = () => setFirstRunOpen(true);
+    window.addEventListener('homebot:reopen-first-run', reopen);
+    return () => window.removeEventListener('homebot:reopen-first-run', reopen);
+  }, []);
+
   useEffect(() => {
     if (isHydrated && settings?.firstRun) {
       logDebug('[Renderer] Opening first-run modal - isHydrated:', isHydrated, 'firstRun:', settings?.firstRun);
@@ -407,8 +416,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     const ollamaUnsub = window.electron.onOllamaStatus?.((data) => {
       if (!data.online) {
         if (ollamaToastRef.current) dismissToast(ollamaToastRef.current);
+        // Was: "Ollama not running — start Ollama to use local models.
+        // (http://...)" — a product name the user never chose, a raw URL they
+        // cannot act on, and no way forward. The ▶ Start button already sits in
+        // the header (OllamaBadge); point there.
         ollamaToastRef.current = addToast(
-          `Ollama not running — start Ollama to use local models. (${data.url})`,
+          'The AI on this PC isn’t running, so HomeBot can’t answer privately right now. Use the ▶ Start button at the top of the window to launch it.',
           'warning',
           0
         );

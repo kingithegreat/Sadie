@@ -120,13 +120,18 @@ export const MediaStudioPanel: React.FC = () => {
     }
   };
 
-  /** Stages that call a model or the TTS service — the slow ones. */
-  const stageAction = (j: MediaJob): { label: string; action: 'script' | 'narrate' } | null => {
+  /** Stages that call a model, the TTS service or ffmpeg — the slow ones. */
+  const stageAction = (j: MediaJob): { label: string; action: 'script' | 'narrate' | 'render' } | null => {
     if (j.state === 'idea' || j.state === 'researching' || j.state === 'needs_revision') {
       return { label: 'Write script', action: 'script' };
     }
     if (j.state === 'script_draft' || j.state === 'script_qa') {
       return { label: 'Record narration', action: 'narrate' };
+    }
+    // Rendering used to be reachable only by asking in chat — the panel walked
+    // a video all the way to media_production and then went quiet.
+    if (j.state === 'media_production') {
+      return { label: 'Make the video', action: 'render' };
     }
     return null;
   };

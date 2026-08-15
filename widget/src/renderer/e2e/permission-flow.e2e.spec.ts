@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
+import { dismissFirstRun } from './helpers/firstRun';
 
 function makeTempProfile() {
   const base = path.join(os.tmpdir(), `homebot-e2e-${Date.now()}`);
@@ -19,6 +20,9 @@ test('permission escalation: Allow once, Always allow, persistence across restar
 
   const { app, page } = await launchElectronApp(env, tmp);
     await waitForAppReady(page);
+  // A fresh profile shows the first-run modal over everything; racing past it
+  // is how document-summary kept the e2e gate red for 28 runs.
+  await dismissFirstRun(page);
 
   // Reset permissions to defaults
   await page.evaluate(async () => { await (window as any).electron.resetPermissions?.(); });
@@ -153,6 +157,9 @@ test('no permission modal when permissions already allowed', async () => {
 
   const { app, page } = await launchElectronApp(env, tmp);
     await waitForAppReady(page);
+  // A fresh profile shows the first-run modal over everything; racing past it
+  // is how document-summary kept the e2e gate red for 28 runs.
+  await dismissFirstRun(page);
 
   // Ensure settings explicitly allow the needed permissions
   await page.evaluate(async () => {
