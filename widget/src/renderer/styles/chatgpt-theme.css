@@ -183,29 +183,13 @@ body {
    .app-container is `grid-template-rows: auto auto 1fr auto`; anything left in
    flow claims a track and shifts every row below it.
 
-   A later, more targeted rule does NOT win: each :not() contributes the
-   specificity of its argument, so this selector is (0,12,0), while
-   `.app-container > .toast-container` is (0,2,0). 848f519 tried to fix the
-   toast row that way and the declaration was silently overridden — measured
-   with overlay-cascade-probe, which reported `.toast-container
-   position=relative` months after the "fix". If an element stays a child of
-   .app-container, its class must be added here as well as given its own
-   positioned rule.
-
-   THE OTHER MECHANISM, and the one to prefer for overlays: leave the subtree.
-   An element portalled to document.body is not a child of .app-container, so
-   this selector cannot match it at any specificity and no exclusion is needed.
-   Thirteen overlays now do that via components/anchoredOverlay.tsx — every
-   `position: fixed` class in the app except the five already listed here.
-   Sweeping the live cascade found 13 of 18 captured, several of them added
-   long after this rule was written and silently broken from birth.
-
-   Which is the point: this list is a blocklist, so anything new is captured by
-   DEFAULT and fails silently — nothing goes red when a rule loses a specificity
-   contest. It is the right tool for an element that must genuinely stay in this
-   subtree (.floating-feature-buttons is positioned relative to the app frame,
-   so it belongs here). For anything that merely needs to float above the app,
-   portal it and do not extend this list. */
+   This list is the only mechanism that works. A later, more targeted rule does
+   NOT win: each :not() contributes the specificity of its argument, so this
+   selector is (0,12,0), while `.app-container > .toast-container` is (0,2,0).
+   848f519 tried to fix the toast row that way and the declaration was silently
+   overridden — measured with overlay-cascade-probe, which reported
+   `.toast-container position=relative` months after the "fix". Add the class
+   here as well as writing its own positioned rule. */
 .app-container > *:not(.app-header):not(.widget-titlebar):not(.expanded-titlebar):not(.settings-overlay):not(.confirmation-overlay):not(.first-run-overlay):not(.sidebar-backdrop):not(.conversation-sidebar):not(.drop-overlay):not(.toast-container):not(.floating-feature-buttons) {
   position: relative;
   z-index: 1;
@@ -613,13 +597,10 @@ body {
   opacity: 0.8;
 }
 
-/* Portalled to document.body and positioned by useAnchoredPosition — see
-   anchoredOverlay.tsx. It was `position: absolute; top: 60px; right: 16px`
-   inside .app-header (overflow: hidden), which clipped it to 0px of visible
-   height. No `top`/`right` here: JS owns the coordinates now, and a CSS offset
-   on top of them shifts the panel off its anchor. */
 .backend-popover {
-  position: fixed;
+  position: absolute;
+  top: 60px;
+  right: 16px;
   min-width: min(320px, 90vw);
   max-width: min(520px, 95vw);
   max-height: 40vh;
@@ -1266,11 +1247,10 @@ body {
   position: relative;
 }
 
-/* Portalled and positioned by useAnchoredPosition — see anchoredOverlay.tsx.
-   Was `position: absolute; bottom: 100%`, which .messages-container clipped
-   whenever the message sat near the top of the scroller. */
 .reaction-picker {
-  position: fixed;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
   display: flex;
   gap: 2px;
   padding: 4px;
@@ -2739,9 +2719,10 @@ body {
 
 /* ── Toast Notifications ── */
 .toast-container {
-  /* 44px, not 16px, so a toast clears the titlebar instead of covering the
-     window controls and the app name. Measured at 37px; #155 found this on the
-     in-flow version and it applies just the same to the portalled one. */
+  /* 44px, not 16px, so a toast clears the titlebar rather than covering the
+     window controls and the app name. Measured: titlebar bottom at 37px, toast
+     top now 44. #155 found this on the in-flow version; it applies just the
+     same once ToastContainer portals to document.body. */
   position: fixed; top: 44px; right: 16px; z-index: 10000;
   display: flex; flex-direction: column; gap: 8px; pointer-events: none;
   max-width: 380px;
@@ -4147,9 +4128,9 @@ body {
   z-index: 10000;
   min-width: 180px;
   /* The conversation menu carries ~14 items and ran the full height of the
-     window, leaving Delete flush against the bottom edge. Bounding the height
-     also makes ContextMenu's own viewport clamp reliable, since it clamps
-     against the measured height. */
+     window, leaving Delete flush against the bottom edge. Bounding it also
+     makes ContextMenu's own viewport clamp reliable, since that clamps against
+     the measured height. */
   max-height: min(70vh, 520px);
   overflow-y: auto;
   background: oklch(10% 0.008 250 / 0.95);
@@ -5939,21 +5920,11 @@ body {
 }
 
 /* ── Toast notifications ── */
-/* `.toast-item`, not `.toast`. There is no element with class `toast` anywhere
-   in the app — ToastContainer renders .toast-container > .toast-item, with
-   .toast-icon / .toast-message / .toast-close inside. So this override matched
-   nothing and light mode kept the dark-theme `.toast-item` background:
-
-     background  oklch(0.09 …)   near-black
-     color       oklch(0.18 …)   near-black   (var(--text-primary), light theme)
-
-   Measured on a real toast fired through the IPC path. Every notification in
-   light mode — which is the default — was dark text on a dark panel. The fix
-   was sitting right here the whole time, aimed one class name to the left.
-
-   A selector that matches nothing looks exactly like a selector that is
-   satisfied; nothing goes red either way. Same shape as the toast fix that lost
-   a specificity contest and the `:not()` blocklist above. */
+/* `.toast-item`, not `.toast`. Nothing in the app has class `toast` —
+   ToastContainer renders .toast-container > .toast-item. So this override
+   matched nothing and light mode kept the dark panel: background oklch(0.09),
+   text oklch(0.18). Measured lightness gap 0.09 -> 0.82 after the fix. Every
+   notification in the default theme was dark text on a dark box. */
 [data-theme="light"] .toast-item {
   background: oklch(100% 0 0);
   border-color: oklch(0% 0 0 / 0.08);
@@ -9712,25 +9683,38 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   height: 2rem;
 }
 
-/* Toasts must not consume a grid row.
+/* [DEAD as of the portal change — kept, not deleted, because deleting it has
+   now caused the same merge conflict twice. ToastContainer portals to
+   document.body, so `.app-container > .toast-container` matches nothing. The
+   rule that actually applies is `.toast-container` further up, which carries
+   the 44px measured below. If you are reading this while adding a toast rule,
+   add it there.]
+
+   Toasts must not consume a grid row.
    .app-container is `grid-template-rows: auto auto 1fr auto`, sized for
-   titlebar / header / content / footer. .toast-container was a real child, so
-   whenever a toast was on screen it TOOK row 1 and shifted everything down one.
-
-   There used to be a `.app-container > .toast-container { position: absolute }`
-   rule here to fix that, and it worked when it was written. The blanket
-   `.app-container > *:not(...)` rule further up was added later at (0,10,0) and
-   silently beat it — that override is only (0,2,0) — so the fix quietly stopped
-   applying while its comment went on claiming otherwise. Measured before this
-   change: the header sat at y=37 normally and y=83 with a toast up, so the
-   whole UI jolted 46px on every "Copied to clipboard" and back again when it
-   expired.
-
-   ToastContainer now portals to document.body, which puts it out of
-   .app-container entirely, so no descendant rule can reach it and the base
-   `.toast-container { position: fixed }` above applies as written. The old
-   override is deleted rather than given more specificity: another rule can
-   always outrank it later, and this is the second time that has happened. */
+   titlebar / header / content / footer. .toast-container is a real child, so
+   whenever a toast was on screen it TOOK row 1 and shifted everything down one:
+   the header landed in the 1fr row (measured at 451px instead of 134px) and the
+   mode panel dropped into the trailing auto row at the bottom of the window.
+   Both symptoms, one cause — the earlier align-content fix only stopped the
+   header from looking stretched.
+   Taking the overlay out of flow puts every real row back where the template
+   intends. pointer-events is restored on the toasts themselves so they stay
+   dismissable. */
+.app-container > .toast-container {
+  position: absolute;
+  /* Clear the titlebar (37px measured) rather than starting at 0. While the
+     overlay was stuck in flow this was invisible; once it genuinely floated,
+     every toast landed on top of the window controls and the app name. */
+  top: 44px;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.app-container > .toast-container > * {
+  pointer-events: auto;
+}
 
 /* ── Tooltip ──────────────────────────────────────────────────────────────
    Hover help that also appears on keyboard focus. The anchor is inline-flex
@@ -9770,6 +9754,197 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 @keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .tooltip-bubble { animation: none; }
+}
+
+/* ── Delete confirmation (Automation Center) ───────────────────────────────
+   Fixed, not absolute: .app-container is a grid, and an absolutely-positioned
+   child of it is still subject to the blanket `position: relative` rule near
+   the top of this file. This dialog is mounted inside the panel, so it takes
+   itself out of that argument entirely. */
+.automation-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: oklch(0% 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.automation-confirm {
+  width: min(420px, 100%);
+  padding: 22px 24px;
+  border-radius: 14px;
+  background: var(--bg-panel);
+  border: 1px solid oklch(100% 0 0 / 0.1);
+  box-shadow: 0 24px 60px oklch(0% 0 0 / 0.5);
+}
+
+.automation-confirm h3 {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.automation-confirm p {
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.automation-confirm-blocked {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: oklch(60% 0.2 25 / 0.12);
+  border: 1px solid oklch(60% 0.2 25 / 0.3);
+  color: var(--text-primary) !important;
+}
+
+.automation-confirm .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.automation-confirm .btn-danger {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid oklch(60% 0.2 25 / 0.45);
+  background: oklch(55% 0.2 25 / 0.9);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.automation-confirm .btn-danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   DEPTH PASS
+
+   The app was reading flat: a near-black field, surfaces filled with one solid
+   colour, and nothing suggesting a light source. Everything below adds depth
+   without changing a single dimension — no size, spacing or position is touched,
+   only background, border and shadow. That is deliberate: layout here is grid
+   rows that shift each other when disturbed, so a cosmetic pass has no business
+   near them.
+
+   Appended rather than edited in place so each rule layers over the base it
+   refines, and so the whole pass can be removed by deleting one block.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ambient ground ────────────────────────────────────────────────────────
+   Two very low-alpha washes in the brand hue, so the dark field has a direction
+   to it instead of being uniformly black. background-image only, so the base
+   background-color keeps doing its job underneath. */
+.app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(65% 0.18 250 / 0.09), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(70% 0.13 215 / 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Let the wash through the chat surface: --bg-chat and --bg-main are within a
+   percent of each other, so nothing changes except that the ground shows. */
+.chat-interface {
+  background-color: transparent;
+}
+
+/* ── Surfaces ──────────────────────────────────────────────────────────────
+   A top-lit gradient and a one-pixel inner highlight along the top edge. This
+   is what separates a surface that looks placed on the page from one that looks
+   painted onto it. */
+.daily-card,
+.automation-card,
+.template-card {
+  background-image: linear-gradient(180deg, oklch(100% 0 0 / 0.05), oklch(100% 0 0 / 0.012));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.07),
+    0 6px 20px oklch(0% 0 0 / 0.26);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.daily-card:hover,
+.automation-card:hover,
+.template-card:hover {
+  border-color: oklch(100% 0 0 / 0.13);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.09),
+    0 10px 28px oklch(0% 0 0 / 0.34);
+  transform: translateY(-1px);
+}
+
+/* ── The active mode ───────────────────────────────────────────────────────
+   The current tab was distinguished only by a slightly lighter fill. Giving it
+   the brand colour makes it the one obviously-lit thing in the header. */
+.mode-btn.active {
+  background-image: linear-gradient(180deg, oklch(65% 0.18 250 / 0.22), oklch(65% 0.18 250 / 0.10));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.12),
+    0 2px 10px oklch(65% 0.18 250 / 0.22);
+}
+
+/* ── The composer, when you are in it ──────────────────────────────────────
+   A focus state on the panel as a whole rather than only the textarea, so the
+   thing you are typing into is visibly live. */
+.input-box:focus-within {
+  border-color: oklch(65% 0.18 250 / 0.45);
+  box-shadow:
+    0 0 0 1px oklch(65% 0.18 250 / 0.22),
+    0 8px 32px oklch(65% 0.18 250 / 0.14);
+}
+
+/* Send stays quiet until it can actually do something, then it lights up. */
+.send-button:not(:disabled) {
+  background-image: linear-gradient(180deg, var(--homebot-blue-300), var(--homebot-blue-500));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.22),
+    0 2px 10px oklch(55% 0.2 255 / 0.32);
+  color: #fff;
+}
+
+.send-button:not(:disabled):hover {
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.28),
+    0 4px 16px oklch(55% 0.2 255 / 0.45);
+}
+
+/* ── Light theme ───────────────────────────────────────────────────────────
+   The same moves inverted: on white, depth comes from shadow rather than from
+   an inner highlight, and the washes have to be far weaker to stay tasteful. */
+[data-theme="light"] .app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(65% 0.18 250 / 0.07), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(70% 0.13 215 / 0.05), transparent 60%);
+}
+
+[data-theme="light"] .daily-card,
+[data-theme="light"] .automation-card,
+[data-theme="light"] .template-card {
+  background-image: linear-gradient(180deg, oklch(100% 0 0 / 0.9), oklch(100% 0 0 / 0.55));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.9),
+    0 4px 16px oklch(30% 0.02 250 / 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-card,
+  .automation-card,
+  .template-card {
+    transition: none;
+  }
+  .daily-card:hover,
+  .automation-card:hover,
+  .template-card:hover {
+    transform: none;
+  }
 }
 
 /* ── Confirm before destroying something ──────────────────────────────────

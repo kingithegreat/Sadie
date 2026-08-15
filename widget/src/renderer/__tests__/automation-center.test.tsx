@@ -196,27 +196,25 @@ describe('AutomationCenter — automation controls', () => {
     expect(runAutomation).toHaveBeenCalledWith({ id: 'a1' });
   });
 
-  // 🗑 sits a few pixels from ▶ Run and used to delete outright on one click.
-  // It now asks first, so these tests drive the confirmation.
-  test('🗑 delete button asks first, then removes the automation', async () => {
+  test('delete asks before removing anything', async () => {
+    const deleteAutomation = jest.fn().mockResolvedValue({ success: true });
     setupElectron({
       loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
+      deleteAutomation,
     });
     await act(async () => { render(<AutomationCenter />); });
     await act(async () => {
       fireEvent.click(screen.getByTitle('Delete'));
     });
 
-    // Still there — and the dialog names it and says the change is permanent.
+    // The guard: the click opens a prompt and touches nothing. This button sits
+    // beside Run in a row of small icons, and the action cannot be undone.
+    expect(deleteAutomation).not.toHaveBeenCalled();
     expect(screen.getByText('Daily Backup')).toBeInTheDocument();
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
-
-    await act(async () => { fireEvent.click(screen.getByText('Delete it')); });
-    expect(screen.queryByText('Daily Backup')).toBeNull();
   });
 
-  test('cancelling the delete keeps the automation', async () => {
+  test('confirming the prompt removes the automation', async () => {
     const deleteAutomation = jest.fn().mockResolvedValue({ success: true });
     setupElectron({
       loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
@@ -224,10 +222,55 @@ describe('AutomationCenter — automation controls', () => {
     });
     await act(async () => { render(<AutomationCenter />); });
     await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
-    await act(async () => { fireEvent.click(screen.getByText('Cancel')); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }));
+    });
+
+    expect(deleteAutomation).toHaveBeenCalledWith({ id: 'a1', force: false });
+    expect(screen.queryByText('Daily Backup')).toBeNull();
+  });
+
+  test('cancelling the prompt leaves the automation alone', async () => {
+    const deleteAutomation = jest.fn().mockResolvedValue({ success: true });
+    setupElectron({
+      loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
+      deleteAutomation,
+    });
+    await act(async () => { render(<AutomationCenter />); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Cancel/i }));
+    });
 
     expect(deleteAutomation).not.toHaveBeenCalled();
     expect(screen.getByText('Daily Backup')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  test('a refused delete keeps the automation and offers to force it', async () => {
+    const deleteAutomation = jest.fn().mockResolvedValue({
+      success: false,
+      error: 'still has an n8n workflow (wf-9) and it could not be removed',
+    });
+    setupElectron({
+      loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
+      deleteAutomation,
+    });
+    await act(async () => { render(<AutomationCenter />); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Delete$/ })); });
+
+    // Main kept it on purpose; the row must still be there and the reason shown.
+    expect(screen.getByText('Daily Backup')).toBeInTheDocument();
+    // The workflow id only appears in main's message, so this pins the reason
+    // reaching the user rather than the dialog's own generic warning line.
+    expect(screen.getByText(/wf-9/)).toBeInTheDocument();
+
+    // The second press is the override, and it says so.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Delete anyway/i }));
+    });
+    expect(deleteAutomation).toHaveBeenLastCalledWith({ id: 'a1', force: true });
   });
 
   test('shows error when toggleAutomation throws', async () => {
@@ -249,7 +292,9 @@ describe('AutomationCenter — automation controls', () => {
     });
     await act(async () => { render(<AutomationCenter />); });
     await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
-    await act(async () => { fireEvent.click(screen.getByText('Delete it')); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }));
+    });
     expect(screen.getByText('Failed to delete automation')).toBeInTheDocument();
   });
 });

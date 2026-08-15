@@ -60,7 +60,7 @@ import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
-import { createAndActivateWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
+import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
 import { parseQuizBatch, dedupeQuestions, buildAvoidClause, ParsedQuizQuestion } from '../../../src/quiz/generate';
 import {
@@ -2041,10 +2041,49 @@ try {
     return { success: true };
   }));
 
-  ipcMain.handle('homebot:delete-automation', async (_event, data: { id: string }) => {
-    const automations = readAutomations().filter((a: any) => a.id !== data.id);
-    writeAutomations(automations);
-    return { success: true };
+  /**
+   * Delete an automation, and the n8n workflow it deployed.
+   *
+   * This used to filter the array and write the file. The workflow stayed live
+   * in n8n with its own trigger, and nothing in HomeBot pointed at it any more,
+   * so it kept firing invisibly and could only be found by opening n8n. The id
+   * needed to remove it was already stored on the record.
+   *
+   * If n8n refuses, the RECORD IS KEPT. Deleting it while the workflow survives
+   * is what strands the workflow — the same reasoning as media_delete_job, which
+   * keeps a job whose files it could not remove. Better a delete the user has to
+   * repeat than an orphan they cannot see.
+   */
+  ipcMain.handle('homebot:delete-automation', async (_event, data: { id: string; force?: boolean }) => {
+    const automations = readAutomations();
+    const auto = automations.find((a: any) => a.id === data.id);
+    if (!auto) return { success: false, error: 'Automation not found' };
+
+    let workflowWarning: string | undefined;
+    if (auto.n8nWorkflowId) {
+      try {
+        await deleteWorkflow(auto.n8nWorkflowId);
+        console.log(`[Automation] Deleted n8n workflow ${auto.n8nWorkflowId} with "${auto.name}"`);
+      } catch (err: any) {
+        const message = err?.message || String(err);
+        if (!data.force) {
+          return {
+            success: false,
+            error:
+              `"${auto.name}" still has an n8n workflow (${auto.n8nWorkflowId}) and it could not be removed: ` +
+              `${message}. The automation has been kept so the workflow is not left running with nothing ` +
+              `pointing at it. Start n8n and try again, or delete it anyway to remove only the HomeBot side.`,
+            n8nWorkflowId: auto.n8nWorkflowId,
+          };
+        }
+        workflowWarning =
+          `Removed "${auto.name}", but its n8n workflow ${auto.n8nWorkflowId} could not be deleted (${message}). ` +
+          `It is still in n8n and will keep running until you remove it there.`;
+      }
+    }
+
+    writeAutomations(automations.filter((a: any) => a.id !== data.id));
+    return { success: true, warning: workflowWarning };
   });
 
   const MAX_TOOL_ROUNDS = 6;
@@ -2057,6 +2096,8 @@ try {
     // Track failure explicitly rather than sniffing the output text — a
     // legitimate LLM response that begins with "Error:" is not a failed run.
     let errored = false;
+    /** Set when an intended n8n run silently became a local one. */
+    let deployNote: string | undefined;
 
     // Auto-deploy to n8n if no webhook URL yet and n8n is reachable
     if (!auto.n8nWebhookUrl) {
@@ -2074,7 +2115,16 @@ try {
           if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
           console.log(`[Automation] Auto-deployed n8n workflow: ${wf.webhookUrl}`);
         }
-      } catch { /* n8n not available, fall through to local */ }
+      } catch (err: any) {
+        // Falling back to local tools is the right behaviour; doing it in
+        // silence was not. The card shows an n8n badge and the run reads as a
+        // normal success, so without this line the user has no way to learn
+        // that the automation they believe is running through n8n is not.
+        console.warn('[Automation] n8n auto-deploy failed, running locally:', err?.message || err);
+        deployNote =
+          `n8n was not reachable, so this ran on HomeBot's local tools instead ` +
+          `(${err?.message || err}).`;
+      }
     }
 
     // ── Pre-gather local tool data for automations that need system access ──
@@ -2221,6 +2271,10 @@ try {
     }
 
     if (!resultText) resultText = 'Automation completed but produced no output.';
+
+    // Prepend rather than append: the reason a run behaved differently belongs
+    // above the output, not after a wall of it.
+    if (deployNote) resultText = `${deployNote}\n\n${resultText}`;
 
     // Persist result
     const automations = readAutomations();
