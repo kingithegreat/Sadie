@@ -101,3 +101,26 @@ jobs:
             widget/test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             widget/traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
             widget/test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}/
+
+  # One context for branch protection to require, instead of nine.
+  #
+  # This suite ran on every PR for months while failing 28 of 30 runs, and
+  # nothing noticed — because no check derived from it could block a merge,
+  # and a gate that cannot block is decoration. Requiring all nine
+  # os×shard contexts individually would be brittle (renaming the matrix
+  # silently un-requires them); this job collapses the matrix to a single
+  # stable name.
+  #
+  # `if: always()` matters: without it, a cancelled or failed shard SKIPS this
+  # job, and a skipped check does not block a merge — the gate would wave
+  # through the exact failures it exists to stop.
+  e2e-all:
+    name: e2e-all
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: always()
+    steps:
+      - name: Every shard must have passed
+        run: |
+          echo "matrix result: ${{ needs.e2e.result }}"
+          test "${{ needs.e2e.result }}" = "success"
