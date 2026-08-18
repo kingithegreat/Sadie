@@ -45,8 +45,14 @@ test('the publishing switch exists and reaches the setting the state machine rea
   const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
   await waitForAppReady(page);
 
-  // Fail-closed to begin with: absent from a fresh profile.
-  expect(readSettings(tmp).mediaPublishingEnabled).toBeUndefined();
+  // Fail-closed to begin with.
+  //
+  // This used to assert the key was `undefined` on disk, which raced the app's
+  // own startup settings write: alone it read the file before that write and
+  // passed, in a full suite it read after and saw `false`. Absence from the
+  // file was never the property worth testing — "publishing is off" is, and
+  // `false` and absent both mean that.
+  expect(readSettings(tmp).mediaPublishingEnabled).not.toBe(true);
 
   await page.locator('button[aria-label="Settings"]').click();
   const dialog = page.locator('[role="dialog"][aria-label="Settings"]');
