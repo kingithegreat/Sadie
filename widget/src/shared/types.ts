@@ -531,6 +531,8 @@ export interface ElectronAPI {
   // this is not Optional/nullable — see the fix note where the stray
   // duplicate declaration further down used to claim otherwise.
   sdCppStatus?: () => Promise<{ ready: boolean; hasBinary: boolean; hasModel: boolean; dir: string; modelsDir: string }>;
+  sdCppAutoSetup?: () => Promise<{ success: boolean; message?: string; error?: string }>;
+  onSdCppSetupProgress?: (cb: (p: { phase: string; note: string; receivedMB?: number; totalMB?: number | null }) => void) => () => void;
   sdCppSetup?: () => Promise<{ success: boolean; message?: string; dir?: string; modelsDir?: string; instructions?: string[] }>;
   // Full system/connectivity diagnostics report
   runDiagnostics?: () => Promise<{ success: boolean; error?: string; [key: string]: any }>;

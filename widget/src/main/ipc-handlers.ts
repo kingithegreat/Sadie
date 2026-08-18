@@ -421,6 +421,24 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     };
   });
 
+  // One-click setup: downloads the engine and a model itself, streaming
+  // progress to the renderer. The manual homebot:sd-cpp:setup below remains as
+  // the fallback ("Show me how") and for anyone who prefers their own model.
+  ipcMain.handle('homebot:sd-cpp:auto-setup', async (e) => {
+    const { runAutoSetup, isSetupRunning } = await import('./sd-cpp-setup');
+    if (isSetupRunning()) return { success: false, error: 'Setup is already running.' };
+    try {
+      const message = await runAutoSetup((p) => {
+        try { e.sender.send('homebot:sd-cpp:setup-progress', p); } catch { /* window gone */ }
+      });
+      return { success: true, message };
+    } catch (err: any) {
+      const msg = err?.message || 'Setup failed.';
+      try { e.sender.send('homebot:sd-cpp:setup-progress', { phase: 'error', note: msg }); } catch {}
+      return { success: false, error: msg };
+    }
+  });
+
   ipcMain.handle('homebot:sd-cpp:setup', async () => {
     const dir = getSDCppDir();
     const modelsDir = require('path').join(dir, 'models');
@@ -437,8 +455,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     const instructions: string[] = [];
     if (!binary) {
       instructions.push(
-        `Download sd.exe from: https://github.com/leejet/stable-diffusion.cpp/releases`,
-        `Extract sd.exe into: ${dir}`
+        `Download the file ending in "win-cpu-x64.zip" from: https://github.com/leejet/stable-diffusion.cpp/releases`,
+        `Unzip ALL of it (sd-cli.exe needs the .dll files beside it) into: ${dir}`
       );
     }
     if (!model) {

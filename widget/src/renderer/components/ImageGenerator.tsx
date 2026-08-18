@@ -43,6 +43,27 @@ const ImageGenerator: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [sdCppStatus, setSdCppStatus] = useState<SDCppStatus | null>(null);
   const [setupInfo, setSetupInfo] = useState<string[] | null>(null);
+  // One-click setup progress. `note` is written for the user in main; show it
+  // verbatim rather than translating twice.
+  const [autoSetup, setAutoSetup] = useState<{ phase: string; note: string; receivedMB?: number; totalMB?: number | null } | null>(null);
+  const autoRunning = !!autoSetup && autoSetup.phase !== 'done' && autoSetup.phase !== 'error';
+
+  useEffect(() => {
+    const off = (window as any).electron?.onSdCppSetupProgress?.((p: any) => setAutoSetup(p));
+    return () => off?.();
+  }, []);
+
+  const handleAutoSetup = async () => {
+    setAutoSetup({ phase: 'resolving', note: 'Starting…' });
+    setSetupInfo(null);
+    try {
+      const res = await (window as any).electron?.sdCppAutoSetup?.();
+      if (res?.success) await refreshStatus();
+      else if (res?.error) setAutoSetup({ phase: 'error', note: res.error });
+    } catch (e: any) {
+      setAutoSetup({ phase: 'error', note: e?.message || 'Setup failed.' });
+    }
+  };
   const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(null);
 
   useEffect(() => {
@@ -180,13 +201,29 @@ const ImageGenerator: React.FC = () => {
               </span>
             </div>
             <div className="setup-actions">
-              <button type="button" className="setup-btn" onClick={handleSetupSDCpp}>
-                Show me how
+              <button
+                type="button"
+                className="setup-btn"
+                onClick={handleAutoSetup}
+                disabled={autoRunning}
+              >
+                {autoRunning ? 'Setting up…' : 'Set it up for me (about a 2 GB download)'}
               </button>
-              <button type="button" className="setup-btn secondary" onClick={refreshStatus}>
+              <button type="button" className="setup-btn secondary" onClick={handleSetupSDCpp} disabled={autoRunning}>
+                Show me how instead
+              </button>
+              <button type="button" className="setup-btn secondary" onClick={refreshStatus} disabled={autoRunning}>
                 I've done it — check again
               </button>
             </div>
+            {autoSetup && (
+              <div className={`setup-progress${autoSetup.phase === 'error' ? ' setup-progress--error' : ''}`} role="status" aria-live="polite">
+                {autoSetup.note}
+                {autoSetup.receivedMB != null && autoSetup.phase !== 'done' && autoSetup.phase !== 'error' && (
+                  <> {autoSetup.receivedMB}{autoSetup.totalMB ? ` of ${autoSetup.totalMB}` : ''} MB</>
+                )}
+              </div>
+            )}
             {setupInfo && (
               <div className="setup-instructions">
                 <strong>What to do:</strong>

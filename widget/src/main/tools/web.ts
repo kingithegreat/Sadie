@@ -1511,7 +1511,11 @@ export function getSDCppDir(): string {
 
 export function findSDCppBinary(): string | null {
   const dir = getSDCppDir();
-  for (const name of ['sd.exe', 'sd', 'stable-diffusion.exe', 'main.exe']) {
+  // 'sd-cli.exe' first: upstream renamed the binary (releases since 2026 ship
+  // sd-cli.exe + sd-server.exe, no sd.exe at all), which silently made the old
+  // manual instructions impossible to follow — found by a live probe of the
+  // actual latest release. Older names kept for existing installs.
+  for (const name of ['sd-cli.exe', 'sd.exe', 'sd', 'stable-diffusion.exe', 'main.exe']) {
     const p = path.join(dir, name);
     if (fs.existsSync(p)) return p;
   }
@@ -1533,27 +1537,46 @@ async function trySDCpp(prompt: string, width: number, height: number, steps: nu
 
   const outputPath = path.join(getSDCppDir(), `output-${Date.now()}.png`);
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const args = [
-        '-M', 'txt2img',
-        '-m', model,
-        '-p', prompt,
-        '-W', String(width),
-        '-H', String(height),
-        '--steps', String(steps),
-        '-o', outputPath,
-      ];
-      console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
-      const proc = childProcess.spawn(binary, args, { timeout: 300000 });
-      let stderr = '';
-      proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-      proc.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`sd.cpp exited with code ${code}: ${stderr.slice(0, 500)}`));
-      });
-      proc.on('error', reject);
+  const runOnce = (mode: string) => new Promise<void>((resolve, reject) => {
+    const args = [
+      '-M', mode,
+      '-m', model,
+      '-p', prompt,
+      '-W', String(width),
+      '-H', String(height),
+      '--steps', String(steps),
+      '-o', outputPath,
+    ];
+    console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
+    const proc = childProcess.spawn(binary, args, { timeout: 300000 });
+    let stderr = '';
+    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`sd.cpp exited with code ${code}: ${stderr.slice(0, 500)}`));
     });
+    proc.on('error', reject);
+  });
+
+  try {
+    // Upstream renamed the mode: current sd-cli.exe takes `img_gen`
+    // ([img_gen, adetailer, vid_gen, upscale, convert, metadata] per its own
+    // --help, checked against a live binary), while older sd.exe builds only
+    // understood `txt2img`. Try current first; an existing old install gets
+    // one retry in its own dialect rather than a permanent failure.
+    try {
+      await runOnce('img_gen');
+    } catch (firstErr: any) {
+      // Match only a rejected MODE ("invalid mode txt2img, must be one of
+      // [...]" — verified against the live binary). A broader match would also
+      // catch the missing-model error, whose output includes "Usage:", and
+      // burn a pointless retry in the wrong dialect.
+      if (/invalid mode|unknown mode|must be one of/i.test(String(firstErr?.message))) {
+        await runOnce('txt2img');
+      } else {
+        throw firstErr;
+      }
+    }
 
     if (fs.existsSync(outputPath)) {
       const buf = fs.readFileSync(outputPath);
