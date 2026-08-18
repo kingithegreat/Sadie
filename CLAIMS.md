@@ -16,6 +16,38 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 (No open claims as of this writing — Pro monetization Steps 1 & 2 are merged; see Notion ledger for history.)
 
+## Integration notes — 2026-08-15 session (read before your next PR)
+
+Five PRs merged today (#152, #162, #164, #165, #168). Four of them change the rules of the road
+for every session working here:
+
+1. **`e2e-all` is now a REQUIRED check** (branch protection has six contexts). Two consequences:
+   - **A branch created before #165 cannot merge** — it lacks the `e2e-all` job, the context never
+     reports, and the PR sits BLOCKED forever. Rebase onto or merge current main first.
+   - **Every bot-opened PR parks its `pull_request` runs at `action_required`** — silently; the
+     required check simply never appears. This is EVERY auto-opened PR, not just workflow-touching
+     ones. After the auto-PR appears, approve the held runs:
+     `gh api -X POST repos/kingithegreat/Sadie/actions/runs/<id>/approve`
+2. **Floating overlays: portal, don't blocklist.** `chatgpt-theme.css` has a
+   `.app-container > *:not(...)` rule at (0,12,0) that silently captures any non-excluded child's
+   `position: fixed` (13 of 18 overlay classes were captured and shipped broken). Use
+   `widget/src/renderer/components/anchoredOverlay.tsx` / `createPortal(document.body)`. Extend
+   the `:not()` list only for something that must genuinely stay a child of `.app-container`.
+3. **Dial `127.0.0.1:11434`, never `localhost:11434`.** Docker Desktop's model runner binds
+   `0.0.0.0:11434` with an empty model store and wins the IPv6 race — installed models read as
+   "not found". Found live on Aden's machine.
+4. **Changing the preload surface? Run `npm run docs:write`** (repo root) — `docs/api-reference.md`
+   is generated and the root CI job has a drift gate that goes red otherwise.
+
+Also useful: destructive UI actions go through `ConfirmDestructive.tsx` (button text names the
+consequence, never "OK"); upstream stable-diffusion.cpp renamed its binary to `sd-cli.exe` and its
+mode to `img_gen` (old names handled with fallbacks — don't reintroduce `sd.exe`/`txt2img`
+assumptions); live-engine verification tests are gated behind `HOMEBOT_LIVE=1` (see
+`media-pipeline.live.test.ts` for the pattern).
+
+Fuller narrative: the 2026-08-13→15 daily log in Aden's Ai-Brain vault, and the Notion Lessons &
+Playbook.
+
 ## Known non-duplicates
 
 Identifiers intentionally exported by more than one file (add the exact name, one per bullet, to suppress `check-duplicate-exports.mjs` false positives). Pre-registered from the existing codebase so a future file rename doesn't trip the check:
