@@ -22,6 +22,7 @@ import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 import { homebotWebhookHeaders } from './webhook-auth';
+import { homeDir } from './user-paths';
 import { ragSearch, ragSearchWarmup } from './tools/rag';
 // matchSkills moved here from skills-loader.ts — that file and skills.ts were
 // two parallel builds of the same feature (caught by the duplicate-export
@@ -3960,7 +3961,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const fileName = `${fileLabel}_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
               const now = new Date().toLocaleString();
               const fileContent = `Weather Report for ${location}\nGenerated: ${now}\n\n${weatherSummary.replace(/\*\*/g, '').replace(/🌤️|📊/g, '')}`;
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const desktopPath = require('path').join(HOME, 'Desktop', fileName);
               let writeSuccess = false;
               let writeError = '';
@@ -4004,7 +4005,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const nbaContent = `NBA ${isSeason ? 'Season Results' : 'Games Report'}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
               // Write to file
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const teamSuffix = teamQuery ? `_${teamQuery}` : '';
               const nbaFileName = isSeason ? `nba_season_results${teamSuffix}.txt` : `nba_games${teamSuffix}.txt`;
               const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
@@ -4063,7 +4064,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
 
               // Write to file — use explicit filename if provided
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const safeFileName = filename
                 ? filename.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt'
                 : topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
@@ -4142,7 +4143,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
               const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
               const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${surfSummary}`;
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const surfFilePath = require('path').join(HOME, 'Desktop', surfFileName);
               let surfWriteOk = false;
               try {
@@ -5056,7 +5057,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🌤️|🏄|📊/g, '')}`;
                   
                   // Step 2: Write file to Desktop
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const desktopPath = require('path').join(HOME, 'Desktop', fileName);
                   let writeSuccess = false;
                   let writeError = '';
@@ -5103,7 +5104,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
                   const nbaContent = `NBA ${isSeason ? 'Season Results' : 'Games Report'}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const teamSuffix = teamQuery ? `_${teamQuery}` : '';
                   const nbaFileName = isSeason ? `nba_season_results${teamSuffix}.txt` : `nba_games${teamSuffix}.txt`;
                   const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
@@ -5160,7 +5161,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const fileBody = synthesizedContent.trim() || enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '');
                   const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
 
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const safeFileName = filename
                     ? filename.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt'
                     : topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
@@ -5208,7 +5209,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
                   const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🏄|📊/g, '')}`;
 
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
                   const surfFilePath = require('path').join(HOME, 'Desktop', surfFileName);
                   let surfWriteOk = false;
