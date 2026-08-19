@@ -35,8 +35,19 @@ interface MediaJob {
   script?: string;
   /** Set once narration has been recorded; absolute path to the MP3. */
   narrationPath?: string;
+  /**
+   * Set once the render stage has produced a file; absolute path to the MP4.
+   *
+   * This arrived over IPC from the first day rendering existed and the panel
+   * dropped it, so the approval gate asked a person to approve a video they had
+   * no way to watch — while the render tool's own reply said "watch it before
+   * approving".
+   */
+  renderPath?: string;
   /** Measured from the audio, not estimated from word count. */
   durationSeconds?: number;
+  /** The id or link the platform gave it. Only ever set after publishing. */
+  videoId?: string;
   createdAt: string;
   updatedAt: string;
   history: MediaJobEvent[];
@@ -53,10 +64,17 @@ const NEXT_STAGE: Partial<Record<MediaJobState, MediaJobState>> = {
   media_production: 'render_qa',
   render_qa: 'awaiting_approval',
   approved: 'scheduled',
-  scheduled: 'published',
+  // `scheduled → published` is deliberately NOT here. Reaching `published`
+  // needs the id the platform assigned, which only the publish flow below
+  // collects — a generic "Move to published" set the state with no id, which is
+  // precisely the "looks published and is not" case the state machine warns
+  // about, and it left the double-publish guard (keyed on videoId) dead.
   published: 'analysing',
   needs_revision: 'script_draft',
 };
+
+/** States from which a video can be recorded as having gone out. */
+const PUBLISHABLE: MediaJobState[] = ['approved', 'scheduled'];
 
 const label = (s: string) => s.replace(/_/g, ' ');
 
@@ -91,6 +109,9 @@ export const MediaStudioPanel: React.FC = () => {
   const [feedLoading, setFeedLoading] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feed, setFeed] = useState<ParsedFeedView | null>(null);
+  /** Which job is currently being asked for its published link, if any. */
+  const [publishingFor, setPublishingFor] = useState<string | null>(null);
+  const [publishedLink, setPublishedLink] = useState('');
 
   const api = () => (window as any).electron;
 
@@ -160,6 +181,20 @@ export const MediaStudioPanel: React.FC = () => {
     }
   };
 
+  /**
+   * Record the video as published, with the link the user pastes back.
+   *
+   * Deliberately not an upload: HomeBot has no uploader, and pretending
+   * otherwise is what the old "Move to published" button did.
+   */
+  const markPublished = async (j: MediaJob) => {
+    const link = publishedLink.trim();
+    if (!link) return;
+    await run(j.id, () => api()?.mediaMarkPublished?.(j.id, link), 'Saving');
+    setPublishingFor(null);
+    setPublishedLink('');
+  };
+
   /** One episode → one ordinary job, via the shared composition. */
   const createFromEpisode = async (ep: FeedEpisode) => {
     await run('new', () => api()?.mediaCreate?.(
@@ -179,15 +214,30 @@ export const MediaStudioPanel: React.FC = () => {
           {j.format === 'long' ? 'long-form' : 'short'}
           {j.durationSeconds ? ` · ${j.durationSeconds}s recorded` : ''}
         </span>
-        {/* Hearing the narration is the only way to judge it. file:// works
-            because the renderer loads from disk in this app. */}
-        {j.narrationPath && (
+        {/* Seeing the video is the only way to judge it, and this panel is
+            where it gets approved. Once a render exists the video replaces the
+            audio player — the narration is inside it, so offering both is two
+            controls for one job. */}
+        {j.renderPath ? (
+          <video
+            className="ms-video"
+            controls
+            preload="metadata"
+            data-testid={`ms-video-${j.id}`}
+            src={`file:///${j.renderPath.replace(/\\/g, '/')}`}
+          />
+        ) : j.narrationPath ? (
+          /* Hearing the narration is the only way to judge it before there is
+             a picture. file:// works because the renderer loads from disk. */
           <audio
             className="ms-audio"
             controls
             preload="none"
             src={`file:///${j.narrationPath.replace(/\\/g, '/')}`}
           />
+        ) : null}
+        {j.videoId && (
+          <span className="ms-job-published">Published as {j.videoId}</span>
         )}
       </div>
       <span className={stateClass(j.state)}>
@@ -246,6 +296,51 @@ export const MediaStudioPanel: React.FC = () => {
           >
             {stageAction(j)!.label}
           </button>
+        ) : PUBLISHABLE.includes(j.state) ? (
+          /* Publishing asks for the link, because HomeBot does not upload.
+             The old button set the state to `published` and stopped, so the
+             app claimed to have published something it had never sent
+             anywhere — and with no id, the guard against publishing twice had
+             nothing to compare. */
+          publishingFor === j.id ? (
+            <span className="ms-publish">
+              <input
+                className="ms-input ms-publish-input"
+                placeholder="Paste the link or video id"
+                aria-label={`Link or video id for ${j.title}`}
+                value={publishedLink}
+                autoFocus
+                onChange={e => setPublishedLink(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') markPublished(j); }}
+              />
+              <button
+                className="ms-btn ms-btn--primary"
+                disabled={!publishedLink.trim()}
+                onClick={() => markPublished(j)}
+              >Save</button>
+              <button
+                className="ms-btn"
+                onClick={() => { setPublishingFor(null); setPublishedLink(''); }}
+              >Cancel</button>
+            </span>
+          ) : (
+            <>
+              {NEXT_STAGE[j.state] && (
+                <button
+                  className="ms-btn"
+                  onClick={() => run(j.id, () => api()?.mediaAdvance?.(j.id, NEXT_STAGE[j.state]!), 'Moving')}
+                >
+                  Move to {label(NEXT_STAGE[j.state]!)}
+                </button>
+              )}
+              <button
+                className="ms-btn ms-btn--primary"
+                onClick={() => { setPublishingFor(j.id); setPublishedLink(''); }}
+              >
+                Mark as published…
+              </button>
+            </>
+          )
         ) : NEXT_STAGE[j.state] ? (
           <button
             className="ms-btn"
@@ -255,6 +350,26 @@ export const MediaStudioPanel: React.FC = () => {
           </button>
         ) : (
           <span className="ms-job-terminal">no further steps</span>
+        )}
+        {/* Removing a video was chat-only, so the queue could only ever grow
+            and renders piled up on disk with nothing in the UI to clear them.
+            Irreversible, so it asks — the same rule the Reject button follows. */}
+        {busy !== j.id && publishingFor !== j.id && (
+          <button
+            className="ms-btn ms-btn--reject"
+            aria-label={`Delete ${j.title}`}
+            onClick={() => confirm({
+              title: `Delete “${j.title || 'this video'}”?`,
+              body: (
+                <p>
+                  This removes it from the list and deletes its files — narration,
+                  captions, scene images and the rendered video. It cannot be undone.
+                </p>
+              ),
+              confirmLabel: 'Delete it',
+              onConfirm: () => run(j.id, () => api()?.mediaDelete?.(j.id), 'Deleting'),
+            })}
+          >Delete</button>
         )}
       </div>
     </li>

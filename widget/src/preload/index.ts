@@ -747,6 +747,10 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:approve', id, note),
   mediaReject: async (id: string, revise: boolean, note?: string) =>
     ipcRenderer.invoke('homebot:media:reject', id, revise, note),
+  mediaMarkPublished: async (id: string, videoId: string, note?: string) =>
+    ipcRenderer.invoke('homebot:media:mark-published', id, videoId, note),
+  mediaDelete: async (id: string, keepFiles?: boolean) =>
+    ipcRenderer.invoke('homebot:media:delete', id, keepFiles),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),
