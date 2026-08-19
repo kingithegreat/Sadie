@@ -113,3 +113,39 @@ describe('SettingsPanel — privacy switch reachability', () => {
     expect(onSave.mock.calls[0][0].useCustomLLM).toBe(false);
   });
 });
+
+describe('SettingsPanel — privacy switch wording', () => {
+  beforeEach(mountElectron);
+  afterEach(() => { delete (window as any).electron; });
+
+  test('explains uncensored mode rather than telling you to set up what you already have', () => {
+    const { container } = render(
+      <SettingsPanel
+        settings={{ ...cloudConfigured, useCustomLLM: false, uncensoredMode: true } as any}
+        onSave={noop}
+        onClose={noop}
+      />
+    );
+    expect(container.textContent).toContain('Uncensored mode answers with the model on this PC');
+    expect(container.textContent).not.toContain('Set up an online AI under Advanced');
+  });
+
+  test('tells someone with no provider where to set one up', () => {
+    const { container } = render(
+      <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
+    );
+    expect(container.textContent).toContain('Set up an online AI under Advanced');
+  });
+
+  test('a switch that is already on stays operable even if the key has gone missing', () => {
+    const { container } = render(
+      <SettingsPanel
+        settings={{ ...cloudConfigured, openaiApiKey: '', customLLM: { ...cloudConfigured.customLLM, apiKey: '' } } as any}
+        onSave={noop}
+        onClose={noop}
+      />
+    );
+    // Cloud is on but unusable — the way back to local must not be disabled.
+    expect(privacySwitch(container)!.disabled).toBe(false);
+  });
+});

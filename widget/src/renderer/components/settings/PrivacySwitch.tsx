@@ -30,6 +30,11 @@ export default function PrivacySwitch() {
   const ready = resolveCloudLLM({ ...(localSettings as any), useCustomLLM: true });
   const canEnable = ready.active;
 
+  // Uncensored mode makes resolveCloudLLM report inactive by design — the
+  // toggle promises the local uncensored model answers. Without separating that
+  // case, someone who HAS set up a provider gets told to go and set one up.
+  const blockedByUncensored = !canEnable && !!localSettings.uncensoredMode;
+
   return (
     <div className="setting-group sp-privacy-switch">
       <label className="setting-label">Where your chats are answered</label>
@@ -53,7 +58,9 @@ export default function PrivacySwitch() {
           ? 'Your messages are sent to the online AI service you set up. Turn this off to keep every chat on this PC.'
           : canEnable
             ? 'Nothing you type leaves this PC. Turn this on to let HomeBot use the online AI you set up instead.'
-            : 'Nothing you type leaves this PC. Set up an online AI under Advanced if you want the option to use one.'}
+            : blockedByUncensored
+              ? 'Nothing you type leaves this PC. Uncensored mode answers with the model on this PC, so the online AI stays unused while it is on.'
+              : 'Nothing you type leaves this PC. Set up an online AI under Advanced if you want the option to use one.'}
       </small>
     </div>
   );

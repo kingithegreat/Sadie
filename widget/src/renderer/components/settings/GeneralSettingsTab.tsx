@@ -7,7 +7,6 @@
 
 import { useSettingsCtx } from './SettingsContext';
 
-
 export default function GeneralSettingsTab() {
   const {
     localSettings,
