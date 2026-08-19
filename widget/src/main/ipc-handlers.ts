@@ -951,6 +951,61 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('homebot:media:reject', async (_e, id: string, revise: boolean, note?: string) =>
     applyMediaTransition(id, revise ? 'needs_revision' : 'rejected', { by: 'human', humanDecision: true, note }));
 
+  // Record that a video went out, and where.
+  //
+  // `markPublished` was exported, unit-tested and called by nothing: the only
+  // route a user could reach was `advance(id, 'published')`, a plain transition
+  // that set the state and no id. That is the failure the state machine's own
+  // comment warns about — "a job that looks published and is not" — because
+  // without an id there is nothing to tell the two apart, and the idempotency
+  // guard (which keys on `videoId`) could never fire.
+  //
+  // HomeBot does not upload. There is no uploader in this codebase, and adding
+  // one needs Google OAuth client credentials that are not ours to hold. So the
+  // honest operation is "record that this went out, and where" — the user
+  // uploads, then pastes the link back. The guard then does real work: a second
+  // attempt is refused rather than silently overwriting the id of the copy
+  // already online.
+  ipcMain.handle('homebot:media:mark-published', async (_e, id: string, videoId: string, note?: string) => {
+    const { readJobs, writeJobs } = await import('./tools/media');
+    const { markPublished } = await import('./media-studio');
+    const { getSettings } = await import('./config-manager');
+    // Same kill switch as every other route into a publishing state.
+    const publishingEnabled = !!(getSettings() as any)?.mediaPublishingEnabled;
+    const jobs = readJobs();
+    const i = jobs.findIndex(j => j.id === id);
+    if (i < 0) return { ok: false, error: 'That video is no longer in the list.' };
+    try {
+      jobs[i] = markPublished(jobs[i], String(videoId || ''), {
+        by: 'human', humanDecision: true, note, publishingEnabled,
+      });
+      writeJobs(jobs);
+      return { ok: true, job: jobs[i] };
+    } catch (e: any) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // Deleting was chat-only. The panel could fill the disk with renders, scene
+  // images and narration and offered no way to remove any of it — so the one
+  // surface that shows you the queue was the one that could not shorten it.
+  // Goes through the tool handler so the containment check that keeps a bad id
+  // from deleting outside the media-assets root applies here too.
+  ipcMain.handle('homebot:media:delete', async (_e, id: string, keepFiles?: boolean) => {
+    const { mediaToolHandlers } = await import('./tools/media');
+    try {
+      const res: any = await mediaToolHandlers.media_delete_job(
+        { job: id, keepFiles: !!keepFiles },
+        { executionId: 'panel-delete' } as any,
+      );
+      return res?.success
+        ? { ok: true, message: String(res.result ?? '') }
+        : { ok: false, error: String(res?.error ?? 'Could not delete that video.') };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
   // ── Comprehensive first-run diagnostics ───────────────────────────────────
   // Runs disk-space, service-reachability, write-permissions, and GPU checks
   // in parallel. All checks are non-destructive and safe to call at any time.
