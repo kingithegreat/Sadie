@@ -35,7 +35,7 @@ jest.mock('electron', () => ({
   BrowserWindow: jest.fn(),
 }));
 
-import { classifyError } from '../message-router';
+import { classifyError } from '../router/error-recovery';
 
 // ── classifyError ───────────────────────────────────────────────────────────
 
