@@ -136,6 +136,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
   const newConversationRef = useRef<() => void>(() => {});
 
+  // The shortcut handler below is registered once, with [] deps, so it closes
+  // over the first render's empty `messages` forever. A ref is how the other
+  // shortcuts in that handler already reach current state.
+  const lastAssistantRef = useRef<string>('');
+  useEffect(() => {
+    lastAssistantRef.current = messages
+      .filter(m => m.role === 'assistant' && m.streamingState === 'finished')
+      .slice(-1)[0]?.content || '';
+  }, [messages]);
+
   // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -172,6 +182,18 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       } else if (e.ctrlKey && e.key === '0') {
         e.preventDefault();
         setMode('dashboard');
+      } else if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+        // The Shortcuts panel has advertised "Ctrl + Shift + C — Copy last
+        // response" while nothing in the app bound it: pressing it did nothing
+        // at all, and left whatever was already on the clipboard in place, so
+        // the next paste produced the wrong text.
+        //
+        // Both cases are tested because Caps Lock changes which one arrives.
+        // Plain Ctrl+C is deliberately untouched — that is ordinary text copy.
+        e.preventDefault();
+        if (lastAssistantRef.current) {
+          window.electron?.writeClipboard?.(lastAssistantRef.current);
+        }
       }
     };
     window.addEventListener('keydown', handler);
@@ -468,17 +490,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     };
   }, []);
 
-  // Listen for capture saved event from header (StatusIndicator)
-  useEffect(() => {
-    const onSaved = (e: Event) => {
-      const detail: any = (e as CustomEvent)?.detail;
-      if (detail?.path) {
-        setMessages(prev => [...prev, { id: newId(), role: 'system', content: `Saved capture: ${detail.path}`, createdAt: Date.now(), error: null }]);
-      }
-    };
-    window.addEventListener('homebot:capture-saved', onSaved as EventListener);
-    return () => window.removeEventListener('homebot:capture-saved', onSaved as EventListener);
-  }, [newId]);
+  // Removed: a listener for a 'homebot:capture-saved' DOM event that nothing in
+  // the codebase has ever dispatched. Its comment said the event came "from
+  // header (StatusIndicator)", and StatusIndicator has no such dispatch — the
+  // capture-logs feature it belonged to has no UI at any point in the chain, so
+  // the log bundle it was meant to announce cannot be produced from the app at
+  // all. Deleted rather than wired: the listener alone was telling the next
+  // reader that a feature exists, which cost this audit time to disprove.
 
   // Auto-generate conversation title after the first assistant reply finishes
   useEffect(() => {

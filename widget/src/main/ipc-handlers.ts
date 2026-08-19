@@ -1306,6 +1306,18 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
    */
   ipcMain.handle('homebot:save-conversation', async (_event, conversation: StoredConversation) => {
     try {
+      // The one place this setting is honoured, and until now it was honoured
+      // nowhere: `saveConversationHistory` was declared, defaulted to true,
+      // shipped to the renderer and written back to disk on every save — and no
+      // branch anywhere depended on it. Someone who set it to false still had
+      // every message written to conversation-history.json verbatim.
+      //
+      // Turning it off stops new writes. It deliberately does NOT delete what is
+      // already stored: erasing a user's history as a side effect of a
+      // preference change is not something a checkbox should do silently.
+      if (getSettings().saveConversationHistory === false) {
+        return { success: true, skipped: 'history-disabled' };
+      }
       const success = MemoryManager.saveConversation(conversation);
       return { success };
     } catch (err: any) {

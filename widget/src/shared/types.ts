@@ -225,6 +225,15 @@ export interface Settings {
    * cannot put a video on a channel until this is deliberately turned on.
    */
   mediaPublishingEnabled?: boolean;
+  /**
+   * Whether chats are written to conversation-history.json. Defaults to true.
+   *
+   * It was absent from this interface, which is why no control for it could be
+   * written: the renderer literally could not see the key. It existed in the
+   * main-process Settings, round-tripped through disk and IPC, and no code read
+   * it — so setting it to false saved every message anyway.
+   */
+  saveConversationHistory?: boolean;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
   // Per-tool permissions (keys are tool names)
