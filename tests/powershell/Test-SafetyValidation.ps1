@@ -1,9 +1,10 @@
 # ============================================================================
 # SafetyValidation.ps1 — standalone test runner
 # ============================================================================
-# Deliberately Pester-free. The repo's other PowerShell tests are written in
-# Pester 5 syntax ("Should -Be") while only Pester 3.4.0 is installed, so they
-# cannot execute. This runner needs nothing but Windows PowerShell.
+# Deliberately Pester-free: it needs nothing but Windows PowerShell, so it runs
+# on a fresh clone and on a CI runner without an Install-Module step. The box it
+# was written on has Pester 3.4.0, whose assertion syntax differs from Pester 5;
+# depending on neither keeps this gate runnable whichever is present.
 #
 # Usage:  powershell -NoProfile -ExecutionPolicy Bypass -File tests\powershell\Test-SafetyValidation.ps1
 # Exits non-zero on the first failing expectation, so it is CI-wirable.

@@ -32,6 +32,7 @@ import { looksMultiStep, buildAgenticSystemPrompt, formatStepProgress } from './
 import { shouldOfferBriefing, markBriefingDelivered, generateBriefing } from './morning-briefing';
 import { shouldOfferToolsForMessage } from '../shared/model-advisor';
 import { resolveCloudLLM } from '../shared/cloud-llm';
+import type { CloudLLMSettingsSlice } from '../shared/cloud-llm';
 
 const E2E = isE2E;
 const PACKAGED = isPackagedBuild;
@@ -695,22 +696,87 @@ export interface RecoveryHint {
   action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings';
   actionLabel?: string;
   model?: string;
+  /**
+   * Set only when the local model failed AND a cloud provider is already
+   * configured with a usable credential — i.e. the user could switch right now
+   * without typing anything. The renderer draws a second button from this.
+   *
+   * Absent means "do not offer it". The decision is made here, in the process
+   * that owns routing, because the renderer deriving it a second time from its
+   * own settings copy is the exact split-brain that shipped a lying model
+   * header twice (see shared/cloud-llm.ts).
+   *
+   * This never switches anything by itself. `useCustomLLM` is the privacy
+   * kill-switch: turning it on is the user pressing a labelled button, never a
+   * fallback HomeBot takes on their behalf.
+   */
+  cloudFallback?: { provider: string; model: string };
+}
+
+/**
+ * Would switching to the cloud actually work right now?
+ *
+ * Asks the same resolver the router uses, with `useCustomLLM` flipped on, so
+ * the offer appears only when the switch would genuinely produce an answer.
+ * A configured-but-keyless provider returns null — offering a button that
+ * cannot work is worse than not offering one.
+ *
+ * uncensoredMode is deliberately left as the user set it: with it on,
+ * resolveCloudLLM reports inactive, so no cloud offer is made. Routing an
+ * uncensored request to a hosted provider breaks that toggle's whole promise.
+ */
+function cloudFallbackOffer(settings: CloudLLMSettingsSlice | null | undefined): { provider: string; model: string } | undefined {
+  if (!settings) return undefined;
+
+  // Already on cloud? Then cloud is not the escape hatch from this failure.
+  const current = resolveCloudLLM(settings);
+  if (current.intended) return undefined;
+
+  const asIfEnabled = resolveCloudLLM({ ...settings, useCustomLLM: true });
+  if (!asIfEnabled.active || !asIfEnabled.config) return undefined;
+
+  return {
+    provider: asIfEnabled.config.provider,
+    model: asIfEnabled.config.model || '',
+  };
+}
+
+function settingsForRecovery(): CloudLLMSettingsSlice | null {
+  try {
+    return getSettings() as unknown as CloudLLMSettingsSlice;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Classify a stream error and produce an actionable hint for the renderer.
  * Attach the result as `recoveryHint` on the `homebot:stream-error` payload.
+ *
+ * `settingsOverride` exists for tests. Callers in production omit it so every
+ * existing call site gains the cloud offer without being edited — a recovery
+ * path only the newest call site reaches is a recovery path most failures
+ * never see.
  */
-export function classifyError(message: string, details?: string): RecoveryHint {
+export function classifyError(
+  message: string,
+  details?: string,
+  settingsOverride?: CloudLLMSettingsSlice | null,
+): RecoveryHint {
   const combined = `${message} ${details ?? ''}`.toLowerCase();
+  const settings = settingsOverride !== undefined ? settingsOverride : settingsForRecovery();
+  const cloudFallback = cloudFallbackOffer(settings);
 
   // Both services down (most specific — check first)
   if (combined.includes('both') && combined.includes('unavailable')) {
     return {
       service: 'ollama',
-      userMessage: "HomeBot can't reach the AI on this PC. Start it below, then send your message again.",
+      userMessage: cloudFallback
+        ? "HomeBot can't reach the AI on this PC. Start it below, or switch to the online AI you already set up."
+        : "HomeBot can't reach the AI on this PC. Start it below, then send your message again.",
       action: 'start-ollama',
       actionLabel: 'Retry',
+      cloudFallback,
     };
   }
 
@@ -767,9 +833,12 @@ export function classifyError(message: string, details?: string): RecoveryHint {
       // The renderer draws a StartOllamaButton directly beneath this. Telling
       // someone to open a terminal, next to a button that does it for them, is
       // the worst of both.
-      userMessage: "The AI on this PC isn't running. Start it below, then send your message again.",
+      userMessage: cloudFallback
+        ? "The AI on this PC isn't running. Start it below, or switch to the online AI you already set up."
+        : "The AI on this PC isn't running. Start it below, then send your message again.",
       action: 'start-ollama',
       actionLabel: 'Retry',
+      cloudFallback,
     };
   }
 
@@ -787,9 +856,15 @@ export function classifyError(message: string, details?: string): RecoveryHint {
   if (combined.includes('timeout') || combined.includes('etimedout') || combined.includes('timed out')) {
     return {
       service: 'unknown',
-      userMessage: 'That took too long to answer. The model may still be starting up — try again in a moment.',
+      // A timeout is not a stopped service, so Start Ollama is the wrong offer —
+      // but a model too slow to answer is exactly when the already-configured
+      // online AI is worth reaching for.
+      userMessage: cloudFallback
+        ? 'That took too long to answer. The model on this PC may still be starting up — try again, or switch to the online AI you already set up.'
+        : 'That took too long to answer. The model may still be starting up — try again in a moment.',
       action: 'retry',
       actionLabel: 'Retry',
+      cloudFallback,
     };
   }
 

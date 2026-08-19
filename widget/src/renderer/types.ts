@@ -31,6 +31,11 @@ export type ChatMessage = {
     action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings' | 'reattach-document';
     actionLabel?: string;
     model?: string;
+    /** Set by the main process only when a configured, usable cloud provider
+     *  exists — see RecoveryHint in main/message-router.ts. Its presence is the
+     *  whole permission to draw the "use the online AI" button; the renderer
+     *  must not re-derive it from its own settings copy. */
+    cloudFallback?: { provider: string; model: string };
   } | null;
   durationMs?: number;
 };
