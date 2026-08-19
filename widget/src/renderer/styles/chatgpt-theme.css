@@ -9699,6 +9699,26 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 
 .ms-engine-text { flex: 1 1 16rem; font-size: .88rem; }
 a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
+/* The rendered video, shown where it is approved. Capped by height rather
+   than width because shorts are 1080x1920 — sized by width, a portrait video
+   would push every other job off the screen. */
+.ms-video {
+  margin-top: .4rem;
+  max-width: 100%;
+  max-height: 15rem;
+  border-radius: 8px;
+  background: #000;
+}
+
+.ms-job-published {
+  font-size: .82rem;
+  color: var(--text-secondary);
+  margin-top: .25rem;
+  word-break: break-all;
+}
+
+.ms-publish { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+.ms-publish-input { min-width: 12rem; }
 
 /* [DEAD as of the portal change — kept, not deleted, because deleting it has
    now caused the same merge conflict twice. ToastContainer portals to

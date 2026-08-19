@@ -495,6 +495,15 @@ export interface ElectronAPI {
   onMediaFfmpegProgress?: (cb: (p: {
     phase: string; note: string; receivedMB?: number; totalMB?: number | null;
   }) => void) => () => void;
+  /**
+   * Record that a video went out, with the id or link the platform gave it.
+   * HomeBot does not upload — this is the user reporting back, which is what
+   * makes the "already published" guard able to fire.
+   */
+  mediaMarkPublished?: (id: string, videoId: string, note?: string) =>
+    Promise<{ ok: boolean; job?: any; error?: string }>;
+  mediaDelete?: (id: string, keepFiles?: boolean) =>
+    Promise<{ ok: boolean; message?: string; error?: string }>;
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
   licenseValidate?: () => Promise<LicenseActionResult>;

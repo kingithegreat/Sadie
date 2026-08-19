@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (172)** — `window.electron`
+**Preload methods (174)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1030,34 +1030,35 @@ licenseActivate           licenseDeactivate         licenseStatus             li
 listCustomLLMModels       listOllamaModels          listTools                 loadAutomations
 loadConversations         loadQuizProgress          maximizeWindow            mcpAddServer
 mcpGetStatus              mcpListServers            mcpRemoveServer           mcpToggleServer
-mediaAdvance              mediaApprove              mediaCreate               mediaFfmpegSetup
-mediaFfmpegStatus         mediaList                 mediaParseFeed            mediaReject
-mediaRun                  minimizeWindow            onAssistantToolActivity   onBatchSummary
-onBrowserState            onConfigRecovered         onConfirmationRequest     onConversationCompacted
-onHardwareProfileApplied  onHideWindow              onMediaFfmpegProgress     onMessage
-onModelFallback           onOllamaDownloadProgress  onOllamaStatus            onPermissionRequest
-onProactiveBriefing       onPullModelProgress       onReminderFired           onSdCppSetupProgress
-onShowWindow              onStreamChunk             onStreamEnd               onStreamError
-onSupervisorStatus        onTerminalExit            onTerminalOutput          onTitleUpdated
-onUpdateAvailable         onUpdateDownloaded        onUpdateProgress          onWidgetModeChanged
-openExternalUrl           openFile                  parseDocument             pullModel
-pullModelStream           ragClear                  ragIndex                  ragList
-readConsentLog            readDebugLogs             readPermissionAudit       readTelemetryEvents
-removeHideWindowListener  removeShowWindowListener  resetPermissions          resolveActiveModel
-restartApp                runAutomation             runDiagnostics            saveConversation
-saveQuizProgress          saveSettings              schedulerAdd              schedulerList
-schedulerRemove           schedulerToggle           sdCppAutoSetup            sdCppSetup
-sdCppStatus               searchConversations       sendConfirmationResponse  sendMessage
-sendPermissionResponse    sendStreamMessage         setActiveConversation     setAlwaysOnTop
-setUncensoredMode         showInFolder              skillsList                skillsOpenFolder
-startOllama               startSpeechRecognition    subscribeToStream         summarizeWebContent
-terminalClose             terminalCreate            terminalKill              terminalRun
-testN8nConnection         toggleWidgetMode          ttsSpeak                  ttsStop
-updateAutomation          updateMessage             workspaceList             workspaceRead
-workspaceRoot             workspaceSave             writeClipboard            writeDocument
+mediaAdvance              mediaApprove              mediaCreate               mediaDelete
+mediaFfmpegSetup          mediaFfmpegStatus         mediaList                 mediaMarkPublished
+mediaParseFeed            mediaReject               mediaRun                  minimizeWindow
+onAssistantToolActivity   onBatchSummary            onBrowserState            onConfigRecovered
+onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied  onHideWindow
+onMediaFfmpegProgress     onMessage                 onModelFallback           onOllamaDownloadProgress
+onOllamaStatus            onPermissionRequest       onProactiveBriefing       onPullModelProgress
+onReminderFired           onSdCppSetupProgress      onShowWindow              onStreamChunk
+onStreamEnd               onStreamError             onSupervisorStatus        onTerminalExit
+onTerminalOutput          onTitleUpdated            onUpdateAvailable         onUpdateDownloaded
+onUpdateProgress          onWidgetModeChanged       openExternalUrl           openFile
+parseDocument             pullModel                 pullModelStream           ragClear
+ragIndex                  ragList                   readConsentLog            readDebugLogs
+readPermissionAudit       readTelemetryEvents       removeHideWindowListener  removeShowWindowListener
+resetPermissions          resolveActiveModel        restartApp                runAutomation
+runDiagnostics            saveConversation          saveQuizProgress          saveSettings
+schedulerAdd              schedulerList             schedulerRemove           schedulerToggle
+sdCppAutoSetup            sdCppSetup                sdCppStatus               searchConversations
+sendConfirmationResponse  sendMessage               sendPermissionResponse    sendStreamMessage
+setActiveConversation     setAlwaysOnTop            setUncensoredMode         showInFolder
+skillsList                skillsOpenFolder          startOllama               startSpeechRecognition
+subscribeToStream         summarizeWebContent       terminalClose             terminalCreate
+terminalKill              terminalRun               testN8nConnection         toggleWidgetMode
+ttsSpeak                  ttsStop                   updateAutomation          updateMessage
+workspaceList             workspaceRead             workspaceRoot             workspaceSave
+writeClipboard            writeDocument
 ```
 
-**IPC channels, renderer → main (124)**
+**IPC channels, renderer → main (126)**
 
 ```
 homebot:__e2e_get_router_logs         homebot:__e2e_invoke_tool_batch
@@ -1093,8 +1094,9 @@ homebot:load-quiz-progress            homebot:mcp-add-server
 homebot:mcp-get-status                homebot:mcp-list-servers
 homebot:mcp-remove-server             homebot:mcp-toggle-server
 homebot:media:advance                 homebot:media:approve
-homebot:media:create                  homebot:media:ffmpeg-setup
-homebot:media:ffmpeg-status           homebot:media:list
+homebot:media:create                  homebot:media:delete
+homebot:media:ffmpeg-setup            homebot:media:ffmpeg-status
+homebot:media:list                    homebot:media:mark-published
 homebot:media:parse-feed              homebot:media:reject
 homebot:media:run                     homebot:message
 homebot:n8n-test-connection           homebot:open-browse
