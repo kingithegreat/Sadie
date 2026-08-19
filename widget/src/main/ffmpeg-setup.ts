@@ -44,8 +44,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import axios from 'axios';
 import { execFile } from 'child_process';
+import { makeDownloadIO } from './binary-download';
+import type { DownloadIO, ProgressFn, ReleaseAsset } from './binary-download';
 
 // ---- where it lives ---------------------------------------------------------
 
@@ -77,8 +78,6 @@ export function findManagedFfmpeg(dir: string = getFfmpegDir()): string | null {
 }
 
 // ---- resolution (pure, tested) ---------------------------------------------
-
-export interface ReleaseAsset { name: string; browser_download_url: string; size: number }
 
 /**
  * Choose the Windows build to download.
@@ -132,64 +131,25 @@ export interface FfmpegSetupProgress {
   totalMB?: number | null;
 }
 
-export type ProgressFn = (p: FfmpegSetupProgress) => void;
-
 // ---- IO seams (injectable for tests) ---------------------------------------
 
-export interface FfmpegSetupIO {
-  getJson(url: string): Promise<any>;
-  download(url: string, destPath: string, onBytes: (received: number, total: number | null) => void): Promise<void>;
-  extractZip(zipPath: string, intoDir: string): Promise<void>;
-  freeDiskGB(dir: string): number | null;
+/**
+ * The shared downloader plus the one thing only this module needs: proving the
+ * binary runs. `canRun` is not in DownloadIO because "did it work" is specific
+ * to what was installed — sd.cpp checks for a file, this runs `-version`.
+ */
+export interface FfmpegSetupIO extends DownloadIO {
   /** True when the binary at this path actually runs. */
   canRun(bin: string): Promise<boolean>;
 }
 
-const UA = { 'User-Agent': 'HomeBot video setup' };
-
-export const realIO: FfmpegSetupIO = {
-  async getJson(url) {
-    const res = await axios.get(url, { timeout: 30_000, headers: UA });
-    return res.data;
-  },
-  async download(url, destPath, onBytes) {
-    const tmp = `${destPath}.part`;
-    const res = await axios.get(url, {
-      responseType: 'stream', timeout: 60_000, headers: UA, maxRedirects: 10,
-    });
-    const total = Number(res.headers['content-length']) || null;
-    let received = 0;
-    await new Promise<void>((resolve, reject) => {
-      const out = fs.createWriteStream(tmp);
-      res.data.on('data', (chunk: Buffer) => { received += chunk.length; onBytes(received, total); });
-      res.data.on('error', reject);
-      out.on('error', reject);
-      out.on('finish', resolve);
-      res.data.pipe(out);
-    });
-    // A truncated download must never be renamed into place — findManagedFfmpeg
-    // accepts any ffmpeg.exe, and a half file would "work" until render time.
-    if (total && Math.abs(fs.statSync(tmp).size - total) > 1024) {
-      fs.unlinkSync(tmp);
-      throw new Error('The download stopped early — check the internet connection and try again.');
-    }
-    fs.renameSync(tmp, destPath);
-  },
-  async extractZip(zipPath, intoDir) {
-    await new Promise<void>((resolve, reject) => {
-      execFile('powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command',
-          `Expand-Archive -LiteralPath "${zipPath}" -DestinationPath "${intoDir}" -Force`],
-        { timeout: 300_000 },
-        (err, _o, stderr) => err ? reject(new Error(stderr || err.message)) : resolve());
-    });
-  },
-  freeDiskGB(dir) {
-    try {
-      const st = (fs as any).statfsSync(dir);
-      return (st.bavail * st.bsize) / 1024 ** 3;
-    } catch { return null; }
-  },
+/**
+ * Not exported: tests inject their own, and nothing outside this module has a
+ * reason to reach for it. Extraction gets a longer timeout than sd.cpp's — the
+ * ffmpeg archive is an order of magnitude larger.
+ */
+const realIO: FfmpegSetupIO = {
+  ...makeDownloadIO('HomeBot video setup', 300_000),
   canRun(bin) {
     return new Promise((resolve) => {
       execFile(bin, ['-version'], { timeout: 10_000 }, (err) => resolve(!err));
@@ -218,7 +178,7 @@ export function isFfmpegSetupRunning(): boolean { return running; }
  * second, and only the second is what the render stage needs.
  */
 export async function runFfmpegSetup(
-  onProgress: ProgressFn,
+  onProgress: ProgressFn<FfmpegSetupProgress>,
   io: FfmpegSetupIO = realIO,
   dir: string = getFfmpegDir(),
 ): Promise<string> {

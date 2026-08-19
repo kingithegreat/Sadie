@@ -26,8 +26,8 @@ import {
   runFfmpegSetup,
   findManagedFfmpeg,
   type FfmpegSetupIO,
-  type ReleaseAsset,
 } from '../ffmpeg-setup';
+import type { ReleaseAsset } from '../binary-download';
 import { findFfmpeg } from '../media-render';
 
 /** Real asset names from the BtbN/FFmpeg-Builds `latest` release. */
