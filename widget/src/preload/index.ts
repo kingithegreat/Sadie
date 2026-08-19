@@ -747,6 +747,13 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:approve', id, note),
   mediaReject: async (id: string, revise: boolean, note?: string) =>
     ipcRenderer.invoke('homebot:media:reject', id, revise, note),
+  mediaFfmpegStatus: async () => ipcRenderer.invoke('homebot:media:ffmpeg-status'),
+  mediaFfmpegSetup: async () => ipcRenderer.invoke('homebot:media:ffmpeg-setup'),
+  onMediaFfmpegProgress: (cb: (p: any) => void) => {
+    const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
+    ipcRenderer.on('homebot:media:ffmpeg-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:media:ffmpeg-progress', listener);
+  },
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),

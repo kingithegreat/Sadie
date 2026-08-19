@@ -671,7 +671,11 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       findFfmpeg, renderVideo, FFMPEG_MISSING_MESSAGE,
     } = await import('../media-render');
 
-    const ffmpeg = await findFfmpeg();
+    // The copy "Set it up for me" downloads lives in userData, not on PATH, so
+    // it has to be handed to the finder — otherwise the download succeeds and
+    // rendering still reports ffmpeg missing.
+    const { findManagedFfmpeg } = await import('../ffmpeg-setup');
+    const ffmpeg = await findFfmpeg(findManagedFfmpeg());
     // Not an error in the job's sense: nothing is wrong with the video, a tool
     // is missing from the machine. Leave the job where it is so rendering can
     // simply be retried once ffmpeg is there.

@@ -482,6 +482,19 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaReject?: (id: string, revise: boolean, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
+  /** Whether the video engine is usable, and whether HomeBot installed it. */
+  mediaFfmpegStatus?: () => Promise<{
+    ready: boolean;
+    path: string | null;
+    managed: boolean;
+    running: boolean;
+    supported: boolean;
+  }>;
+  /** Download and unpack the video engine. Progress arrives on onMediaFfmpegProgress. */
+  mediaFfmpegSetup?: () => Promise<{ ok: boolean; path?: string; message?: string; error?: string }>;
+  onMediaFfmpegProgress?: (cb: (p: {
+    phase: string; note: string; receivedMB?: number; totalMB?: number | null;
+  }) => void) => () => void;
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
   licenseValidate?: () => Promise<LicenseActionResult>;

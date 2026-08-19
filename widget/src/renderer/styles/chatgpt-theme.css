@@ -9683,6 +9683,23 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   height: 2rem;
 }
 
+/* The one-off video-engine download. Informational, not an error — nothing has
+   gone wrong yet, and colouring it red would say otherwise. */
+.ms-engine {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .6rem .75rem;
+  margin-bottom: .6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, oklch(60% 0.02 250 / 0.35));
+  background: var(--bg-secondary, oklch(50% 0.02 250 / 0.12));
+}
+
+.ms-engine-text { flex: 1 1 16rem; font-size: .88rem; }
+a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
+
 /* [DEAD as of the portal change — kept, not deleted, because deleting it has
    now caused the same merge conflict twice. ToastContainer portals to
    document.body, so `.app-container > .toast-container` matches nothing. The
