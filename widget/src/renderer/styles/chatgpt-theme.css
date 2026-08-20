@@ -4575,6 +4575,36 @@ body {
 .sp-section-toggle:hover { color: var(--accent-primary, #4a6cf7); background: oklch(100% 0 0 / 0.05); }
 .sp-section-arrow { font-size: 14px; width: 18px; display: inline-block; }
 
+/* Simple / Advanced view toggle — sits between the header and the body */
+.sp-view-toggle {
+  display: flex; gap: 4px; padding: 4px;
+  margin: 0 12px 4px; border-radius: var(--radius-sm);
+  background: oklch(100% 0 0 / 0.04);
+}
+.sp-view-btn {
+  flex: 1; padding: 8px 12px; border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: var(--transition-fast);
+}
+.sp-view-btn:hover { color: var(--text-primary); background: oklch(100% 0 0 / 0.05); }
+.sp-view-btn.active {
+  background: var(--accent-primary, #4a6cf7); color: #fff;
+}
+.sp-view-hint {
+  display: block; padding: 12px; margin-top: 4px;
+  border-top: 1px solid var(--border-light, #333);
+}
+
+/* The local-vs-cloud switch is the highest-stakes control here, so it reads as
+   a distinct block rather than one more row in a list. */
+.sp-privacy-switch {
+  border: 1px solid var(--border-light, #333);
+  border-radius: var(--radius-sm);
+  padding: 12px; margin: 4px 12px 8px;
+  background: oklch(100% 0 0 / 0.02);
+}
+
 /* Settings backup section */
 .sp-backup-section { border-top: 1px solid var(--border-light, #333); padding-top: 16px; margin-top: 8px; }
 .sp-backup-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
