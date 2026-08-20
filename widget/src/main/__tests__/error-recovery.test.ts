@@ -35,7 +35,7 @@ jest.mock('electron', () => ({
   BrowserWindow: jest.fn(),
 }));
 
-import { classifyError } from '../message-router';
+import { classifyError } from '../router/error-recovery';
 
 // ── classifyError ───────────────────────────────────────────────────────────
 
@@ -214,5 +214,87 @@ describe('classifyError — plain language guarantee', () => {
       expect(hint.action).toBeTruthy();
       expect(hint.actionLabel).toBeTruthy();
     }
+  });
+});
+
+// ── cloud fallback offer ────────────────────────────────────────────────────
+//
+// The offer is the renderer's ONLY permission to draw "use the online AI
+// instead". It must appear when a switch would genuinely work, and be absent
+// every other time — an offer that leads to a second identical failure is
+// worse than no offer, and one that leads to data leaving the machine against
+// the user's privacy choice is worse than that.
+
+describe('classifyError cloud fallback offer', () => {
+  const CONFIGURED_CLOUD = {
+    useCustomLLM: false,                  // privacy switch: local only
+    customLLM: { enabled: false, provider: 'anthropic', model: 'claude-sonnet-5', apiUrl: '' },
+    anthropicApiKey: 'sk-ant-test',       // ...but a usable key is already saved
+  } as any;
+
+  const LOCAL_FAILURES: Array<[string, string, string]> = [
+    ['Ollama stopped',    'Ollama error',                     'connect ECONNREFUSED 127.0.0.1:11434'],
+    ['both unavailable',  'Both n8n and Ollama unavailable',  'connect ECONNREFUSED'],
+    ['local timeout',     'Streaming error',                  'ETIMEDOUT'],
+  ];
+
+  test.each(LOCAL_FAILURES)('offers the switch on %s when a provider is ready', (_label, message, details) => {
+    const hint = classifyError(message, details, CONFIGURED_CLOUD);
+    expect(hint.cloudFallback).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5' });
+  });
+
+  test('no offer when no cloud provider is configured', () => {
+    const hint = classifyError('Ollama error', 'ECONNREFUSED', {} as any);
+    expect(hint.cloudFallback).toBeUndefined();
+  });
+
+  test('no offer when the provider is configured but has no key', () => {
+    const noKey = { ...CONFIGURED_CLOUD, anthropicApiKey: '' };
+    const hint = classifyError('Ollama error', 'ECONNREFUSED', noKey);
+    expect(hint.cloudFallback).toBeUndefined();
+  });
+
+  test('no offer when the provider has no model selected', () => {
+    const noModel = { ...CONFIGURED_CLOUD, customLLM: { ...CONFIGURED_CLOUD.customLLM, model: '' } };
+    const hint = classifyError('Ollama error', 'ECONNREFUSED', noModel);
+    expect(hint.cloudFallback).toBeUndefined();
+  });
+
+  test('no offer when the user is ALREADY on cloud — cloud is not the escape hatch', () => {
+    const onCloud = { ...CONFIGURED_CLOUD, useCustomLLM: true };
+    const hint = classifyError('Ollama error', 'ECONNREFUSED', onCloud);
+    expect(hint.cloudFallback).toBeUndefined();
+  });
+
+  test('no offer while uncensored mode is on — it promises the local model', () => {
+    const uncensored = { ...CONFIGURED_CLOUD, uncensoredMode: true };
+    const hint = classifyError('Ollama error', 'ECONNREFUSED', uncensored);
+    expect(hint.cloudFallback).toBeUndefined();
+  });
+
+  test('no offer when settings cannot be read at all', () => {
+    const hint = classifyError('Ollama error', 'ECONNREFUSED', null);
+    expect(hint.cloudFallback).toBeUndefined();
+  });
+
+  test('a cloud-side failure never offers cloud as its own remedy', () => {
+    const hint = classifyError('Cloud API error (ANTHROPIC): status code 429', '', CONFIGURED_CLOUD);
+    expect(hint.cloudFallback).toBeUndefined();
+    expect(hint.action).toBe('check-settings');
+  });
+
+  test('the offer does not flip the privacy switch by itself', () => {
+    const { saveSettings } = jest.requireMock('../config-manager');
+    saveSettings.mockClear();
+    classifyError('Ollama error', 'ECONNREFUSED', CONFIGURED_CLOUD);
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
+  test('the wording mentions the alternative only when it is actually offered', () => {
+    const withOffer = classifyError('Ollama error', 'ECONNREFUSED', CONFIGURED_CLOUD);
+    expect(withOffer.userMessage).toMatch(/online AI/i);
+
+    const withoutOffer = classifyError('Ollama error', 'ECONNREFUSED', {} as any);
+    expect(withoutOffer.userMessage).not.toMatch(/online AI/i);
   });
 });

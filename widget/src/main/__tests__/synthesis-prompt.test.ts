@@ -23,7 +23,7 @@ jest.mock('electron', () => ({
 }));
 jest.mock('axios');
 
-import { makeSynthesisPrompt, makeSynthesisPromptCompact } from '../message-router';
+import { makeSynthesisPrompt, makeSynthesisPromptCompact } from '../router/synthesis-prompts';
 
 const MOCK_CONTEXT = 'Title: Iran War Update\nURL: https://example.com/iran\nContent: US forces attacked Iranian positions on Day 4.';
 const MOCK_QUESTION = 'current war in iran';

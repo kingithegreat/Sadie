@@ -33,7 +33,18 @@ describe('SettingsPanel — cloud connection defaults', () => {
     delete (window as any).electron;
   });
 
+  /**
+   * Settings opens in the Simple view, which shows only the essentials. The
+   * cloud-provider block asserted on here lives under Advanced.
+   */
+  function showAdvanced(container: HTMLElement) {
+    const btn = Array.from(container.querySelectorAll('.sp-view-btn'))
+      .find(b => b.textContent?.trim() === 'Advanced') as HTMLElement | undefined;
+    if (btn && btn.getAttribute('aria-pressed') !== 'true') fireEvent.click(btn);
+  }
+
   function expandSection(container: HTMLElement, label: string) {
+    showAdvanced(container);
     const toggles = Array.from(container.querySelectorAll('.sp-section-toggle'));
     const btn = toggles.find(t => t.textContent?.includes(label)) as HTMLElement | undefined;
     if (btn && btn.textContent?.includes('▸')) fireEvent.click(btn);

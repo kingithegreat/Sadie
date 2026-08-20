@@ -12,13 +12,14 @@ import ExcelJS from 'exceljs';
 import * as mammoth from 'mammoth';
 import PDFDocument from 'pdfkit';
 import { captureBefore, recordChange } from '../file-change-log';
+import { homeDir } from '../user-paths';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const fsPromises = fs.promises;
 
 // Safety: Restrict operations to user's home directory and below
-const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
+const HOME_DIR = homeDir();
 const DESKTOP_DIR = path.join(HOME_DIR, 'Desktop');
 
 
