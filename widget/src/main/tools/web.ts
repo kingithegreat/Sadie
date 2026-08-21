@@ -973,6 +973,15 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
 
     const fetchResultCount = Math.min(Math.max(1, args.fetchResultCount || 3), 5);
 
+    // Read once per search rather than per source. Defaults to OFF: this is
+    // the one fallback that sends a URL to a third party, and a local-first
+    // app does not opt the user into that quietly.
+    let readerAllowed = false;
+    try {
+      const { getSettings: getWebSettings } = await import('../config-manager');
+      readerAllowed = !!(getWebSettings() as any)?.webReaderFallbackEnabled;
+    } catch { /* settings unavailable (tests) — stay off */ }
+
     // Try each provider in order until one returns results.
     let results: Array<{ title: string; url: string; snippet: string }> = [];
     let tavilyAnswer: string | undefined;
@@ -1068,6 +1077,32 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
               }
             } catch (e: any) {
               console.log(`[HomeBot Web] Browser fetch also failed for ${r.url}: ${e?.message || e}`);
+            }
+          }
+
+          // Last tier: a rendering proxy.
+          //
+          // The browser beats a plain block but not a JS challenge or a
+          // paywall shell — measured, realgm.com timed out at 30s and espn.com
+          // returned 139 characters of navigation. Jina Reader renders
+          // server-side and returned 90,007 and 87,099 characters for those
+          // same two pages.
+          //
+          // OFF unless the user allows it, because this is the only tier that
+          // sends the URL off the machine. The search query already reaches a
+          // search engine, but "which page you opened" is a separate
+          // disclosure and HomeBot is local-first. Never silent.
+          if (content.length < 200 && readerAllowed) {
+            try {
+              const { fetchViaReader } = await import('../reader-fetch');
+              console.log(`[HomeBot Web] Falling back to the reading service for ${r.url}`);
+              const page = await fetchViaReader(r.url, { maxChars: 4000, timeoutMs: 20_000 });
+              if (page.text.length >= 200) {
+                content = page.text;
+                if (page.title) title = page.title;
+              }
+            } catch (e: any) {
+              console.log(`[HomeBot Web] Reading service also failed for ${r.url}: ${e?.message || e}`);
             }
           }
 
