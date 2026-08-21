@@ -428,8 +428,27 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
-    if (job.state !== 'idea' && job.state !== 'researching' && job.state !== 'needs_revision') {
-      return err(`"${job.title}" is at ${describeProgress(job)} — scripting runs from idea, researching or needs_revision.`);
+    // A job can reach script_draft WITHOUT a script: the panel's generic
+    // "Move to …" button advances the state and does none of the work. That
+    // left a job wedged with no way out — media_narrate refused for having no
+    // script, and scripting refused for being past the scripting stage.
+    //
+    // Reported from real use: "is there a god" sat in script draft offering
+    // "Record narration", which answered "has no script yet".
+    //
+    // So writing IS allowed from the script stages, but only when there is no
+    // script to lose. A job that already has one goes through needs_revision,
+    // which is what that state is for.
+    const atScriptStage = job.state === 'script_draft' || job.state === 'script_qa';
+    const recoveringEmptyScript = atScriptStage && !job.script?.trim();
+    if (
+      !recoveringEmptyScript &&
+      job.state !== 'idea' && job.state !== 'researching' && job.state !== 'needs_revision'
+    ) {
+      return err(
+        `"${job.title}" is at ${describeProgress(job)} — scripting runs from idea, researching or needs_revision. ` +
+        `To rewrite a script that already exists, send it back first with media_reject_job.`,
+      );
     }
 
     // Imported here rather than at module load: this pulls in the LLM client,
@@ -447,11 +466,32 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
       script: script.text,
       sources: research.text.split('\n').filter(l => l.trim()).slice(0, 12),
     };
-    if (updated.state !== 'researching') {
-      updated = transition(updated, 'researching', { by: 'script stage' });
+    if (recoveringEmptyScript) {
+      // Already parked at the right stage — the state was reached without the
+      // work, so filling in the work is the whole fix. Transitioning would
+      // throw anyway: script_draft leads to script_qa or needs_revision, never
+      // back to researching.
+      updated = {
+        ...updated,
+        history: [
+          ...updated.history,
+          {
+            at: new Date().toISOString(),
+            from: updated.state,
+            to: updated.state,
+            by: 'script stage',
+            note: `script filled in by ${script.via} (the stage had been reached without one)`,
+          },
+        ],
+      };
+      upsert(updated);
+    } else {
+      if (updated.state !== 'researching') {
+        updated = transition(updated, 'researching', { by: 'script stage' });
+      }
+      updated = transition(updated, 'script_draft', { by: 'script stage', note: `written by ${script.via}` });
+      upsert(updated);
     }
-    updated = transition(updated, 'script_draft', { by: 'script stage', note: `written by ${script.via}` });
-    upsert(updated);
 
     const problems = checkScript(updated, script.text);
     const seconds = estimateSpokenSeconds(script.text);
@@ -651,6 +691,12 @@ const renderMediaJobDef: ToolDefinition = {
       },
       style: { type: 'string', description: 'Optional art direction for generated scenes' },
       zoom: { type: 'boolean', description: 'Slow zoom, single-image renders only. Default true.' },
+      music: {
+        type: 'boolean',
+        description:
+          'Mix background music under the narration, from the folder set in Settings. ' +
+          'Defaults to the Settings choice; pass false to render this one silent.',
+      },
     },
     required: ['job'],
   },
@@ -681,6 +727,28 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     if (image && !fs.existsSync(image)) {
       return err(`No image at ${image}.`);
     }
+
+    // Background music, from the user's own folder. Chosen by the job's seed so
+    // a re-render of the same video reuses the same track — a re-render should
+    // be a re-render, not a different video.
+    const { getSettings: getMediaSettings } = await import('../config-manager');
+    const { chooseMusic } = await import('../media-music');
+    const { seedForVideo: seedForMusic } = await import('../media-visuals');
+    const mediaSettings = getMediaSettings() as any;
+    const musicWanted = args.music === undefined
+      ? !!mediaSettings?.mediaMusicEnabled
+      : Boolean(args.music);
+    const music = chooseMusic({
+      enabled: musicWanted,
+      folder: mediaSettings?.mediaMusicFolder || '',
+      seed: seedForMusic(job.id),
+    });
+    // A reason, never a failure: a silent video is a legitimate outcome, and
+    // the point of saying so is that "I chose no music" is distinguishable from
+    // "it tried and quietly gave up".
+    const musicNote = music.path
+      ? `music: ${path.basename(music.path)}`
+      : (music.reason ? `no music — ${music.reason}` : '');
 
     const dir = mediaAssetsDir(job.id);
     const out = path.join(dir, 'video.mp4');
@@ -745,7 +813,50 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       concatPath,
       durationSeconds: job.durationSeconds || 60,
       zoom: args.zoom === undefined ? true : Boolean(args.zoom),
+      musicPath: music.path,
     });
+
+    // The QA the `render_qa` state has always claimed and never done.
+    //
+    // A render can exit 0 and still be unwatchable: no audio track, digital
+    // silence where the narration should be, the wrong frame size, or minutes
+    // of picture after the speech ended. Asking a person to sit through one to
+    // discover that is the expensive way to find out.
+    //
+    // A failed check does NOT throw away the file — it is on disk and named in
+    // the reply, so a false negative costs a click, not a re-render.
+    const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
+    const { dimensionsFor: qaDimensions } = await import('../media-render');
+    const { w: qaW, h: qaH } = qaDimensions(shape);
+    let qa: { ok: boolean; failures: string[]; warnings: string[] };
+    try {
+      const facts = await inspectRender(ffmpeg, rendered.path);
+      qa = evaluateRenderQa(facts, {
+        width: qaW,
+        height: qaH,
+        narrationSeconds: job.durationSeconds ?? null,
+        hasMusic: !!music.path,
+      });
+    } catch (qaErr: any) {
+      // Being unable to MEASURE is not the same as measuring a fault. Say so
+      // and let the human look, rather than blocking a video over a broken
+      // probe.
+      qa = { ok: true, failures: [], warnings: [`could not check the file automatically: ${errText(qaErr)}`] };
+    }
+
+    if (!qa.ok) {
+      const blocked = transition(
+        { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
+        'needs_revision',
+        { by: 'render QA', note: describeQa(qa) },
+      );
+      upsert(blocked);
+      return err([
+        `Rendered "${blocked.title}", but it did not pass checks: ${qa.failures.join('; ')}.`,
+        `video: ${rendered.path}`,
+        'The file is on disk if you want to look — but it is not worth approving as it stands.',
+      ].join('\n'));
+    }
 
     // Record the file before transitioning, so a failed transition cannot
     // discard a render that took real minutes.
@@ -757,8 +868,9 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     upsert(updated);
 
     const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
+    const notes = [visualNote, musicNote, describeQa(qa)].filter(Boolean).join(', ');
     return ok(withNextStep([
-      `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${visualNote ? `, ${visualNote}` : ''}.`,
+      `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${notes ? `, ${notes}` : ''}.`,
       `video: ${rendered.path}`,
       'Watch it before approving; nothing publishes on its own.',
     ], updated));

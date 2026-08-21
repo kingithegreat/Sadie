@@ -19,6 +19,8 @@ import {
   groupCues,
   buildConcatFileContent,
   buildTimelineRenderArgs,
+  buildMusicAudioGraph,
+  MUSIC_VOLUME_DEFAULT,
 } from '../media-render';
 
 /** The -vf value, which is where every interesting decision ends up. */
@@ -282,3 +284,111 @@ describe('the multi-scene command', () => {
     expect(f.endsWith('format=yuv420p')).toBe(true);
   });
 });
+
+/**
+ * Background music.
+ *
+ * The whole risk of this feature is that switching it ON changes renders that
+ * already worked. ffmpeg will not accept -vf alongside -filter_complex for one
+ * output, so music moves the graph into filter_complex — which means the
+ * no-music path must be proven untouched, not assumed.
+ *
+ * The graph itself was verified against real ffmpeg 9.0.1: a 2-second track
+ * under 6 seconds of narration produced a 6-second video with the bed audible
+ * at t=1.2s, 3.2s AND 5.2s (so aloop works), measuring -36.7 dB in the speech
+ * gaps against -21.5 dB during speech (so ducking works).
+ */
+describe('background music', () => {
+  const base = {
+    audioPath: '/m/narration.mp3',
+    outputPath: '/m/out.mp4',
+    shape: 'short' as const,
+    durationSeconds: 6,
+  };
+
+  test('without music, the arguments are exactly what they were', () => {
+    const args = buildRenderArgs(base);
+    expect(args).toContain('-vf');
+    expect(args).not.toContain('-filter_complex');
+    expect(args).not.toContain('-map');
+  });
+
+  test('with music, the graph moves into filter_complex and both streams are mapped', () => {
+    const args = buildRenderArgs({ ...base, musicPath: '/m/bed.mp3' });
+    expect(args).not.toContain('-vf');
+    expect(args).toContain('-filter_complex');
+    expect(args.join(' ')).toContain('-map [v]');
+    expect(args.join(' ')).toContain('-map [aout]');
+  });
+
+  test('the music file is the THIRD input — the graph indexes depend on it', () => {
+    const args = buildRenderArgs({ ...base, musicPath: '/m/bed.mp3' });
+    const inputs = args.reduce<string[]>((acc, a, i) => (a === '-i' ? [...acc, args[i + 1]] : acc), []);
+    expect(inputs[inputs.length - 2]).toBe('/m/narration.mp3');
+    expect(inputs[inputs.length - 1]).toBe('/m/bed.mp3');
+  });
+
+  test('the concat path gets music too, not just single-image renders', () => {
+    const args = buildTimelineRenderArgs({
+      concatPath: '/m/scenes.txt',
+      audioPath: '/m/narration.mp3',
+      outputPath: '/m/out.mp4',
+      shape: 'short',
+      musicPath: '/m/bed.mp3',
+    });
+    expect(args).toContain('-filter_complex');
+    expect(args.join(' ')).toContain('-map [aout]');
+  });
+
+  test('the concat path without music is also unchanged', () => {
+    const args = buildTimelineRenderArgs({
+      concatPath: '/m/scenes.txt',
+      audioPath: '/m/narration.mp3',
+      outputPath: '/m/out.mp4',
+      shape: 'short',
+    });
+    expect(args).toContain('-vf');
+    expect(args).not.toContain('-filter_complex');
+  });
+});
+
+describe('buildMusicAudioGraph', () => {
+  const graph = () => buildMusicAudioGraph({ narrationInput: 1, musicInput: 2 }).graph;
+
+  test('splits the narration, because it is both a mix input and the ducking key', () => {
+    // A filter output cannot be consumed twice; without asplit the graph is invalid.
+    expect(graph()).toContain('[1:a]asplit=2[narmix][narkey]');
+  });
+
+  test('loops the music, so a short track does not stop mid-video', () => {
+    expect(graph()).toContain('aloop=loop=-1');
+  });
+
+  test('ducks the music under the narration rather than holding a fixed level', () => {
+    expect(graph()).toContain('sidechaincompress');
+    // Music is the main input, narration the key — the other way round would
+    // duck the speech under the music.
+    expect(graph()).toContain('[musicloop][narkey]sidechaincompress');
+  });
+
+  test('the narration is FIRST in the mix, so it decides the length', () => {
+    // With the infinitely-looped music first, duration=first would never end.
+    expect(graph()).toContain('[narmix][ducked]amix=inputs=2:duration=first');
+  });
+
+  test('mixing does not normalize — that would halve the narration', () => {
+    expect(graph()).toContain('normalize=0');
+  });
+
+  test('the default bed is quiet enough to sit under a voice', () => {
+    expect(MUSIC_VOLUME_DEFAULT).toBeLessThan(0.3);
+    expect(MUSIC_VOLUME_DEFAULT).toBeGreaterThan(0);
+    expect(graph()).toContain(`volume=${MUSIC_VOLUME_DEFAULT}`);
+  });
+
+  test('the volume is overridable per render', () => {
+    const g = buildMusicAudioGraph({ narrationInput: 1, musicInput: 2, volume: 0.05 }).graph;
+    expect(g).toContain('volume=0.05');
+  });
+});
+

@@ -104,6 +104,10 @@ export interface Settings {
    * cannot put a video on a channel until this is deliberately turned on.
    */
   mediaPublishingEnabled?: boolean;
+  /** Mix background music under video narration — see shared/types.ts. */
+  mediaMusicEnabled?: boolean;
+  /** Folder of the user's own music tracks. */
+  mediaMusicFolder?: string;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
 
@@ -209,6 +213,10 @@ export const DEFAULT_SETTINGS: Settings = {
    * conscious act.
    */
   mediaPublishingEnabled: false,
+  // Off until a folder is chosen: there is nothing to play otherwise, and a
+  // toggle that appears on and does nothing is worse than one that is off.
+  mediaMusicEnabled: false,
+  mediaMusicFolder: '',
 
   // onboarding defaults
   firstRun: true,
