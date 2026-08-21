@@ -428,8 +428,27 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
-    if (job.state !== 'idea' && job.state !== 'researching' && job.state !== 'needs_revision') {
-      return err(`"${job.title}" is at ${describeProgress(job)} — scripting runs from idea, researching or needs_revision.`);
+    // A job can reach script_draft WITHOUT a script: the panel's generic
+    // "Move to …" button advances the state and does none of the work. That
+    // left a job wedged with no way out — media_narrate refused for having no
+    // script, and scripting refused for being past the scripting stage.
+    //
+    // Reported from real use: "is there a god" sat in script draft offering
+    // "Record narration", which answered "has no script yet".
+    //
+    // So writing IS allowed from the script stages, but only when there is no
+    // script to lose. A job that already has one goes through needs_revision,
+    // which is what that state is for.
+    const atScriptStage = job.state === 'script_draft' || job.state === 'script_qa';
+    const recoveringEmptyScript = atScriptStage && !job.script?.trim();
+    if (
+      !recoveringEmptyScript &&
+      job.state !== 'idea' && job.state !== 'researching' && job.state !== 'needs_revision'
+    ) {
+      return err(
+        `"${job.title}" is at ${describeProgress(job)} — scripting runs from idea, researching or needs_revision. ` +
+        `To rewrite a script that already exists, send it back first with media_reject_job.`,
+      );
     }
 
     // Imported here rather than at module load: this pulls in the LLM client,
@@ -447,11 +466,32 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
       script: script.text,
       sources: research.text.split('\n').filter(l => l.trim()).slice(0, 12),
     };
-    if (updated.state !== 'researching') {
-      updated = transition(updated, 'researching', { by: 'script stage' });
+    if (recoveringEmptyScript) {
+      // Already parked at the right stage — the state was reached without the
+      // work, so filling in the work is the whole fix. Transitioning would
+      // throw anyway: script_draft leads to script_qa or needs_revision, never
+      // back to researching.
+      updated = {
+        ...updated,
+        history: [
+          ...updated.history,
+          {
+            at: new Date().toISOString(),
+            from: updated.state,
+            to: updated.state,
+            by: 'script stage',
+            note: `script filled in by ${script.via} (the stage had been reached without one)`,
+          },
+        ],
+      };
+      upsert(updated);
+    } else {
+      if (updated.state !== 'researching') {
+        updated = transition(updated, 'researching', { by: 'script stage' });
+      }
+      updated = transition(updated, 'script_draft', { by: 'script stage', note: `written by ${script.via}` });
+      upsert(updated);
     }
-    updated = transition(updated, 'script_draft', { by: 'script stage', note: `written by ${script.via}` });
-    upsert(updated);
 
     const problems = checkScript(updated, script.text);
     const seconds = estimateSpokenSeconds(script.text);

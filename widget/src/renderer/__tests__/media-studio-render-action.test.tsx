@@ -16,6 +16,13 @@ const JOB = {
   title: 'Recap: Why Attention Matters',
   format: 'short',
   state: 'media_production',
+  // media_narrate writes narrationPath and THEN transitions to
+  // media_production, so a real job in this state always has one. The fixture
+  // omitted it, which stopped mattering once the panel began offering the
+  // action for what a job is MISSING rather than for its state alone: without
+  // narration it now offers "Record narration", because "Make the video" would
+  // be refused by the render tool for exactly that reason.
+  narrationPath: 'C:\\media\\j1\\narration.mp3',
   createdAt: '2026-08-15T00:00:00Z',
   updatedAt: '2026-08-15T00:00:00Z',
   history: [],
