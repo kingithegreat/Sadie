@@ -68,6 +68,9 @@ export interface Settings {
   defaultLocation?: string;
   /** The Media Studio publishing kill switch — see media-studio.ts. */
   mediaPublishingEnabled?: boolean;
+  /** Background music for generated video — see shared/types.ts. */
+  mediaMusicEnabled?: boolean;
+  mediaMusicFolder?: string;
   /** Whether chats are written to disk — see shared/types.ts. */
   saveConversationHistory?: boolean;
 }
