@@ -249,6 +249,20 @@ export interface Settings {
   geminiApiKey?: string;
   /** Moonshot / Kimi — OpenAI-compatible API at api.moonshot.ai. */
   moonshotApiKey?: string;
+  /**
+   * One API key per cloud provider, keyed by `CustomLLMConfig['provider']`.
+   *
+   * The four fields above predate this and only cover anthropic, openai,
+   * gemini and moonshot — while the picker offers thirteen providers. groq,
+   * deepseek, huggingface, cerebras, sambanova, together and custom had
+   * nowhere to persist a key, so they shared the single `customLLM.apiKey`
+   * slot and configuring a second one destroyed the first.
+   *
+   * Read through `apiKeyForProvider`, never directly: the legacy fields are
+   * still written for the four they cover, so a downgrade does not lose them.
+   * Encrypted at rest per value, like every other secret.
+   */
+  providerApiKeys?: Record<string, string>;
   // Image generation API keys
   stableHordeApiKey?: string;
   // Code model routing

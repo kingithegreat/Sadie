@@ -17,6 +17,7 @@ import type { Settings as SharedSettings, CustomLLMConfig, CustomModelInfo, Sche
 import type { LicenseStatus, UpgradePrompt } from '../../../shared/types';
 import { buildSupportReport } from '../../../shared/support-report';
 import { isGateBlocked } from '../../../shared/upgrade';
+import { apiKeyForProvider } from '../../../shared/cloud-llm';
 
 export interface Settings {
   alwaysOnTop: boolean;
@@ -41,6 +42,8 @@ export interface Settings {
   openaiApiKey?: string;
   geminiApiKey?: string;
   moonshotApiKey?: string;
+  /** One key per cloud provider — see shared/types.ts. */
+  providerApiKeys?: Record<string, string>;
   stableHordeApiKey?: string;
   codeModel?: string;
   codeApiKey?: string;
@@ -115,17 +118,15 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     // Fill canonical URL only if the user hasn't set a custom one
     const providerDefault = getDefaultApiUrl(llm.provider);
     if (providerDefault && !llm.apiUrl) llm.apiUrl = providerDefault;
-    // Auto-fill API key from saved provider keys if not already set
+    // Auto-fill this provider's saved key if the config doesn't carry one.
+    //
+    // This used to be a four-branch if/else naming anthropic, openai, gemini
+    // and moonshot — the only providers with a top-level field — which is why
+    // a groq or cerebras key had nowhere to come back from. apiKeyForProvider
+    // is the same lookup the router uses, so the panel and the router cannot
+    // disagree about whether a provider is configured.
     if (!llm.apiKey) {
-      if (llm.provider === 'anthropic' && source.anthropicApiKey) {
-        llm.apiKey = source.anthropicApiKey;
-      } else if (llm.provider === 'openai' && source.openaiApiKey) {
-        llm.apiKey = source.openaiApiKey;
-      } else if ((llm.provider === 'google-ai-studio' || llm.provider === 'google-gemini') && source.geminiApiKey) {
-        llm.apiKey = source.geminiApiKey;
-      } else if (llm.provider === 'moonshot' && source.moonshotApiKey) {
-        llm.apiKey = source.moonshotApiKey;
-      }
+      llm.apiKey = apiKeyForProvider(source as any, llm.provider);
     }
     return {
       ...source,
@@ -723,8 +724,28 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
       const canonicalUrl = getDefaultApiUrl(llmToSave.provider);
       if (canonicalUrl) llmToSave.apiUrl = canonicalUrl;
     }
+    // File the current key under ITS OWN provider, so configuring a second
+    // provider no longer destroys the first. The main process merges this map
+    // against what is already saved, so providers not touched here keep their
+    // keys; an explicit empty string is what clears one.
+    const nextProviderKeys: Record<string, string> = { ...(localSettings.providerApiKeys || {}) };
+    if (llmToSave?.provider) {
+      const typedKey = (llmToSave.apiKey || '').trim();
+      if (typedKey) nextProviderKeys[llmToSave.provider] = typedKey;
+    }
+    // The four dedicated fields stay in sync so an older build — which only
+    // knows about these — still finds the key it expects.
+    if (localSettings.anthropicApiKey?.trim()) nextProviderKeys.anthropic = localSettings.anthropicApiKey.trim();
+    if (localSettings.openaiApiKey?.trim()) nextProviderKeys.openai = localSettings.openaiApiKey.trim();
+    if (localSettings.geminiApiKey?.trim()) {
+      nextProviderKeys['google-ai-studio'] = localSettings.geminiApiKey.trim();
+      nextProviderKeys['google-gemini'] = localSettings.geminiApiKey.trim();
+    }
+    if (localSettings.moonshotApiKey?.trim()) nextProviderKeys.moonshot = localSettings.moonshotApiKey.trim();
+
     const nextSettings: SharedSettings = {
       ...localSettings,
+      providerApiKeys: nextProviderKeys,
       customLLM: llmToSave,
       codeModel: (localSettings as any).codeModel?.trim() || undefined,
       codeApiKey: (localSettings as any).codeApiKey?.trim() || undefined,

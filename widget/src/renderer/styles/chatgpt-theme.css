@@ -4575,6 +4575,24 @@ body {
 .sp-section-toggle:hover { color: var(--accent-primary, #4a6cf7); background: oklch(100% 0 0 / 0.05); }
 .sp-section-arrow { font-size: 14px; width: 18px; display: inline-block; }
 
+/* Which cloud providers already have a saved key */
+.sp-saved-keys { margin-top: 8px; }
+.sp-saved-keys-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sp-saved-key {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: var(--radius-sm);
+  background: oklch(100% 0 0 / 0.06); color: var(--text-secondary);
+  font-size: 12px;
+}
+.sp-saved-key.current {
+  background: var(--accent-primary, #4a6cf7); color: #fff;
+}
+.sp-saved-key-remove {
+  border: none; background: transparent; cursor: pointer;
+  color: inherit; opacity: 0.7; font-size: 11px; line-height: 1; padding: 0;
+}
+.sp-saved-key-remove:hover { opacity: 1; }
+
 /* Simple / Advanced view toggle — sits between the header and the body */
 .sp-view-toggle {
   display: flex; gap: 4px; padding: 4px;

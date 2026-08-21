@@ -6,6 +6,7 @@
  */
 
 import { useSettingsCtx } from './SettingsContext';
+import CloudProviderSection from './CloudProviderSection';
 import type { Settings } from './useSettingsState';
 
 
@@ -25,6 +26,8 @@ export default function ModelsSettingsTab() {
 
   return (
     <>
+      <CloudProviderSection />
+
         {/* ── Models ── */}
         <button type="button" className={`sp-section-toggle${openSections.models ? ' open' : ''}`} onClick={() => toggleSection('models')}>
           <span className="sp-section-arrow">{openSections.models ? '▾' : '▸'}</span> Models
