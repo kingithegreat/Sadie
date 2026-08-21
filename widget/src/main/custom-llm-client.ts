@@ -1499,13 +1499,15 @@ export async function streamFromCustomLLM(
     { role: 'user', content: userContent }
   ];
 
+  const temperature = await resolveChatTemperature();
+
   const options: StreamOptions = {
     model: apiConfig.model || 'gpt-3.5-turbo',
     messages,
     apiConfig,
     maxTokens: getModelMetadata(apiConfig.model || '').maxTokens,
     // undefined preserves each provider's own default (0.5 / 0.7).
-    temperature: resolveChatTemperature(),
+    temperature,
     tools,
     onChunk,
     onToolCall,
@@ -1562,11 +1564,15 @@ export async function streamFromCustomLLM(
  * and a dozen call sites don't each need the setting threaded in. Undefined
  * when unset or unreadable (tests, missing config): each stream's own default
  * then applies, which is the behaviour this knob replaces only deliberately.
+ *
+ * Async because config-manager must be reached by dynamic import: a static
+ * import would pull electron's `app` into every consumer of this module, and
+ * a relative require() does not survive bundling (the bundle-integrity gate
+ * exists because this exact shape shipped before).
  */
-function resolveChatTemperature(): number | undefined {
+export async function resolveChatTemperature(): Promise<number | undefined> {
   try {
-    // Lazy: config-manager imports electron's app, absent under Jest.
-    const { getSettings } = require('./config-manager');
+    const { getSettings } = await import('./config-manager');
     const t = getSettings()?.chatTemperature;
     if (typeof t !== 'number' || !Number.isFinite(t)) return undefined;
     return Math.min(2, Math.max(0, t));
