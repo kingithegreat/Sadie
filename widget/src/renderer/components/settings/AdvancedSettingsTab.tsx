@@ -13,17 +13,9 @@ import { buildPerfAdvice } from '../../../shared/perf-advice';
 
 export default function AdvancedSettingsTab() {
   const {
-    defaultCustomLLM,
-    getDefaultApiUrl,
     ollamaModels,
     localSettings,
     setLocalSettings,
-    availableModels,
-    setAvailableModels,
-    modelsLoading,
-    modelFetchError,
-    setModelFetchError,
-    setModelsFetchedAt,
     openSections,
     toggleSection,
     perfStats,
@@ -51,12 +43,6 @@ export default function AdvancedSettingsTab() {
     licenseMessage,
     handleActivateLicense,
     handleDeactivateLicense,
-    selectedProvider,
-    isClaudeCode,
-    providerRequiresApiKey,
-    hasApiKey,
-    isConnected,
-    handleFetchModels,
     onClose,
   } = useSettingsCtx();
 
@@ -143,195 +129,6 @@ export default function AdvancedSettingsTab() {
         </button>
         {openSections.api_keys && <>
         {/* Custom LLM API Section - Simplified */}
-        <div className="setting-group custom-llm-section">
-          <label className="setting-label">☁️ Main chat model — Cloud API (OpenAI, Anthropic, Claude subscription…)</label>
-          
-          {/* Step 1: Provider Selection */}
-          <div className="provider-row">
-            <select
-              aria-label="Cloud API provider"
-              className="setting-input provider-select"
-              value={selectedProvider}
-              onChange={(e) => {
-                const newProvider = e.target.value as any;
-                // Auto-fill API key from saved keys when switching providers
-                let autoFillKey = localSettings.customLLM?.apiKey || '';
-                if (newProvider === 'anthropic' && localSettings.anthropicApiKey) {
-                  autoFillKey = localSettings.anthropicApiKey;
-                } else if (newProvider === 'openai' && localSettings.openaiApiKey) {
-                  autoFillKey = localSettings.openaiApiKey;
-                } else if ((newProvider === 'google-ai-studio' || newProvider === 'google-gemini') && localSettings.geminiApiKey) {
-                  autoFillKey = localSettings.geminiApiKey;
-                }
-                setLocalSettings({
-                  ...localSettings,
-                  customLLM: { 
-                    ...localSettings.customLLM!, 
-                    provider: newProvider,
-                    apiUrl: getDefaultApiUrl(newProvider),
-                    apiKey: autoFillKey,
-                    model: '',
-                    enabled: false
-                  },
-                  useCustomLLM: false
-                });
-                setAvailableModels([]);
-                setModelFetchError(null);
-                setModelsFetchedAt(null);
-              }}
-            >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="claude-code">Claude subscription — no API key (via Claude Code)</option>
-              <option value="openrouter">OpenRouter (all models, one key)</option>
-              <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
-              <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
-              <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>
-              <option value="google-gemini">Google Gemini Native API</option>
-              <option value="huggingface">Hugging Face (free tier — open-source models)</option>
-              <option value="cerebras">Cerebras (free tier — fastest inference)</option>
-              <option value="sambanova">SambaNova (free tier — Llama, DeepSeek)</option>
-              <option value="together">Together AI ($5 free credits, 200+ models)</option>
-              <option value="custom">Custom URL</option>
-            </select>
-          </div>
-
-          {/* Step 2: API Key (or URL for custom) */}
-          {selectedProvider === 'custom' ? (
-            <div className="api-key-row">
-              <input
-                type="text"
-                className="setting-input api-key-input"
-                value={localSettings.customLLM?.apiUrl || ''}
-                onChange={(e) =>
-                  setLocalSettings({
-                    ...localSettings,
-                    customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
-                  })
-                }
-                placeholder="https://your-api.com/v1"
-              />
-            </div>
-          ) : null}
-          
-          <div className="api-key-row">
-            {isClaudeCode ? (
-              <input
-                type="text"
-                className="setting-input api-key-input"
-                value={localSettings.customLLM?.apiUrl || ''}
-                onChange={(e) =>
-                  setLocalSettings({
-                    ...localSettings,
-                    customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
-                  })
-                }
-                placeholder="Claude Code path (optional — leave blank to find it automatically)"
-              />
-            ) : (
-              <input
-                type="password"
-                className="setting-input api-key-input"
-                value={localSettings.customLLM?.apiKey || ''}
-                onChange={(e) => {
-                  const key = e.target.value;
-                  const update: any = {
-                    ...localSettings,
-                    customLLM: { ...localSettings.customLLM!, apiKey: key }
-                  };
-                  if (selectedProvider === 'anthropic') update.anthropicApiKey = key;
-                  else if (selectedProvider === 'openai') update.openaiApiKey = key;
-                  else if (selectedProvider === 'google-ai-studio' || selectedProvider === 'google-gemini') update.geminiApiKey = key;
-                  setLocalSettings(update);
-                }}
-                placeholder={
-                  selectedProvider === 'openai' ? 'sk-...' :
-                  selectedProvider === 'anthropic' ? 'sk-ant-...' :
-                  selectedProvider === 'groq' ? 'gsk_...' :
-                  selectedProvider === 'deepseek' ? 'sk-...' :
-                  selectedProvider === 'google-ai-studio' ? 'AIza...' :
-                  selectedProvider === 'google-gemini' ? 'AIza...' :
-                  'API Key'
-                }
-              />
-            )}
-            <button
-              type="button"
-              className={`button connect-btn ${isConnected ? 'connected' : ''}`}
-              onClick={handleFetchModels}
-              disabled={modelsLoading || (providerRequiresApiKey && !hasApiKey)}
-            >
-              {modelsLoading ? '...' : isConnected ? '✓ Connected' : 'Connect'}
-            </button>
-          </div>
-
-          {isClaudeCode && (
-            <small className="setting-hint">
-              Runs on your own Claude Pro/Max subscription through the Claude Code CLI — no API key, no per-token billing.
-              Requires Claude Code installed and signed in on this machine. Replies count against your plan's usage limits.
-              It can read and edit files, search your project and run commands — always through HomeBot's own permission
-              prompt, never Claude Code's unsupervised tools. Leave the path blank unless Claude Code isn't on your PATH.
-            </small>
-          )}
-
-          {modelFetchError && (
-            <small className="setting-hint error-hint">{modelFetchError}</small>
-          )}
-
-          {/* Step 3: Model Selection - only show when connected */}
-          {isConnected && (
-            <div className="model-chips-section">
-              <label className="setting-label chip-label">Select Model</label>
-              <div className="custom-models-grid">
-                {availableModels.map((model) => (
-                  <button
-                    type="button"
-                    key={model.id}
-                    className={`custom-model-chip ${localSettings.customLLM?.model === model.id ? 'active' : ''}`}
-                    onClick={() =>
-                      setLocalSettings((prev) => ({
-                        ...prev,
-                        customLLM: { ...(prev.customLLM || { ...defaultCustomLLM }), model: model.id }
-                      }))
-                    }
-                  >
-                    <span className="chip-name">{model.name || model.id}</span>
-                    {model.costHint && (
-                      <span className="chip-cost">{model.costHint}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Status indicator */}
-          {localSettings.customLLM?.enabled && localSettings.customLLM?.model && (
-            <div className="custom-llm-status">
-              <span className={`status-dot ${localSettings.useCustomLLM ? 'active' : ''}`}></span>
-              {localSettings.useCustomLLM
-                ? `Using ${localSettings.customLLM.model}`
-                : `${localSettings.customLLM.model} is connected but NOT in use — tick the box below, then Save.`}
-            </div>
-          )}
-
-          {/* Disable toggle - only show when connected */}
-          {isConnected && (
-            <label className="setting-label disable-toggle">
-              <input
-                type="checkbox"
-                checked={localSettings.useCustomLLM || false}
-                onChange={(e) =>
-                  setLocalSettings({
-                    ...localSettings,
-                    useCustomLLM: e.target.checked
-                  })
-                }
-              />
-              <span>Use this API by default for chats</span>
-            </label>
-          )}
-        </div>
 
 
 
