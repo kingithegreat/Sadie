@@ -1028,11 +1028,52 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       console.log(`[HomeBot Web] Parallel-fetching ${toFetch.length} result(s)...`);
       const fetchResults = await Promise.allSettled(
         toFetch.map(async (r) => {
-          const html = await httpGet(r.url);
-          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-          const title = titleMatch ? stripHtml(titleMatch[1]).trim() : r.title;
-          let content = extractMainContent(html);
-          if (content.length < 200) throw new Error('Too little content');
+          let title = r.title;
+          let content = '';
+          let httpError: string | null = null;
+
+          // Cheap path first: a plain GET costs a fraction of a browser window.
+          try {
+            const html = await httpGet(r.url);
+            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch) title = stripHtml(titleMatch[1]).trim();
+            content = extractMainContent(html);
+          } catch (e: any) {
+            httpError = e?.message || String(e);
+          }
+
+          // Then the browser we already ship.
+          //
+          // Measured on a live search before this existed: 3 results, two HTTP
+          // 403 and one too thin, 0 of 3 read — so the answer came from search
+          // snippets and never saw an article. The user-agent was already a
+          // current Chrome string; those sites check TLS fingerprints and JS
+          // challenges, which no header satisfies. A hidden BrowserWindow is a
+          // real browser, so it simply gets the page.
+          if (content.length < 200) {
+            try {
+              const { fetchViaBrowser, isBrowserFetchAvailable } = await import('../browser-fetch');
+              if (isBrowserFetchAvailable()) {
+                console.log(`[HomeBot Web] HTTP gave ${httpError || `${content.length} chars`} for ${r.url} — retrying in the browser`);
+                // Shorter than the module default. This is a fallback running
+                // across several sources at once, and a site behind a JS
+                // challenge never resolves — measured: realgm.com burns the
+                // whole budget and still fails. Better to lose one source than
+                // to hold the answer up for everyone.
+                const page = await fetchViaBrowser(r.url, { maxChars: 4000, timeoutMs: 12_000 });
+                if (page.text.length >= 200) {
+                  content = page.text;
+                  if (page.title) title = page.title;
+                }
+              }
+            } catch (e: any) {
+              console.log(`[HomeBot Web] Browser fetch also failed for ${r.url}: ${e?.message || e}`);
+            }
+          }
+
+          // Both routes exhausted. Report the ORIGINAL HTTP reason when there
+          // was one — "Too little content" after a 403 hides why it failed.
+          if (content.length < 200) throw new Error(httpError || 'Too little content');
           if (content.length > 2500) content = content.substring(0, 2500) + '... [truncated]';
           return { url: r.url, title, content };
         })
