@@ -45,6 +45,8 @@ const QuizPanel: React.FC = () => {
   // Quiz state
   const [phase, setPhase] = useState<'setup' | 'loading' | 'quiz' | 'review' | 'results'>('setup');
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  /** Set when the generator returned fewer questions than requested. */
+  const [shortfallNotice, setShortfallNotice] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [answered, setAnswered] = useState(false);
@@ -107,6 +109,12 @@ const QuizPanel: React.FC = () => {
     if (result?.success && result.questions?.length) {
       setQuestions(result.questions);
       setAnswers(new Array(result.questions.length).fill(null));
+      // Say when fewer questions came back than were asked for. Handing over 3
+      // of 5 without a word is how this was reported: "quiz was meant to give
+      // me 5 questions and it gave me 3".
+      setShortfallNotice(
+        (result as any).shortfall > 0 ? String((result as any).notice || '') : null,
+      );
       setPhase('quiz');
     } else {
       setLoadError(result?.error || 'Failed to generate quiz. Is Ollama running?');
@@ -421,6 +429,13 @@ const QuizPanel: React.FC = () => {
 
   return (
     <div className="quiz-container">
+      {/* Fewer questions than asked for, said out loud.
+          Shown above the progress bar, which otherwise reads "1 / 3" for a
+          quiz the user set to 5 and leaves them to wonder. */}
+      {shortfallNotice && (
+        <div className="quiz-notice" data-testid="quiz-shortfall">{shortfallNotice}</div>
+      )}
+
       {/* Progress bar */}
       <div className="quiz-progress-header">
         <div className="quiz-progress-info">
