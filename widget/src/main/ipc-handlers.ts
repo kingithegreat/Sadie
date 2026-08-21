@@ -1046,7 +1046,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   // Delete an Ollama model
   ipcMain.handle('homebot:delete-ollama-model', async (_event, modelName: string) => {
-    if (!modelName || typeof modelName !== 'string') {
+    // Same shape check the pull handler below already applies. Delete only
+    // tested for a non-empty string, so the destructive half of the pair was
+    // the more permissive one — the wrong way round, and only unnoticed
+    // because nothing in the UI called it until now.
+    if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
       return { success: false, error: 'Invalid model name' };
     }
     const ollamaBase = getConfiguredOllamaBaseUrl();

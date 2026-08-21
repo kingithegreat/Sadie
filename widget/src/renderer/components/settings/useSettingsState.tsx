@@ -325,6 +325,38 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     }).catch(() => {});
   }, []);
 
+  /**
+   * Remove a downloaded model.
+   *
+   * `deleteOllamaModel` has been on the preload bridge, wired to a working main
+   * handler, with ZERO callers — while pulling a model is offered in three
+   * places. So one click could take 9.6 GB and nothing in HomeBot would ever
+   * give it back. That matters beyond tidiness: model-download-fit refuses
+   * pulls that will not fit, so the app could talk itself into a corner it
+   * offered no way out of.
+   */
+  const [deletingModel, setDeletingModel] = useState<string | null>(null);
+  const [modelDeleteError, setModelDeleteError] = useState<string | null>(null);
+
+  const deleteInstalledModel = async (modelName: string) => {
+    setDeletingModel(modelName);
+    setModelDeleteError(null);
+    try {
+      const res = await window.electron?.deleteOllamaModel?.(modelName);
+      if (res?.success) {
+        // Drop it locally rather than re-listing: Ollama has already removed
+        // it, and a refetch would only be a slower way to learn the same thing.
+        setInstalledOllamaModels(prev => prev.filter(m => m.name !== modelName));
+      } else {
+        setModelDeleteError(res?.error || `Could not delete ${modelName}.`);
+      }
+    } catch (e: any) {
+      setModelDeleteError(e?.message || `Could not delete ${modelName}.`);
+    } finally {
+      setDeletingModel(null);
+    }
+  };
+
   const PERMISSION_DESCRIPTIONS: Record<string, string> = {
     // Filesystem
     read_file: 'Read the contents of a file (safe, read-only).',
@@ -882,6 +914,9 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     setModelsFetchedAt,
     installedOllamaModels,
     setInstalledOllamaModels,
+    deletingModel,
+    modelDeleteError,
+    deleteInstalledModel,
     openSections,
     setOpenSections,
     toggleSection,
