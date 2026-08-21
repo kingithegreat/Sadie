@@ -44,6 +44,15 @@ interface MediaJob {
    * approving".
    */
   renderPath?: string;
+  /**
+   * The generated slides, in running order. `null` marks a scene whose image
+   * failed and which reuses its neighbour in the video.
+   *
+   * Same shape of omission as `renderPath` above: these paths were computed,
+   * written into the ffmpeg concat file and thrown away, so the approval gate
+   * asked a person to approve slides they had never seen.
+   */
+  scenePaths?: Array<string | null>;
   /** Measured from the audio, not estimated from word count. */
   durationSeconds?: number;
   /** The id or link the platform gave it. Only ever set after publishing. */
@@ -214,6 +223,49 @@ export const MediaStudioPanel: React.FC = () => {
           {j.format === 'long' ? 'long-form' : 'short'}
           {j.durationSeconds ? ` · ${j.durationSeconds}s recorded` : ''}
         </span>
+        {/* The script and the slides, before you commit to watching.
+            Both were already produced and neither was ever shown: `script` has
+            been on the job all along, and the scene image paths were built,
+            written into the ffmpeg concat file and discarded. Approving a video
+            you can only judge by playing it is slower than reading it. Closed
+            by default so a list of jobs stays a list. */}
+        {j.script ? (
+          <details className="ms-preview">
+            <summary className="ms-preview-toggle">Script</summary>
+            <p className="ms-script">{j.script}</p>
+          </details>
+        ) : null}
+
+        {j.scenePaths?.length ? (
+          <details className="ms-preview">
+            <summary className="ms-preview-toggle">
+              Slides ({j.scenePaths.length})
+              {j.scenePaths.some(p => !p)
+                ? ` · ${j.scenePaths.filter(p => !p).length} reused a neighbour`
+                : ''}
+            </summary>
+            <div className="ms-slides" data-testid={`ms-slides-${j.id}`}>
+              {j.scenePaths.map((p, i) => (
+                p ? (
+                  <img
+                    key={i}
+                    className="ms-slide"
+                    loading="lazy"
+                    alt={`Slide ${i + 1} of ${j.scenePaths!.length}`}
+                    src={`file:///${p.replace(/\\/g, '/')}`}
+                  />
+                ) : (
+                  /* Named rather than hidden: a gap the user cannot explain
+                     reads as a bug, and this one is expected and harmless. */
+                  <span key={i} className="ms-slide ms-slide-missing" title={`Slide ${i + 1} had no image and reuses the one before it`}>
+                    {i + 1}
+                  </span>
+                )
+              ))}
+            </div>
+          </details>
+        ) : null}
+
         {/* Seeing the video is the only way to judge it, and this panel is
             where it gets approved. Once a render exists the video replaces the
             audio player — the narration is inside it, so offering both is two

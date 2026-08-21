@@ -692,6 +692,9 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // none of them stops the video being made.
     let concatPath: string | null = null;
     let visualNote = '';
+    // Kept so the panel can show the slides. Declared out here because the
+    // scene block below is conditional and the transition happens after it.
+    let scenePaths: Array<string | null> | undefined;
     const wantScenes = String(args.visuals ?? 'scenes') === 'scenes' && !image;
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
@@ -716,6 +719,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         });
         const filled = fillMissingImages(images);
         const made = filled.filter(Boolean).length;
+        // Record the slides whether or not the concat file gets built: if every
+        // image failed, an empty list is still the honest answer, and the panel
+        // says so rather than showing nothing and looking broken.
+        scenePaths = images.map(i => i.path);
         if (made) {
           const timeline = timelineFromCues(scenes, i => filled[i]);
           concatPath = path.join(dir, 'scenes.txt');
@@ -743,7 +750,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // Record the file before transitioning, so a failed transition cannot
     // discard a render that took real minutes.
     const updated = transition(
-      { ...job, renderPath: rendered.path },
+      { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
       'render_qa',
       { by: 'render stage' },
     );
