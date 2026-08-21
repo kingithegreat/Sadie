@@ -125,6 +125,8 @@ export interface Settings {
   geminiApiKey?: string;
   /** Moonshot / Kimi — OpenAI-compatible API. */
   moonshotApiKey?: string;
+  /** One key per cloud provider — see shared/types.ts. Encrypted per value. */
+  providerApiKeys?: Record<string, string>;
   // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
   codeApiKey?: string;
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
@@ -542,6 +544,18 @@ export function getSettings(): Settings {
         (merged as any)[key] = decryptSecret(val);
       }
     }
+    // Decrypt every per-provider key. Same treatment as the flat secrets above
+    // — this map holds credentials for the providers the four named fields
+    // never covered, so it must not sit on disk in plaintext.
+    const providerKeys = (merged as any).providerApiKeys;
+    if (providerKeys && typeof providerKeys === 'object') {
+      for (const provider of Object.keys(providerKeys)) {
+        const val = providerKeys[provider];
+        if (typeof val === 'string' && val.length > 0) {
+          providerKeys[provider] = decryptSecret(val);
+        }
+      }
+    }
     // Decrypt nested customLLM.apiKey
     if (merged.customLLM && typeof (merged.customLLM as any).apiKey === 'string' && (merged.customLLM as any).apiKey.length > 0) {
       (merged.customLLM as any).apiKey = decryptSecret((merged.customLLM as any).apiKey);
@@ -604,6 +618,37 @@ export function saveSettings(settings: Settings): void {
           (toSave as any)[key] = encryptSecret(val);
         }
       }
+    }
+    // Per-provider keys: merged against the previous map, then encrypted.
+    //
+    // Same rule the flat secrets follow — a save that OMITS a provider means
+    // "unchanged", and only an explicit empty string clears it. The renderer
+    // sends the whole settings object, so without the merge, saving from a
+    // panel that had only loaded one provider would wipe every other
+    // provider's key. That is the lost-update bug the SECRET_KEYS loop above
+    // exists to prevent, and this map is just as easy to lose.
+    {
+      const previousMap: Record<string, string> = ((previous as any).providerApiKeys as Record<string, string>) || {};
+      const incoming = (toSave as any).providerApiKeys;
+      const mergedKeys: Record<string, string> = { ...previousMap };
+      if (incoming && typeof incoming === 'object') {
+        for (const [provider, value] of Object.entries(incoming)) {
+          if (typeof value !== 'string') continue;
+          if (value === '') delete mergedKeys[provider];
+          else mergedKeys[provider] = value;
+        }
+      }
+      const encrypted: Record<string, string> = {};
+      for (const [provider, value] of Object.entries(mergedKeys)) {
+        if (typeof value !== 'string' || value.length === 0) continue;
+        if (value.length > MAX_SECRET_CHARS) {
+          console.error('[CONFIG] providerApiKeys.%s suspiciously large (%d chars) — clearing to prevent bloat', provider, value.length);
+          continue;
+        }
+        encrypted[provider] = encryptSecret(value);
+      }
+      if (Object.keys(encrypted).length > 0) (toSave as any).providerApiKeys = encrypted;
+      else delete (toSave as any).providerApiKeys;
     }
     // Encrypt nested customLLM.apiKey with the same cap
     if (toSave.customLLM && typeof (toSave.customLLM as any).apiKey === 'string' && (toSave.customLLM as any).apiKey.length > 0) {

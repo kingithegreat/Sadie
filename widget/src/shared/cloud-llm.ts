@@ -35,6 +35,8 @@ export type CloudLLMSettingsSlice = Pick<
   | 'openaiApiKey'
   | 'geminiApiKey'
   | 'moonshotApiKey'
+  // Every provider's key, including the seven the four fields above never covered.
+  | 'providerApiKeys'
   // Uncensored mode belongs to this decision, not beside it. It used to be read
   // only on the Ollama path, so with a cloud provider enabled the router went
   // to the cloud and never reached the line that honours it — the toggle was
@@ -62,6 +64,28 @@ const PROVIDER_KEY_FIELDS: Partial<Record<CustomLLMConfig['provider'], keyof Clo
  *  subscription (Claude Max / ChatGPT), so there is no key to store; custom
  *  endpoints may be unauthenticated local servers. */
 const KEYLESS_PROVIDERS: ReadonlySet<string> = new Set(['claude-code', 'codex', 'custom']);
+
+/**
+ * The saved key for one provider — the single read path.
+ *
+ * `providerApiKeys` is authoritative and covers every provider the picker
+ * offers. The four legacy top-level fields are the fallback, so settings
+ * written before that map existed still resolve. Callers must not reach into
+ * either store directly: a second copy of this lookup is how the renderer and
+ * the router previously disagreed about whether a provider was configured.
+ */
+export function apiKeyForProvider(
+  settings: CloudLLMSettingsSlice | null | undefined,
+  provider: string | null | undefined,
+): string {
+  if (!settings || !provider) return '';
+  const fromMap = (settings as any).providerApiKeys?.[provider];
+  if (typeof fromMap === 'string' && fromMap.trim()) return fromMap.trim();
+
+  const legacyField = PROVIDER_KEY_FIELDS[provider as CustomLLMConfig['provider']];
+  const fromLegacy = legacyField ? (settings as any)[legacyField] : undefined;
+  return typeof fromLegacy === 'string' ? fromLegacy.trim() : '';
+}
 
 export interface ResolvedCloudLLM {
   /** The user turned cloud chat on (useCustomLLM or customLLM.enabled). */
@@ -110,8 +134,7 @@ export function resolveCloudLLM(settings: CloudLLMSettingsSlice | null | undefin
   const ownKey = (cfg.apiKey || '').trim();
   let apiKey = ownKey;
   if (!apiKey) {
-    const field = PROVIDER_KEY_FIELDS[cfg.provider];
-    const vaultKey = field ? String((settings as any)[field] ?? '').trim() : '';
+    const vaultKey = apiKeyForProvider(settings, cfg.provider);
     if (vaultKey) apiKey = vaultKey;
   }
   const config: CustomLLMConfig = apiKey === ownKey ? { ...cfg } : { ...cfg, apiKey };

@@ -425,3 +425,112 @@ describe('settings corruption hardening (the 2026-08-10 incident)', () => {
     expect(cm.getSettings().geminiApiKey || '').toBe('');
   });
 });
+
+/**
+ * Per-provider API keys.
+ *
+ * The four named fields (anthropic/openai/gemini/moonshot) never covered the
+ * other nine providers the picker offers, so groq, cerebras and friends shared
+ * customLLM.apiKey and overwrote each other. These pin the map that replaced
+ * it: encrypted at rest, merged on save, readable back.
+ *
+ * Its own temp userData, ASSERTED before anything is written. The first version
+ * of this block was appended into a describe whose afterAll deletes its temp
+ * dir, so a save landed in the repo's tracked widget/config/user-settings.json
+ * and committed a test sentinel as real configuration. Isolation that is
+ * assumed is isolation that is not there.
+ */
+describe('per-provider API keys', () => {
+  const temp = join(os.tmpdir(), 'homebot-provider-keys-' + process.pid);
+
+  const freshLoad = () => {
+    jest.resetModules();
+    return require('../../main/config-manager');
+  };
+
+  beforeEach(() => {
+    process.env.TEST_USERDATA = temp;
+    mkdirSync(temp, { recursive: true });
+  });
+
+  afterAll(() => {
+    try { rmSync(temp, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+
+  test('writes land in the temp userData, never in the repo', () => {
+    expect(freshLoad().getSettingsPath().startsWith(temp)).toBe(true);
+  });
+
+  test('provider keys survive a save/load round trip', () => {
+    const cm = freshLoad();
+    const s = cm.getSettings();
+    s.providerApiKeys = { groq: 'gsk-groq', cerebras: 'csk-cerebras' };
+    cm.saveSettings(s);
+
+    const loaded = freshLoad().getSettings();
+    expect(loaded.providerApiKeys.groq).toBe('gsk-groq');
+    expect(loaded.providerApiKeys.cerebras).toBe('csk-cerebras');
+  });
+
+  test('provider keys are ENCRYPTED on disk, never plaintext', () => {
+    const cm = freshLoad();
+    expect(cm.getSettingsPath().startsWith(temp)).toBe(true);
+    const s = cm.getSettings();
+    s.providerApiKeys = { groq: 'gsk-PLAINTEXT-SENTINEL' };
+    cm.saveSettings(s);
+
+    const raw = readFileSync(cm.getSettingsPath(), 'utf-8');
+    // Absence alone is not proof — a dropped map is also absent. Assert the
+    // field is present AND is ciphertext.
+    const onDisk = JSON.parse(raw).providerApiKeys;
+    expect(onDisk).toBeDefined();
+    expect(onDisk.groq).toBeDefined();
+    expect(onDisk.groq).not.toBe('gsk-PLAINTEXT-SENTINEL');
+    expect(onDisk.groq.startsWith('enc:v1:')).toBe(true);   // ENC_PREFIX
+    expect(raw).not.toContain('gsk-PLAINTEXT-SENTINEL');
+  });
+
+  test('saving one provider does not wipe the others', () => {
+    const cm = freshLoad();
+    const s = cm.getSettings();
+    s.providerApiKeys = { groq: 'gsk-groq', together: 'tog-key' };
+    cm.saveSettings(s);
+
+    // A panel that only knew about groq saves just that one.
+    const partial = cm.getSettings();
+    partial.providerApiKeys = { groq: 'gsk-groq-v2' };
+    cm.saveSettings(partial);
+
+    const loaded = freshLoad().getSettings();
+    expect(loaded.providerApiKeys.groq).toBe('gsk-groq-v2');
+    expect(loaded.providerApiKeys.together).toBe('tog-key');
+  });
+
+  test('omitting the map entirely keeps every provider key', () => {
+    const cm = freshLoad();
+    const s = cm.getSettings();
+    s.providerApiKeys = { groq: 'gsk-keep' };
+    cm.saveSettings(s);
+
+    const stale = cm.getSettings();
+    delete (stale as any).providerApiKeys;
+    cm.saveSettings(stale);
+
+    expect(freshLoad().getSettings().providerApiKeys.groq).toBe('gsk-keep');
+  });
+
+  test('an explicit empty string clears one provider and leaves the rest', () => {
+    const cm = freshLoad();
+    const s = cm.getSettings();
+    s.providerApiKeys = { groq: 'gsk-bye', cerebras: 'csk-stay' };
+    cm.saveSettings(s);
+
+    const clearing = cm.getSettings();
+    clearing.providerApiKeys = { groq: '' };
+    cm.saveSettings(clearing);
+
+    const loaded = freshLoad().getSettings();
+    expect(loaded.providerApiKeys.groq).toBeUndefined();
+    expect(loaded.providerApiKeys.cerebras).toBe('csk-stay');
+  });
+});
