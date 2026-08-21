@@ -11,7 +11,7 @@ import { migrateRetiredModel, RETIRED_MODEL_RENAMES } from '../model-lifecycle';
 jest.mock('axios');
 import axios from 'axios';
 import { EventEmitter } from 'events';
-import { fetchAvailableCustomModels, streamFromCustomLLM } from '../custom-llm-client';
+import { fetchAvailableCustomModels } from '../custom-llm-client';
 
 describe('chatTemperature reaches the wire', () => {
   // The knob is the feature: a slider that nothing reads is the defect this
