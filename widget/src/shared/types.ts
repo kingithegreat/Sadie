@@ -225,6 +225,14 @@ export interface Settings {
    * cannot put a video on a channel until this is deliberately turned on.
    */
   mediaPublishingEnabled?: boolean;
+  /** Mix background music under video narration. Off unless a folder is set. */
+  mediaMusicEnabled?: boolean;
+  /**
+   * Folder holding the user's own music tracks. A folder rather than a service:
+   * no account, no rate limit, no licence question, and it works offline.
+   * One track is chosen per video, seeded by the job id so a re-render reuses it.
+   */
+  mediaMusicFolder?: string;
   /**
    * Whether chats are written to conversation-history.json. Defaults to true.
    *
