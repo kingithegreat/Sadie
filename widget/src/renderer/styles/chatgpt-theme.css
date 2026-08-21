@@ -9742,6 +9742,74 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   background: #000;
 }
 
+/* Script and slide preview — closed by default, so a list of jobs stays a list */
+.ms-preview { margin-top: .4rem; }
+.ms-preview-toggle {
+  cursor: pointer; font-size: .82rem; color: var(--text-secondary);
+  padding: .15rem 0; list-style: revert;
+}
+.ms-preview-toggle:hover { color: var(--text-primary); }
+.ms-script {
+  margin: .35rem 0 0;
+  padding: .6rem .7rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  background: oklch(100% 0 0 / 0.03);
+  border-radius: 6px;
+  font-size: .85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+}
+.ms-slides {
+  display: flex; gap: .4rem; margin-top: .35rem;
+  overflow-x: auto; padding-bottom: .3rem;
+}
+.ms-slide {
+  flex: 0 0 auto;
+  height: 4.5rem; width: auto;
+  border-radius: 6px;
+  background: #000;
+}
+.ms-slide-missing {
+  display: flex; align-items: center; justify-content: center;
+  width: 4.5rem;
+  border: 1px dashed var(--border-light, #333);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+
+/* Fullscreen has to undo the preview sizing above.
+ *
+ * The browser gives a fullscreen element width/height 100% from its UA
+ * stylesheet, but an AUTHOR rule beats a UA rule — so `max-height: 15rem` kept
+ * applying and the video stayed a 15rem letterbox in the middle of a black
+ * screen. Pressing the fullscreen button appeared to do nothing, which is
+ * exactly how it was reported ("I couldn't make it full screen").
+ *
+ * :-webkit-full-screen is listed separately on purpose: a selector list is
+ * dropped WHOLE by any browser that does not understand one of its selectors,
+ * so combining the two with a comma would lose the rule for both. */
+.ms-video:fullscreen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+.ms-video:-webkit-full-screen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+
 .ms-job-published {
   font-size: .82rem;
   color: var(--text-secondary);
