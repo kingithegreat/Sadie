@@ -697,6 +697,12 @@ const renderMediaJobDef: ToolDefinition = {
           'Mix background music under the narration, from the folder set in Settings. ' +
           'Defaults to the Settings choice; pass false to render this one silent.',
       },
+      track: {
+        type: 'string',
+        description:
+          'Specific music track filename from the folder set in Settings. ' +
+          'Overrides the default seeded pick. Use media_list_music to see what is available.',
+      },
     },
     required: ['job'],
   },
@@ -738,11 +744,27 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const musicWanted = args.music === undefined
       ? !!mediaSettings?.mediaMusicEnabled
       : Boolean(args.music);
-    const music = chooseMusic({
+
+    // A specific track the caller asked for. Validated against the folder so
+    // the model cannot invent a path that does not exist.
+    const requestedTrack = args.track ? String(args.track).trim() : '';
+    let music = chooseMusic({
       enabled: musicWanted,
       folder: mediaSettings?.mediaMusicFolder || '',
       seed: seedForMusic(job.id),
     });
+    if (requestedTrack && musicWanted) {
+      const { listMusicTracks } = await import('../media-music');
+      const folder = (mediaSettings?.mediaMusicFolder || '').trim();
+      const tracks = listMusicTracks(folder);
+      const found = tracks.find(t => path.basename(t).toLowerCase() === requestedTrack.toLowerCase());
+      if (found) {
+        music = { path: found, available: tracks.length };
+      } else if (tracks.length > 0) {
+        music = { path: null, available: tracks.length, reason: `"${requestedTrack}" is not in the music folder — use media_list_music to see what is` };
+      }
+    }
+
     // A reason, never a failure: a silent video is a legitimate outcome, and
     // the point of saying so is that "I chose no music" is distinguishable from
     // "it tried and quietly gave up".
@@ -879,6 +901,71 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
   }
 };
 
+const listMusicDef: ToolDefinition = {
+  name: 'media_list_music',
+  description:
+    'List the tracks in the background-music folder, so you can pick one that fits the video. ' +
+    'Shows each track’s name, duration, and whether it is the one the current job would use by default.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title — used to show which track the seed would pick' },
+    },
+    required: ['job'],
+  },
+};
+
+const listMusicHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err(`No media job matching "${args.job}".`);
+
+    const { getSettings } = await import('../config-manager');
+    const { listMusicTracks, chooseMusic, MUSIC_EXTENSIONS } = await import('../media-music');
+    const { seedForVideo } = await import('../media-visuals');
+    const { mp3DurationSeconds } = await import('../media-captions');
+
+    const settings = getSettings() as any;
+    const folder = (settings?.mediaMusicFolder || '').trim();
+    if (!folder) {
+      return err('No music folder is set in Settings. Set one first, then the tracks in it can be listed.');
+    }
+    if (!fs.existsSync(folder)) {
+      return err(`The music folder was not found: ${folder}`);
+    }
+
+    const tracks = listMusicTracks(folder);
+    if (tracks.length === 0) {
+      return ok(`No music files in ${folder} (looked for ${MUSIC_EXTENSIONS.join(', ')}).`);
+    }
+
+    const seed = seedForVideo(job.id);
+    const chosen = chooseMusic({ enabled: true, folder, seed });
+
+    const lines = tracks.map((t, i) => {
+      const name = path.basename(t);
+      let duration = '';
+      try {
+        const bytes = fs.statSync(t).size;
+        duration = `, ${Math.round(mp3DurationSeconds(bytes))}s`;
+      } catch { /* unreadable file — skip duration */ }
+      const marker = chosen.path === t ? ' ← default pick' : '';
+      return `${i + 1}. ${name}${duration}${marker}`;
+    });
+
+    return ok([
+      `Music folder: ${folder}`,
+      `${tracks.length} track(s):`,
+      ...lines,
+      '',
+      'Pass the filename to media_render as `track` to use a specific one, or omit to keep the default pick.',
+    ].join('\n'));
+  } catch (e: any) {
+    return err(`Could not list music: ${errText(e)}`);
+  }
+};
+
 const deleteMediaJobDef: ToolDefinition = {
   name: 'media_delete_job',
   description:
@@ -938,6 +1025,7 @@ const deleteMediaJobHandler: ToolHandler = async (args) => {
 
 export const mediaToolDefs: ToolDefinition[] = [
   deleteMediaJobDef,
+  listMusicDef,
   writeMediaScriptDef,
   narrateMediaJobDef,
   renderMediaJobDef,
@@ -953,6 +1041,7 @@ export const mediaToolHandlers: Record<string, ToolHandler> = {
   media_write_script: writeMediaScriptHandler,
   media_narrate: narrateMediaJobHandler,
   media_render: renderMediaJobHandler,
+  media_list_music: listMusicHandler,
   media_setup_research: setupMediaResearchHandler,
   media_create_job: createMediaJobHandler,
   media_list_jobs: listMediaJobsHandler,

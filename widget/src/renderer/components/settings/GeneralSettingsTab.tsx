@@ -83,6 +83,26 @@ export default function GeneralSettingsTab() {
         {/* Notification Preferences */}
         <div className="setting-group">
           <label className="setting-label">🔔 Notifications</label>
+          {/* The briefing has honoured `morningBriefing === false` since it was
+              written — its own header says so — and nothing anywhere could
+              write that value, so the opt-out could not be taken. Left ON by
+              default, because that is the behaviour everyone already has and
+              adding a switch is not the moment to change it. */}
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              data-testid="morning-briefing"
+              checked={(localSettings as any).morningBriefing !== false}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, morningBriefing: e.target.checked } as any)
+              }
+            />
+            <span>Offer a morning briefing on the first message each day</span>
+          </label>
+          <small className="setting-hint">
+            Weather, your next few calendar events and any reminders — offered once a day,
+            the first time you say something. Turn it off to start the day with a blank chat.
+          </small>
           <label className="setting-label">
             <input
               type="checkbox"
