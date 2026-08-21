@@ -9724,6 +9724,36 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   background: #000;
 }
 
+/* Fullscreen has to undo the preview sizing above.
+ *
+ * The browser gives a fullscreen element width/height 100% from its UA
+ * stylesheet, but an AUTHOR rule beats a UA rule — so `max-height: 15rem` kept
+ * applying and the video stayed a 15rem letterbox in the middle of a black
+ * screen. Pressing the fullscreen button appeared to do nothing, which is
+ * exactly how it was reported ("I couldn't make it full screen").
+ *
+ * :-webkit-full-screen is listed separately on purpose: a selector list is
+ * dropped WHOLE by any browser that does not understand one of its selectors,
+ * so combining the two with a comma would lose the rule for both. */
+.ms-video:fullscreen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+.ms-video:-webkit-full-screen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+
 .ms-job-published {
   font-size: .82rem;
   color: var(--text-secondary);
