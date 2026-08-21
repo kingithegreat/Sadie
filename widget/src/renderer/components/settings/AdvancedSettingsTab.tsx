@@ -380,6 +380,39 @@ export default function AdvancedSettingsTab() {
           <small className="setting-hint">
             Off by default. While it is off, moving a video into either stage is refused.
           </small>
+
+          {/* Background music, from a folder rather than a service: no account,
+              no rate limit, no licence question, and it works offline. */}
+          <label className="setting-label" style={{ marginTop: 12 }}>
+            <input
+              type="checkbox"
+              data-testid="media-music-enabled"
+              checked={!!localSettings.mediaMusicEnabled}
+              // Nothing to play without a folder, and a toggle that looks on
+              // while doing nothing is worse than one that is plainly off.
+              disabled={!localSettings.mediaMusicFolder?.trim()}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, mediaMusicEnabled: e.target.checked })
+              }
+            />
+            <span>Play background music under the narration</span>
+          </label>
+          <input
+            type="text"
+            className="setting-input"
+            data-testid="media-music-folder"
+            value={localSettings.mediaMusicFolder || ''}
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, mediaMusicFolder: e.target.value })
+            }
+            placeholder="Paste the folder holding your music, e.g. C:\Users\you\Music\HomeBot"
+          />
+          <small className="setting-hint">
+            Your own tracks, your own licence — HomeBot ships none and downloads none. Drop
+            mp3, m4a, wav, ogg or flac files into a folder and paste the path here. One track
+            is picked per video and quietened automatically whenever the narration is speaking.
+            The same video always gets the same track.
+          </small>
         </div>
 
         <div className="setting-group">

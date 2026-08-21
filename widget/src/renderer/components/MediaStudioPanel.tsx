@@ -155,7 +155,21 @@ export const MediaStudioPanel: React.FC = () => {
     if (j.state === 'idea' || j.state === 'researching' || j.state === 'needs_revision') {
       return { label: 'Write script', action: 'script' };
     }
+    // Offer what is MISSING, not what the state implies.
+    //
+    // "Move to …" advances the state and does none of the work, so a job can
+    // sit in script_draft with no script. Going by state alone offered "Record
+    // narration", which answered "has no script yet" — and scripting refused
+    // too, for being past the scripting stage. Reported live on a job called
+    // "is there a god", which had no way forward at all.
+    if ((j.state === 'script_draft' || j.state === 'script_qa') && !j.script?.trim()) {
+      return { label: 'Write script', action: 'script' };
+    }
     if (j.state === 'script_draft' || j.state === 'script_qa') {
+      return { label: 'Record narration', action: 'narrate' };
+    }
+    // Same shape one stage later: media_production without narration audio.
+    if (j.state === 'media_production' && !j.narrationPath) {
       return { label: 'Record narration', action: 'narrate' };
     }
     // Rendering used to be reachable only by asking in chat — the panel walked

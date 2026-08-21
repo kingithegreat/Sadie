@@ -66,8 +66,16 @@ export interface Settings {
   moaAggregator?: string;
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
   defaultLocation?: string;
+  /**
+   * Offer a morning briefing on the first message each day. Read by
+   * morning-briefing.ts as `=== false`, so undefined means ON.
+   */
+  morningBriefing?: boolean;
   /** The Media Studio publishing kill switch — see media-studio.ts. */
   mediaPublishingEnabled?: boolean;
+  /** Background music for generated video — see shared/types.ts. */
+  mediaMusicEnabled?: boolean;
+  mediaMusicFolder?: string;
   /** Whether chats are written to disk — see shared/types.ts. */
   saveConversationHistory?: boolean;
 }
