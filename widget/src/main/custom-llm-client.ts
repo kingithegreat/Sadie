@@ -146,9 +146,10 @@ const CODEX_MODELS: CustomModelInfo[] = [
 const OPENAI_MODELS: CustomModelInfo[] = [
   { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', provider: 'openai', costHint: '~$5/1M in' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable', provider: 'openai', costHint: '~$0.15/1M in' },
-  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: '128K context, vision', provider: 'openai', costHint: '~$10/1M in' },
-  { id: 'gpt-4', name: 'GPT-4', description: 'High intelligence', provider: 'openai', costHint: '~$30/1M in' },
-  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast, cost-effective', provider: 'openai', costHint: '~$0.50/1M in' },
+  // gpt-4-turbo, gpt-4 and gpt-3.5-turbo are retired/pointless next to 4o and
+  // were removed from the picker. Saved settings that still name one are
+  // remapped at load by model-lifecycle.ts; their MODEL_METADATA entries stay
+  // as the fallback for anything that skips migration.
   { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning', provider: 'openai', costHint: '~$15/1M in' },
   { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning', provider: 'openai', costHint: '~$3/1M in' },
 ];
@@ -1497,12 +1498,14 @@ export async function streamFromCustomLLM(
     ...conversationHistory,
     { role: 'user', content: userContent }
   ];
-  
+
   const options: StreamOptions = {
     model: apiConfig.model || 'gpt-3.5-turbo',
     messages,
     apiConfig,
     maxTokens: getModelMetadata(apiConfig.model || '').maxTokens,
+    // undefined preserves each provider's own default (0.5 / 0.7).
+    temperature: resolveChatTemperature(),
     tools,
     onChunk,
     onToolCall,
@@ -1550,6 +1553,26 @@ export async function streamFromCustomLLM(
       // AbortController will handle cancellation
     }
   };
+}
+
+/**
+ * The user's cloud-chat temperature, if they set one.
+ *
+ * Read here — the one point every provider path flows through — so the router
+ * and a dozen call sites don't each need the setting threaded in. Undefined
+ * when unset or unreadable (tests, missing config): each stream's own default
+ * then applies, which is the behaviour this knob replaces only deliberately.
+ */
+function resolveChatTemperature(): number | undefined {
+  try {
+    // Lazy: config-manager imports electron's app, absent under Jest.
+    const { getSettings } = require('./config-manager');
+    const t = getSettings()?.chatTemperature;
+    if (typeof t !== 'number' || !Number.isFinite(t)) return undefined;
+    return Math.min(2, Math.max(0, t));
+  } catch {
+    return undefined;
+  }
 }
 
 /**

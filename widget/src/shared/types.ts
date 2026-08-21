@@ -240,6 +240,11 @@ export interface Settings {
    */
   mediaMusicFolder?: string;
   /**
+   * Cloud chat temperature override (0–2). Unset = provider default.
+   * Mirrors the main-process Settings key.
+   */
+  chatTemperature?: number;
+  /**
    * Whether chats are written to conversation-history.json. Defaults to true.
    *
    * It was absent from this interface, which is why no control for it could be
