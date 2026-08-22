@@ -22,6 +22,10 @@ export default function ModelsSettingsTab() {
     effectiveVramGB,
     getModelFit,
     modelFitLabel,
+    confirmDestructive,
+    deletingModel,
+    modelDeleteError,
+    deleteInstalledModel,
   } = useSettingsCtx();
 
   return (
@@ -56,9 +60,20 @@ export default function ModelsSettingsTab() {
             }).map((model) => {
               const fit = getModelFit(model);
               const fitLabel = modelFitLabel(fit);
+              // Only what is actually on disk can be removed, and never the one
+              // currently answering — deleting that leaves chat pointing at a
+              // model Ollama no longer has.
+              const inUse = localSettings.chatModel === model.id
+                || localSettings.uncensoredModel === model.id
+                || localSettings.visionModel === model.id
+                || localSettings.codeModel === model.id;
+              const canDelete = (model as any).installed && !inUse;
+              const busy = deletingModel === model.id;
               return (
+                // Wrapped because the card is a <button> and a button cannot
+                // contain another one.
+                <div className="model-card-wrap" key={model.id}>
                 <button
-                  key={model.id}
                   className={`model-card ${localSettings.chatModel === model.id ? 'active' : ''} ${fit !== 'ok' && fit !== 'unknown' ? `model-fit-${fit}` : ''}`}
                   title={fit === 'over' ? `This model is larger than the detected ${effectiveVramGB} GB VRAM and may fall back to CPU or fail to load.` : undefined}
                   onClick={() =>
@@ -74,9 +89,39 @@ export default function ModelsSettingsTab() {
                   </div>
                   <p className="model-card-desc">{model.description}</p>
                 </button>
+                {(model as any).installed && (
+                  <button
+                    type="button"
+                    className="model-card-delete"
+                    data-testid={`delete-model-${model.id}`}
+                    disabled={!canDelete || busy}
+                    title={inUse
+                      ? 'This model is in use. Pick a different one first, then delete it.'
+                      : `Delete ${model.name} from this PC, freeing ${model.sizeGB ? `${model.sizeGB.toFixed(1)} GB` : 'disk space'}`}
+                    aria-label={`Delete ${model.name}`}
+                    onClick={() => confirmDestructive({
+                      title: `Delete ${model.name}?`,
+                      body: (
+                        <>
+                          This removes the model from this PC, freeing{' '}
+                          <strong>{model.sizeGB ? `${model.sizeGB.toFixed(1)} GB` : 'disk space'}</strong>.
+                          {' '}You can download it again later, but that means downloading it again.
+                        </>
+                      ),
+                      confirmLabel: 'Delete it',
+                      onConfirm: () => { void deleteInstalledModel(model.id); },
+                    })}
+                  >
+                    {busy ? '…' : '✕'}
+                  </button>
+                )}
+                </div>
               );
             })}
           </div>
+          {modelDeleteError && (
+            <small className="setting-hint error-hint" data-testid="model-delete-error">{modelDeleteError}</small>
+          )}
           <small className="setting-hint">
             {installedOllamaModels.length > 0
               ? `Showing ${installedOllamaModels.length} installed model(s). Recommendations are based on ${effectiveVramGB ? `${effectiveVramGB} GB VRAM` : 'your hardware profile'}; you can still choose any model.`
