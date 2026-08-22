@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
+import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 
 type MediaJobState =
   | 'idea' | 'researching' | 'script_draft' | 'script_qa' | 'media_production'
@@ -118,6 +119,19 @@ export const MediaStudioPanel: React.FC = () => {
   const [feedLoading, setFeedLoading] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [feed, setFeed] = useState<ParsedFeedView | null>(null);
+  // "From chat…" — recent user messages as video ideas. Same collapsed
+  // pattern; the messages only load when the section is opened.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatIdeas, setChatIdeas] = useState<Array<{ id: string; content: string; createdAt: number }> | null>(null);
+  // Narration voice picker. Voices load lazily with the first narrate action;
+  // sampling renders a short clip to a temp file and plays it.
+  const [voices, setVoices] = useState<Array<{ name: string; friendlyName?: string; locale?: string }> | null>(null);
+  const [narrateVoice, setNarrateVoice] = useState('');
+  const [sampling, setSampling] = useState<string | null>(null);
+  /** Last rendered voice sample, played inline via file:// like the previews. */
+  const [samplePath, setSamplePath] = useState<string | null>(null);
   /** Which job is currently being asked for its published link, if any. */
   const [publishingFor, setPublishingFor] = useState<string | null>(null);
   const [publishedLink, setPublishedLink] = useState('');
@@ -223,6 +237,86 @@ export const MediaStudioPanel: React.FC = () => {
     await run('new', () => api()?.mediaCreate?.(
       episodeToJobInput(feed?.showTitle || 'this podcast', ep),
     ));
+  };
+
+  /**
+   * Recent user messages, newest first, as candidate video ideas.
+   *
+   * Only user messages: the brief contract in chat-idea.ts is built on the
+   * idea being the user's own words. Length-capped so a pasted essay does not
+   * dominate the list; the full text still travels into the job's brief.
+   */
+  const loadChatIdeas = async () => {
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      const res = await api()?.loadConversations?.();
+      // homebot:load-conversations returns MemoryResult: { success, data }.
+      // The fallback covers a bare-store shape in case the envelope changes.
+      const store = res?.data ?? res;
+      const all: Array<{ id: string; content: string; createdAt: number }> = [];
+      const seen = new Set<string>();
+      const conversations = store?.conversations;
+      if (Array.isArray(conversations)) {
+        for (const conv of conversations) {
+          for (const m of (conv.messages || [])) {
+            if (m.role !== 'user') continue;
+            const text = String(m.content || '').trim();
+            if (text.length < 12) continue; // "ok", "thanks" — not ideas
+            // The same words re-sent or repeated across conversations are one
+            // idea, not two — and two jobs from it would be indistinguishable.
+            const key = text.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            all.push({ id: m.id || `${conv.id}-${all.length}`, content: text, createdAt: m.createdAt || 0 });
+          }
+        }
+      }
+      all.sort((a, b) => b.createdAt - a.createdAt);
+      setChatIdeas(all.slice(0, 15));
+    } catch (e: any) {
+      setChatError(e?.message || 'Could not read the conversation history.');
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const openChatSection = () => {
+    setChatOpen(true);
+    if (!chatIdeas) loadChatIdeas();
+  };
+
+  /** One idea → one ordinary job, via the shared composition. */
+  const createFromChatIdea = async (idea: { id: string; content: string; createdAt: number }) => {
+    await run('new', () => api()?.mediaCreate?.(chatIdeaToJobInput(idea)));
+  };
+
+  /** Neural voices for the narration picker — loaded once, on first use. */
+  const ensureVoices = async () => {
+    if (voices) return;
+    try {
+      const res = await api()?.ttsListVoices?.();
+      const list = res?.result?.voices;
+      if (Array.isArray(list)) setVoices(list);
+    } catch { /* picker stays on "Default voice" — narration still works */ }
+  };
+
+  /** Render a short sample of a voice to a temp file and play it inline. */
+  const sampleVoice = async (voice: string) => {
+    setSampling(voice);
+    try {
+      const res = await api()?.ttsSampleVoice?.(voice);
+      if (res?.success && res.path) {
+        // Same file:// playback the job previews use — no extra channel.
+        setSamplePath(res.path);
+      } else {
+        setError(res?.error || 'Could not render the voice sample.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Could not render the voice sample.');
+    } finally {
+      setSampling(null);
+    }
   };
 
   const awaiting = jobs.filter(j => j.state === 'awaiting_approval');
@@ -353,15 +447,42 @@ export const MediaStudioPanel: React.FC = () => {
           </>
         ) : stageAction(j) ? (
           // The stage that does real work, rather than only changing state.
-          <button
-            className="ms-btn ms-btn--primary"
-            onClick={() => {
-              const a = stageAction(j)!;
-              run(j.id, () => api()?.mediaRun?.(j.id, a.action), a.label);
-            }}
-          >
-            {stageAction(j)!.label}
-          </button>
+          // Narration offers the voice picker inline: pick, hear a sample,
+          // then record — without a trip to Settings.
+          <>
+            {stageAction(j)!.action === 'narrate' && (
+              <select
+                className="ms-input ms-voice-select"
+                value={narrateVoice}
+                onChange={e => setNarrateVoice(e.target.value)}
+                onFocus={ensureVoices}
+                aria-label="Narration voice"
+              >
+                <option value="">Default voice</option>
+                {(voices || []).map(v => (
+                  <option key={v.name} value={v.name}>{v.friendlyName || v.name}</option>
+                ))}
+              </select>
+            )}
+            {stageAction(j)!.action === 'narrate' && narrateVoice && (
+              <button
+                className="ms-btn"
+                disabled={sampling === narrateVoice}
+                onClick={() => sampleVoice(narrateVoice)}
+              >
+                {sampling === narrateVoice ? 'Rendering…' : '▶ Sample'}
+              </button>
+            )}
+            <button
+              className="ms-btn ms-btn--primary"
+              onClick={() => {
+                const a = stageAction(j)!;
+                run(j.id, () => api()?.mediaRun?.(j.id, a.action, a.action === 'narrate' ? { voice: narrateVoice || undefined } : undefined), a.label);
+              }}
+            >
+              {stageAction(j)!.label}
+            </button>
+          </>
         ) : PUBLISHABLE.includes(j.state) ? (
           /* Publishing asks for the link, because HomeBot does not upload.
              The old button set the state to `published` and stopped, so the
@@ -538,10 +659,71 @@ export const MediaStudioPanel: React.FC = () => {
         )}
       </div>
 
+      {/* A third source: an idea already brainstormed in chat. The user's own
+          words become the job's brief (chat-idea.ts), so the script stage works
+          from what they actually said. Same ordinary job, same approval gate. */}
+      <div className="ms-feed">
+        {!chatOpen ? (
+          <button type="button" className="ms-btn" onClick={openChatSection}>
+            From chat…
+          </button>
+        ) : (
+          <>
+            <div className="ms-feed-row">
+              <span className="ms-feed-ep-meta" style={{ alignSelf: 'center' }}>
+                Recent messages you sent, newest first.
+              </span>
+              <button
+                type="button"
+                className="ms-btn"
+                onClick={() => { setChatOpen(false); setChatIdeas(null); setChatError(null); }}
+                aria-label="Close chat ideas section"
+              >✕</button>
+            </div>
+            {chatError && <div className="ms-error" role="alert">{chatError}</div>}
+            {chatLoading && <div className="ms-feed-ep-meta">Looking…</div>}
+            {chatIdeas && chatIdeas.length === 0 && (
+              <div className="ms-feed-ep-meta">No recent messages long enough to be an idea.</div>
+            )}
+            {chatIdeas && chatIdeas.length > 0 && (
+              <ul className="ms-feed-episodes" aria-label="Recent chat ideas">
+                {chatIdeas.map(idea => (
+                  <li key={idea.id} className="ms-feed-episode">
+                    <div className="ms-feed-ep-main">
+                      <span className="ms-feed-ep-title">{deriveIdeaTitle(idea.content)}</span>
+                      <span className="ms-feed-ep-meta">
+                        {idea.content.length > 90 ? `${idea.content.slice(0, 90)}…` : idea.content}
+                      </span>
+                    </div>
+                    <button
+                      className="ms-btn ms-btn--primary"
+                      disabled={busy === 'new'}
+                      onClick={() => createFromChatIdea(idea)}
+                    >
+                      Make a video
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
+
       {jobs.length === 0 && (
         <p className="ms-empty">
           No videos yet. Add one above, or ask in chat — “start a short video called …”.
         </p>
+      )}
+
+      {/* A rendered voice sample, played inline — hear it before recording. */}
+      {samplePath && (
+        <audio
+          className="ms-audio"
+          controls
+          autoPlay
+          src={`file:///${samplePath.replace(/\\/g, '/')}`}
+        />
       )}
 
       {awaiting.length > 0 && (

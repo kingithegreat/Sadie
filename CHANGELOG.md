@@ -2,6 +2,17 @@
 
 ## Unreleased — Automation from chat + monetization + audit hardening
 
+### Security audit remediations (2026-08-22)
+
+#### Security
+- **Removed the unconfined `run_command` tool from the shipped n8n chat workflow** (`n8n-workflows/homebot-chat.json`): the workflow that ships inside every installer carried a Code node running `execSync` on an LLM-chosen command — a second, permission-free shell path beside the Electron terminal tool's own permission gates. The Electron-side `run_terminal_command` tool (permission-prompted) remains the only command path.
+- **n8n chat workflow file tools now confined to the home directory** (`n8n-workflows/homebot-chat.json`): `read_file`, `write_file` and `list_directory` accepted absolute paths anywhere on disk from the model; they now resolve `~` and reject anything outside `os.homedir()`, matching the Electron-side `resolveWithinHome` rule.
+- **Auth Guard added to the n8n chat workflow**: `homebot-chat.json` was the one webhook workflow shipping without the `X-HOMEBOT-Auth` guard the other fifteen have. Guard nodes now sit between each webhook trigger and its agent; `scripts/inject-auth-guard.js` confirms idempotently.
+- **`homebot:import-settings` path confinement** (`ipc-handlers.ts`): restoring a backup resolved any path on disk with no guard. It now uses the shared `resolveWithinHome`, and credential-bearing settings keys (`*ApiKey`, `providerApiKeys`, `calendarIcsUrl`, nested `customLLM.apiKey`) are stripped on import so a malicious backup cannot silently repoint cloud traffic or replace keys (`utils/settings-import.ts`, `utils/path-guard.ts`; 12 new tests).
+- **Startup warning when `HOMEBOT_WEBHOOK_SECRET` is unset** (`webhook-auth.ts`): the n8n auth guards skip validation when the env var is absent (dev convenience); a silent mismatch meant unauthenticated webhooks. The mismatch now warns once at startup.
+- **Dependency refresh** (`widget/package-lock.json`): `nanoid` 3.3.17 → 3.3.18 via plain `npm audit fix` (GHSA-2v37-7h3g-55p8). Remaining 6 advisories are the documented accepted set — see `SECURITY-AUDIT.md`.
+- **Removed the fake `crypto` npm dependency** (root `package.json`): the placeholder package is not Node's builtin; every `from 'crypto'` import already resolves to Node core.
+
 ### Settings, portability and cloud keys (2026-08-21)
 
 #### Added

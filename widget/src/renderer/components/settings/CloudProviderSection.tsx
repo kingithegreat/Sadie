@@ -291,6 +291,44 @@ export default function CloudProviderSection() {
               <span>Use this API by default for chats</span>
             </label>
           )}
+
+          {/* Creativity — unset means each provider's own default (0.5 for
+              OpenAI-compatible APIs, 0.7 for Anthropic). Cloud only: local
+              models keep their tuned values. */}
+          {isConnected && (
+            <div className="setting-group" style={{ marginTop: 8 }}>
+              <label className="setting-label" htmlFor="chat-temperature">
+                Response creativity{localSettings.chatTemperature == null ? ' (provider default)' : `: ${localSettings.chatTemperature.toFixed(2)}`}
+              </label>
+              <input
+                id="chat-temperature"
+                type="range"
+                min={0}
+                max={1.5}
+                step={0.05}
+                value={localSettings.chatTemperature ?? 0.7}
+                onChange={(e) =>
+                  setLocalSettings({
+                    ...localSettings,
+                    chatTemperature: Number(e.target.value)
+                  })
+                }
+              />
+              {localSettings.chatTemperature != null && (
+                <button
+                  type="button"
+                  className="setting-link"
+                  onClick={() => {
+                    const next = { ...localSettings };
+                    delete next.chatTemperature;
+                    setLocalSettings(next);
+                  }}
+                >
+                  Back to provider default
+                </button>
+              )}
+            </div>
+          )}
         </div>
   );
 }

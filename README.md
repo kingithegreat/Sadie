@@ -221,6 +221,12 @@ HomeBot/
 └── README.md
 ```
 
+> **Repo layout note:** this repository contains two packages. The **Electron
+> app** lives in `widget/` (its own `package.json`, tests, and build); the root
+> `package.json` (`homebot-tool-registry`) is a standalone module — the shared
+> tool-registry/trust/CRM/licensing core that both the app and CI gates use.
+> Run app scripts from `widget/`; run registry scripts from the repo root.
+
 ---
 
 ## Testing

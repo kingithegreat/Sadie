@@ -693,6 +693,7 @@ export function MessageBubble({
   onBookmark,
   onReact,
   onEdit,
+  onSendToMediaStudio,
 }: {
   message: ChatMessage;
   onCancel: (assistantId: string) => void;
@@ -700,6 +701,7 @@ export function MessageBubble({
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
+  onSendToMediaStudio?: (message: ChatMessage) => void;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -746,6 +748,12 @@ export function MessageBubble({
         setTimeout(() => editRef.current?.focus(), 50);
       }});
     }
+    // An idea brainstormed in chat can become a Media Studio job without
+    // retyping it. User messages only: the idea is the user's own words, and
+    // the brief contract (chat-idea.ts) is built on that.
+    if (isUser && onSendToMediaStudio && hasContent) {
+      items.push({ label: 'Make a video from this', icon: <Icon name="video" />, action: () => onSendToMediaStudio(message) });
+    }
     if (onBookmark && message.id) {
       items.push({ label: message.bookmarked ? 'Remove bookmark' : 'Bookmark', icon: <Icon name={message.bookmarked ? 'starFilled' : 'star'} />, action: () => onBookmark(message.id!) });
     }
@@ -760,7 +768,7 @@ export function MessageBubble({
       items.push({ label: 'Regenerate', icon: <Icon name="refresh" />, action: () => onRetry(message.id!) });
     }
     return items;
-  }, [message, isAssistant, state, speaking, onRetry, onBookmark]);
+  }, [message, isAssistant, state, speaking, onRetry, onBookmark, onSendToMediaStudio, hasContent]);
 
   const handleCopyMessage = useCallback(() => {
     if (!message.content) return;
