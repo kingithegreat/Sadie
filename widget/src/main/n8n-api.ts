@@ -270,10 +270,15 @@ return {
 
 export async function importWorkflow(workflowJson: object): Promise<string> {
   // Defense in depth: every app-deployed workflow gets Auth Guard nodes after
-  // its webhook triggers, whatever builder produced the JSON. Idempotent —
-  // workflows that already carry guards (e.g. the shipped n8n-workflows/)
-  // come back unchanged.
-  const guarded = injectAuthGuards(workflowJson as Parameters<typeof injectAuthGuards>[0]).wf;
+  // its webhook triggers, whatever builder produced the JSON. The per-install
+  // secret is embedded into the guard (Code nodes cannot read container env —
+  // see n8n-auth-guard.ts). Idempotent — already-guarded workflows are only
+  // upgraded if their guard predates the embedded-secret form.
+  const { getWebhookSecret } = await import('./webhook-auth');
+  const guarded = injectAuthGuards(
+    workflowJson as Parameters<typeof injectAuthGuards>[0],
+    getWebhookSecret(),
+  ).wf;
   workflowJson = guarded as object;
 
   const check = validateWorkflowJson(workflowJson);

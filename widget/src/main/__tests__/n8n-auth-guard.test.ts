@@ -1,4 +1,6 @@
-import { injectAuthGuards, AUTH_GUARD_JS } from '../n8n-auth-guard';
+import { injectAuthGuards } from '../n8n-auth-guard';
+
+const SECRET = 'test-secret-123';
 
 function makeWorkflow(nodeNames: string[], webhookIndexes: number[] = [0]) {
   const nodes = nodeNames.map((name, i) => ({
@@ -24,7 +26,7 @@ function makeWorkflow(nodeNames: string[], webhookIndexes: number[] = [0]) {
 describe('injectAuthGuards', () => {
   test('inserts a guard between the webhook and its first downstream node', () => {
     const wf = makeWorkflow(['Webhook', 'Prepare Request', 'Respond']);
-    const { wf: out, injected } = injectAuthGuards(wf as any);
+    const { wf: out, injected } = injectAuthGuards(wf as any, SECRET);
     expect(injected).toBe(1);
     expect(out.nodes.some((n: any) => n.name === 'Auth Guard')).toBe(true);
     // Webhook now points at the guard, guard points at the original target.
@@ -34,31 +36,42 @@ describe('injectAuthGuards', () => {
     expect(out.connections['Prepare Request'].main[0][0].node).toBe('Respond');
   });
 
-  test('guard node carries the shared-secret check script', () => {
-    const { wf: out } = injectAuthGuards(makeWorkflow(['Webhook', 'Respond']) as any);
+  test('guard embeds the per-install secret and checks the auth header', () => {
+    const { wf: out } = injectAuthGuards(makeWorkflow(['Webhook', 'Respond']) as any, SECRET);
     const guard = out.nodes.find((n: any) => n.name === 'Auth Guard') as any;
-    expect(guard.parameters.jsCode).toContain('HOMEBOT_WEBHOOK_SECRET');
-    expect(guard.parameters.jsCode).toContain("hdrs['x-homebot-auth']");
+    expect(guard.parameters.jsCode).toContain('x-homebot-auth');
+    expect(guard.parameters.jsCode).toContain(JSON.stringify(SECRET));
   });
 
   test('is idempotent — a second pass injects nothing and keeps one guard', () => {
-    const first = injectAuthGuards(makeWorkflow(['Webhook', 'Respond']) as any);
-    const second = injectAuthGuards(first.wf as any);
+    const first = injectAuthGuards(makeWorkflow(['Webhook', 'Respond']) as any, SECRET);
+    const second = injectAuthGuards(first.wf as any, SECRET);
     expect(second.injected).toBe(0);
     expect(second.wf.nodes.filter((n: any) => n.name === 'Auth Guard').length).toBe(1);
   });
 
+  test('upgrades a legacy env-based guard to the embedded-secret form', () => {
+    const wf = makeWorkflow(['Webhook', 'Old Env Guard', 'Respond']);
+    (wf.nodes[1] as any).parameters = {
+      jsCode: 'const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const incoming = hdrs[\'x-homebot-auth\'];\n  throw new Error("no");\n}',
+    };
+    const { wf: out } = injectAuthGuards(wf as any, SECRET);
+    const guard = out.nodes.find((n: any) => n.name === 'Old Env Guard') as any;
+    expect(guard.parameters.jsCode).toContain(JSON.stringify(SECRET));
+    expect(guard.parameters.jsCode).toContain('x-homebot-auth');
+  });
+
   test('recognises an existing guard even when it is named differently', () => {
     const wf = makeWorkflow(['Webhook', 'My Custom Guard', 'Respond']);
-    (wf.nodes[1] as any).parameters = { jsCode: AUTH_GUARD_JS };
-    const { injected, wf: out } = injectAuthGuards(wf as any);
+    (wf.nodes[1] as any).parameters = { jsCode: `const hdrs = {}; void hdrs["hdrs['x-homebot-auth']"];` };
+    const { injected, wf: out } = injectAuthGuards(wf as any, SECRET);
     expect(injected).toBe(0);
     expect(out.connections['Webhook'].main[0][0].node).toBe('My Custom Guard');
   });
 
   test('leaves workflows without webhooks untouched', () => {
     const wf = makeWorkflow(['Step A', 'Step B'], []);
-    const { injected, wf: out } = injectAuthGuards(wf as any);
+    const { injected, wf: out } = injectAuthGuards(wf as any, SECRET);
     expect(injected).toBe(0);
     expect(out.nodes.length).toBe(wf.nodes.length);
   });
@@ -78,7 +91,7 @@ describe('injectAuthGuards', () => {
       },
       settings: {},
     };
-    const { wf: out, injected } = injectAuthGuards(wf);
+    const { wf: out, injected } = injectAuthGuards(wf, SECRET);
     expect(injected).toBe(2);
     expect(out.connections['W1'].main[0][0].node).toBe('Auth Guard');
     expect(out.connections['W2'].main[0][0].node).toBe('Auth Guard 2');
@@ -89,7 +102,7 @@ describe('injectAuthGuards', () => {
   test('does not mutate the input workflow', () => {
     const wf = makeWorkflow(['Webhook', 'Respond']) as any;
     const before = JSON.stringify(wf);
-    injectAuthGuards(wf);
+    injectAuthGuards(wf, SECRET);
     expect(JSON.stringify(wf)).toBe(before);
   });
 });

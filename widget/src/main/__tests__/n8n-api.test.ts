@@ -132,7 +132,7 @@ describe('REST path (API key configured)', () => {
       settings: VALID_WORKFLOW.settings,
     });
     const guard = call.data.nodes.find((n: any) => n.name === 'Auth Guard');
-    expect(guard.parameters.jsCode).toContain('HOMEBOT_WEBHOOK_SECRET');
+    expect(guard.parameters.jsCode).toContain('x-homebot-auth');
     // No docker involvement on the REST path
     expect(mockExecFile).not.toHaveBeenCalled();
   });

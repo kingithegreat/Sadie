@@ -7,10 +7,12 @@
  * HomeBot as the `X-HOMEBOT-Auth` header), so only this machine's app can
  * trigger automations — not anything else that can reach the port.
  *
- * The guard reads HOMEBOT_WEBHOOK_SECRET from the n8n container's environment
- * (set via docker-compose / start-homebot.ps1). When unset it skips validation
- * so local development keeps working; webhook-auth.ts warns about that state
- * at app startup.
+ * The secret is **embedded into the generated Code node** rather than read
+ * from process.env: verified on n8n 1.122.5 (2026-08-22) that Code nodes see
+ * an EMPTY process.env regardless of N8N_BLOCK_ENV_ACCESS_IN_NODE, so the
+ * original env-based guards silently skipped validation on every execution.
+ * The embedded value lives in the n8n database — the same trust boundary as
+ * every other automation definition.
  *
  * This module is intentionally dependency-free so it unit-tests without
  * mocking Electron, Docker or HTTP.
@@ -18,18 +20,25 @@
 
 export const AUTH_GUARD_NODE_TYPE = 'n8n-nodes-base.code';
 
-/** Same logic as n8n-workflows/_shared/auth-guard.js — keep the two in sync. */
-export const AUTH_GUARD_JS = [
-  "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;",
-  "if (secret) {",
-  "  const hdrs = $input.first()?.json?.headers || {};",
-  "  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';",
-  "  if (incoming !== secret) {",
-  "    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');",
-  "  }",
-  "}",
-  "return $input.all();",
-].join('\n');
+/** Marker shared by all guard variants (env-based legacy ones included). */
+const GUARD_MARKER = "hdrs['x-homebot-auth']";
+
+/** Generate the guard script with the per-install secret baked in. */
+export function guardJsCode(secret: string): string {
+  return [
+    `// Auth Guard — deployed by HomeBot; validates X-HOMEBOT-Auth.`,
+    `let secret = ${JSON.stringify(secret)};`,
+    `if (!secret) secret = process.env.HOMEBOT_WEBHOOK_SECRET;`,
+    `if (secret) {`,
+    `  const hdrs = $input.first()?.json?.headers || {};`,
+    `  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';`,
+    `  if (incoming !== secret) {`,
+    `    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');`,
+    `  }`,
+    `}`,
+    `return $input.all();`,
+  ].join('\n');
+}
 
 interface N8nNode {
   name: string;
@@ -53,20 +62,27 @@ function isGuardNode(node: N8nNode): boolean {
   return (
     node.type === AUTH_GUARD_NODE_TYPE &&
     typeof node.parameters?.jsCode === 'string' &&
-    (node.parameters.jsCode as string).includes('HOMEBOT_WEBHOOK_SECRET')
+    (node.parameters.jsCode as string).includes(GUARD_MARKER)
   );
 }
 
 /**
  * Insert Auth Guard nodes after every Webhook trigger that doesn't already
- * have one. Mutates nothing — returns a new workflow object.
+ * have one, and upgrade any existing guard to the embedded-secret form (the
+ * old process.env-based guards are inert on current n8n — Code nodes see no
+ * environment). Mutates nothing — returns a new workflow object.
  *
- * Idempotent: running it on an already-guarded workflow injects nothing.
+ * Idempotent: running it twice changes nothing the second time.
  */
-export function injectAuthGuards<T extends N8nWorkflow>(wf: T): { wf: T; injected: number } {
+export function injectAuthGuards<T extends N8nWorkflow>(
+  wf: T,
+  secret: string,
+): { wf: T; injected: number } {
   if (!wf || !Array.isArray(wf.nodes) || !wf.connections) {
     return { wf, injected: 0 };
   }
+
+  const jsCode = guardJsCode(secret);
 
   const nodes = wf.nodes.map((n) => ({ ...n }));
   const connections: NonNullable<N8nWorkflow['connections']> = {};
@@ -82,9 +98,17 @@ export function injectAuthGuards<T extends N8nWorkflow>(wf: T): { wf: T; injecte
     const outgoing = connections[node.name]?.main?.[0];
     if (!outgoing || outgoing.length === 0) continue;
 
-    // Already guarded when the first downstream node is a guard.
     const firstTarget = nodes.find((n) => n.name === outgoing[0]?.node);
-    if (firstTarget && isGuardNode(firstTarget)) continue;
+    if (firstTarget && isGuardNode(firstTarget)) {
+      // Upgrade legacy env-based guards to the embedded-secret form.
+      if (
+        secret &&
+        !(firstTarget.parameters?.jsCode as string)?.includes(JSON.stringify(secret))
+      ) {
+        firstTarget.parameters = { ...(firstTarget.parameters as object), jsCode };
+      }
+      continue;
+    }
 
     guardCount += 1;
     const guardName = guardCount === 1 ? 'Auth Guard' : `Auth Guard ${guardCount}`;
@@ -93,7 +117,7 @@ export function injectAuthGuards<T extends N8nWorkflow>(wf: T): { wf: T; injecte
       type: AUTH_GUARD_NODE_TYPE,
       typeVersion: 2,
       position: [(node.position as number[]) ? (node.position as number[])[0] + 200 : 400, (node.position as number[]) ? (node.position as number[])[1] : 300],
-      parameters: { jsCode: AUTH_GUARD_JS },
+      parameters: { jsCode },
     });
 
     // Webhook → Guard → (original targets)
@@ -104,3 +128,4 @@ export function injectAuthGuards<T extends N8nWorkflow>(wf: T): { wf: T; injecte
 
   return { wf: { ...wf, nodes, connections }, injected };
 }
+
