@@ -315,8 +315,20 @@ export async function importWorkflow(workflowJson: object): Promise<string> {
 /**
  * Activate a workflow.
  * - REST path: `POST /api/v1/workflows/{id}/activate` — webhooks register live.
- * - CLI fallback: `n8n update:workflow --active=true` (n8n's own supported
- *   command), which requires a container restart to register webhooks.
+ * - CLI fallback: `n8n update:workflow --active=true`, which requires a
+ *   container restart to register webhooks.
+ *
+ * **Known limitation of the CLI fallback** (verified on n8n 1.122.5,
+ * 2026-08-22): `import:workflow` does not create a `workflow_history` row for
+ * the imported version, so the subsequent activation fails with
+ * SQLITE_CONSTRAINT (FOREIGN KEY, activeVersionId → workflow_history) and —
+ * even when the flag is forced in the database — webhook serving reports
+ * "Active version not found". Only n8n's own save/activation path creates the
+ * version bookkeeping. The REST path is therefore the only reliable way to
+ * deploy; without an API key we fail loudly instead of leaving a silently
+ * broken automation behind. The user can still activate an imported workflow
+ * by hand in the n8n editor (that path writes proper versions), or better,
+ * configure the API key under Settings → n8n.
  */
 export async function activateWorkflow(workflowId: string): Promise<void> {
   if (hasApiKey()) {
@@ -324,9 +336,24 @@ export async function activateWorkflow(workflowId: string): Promise<void> {
     console.log('[n8n-api] Activated workflow via REST API:', workflowId);
     return;
   }
-  const out = await dockerExec('n8n', 'update:workflow', `--id=${workflowId}`, '--active=true');
-  console.log('[n8n-api] activate result:', out);
+  try {
+    const out = await dockerExec('n8n', 'update:workflow', `--id=${workflowId}`, '--active=true');
+    console.log('[n8n-api] activate result:', out);
+  } catch (err: any) {
+    const raw = String(err?.message || err);
+    if (/FOREIGN KEY constraint failed|GOT ERROR|SQLITE_CONSTRAINT/i.test(raw)) {
+      throw new Error(
+        'Could not activate the workflow via the Docker CLI fallback: this n8n version ' +
+          'cannot serve workflows imported with `n8n import:workflow` (missing active-version ' +
+          'bookkeeping). Configure an n8n API key in Settings → n8n so deployments use the ' +
+          'REST API, or activate the workflow manually in the n8n editor at ' +
+          `${N8N_BASE}. Raw output: ${raw}`
+      );
+    }
+    throw err;
+  }
 }
+
 
 export async function restartN8n(): Promise<void> {
   console.log('[n8n-api] Restarting n8n container...');
