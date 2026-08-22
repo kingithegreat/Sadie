@@ -149,3 +149,66 @@ describe('SettingsPanel — privacy switch wording', () => {
     expect(privacySwitch(container)!.disabled).toBe(false);
   });
 });
+
+/**
+ * Reported from real use: "selected sonet but still showing quen".
+ *
+ * Choosing a cloud model saves `customLLM.model` and sets `enabled: true`, but
+ * routing is decided by `useCustomLLM` — which stays off, deliberately, so that
+ * connecting a provider never silently starts sending chats off the machine.
+ * Nothing said so. The switch read "the online AI you set up", which does not
+ * connect to "the Sonnet I just picked is sitting there unused".
+ */
+describe('SettingsPanel — a configured-but-unused cloud model says so', () => {
+  beforeEach(mountElectron);
+  afterEach(() => { delete (window as any).electron; });
+
+  const claudeSubReady = {
+    ...baseSettings,
+    useCustomLLM: false,
+    chatModel: 'qwen2.5:7b',
+    customLLM: {
+      name: 'Custom LLM', apiUrl: '', apiKey: '',
+      provider: 'claude-code', model: 'sonnet', enabled: true,
+    },
+  };
+
+  test('names the model that is waiting AND the one answering instead', () => {
+    const { container } = render(
+      <SettingsPanel settings={claudeSubReady as any} onSave={noop} onClose={noop} />
+    );
+    expect(container.textContent).toContain('Claude sonnet is set up but NOT in use');
+    expect(container.textContent).toContain('qwen2.5:7b is answering');
+  });
+
+  test('the switch is operable, so the fix is one click away', () => {
+    const { container } = render(
+      <SettingsPanel settings={claudeSubReady as any} onSave={noop} onClose={noop} />
+    );
+    expect(privacySwitch(container)!.disabled).toBe(false);
+    expect(privacySwitch(container)!.checked).toBe(false);
+  });
+
+  test('turning it on routes to the cloud model', () => {
+    const onSave = jest.fn();
+    const { container } = render(
+      <SettingsPanel settings={claudeSubReady as any} onSave={onSave} onClose={noop} />
+    );
+    fireEvent.click(privacySwitch(container)!);
+    fireEvent.click(container.querySelector('.button-save') as HTMLButtonElement);
+
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.useCustomLLM).toBe(true);
+    expect(saved.customLLM.provider).toBe('claude-code');
+    expect(saved.customLLM.model).toBe('sonnet');
+  });
+
+  test('once in use, it stops claiming the model is unused', () => {
+    const { container } = render(
+      <SettingsPanel settings={{ ...claudeSubReady, useCustomLLM: true } as any} onSave={noop} onClose={noop} />
+    );
+    expect(container.textContent).not.toContain('set up but NOT in use');
+    expect(container.textContent).toContain('Allowed to use the online AI');
+  });
+});
+
