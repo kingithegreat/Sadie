@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
 import UpdateBanner from './components/UpdateBanner';
 import { debug as logDebug } from '../shared/logger';
+import { chatIdeaToJobInput } from '../shared/chat-idea';
 import ChatInterface from "./components/ChatInterface";
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
@@ -1148,6 +1149,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     updatePersistedMessage(messageId, { content: newContent });
   }, [updatePersistedMessage]);
 
+  // An idea brainstormed in chat becomes a Media Studio job, and the app
+  // switches there so the creation is visible where the work will happen.
+  const handleSendToMediaStudio = useCallback(async (message: ChatMessage) => {
+    try {
+      const input = chatIdeaToJobInput({ content: message.content || '', createdAt: message.createdAt });
+      const res = await (window as any).electron?.mediaCreate?.(input);
+      if (res && res.ok === false) {
+        console.error('[Media Studio] idea → job refused:', res.error);
+        return;
+      }
+      setMode('media');
+    } catch (e) {
+      console.error('[Media Studio] could not create a job from the idea:', e);
+    }
+  }, []);
+
   /**
    * Handle confirmation rejection
    */
@@ -1447,6 +1464,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             onBookmark={handleBookmark}
             onReact={handleReact}
             onEdit={handleEdit}
+            onSendToMediaStudio={handleSendToMediaStudio}
             systemPrompt={conversationSystemPrompt}
             onUpdateSystemPrompt={updateConversationSystemPrompt}
           />

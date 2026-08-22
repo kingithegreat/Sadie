@@ -11,6 +11,7 @@ export function MessageList({
   onBookmark,
   onReact,
   onEdit,
+  onSendToMediaStudio,
 }: {
   messages: ChatMessage[];
   onCancel: (assistantId: string) => void;
@@ -18,6 +19,7 @@ export function MessageList({
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
+  onSendToMediaStudio?: (message: ChatMessage) => void;
 }) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +131,7 @@ export function MessageList({
               onBookmark={onBookmark}
               onReact={onReact}
               onEdit={onEdit}
+              onSendToMediaStudio={onSendToMediaStudio}
             />
           </React.Fragment>
         );
