@@ -58,6 +58,8 @@ import { Message } from '../shared/types';
 import { resolveCloudLLM, describeActiveModel } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
+import { resolveWithinHome } from './utils/path-guard';
+import { sanitizeImportedSettings } from './utils/settings-import';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
@@ -920,7 +922,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string }) => {
     const { mediaToolHandlers, readJobs } = await import('./tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -933,7 +935,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       : action === 'narrate' ? 'media_narrate'
       : 'media_write_script';
     try {
-      const res: any = await mediaToolHandlers[tool]({ job: job.id }, { executionId: `panel-${action}` } as any);
+      const args: Record<string, unknown> = { job: job.id };
+      if (action === 'narrate' && opts?.voice) args.voice = opts.voice;
+      const res: any = await mediaToolHandlers[tool](args, { executionId: `panel-${action}` } as any);
       return res?.success
         ? { ok: true, message: String(res.result ?? '') }
         : { ok: false, error: String(res?.error ?? 'That stage failed.') };
@@ -1668,6 +1672,25 @@ try {
     return stopSpeakingHandler({}, {} as any);
   });
 
+  // Voice picker: list the neural voices, and render a short sample of one to
+  // a file the renderer can play — hear a voice before committing a video to it.
+  ipcMain.handle('homebot:tts-list-voices', async () => {
+    const { getVoicesHandler } = await import('./tools/voice');
+    return getVoicesHandler({}, {} as any);
+  });
+
+  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string) => {
+    const { renderNarrationToFile } = await import('./tools/voice');
+    const text = (sampleText || 'Hi, this is how I sound. I can narrate your video from start to finish.').slice(0, 300);
+    const file = path.join(os.tmpdir(), `homebot-voice-sample-${Date.now()}.mp3`);
+    try {
+      const rendered = await renderNarrationToFile(text, file, { voice: voice || undefined });
+      return { success: true, path: rendered.path };
+    } catch (err: any) {
+      return { success: false, error: err?.message || String(err) };
+    }
+  });
+
   // ── MCP Server Management ───────────────────────────────────────────────────
 
   ipcMain.handle('homebot:mcp-get-status', async () => {
@@ -1794,7 +1817,12 @@ try {
 
   ipcMain.handle('homebot:import-settings', async (_event, filePath: string) => {
     try {
-      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      // Same home-directory confinement as parse-document / write-document:
+      // an arbitrary path here would let a malicious or mistaken restore read
+      // any JSON on disk (error messages leak contents) — see path-guard.ts.
+      const guard = resolveWithinHome(filePath);
+      if ('error' in guard) return { success: false, error: guard.error };
+      const resolved = guard.resolved;
       if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
       const raw = fs.readFileSync(resolved, 'utf-8');
       const bundle = JSON.parse(raw);
@@ -1802,7 +1830,7 @@ try {
 
       if (bundle.settings) {
         const current = getSettings();
-        saveSettings({ ...current, ...bundle.settings });
+        saveSettings({ ...current, ...sanitizeImportedSettings(bundle.settings) });
       }
       if (bundle.preferences) {
         MemoryManager.savePreferences(bundle.preferences);
@@ -1817,20 +1845,11 @@ try {
     }
   });
 
+
   // ── Document Viewer ────────────────────────────────────────────────────────
 
-  // Confine document read/write to the user's home directory. Without this a
-  // malicious LLM tool-call or a compromised renderer could read arbitrary
-  // files (~/.ssh/id_rsa, browser cookie stores, etc.) and return them.
-  function resolveWithinHome(filePath: string): { resolved: string } | { error: string } {
-    const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
-    const homeDir = os.homedir();
-    const homeWithSep = homeDir.toLowerCase() + path.sep;
-    if (resolved.toLowerCase() !== homeDir.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {
-      return { error: 'Access denied: path must be within home directory' };
-    }
-    return { resolved };
-  }
+  // resolveWithinHome lives in utils/path-guard.ts so every handler that
+  // takes an untrusted filesystem path uses one tested implementation.
 
   ipcMain.handle('homebot:parse-document', async (_event, filePath: string) => {
     try {
