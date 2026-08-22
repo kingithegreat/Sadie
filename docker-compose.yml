@@ -24,6 +24,12 @@ services:
       - N8N_LOG_LEVEL=info
       - N8N_LOG_OUTPUT=console
       - N8N_WORKFLOW_HISTORY_ENABLED=true
+      # The Auth Guard Code nodes in every n8n-workflows/*.json read the shared
+      # secret from process.env. n8n blocks container env access from Code nodes
+      # unless this is explicitly false — with it blocked, every guard silently
+      # skips validation (verified 2026-08-22: envLen=0 inside the node while the
+      # container had the 64-char secret).
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Shared secret used by HomeBot to authenticate webhook requests.
       # start-homebot.ps1 sets this from the auto-generated webhook-secret file.
       - HOMEBOT_WEBHOOK_SECRET=${HOMEBOT_WEBHOOK_SECRET:-}
