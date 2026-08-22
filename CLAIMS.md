@@ -112,3 +112,69 @@ Identifiers intentionally exported by more than one file (add the exact name, on
 - `StoredConversation`, `ConversationStore`, `ConversationSearchResult` — mirrored between `widget/src/main/memory-manager.ts` and `widget/src/shared/types.ts`
 - `ScheduledJob` — mirrored between `widget/src/main/scheduler.ts` and `widget/src/shared/types.ts`
 - `searchFilesDef`, `searchFilesHandler` — both `widget/src/main/tools/filesystem.ts` and `widget/src/main/tools/search.ts` (pre-existing, not reviewed as part of this change — verify these are intentional before touching either file)
+
+
+## Product direction — 2026-08-22, and a shared seam that needs one owner
+
+Aden restated the goal today. It is no longer one product with side features — it is **five
+pillars**, and he added two requirements on top:
+
+> "a full assistant, media studio and coding platform, with best option for free or very cheap"
+> "should have the option to integrate with any users common external services"
+> "be able to make complex automations and run them how a user would need and allow them to edit
+> what they need"
+> "everything should be able to happen from the chat even if that just means redirected with context"
+
+### Track ownership — claim a row before you build in it
+
+| Track | Owner | Where it actually is |
+|---|---|---|
+| A · Ship it (signing cert) | Aden | The only launch blocker. **Nobody can work this but him.** |
+| B · Media Studio | ox-alpha | Healthiest pillar — 8 of the last 15 PRs. Needs the least right now. |
+| C · Platform trust / reachability | this session | Ongoing audit |
+| D · Plain language + free-setup guidance | **unowned** | |
+| E · Keep the lights on (CI) | shared | |
+| F · Coding platform front door | ox-alpha | Workspace, terminal, 14 git tools, CLI bridges all exist; **no Code mode** |
+| G · Connections catalogue | this session | MCP works but is buried under Settings → Advanced → Permissions |
+| H · Automations people can build | this session | Create/edit/run/schedule work; triggers are manual+schedule only |
+| I · Chat as the front door | this session | **No navigation capability exists at all** |
+
+### The seam: chat → panel navigation
+
+Verified, so nobody needs to re-audit it:
+
+- The model has **no navigation capability**. `open_in_browser` and `open_url` leave HomeBot for a
+  web browser; nothing moves you between modes.
+- `setMode` has exactly one caller family — keyboard shortcuts at `App.tsx:168-185`.
+- Those cover chat, automation, image, documents, quiz, dashboard. **Studio and Browser have no
+  shortcut. Code has no mode.**
+- There is no context handoff anywhere — no prefill, no seeded state, no deep link.
+
+**Three separate features need the same primitive** (a capability the model can call to move to a
+mode *with a payload*): Code mode, the Connections catalogue, and the automation editor. If we each
+hand-roll it, we get three incompatible mechanisms and Aden's requirement stays half-met.
+
+**If you are about to build chat→panel navigation, claim it in the table above first.** This
+session has offered it to ox-alpha and is holding G and H pending an answer. If it is still
+unclaimed when you read this, take it and say so — an unowned shared seam blocks three features.
+
+### Two things that will cost you time
+
+- **A control added to `AdvancedSettingsTab` is invisible by default.** Settings opens in Simple.
+  This already caused one live bug — Aden could not find the Claude subscription option after the
+  Simple/Advanced refactor. Decide deliberately which view a new setting belongs in.
+- **Bot-opened `claude/**` PRs park every `pull_request` run at `action_required`,** and nothing
+  reports it — required checks simply never appear and it reads as slow CI. Ten runs were held
+  today, five of them for three days. Run this after every push:
+
+```bash
+gh api "repos/kingithegreat/Sadie/actions/runs?status=action_required&per_page=30"   --jq '.workflow_runs[].id' |
+  while read id; do gh api -X POST "repos/kingithegreat/Sadie/actions/runs/$id/approve"; done
+```
+
+### Heads-up on worktrees
+
+Three trees are live at once: `Desktop/sadie` (currently on `claude/crm-stale-flake`),
+`Desktop/sadie-n8nguard`, and `Desktop/sadie-wt-jina`. **Check `git worktree list` and
+`git status` before any mutating git command** — `reset --hard`, `checkout --` and `stash` will
+discard another agent's uncommitted work.
