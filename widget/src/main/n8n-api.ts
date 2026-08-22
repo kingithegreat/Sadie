@@ -15,6 +15,7 @@
 import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
 import axios from 'axios';
+import { injectAuthGuards } from './n8n-auth-guard';
 
 const CONTAINER = 'homebot-n8n';
 const N8N_BASE = 'http://localhost:5678';
@@ -268,6 +269,13 @@ return {
 }
 
 export async function importWorkflow(workflowJson: object): Promise<string> {
+  // Defense in depth: every app-deployed workflow gets Auth Guard nodes after
+  // its webhook triggers, whatever builder produced the JSON. Idempotent —
+  // workflows that already carry guards (e.g. the shipped n8n-workflows/)
+  // come back unchanged.
+  const guarded = injectAuthGuards(workflowJson as Parameters<typeof injectAuthGuards>[0]).wf;
+  workflowJson = guarded as object;
+
   const check = validateWorkflowJson(workflowJson);
   if (!check.ok) throw new Error(`Invalid workflow JSON: ${check.errors.join('; ')}`);
 
