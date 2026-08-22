@@ -740,7 +740,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const { getSettings: getMediaSettings } = await import('../config-manager');
     const { chooseMusic } = await import('../media-music');
     const { seedForVideo: seedForMusic } = await import('../media-visuals');
-    const mediaSettings = getMediaSettings() as any;
+    const mediaSettings = getMediaSettings();
     const musicWanted = args.music === undefined
       ? !!mediaSettings?.mediaMusicEnabled
       : Boolean(args.music);
