@@ -225,6 +225,12 @@ export interface Settings {
    * cannot put a video on a channel until this is deliberately turned on.
    */
   mediaPublishingEnabled?: boolean;
+  /**
+   * Allow a rendering proxy (Jina Reader) as the LAST fetch fallback when a
+   * page cannot be read locally. Off by default: it is the only fetch tier
+   * that sends the URL off this machine.
+   */
+  webReaderFallbackEnabled?: boolean;
   /** Mix background music under video narration. Off unless a folder is set. */
   mediaMusicEnabled?: boolean;
   /**

@@ -73,6 +73,8 @@ export interface Settings {
   morningBriefing?: boolean;
   /** The Media Studio publishing kill switch — see media-studio.ts. */
   mediaPublishingEnabled?: boolean;
+  /** Allow a rendering proxy as the last fetch fallback — see shared/types.ts. */
+  webReaderFallbackEnabled?: boolean;
   /** Background music for generated video — see shared/types.ts. */
   mediaMusicEnabled?: boolean;
   mediaMusicFolder?: string;

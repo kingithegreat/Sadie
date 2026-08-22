@@ -22,6 +22,26 @@ const FILESYSTEM_ACTION_PATTERN = /\b(read|write|create|delete|remove|rename|mov
 const TERMINAL_ACTION_PATTERN = /\b(run|execute|launch|start|stop|restart|kill)\b.*\b(command|terminal|shell|script|npm|pnpm|yarn|pip|cargo|docker|pytest|jest|build|test|lint|git)\b/i;
 const LIVE_DATA_PATTERN = /\b(weather|forecast|temperature|rain|snow|wind|humidity|news|headline|score|scores|game|games|match|matches|nba|basketball|football|soccer|baseball|stock|price|prices|traffic|flight|flights|latest|current|today|tonight|right now)\b/i;
 const WEB_ACTION_PATTERN = /\b(search|look up|browse|google|web|website|url|headline|news|find online|check online)\b/i;
+
+/**
+ * Asking for a lookup, unambiguously. These are imperatives — nobody types
+ * "google how to bake bread" as small talk.
+ *
+ * Split out of WEB_ACTION_PATTERN because that one also matches bare nouns
+ * ("web", "news", "url") which DO need a second signal before they mean
+ * "go and search". The verbs do not.
+ */
+const WEB_VERB_PATTERN = /\b(search|look\s?up|browse|google|fetch|find\s+online|check\s+online|look\s+online)\b/i;
+
+/** A literal link. The least ambiguous request for the web there is. */
+const URL_PATTERN = /\bhttps?:\/\/\S+/i;
+
+/**
+ * "Do something with the thing I pointed at." Only a web request when a URL is
+ * actually in play — otherwise "summarise this" is about a document or the
+ * conversation.
+ */
+const READ_VERB_PATTERN = /\b(summar(?:is|iz)e|summary|read|open|fetch|extract|scrape)\b/i;
 const ORGANIZER_ACTION_PATTERN = /\b(email|mail|calendar|schedule|meeting|appointment|reminder|notify|notification|clipboard|contact|contacts|process|task manager|cpu|memory usage|ram usage)\b/i;
 const REASONING_PATTERN = /\b(compare|trade-?off|tradeoffs|plan|design|architecture|evaluate|analysis|analyze|reason|think through|pros and cons)\b/i;
 
@@ -63,8 +83,31 @@ export function classifyTaskIntent(message: string, options?: { hasImages?: bool
   return 'chat';
 }
 
-export function shouldOfferToolsForMessage(message: string, options?: { hasImages?: boolean; hasDocuments?: boolean }): boolean {
+export function shouldOfferToolsForMessage(
+  message: string,
+  options?: { hasImages?: boolean; hasDocuments?: boolean; contextHasUrl?: boolean },
+): boolean {
   if (options?.hasImages) return false;
+
+  // A link in the message is the clearest possible request for the web.
+  //
+  // This used to fall through to the rule below, which requires a web word AND
+  // a live-data word in the SAME message — so "fetch https://example.com"
+  // offered no tools at all. Measured before the fix: nine of ten plainly
+  // web-shaped requests got nothing, including "search the web for…" and
+  // "google how to…". The reported symptom was HomeBot printing a curl command
+  // and reporting "Done", which is exactly what a model with no fetch tool has
+  // left to offer.
+  if (URL_PATTERN.test(message)) return true;
+
+  // An imperative lookup verb is enough on its own. "search", "google" and
+  // "look up" do not need a second keyword to prove they meant it.
+  if (WEB_VERB_PATTERN.test(message)) return true;
+
+  // "Summarise this page" — the link was in the previous message, not this one.
+  // Judging a conversation one message at a time is what made a follow-up
+  // impossible.
+  if (options?.contextHasUrl && READ_VERB_PATTERN.test(message)) return true;
 
   const hasExplicitAction = FILESYSTEM_ACTION_PATTERN.test(message)
     || TERMINAL_ACTION_PATTERN.test(message)
