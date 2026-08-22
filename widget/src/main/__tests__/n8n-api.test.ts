@@ -118,10 +118,21 @@ describe('REST path (API key configured)', () => {
     // Public API rejects unknown top-level props — active/versionId must be stripped
     expect(call.data).toEqual({
       name: VALID_WORKFLOW.name,
-      nodes: VALID_WORKFLOW.nodes,
-      connections: VALID_WORKFLOW.connections,
+      // Deployment injects an Auth Guard between the webhook and its first
+      // downstream node (see n8n-auth-guard.ts) — assert the rewired graph.
+      nodes: expect.arrayContaining([
+        expect.objectContaining({ name: 'Webhook', type: 'n8n-nodes-base.webhook' }),
+        expect.objectContaining({ name: 'Auth Guard', type: 'n8n-nodes-base.code' }),
+        expect.objectContaining({ name: 'Respond' }),
+      ]),
+      connections: {
+        Webhook: { main: [[{ node: 'Auth Guard', type: 'main', index: 0 }]] },
+        'Auth Guard': { main: [[{ node: 'Respond', type: 'main', index: 0 }]] },
+      },
       settings: VALID_WORKFLOW.settings,
     });
+    const guard = call.data.nodes.find((n: any) => n.name === 'Auth Guard');
+    expect(guard.parameters.jsCode).toContain('HOMEBOT_WEBHOOK_SECRET');
     // No docker involvement on the REST path
     expect(mockExecFile).not.toHaveBeenCalled();
   });
