@@ -13,7 +13,61 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| Model freshness + cloud temperature knob | claude/model-freshness-and-knobs | In progress | Touches custom-llm-client.ts, config-manager.ts, model-lifecycle.ts (new), shared/types.ts, useSettingsState.tsx, CloudProviderSection.tsx. Does NOT touch message-router.ts, model-advisor.ts, media tools, or PrivacySwitch. |
+| Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
+| Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
+| Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Ready for integration | PrivacySwitch.tsx only. |
+
+*(Model freshness + knobs merged as #182 — claim retired.)*
+
+## Integration notes — 2026-08-22 session (read before your next PR)
+
+Two sessions shipped in parallel all night. These are the rules that CHANGED — the media ones
+matter most, because that is where both sessions were working.
+
+1. **Settings has a Simple/Advanced toggle, and Simple is the DEFAULT.**
+   `SettingsPanel.tsx` is now a 156-line shell; state lives in `settings/useSettingsState.tsx`
+   and controls in `settings/*Tab.tsx`, read through `SettingsContext`.
+   **A control you add to `AdvancedSettingsTab` is invisible unless the user switches views.**
+   This already cost a live bug: the Claude-subscription provider option vanished from the
+   default panel and was reported by Aden within hours. If a setting is something a normal user
+   would look for on day one, put it in a tab Simple renders (`ModelsSettingsTab`,
+   `VoiceHotkeysTab`, `GeneralSettingsTab`) or beside `PrivacySwitch`.
+   Existing tests that reach Diagnostics / System check / API Keys must click **Advanced** first.
+
+2. **`render_qa` now actually inspects the file.** It measures the render with ffmpeg (NOT
+   ffprobe — a second binary that is not on Aden's PATH, and a check that cannot run looks
+   exactly like one that passed). A render with no audio track, digital silence, the wrong frame
+   size, or picture running past the speech now moves the job to **`needs_revision`**, not
+   `awaiting_approval`. If you add a render path, expect QA to judge it.
+
+3. **The Media panel offers the action for what a job is MISSING, not for its state.**
+   `script_draft` with no script offers "Write script"; `media_production` with no narration
+   offers "Record narration". This exists because the generic "Move to …" button advances the
+   STATE and does none of the work, which left a job wedged with both exits closed
+   (reported live on a job titled "is there a god"). Keep the rule if you touch `stageAction`.
+
+4. **Provider API keys: read through `apiKeyForProvider` in `shared/cloud-llm.ts`.**
+   `providerApiKeys` is a map covering all thirteen providers; the four legacy top-level fields
+   are still written and read as a fallback. Do not re-derive "is this provider configured?" —
+   a second copy of that decision is what previously shipped a header naming one model while
+   another answered.
+
+5. **Web fetch is three tiers now** (`tools/web.ts`): plain GET → hidden `BrowserWindow`
+   (`main/browser-fetch.ts`) → Jina Reader (`main/reader-fetch.ts`). The reader tier is **off by
+   default** because it is the only one that sends the URL off the machine. Measured: the browser
+   reads wikipedia/bbc that plain GET cannot, but does NOT beat a JS challenge or a paywall.
+
+6. **Quiz batching lives in `fillQuiz`** (root `src/quiz/generate.ts`) — both IPC handlers use it.
+   Do not reimplement the retry loop; the old duplicated one returned short quizzes silently.
+
+7. **A reachability audit ran on 2026-08-22.** Before adding a capability, check it can be
+   REACHED — six defects in one session were all "the code works and nothing calls it". Two are
+   fixed (#183 delete-model, #185 briefing opt-out); `summarizeWebContent` and `defaultTeam` are
+   still dead and safe to delete.
+
+Standing traps that have not changed: bot-opened PRs still park every `pull_request` run at
+`action_required` (approve them, or the required checks never report), and with two sessions
+merging, a green PR goes `BEHIND` within minutes — `gh pr update-branch <n>` and re-approve.
 
 ## Integration notes — 2026-08-15 session (read before your next PR)
 
