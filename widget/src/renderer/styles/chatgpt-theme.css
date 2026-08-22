@@ -2046,6 +2046,31 @@ body {
   gap: 10px;
 }
 
+/* Wraps the card so a delete control can sit on it — a <button> cannot
+   contain another <button>. */
+.model-card-wrap { position: relative; display: flex; }
+.model-card-wrap > .model-card { flex: 1; }
+
+.model-card-delete {
+  position: absolute; top: 4px; right: 4px;
+  width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 4px;
+  background: transparent; color: var(--text-muted);
+  font-size: 12px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: var(--transition-fast);
+}
+/* Revealed on hover or keyboard focus. Always-visible ✕ on every card turns a
+   model picker into a row of delete buttons. Focus matters as much as hover —
+   hover-only would put it out of reach of the keyboard entirely. */
+.model-card-wrap:hover .model-card-delete,
+.model-card-delete:focus-visible { opacity: 1; }
+.model-card-delete:hover:not(:disabled) {
+  background: oklch(55% 0.2 25 / 0.85); color: #fff;
+}
+.model-card-delete:disabled { cursor: not-allowed; opacity: 0; }
+.model-card-wrap:hover .model-card-delete:disabled { opacity: 0.35; }
+
 .model-card {
   background: var(--bg-medium);
   border-radius: var(--radius-sm);
