@@ -276,7 +276,7 @@ describe('CrmStore — stages & daily brief', () => {
     store.close();
   });
 
-  test('dailyBrief aggregates stale deals, tasks, and pipeline totals', () => {
+  test('dailyBrief aggregates stale deals, tasks, and pipeline totals', async () => {
     const store = freshStore();
     store.createDeal({ title: 'Open A', valueCents: 100000 });
     const won = store.createDeal({ title: 'Won B', valueCents: 999999 });
@@ -284,6 +284,12 @@ describe('CrmStore — stages & daily brief', () => {
     store.createTask({ title: 'Overdue thing', dueDate: '2020-01-01' });
     const today = new Date().toISOString().slice(0, 10);
     store.createTask({ title: 'Today thing', dueDate: today });
+
+    // days=0 makes the cutoff "now", so a deal created in the SAME millisecond
+    // as the cutoff reads as not-yet-stale (its timestamp is not strictly less
+    // than the cutoff). Sleep past it — same reason the findStaleDeals test
+    // below sleeps, which this test skipped.
+    await new Promise((r) => setTimeout(r, 5));
 
     const brief = store.dailyBrief(0);
     expect(brief.openDealCount).toBe(1);
