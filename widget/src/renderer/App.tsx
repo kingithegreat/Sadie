@@ -1156,14 +1156,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       const input = chatIdeaToJobInput({ content: message.content || '', createdAt: message.createdAt });
       const res = await (window as any).electron?.mediaCreate?.(input);
       if (res && res.ok === false) {
-        console.error('[Media Studio] idea → job refused:', res.error);
+        // A refusal the user cannot see is a click that did nothing.
+        addToast(`Media Studio refused: ${res.error || 'unknown reason'}`, 'error');
         return;
       }
       setMode('media');
-    } catch (e) {
-      console.error('[Media Studio] could not create a job from the idea:', e);
+    } catch (e: any) {
+      addToast('Could not create the video job.', 'error');
     }
-  }, []);
+  }, [addToast]);
 
   /**
    * Handle confirmation rejection
