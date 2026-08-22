@@ -244,8 +244,11 @@ export const MediaStudioPanel: React.FC = () => {
     setChatError(null);
     try {
       const res = await api()?.loadConversations?.();
-      const store = res?.store || res?.conversations || res;
+      // homebot:load-conversations returns MemoryResult: { success, data }.
+      // The fallback covers a bare-store shape in case the envelope changes.
+      const store = res?.data ?? res;
       const all: Array<{ id: string; content: string; createdAt: number }> = [];
+      const seen = new Set<string>();
       const conversations = store?.conversations;
       if (Array.isArray(conversations)) {
         for (const conv of conversations) {
@@ -253,7 +256,12 @@ export const MediaStudioPanel: React.FC = () => {
             if (m.role !== 'user') continue;
             const text = String(m.content || '').trim();
             if (text.length < 12) continue; // "ok", "thanks" — not ideas
-            all.push({ id: m.id || `${conv.id}-${all.length}`, content: text.slice(0, 2000), createdAt: m.createdAt || 0 });
+            // The same words re-sent or repeated across conversations are one
+            // idea, not two — and two jobs from it would be indistinguishable.
+            const key = text.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            all.push({ id: m.id || `${conv.id}-${all.length}`, content: text, createdAt: m.createdAt || 0 });
           }
         }
       }
