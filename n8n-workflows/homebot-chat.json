@@ -126,23 +126,14 @@
     {
       "parameters": {
         "name": "get_weather",
-        "description": "Get the current weather for a location. Returns temperature, conditions, humidity, and wind.",
-        "url": "=https://wttr.in/{{ encodeURIComponent($fromAI('location', 'City or location name', 'string')) }}?format=j1",
-        "placeholderDefinitions": {
-          "values": [
-            {
-              "name": "location",
-              "description": "City or location name (e.g. Tauranga, New Zealand)",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "description": "Get the current weather for a city. ALWAYS pass a city name (e.g. 'Tauranga'). Returns temperature, feels-like, conditions, humidity, and wind.",
+        "language": "javaScript",
+        "jsCode": "const loc = (($fromAI('location', 'City or location name', 'string') || '')).trim() || 'Tauranga';\nconst res = await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=j1`, { headers: { 'User-Agent': 'HomeBot' } });\nif (!res.ok) return `Weather lookup failed (${res.status}) for ${loc}`;\nconst data = await res.json();\nconst cur = data.current_condition && data.current_condition[0];\nif (!cur) return `No current conditions available for ${loc}`;\nconst area = data.nearest_area && data.nearest_area[0];\nconst name = area ? area.areaName[0].value : loc;\nreturn `Weather in ${name}: ${cur.temp_C}°C (feels like ${cur.FeelsLikeC}°C), ${cur.weatherDesc[0].value}, humidity ${cur.humidity}%, wind ${cur.windspeedKmph} km/h`;"
       },
       "id": "tool-weather",
       "name": "Get Weather",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
-      "typeVersion": 1.1,
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
       "position": [700, 700]
     },
     {
