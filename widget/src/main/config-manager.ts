@@ -104,6 +104,8 @@ export interface Settings {
    * cannot put a video on a channel until this is deliberately turned on.
    */
   mediaPublishingEnabled?: boolean;
+  /** Allow a rendering proxy as the last fetch fallback — see shared/types.ts. */
+  webReaderFallbackEnabled?: boolean;
   /** Mix background music under video narration — see shared/types.ts. */
   mediaMusicEnabled?: boolean;
   /** Folder of the user's own music tracks. */
@@ -215,6 +217,8 @@ export const DEFAULT_SETTINGS: Settings = {
   mediaPublishingEnabled: false,
   // Off until a folder is chosen: there is nothing to play otherwise, and a
   // toggle that appears on and does nothing is worse than one that is off.
+  // Off by default: the only fetch tier that sends a URL to a third party.
+  webReaderFallbackEnabled: false,
   mediaMusicEnabled: false,
   mediaMusicFolder: '',
 

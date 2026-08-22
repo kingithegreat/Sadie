@@ -2112,8 +2112,20 @@ export async function streamFromLLM(
   const hasDocuments = options?.hasDocuments ?? false;
   const skipToolsForGreeting = isSimpleGreeting(message);
   const intentCategories = detectToolCategories(message);
+  // Did a link appear recently? "Summarise that" carries no URL of its own, and
+  // judging each message in isolation is what made a follow-up impossible —
+  // the link was one turn back, so the model was handed no tools and had to
+  // improvise. Only the last few turns: a URL from twenty messages ago is not
+  // what "that page" means.
+  const contextHasUrl = getHistory(conversationId)
+    .slice(-6)
+    .some(m => /\bhttps?:\/\/\S+/i.test(m.content || ''));
   const shouldOfferTools = !skipToolsForGreeting
-    && shouldOfferToolsForMessage(message, { hasImages: !!images?.length, hasDocuments });
+    && shouldOfferToolsForMessage(message, {
+      hasImages: !!images?.length,
+      hasDocuments,
+      contextHasUrl,
+    });
 
   // Per-conversation model override (set via sidebar context menu)
   const storedConvForModel = MemoryManager.getConversation(conversationId);

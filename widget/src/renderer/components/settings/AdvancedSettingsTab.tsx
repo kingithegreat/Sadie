@@ -381,6 +381,26 @@ export default function AdvancedSettingsTab() {
             Off by default. While it is off, moving a video into either stage is refused.
           </small>
 
+          {/* The one fetch tier that leaves this machine, so it says so. */}
+          <label className="setting-label" style={{ marginTop: 12 }}>
+            <input
+              type="checkbox"
+              data-testid="web-reader-fallback"
+              checked={!!localSettings.webReaderFallbackEnabled}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, webReaderFallbackEnabled: e.target.checked })
+              }
+            />
+            <span>Use a reading service when a page will not open</span>
+          </label>
+          <small className="setting-hint">
+            Some sites refuse to open for anything but a person at a keyboard. HomeBot tries
+            twice on its own first — a direct request, then its own browser — and only then,
+            with this on, asks the free Jina Reader service to fetch the page instead. That
+            sends <strong>the page address</strong> to that service; the page itself is read
+            for you and nothing you typed is sent. Off by default.
+          </small>
+
           {/* Background music, from a folder rather than a service: no account,
               no rate limit, no licence question, and it works offline. */}
           <label className="setting-label" style={{ marginTop: 12 }}>
