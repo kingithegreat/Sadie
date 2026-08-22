@@ -23,6 +23,18 @@ jobs:
 
   e2e:
     runs-on: ${{ matrix.os }}
+    # Without this, the job inherits GitHub's 6-hour default.
+    #
+    # Observed on PR #174: seven shards finished in 2m35s-9m27s while two Ubuntu
+    # shards ran past 90 minutes. `gh pr checks` shows both states as "pending",
+    # so a hung shard and a slow one are indistinguishable, and `e2e-all` — a
+    # REQUIRED check — simply never reports. The merge waits, and no one can
+    # tell whether it is waiting on work or on nothing.
+    #
+    # 35 minutes is ~3.5x the slowest healthy shard, which leaves room for a
+    # cold cache and a genuinely failing test to retry, and still fails loudly
+    # inside a coffee break instead of silently until lunch tomorrow.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -59,6 +71,7 @@ jobs:
           restore-keys: |
             ${{ matrix.os }}-node-
       - name: Install widget dependencies
+        timeout-minutes: 10
         run: npm ci --prefix widget
       - name: Cache Playwright binaries
         uses: actions/cache@v3
@@ -70,7 +83,20 @@ jobs:
           key: ${{ matrix.os }}-playwright-${{ hashFiles('widget/package-lock.json') }}
           restore-keys: |
             ${{ matrix.os }}-playwright-
+      # This is where the two Ubuntu shards on PR #174 actually hung — for over
+      # 90 minutes, before the run was cancelled. The job log ended with:
+      #
+      #   Terminate orphan process: pid (2478) (npm exec playwright install --with-deps)
+      #
+      # and uploaded no report, because not one test had run. `--with-deps`
+      # shells out to apt-get on Linux only, which is why the same commit passed
+      # on all six Windows and macOS shards.
+      #
+      # A hang here previously looked identical to a slow test suite. Ten minutes
+      # is generous for a browser download and an apt install, and when it trips
+      # the failure names this step instead of the tests.
       - name: Install Playwright browsers
+        timeout-minutes: 10
         working-directory: widget
         run: npx playwright install --with-deps
       - name: Prepare Playwright artifact directories
@@ -78,9 +104,23 @@ jobs:
           node -e "const fs = require('fs'); const dirs = ['playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}']; dirs.forEach(d => { try { fs.mkdirSync('widget/' + d, { recursive: true }) } catch(e){} });"
       - name: Build widget
         run: npm run build --prefix widget
+      # Two layers of retry, not three.
+      #
+      # Playwright's own --retries=2 already gives every test three goes, which
+      # is what flake needs. The loop around it re-runs the WHOLE shard, and it
+      # earns its place only for failures Playwright cannot retry past — the
+      # runner or xvfb dying before any test reports. One spare attempt covers
+      # that; the third only multiplied a real failure's runtime by 50%.
+      #
+      # It was 3 outer x 3 inner = up to NINE runs of every failing test, which
+      # is how a ~9-minute shard became a 90-minute one and buried the actual
+      # failure under eight identical repeats of itself.
+      #
+      # Each attempt now prints its exit code and elapsed seconds, so the log
+      # says which attempt is running and how long it has been going.
       - name: Run E2E tests (sharded)
         run: |
-          node -e "const { spawnSync } = require('child_process'); const linux = process.platform === 'linux'; const e2eArgs = ['run','e2e','--prefix','widget','--silent','--','--shard=${{ matrix.shardIndex }}/${{ matrix.totalShards }}','--retries=2','--trace=on-first-retry']; const cmd = linux ? 'xvfb-run' : 'npm'; const args = linux ? ['-a','npm',...e2eArgs] : e2eArgs; let rc = 1; for (let i = 0; i < 3; i++) { console.log('Playwright attempt', i+1, 'of 3'); const r = spawnSync(cmd, args, { stdio: 'inherit' }); rc = r.status; if (rc === 0) break; if (i < 2) console.log('Attempt', i+1, 'failed  retrying...'); } process.exit(rc);"
+          node -e "const { spawnSync } = require('child_process'); const linux = process.platform === 'linux'; const e2eArgs = ['run','e2e','--prefix','widget','--silent','--','--shard=${{ matrix.shardIndex }}/${{ matrix.totalShards }}','--retries=2','--trace=on-first-retry']; const cmd = linux ? 'xvfb-run' : 'npm'; const args = linux ? ['-a','npm',...e2eArgs] : e2eArgs; const ATTEMPTS = 2; const t0 = Date.now(); let rc = 1; for (let i = 0; i < ATTEMPTS; i++) { console.log('Playwright attempt ' + (i+1) + ' of ' + ATTEMPTS); const a0 = Date.now(); const r = spawnSync(cmd, args, { stdio: 'inherit' }); rc = r.status; console.log('attempt ' + (i+1) + ' exited ' + rc + ' after ' + Math.round((Date.now()-a0)/1000) + 's; elapsed ' + Math.round((Date.now()-t0)/1000) + 's'); if (rc === 0) break; } process.exit(rc);"
       - name: Upload Playwright Artifacts (failure)
         if: failure()
         uses: actions/upload-artifact@v4
@@ -119,6 +159,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: e2e
     if: always()
+    timeout-minutes: 5
     steps:
       - name: Every shard must have passed
         run: |

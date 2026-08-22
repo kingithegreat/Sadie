@@ -726,6 +726,10 @@ const electronAPI: ElectronAPI = {
   ttsStop: async (): Promise<{ success: boolean; error?: string }> => {
     return await ipcRenderer.invoke('homebot:tts-stop');
   },
+  // Voice picker: list neural voices and render a sample of one to a file.
+  ttsListVoices: async (): Promise<any> => ipcRenderer.invoke('homebot:tts-list-voices'),
+  ttsSampleVoice: async (voice: string, sampleText?: string): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('homebot:tts-sample-voice', voice, sampleText),
 
   // Scheduler — recurring / daily jobs
   schedulerList: async () => ipcRenderer.invoke('homebot:scheduler-list'),
@@ -741,8 +745,8 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render') =>
-    ipcRenderer.invoke('homebot:media:run', id, action),
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string }) =>
+    ipcRenderer.invoke('homebot:media:run', id, action, opts),
   mediaApprove: async (id: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note),
   mediaReject: async (id: string, revise: boolean, note?: string) =>

@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
+import { migrateRetiredModel } from './model-lifecycle';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
@@ -104,6 +105,12 @@ export interface Settings {
    * cannot put a video on a channel until this is deliberately turned on.
    */
   mediaPublishingEnabled?: boolean;
+  /** Allow a rendering proxy as the last fetch fallback — see shared/types.ts. */
+  webReaderFallbackEnabled?: boolean;
+  /** Mix background music under video narration — see shared/types.ts. */
+  mediaMusicEnabled?: boolean;
+  /** Folder of the user's own music tracks. */
+  mediaMusicFolder?: string;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
 
@@ -125,10 +132,19 @@ export interface Settings {
   geminiApiKey?: string;
   /** Moonshot / Kimi — OpenAI-compatible API. */
   moonshotApiKey?: string;
+  /** One key per cloud provider — see shared/types.ts. Encrypted per value. */
+  providerApiKeys?: Record<string, string>;
   // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
   codeApiKey?: string;
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
+  /**
+   * Cloud chat temperature override, 0–2. Unset means each provider's default
+   * (0.5 for OpenAI-compatible, 0.7 for Anthropic) — the knob only exists to
+   * replace a default deliberately, not to add another one. Local Ollama
+   * models keep their tuned values regardless.
+   */
+  chatTemperature?: number;
   // Hardware profile — drives model defaults and VRAM recommendations
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
   // Custom chat guidelines appended to system prompt
@@ -207,6 +223,12 @@ export const DEFAULT_SETTINGS: Settings = {
    * conscious act.
    */
   mediaPublishingEnabled: false,
+  // Off until a folder is chosen: there is nothing to play otherwise, and a
+  // toggle that appears on and does nothing is worse than one that is off.
+  // Off by default: the only fetch tier that sends a URL to a third party.
+  webReaderFallbackEnabled: false,
+  mediaMusicEnabled: false,
+  mediaMusicFolder: '',
 
   // onboarding defaults
   firstRun: true,
@@ -523,6 +545,16 @@ export function getSettings(): Settings {
       ...(savedSettings.permissions || {})
     } as Record<string, boolean>;
     merged.permissions = mergedPermissions;
+    // Retired cloud model IDs get remapped to their current-tier replacement
+    // here, at load — the corrected value persists on the next ordinary save,
+    // and the picker lists no longer offer the retired IDs at all.
+    if (merged.customLLM?.model) {
+      const migration = migrateRetiredModel(merged.customLLM.model);
+      if (migration.renamedFrom) {
+        console.warn(`[HomeBot] Saved model "${migration.renamedFrom}" is retired — using "${migration.model}" instead.`);
+        merged.customLLM = { ...merged.customLLM, model: migration.model };
+      }
+    }
     const demoMode = process.argv?.includes('--demo') || process.env.HOMEBOT_DEMO_MODE === '1' || process.env.HOMEBOT_DEMO_MODE === 'true';
     if (demoMode) {
       merged.telemetryEnabled = false;
@@ -540,6 +572,18 @@ export function getSettings(): Settings {
       const val = (merged as any)[key];
       if (typeof val === 'string' && val.length > 0) {
         (merged as any)[key] = decryptSecret(val);
+      }
+    }
+    // Decrypt every per-provider key. Same treatment as the flat secrets above
+    // — this map holds credentials for the providers the four named fields
+    // never covered, so it must not sit on disk in plaintext.
+    const providerKeys = (merged as any).providerApiKeys;
+    if (providerKeys && typeof providerKeys === 'object') {
+      for (const provider of Object.keys(providerKeys)) {
+        const val = providerKeys[provider];
+        if (typeof val === 'string' && val.length > 0) {
+          providerKeys[provider] = decryptSecret(val);
+        }
       }
     }
     // Decrypt nested customLLM.apiKey
@@ -604,6 +648,37 @@ export function saveSettings(settings: Settings): void {
           (toSave as any)[key] = encryptSecret(val);
         }
       }
+    }
+    // Per-provider keys: merged against the previous map, then encrypted.
+    //
+    // Same rule the flat secrets follow — a save that OMITS a provider means
+    // "unchanged", and only an explicit empty string clears it. The renderer
+    // sends the whole settings object, so without the merge, saving from a
+    // panel that had only loaded one provider would wipe every other
+    // provider's key. That is the lost-update bug the SECRET_KEYS loop above
+    // exists to prevent, and this map is just as easy to lose.
+    {
+      const previousMap: Record<string, string> = ((previous as any).providerApiKeys as Record<string, string>) || {};
+      const incoming = (toSave as any).providerApiKeys;
+      const mergedKeys: Record<string, string> = { ...previousMap };
+      if (incoming && typeof incoming === 'object') {
+        for (const [provider, value] of Object.entries(incoming)) {
+          if (typeof value !== 'string') continue;
+          if (value === '') delete mergedKeys[provider];
+          else mergedKeys[provider] = value;
+        }
+      }
+      const encrypted: Record<string, string> = {};
+      for (const [provider, value] of Object.entries(mergedKeys)) {
+        if (typeof value !== 'string' || value.length === 0) continue;
+        if (value.length > MAX_SECRET_CHARS) {
+          console.error('[CONFIG] providerApiKeys.%s suspiciously large (%d chars) — clearing to prevent bloat', provider, value.length);
+          continue;
+        }
+        encrypted[provider] = encryptSecret(value);
+      }
+      if (Object.keys(encrypted).length > 0) (toSave as any).providerApiKeys = encrypted;
+      else delete (toSave as any).providerApiKeys;
     }
     // Encrypt nested customLLM.apiKey with the same cap
     if (toSave.customLLM && typeof (toSave.customLLM as any).apiKey === 'string' && (toSave.customLLM as any).apiKey.length > 0) {

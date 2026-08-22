@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (174)** — `window.electron`
+**Preload methods (176)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1053,12 +1053,12 @@ setActiveConversation     setAlwaysOnTop            setUncensoredMode         sh
 skillsList                skillsOpenFolder          startOllama               startSpeechRecognition
 subscribeToStream         summarizeWebContent       terminalClose             terminalCreate
 terminalKill              terminalRun               testN8nConnection         toggleWidgetMode
-ttsSpeak                  ttsStop                   updateAutomation          updateMessage
-workspaceList             workspaceRead             workspaceRoot             workspaceSave
-writeClipboard            writeDocument
+ttsListVoices             ttsSampleVoice            ttsSpeak                  ttsStop
+updateAutomation          updateMessage             workspaceList             workspaceRead
+workspaceRoot             workspaceSave             writeClipboard            writeDocument
 ```
 
-**IPC channels, renderer → main (126)**
+**IPC channels, renderer → main (128)**
 
 ```
 homebot:__e2e_get_router_logs         homebot:__e2e_invoke_tool_batch
@@ -1121,6 +1121,7 @@ homebot:skills-list                   homebot:skills-open-folder
 homebot:start-ollama                  homebot:start-speech-recognition
 homebot:stream-cancel                 homebot:stream-message
 homebot:summarize-web-content         homebot:toggle-widget-mode
+homebot:tts-list-voices               homebot:tts-sample-voice
 homebot:tts-speak                     homebot:tts-stop
 homebot:update-automation             homebot:update-message
 homebot:web-service-status            homebot:write-document

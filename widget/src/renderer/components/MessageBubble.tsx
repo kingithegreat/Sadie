@@ -568,6 +568,60 @@ function StartOllamaButton() {
   );
 }
 
+/**
+ * Inline button that moves chat to the already-configured online AI.
+ *
+ * Only rendered when the MAIN process attached `cloudFallback` to the recovery
+ * hint, which it does solely when a provider is configured with a usable
+ * credential. This component never decides that for itself.
+ *
+ * `useCustomLLM` is the privacy kill-switch, so flipping it here is a deliberate
+ * user action on a labelled button — never something HomeBot does silently when
+ * the local model fails.
+ *
+ * The save is read-modify-write. saveSettings takes a WHOLE settings object and
+ * only guards secrets against omission, so sending `{ useCustomLLM: true }`
+ * alone would erase every non-secret key the user has.
+ */
+function SwitchToCloudButton({ provider, model, onSwitched }: { provider: string; model: string; onSwitched: () => void }) {
+  const [switching, setSwitching] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
+
+  const handleSwitch = async () => {
+    setSwitching(true);
+    setErrMsg('');
+    try {
+      const current = await window.electron?.getSettings?.();
+      if (!current) throw new Error('Could not read your settings');
+      await window.electron?.saveSettings?.({ ...current, useCustomLLM: true });
+      onSwitched();
+    } catch (e: any) {
+      setErrMsg(e?.message || 'Could not switch');
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        className="message-action-btn"
+        onClick={handleSwitch}
+        disabled={switching}
+        style={{ padding: '4px 12px' }}
+        title={model ? `${provider} — ${model}` : provider}
+      >
+        {switching ? 'Switching…' : '☁ Use the online AI instead'}
+      </button>
+      {errMsg && (
+        <span style={{ color: 'var(--warning-color, #f59e0b)', fontSize: '11px', marginLeft: '4px', alignSelf: 'center' }}>
+          {errMsg}
+        </span>
+      )}
+    </>
+  );
+}
+
 /** Inline button that triggers `ollama pull <model>` via IPC. */
 function PullModelButton({ model }: { model: string }) {
   const [pulling, setPulling] = useState(false);
@@ -639,6 +693,7 @@ export function MessageBubble({
   onBookmark,
   onReact,
   onEdit,
+  onSendToMediaStudio,
 }: {
   message: ChatMessage;
   onCancel: (assistantId: string) => void;
@@ -646,6 +701,7 @@ export function MessageBubble({
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
+  onSendToMediaStudio?: (message: ChatMessage) => void;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -692,6 +748,12 @@ export function MessageBubble({
         setTimeout(() => editRef.current?.focus(), 50);
       }});
     }
+    // An idea brainstormed in chat can become a Media Studio job without
+    // retyping it. User messages only: the idea is the user's own words, and
+    // the brief contract (chat-idea.ts) is built on that.
+    if (isUser && onSendToMediaStudio && hasContent) {
+      items.push({ label: 'Make a video from this', icon: <Icon name="video" />, action: () => onSendToMediaStudio(message) });
+    }
     if (onBookmark && message.id) {
       items.push({ label: message.bookmarked ? 'Remove bookmark' : 'Bookmark', icon: <Icon name={message.bookmarked ? 'starFilled' : 'star'} />, action: () => onBookmark(message.id!) });
     }
@@ -706,7 +768,7 @@ export function MessageBubble({
       items.push({ label: 'Regenerate', icon: <Icon name="refresh" />, action: () => onRetry(message.id!) });
     }
     return items;
-  }, [message, isAssistant, state, speaking, onRetry, onBookmark]);
+  }, [message, isAssistant, state, speaking, onRetry, onBookmark, onSendToMediaStudio, hasContent]);
 
   const handleCopyMessage = useCallback(() => {
     if (!message.content) return;
@@ -930,6 +992,13 @@ export function MessageBubble({
                           )}
                           {message.recoveryHint.action === 'start-ollama' && (
                             <StartOllamaButton />
+                          )}
+                          {message.recoveryHint.cloudFallback && (
+                            <SwitchToCloudButton
+                              provider={message.recoveryHint.cloudFallback.provider}
+                              model={message.recoveryHint.cloudFallback.model}
+                              onSwitched={() => onRetry(message.id!)}
+                            />
                           )}
                           {message.recoveryHint.action !== 'reattach-document' && (
                             <button

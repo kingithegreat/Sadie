@@ -72,6 +72,16 @@ export interface MediaJob {
   captionsPath?: string;
   /** True spoken length, measured from the audio rather than estimated. */
   durationSeconds?: number;
+  /**
+   * Absolute paths to the generated scene images, in running order, once the
+   * render stage has made them. `null` marks a scene whose image failed and
+   * which reuses a neighbour — kept rather than dropped so the preview shows
+   * the same number of slides the video actually has.
+   *
+   * These were previously computed, written into the ffmpeg concat file, and
+   * thrown away — so nothing could show the user what they were approving.
+   */
+  scenePaths?: Array<string | null>;
   /** Absolute path to a rendered file, once one exists. */
   renderPath?: string;
   /** YouTube video id, only ever set after publishing. */

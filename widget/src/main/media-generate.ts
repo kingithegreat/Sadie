@@ -107,6 +107,17 @@ const SCRIPT_SYSTEM = [
   '  wondered" or "In this video we will".',
   '- One idea per sentence. Short sentences beat clever ones when spoken.',
   '- End on the thought, not on a call to subscribe.',
+  '',
+  'Staying on topic (the most common failure):',
+  '- Every sentence must serve the working title and brief. If a sentence',
+  '  would survive deletion without the viewer noticing anything missing',
+  '  about THE TOPIC, delete it — tangents, general background, and',
+  '  "interesting related facts" are how scripts drift off subject.',
+  '- Do not widen the topic. A video about Jonah staying in the storm is not',
+  '  a video about all of Jonah, and a video about tide pools is not a video',
+  '  about the ocean.',
+  '- Before finishing, check: does every sentence trace back to the title or',
+  '  brief? Rewrite any that do not.',
 ].join('\n');
 
 const TARGET_WORDS: Record<string, string> = {
@@ -198,6 +209,7 @@ export async function generateScript(job: MediaJob, research: string): Promise<G
     research,
     '',
     `Write the narration. Length: ${TARGET_WORDS[job.format] ?? TARGET_WORDS.short}.`,
+    'Stay strictly on the title and brief — cut anything that wanders off them.',
   ].filter(Boolean).join('\n');
   return generateText(SCRIPT_SYSTEM, prompt);
 }
@@ -230,6 +242,32 @@ export function checkScript(job: MediaJob, script: string): string[] {
   }
   if (/\b(subscribe|like and share|smash that)\b/i.test(script)) {
     problems.push('The script ends on a call to subscribe, which the brief rules out.');
+  }
+
+  // Off-topic drift, detected mechanically rather than by hope. The title's
+  // significant words are the contract; a script that barely mentions them
+  // has wandered, however fluent it reads. Proper nouns and distinct nouns
+  // carry the topic — "the", "and" and "video" do not. The bar is deliberately
+  // low (ANY key word present): a script about Jonah will say "Jonah" often,
+  // and one drift check that occasionally passes a drifter is better than one
+  // that fails honest scripts.
+  const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'to', 'for',
+    'with', 'about', 'video', 'short', 'long', 'how', 'why', 'what', 'is', 'was',
+    'your', 'you', 'it', 'that', 'this', 'from', 'one', 'minute']);
+  const titleWords = (job.title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP.has(w));
+  if (titleWords.length > 0) {
+    const scriptLower = script.toLowerCase();
+    const hits = titleWords.filter(w => scriptLower.includes(w)).length;
+    if (hits === 0) {
+      problems.push(
+        `The script never mentions the title's subject (${titleWords.join(', ')}) — ` +
+        'it has drifted off topic. Re-run the script stage or sharpen the brief.',
+      );
+    }
   }
   return problems;
 }

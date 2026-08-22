@@ -226,6 +226,25 @@ export interface Settings {
    */
   mediaPublishingEnabled?: boolean;
   /**
+   * Allow a rendering proxy (Jina Reader) as the LAST fetch fallback when a
+   * page cannot be read locally. Off by default: it is the only fetch tier
+   * that sends the URL off this machine.
+   */
+  webReaderFallbackEnabled?: boolean;
+  /** Mix background music under video narration. Off unless a folder is set. */
+  mediaMusicEnabled?: boolean;
+  /**
+   * Folder holding the user's own music tracks. A folder rather than a service:
+   * no account, no rate limit, no licence question, and it works offline.
+   * One track is chosen per video, seeded by the job id so a re-render reuses it.
+   */
+  mediaMusicFolder?: string;
+  /**
+   * Cloud chat temperature override (0–2). Unset = provider default.
+   * Mirrors the main-process Settings key.
+   */
+  chatTemperature?: number;
+  /**
    * Whether chats are written to conversation-history.json. Defaults to true.
    *
    * It was absent from this interface, which is why no control for it could be
@@ -249,6 +268,20 @@ export interface Settings {
   geminiApiKey?: string;
   /** Moonshot / Kimi — OpenAI-compatible API at api.moonshot.ai. */
   moonshotApiKey?: string;
+  /**
+   * One API key per cloud provider, keyed by `CustomLLMConfig['provider']`.
+   *
+   * The four fields above predate this and only cover anthropic, openai,
+   * gemini and moonshot — while the picker offers thirteen providers. groq,
+   * deepseek, huggingface, cerebras, sambanova, together and custom had
+   * nowhere to persist a key, so they shared the single `customLLM.apiKey`
+   * slot and configuring a second one destroyed the first.
+   *
+   * Read through `apiKeyForProvider`, never directly: the legacy fields are
+   * still written for the four they cover, so a downgrade does not lose them.
+   * Encrypted at rest per value, like every other secret.
+   */
+  providerApiKeys?: Record<string, string>;
   // Image generation API keys
   stableHordeApiKey?: string;
   // Code model routing
@@ -451,6 +484,9 @@ export interface ElectronAPI {
   // TTS (text-to-speech)
   ttsSpeak?: (text: string, rate?: number) => Promise<{ success: boolean; error?: string }>;
   ttsStop?: () => Promise<{ success: boolean; error?: string }>;
+  // Voice picker: list neural voices; render a short sample of one to a file.
+  ttsListVoices?: () => Promise<any>;
+  ttsSampleVoice?: (voice: string, sampleText?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
 
   // Scheduler (Pro-gated — handlers may resolve to GateBlockedResponse for free users)
   schedulerList?: () => Promise<ScheduledJob[] | GateBlockedResponse>;
@@ -476,7 +512,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render') =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;

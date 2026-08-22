@@ -66,11 +66,27 @@ export function getWebhookSecret(): string {
 /**
  * Returns headers that should be included on every HomeBot → n8n request.
  * Merges with any additional headers the caller provides.
+ *
+ * Warns once when the Electron side has a secret but n8n may not: the
+ * workflow auth guards SKIP validation when HOMEBOT_WEBHOOK_SECRET is unset
+ * (local-dev convenience), so a silent mismatch would mean unauthenticated
+ * webhooks. docker-compose / start-homebot.ps1 normally export the variable;
+ * this warning makes a broken handoff visible at startup instead of never.
  */
+let warnedSecretMismatch = false;
 export function homebotWebhookHeaders(extra?: Record<string, string>): Record<string, string> {
+  const secret = getWebhookSecret();
+  if (!warnedSecretMismatch && !process.env['HOMEBOT_WEBHOOK_SECRET']) {
+    warnedSecretMismatch = true;
+    console.warn(
+      '[HomeBot] HOMEBOT_WEBHOOK_SECRET is not set in this environment — n8n workflow ' +
+        'auth guards will SKIP validation and webhook endpoints are unauthenticated on ' +
+        'the network. Set it via start-homebot.ps1 or docker-compose.'
+    );
+  }
   return {
     'Content-Type': 'application/json',
-    'X-HOMEBOT-Auth': getWebhookSecret(),
+    'X-HOMEBOT-Auth': secret,
     ...extra,
   };
 }

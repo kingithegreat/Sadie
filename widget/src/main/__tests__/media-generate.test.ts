@@ -85,12 +85,41 @@ describe('checks that run before anything is rendered', () => {
   });
 
   it('passes a clean script of the right length', () => {
-    const clean = new Array(130).fill('word').join(' '); // ~52s
+    // Mentions the subject — a real script would; pure filler would now trip
+    // the drift check below, which is the point of it. ~48s spoken.
+    const clean = new Array(40).fill('word Jonah storm').join(' ');
     expect(checkScript(short, clean)).toEqual([]);
   });
 
   it('reports an empty script rather than treating it as fine', () => {
     expect(checkScript(short, '').join(' ')).toMatch(/empty/i);
+  });
+
+  // Off-topic drift was the most-reported script failure: fluent output that
+  // barely touches the subject. Detected mechanically — the title's key words
+  // are the contract, and a script that mentions none of them has wandered no
+  // matter how well it reads. The bar is "mentions at least one key word":
+  // strict enough to catch drift, loose enough to never fail honest scripts.
+  describe('off-topic drift', () => {
+    it('flags a script that never mentions the title subject', () => {
+      // ~16s spoken — inside the length band, so ONLY the drift check fires.
+      const drifted = 'completely unrelated filler text here '.repeat(8);
+      const problems = checkScript(short, drifted).join(' ');
+      expect(problems).toMatch(/drifted off topic/i);
+    });
+
+    it('passes a script that engages the title subject', () => {
+      // 40 words ≈ 16s — inside the length band, so only drift is under test.
+      const onTopic = 'Jonah storm ship sailors sea '.repeat(8);
+      expect(checkScript(short, onTopic)).toEqual([]);
+    });
+
+    it('ignores stop-words when judging the title', () => {
+      // "One-Minute Bible: Jonah" — "bible" and "jonah" carry the topic;
+      // "one" and "minute" are framing. A script saying "Jonah" is on topic.
+      const script = 'the a an of Jonah '.repeat(8); // ~40 words
+      expect(checkScript(short, script)).toEqual([]);
+    });
   });
 });
 

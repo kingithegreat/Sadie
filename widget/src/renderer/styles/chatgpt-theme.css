@@ -2046,6 +2046,31 @@ body {
   gap: 10px;
 }
 
+/* Wraps the card so a delete control can sit on it — a <button> cannot
+   contain another <button>. */
+.model-card-wrap { position: relative; display: flex; }
+.model-card-wrap > .model-card { flex: 1; }
+
+.model-card-delete {
+  position: absolute; top: 4px; right: 4px;
+  width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 4px;
+  background: transparent; color: var(--text-muted);
+  font-size: 12px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: var(--transition-fast);
+}
+/* Revealed on hover or keyboard focus. Always-visible ✕ on every card turns a
+   model picker into a row of delete buttons. Focus matters as much as hover —
+   hover-only would put it out of reach of the keyboard entirely. */
+.model-card-wrap:hover .model-card-delete,
+.model-card-delete:focus-visible { opacity: 1; }
+.model-card-delete:hover:not(:disabled) {
+  background: oklch(55% 0.2 25 / 0.85); color: #fff;
+}
+.model-card-delete:disabled { cursor: not-allowed; opacity: 0; }
+.model-card-wrap:hover .model-card-delete:disabled { opacity: 0.35; }
+
 .model-card {
   background: var(--bg-medium);
   border-radius: var(--radius-sm);
@@ -4574,6 +4599,54 @@ body {
 .sp-section-toggle:first-child { border-top: none; }
 .sp-section-toggle:hover { color: var(--accent-primary, #4a6cf7); background: oklch(100% 0 0 / 0.05); }
 .sp-section-arrow { font-size: 14px; width: 18px; display: inline-block; }
+
+/* Which cloud providers already have a saved key */
+.sp-saved-keys { margin-top: 8px; }
+.sp-saved-keys-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sp-saved-key {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: var(--radius-sm);
+  background: oklch(100% 0 0 / 0.06); color: var(--text-secondary);
+  font-size: 12px;
+}
+.sp-saved-key.current {
+  background: var(--accent-primary, #4a6cf7); color: #fff;
+}
+.sp-saved-key-remove {
+  border: none; background: transparent; cursor: pointer;
+  color: inherit; opacity: 0.7; font-size: 11px; line-height: 1; padding: 0;
+}
+.sp-saved-key-remove:hover { opacity: 1; }
+
+/* Simple / Advanced view toggle — sits between the header and the body */
+.sp-view-toggle {
+  display: flex; gap: 4px; padding: 4px;
+  margin: 0 12px 4px; border-radius: var(--radius-sm);
+  background: oklch(100% 0 0 / 0.04);
+}
+.sp-view-btn {
+  flex: 1; padding: 8px 12px; border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: var(--transition-fast);
+}
+.sp-view-btn:hover { color: var(--text-primary); background: oklch(100% 0 0 / 0.05); }
+.sp-view-btn.active {
+  background: var(--accent-primary, #4a6cf7); color: #fff;
+}
+.sp-view-hint {
+  display: block; padding: 12px; margin-top: 4px;
+  border-top: 1px solid var(--border-light, #333);
+}
+
+/* The local-vs-cloud switch is the highest-stakes control here, so it reads as
+   a distinct block rather than one more row in a list. */
+.sp-privacy-switch {
+  border: 1px solid var(--border-light, #333);
+  border-radius: var(--radius-sm);
+  padding: 12px; margin: 4px 12px 8px;
+  background: oklch(100% 0 0 / 0.02);
+}
 
 /* Settings backup section */
 .sp-backup-section { border-top: 1px solid var(--border-light, #333); padding-top: 16px; margin-top: 8px; }
@@ -9708,6 +9781,74 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   max-height: 15rem;
   border-radius: 8px;
   background: #000;
+}
+
+/* Script and slide preview — closed by default, so a list of jobs stays a list */
+.ms-preview { margin-top: .4rem; }
+.ms-preview-toggle {
+  cursor: pointer; font-size: .82rem; color: var(--text-secondary);
+  padding: .15rem 0; list-style: revert;
+}
+.ms-preview-toggle:hover { color: var(--text-primary); }
+.ms-script {
+  margin: .35rem 0 0;
+  padding: .6rem .7rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  background: oklch(100% 0 0 / 0.03);
+  border-radius: 6px;
+  font-size: .85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+}
+.ms-slides {
+  display: flex; gap: .4rem; margin-top: .35rem;
+  overflow-x: auto; padding-bottom: .3rem;
+}
+.ms-slide {
+  flex: 0 0 auto;
+  height: 4.5rem; width: auto;
+  border-radius: 6px;
+  background: #000;
+}
+.ms-slide-missing {
+  display: flex; align-items: center; justify-content: center;
+  width: 4.5rem;
+  border: 1px dashed var(--border-light, #333);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+
+/* Fullscreen has to undo the preview sizing above.
+ *
+ * The browser gives a fullscreen element width/height 100% from its UA
+ * stylesheet, but an AUTHOR rule beats a UA rule — so `max-height: 15rem` kept
+ * applying and the video stayed a 15rem letterbox in the middle of a black
+ * screen. Pressing the fullscreen button appeared to do nothing, which is
+ * exactly how it was reported ("I couldn't make it full screen").
+ *
+ * :-webkit-full-screen is listed separately on purpose: a selector list is
+ * dropped WHOLE by any browser that does not understand one of its selectors,
+ * so combining the two with a comma would lose the rule for both. */
+.ms-video:fullscreen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+.ms-video:-webkit-full-screen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
 }
 
 .ms-job-published {

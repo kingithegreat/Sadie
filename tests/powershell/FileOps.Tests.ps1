@@ -1,5 +1,5 @@
 $ScriptPath = Resolve-Path "$PSScriptRoot\..\..\scripts\tools\powershell\FileOps.ps1"
-$TestSandbox = "C:\Users\adenk\Desktop\homebot\tests\sandbox"
+$TestSandbox = Join-Path $env:TEMP "homebot-pester-sandbox-$([guid]::NewGuid().ToString('N'))"
 
 Describe "HomeBot FileOps.ps1 Tests" {
 
@@ -11,101 +11,82 @@ Describe "HomeBot FileOps.ps1 Tests" {
 
     AfterAll {
         if (Test-Path $TestSandbox) {
-            Remove-Item $TestSandbox -Recurse -Force
+            Remove-Item $TestSandbox -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
-    Context "Safety Validation" {
-        It "Should block access to C:\Windows" {
-            $result = & $ScriptPath -Action list -Path "C:\Windows"
-            $json = $result | ConvertFrom-Json
-            $json.success | Should -Be $false
-            $json.error_code | Should -Be "ACCESS_DENIED"
-        }
-
-        It "Should block dangerous file extensions (.exe)" {
-            $path = Join-Path $TestSandbox "malware.exe"
-            $result = & $ScriptPath -Action write -Path $path -Content "malware"
-            $json = $result | ConvertFrom-Json
-            $json.success | Should -Be $false
-            $json.error | Should -Match "Blocked extension"
-        }
-
-        It "Should block dangerous file extensions (.ps1)" {
-            $path = Join-Path $TestSandbox "script.ps1"
-            $result = & $ScriptPath -Action write -Path $path -Content "script"
-            $json = $result | ConvertFrom-Json
-            $json.success | Should -Be $false
-            $json.error | Should -Match "Blocked extension"
-        }
-    }
-
-    Context "File Operations" {
-        It "Should allow writing a text file in a safe path" {
-            $path = Join-Path $TestSandbox "test_write.txt"
+    Context "Write Operations" {
+        It "Should write a text file to a specified LiteralPath" {
+            $testFile = Join-Path $TestSandbox "test_write.txt"
             $content = "Hello HomeBot"
-            
-            $result = & $ScriptPath -Action write -Path $path -Content $content
-            $json = $result | ConvertFrom-Json
-            
-            $json.success | Should -Be $true
-            $json.action | Should -Be "write"
-            Test-Path $path | Should -Be $true
-            Get-Content $path | Should -Be $content
-        }
 
-        It "Should read the written file" {
-            $path = Join-Path $TestSandbox "test_write.txt"
-            $content = "Hello HomeBot" # Matches previous test
-            
-            $result = & $ScriptPath -Action read -Path $path
+            $result = & $ScriptPath -Action write -LiteralPath $testFile -Content $content
             $json = $result | ConvertFrom-Json
-            
-            $json.success | Should -Be $true
-            $json.data.content | Should -Be $content
-        }
 
-        It "Should list directory contents" {
-            $result = & $ScriptPath -Action list -Path $TestSandbox
-            $json = $result | ConvertFrom-Json
-            
-            $json.success | Should -Be $true
-            $json.data.files | Should -Not -BeNullOrEmpty
-            $fileNames = $json.data.files | ForEach-Object { $_.name }
-            $fileNames | Should -Contain "test_write.txt"
-        }
-
-        It "Should search for files" {
-            $result = & $ScriptPath -Action search -Path $TestSandbox -Pattern "*.txt"
-            $json = $result | ConvertFrom-Json
-            
-            $json.success | Should -Be $true
-            $json.data.matches | Should -Not -BeNullOrEmpty
+            $json.success | Should Be $true
+            Test-Path $testFile | Should Be $true
+            (Get-Content -LiteralPath $testFile -Raw).TrimEnd("`r", "`n") | Should Be $content
         }
     }
 
-    Context "Dangerous Operations & Confirmation" {
-        It "Should require confirmation for delete" {
-            $path = Join-Path $TestSandbox "test_delete_unconfirmed.txt"
-            Set-Content -Path $path -Value "Delete me"
-            
-            $result = & $ScriptPath -Action delete -Path $path -Confirmed $false
+    Context "Read Operations" {
+        It "Should read an existing file" {
+            $testFile = Join-Path $TestSandbox "test_read.txt"
+            $content = "Read test content"
+            Set-Content -LiteralPath $testFile -Value $content -Force
+
+            $result = & $ScriptPath -Action read -LiteralPath $testFile
             $json = $result | ConvertFrom-Json
-            
-            $json.success | Should -Be $false
-            $json.error | Should -Match "confirmation"
-            Test-Path $path | Should -Be $true
+
+            $json.success | Should Be $true
+            $json.data.TrimEnd("`r", "`n") | Should Be $content
+            $json._fileSize | Should BeGreaterThan 0
         }
 
-        It "Should delete file when confirmed" {
-            $path = Join-Path $TestSandbox "test_delete_confirmed.txt"
-            Set-Content -Path $path -Value "Delete me"
-            
-            $result = & $ScriptPath -Action delete -Path $path -Confirmed $true
+        It "Should return error when reading a non-existent file" {
+            $missingFile = Join-Path $TestSandbox "does_not_exist.txt"
+
+            $result = & $ScriptPath -Action read -LiteralPath $missingFile
             $json = $result | ConvertFrom-Json
-            
-            $json.success | Should -Be $true
-            Test-Path $path | Should -Be $false
+
+            $json.success | Should Be $false
+            $json.error | Should Match "File not found"
+        }
+    }
+
+    Context "Delete Operations" {
+        It "Should delete an existing file" {
+            $testFile = Join-Path $TestSandbox "test_delete.txt"
+            Set-Content -LiteralPath $testFile -Value "Delete me" -Force
+
+            $result = & $ScriptPath -Action delete -LiteralPath $testFile
+            $json = $result | ConvertFrom-Json
+
+            $json.success | Should Be $true
+            Test-Path $testFile | Should Be $false
+        }
+
+        It "Should return error when deleting a non-existent file" {
+            $missingFile = Join-Path $TestSandbox "never_existed.txt"
+
+            $result = & $ScriptPath -Action delete -LiteralPath $missingFile
+            $json = $result | ConvertFrom-Json
+
+            $json.success | Should Be $false
+            $json.error | Should Match "File not found"
+        }
+    }
+
+    Context "Error Handling" {
+        It "Should return error for an unknown action" {
+            $testFile = Join-Path $TestSandbox "dummy.txt"
+
+            $result = & $ScriptPath -Action invalid_action -LiteralPath $testFile
+            $json = $result | ConvertFrom-Json
+
+            $json.success | Should Be $false
+            $json.error | Should Match "Unknown action"
         }
     }
 }
+

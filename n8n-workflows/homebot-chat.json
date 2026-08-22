@@ -40,7 +40,7 @@
         "promptType": "define",
         "text": "={{ $json.body.message }}",
         "options": {
-          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
+          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
           "maxIterations": 6
         }
       },
@@ -69,43 +69,31 @@
       "parameters": {
         "name": "web_search",
         "description": "Search the web for current information. Use for news, facts, weather, sports, or anything requiring up-to-date data.",
-        "url": "=https://api.duckduckgo.com/?q={{ encodeURIComponent($fromAI('query', 'The search query', 'string')) }}&format=json&no_html=1&skip_disambig=1",
-        "placeholderDefinitions": {
-          "values": [
-            {
-              "name": "query",
-              "description": "The search query - be specific",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "language": "javaScript",
+        "jsCode": "const q = (($fromAI('query', 'The search query - be specific', 'string') || '')).trim();\nif (!q) return 'Search failed: no query provided';\nconst res = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1&skip_disambiguation=1', { headers: { 'User-Agent': 'HomeBot' } });\nif (!res.ok) return `Search failed (${res.status})`;\nconst d = await res.json();\nconst parts = [];\nif (d.AbstractText) parts.push(d.AbstractText);\nif (d.Answer) parts.push(String(d.Answer));\nfor (const t of (d.RelatedTopics || []).slice(0, 5)) {\n  if (t.Text) parts.push(t.Text);\n}\nreturn parts.length ? parts.join('\\n').slice(0, 4000) : `No results for \"${q}\"`;"
       },
       "id": "tool-web-search",
       "name": "Web Search",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
-      "typeVersion": 1.1,
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
       "position": [700, 520]
     },
     {
       "parameters": {
-        "name": "run_command",
-        "description": "Execute a terminal command on the host system. Use for git operations, file management, system info, or running scripts. Available commands: dir, type, git, powershell scripts, etc.",
-        "language": "javaScript",
-        "jsCode": "const cmd = $fromAI('command', 'The command to execute', 'string');\nconst { execSync } = require('child_process');\ntry {\n  const output = execSync(cmd, { timeout: 30000, encoding: 'utf8', maxBuffer: 1024 * 1024 });\n  return output.trim() || '(command completed with no output)';\n} catch (err) {\n  return `Error: ${err.message}\\nStderr: ${err.stderr || ''}`.trim();\n}"
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
       },
-      "id": "tool-command",
-      "name": "Run Command",
-      "type": "@n8n/n8n-nodes-langchain.toolCode",
-      "typeVersion": 1,
-      "position": [880, 520]
+      "id": "auth-guard-main",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
     },
     {
       "parameters": {
         "name": "read_file",
-        "description": "Read the contents of a file from the filesystem. Provide the full file path.",
+        "description": "Read the contents of a file from the filesystem. Provide the full file path. Only paths inside the user's home directory are allowed.",
         "language": "javaScript",
-        "jsCode": "const filePath = $fromAI('path', 'Full path to the file to read', 'string');\nconst fs = require('fs');\ntry {\n  const content = fs.readFileSync(filePath, 'utf8');\n  return content.slice(0, 8000);\n} catch (err) {\n  return `Error reading file: ${err.message}`;\n}"
+        "jsCode": "const filePath = $fromAI('path', 'Full path to the file to read', 'string');\nconst fs = require('fs');\nconst os = require('os');\nconst path = require('path');\nconst HOME = os.homedir();\nconst resolved = path.resolve(filePath.replace(/^~/, HOME));\nconst homeWithSep = HOME.toLowerCase() + path.sep;\nif (resolved.toLowerCase() !== HOME.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {\n  return 'Error: access denied - path must be within the home directory';\n}\ntry {\n  const content = fs.readFileSync(resolved, 'utf8');\n  return content.slice(0, 8000);\n} catch (err) {\n  return `Error reading file: ${err.message}`;\n}"
       },
       "id": "tool-read-file",
       "name": "Read File",
@@ -116,9 +104,9 @@
     {
       "parameters": {
         "name": "write_file",
-        "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does.",
+        "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Only paths inside the user's home directory are allowed.",
         "language": "javaScript",
-        "jsCode": "const filePath = $fromAI('path', 'Full path to write the file to', 'string');\nconst content = $fromAI('content', 'The content to write to the file', 'string');\nconst fs = require('fs');\nconst path = require('path');\ntry {\n  const dir = path.dirname(filePath);\n  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });\n  fs.writeFileSync(filePath, content, 'utf8');\n  return `File written successfully: ${filePath} (${content.length} characters)`;\n} catch (err) {\n  return `Error writing file: ${err.message}`;\n}"
+        "jsCode": "const filePath = $fromAI('path', 'Full path to write the file to', 'string');\nconst content = $fromAI('content', 'The content to write to the file', 'string');\nconst fs = require('fs');\nconst path = require('path');\nconst os = require('os');\nconst HOME = os.homedir();\nconst resolved = path.resolve(filePath.replace(/^~/, HOME));\nconst homeWithSep = HOME.toLowerCase() + path.sep;\nif (resolved.toLowerCase() !== HOME.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {\n  return 'Error: access denied - path must be within the home directory';\n}\ntry {\n  const dir = path.dirname(resolved);\n  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });\n  fs.writeFileSync(resolved, content, 'utf8');\n  return `File written successfully: ${resolved} (${content.length} characters)`;\n} catch (err) {\n  return `Error writing file: ${err.message}`;\n}"
       },
       "id": "tool-write-file",
       "name": "Write File",
@@ -129,31 +117,22 @@
     {
       "parameters": {
         "name": "get_weather",
-        "description": "Get the current weather for a location. Returns temperature, conditions, humidity, and wind.",
-        "url": "=https://wttr.in/{{ encodeURIComponent($fromAI('location', 'City or location name', 'string')) }}?format=j1",
-        "placeholderDefinitions": {
-          "values": [
-            {
-              "name": "location",
-              "description": "City or location name (e.g. Tauranga, New Zealand)",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "description": "Get the current weather for a city. ALWAYS pass a city name (e.g. 'Tauranga'). Returns temperature, feels-like, conditions, humidity, and wind.",
+        "language": "javaScript",
+        "jsCode": "const loc = (($fromAI('location', 'City or location name', 'string') || '')).trim() || 'Tauranga';\nconst res = await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=j1`, { headers: { 'User-Agent': 'HomeBot' } });\nif (!res.ok) return `Weather lookup failed (${res.status}) for ${loc}`;\nconst data = await res.json();\nconst cur = data.current_condition && data.current_condition[0];\nif (!cur) return `No current conditions available for ${loc}`;\nconst area = data.nearest_area && data.nearest_area[0];\nconst name = area ? area.areaName[0].value : loc;\nreturn `Weather in ${name}: ${cur.temp_C}°C (feels like ${cur.FeelsLikeC}°C), ${cur.weatherDesc[0].value}, humidity ${cur.humidity}%, wind ${cur.windspeedKmph} km/h`;"
       },
       "id": "tool-weather",
       "name": "Get Weather",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
-      "typeVersion": 1.1,
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
       "position": [700, 700]
     },
     {
       "parameters": {
         "name": "list_directory",
-        "description": "List the files and folders in a directory.",
+        "description": "List the files and folders in a directory. Only paths inside the user's home directory are allowed.",
         "language": "javaScript",
-        "jsCode": "const dirPath = $fromAI('path', 'Directory path to list', 'string');\nconst fs = require('fs');\nconst path = require('path');\ntry {\n  const entries = fs.readdirSync(dirPath, { withFileTypes: true });\n  const result = entries.slice(0, 50).map(e => {\n    const icon = e.isDirectory() ? '[DIR]' : '[FILE]';\n    let size = '';\n    if (!e.isDirectory()) {\n      try { const s = fs.statSync(path.join(dirPath, e.name)); size = ` (${(s.size / 1024).toFixed(1)} KB)`; } catch {}\n    }\n    return `${icon} ${e.name}${size}`;\n  });\n  return `Contents of ${dirPath}:\\n${result.join('\\n')}`;\n} catch (err) {\n  return `Error: ${err.message}`;\n}"
+        "jsCode": "const dirPath = $fromAI('path', 'Directory path to list', 'string');\nconst fs = require('fs');\nconst path = require('path');\nconst os = require('os');\nconst HOME = os.homedir();\nconst resolved = path.resolve(dirPath.replace(/^~/, HOME));\nconst homeWithSep = HOME.toLowerCase() + path.sep;\nif (resolved.toLowerCase() !== HOME.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {\n  return 'Error: access denied - path must be within the home directory';\n}\ntry {\n  const entries = fs.readdirSync(resolved, { withFileTypes: true });\n  const result = entries.slice(0, 50).map(e => {\n    const icon = e.isDirectory() ? '[DIR]' : '[FILE]';\n    let size = '';\n    if (!e.isDirectory()) {\n      try { const s = fs.statSync(path.join(resolved, e.name)); size = ` (${(s.size / 1024).toFixed(1)} KB)`; } catch {}\n    }\n    return `${icon} ${e.name}${size}`;\n  });\n  return `Contents of ${resolved}:\\n${result.join('\\n')}`;\n} catch (err) {\n  return `Error: ${err.message}`;\n}"
       },
       "id": "tool-list-dir",
       "name": "List Directory",
@@ -190,7 +169,7 @@
         "promptType": "define",
         "text": "={{ $json.body.message }}",
         "options": {
-          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, terminal commands, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
+          "systemMessage": "You are HomeBot (Private Desktop AI Assistant), a helpful desktop AI assistant built by Aden Kingi. You have access to tools for web search, file operations, weather, and more. Use tools when the user's request requires real data or actions. Be concise, accurate, and use markdown formatting. Today's date is {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}.",
           "maxIterations": 6
         }
       },
@@ -199,15 +178,35 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [620, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
+      },
+      "id": "auth-guard-stream",
+      "name": "Auth Guard Stream",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 700]
     }
   ],
   "connections": {
     "HomeBot Webhook": {
       "main": [
+        [{ "node": "Auth Guard", "type": "main", "index": 0 }]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
         [{ "node": "AI Agent", "type": "main", "index": 0 }]
       ]
     },
     "HomeBot Stream Webhook": {
+      "main": [
+        [{ "node": "Auth Guard Stream", "type": "main", "index": 0 }]
+      ]
+    },
+    "Auth Guard Stream": {
       "main": [
         [{ "node": "AI Agent Stream", "type": "main", "index": 0 }]
       ]
@@ -231,14 +230,6 @@
       ]
     },
     "Web Search": {
-      "ai_tool": [
-        [
-          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
-          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
-        ]
-      ]
-    },
-    "Run Command": {
       "ai_tool": [
         [
           { "node": "AI Agent", "type": "ai_tool", "index": 0 },

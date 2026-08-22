@@ -1,6 +1,6 @@
 # Dependency audit — recorded decisions
 
-Last reviewed **2026-08-13** against `npm audit --omit=dev` in `widget/`.
+Last reviewed **2026-08-22** against `npm audit --omit=dev` in `widget/`.
 
 `npm audit` reports advisories against packages, not against *how this app uses them*. Some of
 what it reports cannot fire here. This file records which, and why, so nobody re-litigates it —
@@ -21,6 +21,17 @@ advisory that cannot fire.
 
 Applied with plain `npm audit fix` (no `--force`). Lockfile only — `package.json` untouched, so
 no semver-major change. Took the count from 8 to 6.
+
+---
+
+## Fixed — 2026-08-22
+
+| Package | Was → Now | Advisory |
+|---|---|---|
+| `nanoid` (via `docx`) | 3.3.17 → **3.3.18** | Custom generators can loop indefinitely when size is zero ([GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8)) |
+
+Applied with plain `npm audit fix` (no `--force`). Lockfile only — `package.json` untouched.
+Count went 7 → 6 (a new nanoid advisory had appeared since the 2026-08-13 review).
 
 ---
 
