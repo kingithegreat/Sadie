@@ -83,7 +83,17 @@ const TEMPLATE_AUTOMATIONS: AutomationTemplate[] = [
   },
 ];
 
-export const AutomationCenter: React.FC = () => {
+export interface AutomationCenterProps {
+  /**
+   * Context handed over when the assistant sent the user here, so the create
+   * form opens holding what was just discussed in chat instead of blank. Keys
+   * it does not understand are ignored, which is what lets other callers hand
+   * over richer context later without changing this signature.
+   */
+  navContext?: Record<string, unknown> | null;
+}
+
+export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }) => {
   const [automations, setAutomations] = useState<SavedAutomation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +108,28 @@ export const AutomationCenter: React.FC = () => {
   const [formTrigger, setFormTrigger] = useState<'manual' | 'schedule'>('manual');
   const [formSchedule, setFormSchedule] = useState(60);
   const [formN8nUrl, setFormN8nUrl] = useState('');
+
+  // Open the create form already filled in when the assistant sent the user
+  // here with context. Without this the handoff is only a redirect: someone who
+  // just described an automation in chat would arrive at an empty form and have
+  // to type it all again.
+  //
+  // Only fills blank fields, so arriving here a second time cannot wipe work in
+  // progress.
+  useEffect(() => {
+    if (!navContext) return;
+    const name = typeof navContext.name === 'string' ? navContext.name.trim() : '';
+    const instructions =
+      typeof navContext.instructions === 'string' ? navContext.instructions.trim() : '';
+    const description =
+      typeof navContext.description === 'string' ? navContext.description.trim() : '';
+    if (!name && !instructions && !description) return;
+
+    setIsCreating(true);
+    if (name) setFormName(prev => prev || name);
+    if (instructions) setFormInstructions(prev => prev || instructions);
+    if (description) setFormDesc(prev => prev || description);
+  }, [navContext]);
   const [formUseN8n, setFormUseN8n] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [n8nOnline, setN8nOnline] = useState(false);
