@@ -35,6 +35,22 @@ export default function PrivacySwitch() {
   // case, someone who HAS set up a provider gets told to go and set one up.
   const blockedByUncensored = !canEnable && !!localSettings.uncensoredMode;
 
+  // Name what is waiting, and what is answering instead.
+  //
+  // Reported from real use: "selected sonet but still showing quen". Choosing a
+  // cloud model saves `customLLM.model` and sets `enabled: true`, but routing is
+  // decided by `useCustomLLM`, which stays off — deliberately, so connecting a
+  // provider never silently starts sending chats off the machine. The switch
+  // said only "the online AI you set up", which does not read as "the Sonnet you
+  // just picked is sitting here unused".
+  const readyModel = ready.config?.model?.trim();
+  const readyLabel = readyModel
+    ? (ready.config?.provider === 'claude-code' ? `Claude ${readyModel}` : readyModel)
+    : null;
+  const localLabel = localSettings.uncensoredMode
+    ? (localSettings.uncensoredModel || 'the uncensored model on this PC')
+    : (localSettings.chatModel || 'the model on this PC');
+
   return (
     <div className="setting-group sp-privacy-switch">
       <label className="setting-label">Where your chats are answered</label>
@@ -57,7 +73,11 @@ export default function PrivacySwitch() {
         {cloudAllowed
           ? 'Your messages are sent to the online AI service you set up. Turn this off to keep every chat on this PC.'
           : canEnable
-            ? 'Nothing you type leaves this PC. Turn this on to let HomeBot use the online AI you set up instead.'
+            ? readyLabel
+              // Names both sides, because the confusing case is having picked a
+              // cloud model and still seeing the local one answer.
+              ? `${readyLabel} is set up but NOT in use — ${localLabel} is answering. Turn this on to switch to it. Nothing you type leaves this PC until you do.`
+              : 'Nothing you type leaves this PC. Turn this on to let HomeBot use the online AI you set up instead.'
             : blockedByUncensored
               ? 'Nothing you type leaves this PC. Uncensored mode answers with the model on this PC, so the online AI stays unused while it is on.'
               : 'Nothing you type leaves this PC. Set up an online AI under Advanced if you want the option to use one.'}
