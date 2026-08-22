@@ -78,6 +78,8 @@ export interface Settings {
   /** Background music for generated video — see shared/types.ts. */
   mediaMusicEnabled?: boolean;
   mediaMusicFolder?: string;
+  /** Cloud chat temperature override (0–2); unset = provider default. */
+  chatTemperature?: number;
   /** Whether chats are written to disk — see shared/types.ts. */
   saveConversationHistory?: boolean;
 }

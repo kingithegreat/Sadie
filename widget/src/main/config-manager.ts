@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
+import { migrateRetiredModel } from './model-lifecycle';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
@@ -137,6 +138,13 @@ export interface Settings {
   codeApiKey?: string;
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
+  /**
+   * Cloud chat temperature override, 0–2. Unset means each provider's default
+   * (0.5 for OpenAI-compatible, 0.7 for Anthropic) — the knob only exists to
+   * replace a default deliberately, not to add another one. Local Ollama
+   * models keep their tuned values regardless.
+   */
+  chatTemperature?: number;
   // Hardware profile — drives model defaults and VRAM recommendations
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
   // Custom chat guidelines appended to system prompt
@@ -537,6 +545,16 @@ export function getSettings(): Settings {
       ...(savedSettings.permissions || {})
     } as Record<string, boolean>;
     merged.permissions = mergedPermissions;
+    // Retired cloud model IDs get remapped to their current-tier replacement
+    // here, at load — the corrected value persists on the next ordinary save,
+    // and the picker lists no longer offer the retired IDs at all.
+    if (merged.customLLM?.model) {
+      const migration = migrateRetiredModel(merged.customLLM.model);
+      if (migration.renamedFrom) {
+        console.warn(`[HomeBot] Saved model "${migration.renamedFrom}" is retired — using "${migration.model}" instead.`);
+        merged.customLLM = { ...merged.customLLM, model: migration.model };
+      }
+    }
     const demoMode = process.argv?.includes('--demo') || process.env.HOMEBOT_DEMO_MODE === '1' || process.env.HOMEBOT_DEMO_MODE === 'true';
     if (demoMode) {
       merged.telemetryEnabled = false;

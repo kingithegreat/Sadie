@@ -41,5 +41,5 @@ test('a video in media_production offers "Make the video", wired to the render a
   const btn = screen.getByText('Make the video');
   await act(async () => { fireEvent.click(btn); });
 
-  expect(mediaRun).toHaveBeenCalledWith('j1', 'render');
+  expect(mediaRun).toHaveBeenCalledWith('j1', 'render', undefined);
 });
