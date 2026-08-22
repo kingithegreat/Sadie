@@ -125,6 +125,13 @@ export const MediaStudioPanel: React.FC = () => {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatIdeas, setChatIdeas] = useState<Array<{ id: string; content: string; createdAt: number }> | null>(null);
+  // Narration voice picker. Voices load lazily with the first narrate action;
+  // sampling renders a short clip to a temp file and plays it.
+  const [voices, setVoices] = useState<Array<{ name: string; friendlyName?: string; locale?: string }> | null>(null);
+  const [narrateVoice, setNarrateVoice] = useState('');
+  const [sampling, setSampling] = useState<string | null>(null);
+  /** Last rendered voice sample, played inline via file:// like the previews. */
+  const [samplePath, setSamplePath] = useState<string | null>(null);
   /** Which job is currently being asked for its published link, if any. */
   const [publishingFor, setPublishingFor] = useState<string | null>(null);
   const [publishedLink, setPublishedLink] = useState('');
@@ -284,6 +291,34 @@ export const MediaStudioPanel: React.FC = () => {
     await run('new', () => api()?.mediaCreate?.(chatIdeaToJobInput(idea)));
   };
 
+  /** Neural voices for the narration picker — loaded once, on first use. */
+  const ensureVoices = async () => {
+    if (voices) return;
+    try {
+      const res = await api()?.ttsListVoices?.();
+      const list = res?.result?.voices;
+      if (Array.isArray(list)) setVoices(list);
+    } catch { /* picker stays on "Default voice" — narration still works */ }
+  };
+
+  /** Render a short sample of a voice to a temp file and play it inline. */
+  const sampleVoice = async (voice: string) => {
+    setSampling(voice);
+    try {
+      const res = await api()?.ttsSampleVoice?.(voice);
+      if (res?.success && res.path) {
+        // Same file:// playback the job previews use — no extra channel.
+        setSamplePath(res.path);
+      } else {
+        setError(res?.error || 'Could not render the voice sample.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Could not render the voice sample.');
+    } finally {
+      setSampling(null);
+    }
+  };
+
   const awaiting = jobs.filter(j => j.state === 'awaiting_approval');
   const active = jobs.filter(j => j.state !== 'awaiting_approval' && !FAILURE.includes(j.state));
   const stalled = jobs.filter(j => FAILURE.includes(j.state));
@@ -412,15 +447,42 @@ export const MediaStudioPanel: React.FC = () => {
           </>
         ) : stageAction(j) ? (
           // The stage that does real work, rather than only changing state.
-          <button
-            className="ms-btn ms-btn--primary"
-            onClick={() => {
-              const a = stageAction(j)!;
-              run(j.id, () => api()?.mediaRun?.(j.id, a.action), a.label);
-            }}
-          >
-            {stageAction(j)!.label}
-          </button>
+          // Narration offers the voice picker inline: pick, hear a sample,
+          // then record — without a trip to Settings.
+          <>
+            {stageAction(j)!.action === 'narrate' && (
+              <select
+                className="ms-input ms-voice-select"
+                value={narrateVoice}
+                onChange={e => setNarrateVoice(e.target.value)}
+                onFocus={ensureVoices}
+                aria-label="Narration voice"
+              >
+                <option value="">Default voice</option>
+                {(voices || []).map(v => (
+                  <option key={v.name} value={v.name}>{v.friendlyName || v.name}</option>
+                ))}
+              </select>
+            )}
+            {stageAction(j)!.action === 'narrate' && narrateVoice && (
+              <button
+                className="ms-btn"
+                disabled={sampling === narrateVoice}
+                onClick={() => sampleVoice(narrateVoice)}
+              >
+                {sampling === narrateVoice ? 'Rendering…' : '▶ Sample'}
+              </button>
+            )}
+            <button
+              className="ms-btn ms-btn--primary"
+              onClick={() => {
+                const a = stageAction(j)!;
+                run(j.id, () => api()?.mediaRun?.(j.id, a.action, a.action === 'narrate' ? { voice: narrateVoice || undefined } : undefined), a.label);
+              }}
+            >
+              {stageAction(j)!.label}
+            </button>
+          </>
         ) : PUBLISHABLE.includes(j.state) ? (
           /* Publishing asks for the link, because HomeBot does not upload.
              The old button set the state to `published` and stopped, so the
@@ -652,6 +714,16 @@ export const MediaStudioPanel: React.FC = () => {
         <p className="ms-empty">
           No videos yet. Add one above, or ask in chat — “start a short video called …”.
         </p>
+      )}
+
+      {/* A rendered voice sample, played inline — hear it before recording. */}
+      {samplePath && (
+        <audio
+          className="ms-audio"
+          controls
+          autoPlay
+          src={`file:///${samplePath.replace(/\\/g, '/')}`}
+        />
       )}
 
       {awaiting.length > 0 && (
