@@ -596,6 +596,8 @@ export interface ElectronAPI {
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
   onConfigRecovered?: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => () => void;
   onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
+  /** The assistant moving the user to another panel, carrying context with them. */
+  onNavigate?: (cb: (request: import('./navigation').NavRequest) => void) => () => void;
 
   // Fetch a web page and extract its text content
   fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;

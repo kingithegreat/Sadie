@@ -50,7 +50,10 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
+// The mode list lives in shared/modes.ts so main can validate against the same
+// one. It was written to be the single source of truth and this file had been
+// restating it, which is how the two could have drifted.
+import type { AppMode } from '../shared/modes';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -219,6 +222,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
+  // Context handed over when the assistant navigates somewhere — what the user
+  // was talking about, so the destination opens ready rather than empty. Held
+  // here rather than in each panel so a panel can start consuming it without
+  // anything upstream changing.
+  const [navContext, setNavContext] = useState<Record<string, unknown> | null>(null);
   const [vramGB, setVramGB] = useState<number | null>(null);
 
   // Keep the header's model in sync with the router's actual decision.
@@ -429,6 +437,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       );
     });
 
+    // The assistant taking the user to another panel. Chat is meant to be the
+    // front door to everything, so when what someone wants lives in a panel the
+    // model sends them there rather than describing where the button is.
+    //
+    // The payload is stashed before the mode changes so the destination renders
+    // with context on its first paint rather than opening empty and filling in
+    // a frame later.
+    const navigateUnsub = window.electron.onNavigate?.((request) => {
+      setNavContext(request.payload ?? null);
+      setMode(request.mode);
+      if (request.reason) {
+        addToast(request.reason, 'info', 6000);
+      }
+    });
+
     // Subscribe to title updates pushed from main (keeps sidebar title in sync)
     const titleUnsub = window.electron.onTitleUpdated?.((data) => {
       // Dispatch a custom DOM event so ConversationSidebar can patch its local list
@@ -484,6 +507,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       briefingUnsub?.();
       hwUnsub?.();
       configRecoveredUnsub?.();
+      navigateUnsub?.();
       titleUnsub?.();
       ollamaUnsub?.();
       modelFbUnsub?.();
@@ -1472,7 +1496,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         </ErrorBoundary>
       ) : mode === 'automation' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <AutomationCenter />
+          <AutomationCenter navContext={navContext} />
         </Suspense>
       ) : mode === 'image' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
