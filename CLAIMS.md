@@ -202,3 +202,41 @@ Two PRs were in flight at handoff; both have auto-merge enabled and need no manu
   commit e49cc3e on #191) — drop it after #191 merges.
 - Worktrees: main tree is `C:\Users\adenk\Desktop\sadie`, the auth-guard branch lives in
   worktree `C:\Users\adenk\Desktop\sadie-n8nguard`.
+
+
+## Dependency decisions — 2026-08-23 (do not re-litigate)
+
+Three third-party projects were evaluated this week. Two were rejected for reasons that are
+licence- and architecture-shaped, not taste-shaped, so they will look attractive again to
+anyone who has not read this.
+
+| Project | Decision | Reason |
+|---|---|---|
+| **Remotion** (React video rendering) | **No** | Free tier is for-profit orgs of **up to 3 employees**, so Aden qualifies personally today. But the licence forbids shipping a derivative — *"not allowed to copy or modify Remotion code for the purpose of selling, renting, licensing, relicensing, or sublicensing your own derivate"* — and HomeBot is a sold product whose headline feature is making videos. Every user would run Remotion through it, and the free tier is per-company so their headcount may count too. That is a licence negotiation with Remotion, not a code change. |
+| **Agent Reach** | **No wrapper** | It has **no fetch, read or search commands at all**. Its verbs are `setup, install, configure, doctor, uninstall, skill, format, transcribe, check-update, watch, version`. It is a playbook plus a dependency installer — the agent reads its SKILL.md and calls `curl r.jina.ai`, `yt-dlp`, `gh` itself. An MCP wrapper would re-implement what `tools/web.ts` and `main/reader-fetch.ts` already do. Run `agent-reach skill --install` instead. |
+| **Voicebox** (TTS/STT) | **Yes — optional provider, never bundled** | MIT, local, keyless, and it ships **Kokoro** and **Qwen3-TTS**, which clear the msedge-tts ceiling of 24 kHz / 96 kbps mono that caps narration quality today. It is a Tauri + Python stack, so bundling it would drag a Python runtime into the installer and fight Track A. Detect it, use it, fall back to Edge TTS. **Measure before integrating** — `.claude/skills/render-verification` covers how. |
+
+### And one idea worth stealing
+
+`agent-reach doctor` enumerates every capability and reports **three** states — works,
+installed-but-unconfigured, not installed — printing the literal command that fixes each broken
+one. It even refuses to mark something available when it declined to run the check that would
+prove it (`gh auth status` writes a device-id, so it is not run and not claimed).
+
+HomeBot does the opposite, measurably. On 2026-08-23 web search was found to return **HTTP 202
+with a challenge page** after roughly one query — a success status — so the parser found no
+results and the app advised the user to *try different search terms*. Fixed on
+`claude/search-blocked-honestly`, which also adds SearXNG (free, unmetered, keyless, a real API
+rather than a scrape) as the first provider when configured.
+
+**A `doctor` screen is the next major piece of work** and is claimed by the Claude Code session.
+Do not start one in parallel.
+
+### New shared primitives, as of today
+
+- **`shared/navigation.ts` + `navigate_to_mode`** (#196, merged) — the assistant can move the
+  user to a mode *with a payload*. Adding a mode is two edits: `APP_MODES` in `shared/modes.ts`
+  and `MODE_INFO` in `shared/navigation.ts`. The tool enum, validator and error text all derive
+  from that list. **Do not write a second mode-switching mechanism.**
+- **`SearchBlockedError` + `isSearchBlockPage`** in `tools/web.ts` — being refused is not the
+  same as finding nothing, and only the first can be fixed by the user.
