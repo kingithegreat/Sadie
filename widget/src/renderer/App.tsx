@@ -1567,7 +1567,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // navigate to directly, carrying context (e.g. "help me with this repo"
         // opens the workspace pointed at the project root).
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <WorkspaceShell open={true} onClose={() => setMode('chat')} />
+          <WorkspaceShell open={true} onClose={() => setMode('chat')} navContext={navContext} />
         </Suspense>
       ) : mode === 'browser' ? (
         // The same panel the Workspace uses. It was reachable only by opening
