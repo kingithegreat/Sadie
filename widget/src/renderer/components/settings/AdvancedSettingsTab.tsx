@@ -446,7 +446,29 @@ export default function AdvancedSettingsTab() {
           <small className="setting-hint sp-hint-mb">
             Add API keys for higher-quality web search results. Falls back to DuckDuckGo scraping if no keys are set.
           </small>
-          <label className="setting-sub-label sp-sub-label">Tavily API Key</label>
+          {/* Listed first because it is the only free-and-unmetered option, and
+              because the fallback the hint above mentions is measurably
+              unreliable: DuckDuckGo answers HTTP 202 with a challenge page after
+              a couple of searches. */}
+          <label className="setting-sub-label sp-sub-label">Your own search server (SearXNG)</label>
+          <input
+            type="text"
+            className="setting-input"
+            data-testid="searxng-url"
+            value={localSettings.searxngUrl || ''}
+            placeholder="http://localhost:8080"
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, searxngUrl: e.target.value })
+            }
+          />
+          <small className="setting-hint">
+            Free, unlimited and no account — you run it yourself with Docker, and it searches the
+            real engines for you. Used before any key below, so it costs nothing per search. One
+            catch: SearXNG ships with its JSON output turned off, so add <code>json</code> to{' '}
+            <code>search.formats</code> in its <code>settings.yml</code> or it will refuse with 403.
+          </small>
+
+          <label className="setting-sub-label sp-sub-label-mt8">Tavily API Key</label>
           <input
             type="password"
             className="setting-input"

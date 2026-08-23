@@ -36,6 +36,7 @@ export interface Settings {
   telemetryConsentVersion?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
+  searxngUrl?: string;
   tavilyApiKey?: string;
   serperApiKey?: string;
   anthropicApiKey?: string;
@@ -149,6 +150,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
       codeModel: source.codeModel ?? '',
       useCustomLLM: source.useCustomLLM ?? false,
       customLLM: llm,
+      searxngUrl: source.searxngUrl || '',
       tavilyApiKey: source.tavilyApiKey || '',
       serperApiKey: source.serperApiKey || '',
       anthropicApiKey: source.anthropicApiKey || '',
@@ -795,6 +797,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
       codeApiKey: (localSettings as any).codeApiKey?.trim() || undefined,
       codeApiProvider: (localSettings as any).codeApiProvider || undefined,
       codeApiUrl: (localSettings as any).codeApiUrl?.trim() || undefined,
+      searxngUrl: localSettings.searxngUrl?.trim() || undefined,
       tavilyApiKey: localSettings.tavilyApiKey?.trim() || undefined,
       serperApiKey: localSettings.serperApiKey?.trim() || undefined,
       anthropicApiKey: localSettings.anthropicApiKey?.trim() || undefined,

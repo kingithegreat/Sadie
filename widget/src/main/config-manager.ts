@@ -123,6 +123,9 @@ export interface Settings {
   // Misc / developer defaults
   defaultTeam?: string;
   uncensoredMode?: boolean;
+  // Web search — a self-hosted SearXNG URL (free, unmetered, no key) plus the
+  // metered key-based providers it falls through to.
+  searxngUrl?: string;
   // Web search API keys
   tavilyApiKey?: string;
   serperApiKey?: string;
