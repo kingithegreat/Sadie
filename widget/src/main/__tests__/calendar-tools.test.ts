@@ -34,6 +34,14 @@ jest.mock('fs', () => ({
   mkdirSync: mockFsMkdirSync,
 }));
 
+// calendar.ts now authenticates its n8n calls, and webhook-auth reads the
+// per-install secret from userData — so this suite needs an app stub. Without
+// it the real electron module throws on import and the whole file fails to run
+// before a single assertion.
+jest.mock('electron', () => ({
+  app: { getPath: () => '/tmp/homebot-test-userdata' },
+}));
+
 import {
   listCalendarEventsHandler,
   addCalendarEventHandler,
