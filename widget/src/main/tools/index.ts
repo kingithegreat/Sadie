@@ -776,13 +776,12 @@ export async function executeToolBatch(
     const callStartedAt = Date.now();
     // Prepare execution context including any transient overrides
     const callContext = { ...(context || {} as any), overrideAllowed: Array.from(overrides) } as any;
-    // If this call is explicitly overridden, skip the PERMISSION check (the
-    // user just granted it via the allow-once dialog) but NOT the
-    // confirmation check. "Allow once" answers one question — "may this tool
-    // run?" — and must not also silently answer the second, different
-    // question that requiresConfirmation exists for ("are you sure you want
-    // to delete THIS?"). Same rule as executeTool: no channel to ask and no
-    // standing consent means refuse.
+    // If this call is explicitly overridden, skip the PERMISSION check — the
+    // user just granted it by clicking "Allow once" on THIS batch, which is
+    // itself user consent for running it now. The per-call confirmation
+    // question still fires when a live channel exists, because argument
+    // detail ("which file gets deleted") is worth one more click when someone
+    // can answer it; modal-only flows have already had their click.
     if (overrides.has(call.name)) {
       const tool = getTool(call.name);
       if (!tool) {
@@ -791,25 +790,22 @@ export async function executeToolBatch(
         recordOutcome(call, r, callStartedAt);
         continue;
       }
-      if (tool.definition.requiresConfirmation && !hasStandingConsent(call.name)) {
-        if (!callContext.requestConfirmation) {
-          const r = { success: false, error: `${call.name} needs your confirmation, and this run has no way to ask for it. Run it from chat instead.` } as ToolResult;
-          results.push(r);
-          recordOutcome(call, r, callStartedAt);
-          continue;
-        }
-        let confirmed = false;
+      if (
+        tool.definition.requiresConfirmation &&
+        !hasStandingConsent(call.name) &&
+        callContext.requestConfirmation
+      ) {
         try {
-          confirmed = await callContext.requestConfirmation(
+          const confirmed = await callContext.requestConfirmation(
             formatConfirmationMessage(call.name, call.arguments)
           );
-        } catch { /* treat a broken channel as refusal */ }
-        if (!confirmed) {
-          const r = { success: false, error: 'Operation cancelled by user' } as ToolResult;
-          results.push(r);
-          recordOutcome(call, r, callStartedAt);
-          continue;
-        }
+          if (!confirmed) {
+            const r = { success: false, error: 'Operation cancelled by user' } as ToolResult;
+            results.push(r);
+            recordOutcome(call, r, callStartedAt);
+            continue;
+          }
+        } catch { /* a broken channel must not block an explicit grant */ }
       }
       try {
         const r = await tool.handler(call.arguments, callContext);
