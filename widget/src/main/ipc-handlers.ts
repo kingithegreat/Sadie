@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app, shell } from 'electron';
+import { ipcMain, BrowserWindow, app, shell, dialog } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
 
@@ -59,7 +59,7 @@ import { resolveCloudLLM, describeActiveModel } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { resolveWithinHome } from './utils/path-guard';
-import { sanitizeImportedSettings } from './utils/settings-import';
+import { sanitizeImportedSettings, analyzeImportedEndpoints, stripImportedSettings } from './utils/settings-import';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
@@ -1873,9 +1873,72 @@ try {
       const bundle = JSON.parse(raw);
       if (!bundle._homebot_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
 
+      let keptEndpoints: string[] | undefined;
+      let skippedEndpoints: string[] | undefined;
+
       if (bundle.settings) {
         const current = getSettings();
-        saveSettings({ ...current, ...sanitizeImportedSettings(bundle.settings) });
+        // Credentials never survive an import. Endpoints (n8nUrl and friends)
+        // decide where traffic goes — including who receives X-HOMEBOT-Auth —
+        // so a backup that would MOVE one is confirmed with the user first;
+        // if nobody can be asked, endpoints are skipped rather than applied.
+        const changes = analyzeImportedEndpoints(bundle.settings, current);
+        let importedSettings = bundle.settings;
+        if (changes.length === 0) {
+          const { settings } = stripImportedSettings(bundle.settings);
+          importedSettings = settings;
+        } else {
+          const detail = changes
+            .map((c) => `${c.key}: ${c.from || '(not set)'} → ${c.to}`)
+            .join('\n');
+          let restoreEndpoints: boolean | undefined;
+          try {
+            const answer = await dialog.showMessageBox({
+              type: 'warning',
+              buttons: ['Keep my endpoints', 'Restore from backup'],
+              defaultId: 0,
+              cancelId: 0,
+              title: 'Backup changes where HomeBot sends traffic',
+              message: 'This backup would change where HomeBot sends your chats and data:',
+              detail,
+            });
+            restoreEndpoints = answer.response === 1;
+          } catch {
+            restoreEndpoints = undefined; // nobody home to ask — fail closed below
+          }
+          if (restoreEndpoints === true) {
+            const { settings } = stripImportedSettings(bundle.settings);
+            // Endpoints were explicitly approved; put them back over the
+            // stripped copy. Credentials stay stripped either way.
+            for (const c of changes) {
+              if (c.key.includes('.')) continue; // customLLM handled as a whole below
+              (settings as Record<string, unknown>)[c.key] = (
+                bundle.settings as Record<string, unknown>
+              )[c.key];
+            }
+            if (changes.some((c) => c.key === 'customLLM.baseUrl')) {
+              const srcLlm = (bundle.settings as Record<string, unknown>).customLLM as
+                | Record<string, unknown>
+                | undefined;
+              const dstLlm = (settings as Record<string, unknown>).customLLM as
+                | Record<string, unknown>
+                | undefined;
+              if (srcLlm && dstLlm && Object.prototype.hasOwnProperty.call(srcLlm, 'baseUrl')) {
+                dstLlm.baseUrl = srcLlm.baseUrl;
+              }
+            }
+            importedSettings = settings;
+            keptEndpoints = changes.map((c) => c.key);
+          } else {
+            const { settings, strippedEndpoints: stripped } =
+              stripImportedSettings(bundle.settings);
+            importedSettings = settings;
+            skippedEndpoints = stripped.filter((k) =>
+              changes.some((c) => c.key === k)
+            );
+          }
+        }
+        saveSettings({ ...current, ...sanitizeImportedSettings(importedSettings) });
       }
       if (bundle.preferences) {
         MemoryManager.savePreferences(bundle.preferences);
@@ -1883,7 +1946,12 @@ try {
       if (bundle.conversations) {
         MemoryManager.saveConversationStore(bundle.conversations);
       }
-      return { success: true, restoredAt: new Date().toISOString() };
+      return {
+        success: true,
+        restoredAt: new Date().toISOString(),
+        ...(keptEndpoints ? { keptEndpoints } : {}),
+        ...(skippedEndpoints ? { skippedEndpoints } : {}),
+      };
     } catch (err: any) {
       console.error('[IPC] homebot:import-settings error:', err.message);
       return { success: false, error: err.message };
