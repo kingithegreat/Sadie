@@ -10,7 +10,10 @@ import * as http from 'http';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 // ---- Built-in feed catalogue ----
-const FEED_CATALOGUE: Record<string, { url: string; description: string }> = {
+// Exported so the Feeds panel offers exactly the sources the news tool knows —
+// two catalogues would drift, and the panel would advertise a source chat could
+// not read, or vice versa.
+export const FEED_CATALOGUE: Record<string, { url: string; description: string }> = {
   bbc: { url: 'https://feeds.bbci.co.uk/news/rss.xml', description: 'BBC News top stories' },
   reuters: { url: 'https://feeds.reuters.com/reuters/topNews', description: 'Reuters top news' },
   techcrunch: { url: 'https://techcrunch.com/feed/', description: 'TechCrunch tech news' },

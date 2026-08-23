@@ -62,6 +62,7 @@ interface HeaderModelProps {
   vramGB?: number | null;
 }
 
+
 interface ModeSwitcherProps {
   mode: AppMode;
   onModeChange?: (mode: AppMode) => void;
@@ -335,6 +336,7 @@ const MODES: { id: AppMode; label: string; icon: IconName; tip: string }[] = [
   { id: 'media', label: 'Studio', icon: 'video', tip: 'Turn a script into a narrated video' },
   { id: 'browser', label: 'Browser', icon: 'globe', tip: 'Browse the web inside HomeBot' },
   { id: 'code', label: 'Code', icon: 'terminal', tip: 'Explore, edit and run code in the workspace' },
+  { id: 'feeds', label: 'Feeds', icon: 'globe', tip: 'Read and search your news feeds' },
 ];
 
 const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
