@@ -18,7 +18,7 @@ import { getSettings, saveSettings } from './config-manager';
 import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig, PROVIDER_API_URLS } from './custom-llm-client';
 import { markRequestStart, markFirstToken } from './utils/perf-logger';
-import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
+import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 import { homebotWebhookHeaders } from './webhook-auth';
@@ -3224,6 +3224,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     // Load search API keys from persisted settings
     try {
       const settings = getSettings();
+      // Loaded at startup as well as on save — set in only one place, a
+      // configured instance would go unused until the user opened Settings and
+      // pressed Save, which nobody would think to do.
+      if ((settings as any).searxngUrl) {
+        setSearxngUrl((settings as any).searxngUrl);
+        console.log('[HomeBot] SearXNG URL loaded from settings');
+      }
       if (settings.tavilyApiKey) {
         setTavilyApiKey(settings.tavilyApiKey);
         console.log('[HomeBot] Tavily API key loaded from settings');
