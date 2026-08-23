@@ -14,6 +14,7 @@ export const APP_MODES = [
   'media',
   'browser',
   'code',
+  'feeds',
 ] as const;
 
 export type AppMode = (typeof APP_MODES)[number];
