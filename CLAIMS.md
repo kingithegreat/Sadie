@@ -13,10 +13,65 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
+| Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
+| Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
+| Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Ready for integration | PrivacySwitch.tsx only. |
+
+*(Model freshness + knobs merged as #182 — claim retired.)*
+
+## Integration notes — 2026-08-22 session (read before your next PR)
+
+Two sessions shipped in parallel all night. These are the rules that CHANGED — the media ones
+matter most, because that is where both sessions were working.
+
+1. **Settings has a Simple/Advanced toggle, and Simple is the DEFAULT.**
+   `SettingsPanel.tsx` is now a 156-line shell; state lives in `settings/useSettingsState.tsx`
+   and controls in `settings/*Tab.tsx`, read through `SettingsContext`.
+   **A control you add to `AdvancedSettingsTab` is invisible unless the user switches views.**
+   This already cost a live bug: the Claude-subscription provider option vanished from the
+   default panel and was reported by Aden within hours. If a setting is something a normal user
+   would look for on day one, put it in a tab Simple renders (`ModelsSettingsTab`,
+   `VoiceHotkeysTab`, `GeneralSettingsTab`) or beside `PrivacySwitch`.
+   Existing tests that reach Diagnostics / System check / API Keys must click **Advanced** first.
+
+2. **`render_qa` now actually inspects the file.** It measures the render with ffmpeg (NOT
+   ffprobe — a second binary that is not on Aden's PATH, and a check that cannot run looks
+   exactly like one that passed). A render with no audio track, digital silence, the wrong frame
+   size, or picture running past the speech now moves the job to **`needs_revision`**, not
+   `awaiting_approval`. If you add a render path, expect QA to judge it.
+
+3. **The Media panel offers the action for what a job is MISSING, not for its state.**
+   `script_draft` with no script offers "Write script"; `media_production` with no narration
+   offers "Record narration". This exists because the generic "Move to …" button advances the
+   STATE and does none of the work, which left a job wedged with both exits closed
+   (reported live on a job titled "is there a god"). Keep the rule if you touch `stageAction`.
+
+4. **Provider API keys: read through `apiKeyForProvider` in `shared/cloud-llm.ts`.**
+   `providerApiKeys` is a map covering all thirteen providers; the four legacy top-level fields
+   are still written and read as a fallback. Do not re-derive "is this provider configured?" —
+   a second copy of that decision is what previously shipped a header naming one model while
+   another answered.
+
+5. **Web fetch is three tiers now** (`tools/web.ts`): plain GET → hidden `BrowserWindow`
+   (`main/browser-fetch.ts`) → Jina Reader (`main/reader-fetch.ts`). The reader tier is **off by
+   default** because it is the only one that sends the URL off the machine. Measured: the browser
+   reads wikipedia/bbc that plain GET cannot, but does NOT beat a JS challenge or a paywall.
+
+6. **Quiz batching lives in `fillQuiz`** (root `src/quiz/generate.ts`) — both IPC handlers use it.
+   Do not reimplement the retry loop; the old duplicated one returned short quizzes silently.
+
+7. **A reachability audit ran on 2026-08-22.** Before adding a capability, check it can be
+   REACHED — six defects in one session were all "the code works and nothing calls it". Two are
+   fixed (#183 delete-model, #185 briefing opt-out); `summarizeWebContent` and `defaultTeam` are
+   still dead and safe to delete.
+
+Standing traps that have not changed: bot-opened PRs still park every `pull_request` run at
+`action_required` (approve them, or the required checks never report), and with two sessions
+merging, a green PR goes `BEHIND` within minutes — `gh pr update-branch <n>` and re-approve.
 | Model freshness + cloud temperature knob | claude/model-freshness-and-knobs | In progress | Touches custom-llm-client.ts, config-manager.ts, model-lifecycle.ts (new), shared/types.ts, useSettingsState.tsx, CloudProviderSection.tsx. Does NOT touch message-router.ts, model-advisor.ts, media tools, or PrivacySwitch. |
+| n8n Auth Guard injection + secret embedding | claude/n8n-auth-guard | Ready for Integration | PR #191, auto-merge on. injectAuthGuards() in widget/src/main/n8n-auth-guard.ts runs inside importWorkflow; guards embed the per-install secret directly (Code nodes see EMPTY process.env — env-based guards were inert). 30 unit tests green locally. |
 
-## Integration notes — 2026-08-15 session (read before your next PR)
-
+## Integration notes — 2026-08-2
 Five PRs merged today (#152, #162, #164, #165, #168). Four of them change the rules of the road
 for every session working here:
 
@@ -58,3 +113,130 @@ Identifiers intentionally exported by more than one file (add the exact name, on
 - `StoredConversation`, `ConversationStore`, `ConversationSearchResult` — mirrored between `widget/src/main/memory-manager.ts` and `widget/src/shared/types.ts`
 - `ScheduledJob` — mirrored between `widget/src/main/scheduler.ts` and `widget/src/shared/types.ts`
 - `searchFilesDef`, `searchFilesHandler` — both `widget/src/main/tools/filesystem.ts` and `widget/src/main/tools/search.ts` (pre-existing, not reviewed as part of this change — verify these are intentional before touching either file)
+
+
+## Product direction — 2026-08-22, and a shared seam that needs one owner
+
+Aden restated the goal today. It is no longer one product with side features — it is **five
+pillars**, and he added two requirements on top:
+
+> "a full assistant, media studio and coding platform, with best option for free or very cheap"
+> "should have the option to integrate with any users common external services"
+> "be able to make complex automations and run them how a user would need and allow them to edit
+> what they need"
+> "everything should be able to happen from the chat even if that just means redirected with context"
+
+### Track ownership — claim a row before you build in it
+
+| Track | Owner | Where it actually is |
+|---|---|---|
+| A · Ship it (signing cert) | Aden | The only launch blocker. **Nobody can work this but him.** |
+| B · Media Studio | ox-alpha | Healthiest pillar — 8 of the last 15 PRs. Needs the least right now. |
+| C · Platform trust / reachability | this session | Ongoing audit |
+| D · Plain language + free-setup guidance | **unowned** | |
+| E · Keep the lights on (CI) | shared | |
+| F · Coding platform front door | ox-alpha | Workspace, terminal, 14 git tools, CLI bridges all exist; **no Code mode** |
+| G · Connections catalogue | this session | MCP works but is buried under Settings → Advanced → Permissions |
+| H · Automations people can build | this session | Create/edit/run/schedule work; triggers are manual+schedule only |
+| I · Chat as the front door | this session | **No navigation capability exists at all** |
+
+### The seam: chat → panel navigation
+
+Verified, so nobody needs to re-audit it:
+
+- The model has **no navigation capability**. `open_in_browser` and `open_url` leave HomeBot for a
+  web browser; nothing moves you between modes.
+- `setMode` has exactly one caller family — keyboard shortcuts at `App.tsx:168-185`.
+- Those cover chat, automation, image, documents, quiz, dashboard. **Studio and Browser have no
+  shortcut. Code has no mode.**
+- There is no context handoff anywhere — no prefill, no seeded state, no deep link.
+
+**Three separate features need the same primitive** (a capability the model can call to move to a
+mode *with a payload*): Code mode, the Connections catalogue, and the automation editor. If we each
+hand-roll it, we get three incompatible mechanisms and Aden's requirement stays half-met.
+
+**If you are about to build chat→panel navigation, claim it in the table above first.** This
+session has offered it to ox-alpha and is holding G and H pending an answer. If it is still
+unclaimed when you read this, take it and say so — an unowned shared seam blocks three features.
+
+### Two things that will cost you time
+
+- **A control added to `AdvancedSettingsTab` is invisible by default.** Settings opens in Simple.
+  This already caused one live bug — Aden could not find the Claude subscription option after the
+  Simple/Advanced refactor. Decide deliberately which view a new setting belongs in.
+- **Bot-opened `claude/**` PRs park every `pull_request` run at `action_required`,** and nothing
+  reports it — required checks simply never appear and it reads as slow CI. Ten runs were held
+  today, five of them for three days. Run this after every push:
+
+```bash
+gh api "repos/kingithegreat/Sadie/actions/runs?status=action_required&per_page=30"   --jq '.workflow_runs[].id' |
+  while read id; do gh api -X POST "repos/kingithegreat/Sadie/actions/runs/$id/approve"; done
+```
+
+### Heads-up on worktrees
+
+Three trees are live at once: `Desktop/sadie` (currently on `claude/crm-stale-flake`),
+`Desktop/sadie-n8nguard`, and `Desktop/sadie-wt-jina`. **Check `git worktree list` and
+`git status` before any mutating git command** — `reset --hard`, `checkout --` and `stash` will
+discard another agent's uncommitted work.
+## Integration notes — 2026-08-22 session handoff
+
+Two PRs were in flight at handoff; both have auto-merge enabled and need no manual merge:
+
+1. **PR #191 (`claude/n8n-auth-guard`)** — Auth Guard injection into every app-deployed
+   workflow, with the per-install webhook secret EMBEDDED in the generated guard script.
+   Key fact for anyone touching n8n Code nodes: **n8n 1.122.5 gives Code nodes an empty
+   `process.env` regardless of `N8N_BLOCK_ENV_ACCESS_IN_NODE`** — any guard reading the
+   secret from env silently skips validation. The branch was rebased onto main at handoff
+   (`c32479e`); CI re-runs after a rebase, so if it sits BLOCKED with checks pending,
+   that is why — wait, don't re-rebase.
+2. **PR #187 (`claude/crm-stale-flake`)** — one-line test fix (sleep past the days=0 cutoff
+   in the dailyBrief test), rebased onto main as `0383f10`, auto-merge on.
+
+**Still owed after both merge (verify where it RUNS, not in tests):**
+- Redeploy workflows through the app's own deploy path to the running n8n container, then
+  POST to a deployed webhook WITHOUT `X-HOMEBOT-Auth` and confirm the guard rejects it
+  before any node executes. Green CI does not prove the deployed instance has embedded-
+  secret guards — old workflows keep their legacy guards until re-imported.
+- The `compose-edit-during-test` stash in the main worktree is REDUNDANT (superseded by
+  commit e49cc3e on #191) — drop it after #191 merges.
+- Worktrees: main tree is `C:\Users\adenk\Desktop\sadie`, the auth-guard branch lives in
+  worktree `C:\Users\adenk\Desktop\sadie-n8nguard`.
+
+
+## Dependency decisions — 2026-08-23 (do not re-litigate)
+
+Three third-party projects were evaluated this week. Two were rejected for reasons that are
+licence- and architecture-shaped, not taste-shaped, so they will look attractive again to
+anyone who has not read this.
+
+| Project | Decision | Reason |
+|---|---|---|
+| **Remotion** (React video rendering) | **No** | Free tier is for-profit orgs of **up to 3 employees**, so Aden qualifies personally today. But the licence forbids shipping a derivative — *"not allowed to copy or modify Remotion code for the purpose of selling, renting, licensing, relicensing, or sublicensing your own derivate"* — and HomeBot is a sold product whose headline feature is making videos. Every user would run Remotion through it, and the free tier is per-company so their headcount may count too. That is a licence negotiation with Remotion, not a code change. |
+| **Agent Reach** | **No wrapper** | It has **no fetch, read or search commands at all**. Its verbs are `setup, install, configure, doctor, uninstall, skill, format, transcribe, check-update, watch, version`. It is a playbook plus a dependency installer — the agent reads its SKILL.md and calls `curl r.jina.ai`, `yt-dlp`, `gh` itself. An MCP wrapper would re-implement what `tools/web.ts` and `main/reader-fetch.ts` already do. Run `agent-reach skill --install` instead. |
+| **Voicebox** (TTS/STT) | **Yes — optional provider, never bundled** | MIT, local, keyless, and it ships **Kokoro** and **Qwen3-TTS**, which clear the msedge-tts ceiling of 24 kHz / 96 kbps mono that caps narration quality today. It is a Tauri + Python stack, so bundling it would drag a Python runtime into the installer and fight Track A. Detect it, use it, fall back to Edge TTS. **Measure before integrating** — `.claude/skills/render-verification` covers how. |
+
+### And one idea worth stealing
+
+`agent-reach doctor` enumerates every capability and reports **three** states — works,
+installed-but-unconfigured, not installed — printing the literal command that fixes each broken
+one. It even refuses to mark something available when it declined to run the check that would
+prove it (`gh auth status` writes a device-id, so it is not run and not claimed).
+
+HomeBot does the opposite, measurably. On 2026-08-23 web search was found to return **HTTP 202
+with a challenge page** after roughly one query — a success status — so the parser found no
+results and the app advised the user to *try different search terms*. Fixed on
+`claude/search-blocked-honestly`, which also adds SearXNG (free, unmetered, keyless, a real API
+rather than a scrape) as the first provider when configured.
+
+**A `doctor` screen is the next major piece of work** and is claimed by the Claude Code session.
+Do not start one in parallel.
+
+### New shared primitives, as of today
+
+- **`shared/navigation.ts` + `navigate_to_mode`** (#196, merged) — the assistant can move the
+  user to a mode *with a payload*. Adding a mode is two edits: `APP_MODES` in `shared/modes.ts`
+  and `MODE_INFO` in `shared/navigation.ts`. The tool enum, validator and error text all derive
+  from that list. **Do not write a second mode-switching mechanism.**
+- **`SearchBlockedError` + `isSearchBlockPage`** in `tools/web.ts` — being refused is not the
+  same as finding nothing, and only the first can be fixed by the user.
