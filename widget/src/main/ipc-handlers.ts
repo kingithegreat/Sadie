@@ -2189,6 +2189,32 @@ try {
     return { automations: readAutomations() };
   });
 
+  /**
+   * Fetch a set of RSS/Atom feeds for the Feeds panel.
+   *
+   * Filtering happens in the renderer against the list it already holds, so
+   * typing in the search box costs nothing — this is only for going and getting
+   * the feeds.
+   */
+  ipcMain.handle('homebot:fetch-feeds', async (_ev, payload: { sources?: string[] }) => {
+    try {
+      const { fetchFeeds, catalogueSources } = await import('./feed-reader');
+      const sources = Array.isArray(payload?.sources) && payload.sources.length > 0
+        ? payload.sources
+        // No choice made yet — show the catalogue rather than an empty screen.
+        : catalogueSources().map(s => s.id);
+      const result = await fetchFeeds(sources);
+      return { success: true, ...result };
+    } catch (err: any) {
+      return { success: false, items: [], failures: [], error: err?.message || 'Could not read feeds.' };
+    }
+  });
+
+  ipcMain.handle('homebot:list-feed-sources', async () => {
+    const { catalogueSources } = await import('./feed-reader');
+    return { sources: catalogueSources() };
+  });
+
   ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
     const automations = readAutomations();
     const automation: any = {
