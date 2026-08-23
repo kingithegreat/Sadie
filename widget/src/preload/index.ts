@@ -863,6 +863,12 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:title-updated', handler);
   },
 
+  // Feeds panel — reading RSS/Atom sources
+  fetchFeeds: async (sources?: string[]) =>
+    ipcRenderer.invoke('homebot:fetch-feeds', { sources }),
+  listFeedSources: async () =>
+    ipcRenderer.invoke('homebot:list-feed-sources'),
+
   // Automation Center
   loadAutomations: async () =>
     ipcRenderer.invoke('homebot:load-automations'),

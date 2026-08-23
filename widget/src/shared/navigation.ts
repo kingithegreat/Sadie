@@ -32,6 +32,7 @@ export const MODE_INFO: Record<AppMode, { label: string; purpose: string }> = {
   dashboard: { label: 'Home', purpose: 'the overview screen' },
   media: { label: 'Media Studio', purpose: 'turn an idea into a narrated video' },
   browser: { label: 'Browser', purpose: 'browse the web inside the app' },
+  feeds: { label: 'Feeds', purpose: 'read and search news and RSS feeds' },
 };
 
 /**
