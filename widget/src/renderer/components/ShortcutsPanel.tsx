@@ -51,6 +51,7 @@ const categories: ShortcutCategory[] = [
       { keys: 'Ctrl + 3', action: 'Switch to Image Generator' },
       { keys: 'Ctrl + 4', action: 'Switch to Document Viewer' },
       { keys: 'Ctrl + 5', action: 'Switch to Quiz' },
+      { keys: 'Ctrl + Shift + K', action: 'Switch to Code workspace' },
     ],
   },
 ];
