@@ -412,6 +412,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     // Vision
     vision_describe: 'Describe an image using the vision model (safe).',
     vision_query: 'Answer questions about an image (safe).',
+    look_at_browser: 'Read the page open in the browser panel (safe).',
     // Voice
     speak: 'Read text aloud using text-to-speech.',
     stop_speaking: 'Stop the current text-to-speech playback.',
@@ -456,10 +457,36 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     git_branches: 'List git branches (safe).',
     media_create_job: 'Start a new video in the Media Studio (safe — nothing is published).',
     media_list_jobs: 'List videos and the stage each has reached (safe).',
+    media_list_music: 'List music available for narration soundtracks (safe).',
     media_advance_job: 'Move a video to its next pipeline stage. Cannot approve or publish.',
     media_approve_job: 'Approve a finished video so it can be scheduled and published.',
     media_reject_job: 'Reject a video, or send it back for another revision.',
     git_commit: 'Create a git commit. Modifies your repository.',
+    // Skills
+    use_skill: 'Load a saved skill recipe into the conversation (safe).',
+    list_skills: 'List installed skills (safe).',
+    // CRM — reads safe; every write is also confirmation-gated in chat
+    crm_search_companies: 'Search business CRM companies (safe).',
+    crm_search_contacts: 'Search business CRM contacts (safe).',
+    crm_search_deals: 'Search deals in the pipeline (safe).',
+    crm_find_stale_deals: 'Find deals with no recent activity (safe).',
+    crm_daily_brief: 'Summarise stale deals, tasks, and pipeline totals (safe).',
+    crm_get_stages: 'List pipeline stages (safe).',
+    crm_audit_log: 'Read the CRM change history (safe).',
+    crm_create_company: 'Create a company record in the business CRM.',
+    crm_update_company: 'Update an existing company record.',
+    crm_create_contact: 'Create a person record in the business CRM.',
+    crm_update_contact: 'Update an existing contact record.',
+    crm_create_deal: 'Create a deal/opportunity in the pipeline.',
+    crm_update_deal: 'Update an existing deal.',
+    crm_advance_deal: 'Move a deal to another pipeline stage.',
+    crm_log_activity: 'Log an email/call/meeting touchpoint against a record.',
+    crm_add_note: 'Attach a note to a contact, company, or deal.',
+    crm_create_task: 'Create a follow-up task.',
+    crm_complete_task: 'Mark a task as completed.',
+    crm_rename_stage: "Rename a pipeline stage's display label.",
+    crm_match_email: 'Match an email sender to the CRM, creating records if needed.',
+    crm_export: 'Export every CRM table to files on disk.',
     // Process management
     list_processes: 'List running processes (safe).',
     get_process_info: 'Get details about a running process (safe).',
@@ -484,6 +511,10 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     'kill_process', 'run_code', 'git_commit', 'forget', 'clear_conversation_history',
     'rag_clear', 'cancel_reminder', 'delete_calendar_event', 'email_send', 'api_request',
     'create_docx', 'create_spreadsheet', 'create_pdf', 'set_clipboard', 'clipboard_write',
+    'crm_create_company', 'crm_update_company', 'crm_create_contact', 'crm_update_contact',
+    'crm_create_deal', 'crm_update_deal', 'crm_advance_deal', 'crm_log_activity',
+    'crm_add_note', 'crm_create_task', 'crm_complete_task', 'crm_rename_stage',
+    'crm_match_email', 'crm_export',
   ]);
 
   const [telemetryLog, setTelemetryLog] = useState<string[]>([]);

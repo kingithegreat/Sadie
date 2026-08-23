@@ -16,6 +16,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 | Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
 | Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
 | Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Ready for integration | PrivacySwitch.tsx only. |
+| Tool-surface hardening (audit remediation) | claude/tool-surface-hardening | Ready for integration | grep_code/git via execFile argv (cmd-injection class removed), 14 CRM writes gated (requiresConfirmation + permissions entries), per-hop redirect SSRF revalidation + IPv6 private ranges, api_request POST confirmation, batch allow-once honors requiresConfirmation, shared home-boundary/url-boundary utils replace five drift-prone startsWith guards. New gate: `tool-permissions-parity.test.ts` — every native tool needs a permission entry or requiresConfirmation; every permission key needs a tool. Full widget suite + tsc green on current main. Does NOT touch message-router routing logic or the media pipeline. |
 
 *(Model freshness + knobs merged as #182 — claim retired.)*
 
@@ -68,39 +69,6 @@ matter most, because that is where both sessions were working.
 Standing traps that have not changed: bot-opened PRs still park every `pull_request` run at
 `action_required` (approve them, or the required checks never report), and with two sessions
 merging, a green PR goes `BEHIND` within minutes — `gh pr update-branch <n>` and re-approve.
-| Model freshness + cloud temperature knob | claude/model-freshness-and-knobs | In progress | Touches custom-llm-client.ts, config-manager.ts, model-lifecycle.ts (new), shared/types.ts, useSettingsState.tsx, CloudProviderSection.tsx. Does NOT touch message-router.ts, model-advisor.ts, media tools, or PrivacySwitch. |
-| n8n Auth Guard injection + secret embedding | claude/n8n-auth-guard | Ready for Integration | PR #191, auto-merge on. injectAuthGuards() in widget/src/main/n8n-auth-guard.ts runs inside importWorkflow; guards embed the per-install secret directly (Code nodes see EMPTY process.env — env-based guards were inert). 30 unit tests green locally. |
-
-## Integration notes — 2026-08-2
-Five PRs merged today (#152, #162, #164, #165, #168). Four of them change the rules of the road
-for every session working here:
-
-1. **`e2e-all` is now a REQUIRED check** (branch protection has six contexts). Two consequences:
-   - **A branch created before #165 cannot merge** — it lacks the `e2e-all` job, the context never
-     reports, and the PR sits BLOCKED forever. Rebase onto or merge current main first.
-   - **Every bot-opened PR parks its `pull_request` runs at `action_required`** — silently; the
-     required check simply never appears. This is EVERY auto-opened PR, not just workflow-touching
-     ones. After the auto-PR appears, approve the held runs:
-     `gh api -X POST repos/kingithegreat/Sadie/actions/runs/<id>/approve`
-2. **Floating overlays: portal, don't blocklist.** `chatgpt-theme.css` has a
-   `.app-container > *:not(...)` rule at (0,12,0) that silently captures any non-excluded child's
-   `position: fixed` (13 of 18 overlay classes were captured and shipped broken). Use
-   `widget/src/renderer/components/anchoredOverlay.tsx` / `createPortal(document.body)`. Extend
-   the `:not()` list only for something that must genuinely stay a child of `.app-container`.
-3. **Dial `127.0.0.1:11434`, never `localhost:11434`.** Docker Desktop's model runner binds
-   `0.0.0.0:11434` with an empty model store and wins the IPv6 race — installed models read as
-   "not found". Found live on Aden's machine.
-4. **Changing the preload surface? Run `npm run docs:write`** (repo root) — `docs/api-reference.md`
-   is generated and the root CI job has a drift gate that goes red otherwise.
-
-Also useful: destructive UI actions go through `ConfirmDestructive.tsx` (button text names the
-consequence, never "OK"); upstream stable-diffusion.cpp renamed its binary to `sd-cli.exe` and its
-mode to `img_gen` (old names handled with fallbacks — don't reintroduce `sd.exe`/`txt2img`
-assumptions); live-engine verification tests are gated behind `HOMEBOT_LIVE=1` (see
-`media-pipeline.live.test.ts` for the pattern).
-
-Fuller narrative: the 2026-08-13→15 daily log in Aden's Ai-Brain vault, and the Notion Lessons &
-Playbook.
 
 ## Known non-duplicates
 
