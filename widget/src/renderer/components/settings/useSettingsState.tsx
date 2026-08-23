@@ -18,6 +18,8 @@ import type { LicenseStatus, UpgradePrompt } from '../../../shared/types';
 import { buildSupportReport } from '../../../shared/support-report';
 import { isGateBlocked } from '../../../shared/upgrade';
 import { apiKeyForProvider } from '../../../shared/cloud-llm';
+import { knownModelsFor } from '../../../shared/subscription-models';
+import { defaultApiUrlFor } from '../../../shared/provider-urls';
 
 export interface Settings {
   alwaysOnTop: boolean;
@@ -107,23 +109,13 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     enabled: false
   };
 
-  // Get the canonical API URL for known providers
-  const getDefaultApiUrl = (provider: string) => {
-    switch (provider) {
-      case 'openai': return 'https://api.openai.com/v1';
-      case 'anthropic': return 'https://api.anthropic.com/v1';
-      case 'openrouter': return 'https://openrouter.ai/api/v1';
-      case 'groq': return 'https://api.groq.com/openai/v1';
-      case 'deepseek': return 'https://api.deepseek.com/v1';
-      case 'google-ai-studio': return 'https://generativelanguage.googleapis.com/v1beta/openai';
-      case 'google-gemini': return 'https://generativelanguage.googleapis.com/v1beta';
-      case 'huggingface': return 'https://api-inference.huggingface.co/v1';
-      case 'cerebras': return 'https://api.cerebras.ai/v1';
-      case 'sambanova': return 'https://api.sambanova.ai/v1';
-      case 'together': return 'https://api.together.xyz/v1';
-      default: return '';
-    }
-  };
+  // The canonical API URL for known providers, from the one shared map.
+  //
+  // This used to be a private switch statement listing eleven providers while
+  // main's map listed twelve — Moonshot was in main and missing here, so
+  // choosing Kimi left the URL blank in Settings while the router knew exactly
+  // what it should be. Two copies of one decision, drifted.
+  const getDefaultApiUrl = (provider: string) => defaultApiUrlFor(provider);
 
   const buildLocalSettings = (source: SharedSettings): Settings => {
     const llm = source.customLLM ? { ...defaultCustomLLM, ...source.customLLM } : { ...defaultCustomLLM };
@@ -754,6 +746,40 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
   );
 
   useEffect(() => {
+    // Claude Code and Codex are local CLIs with no /models endpoint, so their
+    // model lists are constants. Fill them in immediately rather than clearing
+    // them and waiting for a button nobody knows to press.
+    //
+    // This was a dead end, reported live as "I saved Claude sub without api and
+    // it's still not letting me use claude": choosing the provider cleared the
+    // list, no model was ever selected, and resolveCloudLLM treats a cloud
+    // provider with no model as INACTIVE — so the privacy switch disabled
+    // itself and the local model kept answering. The switch was telling the
+    // truth; nothing would have answered.
+    const known = knownModelsFor(selectedProvider);
+    if (known.length > 0) {
+      setAvailableModels(known);
+      setModelFetchError(null);
+      setModelsFetchedAt(Date.now());
+      // Select one if none is valid for THIS provider, so the provider is
+      // usable the moment it is chosen. Keeping a model from the previous
+      // provider would send a request naming something it has never heard of.
+      setLocalSettings(prev => {
+        const current = prev.customLLM?.model;
+        if (current && known.some(m => m.id === current)) return prev;
+        return {
+          ...prev,
+          customLLM: {
+            ...(prev.customLLM || { ...defaultCustomLLM }),
+            provider: selectedProvider as CustomLLMConfig['provider'],
+            model: known[0].id,
+            enabled: true,
+          },
+        };
+      });
+      return;
+    }
+
     setAvailableModels([]);
     setModelFetchError(null);
     setModelsFetchedAt(null);
