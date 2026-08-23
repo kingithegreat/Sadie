@@ -8,7 +8,8 @@
     "test": "npx jest",
     "soak": "npx ts-node scripts/soak-test.ts",
     "docs:check": "node scripts/check-docs-drift.mjs",
-    "docs:write": "node scripts/check-docs-drift.mjs --write"
+    "docs:write": "node scripts/check-docs-drift.mjs --write",
+    "audit:dead": "node scripts/find-dead-capabilities.mjs widget/src"
   },
   "jest": {
     "preset": "ts-jest",
