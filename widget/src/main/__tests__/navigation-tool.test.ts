@@ -91,7 +91,7 @@ describe('navigate_to_mode', () => {
   });
 
   test('rejects an unknown mode by naming the real ones, so the model can retry', async () => {
-    const result = await navigateToModeHandler({ mode: 'code' }, {} as any);
+    const result = await navigateToModeHandler({ mode: 'unknown' }, {} as any);
 
     expect(result.success).toBe(false);
     expect(sentMessages).toHaveLength(0);

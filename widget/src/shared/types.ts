@@ -260,6 +260,12 @@ export interface Settings {
   permissionPromptTimeoutMs?: number;
   defaultTeam?: string;
   // Web search API keys
+  /**
+   * A self-hosted SearXNG instance, e.g. http://localhost:8080. The only search
+   * backend that is free, unmetered, keyless and accountless at once — and not
+   * a scraper, so it does not get challenge-paged like the DuckDuckGo endpoints.
+   */
+  searxngUrl?: string;
   tavilyApiKey?: string;
   serperApiKey?: string;
   // LLM provider API keys
