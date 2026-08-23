@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (177)** — `window.electron`
+**Preload methods (179)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1020,46 +1020,46 @@ clearPermissionAudit      closeWindow               compactConversation       cr
 createConversation        deleteAutomation          deleteConversation        deleteOllamaModel
 detectGpuVram             downloadOllama            downloadUpdate            executeImageGenerate
 exportChat                exportConversation        exportPermissionAudit     exportSettings
-exportTelemetryConsent    fetchPageContent          generateQuiz              generateQuizFromRag
-generateTitle             getAnalyticsSummary       getBatchSummaries         getConfigPath
-getConversation           getCrmActivity            getCrmDashboard           getEnv
-getGeneratedImage         getMode                   getPerfAggregates         getPerfHistory
-getSettings               getSupervisorStatus       getUncensoredMode         getWidgetMode
-hasPermission             importSettings            installUpdate             invoke
-licenseActivate           licenseDeactivate         licenseStatus             licenseValidate
-listCustomLLMModels       listOllamaModels          listTools                 loadAutomations
-loadConversations         loadQuizProgress          maximizeWindow            mcpAddServer
-mcpGetStatus              mcpListServers            mcpRemoveServer           mcpToggleServer
-mediaAdvance              mediaApprove              mediaCreate               mediaDelete
-mediaFfmpegSetup          mediaFfmpegStatus         mediaList                 mediaMarkPublished
-mediaParseFeed            mediaReject               mediaRun                  minimizeWindow
-onAssistantToolActivity   onBatchSummary            onBrowserState            onConfigRecovered
-onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied  onHideWindow
-onMediaFfmpegProgress     onMessage                 onModelFallback           onNavigate
-onOllamaDownloadProgress  onOllamaStatus            onPermissionRequest       onProactiveBriefing
-onPullModelProgress       onReminderFired           onSdCppSetupProgress      onShowWindow
-onStreamChunk             onStreamEnd               onStreamError             onSupervisorStatus
-onTerminalExit            onTerminalOutput          onTitleUpdated            onUpdateAvailable
-onUpdateDownloaded        onUpdateProgress          onWidgetModeChanged       openExternalUrl
-openFile                  parseDocument             pullModel                 pullModelStream
-ragClear                  ragIndex                  ragList                   readConsentLog
-readDebugLogs             readPermissionAudit       readTelemetryEvents       removeHideWindowListener
-removeShowWindowListener  resetPermissions          resolveActiveModel        restartApp
-runAutomation             runDiagnostics            saveConversation          saveQuizProgress
-saveSettings              schedulerAdd              schedulerList             schedulerRemove
-schedulerToggle           sdCppAutoSetup            sdCppSetup                sdCppStatus
-searchConversations       sendConfirmationResponse  sendMessage               sendPermissionResponse
-sendStreamMessage         setActiveConversation     setAlwaysOnTop            setUncensoredMode
-showInFolder              skillsList                skillsOpenFolder          startOllama
-startSpeechRecognition    subscribeToStream         summarizeWebContent       terminalClose
-terminalCreate            terminalKill              terminalRun               testN8nConnection
-toggleWidgetMode          ttsListVoices             ttsSampleVoice            ttsSpeak
-ttsStop                   updateAutomation          updateMessage             workspaceList
-workspaceRead             workspaceRoot             workspaceSave             writeClipboard
-writeDocument
+exportTelemetryConsent    fetchFeeds                fetchPageContent          generateQuiz
+generateQuizFromRag       generateTitle             getAnalyticsSummary       getBatchSummaries
+getConfigPath             getConversation           getCrmActivity            getCrmDashboard
+getEnv                    getGeneratedImage         getMode                   getPerfAggregates
+getPerfHistory            getSettings               getSupervisorStatus       getUncensoredMode
+getWidgetMode             hasPermission             importSettings            installUpdate
+invoke                    licenseActivate           licenseDeactivate         licenseStatus
+licenseValidate           listCustomLLMModels       listFeedSources           listOllamaModels
+listTools                 loadAutomations           loadConversations         loadQuizProgress
+maximizeWindow            mcpAddServer              mcpGetStatus              mcpListServers
+mcpRemoveServer           mcpToggleServer           mediaAdvance              mediaApprove
+mediaCreate               mediaDelete               mediaFfmpegSetup          mediaFfmpegStatus
+mediaList                 mediaMarkPublished        mediaParseFeed            mediaReject
+mediaRun                  minimizeWindow            onAssistantToolActivity   onBatchSummary
+onBrowserState            onConfigRecovered         onConfirmationRequest     onConversationCompacted
+onHardwareProfileApplied  onHideWindow              onMediaFfmpegProgress     onMessage
+onModelFallback           onNavigate                onOllamaDownloadProgress  onOllamaStatus
+onPermissionRequest       onProactiveBriefing       onPullModelProgress       onReminderFired
+onSdCppSetupProgress      onShowWindow              onStreamChunk             onStreamEnd
+onStreamError             onSupervisorStatus        onTerminalExit            onTerminalOutput
+onTitleUpdated            onUpdateAvailable         onUpdateDownloaded        onUpdateProgress
+onWidgetModeChanged       openExternalUrl           openFile                  parseDocument
+pullModel                 pullModelStream           ragClear                  ragIndex
+ragList                   readConsentLog            readDebugLogs             readPermissionAudit
+readTelemetryEvents       removeHideWindowListener  removeShowWindowListener  resetPermissions
+resolveActiveModel        restartApp                runAutomation             runDiagnostics
+saveConversation          saveQuizProgress          saveSettings              schedulerAdd
+schedulerList             schedulerRemove           schedulerToggle           sdCppAutoSetup
+sdCppSetup                sdCppStatus               searchConversations       sendConfirmationResponse
+sendMessage               sendPermissionResponse    sendStreamMessage         setActiveConversation
+setAlwaysOnTop            setUncensoredMode         showInFolder              skillsList
+skillsOpenFolder          startOllama               startSpeechRecognition    subscribeToStream
+summarizeWebContent       terminalClose             terminalCreate            terminalKill
+terminalRun               testN8nConnection         toggleWidgetMode          ttsListVoices
+ttsSampleVoice            ttsSpeak                  ttsStop                   updateAutomation
+updateMessage             workspaceList             workspaceRead             workspaceRoot
+workspaceSave             writeClipboard            writeDocument
 ```
 
-**IPC channels, renderer → main (128)**
+**IPC channels, renderer → main (130)**
 
 ```
 homebot:__e2e_get_router_logs         homebot:__e2e_invoke_tool_batch
@@ -1077,18 +1077,19 @@ homebot:detect-gpu-vram               homebot:download-ollama
 homebot:download-update               homebot:export-chat
 homebot:export-consent                homebot:export-conversation
 homebot:export-permission-audit       homebot:export-settings
-homebot:fetch-page-content            homebot:generate-quiz
-homebot:generate-quiz-from-rag        homebot:generate-title
-homebot:get-analytics-summary         homebot:get-config-path
-homebot:get-conversation              homebot:get-env
-homebot:get-generated-image           homebot:get-mode
-homebot:get-perf-aggregates           homebot:get-perf-history
-homebot:get-settings                  homebot:get-uncensored-mode
-homebot:get-widget-mode               homebot:grab-browse-content
-homebot:has-permission                homebot:import-settings
-homebot:install-update                homebot:license:activate
-homebot:license:deactivate            homebot:license:status
-homebot:license:validate              homebot:list-custom-llm-models
+homebot:fetch-feeds                   homebot:fetch-page-content
+homebot:generate-quiz                 homebot:generate-quiz-from-rag
+homebot:generate-title                homebot:get-analytics-summary
+homebot:get-config-path               homebot:get-conversation
+homebot:get-env                       homebot:get-generated-image
+homebot:get-mode                      homebot:get-perf-aggregates
+homebot:get-perf-history              homebot:get-settings
+homebot:get-uncensored-mode           homebot:get-widget-mode
+homebot:grab-browse-content           homebot:has-permission
+homebot:import-settings               homebot:install-update
+homebot:license:activate              homebot:license:deactivate
+homebot:license:status                homebot:license:validate
+homebot:list-custom-llm-models        homebot:list-feed-sources
 homebot:list-ollama-models            homebot:list-tools
 homebot:load-automations              homebot:load-conversations
 homebot:load-quiz-progress            homebot:mcp-add-server

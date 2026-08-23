@@ -246,6 +246,7 @@ export default function ModelsSettingsTab() {
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
               <option value="openrouter">OpenRouter (all models, one key)</option>
+              <option value="tokenrouter">TokenRouter (all models, one key)</option>
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
               <option value="deepseek">DeepSeek (GPT-4 quality, ~20x cheaper)</option>
               <option value="google-ai-studio">Google AI Studio (Gemini, free tier)</option>

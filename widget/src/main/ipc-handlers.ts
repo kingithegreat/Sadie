@@ -2161,6 +2161,32 @@ try {
     return { automations: readAutomations() };
   });
 
+  /**
+   * Fetch a set of RSS/Atom feeds for the Feeds panel.
+   *
+   * Filtering happens in the renderer against the list it already holds, so
+   * typing in the search box costs nothing — this is only for going and getting
+   * the feeds.
+   */
+  ipcMain.handle('homebot:fetch-feeds', async (_ev, payload: { sources?: string[] }) => {
+    try {
+      const { fetchFeeds, catalogueSources } = await import('./feed-reader');
+      const sources = Array.isArray(payload?.sources) && payload.sources.length > 0
+        ? payload.sources
+        // No choice made yet — show the catalogue rather than an empty screen.
+        : catalogueSources().map(s => s.id);
+      const result = await fetchFeeds(sources);
+      return { success: true, ...result };
+    } catch (err: any) {
+      return { success: false, items: [], failures: [], error: err?.message || 'Could not read feeds.' };
+    }
+  });
+
+  ipcMain.handle('homebot:list-feed-sources', async () => {
+    const { catalogueSources } = await import('./feed-reader');
+    return { sources: catalogueSources() };
+  });
+
   ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
     const automations = readAutomations();
     const automation: any = {
@@ -2337,7 +2363,14 @@ try {
           message: enrichedMessage,
           automation_id: auto.id,
           automation_name: auto.name,
-        }, { timeout: 120_000, headers: { 'Content-Type': 'application/json' } });
+        }, {
+          timeout: 120_000,
+          // Every app-deployed workflow carries an Auth Guard that validates
+          // this header. Without it the guard rejects HomeBot's own automation
+          // runner, and the catch below used to read that as a stale URL and
+          // delete the deployment.
+          headers: homebotWebhookHeaders({ 'Content-Type': 'application/json' }),
+        });
 
         const data = n8nRes.data;
         resultText = data?.output
@@ -2347,12 +2380,30 @@ try {
           || (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
       } catch (err: any) {
         const status = err?.response?.status;
-        console.log(`[Automation] n8n webhook failed (${status || err?.code || err?.message}), clearing stale URL and falling back to local`);
-        auto.n8nWebhookUrl = '';
-        auto.n8nWorkflowId = '';
-        const automations = readAutomations();
-        const idx = automations.findIndex((a: any) => a.id === auto.id);
-        if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+
+        // Only a 404 means the webhook is genuinely gone. Everything else —
+        // a timeout, a container restarting, n8n not up yet, a 500 from a
+        // guard rejecting us — is temporary, and this block used to treat all
+        // of them the same and DELETE the deployment.
+        //
+        // That is unrecoverable from the user's side: the ids are erased from
+        // disk, so the automation silently stops using n8n forever and there
+        // is nothing in the interface explaining why. One scheduled run during
+        // a restart was enough. Falling back to local for this run is the right
+        // response to a transient failure; forgetting the deployment is not.
+        const webhookIsGone = status === 404;
+
+        if (webhookIsGone) {
+          console.log(`[Automation] n8n webhook is gone (404), clearing stale URL and falling back to local`);
+          auto.n8nWebhookUrl = '';
+          auto.n8nWorkflowId = '';
+          const automations = readAutomations();
+          const idx = automations.findIndex((a: any) => a.id === auto.id);
+          if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+        } else {
+          console.log(`[Automation] n8n webhook failed (${status || err?.code || err?.message}) — falling back to local for this run, keeping the deployment`);
+        }
+
         useN8n = false;
       }
     }
