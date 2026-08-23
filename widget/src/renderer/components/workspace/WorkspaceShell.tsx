@@ -33,7 +33,22 @@ type SideView = 'explorer' | 'changes' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
-export default function WorkspaceShell({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function WorkspaceShell({
+  open,
+  onClose,
+  navContext,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /**
+   * Context handed over when the assistant sent the user here with
+   * navigate_to_mode. Only `path` means anything: a directory becomes the
+   * Explorer root, a file opens in its parent folder. Honoured only while no
+   * root is chosen yet, on the AutomationCenter principle — arriving a second
+   * time cannot yank the tree away from what the user is already looking at.
+   */
+  navContext?: Record<string, unknown> | null;
+}) {
   const [confirmDialog, confirm] = useConfirmDestructive();
   const [root, setRoot] = useState('');
   const [sideView, setSideView] = useState<SideView>('explorer');
@@ -47,16 +62,6 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
   const api = (window as any).electron;
   const active = files.find(f => f.path === activePath) || null;
   const dirty = active ? active.content !== active.original : false;
-
-  useEffect(() => {
-    if (!open || root) return;
-    let cancelled = false;
-    (async () => {
-      const res = await api?.workspaceRoot?.();
-      if (!cancelled && res?.path) setRoot(res.path);
-    })();
-    return () => { cancelled = true; };
-  }, [open, root, api]);
 
   const openFile = useCallback(async (path: string) => {
     // Already open? Just focus its tab — never reload over unsaved edits.
@@ -73,6 +78,42 @@ export default function WorkspaceShell({ open, onClose }: { open: boolean; onClo
     setActivePath(path);
     setStatus(null);
   }, [files, api]);
+
+  useEffect(() => {
+    if (!open || root) return;
+    let cancelled = false;
+    (async () => {
+      // A handoff can carry a starting point — "help me with this repo" should
+      // land in the workspace pointed at that repo, not at the default root.
+      // A directory becomes the root; a file opens in its parent folder. If
+      // neither works (unknown path, sandboxed out), fall through to the
+      // configured root rather than leaving the Explorer empty.
+      const ctxPath =
+        typeof navContext?.path === 'string' ? navContext.path.trim() : '';
+      if (ctxPath) {
+        const asDir = await api?.workspaceList?.(ctxPath);
+        if (cancelled) return;
+        if (asDir?.success) {
+          setRoot(asDir.path || ctxPath);
+          return;
+        }
+        const parent = ctxPath.replace(/[\\/][^\\/]*$/, '');
+        if (parent) {
+          const asParent = await api?.workspaceList?.(parent);
+          if (cancelled) return;
+          if (asParent?.success) {
+            setRoot(asParent.path || parent);
+            void openFile(ctxPath);
+            return;
+          }
+        }
+      }
+      const res = await api?.workspaceRoot?.();
+      if (!cancelled && res?.path) setRoot(res.path);
+    })();
+    return () => { cancelled = true; };
+  }, [open, root, navContext, api, openFile]);
+
 
   const closeTab = useCallback((path: string) => {
     setFiles(prev => {

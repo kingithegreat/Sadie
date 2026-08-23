@@ -13,6 +13,7 @@ export const APP_MODES = [
   'dashboard',
   'media',
   'browser',
+  'code',
   'feeds',
 ] as const;
 

@@ -4,6 +4,7 @@ import type { IconName } from './Icon';
 import { OverlayPortal, anchoredStyle, useAnchoredPosition, useDismissOnOutside } from './anchoredOverlay';
 import Tooltip from './Tooltip';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
+import { AppMode } from '../../shared/modes';
 import ModelSelector from './ModelSelector';
 
 interface StatusIndicatorProps {
@@ -61,10 +62,6 @@ interface HeaderModelProps {
   vramGB?: number | null;
 }
 
-// Imported, not restated. Three copies of this list lived in this file and a
-// new mode had to be added to all of them or the build broke in a way that
-// pointed at the caller rather than at the omission.
-import type { AppMode } from '../../shared/modes';
 
 interface ModeSwitcherProps {
   mode: AppMode;
@@ -338,6 +335,7 @@ const MODES: { id: AppMode; label: string; icon: IconName; tip: string }[] = [
   { id: 'quiz', label: 'Quiz', icon: 'quiz', tip: 'Practise coding with questions generated for you' },
   { id: 'media', label: 'Studio', icon: 'video', tip: 'Turn a script into a narrated video' },
   { id: 'browser', label: 'Browser', icon: 'globe', tip: 'Browse the web inside HomeBot' },
+  { id: 'code', label: 'Code', icon: 'terminal', tip: 'Explore, edit and run code in the workspace' },
   { id: 'feeds', label: 'Feeds', icon: 'globe', tip: 'Read and search your news feeds' },
 ];
 
