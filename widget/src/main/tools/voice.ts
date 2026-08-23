@@ -27,6 +27,37 @@ let ttsInstance: MsEdgeTTS | null = null;
 let currentVoice: string = DEFAULT_VOICE;
 let ttsInitPromise: Promise<MsEdgeTTS> | null = null; // guards concurrent init
 
+/**
+ * Throw away the cached instance so the next call builds a fresh connection.
+ *
+ * Exported for the test that proves a dead socket does not poison every
+ * subsequent narration.
+ */
+export function resetTTS(): void {
+  ttsInstance = null;
+  ttsInitPromise = null;
+}
+
+/**
+ * Does this error mean the connection died, rather than the request being bad?
+ *
+ * Only a closed/failed stream is worth reconnecting for. Retrying a rejected
+ * SSML or an unknown voice would just fail twice as slowly.
+ */
+export function isRecoverableStreamError(err: unknown): boolean {
+  const msg = String((err as any)?.message || err || '').toLowerCase();
+  return (
+    msg.includes('turn.end') ||
+    msg.includes('stream closed') ||
+    msg.includes('websocket') ||
+    msg.includes('socket hang up') ||
+    msg.includes('econnreset') ||
+    msg.includes('epipe') ||
+    msg.includes('not connected') ||
+    msg.includes('closed before')
+  );
+}
+
 async function getTTS(voice?: string): Promise<MsEdgeTTS> {
   const targetVoice = voice || DEFAULT_VOICE;
   // Fast path: already initialized with the right voice
@@ -111,11 +142,33 @@ export async function renderNarrationToFile(
   // it made every speak call fall through to the Web Speech fallback.
   fs.mkdirSync(dir, { recursive: true });
 
-  const res: any = await tts.toFile(dir, clean, {
+  const prosody = {
     rate: rate >= 0 ? `+${rate}%` : `${rate}%`,
     pitch: pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`,
     volume: '100%',
-  } as any);
+  } as any;
+
+  let res: any;
+  try {
+    res = await tts.toFile(dir, clean, prosody);
+  } catch (err: any) {
+    // The cached MsEdgeTTS holds a WebSocket to Microsoft's service, and that
+    // socket is closed from the other end after a period of inactivity. The
+    // instance survives, `getTTS`'s fast path keeps returning it, and every
+    // synthesis from then on fails the same way:
+    //
+    //   "Stream closed before the synthesis completed (no turn.end received)"
+    //
+    // Reported live as narration failing and then continuing to fail — which
+    // is the tell. A transient network problem does not repeat forever; a dead
+    // cached socket does, until the app restarts.
+    if (!isRecoverableStreamError(err)) throw err;
+
+    console.warn('[HomeBot Voice] TTS stream was closed; reconnecting and retrying once.');
+    resetTTS();
+    const fresh = await getTTS(opts?.voice);
+    res = await fresh.toFile(dir, clean, prosody);
+  }
 
   // Trust the returned path when given, but still stat it: a path to an empty
   // file would otherwise be reported as a successful narration.
