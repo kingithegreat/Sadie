@@ -2185,6 +2185,69 @@ try {
     fs.renameSync(tmp, AUTOMATIONS_FILE);
   }
 
+  /**
+   * Rewrite a draft request so the assistant can act on it.
+   *
+   * Routed EXACTLY like conversation titles: resolveCloudLLM decides, and when
+   * cloud is off the local model does it. The privacy switch has to govern this
+   * the same as everything else — a "helpful" rewrite that quietly posted the
+   * user's half-finished thought to a cloud provider would be the worst
+   * possible place to make an exception.
+   */
+  ipcMain.handle('homebot:improve-prompt', async (_ev, payload: { draft?: string }) => {
+    const draft = String(payload?.draft ?? '');
+    try {
+      const {
+        checkImprovable, cleanImprovedPrompt, isUsefulImprovement,
+        buildImproveUserPrompt, IMPROVE_SYSTEM_PROMPT,
+      } = await import('../shared/prompt-improve');
+
+      const check = checkImprovable(draft);
+      if (!check.ok) return { success: false, error: check.message };
+
+      const settings = getSettings();
+      const cloud = resolveCloudLLM(settings);
+      let raw = '';
+
+      if (cloud.active && cloud.config) {
+        raw = await generateFromCustomLLM(
+          cloud.config,
+          IMPROVE_SYSTEM_PROMPT,
+          buildImproveUserPrompt(draft),
+          { timeoutMs: 25_000 },
+        );
+      } else {
+        const ollamaBase = getConfiguredOllamaBaseUrl();
+        const model = settings.chatModel || process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const resp = await axios.post(
+          `${ollamaBase}/api/generate`,
+          {
+            model,
+            prompt: `${IMPROVE_SYSTEM_PROMPT}
+
+${buildImproveUserPrompt(draft)}`,
+            stream: false,
+            // Low temperature: this is a rewrite, not a brainstorm. Creativity
+            // here shows up as invented requirements.
+            options: { temperature: 0.2, num_predict: 400 },
+          },
+          { timeout: OLLAMA_OP_TIMEOUT }
+        );
+        raw = resp.data?.response ?? '';
+      }
+
+      const improved = cleanImprovedPrompt(raw);
+      if (!isUsefulImprovement(draft, improved)) {
+        // Returning the draft back unchanged would look like a broken button.
+        return { success: false, error: 'That already reads clearly — nothing worth changing.' };
+      }
+
+      return { success: true, improved, source: cloud.active ? 'cloud' : 'local' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not rewrite that just now.' };
+    }
+  });
+
   ipcMain.handle('homebot:load-automations', async () => {
     return { automations: readAutomations() };
   });

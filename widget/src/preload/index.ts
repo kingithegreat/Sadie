@@ -869,6 +869,10 @@ const electronAPI: ElectronAPI = {
   listFeedSources: async () =>
     ipcRenderer.invoke('homebot:list-feed-sources'),
 
+  // Sharpen a draft request before sending it
+  improvePrompt: async (draft: string) =>
+    ipcRenderer.invoke('homebot:improve-prompt', { draft }),
+
   // Automation Center
   loadAutomations: async () =>
     ipcRenderer.invoke('homebot:load-automations'),

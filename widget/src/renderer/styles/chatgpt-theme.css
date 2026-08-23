@@ -10358,3 +10358,16 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   color: var(--text-secondary, oklch(70% 0 0));
 }
 .setup-progress--error { color: oklch(60% 0.19 25); }
+
+/* ── Improve this prompt ─────────────────────────────────────────────────────
+   Sits with the attach buttons; the undo only appears after a rewrite. */
+.improve-prompt-button:disabled { opacity: 0.4; cursor: default; }
+.improve-undo-button { opacity: 0.75; }
+.improve-note {
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  background: var(--surface-2, rgba(127, 127, 127, 0.1));
+  opacity: 0.9;
+}

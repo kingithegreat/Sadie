@@ -596,6 +596,13 @@ export interface ElectronAPI {
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
   onConfigRecovered?: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => () => void;
   onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
+  /** Rewrite a draft request so the assistant can act on it. */
+  improvePrompt?: (draft: string) => Promise<{
+    success: boolean;
+    improved?: string;
+    source?: 'cloud' | 'local';
+    error?: string;
+  }>;
   /** Fetch RSS/Atom feeds for the Feeds panel. */
   fetchFeeds?: (sources?: string[]) => Promise<{
     success: boolean;
