@@ -596,6 +596,15 @@ export interface ElectronAPI {
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
   onConfigRecovered?: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => () => void;
   onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
+  /** Fetch RSS/Atom feeds for the Feeds panel. */
+  fetchFeeds?: (sources?: string[]) => Promise<{
+    success: boolean;
+    items: import('./feed-search').FeedItem[];
+    failures: Array<{ source: string; reason: string }>;
+    error?: string;
+  }>;
+  /** The named feed sources HomeBot knows about. */
+  listFeedSources?: () => Promise<{ sources: Array<{ id: string; description: string }> }>;
   /** What HomeBot can do right now, with a fix for anything that is not working. */
   getCapabilityReport?: () => Promise<{
     success: boolean;

@@ -863,6 +863,11 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:title-updated', handler);
   },
 
+  // Feeds panel — reading RSS/Atom sources
+  fetchFeeds: async (sources?: string[]) =>
+    ipcRenderer.invoke('homebot:fetch-feeds', { sources }),
+  listFeedSources: async () =>
+    ipcRenderer.invoke('homebot:list-feed-sources'),
   // Home screen — what works right now and how to fix what does not
   getCapabilityReport: async () =>
     ipcRenderer.invoke('homebot:capability-report'),

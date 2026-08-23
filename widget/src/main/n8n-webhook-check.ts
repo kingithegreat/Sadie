@@ -23,6 +23,7 @@
 
 import axios from 'axios';
 import { getSettings } from './config-manager';
+import { homebotWebhookHeaders } from './webhook-auth';
 
 export type WebhookStatus =
   /** The workflow is registered and answered. */
@@ -72,6 +73,9 @@ export async function checkWebhook(path: string, powers = ''): Promise<WebhookCh
     const res = await axios.post(url, { action: 'ping' }, {
       timeout: PROBE_TIMEOUT_MS,
       validateStatus: () => true,
+      // Without this the guard rejects the probe and a correctly-deployed
+      // workflow is reported as broken.
+      headers: homebotWebhookHeaders(),
     });
     if (res.status === 404) {
       return {
