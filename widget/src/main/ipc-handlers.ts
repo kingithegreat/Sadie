@@ -59,7 +59,7 @@ import { resolveCloudLLM, describeActiveModel } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { resolveWithinHome } from './utils/path-guard';
-import { sanitizeImportedSettings } from './utils/settings-import';
+import { sanitizeImportedSettings, droppedEndpoints } from './utils/settings-import';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
@@ -1833,8 +1833,13 @@ try {
       const bundle = JSON.parse(raw);
       if (!bundle._homebot_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
 
+      // Service addresses that were refused because they point off this
+      // machine. Reported so a legitimate restore does not leave someone
+      // wondering why their remote n8n stopped working.
+      let skippedEndpoints: string[] = [];
       if (bundle.settings) {
         const current = getSettings();
+        skippedEndpoints = droppedEndpoints(bundle.settings);
         saveSettings({ ...current, ...sanitizeImportedSettings(bundle.settings) });
       }
       if (bundle.preferences) {
@@ -1843,7 +1848,7 @@ try {
       if (bundle.conversations) {
         MemoryManager.saveConversationStore(bundle.conversations);
       }
-      return { success: true, restoredAt: new Date().toISOString() };
+      return { success: true, restoredAt: new Date().toISOString(), skippedEndpoints };
     } catch (err: any) {
       console.error('[IPC] homebot:import-settings error:', err.message);
       return { success: false, error: err.message };
