@@ -1005,12 +1005,37 @@ const deleteMediaJobHandler: ToolHandler = async (args) => {
       if (!contained) {
         return err(`Refusing to delete ${resolved}: it is not inside the media assets folder.`);
       }
-      try {
-        fs.rmSync(resolved, { recursive: true, force: true });
-      } catch (e: any) {
+      // Windows keeps a lock on a file any handle is still open on, and a
+      // <video>/<audio> element pointed at file:/// counts. The panel releases
+      // its players before calling this, but a lock can also be held by a
+      // player the user opened, an antivirus scan, or Explorer's preview pane —
+      // and those clear on their own within a moment.
+      //
+      // Reported as "Delete keeps failing": before this, one EBUSY meant the
+      // job could never be deleted at all.
+      let lastError: any = null;
+      for (const waitMs of [0, 120, 400]) {
+        if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs));
+        try {
+          fs.rmSync(resolved, { recursive: true, force: true });
+          lastError = null;
+          break;
+        } catch (e: any) {
+          lastError = e;
+        }
+      }
+
+      if (lastError) {
         // The record is left alone on purpose — removing it while the files
         // survive would strand them with nothing pointing at them.
-        return err(`Could not remove the files for "${job.title}": ${errText(e)}`);
+        const locked = /EBUSY|EPERM|ENOTEMPTY/i.test(String(lastError?.code || lastError?.message || ''));
+        return err(
+          `Could not remove the files for "${job.title}": ${errText(lastError)}` +
+          (locked
+            ? ' — something still has the video or audio open. Close any player showing it and try again, ' +
+              'or use "keep files" to remove it from the list without deleting them.'
+            : '')
+        );
       }
     }
 
