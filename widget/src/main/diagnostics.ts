@@ -16,6 +16,7 @@ import * as path from 'path';
 import axios from 'axios';
 import { detectGpuVram } from './moa';
 import { checkKnownWebhooks } from './n8n-webhook-check';
+import { getLastAnthropicUsage } from './custom-llm-client';
 
 // Minimum free disk GB before showing a warning
 export const DISK_WARN_GB = 10;
@@ -78,6 +79,24 @@ export interface DiagnosticsResult {
     status: 'available' | 'not_deployed' | 'n8n_unreachable' | 'error';
     detail?: string;
   }>;
+  /**
+   * Usage from the most recent Anthropic call, or null if none has been made
+   * this session.
+   *
+   * cacheRead > 0 on a repeat request is the only evidence prompt caching is
+   * working; a cache_control marker that never hits is indistinguishable from
+   * no caching at all. Exposed here rather than left in a console line, since
+   * the console is silenced in packaged builds — which is precisely how the
+   * assistant bridge managed to fail invisibly for months.
+   */
+  anthropicUsage: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreation: number;
+    cacheRead: number;
+    stopReason: string | null;
+  } | null;
 }
 
 // ── Disk ──────────────────────────────────────────────────────────────────────
@@ -226,5 +245,6 @@ export async function runDiagnostics(
     durationMs: Math.round((performance.now() - start) * 100) / 100,
     timestamp,
     n8nWebhooks,
+    anthropicUsage: getLastAnthropicUsage(),
   };
 }
