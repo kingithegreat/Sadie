@@ -596,6 +596,13 @@ export interface ElectronAPI {
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
   onConfigRecovered?: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => () => void;
   onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
+  /** What HomeBot can do right now, with a fix for anything that is not working. */
+  getCapabilityReport?: () => Promise<{
+    success: boolean;
+    capabilities?: import('./capability-report').Capability[];
+    summary?: { ready: number; total: number; needsAttention: import('./capability-report').Capability[] };
+    error?: string;
+  }>;
   /** The assistant moving the user to another panel, carrying context with them. */
   onNavigate?: (cb: (request: import('./navigation').NavRequest) => void) => () => void;
 

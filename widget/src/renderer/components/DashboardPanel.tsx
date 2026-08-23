@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { ConversationStore, QuizProgress, StoredConversation, Settings } from '../../shared/types';
 import '../styles/dashboard-panel.css';
+import CapabilityReport from './CapabilityReport';
 
 interface DashboardPanelProps {
   onModeChange: (mode: string) => void;
@@ -295,6 +296,12 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
           )}
         </div>
       )}
+
+      {/* What's working — above Quick Actions on purpose. Offering someone a
+          "Make a video" button while ffmpeg is missing, or "Search the web"
+          while no search source is set up, is how the app came to fail quietly
+          in the first place. */}
+      <CapabilityReport />
 
       {/* Quick Actions */}
       <div>

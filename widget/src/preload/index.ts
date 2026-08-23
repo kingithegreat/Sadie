@@ -863,6 +863,10 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:title-updated', handler);
   },
 
+  // Home screen — what works right now and how to fix what does not
+  getCapabilityReport: async () =>
+    ipcRenderer.invoke('homebot:capability-report'),
+
   // Automation Center
   loadAutomations: async () =>
     ipcRenderer.invoke('homebot:load-automations'),
