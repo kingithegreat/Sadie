@@ -4,6 +4,7 @@ import type { IconName } from './Icon';
 import { OverlayPortal, anchoredStyle, useAnchoredPosition, useDismissOnOutside } from './anchoredOverlay';
 import Tooltip from './Tooltip';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
+import { AppMode } from '../../shared/modes';
 import ModelSelector from './ModelSelector';
 
 interface StatusIndicatorProps {
@@ -22,8 +23,8 @@ interface StatusIndicatorProps {
   backendDiagnostic?: string | null;
   onCopyDiagnostic?: (text: string) => void;
   onDismissDiagnostic?: () => void;
-  mode?: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
-  onModeChange?: (mode: 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser') => void;
+  mode?: AppMode;
+  onModeChange?: (mode: AppMode) => void;
   currentModel?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
@@ -60,8 +61,6 @@ interface HeaderModelProps {
   useCustomLLM: boolean;
   vramGB?: number | null;
 }
-
-type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
 
 interface ModeSwitcherProps {
   mode: AppMode;
@@ -335,6 +334,7 @@ const MODES: { id: AppMode; label: string; icon: IconName; tip: string }[] = [
   { id: 'quiz', label: 'Quiz', icon: 'quiz', tip: 'Practise coding with questions generated for you' },
   { id: 'media', label: 'Studio', icon: 'video', tip: 'Turn a script into a narrated video' },
   { id: 'browser', label: 'Browser', icon: 'globe', tip: 'Browse the web inside HomeBot' },
+  { id: 'code', label: 'Code', icon: 'terminal', tip: 'Explore, edit and run code in the workspace' },
 ];
 
 const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {

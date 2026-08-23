@@ -191,6 +191,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       } else if (e.ctrlKey && e.key === '0') {
         e.preventDefault();
         setMode('dashboard');
+      } else if (e.ctrlKey && e.shiftKey && (e.key === 'K' || e.key === 'k')) {
+        e.preventDefault();
+        setMode('code');
       } else if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
         // The Shortcuts panel has advertised "Ctrl + Shift + C — Copy last
         // response" while nothing in the app bound it: pressing it did nothing
@@ -1554,6 +1557,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       ) : mode === 'media' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <MediaStudioPanel />
+        </Suspense>
+      ) : mode === 'code' ? (
+        // WorkspaceShell is the VS Code–shaped IDE: Explorer, tabbed editor,
+        // docked terminal, and browser panel. It was reachable only by opening
+        // the Workspace overlay and finding an icon in its activity bar — two
+        // levels deep, with nothing on the main screen suggesting it existed.
+        // The Code mode makes it a first-class destination the assistant can
+        // navigate to directly, carrying context (e.g. "help me with this repo"
+        // opens the workspace pointed at the project root).
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <WorkspaceShell open={true} onClose={() => setMode('chat')} />
         </Suspense>
       ) : mode === 'browser' ? (
         // The same panel the Workspace uses. It was reachable only by opening
