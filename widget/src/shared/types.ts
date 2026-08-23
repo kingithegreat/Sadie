@@ -190,7 +190,7 @@ export interface CustomLLMConfig {
   name: string;
   apiUrl: string;
   apiKey?: string;
-  provider: 'openai' | 'anthropic' | 'claude-code' | 'codex' | 'moonshot' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
+  provider: 'openai' | 'anthropic' | 'claude-code' | 'codex' | 'moonshot' | 'openrouter' | 'tokenrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   model?: string;
   enabled: boolean;
   metadata?: ModelMetadata;
@@ -260,6 +260,12 @@ export interface Settings {
   permissionPromptTimeoutMs?: number;
   defaultTeam?: string;
   // Web search API keys
+  /**
+   * A self-hosted SearXNG instance, e.g. http://localhost:8080. The only search
+   * backend that is free, unmetered, keyless and accountless at once — and not
+   * a scraper, so it does not get challenge-paged like the DuckDuckGo endpoints.
+   */
+  searxngUrl?: string;
   tavilyApiKey?: string;
   serperApiKey?: string;
   // LLM provider API keys
