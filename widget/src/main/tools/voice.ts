@@ -148,10 +148,23 @@ export async function renderNarrationToFile(
     volume: '100%',
   } as any;
 
+  // Enough to diagnose a recurrence without another round of guessing.
+  //
+  // This failure was reported from a real run and could NOT be reproduced from
+  // outside the app: long text, a reused instance after idle, and two
+  // concurrent syntheses on one socket all succeeded against the live service.
+  // So the next occurrence has to carry its own evidence — the app runs in
+  // Electron's network stack, not plain Node, and that is the difference this
+  // log is here to expose.
+  const started = Date.now();
+  const context = () =>
+    `voice=${currentVoice} chars=${clean.length} elapsed=${Date.now() - started}ms`;
+
   let res: any;
   try {
     res = await tts.toFile(dir, clean, prosody);
   } catch (err: any) {
+    console.warn(`[HomeBot Voice] synthesis failed — ${context()} — ${err?.message || err}`);
     // The cached MsEdgeTTS holds a WebSocket to Microsoft's service, and that
     // socket is closed from the other end after a period of inactivity. The
     // instance survives, `getTTS`'s fast path keeps returning it, and every
@@ -167,7 +180,19 @@ export async function renderNarrationToFile(
     console.warn('[HomeBot Voice] TTS stream was closed; reconnecting and retrying once.');
     resetTTS();
     const fresh = await getTTS(opts?.voice);
-    res = await fresh.toFile(dir, clean, prosody);
+    try {
+      res = await fresh.toFile(dir, clean, prosody);
+      console.log(`[HomeBot Voice] retry succeeded — ${context()}`);
+    } catch (retryErr: any) {
+      // Both attempts failed. Say which, so a report distinguishes "the
+      // connection was stale" from "this text or voice cannot be synthesised".
+      console.error(`[HomeBot Voice] retry ALSO failed — ${context()} — ${retryErr?.message || retryErr}`);
+      throw new Error(
+        `Text-to-speech failed twice, on a fresh connection the second time. ` +
+        `That points at the service or the network rather than a stale connection. ` +
+        `(${context()}) Original error: ${retryErr?.message || retryErr}`
+      );
+    }
   }
 
   // Trust the returned path when given, but still stat it: a path to an empty
