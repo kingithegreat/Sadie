@@ -54,6 +54,11 @@ type Status = ConnectionStatus;
 // one. It was written to be the single source of truth and this file had been
 // restating it, which is how the two could have drifted.
 import type { AppMode } from '../shared/modes';
+import {
+  detectLeakedToolCalls,
+  stripLeakedToolCalls,
+  describeLeak,
+} from '../shared/leaked-tool-calls';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -773,14 +778,33 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             const nextState: StreamingState = cancelled ? "cancelled" : "finished";
             const durationMs = Date.now() - m.createdAt;
 
+            // A reply that WROTE OUT a tool call instead of making one.
+            //
+            // Reported live: asked to test its tools, HomeBot printed
+            // `<|tool_call_begin|> functions.run_terminal_command …` and then
+            // said "Done", having executed nothing. Being told a job was done
+            // that never started is the worst failure this app has.
+            //
+            // Handled here rather than in the router because every one of the
+            // router's many completion paths funnels through this one place,
+            // and because the raw markup must not reach conversation history —
+            // a later model reads it back and copies the pattern, which is how
+            // a local qwen came to emit Anthropic-shaped markup it would never
+            // invent on its own.
+            const leaked = cancelled ? [] : detectLeakedToolCalls(m.content);
+            const content = leaked.length > 0
+              ? `${stripLeakedToolCalls(m.content)}\n\n⚠️ ${describeLeak(leaked)}`
+              : m.content;
+
             const updatedMsg = {
               ...m,
+              content,
               streamingState: nextState,
               updatedAt: Date.now(),
               ...(nextState === "finished" ? { durationMs } : {}),
               ...(payload.model ? { model: payload.model } : {}),
             };
-            
+
             // Persist the final message content
             if (conversationId) {
               updatePersistedMessage(assistantId, {
