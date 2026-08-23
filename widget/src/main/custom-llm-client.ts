@@ -5,6 +5,10 @@
 import axios from 'axios';
 import { spawn } from 'child_process';
 import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
+// Subscription-CLI model lists live in shared/ so the renderer can offer them
+// without a network round-trip — see the note in that file for why that
+// mattered enough to move them.
+import { CLAUDE_CODE_MODELS, CODEX_MODELS } from '../shared/subscription-models';
 import type { ToolDefinition } from './tools/types';
 import { toOpenAITool, toAnthropicTool } from './tools/types';
 
@@ -122,27 +126,6 @@ const ANTHROPIC_MODELS: CustomModelInfo[] = [
  * resolves each to the current model in that tier, so they don't go stale.
  * No API key is involved; usage draws on the user's subscription limits.
  */
-const CLAUDE_CODE_MODELS: CustomModelInfo[] = [
-  { id: 'haiku', name: 'Claude Haiku (subscription)', description: 'Fastest and lightest — quick questions', provider: 'claude-code', costHint: 'Lightest on your plan' },
-  { id: 'sonnet', name: 'Claude Sonnet (subscription)', description: 'Balanced speed and intelligence — a good default', provider: 'claude-code', costHint: 'Included in your plan' },
-  { id: 'opus', name: 'Claude Opus (subscription)', description: 'Most capable for complex coding and reasoning', provider: 'claude-code', costHint: 'Heavier on your plan' },
-  { id: 'fable', name: 'Claude Fable (subscription)', description: 'Highest capability — hardest problems, long tasks', provider: 'claude-code', costHint: 'Heaviest on your plan' },
-];
-
-/**
- * Models offered when the provider is `codex` — OpenAI's Codex CLI signed in
- * with a ChatGPT account, so usage draws on the user's ChatGPT plan rather
- * than a metered API key. Same idea as CLAUDE_CODE_MODELS above.
- *
- * `default` lets the CLI pick whatever the account is entitled to, which is
- * the safest option when OpenAI rotates model names.
- */
-const CODEX_MODELS: CustomModelInfo[] = [
-  { id: 'default', name: 'Codex default (subscription)', description: 'Whatever your ChatGPT plan provides — safest choice', provider: 'codex', costHint: 'Included in your plan' },
-  { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex (subscription)', description: 'Coding-tuned', provider: 'codex', costHint: 'Included in your plan' },
-  { id: 'gpt-5.1', name: 'GPT-5.1 (subscription)', description: 'General purpose', provider: 'codex', costHint: 'Included in your plan' },
-];
-
 const OPENAI_MODELS: CustomModelInfo[] = [
   { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', provider: 'openai', costHint: '~$5/1M in' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable', provider: 'openai', costHint: '~$0.15/1M in' },
@@ -220,22 +203,13 @@ const TOGETHER_MODELS: CustomModelInfo[] = [
 ];
 
 // Canonical API base URLs for each named provider
-export const PROVIDER_API_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  groq: 'https://api.groq.com/openai/v1',
-  deepseek: 'https://api.deepseek.com/v1',
-  'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
-  'google-gemini': 'https://generativelanguage.googleapis.com/v1beta',
-  huggingface: 'https://api-inference.huggingface.co/v1',
-  cerebras: 'https://api.cerebras.ai/v1',
-  sambanova: 'https://api.sambanova.ai/v1',
-  together: 'https://api.together.xyz/v1',
-  // Kimi (Moonshot) speaks the OpenAI Chat Completions shape, so it needs no
-  // bespoke client — only a base URL and a key from platform.moonshot.ai.
-  moonshot: 'https://api.moonshot.ai/v1',
-};
+// Single definition, in shared/, because the renderer needs the same map and
+// the two copies had already drifted. Re-exported here so every existing
+// importer and test keeps working unchanged.
+export { PROVIDER_API_URLS } from '../shared/provider-urls';
+// Also imported for use within this file — a re-export does not bind the name
+// in local scope.
+import { PROVIDER_API_URLS } from '../shared/provider-urls';
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '');
