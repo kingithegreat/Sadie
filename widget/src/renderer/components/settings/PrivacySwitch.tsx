@@ -82,6 +82,36 @@ export default function PrivacySwitch() {
               ? 'Nothing you type leaves this PC. Uncensored mode answers with the model on this PC, so the online AI stays unused while it is on.'
               : 'Nothing you type leaves this PC. Set up an online AI under Advanced if you want the option to use one.'}
       </small>
+
+      {/*
+        The other question of the same kind — "does anything about my browsing
+        leave this PC?" — and it was answerable only under Advanced, a view that
+        is hidden by default.
+
+        That cost real capability. Measured against live sites, a plain request
+        and HomeBot's own browser both came back with nothing where the reading
+        service returned ~90,000 characters. People who would happily turn this
+        on could not find out it existed. Off remains the default; it is the
+        finding that had to move, not the decision.
+      */}
+      <label className="setting-label" style={{ marginTop: 14 }}>
+        <input
+          type="checkbox"
+          data-testid="web-reader-fallback"
+          checked={!!localSettings.webReaderFallbackEnabled}
+          onChange={(e) =>
+            setLocalSettings({ ...localSettings, webReaderFallbackEnabled: e.target.checked })
+          }
+        />
+        <span>Use a reading service when a page will not open</span>
+      </label>
+      <small className="setting-hint">
+        Some sites refuse to open for anything but a person at a keyboard. HomeBot tries twice on
+        its own first — a direct request, then its own browser — and only then, with this on, asks
+        the free Jina Reader service to fetch the page instead. That sends <strong>the page
+        address</strong> to that service; the page itself is read for you and nothing you typed is
+        sent. Off by default.
+      </small>
     </div>
   );
 }
