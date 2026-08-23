@@ -68,9 +68,10 @@ matter most, because that is where both sessions were working.
 Standing traps that have not changed: bot-opened PRs still park every `pull_request` run at
 `action_required` (approve them, or the required checks never report), and with two sessions
 merging, a green PR goes `BEHIND` within minutes — `gh pr update-branch <n>` and re-approve.
+| Model freshness + cloud temperature knob | claude/model-freshness-and-knobs | In progress | Touches custom-llm-client.ts, config-manager.ts, model-lifecycle.ts (new), shared/types.ts, useSettingsState.tsx, CloudProviderSection.tsx. Does NOT touch message-router.ts, model-advisor.ts, media tools, or PrivacySwitch. |
+| n8n Auth Guard injection + secret embedding | claude/n8n-auth-guard | Ready for Integration | PR #191, auto-merge on. injectAuthGuards() in widget/src/main/n8n-auth-guard.ts runs inside importWorkflow; guards embed the per-install secret directly (Code nodes see EMPTY process.env — env-based guards were inert). 30 unit tests green locally. |
 
-## Integration notes — 2026-08-15 session (read before your next PR)
-
+## Integration notes — 2026-08-2
 Five PRs merged today (#152, #162, #164, #165, #168). Four of them change the rules of the road
 for every session working here:
 
@@ -178,3 +179,26 @@ Three trees are live at once: `Desktop/sadie` (currently on `claude/crm-stale-fl
 `Desktop/sadie-n8nguard`, and `Desktop/sadie-wt-jina`. **Check `git worktree list` and
 `git status` before any mutating git command** — `reset --hard`, `checkout --` and `stash` will
 discard another agent's uncommitted work.
+## Integration notes — 2026-08-22 session handoff
+
+Two PRs were in flight at handoff; both have auto-merge enabled and need no manual merge:
+
+1. **PR #191 (`claude/n8n-auth-guard`)** — Auth Guard injection into every app-deployed
+   workflow, with the per-install webhook secret EMBEDDED in the generated guard script.
+   Key fact for anyone touching n8n Code nodes: **n8n 1.122.5 gives Code nodes an empty
+   `process.env` regardless of `N8N_BLOCK_ENV_ACCESS_IN_NODE`** — any guard reading the
+   secret from env silently skips validation. The branch was rebased onto main at handoff
+   (`c32479e`); CI re-runs after a rebase, so if it sits BLOCKED with checks pending,
+   that is why — wait, don't re-rebase.
+2. **PR #187 (`claude/crm-stale-flake`)** — one-line test fix (sleep past the days=0 cutoff
+   in the dailyBrief test), rebased onto main as `0383f10`, auto-merge on.
+
+**Still owed after both merge (verify where it RUNS, not in tests):**
+- Redeploy workflows through the app's own deploy path to the running n8n container, then
+  POST to a deployed webhook WITHOUT `X-HOMEBOT-Auth` and confirm the guard rejects it
+  before any node executes. Green CI does not prove the deployed instance has embedded-
+  secret guards — old workflows keep their legacy guards until re-imported.
+- The `compose-edit-during-test` stash in the main worktree is REDUNDANT (superseded by
+  commit e49cc3e on #191) — drop it after #191 merges.
+- Worktrees: main tree is `C:\Users\adenk\Desktop\sadie`, the auth-guard branch lives in
+  worktree `C:\Users\adenk\Desktop\sadie-n8nguard`.
