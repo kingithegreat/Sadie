@@ -33,6 +33,7 @@ import { assertPermission, hasStandingConsent } from '../config-manager';
 import { systemToolDefs, systemToolHandlers } from './system';
 import { webToolDefs, webToolHandlers } from './web';
 import { voiceToolDefs, voiceToolHandlers } from './voice';
+import { navigationToolDefs, navigationToolHandlers } from './navigation';
 import { memoryToolDefs, memoryToolHandlers } from './memory';
 import { documentToolDefs, documentToolHandlers } from './documents';
 import { nbaQueryDef, nbaQueryHandler } from './nba';
@@ -938,6 +939,14 @@ export function initializeTools(force = false): void {
     }
   }
   
+  // Register navigation tools — how the assistant takes the user to a panel
+  for (const def of navigationToolDefs) {
+    const handler = navigationToolHandlers[def.name];
+    if (handler) {
+      registerTool(def.name, def, handler);
+    }
+  }
+
   // Register memory tools (Qdrant-backed)
   for (const def of memoryToolDefs) {
     const handler = memoryToolHandlers[def.name];
