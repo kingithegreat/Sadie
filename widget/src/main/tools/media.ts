@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { homebotWebhookHeaders } from '../webhook-auth';
 import {
   createJob,
   transition,
@@ -621,7 +622,7 @@ async function researchActuallyReturnsSources(): Promise<{ ok: boolean; detail: 
     const res = await axios.post(
       `${base}/webhook/${MEDIA_RESEARCH_PATH}`,
       { topic: 'Book of Jonah' },
-      { timeout: 45_000, validateStatus: () => true },
+      { timeout: 45_000, validateStatus: () => true, headers: homebotWebhookHeaders() },
     );
     if (res.status !== 200) return { ok: false, detail: `the webhook answered HTTP ${res.status}` };
 

@@ -26,6 +26,7 @@ import { resolveCloudLLM } from '../shared/cloud-llm';
 import { generateFromCustomLLM } from './custom-llm-client';
 import { MEDIA_RESEARCH_PATH } from './n8n-media-workflows';
 import type { MediaJob } from './media-studio';
+import { homebotWebhookHeaders } from './webhook-auth';
 
 /** Where the text came from, so a caller can say so rather than guess. */
 export interface GeneratedText {
@@ -139,7 +140,7 @@ async function researchViaN8n(topic: string): Promise<{ text: string; sources: s
     const res = await axios.post(
       `${base}/webhook/${MEDIA_RESEARCH_PATH}`,
       { topic },
-      { timeout: 25_000, validateStatus: () => true },
+      { timeout: 25_000, validateStatus: () => true, headers: homebotWebhookHeaders() },
     );
     if (res.status !== 200) return null;
 
