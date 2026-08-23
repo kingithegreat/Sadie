@@ -285,6 +285,8 @@ export const DEFAULT_SETTINGS: Settings = {
     vision_describe: true,
     vision_query: true,
     look_at_browser: true,
+    // Navigation — moves the user to a panel; no data is read or written
+    navigate_to_mode: true,
     // Voice — safe
     speak: true,
     stop_speaking: true,

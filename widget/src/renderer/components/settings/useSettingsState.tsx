@@ -413,6 +413,8 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     vision_describe: 'Describe an image using the vision model (safe).',
     vision_query: 'Answer questions about an image (safe).',
     look_at_browser: 'Read the page open in the browser panel (safe).',
+    // Navigation
+    navigate_to_mode: 'Take you to another HomeBot panel, carrying context (safe).',
     // Voice
     speak: 'Read text aloud using text-to-speech.',
     stop_speaking: 'Stop the current text-to-speech playback.',

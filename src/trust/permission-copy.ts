@@ -154,6 +154,8 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   list_skills: { label: 'List skills', detail: 'See which skill recipes are installed.' },
   // Vision — read-only
   look_at_browser: { label: 'Read the open page', detail: 'Look at the page currently open in the browser panel and answer questions about it.' },
+  // Navigation — moves the user to another panel
+  navigate_to_mode: { label: 'Take you to another mode', detail: 'Open a HomeBot panel (Media Studio, Automations, and so on) for you. Nothing is read or changed on disk.' },
   // CRM — reads
   crm_search_companies: { label: 'Search CRM companies', detail: 'Look up companies in the business CRM.' },
   crm_search_contacts: { label: 'Search CRM contacts', detail: 'Look up people in the business CRM.' },
