@@ -34,6 +34,13 @@ export interface PodcastEpisode {
   published: string;
   /** itunes:duration as the feed gave it (e.g. "34:12" or "2052"). */
   duration: string;
+  /**
+   * The item's own URL. Empty when a feed omits it, which some do.
+   *
+   * Optional so existing callers and their fixtures are unaffected — the
+   * podcast path never needed it.
+   */
+  link?: string;
 }
 
 export interface ParsedFeed {
@@ -77,6 +84,26 @@ function extractTag(fragment: string, tag: string): string {
   const esc = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const m = fragment.match(new RegExp(`<${esc}(?:\\s[^>]*)?>([\\s\\S]*?)</${esc}>`, 'i'));
   return m ? cleanXmlText(m[1]) : '';
+}
+
+/**
+ * Atom writes the item URL as an attribute — `<link rel="alternate" href="…"/>`
+ * — with no body for `extractTag` to find, so an Atom feed would yield items
+ * nothing could open.
+ *
+ * `rel="alternate"` (or no rel at all) is the article itself; `rel="enclosure"`,
+ * `"self"` and `"replies"` are not, and picking the first link blindly hands
+ * back a media file or the feed's own address.
+ */
+function extractAtomLinkHref(fragment: string): string {
+  const linkTags = fragment.match(/<link\b[^>]*\/?>/gi) || [];
+  for (const tag of linkTags) {
+    const rel = tag.match(/\brel\s*=\s*["']([^"']*)["']/i)?.[1]?.toLowerCase();
+    if (rel && rel !== 'alternate') continue;
+    const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (href) return cleanXmlText(href);
+  }
+  return '';
 }
 
 function extractFirstOfTags(fragment: string, tags: string[]): string {
@@ -130,6 +157,12 @@ export function parsePodcastFeed(xmlText: string, limit = 10): ParsedFeed {
       ]).slice(0, MAX_SUMMARY_CHARS),
       published: extractFirstOfTags(item, ['pubDate', 'published', 'updated']),
       duration: extractFirstOfTags(item, ['itunes:duration', 'duration']),
+      // Where the item actually lives. Unused by the podcast path, which only
+      // needs text to build a job from — but a reading list is useless if you
+      // cannot open the article, and parsing the same XML twice to get one
+      // field would be worse. Atom puts it in an attribute rather than a body,
+      // so both shapes are tried.
+      link: extractTag(item, 'link') || extractAtomLinkHref(item),
     });
   }
 

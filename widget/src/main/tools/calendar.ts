@@ -22,6 +22,7 @@ import { promisify } from 'util';
 import axios from 'axios';
 import { getSettings } from '../config-manager';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { homebotWebhookHeaders } from '../webhook-auth';
 
 const execAsync = promisify(exec);
 
@@ -244,7 +245,7 @@ async function listGoogleCalendarEvents(daysAhead: number, limit: number): Promi
   const response = await axios.post(
     url,
     { action: 'list', days_ahead: daysAhead, limit },
-    { timeout: 10000 }
+    { timeout: 10000, headers: homebotWebhookHeaders() }
   );
   const data = response.data;
   // n8n workflow returns { events: [...] } or an array directly
@@ -266,7 +267,7 @@ async function addGoogleCalendarEvent(title: string, start: string, end: string,
   const response = await axios.post(
     url,
     { action: 'add', title, start, end, location, notes },
-    { timeout: 10000 }
+    { timeout: 10000, headers: homebotWebhookHeaders() }
   );
   return String(response.data?.id || '').trim() || null;
 }
