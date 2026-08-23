@@ -33,7 +33,7 @@ import {
 } from './config-manager';
 import { fetchAvailableCustomModels, generateFromCustomLLM } from './custom-llm-client';
 import { fetchPageContentHandler } from './tools/browser';
-import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
+import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
 import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
@@ -557,6 +557,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
 
       // Refresh search API keys in memory
+      setSearxngUrl((merged as any).searxngUrl || null);
       setTavilyApiKey(merged.tavilyApiKey || null);
       setSerperApiKey(merged.serperApiKey || null);
       setStableHordeApiKey(merged.stableHordeApiKey || null);

@@ -260,6 +260,12 @@ export interface Settings {
   permissionPromptTimeoutMs?: number;
   defaultTeam?: string;
   // Web search API keys
+  /**
+   * A self-hosted SearXNG instance, e.g. http://localhost:8080. The only search
+   * backend that is free, unmetered, keyless and accountless at once — and not
+   * a scraper, so it does not get challenge-paged like the DuckDuckGo endpoints.
+   */
+  searxngUrl?: string;
   tavilyApiKey?: string;
   serperApiKey?: string;
   // LLM provider API keys
@@ -603,6 +609,8 @@ export interface ElectronAPI {
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
   onConfigRecovered?: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => () => void;
   onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
+  /** The assistant moving the user to another panel, carrying context with them. */
+  onNavigate?: (cb: (request: import('./navigation').NavRequest) => void) => () => void;
 
   // Fetch a web page and extract its text content
   fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;

@@ -38,6 +38,7 @@ import {
   Message,
 } from '../shared/types';
 import { IPC_SEND_MESSAGE } from '../shared/constants';
+import { NAV_CHANNEL, type NavRequest } from '../shared/navigation';
 
 // No local duplicate ElectronAPI — we import the canonical type above and ensure our implementation matches it.
 
@@ -265,6 +266,14 @@ const electronAPI: ElectronAPI = {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on('homebot:config-recovered', listener);
     return () => ipcRenderer.removeListener('homebot:config-recovered', listener);
+  },
+
+  // The assistant taking the user to another part of the app, with whatever
+  // they were just discussing carried along in `payload`.
+  onNavigate: (cb: (request: NavRequest) => void) => {
+    const listener = (_ev: IpcRendererEvent, request: NavRequest) => cb(request);
+    ipcRenderer.on(NAV_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(NAV_CHANNEL, listener);
   },
 
   onProactiveBriefing: (cb: (data: { content: string }) => void) => {

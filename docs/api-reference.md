@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (176)** — `window.electron`
+**Preload methods (177)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1035,27 +1035,28 @@ mediaFfmpegSetup          mediaFfmpegStatus         mediaList                 me
 mediaParseFeed            mediaReject               mediaRun                  minimizeWindow
 onAssistantToolActivity   onBatchSummary            onBrowserState            onConfigRecovered
 onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied  onHideWindow
-onMediaFfmpegProgress     onMessage                 onModelFallback           onOllamaDownloadProgress
-onOllamaStatus            onPermissionRequest       onProactiveBriefing       onPullModelProgress
-onReminderFired           onSdCppSetupProgress      onShowWindow              onStreamChunk
-onStreamEnd               onStreamError             onSupervisorStatus        onTerminalExit
-onTerminalOutput          onTitleUpdated            onUpdateAvailable         onUpdateDownloaded
-onUpdateProgress          onWidgetModeChanged       openExternalUrl           openFile
-parseDocument             pullModel                 pullModelStream           ragClear
-ragIndex                  ragList                   readConsentLog            readDebugLogs
-readPermissionAudit       readTelemetryEvents       removeHideWindowListener  removeShowWindowListener
-resetPermissions          resolveActiveModel        restartApp                runAutomation
-runDiagnostics            saveConversation          saveQuizProgress          saveSettings
-schedulerAdd              schedulerList             schedulerRemove           schedulerToggle
-sdCppAutoSetup            sdCppSetup                sdCppStatus               searchConversations
-sendConfirmationResponse  sendMessage               sendPermissionResponse    sendStreamMessage
-setActiveConversation     setAlwaysOnTop            setUncensoredMode         showInFolder
-skillsList                skillsOpenFolder          startOllama               startSpeechRecognition
-subscribeToStream         summarizeWebContent       terminalClose             terminalCreate
-terminalKill              terminalRun               testN8nConnection         toggleWidgetMode
-ttsListVoices             ttsSampleVoice            ttsSpeak                  ttsStop
-updateAutomation          updateMessage             workspaceList             workspaceRead
-workspaceRoot             workspaceSave             writeClipboard            writeDocument
+onMediaFfmpegProgress     onMessage                 onModelFallback           onNavigate
+onOllamaDownloadProgress  onOllamaStatus            onPermissionRequest       onProactiveBriefing
+onPullModelProgress       onReminderFired           onSdCppSetupProgress      onShowWindow
+onStreamChunk             onStreamEnd               onStreamError             onSupervisorStatus
+onTerminalExit            onTerminalOutput          onTitleUpdated            onUpdateAvailable
+onUpdateDownloaded        onUpdateProgress          onWidgetModeChanged       openExternalUrl
+openFile                  parseDocument             pullModel                 pullModelStream
+ragClear                  ragIndex                  ragList                   readConsentLog
+readDebugLogs             readPermissionAudit       readTelemetryEvents       removeHideWindowListener
+removeShowWindowListener  resetPermissions          resolveActiveModel        restartApp
+runAutomation             runDiagnostics            saveConversation          saveQuizProgress
+saveSettings              schedulerAdd              schedulerList             schedulerRemove
+schedulerToggle           sdCppAutoSetup            sdCppSetup                sdCppStatus
+searchConversations       sendConfirmationResponse  sendMessage               sendPermissionResponse
+sendStreamMessage         setActiveConversation     setAlwaysOnTop            setUncensoredMode
+showInFolder              skillsList                skillsOpenFolder          startOllama
+startSpeechRecognition    subscribeToStream         summarizeWebContent       terminalClose
+terminalCreate            terminalKill              terminalRun               testN8nConnection
+toggleWidgetMode          ttsListVoices             ttsSampleVoice            ttsSpeak
+ttsStop                   updateAutomation          updateMessage             workspaceList
+workspaceRead             workspaceRoot             workspaceSave             writeClipboard
+writeDocument
 ```
 
 **IPC channels, renderer → main (128)**

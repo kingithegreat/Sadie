@@ -50,7 +50,15 @@ import type { ModelRecommendation } from '../shared/model-advisor';
 
 // Types
 type Status = ConnectionStatus;
-type AppMode = 'chat' | 'automation' | 'image' | 'documents' | 'quiz' | 'dashboard' | 'media' | 'browser';
+// The mode list lives in shared/modes.ts so main can validate against the same
+// one. It was written to be the single source of truth and this file had been
+// restating it, which is how the two could have drifted.
+import type { AppMode } from '../shared/modes';
+import {
+  detectLeakedToolCalls,
+  stripLeakedToolCalls,
+  describeLeak,
+} from '../shared/leaked-tool-calls';
 
 interface AppProps {
   /** Optional initial messages for tests */
@@ -183,6 +191,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       } else if (e.ctrlKey && e.key === '0') {
         e.preventDefault();
         setMode('dashboard');
+      } else if (e.ctrlKey && e.shiftKey && (e.key === 'K' || e.key === 'k')) {
+        e.preventDefault();
+        setMode('code');
       } else if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
         // The Shortcuts panel has advertised "Ctrl + Shift + C — Copy last
         // response" while nothing in the app bound it: pressing it did nothing
@@ -219,6 +230,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
+  // Context handed over when the assistant navigates somewhere — what the user
+  // was talking about, so the destination opens ready rather than empty. Held
+  // here rather than in each panel so a panel can start consuming it without
+  // anything upstream changing.
+  const [navContext, setNavContext] = useState<Record<string, unknown> | null>(null);
   const [vramGB, setVramGB] = useState<number | null>(null);
 
   // Keep the header's model in sync with the router's actual decision.
@@ -429,6 +445,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       );
     });
 
+    // The assistant taking the user to another panel. Chat is meant to be the
+    // front door to everything, so when what someone wants lives in a panel the
+    // model sends them there rather than describing where the button is.
+    //
+    // The payload is stashed before the mode changes so the destination renders
+    // with context on its first paint rather than opening empty and filling in
+    // a frame later.
+    const navigateUnsub = window.electron.onNavigate?.((request) => {
+      setNavContext(request.payload ?? null);
+      setMode(request.mode);
+      if (request.reason) {
+        addToast(request.reason, 'info', 6000);
+      }
+    });
+
     // Subscribe to title updates pushed from main (keeps sidebar title in sync)
     const titleUnsub = window.electron.onTitleUpdated?.((data) => {
       // Dispatch a custom DOM event so ConversationSidebar can patch its local list
@@ -484,6 +515,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       briefingUnsub?.();
       hwUnsub?.();
       configRecoveredUnsub?.();
+      navigateUnsub?.();
       titleUnsub?.();
       ollamaUnsub?.();
       modelFbUnsub?.();
@@ -749,14 +781,33 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             const nextState: StreamingState = cancelled ? "cancelled" : "finished";
             const durationMs = Date.now() - m.createdAt;
 
+            // A reply that WROTE OUT a tool call instead of making one.
+            //
+            // Reported live: asked to test its tools, HomeBot printed
+            // `<|tool_call_begin|> functions.run_terminal_command …` and then
+            // said "Done", having executed nothing. Being told a job was done
+            // that never started is the worst failure this app has.
+            //
+            // Handled here rather than in the router because every one of the
+            // router's many completion paths funnels through this one place,
+            // and because the raw markup must not reach conversation history —
+            // a later model reads it back and copies the pattern, which is how
+            // a local qwen came to emit Anthropic-shaped markup it would never
+            // invent on its own.
+            const leaked = cancelled ? [] : detectLeakedToolCalls(m.content);
+            const content = leaked.length > 0
+              ? `${stripLeakedToolCalls(m.content)}\n\n⚠️ ${describeLeak(leaked)}`
+              : m.content;
+
             const updatedMsg = {
               ...m,
+              content,
               streamingState: nextState,
               updatedAt: Date.now(),
               ...(nextState === "finished" ? { durationMs } : {}),
               ...(payload.model ? { model: payload.model } : {}),
             };
-            
+
             // Persist the final message content
             if (conversationId) {
               updatePersistedMessage(assistantId, {
@@ -1472,7 +1523,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         </ErrorBoundary>
       ) : mode === 'automation' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <AutomationCenter />
+          <AutomationCenter navContext={navContext} />
         </Suspense>
       ) : mode === 'image' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
@@ -1506,6 +1557,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       ) : mode === 'media' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <MediaStudioPanel />
+        </Suspense>
+      ) : mode === 'code' ? (
+        // WorkspaceShell is the VS Code–shaped IDE: Explorer, tabbed editor,
+        // docked terminal, and browser panel. It was reachable only by opening
+        // the Workspace overlay and finding an icon in its activity bar — two
+        // levels deep, with nothing on the main screen suggesting it existed.
+        // The Code mode makes it a first-class destination the assistant can
+        // navigate to directly, carrying context (e.g. "help me with this repo"
+        // opens the workspace pointed at the project root).
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <WorkspaceShell open={true} onClose={() => setMode('chat')} navContext={navContext} />
         </Suspense>
       ) : mode === 'browser' ? (
         // The same panel the Workspace uses. It was reachable only by opening
