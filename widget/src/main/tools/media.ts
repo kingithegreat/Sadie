@@ -43,7 +43,23 @@ export function readJobs(): MediaJob[] {
     const file = jobsFilePath();
     if (!fs.existsSync(file)) return [];
     const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    // The 'analysing' state was removed (it was enterable, terminal, and
+    // consumed by nothing — a one-way trap door). A job persisted in it is in
+    // fact a published video whose analysis never ran, so it reads back as
+    // what is true: published. History keeps the record of where it went.
+    let migrated = false;
+    for (const j of arr) {
+      if (j?.state === 'analysing') {
+        j.state = 'published';
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      try { fs.copyFileSync(file, `${file}.analysing-backup-${Date.now()}`); } catch { /* best effort */ }
+      writeJobs(arr);
+    }
+    return arr;
   } catch (e) {
     // Back up rather than discard — the next write would otherwise overwrite
     // recoverable work, and a media job can represent hours of rendering.
