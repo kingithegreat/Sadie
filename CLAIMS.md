@@ -14,6 +14,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
 | Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
+| Kokoro as optional narration provider | claude/kokoro-narration-provider | Ready for integration | Aden picked Kokoro by ear (2026-08-23). voice.ts provider seam (Edge stays default + fallback; result names the engine that actually rendered), media_narrate `engine` arg, jobs record `narratedWith`, MediaStudioPanel engine picker with voice list that follows the engine and sampling routed through the SAME engine. kokoro-js rides the existing @huggingface/transformers stack (onnxruntime already ships for Whisper) — ~1 MB added, no Python. 10 seam tests; full suite serial green; docs regenerated. Does NOT touch message-router or the render graph. |
 | Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
 | Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Ready for integration | PrivacySwitch.tsx only. |
 

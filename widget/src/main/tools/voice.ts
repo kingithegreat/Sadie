@@ -12,6 +12,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { logTelemetryEvent } from '../utils/logger';
+import { getSettings } from '../config-manager';
+import {
+  KOKORO_DEFAULT_VOICE,
+  isKokoroVoice,
+  type NarrationEngine,
+} from '../../shared/narration';
 
 // ── Preferred voice ──────────────────────────────────────────────────────────
 // Microsoft Ava is the newest, most natural US female neural voice (2024+).
@@ -71,9 +77,85 @@ async function getTTS(voice?: string): Promise<MsEdgeTTS> {
 
 // Ensure cache dir exists
 function ensureCacheDir() {
-  if (!fs.existsSync(TTS_CACHE_DIR)) {
-    fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
+  if (fs.existsSync(TTS_CACHE_DIR)) {
+    return;
   }
+  fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
+}
+
+// ── Narration engines ────────────────────────────────────────────────────────
+//
+// Edge TTS is the default and the fallback. Kokoro-82M runs locally through
+// the SAME onnxruntime stack Whisper speech recognition already ships, so it
+// adds ~1 MB of JS and zero new runtime classes — but it only speaks English,
+// has no pitch control, and its weights (~90 MB) download on first use. Every
+// Kokoro failure falls back to Edge, and the caller is told which engine ran.
+
+let kokoroTTS: any = null;
+let kokoroLoad: Promise<any> | null = null;
+
+async function getKokoro(): Promise<any> {
+  if (kokoroTTS) return kokoroTTS;
+  if (!kokoroLoad) {
+    kokoroLoad = (async () => {
+      const { KokoroTTS } = await import('kokoro-js');
+      console.log('[HomeBot Voice] loading Kokoro-82M — first use downloads ≈90 MB of weights');
+      // q8 + cpu is the configuration that was measured for the decision:
+      // 24 kHz mono PCM, -22.6 dB mean / -4.4 dB max on the A/B script.
+      const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+        dtype: 'q8',
+        device: 'cpu',
+      });
+      kokoroTTS = tts;
+      return tts;
+    })().catch((err) => {
+      kokoroLoad = null; // allow a retry once whatever was missing exists
+      throw err;
+    });
+  }
+  return kokoroLoad;
+}
+
+/** Test seam: drop the cached local model so a suite starts clean. */
+export function __resetKokoroForTest(): void {
+  kokoroTTS = null;
+  kokoroLoad = null;
+}
+
+/** ±percent rate maps onto Kokoro's speed factor, clamped to its sane range. */
+function kokoroSpeed(ratePercent?: number): number {
+  return Math.max(0.5, Math.min(2, 1 + (ratePercent || 0) / 100));
+}
+
+async function renderWithKokoro(
+  text: string,
+  dir: string,
+  opts?: { voice?: string; rate?: number }
+): Promise<{ path: string; bytes: number }> {
+  ensureCacheDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const tts = await getKokoro();
+  // An Edge-style voice name means nothing here; the panel swaps its voice
+  // list when Kokoro is selected, so anything unrecognized falls to Heart.
+  const voice = isKokoroVoice(opts?.voice) ? opts!.voice : KOKORO_DEFAULT_VOICE;
+  const audio = await tts.generate(text, { voice, speed: kokoroSpeed(opts?.rate) });
+  const wav = Buffer.from(audio.toWav());
+  if (wav.length === 0) throw new Error('Kokoro produced no audio');
+  const out = path.join(dir, 'narration.wav');
+  fs.writeFileSync(out, wav);
+  return { path: out, bytes: wav.length };
+}
+
+/**
+ * Which engine should narrate? An explicit request wins (the Media Studio
+ * picker sends one); otherwise the persisted preference; otherwise Edge.
+ */
+export function resolveNarrationEngine(explicit?: unknown): NarrationEngine {
+  if (explicit === 'kokoro' || explicit === 'edge') return explicit;
+  try {
+    if (getSettings().narrationEngine === 'kokoro') return 'kokoro';
+  } catch { /* settings unreadable — default applies */ }
+  return 'edge';
 }
 
 // ============= TOOL DEFINITIONS =============
@@ -93,10 +175,25 @@ function ensureCacheDir() {
 export async function renderNarrationToFile(
   text: string,
   outPath: string,
-  opts?: { voice?: string; rate?: number; pitch?: number },
-): Promise<{ path: string; bytes: number }> {
+  opts?: { voice?: string; rate?: number; pitch?: number; engine?: NarrationEngine }
+): Promise<{ path: string; bytes: number; engine: NarrationEngine }> {
   const clean = (text || '').trim();
   if (!clean) throw new Error('Nothing to narrate — the script is empty.');
+
+  // Kokoro first when asked; ANY failure (weights missing, no window, OOM,
+  // model error) falls back to Edge rather than failing the job. The returned
+  // `engine` is the one that ACTUALLY rendered, so a silent substitution can
+  // never ship unnoticed.
+  if (resolveNarrationEngine(opts?.engine) === 'kokoro') {
+    try {
+      const rendered = await renderWithKokoro(clean, path.dirname(outPath), opts);
+      try { logTelemetryEvent('tts_render', { engine: 'kokoro', outcome: 'success' }); } catch (_e) {}
+      return { ...rendered, engine: 'kokoro' };
+    } catch (err: any) {
+      console.warn(`[HomeBot Voice] Kokoro unavailable (${err?.message || err}); falling back to Edge TTS.`);
+      try { logTelemetryEvent('tts_fallback', { from: 'kokoro', to: 'edge', error: err?.message || String(err) }); } catch (_e) {}
+    }
+  }
 
   const tts = await getTTS(opts?.voice);
   const rate = opts?.rate ?? 0;
@@ -124,7 +221,7 @@ export async function renderNarrationToFile(
   for (const c of candidates) {
     try {
       const st = fs.statSync(c);
-      if (st.size > 0) return { path: c, bytes: st.size };
+      if (st.size > 0) return { path: c, bytes: st.size, engine: 'edge' };
     } catch { /* try the next candidate */ }
   }
   throw new Error('Text-to-speech produced no audio file.');
@@ -258,7 +355,8 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
       result: {
         message: 'Speaking text',
         voice: currentVoice,
-        engine: 'edge-neural',
+        engine: rendered.engine === 'kokoro' ? 'kokoro-local' : 'edge-neural',
+        ...(rendered.engine === 'kokoro' ? { note: 'pitch is not supported by the local engine' } : {}),
         usedFallback: currentVoice === FALLBACK_VOICE,
         textLength: text.length,
       }

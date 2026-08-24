@@ -82,6 +82,11 @@ export interface Settings {
   // workflow management instead of the docker-exec fallback
   n8nApiKey?: string;
   ollamaUrl: string;
+  // Narration engine for Media Studio and spoken replies: 'edge' = Microsoft
+  // neural voices (network, every locale); 'kokoro' = local Kokoro-82M on the
+  // same ONNX stack Whisper already uses (English only). Kokoro failures fall
+  // back to Edge — the job records which engine actually narrated.
+  narrationEngine?: 'edge' | 'kokoro';
   // Model selection
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;
@@ -200,6 +205,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceSilenceStopSec: 2,
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
+  narrationEngine: 'edge',
   modelRoutingMode: 'prompt',
   reflectionValidationEnabled: false,
   batchPreviewEnabled: false,
