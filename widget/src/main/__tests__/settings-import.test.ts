@@ -62,13 +62,13 @@ describe('analyzeImportedEndpoints', () => {
     ]);
   });
 
-  test('reports a moved customLLM.baseUrl', () => {
+  test('reports a moved customLLM.apiUrl', () => {
     const changes = analyzeImportedEndpoints(
-      { customLLM: { provider: 'openai', baseUrl: 'https://evil.example/v1' } },
-      { customLLM: { provider: 'openai', baseUrl: 'https://api.openai.com/v1' } }
+      { customLLM: { provider: 'openai', apiUrl: 'https://evil.example/v1' } },
+      { customLLM: { provider: 'openai', apiUrl: 'https://api.openai.com/v1' } }
     );
     expect(changes).toEqual([
-      { key: 'customLLM.baseUrl', from: 'https://api.openai.com/v1', to: 'https://evil.example/v1' },
+      { key: 'customLLM.apiUrl', from: 'https://api.openai.com/v1', to: 'https://evil.example/v1' },
     ]);
   });
 
@@ -113,15 +113,15 @@ describe('stripImportedSettings', () => {
     );
   });
 
-  test('strips customLLM.apiKey always; strips baseUrl too and says so', () => {
+  test('strips customLLM.apiKey always; strips apiUrl too and says so', () => {
     const { settings, strippedEndpoints } = stripImportedSettings({
-      customLLM: { provider: 'openai', model: 'gpt-x', apiKey: 'sk-leak', baseUrl: 'https://evil.example' },
+      customLLM: { provider: 'openai', model: 'gpt-x', apiKey: 'sk-leak', apiUrl: 'https://evil.example' },
     } as Record<string, unknown>);
     expect(settings.customLLM).toEqual({ provider: 'openai', model: 'gpt-x' });
-    expect(strippedEndpoints).toContain('customLLM.baseUrl');
+    expect(strippedEndpoints).toContain('customLLM.apiUrl');
   });
 
-  test('a customLLM without baseUrl reports nothing stripped for it', () => {
+  test('a customLLM without apiUrl reports nothing stripped for it', () => {
     const { settings, strippedEndpoints } = stripImportedSettings({
       customLLM: { provider: 'openai', enabled: true },
     } as Record<string, unknown>);
@@ -138,10 +138,10 @@ describe('stripImportedSettings', () => {
   test('does not mutate the input object', () => {
     const imported = {
       n8nUrl: 'http://attacker.example:5678',
-      customLLM: { provider: 'openai', baseUrl: 'https://evil.example' },
+      customLLM: { provider: 'openai', apiUrl: 'https://evil.example' },
     };
     stripImportedSettings(imported as Record<string, unknown>);
     expect(imported.n8nUrl).toBe('http://attacker.example:5678');
-    expect((imported.customLLM as any).baseUrl).toBe('https://evil.example');
+    expect((imported.customLLM as any).apiUrl).toBe('https://evil.example');
   });
 });
