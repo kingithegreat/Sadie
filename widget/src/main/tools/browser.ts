@@ -15,6 +15,7 @@ import { promisify } from 'util';
 import * as https from 'https';
 import * as http from 'http';
 import * as zlib from 'zlib';
+import { isPrivateIPv6 } from '../utils/url-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const execAsync = promisify(exec);
@@ -38,12 +39,17 @@ function isSafeUrl(raw: string): boolean {
     /^10\./.test(host) ||
     /^192\.168\./.test(host) ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    /^::1$/.test(host) ||
+    /^169\.254\./.test(host) ||
     /^0\./.test(host) ||
+    /^::1$/.test(host) ||
     host === '' ||
     host.endsWith('.local') ||
     host.endsWith('.internal')
   ) {
+    return false;
+  }
+  // IPv6 hosts: loopback/ULA/link-local/IPv4-mapped private forms
+  if (host.includes(':') && isPrivateIPv6(host)) {
     return false;
   }
   return true;
@@ -232,6 +238,12 @@ export function fetchHtml(url: string, redirectsLeft = 3): Promise<string> {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         if (redirectsLeft <= 0) return reject(new Error('Too many redirects'));
         const next = new URL(res.headers.location, url).toString();
+        // Re-validate EVERY hop: a public page that 302s at localhost or a
+        // private address would otherwise turn fetch_page_content into an
+        // SSRF probe of the machine's own services.
+        if (!isSafeUrl(next)) {
+          return reject(new Error(`Redirect blocked: ${next}`));
+        }
         return resolve(fetchHtml(next, redirectsLeft - 1));
       }
       const chunks: Buffer[] = [];

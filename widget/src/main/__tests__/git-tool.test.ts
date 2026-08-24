@@ -1,28 +1,47 @@
 /**
  * Git Tool Tests
+ *
+ * The tool invokes `execFile('git', args)` — arguments go to git as an ARGV
+ * array and never through a shell, so these tests assert on the args arrays.
+ * The pre-argv tests asserted shell-shaped strings ("commit -m \"...\"") and
+ * character whitelisting that only existed to survive `exec("git " + cmd)`;
+ * those guards were the vulnerability's footprint, not its fix.
  */
 
 import * as os from 'os';
 import * as path from 'path';
 
-// Mock child_process
-const mockExecImpl = jest.fn();
-jest.mock('child_process', () => ({ exec: mockExecImpl }));
+// Mock child_process — callback style, as promisify(execFile) expects.
+const mockExecFileImpl = jest.fn();
+jest.mock('child_process', () => ({ execFile: mockExecFileImpl }));
 
-function mockExecResolve(stdout: string) {
-  mockExecImpl.mockImplementation((_cmd: string, _opts: any, cb?: Function) => {
+function mockResolve(stdout: string) {
+  mockExecFileImpl.mockImplementation((_file: string, _args: string[], _opts: any, cb?: Function) => {
     const callback = typeof _opts === 'function' ? _opts : cb;
     if (callback) callback(null, { stdout, stderr: '' });
-    return { on: jest.fn() };
   });
 }
 
-function mockExecReject(message: string) {
-  mockExecImpl.mockImplementation((_cmd: string, _opts: any, cb?: Function) => {
+function mockReject(message: string) {
+  mockExecFileImpl.mockImplementation((_file: string, _args: string[], _opts: any, cb?: Function) => {
     const callback = typeof _opts === 'function' ? _opts : cb;
     if (callback) callback(new Error(message), null);
-    return { on: jest.fn() };
   });
+}
+
+/** One stdout per successive execFile call (handlers often make two). */
+function mockResolveSequence(stdouts: string[]) {
+  for (const stdout of stdouts) {
+    mockExecFileImpl.mockImplementationOnce((_file: string, _args: string[], _opts: any, cb?: Function) => {
+      const callback = typeof _opts === 'function' ? _opts : cb;
+      if (callback) callback(null, { stdout, stderr: '' });
+    });
+  }
+}
+
+/** The argv of the Nth execFile call (0-based). */
+function nthArgs(n: number): string[] {
+  return mockExecFileImpl.mock.calls[n][1];
 }
 
 import {
@@ -77,22 +96,15 @@ describe('git tool definitions', () => {
 
 describe('gitStatusHandler', () => {
   test('parses porcelain output correctly', async () => {
-    mockExecImpl
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'M  src/foo.ts\n?? newfile.ts\n', stderr: '' });
-        return { on: jest.fn() };
-      })
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'main\n', stderr: '' });
-        return { on: jest.fn() };
-      });
+    mockResolveSequence(['M  src/foo.ts\n?? newfile.ts\n', 'main\n']);
 
     const res = await gitStatusHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.branch).toBe('main');
     expect(res.result.untracked).toContain('newfile.ts');
+    // First call is status, second resolves the branch name
+    expect(nthArgs(0)).toEqual(['status', '--porcelain=v1']);
+    expect(nthArgs(1)).toEqual(['rev-parse', '--abbrev-ref', 'HEAD']);
   });
 
   test('rejects repo outside home dir', async () => {
@@ -101,18 +113,16 @@ describe('gitStatusHandler', () => {
     expect(res.error).toContain('home directory');
   });
 
+  test('rejects a sibling directory that merely prefixes home', async () => {
+    // C:\Users\<user>-evil must not pass a C:\Users\<user> check
+    const sibling = HOME + '-evil\\repo';
+    const res = await gitStatusHandler({ repo_path: sibling }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('home directory');
+  });
+
   test('reports clean when no modifications', async () => {
-    mockExecImpl
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: '', stderr: '' });
-        return { on: jest.fn() };
-      })
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'main\n', stderr: '' });
-        return { on: jest.fn() };
-      });
+    mockResolve('');
 
     const res = await gitStatusHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(true);
@@ -120,17 +130,7 @@ describe('gitStatusHandler', () => {
   });
 
   test('detects staged files', async () => {
-    mockExecImpl
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'A  newfile.ts\nM  edited.ts\n', stderr: '' });
-        return { on: jest.fn() };
-      })
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'develop\n', stderr: '' });
-        return { on: jest.fn() };
-      });
+    mockResolve('A  newfile.ts\nM  edited.ts\n');
 
     const res = await gitStatusHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(true);
@@ -139,7 +139,7 @@ describe('gitStatusHandler', () => {
   });
 
   test('handles exec failure gracefully', async () => {
-    mockExecReject('Not a git repository');
+    mockReject('Not a git repository');
     const res = await gitStatusHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toContain('git_status failed');
@@ -153,7 +153,7 @@ describe('gitLogHandler', () => {
     const logOutput =
       '"abc123|Alice|alice@x.com|2026-03-01|Initial commit"\n' +
       '"def456|Bob|bob@x.com|2026-03-02|Add feature"';
-    mockExecResolve(logOutput);
+    mockResolve(logOutput);
 
     const res = await gitLogHandler({ repo_path: SAFE_REPO, limit: 5 }, {} as any);
     expect(res.success).toBe(true);
@@ -165,32 +165,31 @@ describe('gitLogHandler', () => {
   });
 
   test('respects limit', async () => {
-    mockExecResolve('"abc|A|a@b.com|2026-03-01|msg"');
+    mockResolve('"abc|A|a@b.com|2026-03-01|msg"');
     const res = await gitLogHandler({ repo_path: SAFE_REPO, limit: 1 }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.commits.length).toBeLessThanOrEqual(1);
   });
 
   test('clamps limit to 50 max', async () => {
-    mockExecResolve('"abc|A|a@b.com|2026-03-01|msg"');
+    mockResolve('"abc|A|a@b.com|2026-03-01|msg"');
     await gitLogHandler({ repo_path: SAFE_REPO, limit: 999 }, {} as any);
-    const cmd = mockExecImpl.mock.calls[0][0];
-    expect(cmd).toContain('-n 50');
+    const args = nthArgs(0);
+    const nIdx = args.indexOf('-n');
+    expect(args[nIdx + 1]).toBe('50');
   });
 
   test('accepts branch argument', async () => {
-    mockExecResolve('"abc|A|a@b.com|2026-03-01|msg"');
+    mockResolve('"abc|A|a@b.com|2026-03-01|msg"');
     await gitLogHandler({ repo_path: SAFE_REPO, branch: 'develop' }, {} as any);
-    const cmd = mockExecImpl.mock.calls[0][0];
-    expect(cmd).toContain('develop');
+    expect(nthArgs(0)).toContain('develop');
   });
 
   test('sanitizes branch argument', async () => {
-    mockExecResolve('"abc|A|a@b.com|2026-03-01|msg"');
+    mockResolve('"abc|A|a@b.com|2026-03-01|msg"');
     await gitLogHandler({ repo_path: SAFE_REPO, branch: 'main; rm -rf /' }, {} as any);
-    const cmd = mockExecImpl.mock.calls[0][0];
-    // Semicolons and spaces should be stripped
-    expect(cmd).not.toContain(';');
+    // Semicolons are stripped before the value ever reaches an argv slot
+    expect(nthArgs(0).some((a) => a.includes(';'))).toBe(false);
   });
 
   test('rejects path outside home', async () => {
@@ -200,14 +199,14 @@ describe('gitLogHandler', () => {
   });
 
   test('handles exec failure gracefully', async () => {
-    mockExecReject('fatal: not a git repository');
+    mockReject('fatal: not a git repository');
     const res = await gitLogHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toContain('git_log failed');
   });
 
   test('handles pipe character in commit message', async () => {
-    mockExecResolve('"abc|A|a@b.com|2026-03-01|fix: use X | Y fallback"');
+    mockResolve('"abc|A|a@b.com|2026-03-01|fix: use X | Y fallback"');
     const res = await gitLogHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.commits[0].message).toContain('|');
@@ -218,36 +217,33 @@ describe('gitLogHandler', () => {
 
 describe('gitDiffHandler', () => {
   test('returns staged diff', async () => {
-    mockExecResolve('diff --git a/foo.ts b/foo.ts\n+added line');
+    mockResolve('diff --git a/foo.ts b/foo.ts\n+added line');
     const res = await gitDiffHandler({ repo_path: SAFE_REPO, target: 'staged' }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.diff).toContain('added line');
+    expect(nthArgs(0)).toEqual(['diff', '--cached']);
   });
 
   test('defaults to unstaged diff', async () => {
-    mockExecResolve('-removed line\n+added line');
+    mockResolve('-removed line\n+added line');
     await gitDiffHandler({ repo_path: SAFE_REPO }, {} as any);
-    const cmd = mockExecImpl.mock.calls[0][0];
-    expect(cmd).toContain('git diff');
-    expect(cmd).not.toContain('--cached');
+    expect(nthArgs(0)).toEqual(['diff']);
   });
 
   test('accepts custom ref target', async () => {
-    mockExecResolve('diff output here');
+    mockResolve('diff output here');
     await gitDiffHandler({ repo_path: SAFE_REPO, target: 'HEAD~1' }, {} as any);
-    const cmd = mockExecImpl.mock.calls[0][0];
-    expect(cmd).toContain('HEAD~1');
+    expect(nthArgs(0)).toEqual(['diff', 'HEAD~1']);
   });
 
   test('sanitizes target argument', async () => {
-    mockExecResolve('diff output');
+    mockResolve('diff output');
     await gitDiffHandler({ repo_path: SAFE_REPO, target: 'HEAD; rm -rf /' }, {} as any);
-    const cmd = mockExecImpl.mock.calls[0][0];
-    expect(cmd).not.toContain(';');
+    expect(nthArgs(0).some((a) => a.includes(';'))).toBe(false);
   });
 
   test('truncation flag set when diff > 8KB', async () => {
-    mockExecResolve('x'.repeat(9000));
+    mockResolve('x'.repeat(9000));
     const res = await gitDiffHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.result.truncated).toBe(true);
     expect(res.result.diff.length).toBe(8192);
@@ -255,7 +251,7 @@ describe('gitDiffHandler', () => {
   });
 
   test('no truncation for small diff', async () => {
-    mockExecResolve('small diff');
+    mockResolve('small diff');
     const res = await gitDiffHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.result.truncated).toBe(false);
   });
@@ -267,7 +263,7 @@ describe('gitDiffHandler', () => {
   });
 
   test('handles exec failure gracefully', async () => {
-    mockExecReject('fatal: not a git repository');
+    mockReject('fatal: not a git repository');
     const res = await gitDiffHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toContain('git_diff failed');
@@ -278,17 +274,7 @@ describe('gitDiffHandler', () => {
 
 describe('gitBranchesHandler', () => {
   test('parses branch list', async () => {
-    mockExecImpl
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: '"main|abc123|"\n"feature|def456|origin/feature"', stderr: '' });
-        return { on: jest.fn() };
-      })
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'main', stderr: '' });
-        return { on: jest.fn() };
-      });
+    mockResolveSequence(['"main|abc123|"\n"feature|def456|origin/feature"', 'main\n']);
 
     const res = await gitBranchesHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(true);
@@ -299,17 +285,7 @@ describe('gitBranchesHandler', () => {
   });
 
   test('marks current branch correctly', async () => {
-    mockExecImpl
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: '"main|abc|"\n"develop|def|"', stderr: '' });
-        return { on: jest.fn() };
-      })
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'develop', stderr: '' });
-        return { on: jest.fn() };
-      });
+    mockResolveSequence(['"main|abc|"\n"develop|def|"', 'develop']);
 
     const res = await gitBranchesHandler({ repo_path: SAFE_REPO }, {} as any);
     const develop = res.result.branches.find((b: any) => b.name === 'develop');
@@ -319,38 +295,17 @@ describe('gitBranchesHandler', () => {
   });
 
   test('upstream is null when not set', async () => {
-    mockExecImpl
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: '"main|abc|"', stderr: '' });
-        return { on: jest.fn() };
-      })
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'main', stderr: '' });
-        return { on: jest.fn() };
-      });
+    mockResolveSequence(['"main|abc|"', 'main\n']);
 
     const res = await gitBranchesHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.result.branches[0].upstream).toBeNull();
   });
 
   test('passes -a flag when include_remote is true', async () => {
-    mockExecImpl
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: '"main|abc|"', stderr: '' });
-        return { on: jest.fn() };
-      })
-      .mockImplementationOnce((_cmd: string, _opts: any, cb?: Function) => {
-        const callback = typeof _opts === 'function' ? _opts : cb;
-        if (callback) callback(null, { stdout: 'main', stderr: '' });
-        return { on: jest.fn() };
-      });
+    mockResolve('"main|abc|"');
 
     await gitBranchesHandler({ repo_path: SAFE_REPO, include_remote: true }, {} as any);
-    const cmd = mockExecImpl.mock.calls[0][0];
-    expect(cmd).toContain('-a');
+    expect(nthArgs(0)).toContain('-a');
   });
 
   test('rejects path outside home', async () => {
@@ -360,7 +315,7 @@ describe('gitBranchesHandler', () => {
   });
 
   test('handles exec failure gracefully', async () => {
-    mockExecReject('fatal: not a git repository');
+    mockReject('fatal: not a git repository');
     const res = await gitBranchesHandler({ repo_path: SAFE_REPO }, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toContain('git_branches failed');
@@ -377,43 +332,43 @@ describe('gitCommitHandler', () => {
   });
 
   test('stages and commits', async () => {
-    mockExecResolve('[main abc123] My commit');
+    mockResolve('[main abc123] My commit');
     const res = await gitCommitHandler({ repo_path: SAFE_REPO, message: 'My commit' }, {} as any);
     expect(res.success).toBe(true);
   });
 
   test('runs git add -A by default', async () => {
-    mockExecResolve('[main abc123] commit');
+    mockResolve('[main abc123] commit');
     await gitCommitHandler({ repo_path: SAFE_REPO, message: 'test' }, {} as any);
-    const firstCmd = mockExecImpl.mock.calls[0][0];
-    expect(firstCmd).toContain('add -A');
+    expect(nthArgs(0)).toEqual(['add', '-A']);
+    expect(nthArgs(1)[0]).toBe('commit');
   });
 
   test('skips staging when stage_all is false', async () => {
-    mockExecResolve('[main abc123] commit');
+    mockResolve('[main abc123] commit');
     await gitCommitHandler({ repo_path: SAFE_REPO, message: 'test', stage_all: false }, {} as any);
-    // Only one call (commit), no add -A
-    const cmds = mockExecImpl.mock.calls.map((c: any[]) => c[0]);
-    expect(cmds.every((c: string) => !c.includes('add -A'))).toBe(true);
+    // Only one call (commit), no add
+    expect(mockExecFileImpl.mock.calls).toHaveLength(1);
+    expect(nthArgs(0)).toEqual(['commit', '-m', 'test']);
   });
 
-  test('sanitizes commit message (strips dangerous chars)', async () => {
-    mockExecResolve('[main abc123] safe message');
-    await gitCommitHandler({ repo_path: SAFE_REPO, message: 'fix: "quotes" & `backticks` $var' }, {} as any);
-    const commitCmd = mockExecImpl.mock.calls.find((c: any[]) => c[0].includes('commit'));
-    // Backticks, dollar signs should be stripped
-    expect(commitCmd[0]).not.toContain('`');
-    expect(commitCmd[0]).not.toContain('$');
+  test('passes the commit message verbatim as one argv element', async () => {
+    // With execFile there is no shell to escape for — quotes, backticks and
+    // dollar signs are inert data, so they must arrive untouched. The old
+    // charset whitelist existed only to survive the string-command form.
+    mockResolve('[main abc123] safe message');
+    const message = 'fix: handle "quotes" & `backticks` and $vars';
+    await gitCommitHandler({ repo_path: SAFE_REPO, message }, {} as any);
+    const commitCall = mockExecFileImpl.mock.calls.find((c: any[]) => c[1][0] === 'commit');
+    expect(commitCall[1]).toEqual(['commit', '-m', message]);
   });
 
-  test('truncates long messages to 200 chars', async () => {
-    mockExecResolve('[main abc123] truncated');
-    const longMsg = 'a'.repeat(300);
+  test('truncates long messages to 500 chars', async () => {
+    mockResolve('[main abc123] truncated');
+    const longMsg = 'a'.repeat(600);
     await gitCommitHandler({ repo_path: SAFE_REPO, message: longMsg }, {} as any);
-    const commitCmd = mockExecImpl.mock.calls.find((c: any[]) => c[0].includes('commit'));
-    // The message in the git command should be capped
-    const msgMatch = commitCmd[0].match(/commit -m "(.*)"/);
-    expect(msgMatch[1].length).toBeLessThanOrEqual(200);
+    const commitCall = mockExecFileImpl.mock.calls.find((c: any[]) => c[1][0] === 'commit');
+    expect(commitCall[1][2].length).toBe(500);
   });
 
   test('rejects path outside home dir', async () => {
@@ -423,7 +378,7 @@ describe('gitCommitHandler', () => {
   });
 
   test('handles exec failure gracefully', async () => {
-    mockExecReject('nothing to commit, working tree clean');
+    mockReject('nothing to commit, working tree clean');
     const res = await gitCommitHandler({ repo_path: SAFE_REPO, message: 'test' }, {} as any);
     expect(res.success).toBe(false);
     expect(res.error).toContain('git_commit failed');
