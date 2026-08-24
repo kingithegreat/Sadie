@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as childProcess from 'child_process';
 import { app } from 'electron';
 import { isE2E } from '../env';
+import { isPrivateIPv6 } from '../utils/url-boundary';
 
 // Keep-alive agents — reuse TCP+TLS connections across requests
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 6, timeout: 60000 });
@@ -260,8 +261,8 @@ async function isUrlSafe(urlString: string): Promise<{ ok: boolean; message?: st
     return { ok: true };
   }
   if (ipVersion === 6) {
-    // block IPv6 loopback
-    if (hostname === '::1') return { ok: false, message: 'IPv6 loopback blocked' };
+    // block IPv6 loopback, ULA, link-local and IPv4-mapped private forms
+    if (isPrivateIPv6(hostname)) return { ok: false, message: 'Private/loopback IPv6 blocked' };
     return { ok: true };
   }
 
@@ -274,7 +275,7 @@ async function isUrlSafe(urlString: string): Promise<{ ok: boolean; message?: st
         if (rec.address.startsWith('127.')) return { ok: false, message: 'Resolved to loopback' };
       }
       if (rec.family === 6) {
-        if (rec.address === '::1') return { ok: false, message: 'Resolved to IPv6 loopback' };
+        if (isPrivateIPv6(rec.address)) return { ok: false, message: 'Resolved to private/loopback IPv6' };
       }
     }
   } catch (err) {

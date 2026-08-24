@@ -17,6 +17,7 @@ import { exec } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
+import { isWithinHomeDir } from '../utils/home-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const execAsync = promisify(exec);
@@ -90,7 +91,7 @@ function isSafe(cmd: string): { safe: boolean; reason?: string } {
 /** Exported so the terminal panel confines sessions to the same home-dir sandbox. */
 export function validateCwd(rawPath: string): { valid: boolean; resolved: string; error?: string } {
   const resolved = path.resolve(rawPath || process.cwd());
-  if (!resolved.toLowerCase().startsWith(HOME_DIR.toLowerCase())) {
+  if (!isWithinHomeDir(resolved, HOME_DIR)) {
     return { valid: false, resolved, error: `Working directory must be within home directory (${HOME_DIR})` };
   }
   // Check that the directory actually exists
