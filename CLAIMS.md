@@ -210,3 +210,77 @@ Do not start one in parallel.
   from that list. **Do not write a second mode-switching mechanism.**
 - **`SearchBlockedError` + `isSearchBlockPage`** in `tools/web.ts` — being refused is not the
   same as finding nothing, and only the first can be fixed by the user.
+
+## Rules of the road — agent tooling, 2026-08-24
+
+No product code changed here. This is the per-tool wiring so Cline and Copilot can honour the
+rules the other files already state.
+
+**Copilot could not verify anything, and that is why nothing of its landed.** Its entire commit
+history in this repo is four `Initial plan` commits and a VS Code session checkpoint; its three
+branches sit ~50 commits behind main with nothing merged. Two causes, both environmental:
+
+1. Its ephemeral environment had no `node_modules`, so the verification command in
+   `.github/copilot-instructions.md` could not run.
+2. Even installed, the widget suite cannot pass on Linux — 43 test files write to `os.tmpdir()`
+   and the main-process file tools refuse anything outside `os.homedir()`. `ci.yml` already
+   records the cost: 92 failures across 10 suites on ubuntu.
+
+`.github/workflows/copilot-setup-steps.yml` fixes both — both packages installed,
+`better-sqlite3` rebuilt against Node, and `TMPDIR` pointed inside `$HOME` (the Linux analogue of
+`ci.yml`'s Windows TEMP step). **It does nothing until it is on `main`** — the platform only reads
+it from the default branch, and the job must stay named `copilot-setup-steps`.
+
+**The `TMPDIR` fix is measured, not reasoned.** Run on Linux 2026-08-24 against this tree, same
+command, only `TMPDIR` differing:
+
+| | Suites failed | Tests failed |
+|---|---|---|
+| without `TMPDIR` | 4 | 79 |
+| `TMPDIR="$HOME/homebot-test-tmp"` | 1 | 5 |
+
+The 74 that flip are `codebase-tool`, `edit-file-tool` and `filesystem` — all denied by the home
+boundary, none of them bugs.
+
+The 5 that remain are all `sd-cpp-setup.test.ts` and share one cause: `sd-cpp-setup.ts:177`
+throws "Automatic setup currently supports Windows only." That is a product decision, not a
+broken test, so **on Linux 5 failures in that one suite is the clean result.** Recorded in the
+instruction files so no agent burns a session "fixing" it or reports it as a regression.
+
+Still unobserved: the same run inside an actual Copilot session. The environment is a GitHub
+Actions Linux runner either way, so the mechanism is the same, but `copilot-setup-steps` exporting
+`TMPDIR` via `GITHUB_ENV` into the agent's own shell is the one link that cannot be checked from
+outside. That is why the instructions also pass `TMPDIR` on the command line. First agent to run
+there: confirm the count is 5.
+
+**New files, and what reads them:**
+
+| Path | Read by | Holds |
+|---|---|---|
+| `.github/workflows/copilot-setup-steps.yml` | Copilot agent | Dependency install + `TMPDIR` |
+| `.github/instructions/*.instructions.md` | Copilot cloud agent, Copilot code review | Rules scoped by `applyTo` glob — they arrive only when you open matching files |
+| `.clinerules/` (now a **folder**) | Cline | All `.md` combined; was a single file |
+| `.clinerules/workflows/*.md` | Cline | `/verify.md`, `/claim.md`, `/identity.md` — runnable, not prose |
+| `.clineignore` | Cline | Read filter: build output, lockfiles, binaries |
+
+Because `.clinerules/` is now a folder, Cline no longer falls back to `AGENTS.md` on its own —
+`01-homebot.md` instructs it to read that first, so keep that line intact.
+
+**Two things only Aden can do**, both one click:
+
+- Turn on the repo setting that skips workflow approval for Copilot coding agent Actions runs.
+  Until then the `action_required` loop in `AGENTS.md` has to be run after every bot push — ten
+  runs were held in one day, five for three days.
+- Nothing else. The rest of this is in the repo.
+
+**Division of labour, because the tools are not interchangeable.** Cline runs on Aden's Windows
+box and can run the widget suite, so it owns `widget/` work. Linux-bound agents (Copilot, Claude
+Code on the web) are better spent on the root package, pure modules in `src/`, docs, CI and n8n
+workflows — and must write "unit tests not run in this environment" rather than implying green.
+
+**Attribution is still broken and this only half-fixes it.** 686 commits share the identity
+`kingithegreat <adenk@example.com>`, so `git blame` cannot say which agent wrote a line, and the
+Media Studio track credited to ox-alpha above cannot be verified from git at all. Exactly one
+commit in repo history is attributable to it. `/identity.md` sets a repo-local `git config
+user.name` for Cline; Copilot already signs as `copilot-swe-agent[bot]`. Existing history is not
+rewritable — this only fixes commits from here on.
