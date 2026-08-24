@@ -3,6 +3,15 @@
 **Read `AGENTS.md` in the repo root before your first edit.** It is the full brief and it is short.
 Then read the tail of `CLAIMS.md` to see what other agents are building right now.
 
+These rules used to be a single `.clinerules` file. They are now a folder, which
+means two things: Cline reads every `.md` here as one combined ruleset, and
+`workflows/` holds runnable procedures you invoke by name — `/verify.md`,
+`/claim.md`, `/identity.md`. Rules 1 and 3 below have a workflow each; run the
+workflow rather than reimplementing it from the prose.
+
+Because this folder exists, Cline no longer falls back to `AGENTS.md` on its own.
+That is why the line above is an instruction: read it anyway, it is the brief.
+
 Repeated here because these five cost hours when missed:
 
 1. **Several agents work this repo at once.** Run `git worktree list` and `git status` before any
