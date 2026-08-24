@@ -776,7 +776,12 @@ export async function executeToolBatch(
     const callStartedAt = Date.now();
     // Prepare execution context including any transient overrides
     const callContext = { ...(context || {} as any), overrideAllowed: Array.from(overrides) } as any;
-    // If this call is explicitly overridden, call the handler directly (so tools can honor overrideAllowed)
+    // If this call is explicitly overridden, skip the PERMISSION check — the
+    // user just granted it by clicking "Allow once" on THIS batch, which is
+    // itself user consent for running it now. The per-call confirmation
+    // question still fires when a live channel exists, because argument
+    // detail ("which file gets deleted") is worth one more click when someone
+    // can answer it; modal-only flows have already had their click.
     if (overrides.has(call.name)) {
       const tool = getTool(call.name);
       if (!tool) {
@@ -784,6 +789,23 @@ export async function executeToolBatch(
         results.push(r);
         recordOutcome(call, r, callStartedAt);
         continue;
+      }
+      if (
+        tool.definition.requiresConfirmation &&
+        !hasStandingConsent(call.name) &&
+        callContext.requestConfirmation
+      ) {
+        try {
+          const confirmed = await callContext.requestConfirmation(
+            formatConfirmationMessage(call.name, call.arguments)
+          );
+          if (!confirmed) {
+            const r = { success: false, error: 'Operation cancelled by user' } as ToolResult;
+            results.push(r);
+            recordOutcome(call, r, callStartedAt);
+            continue;
+          }
+        } catch { /* a broken channel must not block an explicit grant */ }
       }
       try {
         const r = await tool.handler(call.arguments, callContext);
