@@ -504,3 +504,58 @@ describe('FirstRunModal — hardware-aware path recommendation', () => {
     expect(screen.getByText('Online').closest('button')).toBeEnabled();
   });
 });
+
+describe('FirstRunModal — free-setup guidance (Track D)', () => {
+  // The plan's finding: HomeBot is already almost entirely free, and the gap is
+  // that a newcomer is never told so in the moment they are choosing. Two ways
+  // that failed here: the provider grid listed paid-only services above the
+  // free ones, and every provider's specific freeHint text was defined but
+  // never rendered — only its truthiness, to light up a one-word badge.
+
+  async function renderCloudStep() {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('Online'));
+    });
+  }
+
+  test('every free-tier provider appears above every paid-only one', async () => {
+    await renderCloudStep();
+    const chips = Array.from(document.querySelectorAll('.wizard-cloud-chip'));
+    const pos = (name: string) =>
+      chips.findIndex(c => c.textContent?.startsWith(name));
+    const freeOnes = ['Groq', 'OpenRouter', 'Google AI Studio', 'Google Gemini Native', 'Cerebras', 'SambaNova', 'Hugging Face'];
+    const paidOnes = ['Anthropic', 'OpenAI', 'DeepSeek', 'Together AI'];
+    for (const f of freeOnes) expect(pos(f)).toBeGreaterThanOrEqual(0);
+    for (const p of paidOnes) expect(pos(p)).toBeGreaterThanOrEqual(0);
+    const lastFree = Math.max(...freeOnes.map(pos));
+    const firstPaid = Math.min(...paidOnes.map(pos));
+    expect(lastFree).toBeLessThan(firstPaid);
+  });
+
+  test('the selected provider’s actual free promise is written out, not just a "free" badge', async () => {
+    await renderCloudStep();
+    // Groq is the default selection.
+    expect(screen.getByText('Groq: Free tier available.')).toBeInTheDocument();
+    // Switching providers swaps the promise with it.
+    fireEvent.click(screen.getByRole('button', { name: /Cerebras/ }));
+    expect(screen.getByText('Cerebras: Free tier.')).toBeInTheDocument();
+    expect(screen.queryByText('Groq: Free tier available.')).not.toBeInTheDocument();
+  });
+
+  test('a paid-only provider makes no free claim at all', async () => {
+    await renderCloudStep();
+    fireEvent.click(screen.getByRole('button', { name: /Anthropic/ }));
+    // No hint line renders for it — silence is honest; inventing a promise is not.
+    expect(screen.queryByText(/: Free tier/)).not.toBeInTheDocument();
+  });
+
+  test('the welcome card says free tiers exist instead of assuming every option is free', () => {
+    render(
+      <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
+    );
+    expect(screen.getByText(/Several providers have genuinely free tiers/i)).toBeInTheDocument();
+  });
+});
