@@ -14,6 +14,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 // Lazy-load panels that aren't visible on first render
 const ToolsPanel = lazy(() => import("./components/ToolsPanel"));
 const FeedsPanel = lazy(() => import("./components/FeedsPanel"));
+const ConnectionsPanel = lazy(() => import("./components/ConnectionsPanel"));
 const SettingsPanel = lazy(() => import("./components/SettingsPanel"));
 const FirstRunModal = lazy(() => import('./components/FirstRunModal'));
 const ConversationSidebar = lazy(() => import("./components/ConversationSidebar"));
@@ -1586,6 +1587,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       ) : mode === 'feeds' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <FeedsPanel navContext={navContext} />
+        </Suspense>
+      ) : mode === 'connections' ? (
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <ConnectionsPanel navContext={navContext} />
         </Suspense>
       ) : (
         // Quiz is the final branch now. The Web Services panel used to be the
