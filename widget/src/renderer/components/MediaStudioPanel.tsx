@@ -17,6 +17,7 @@ import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
+import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 
 type MediaJobState =
   | 'idea' | 'researching' | 'script_draft' | 'script_qa' | 'media_production'
@@ -36,6 +37,9 @@ interface MediaJob {
   script?: string;
   /** Set once narration has been recorded; absolute path to the MP3. */
   narrationPath?: string;
+  /** Which engine actually narrated ('edge' | 'kokoro') — a silent fallback
+   *  must be visible here, not discoverable by ear after publishing. */
+  narratedWith?: string;
   /**
    * Set once the render stage has produced a file; absolute path to the MP4.
    *
@@ -126,9 +130,13 @@ export const MediaStudioPanel: React.FC = () => {
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatIdeas, setChatIdeas] = useState<Array<{ id: string; content: string; createdAt: number }> | null>(null);
   // Narration voice picker. Voices load lazily with the first narrate action;
-  // sampling renders a short clip to a temp file and plays it.
+  // sampling renders a short clip to a temp file and plays it. The ENGINE is
+  // persisted (narrationEngine) and the voice list follows it — an Edge voice
+  // name means nothing to the local model, so offering it next to "record"
+  // would be a silent mismatch waiting to ship.
   const [voices, setVoices] = useState<Array<{ name: string; friendlyName?: string; locale?: string }> | null>(null);
   const [narrateVoice, setNarrateVoice] = useState('');
+  const [narrateEngine, setNarrateEngine] = useState<'' | 'edge' | 'kokoro'>('');
   const [sampling, setSampling] = useState<string | null>(null);
   /** Last rendered voice sample, played inline via file:// like the previews. */
   const [samplePath, setSamplePath] = useState<string | null>(null);
@@ -323,7 +331,7 @@ export const MediaStudioPanel: React.FC = () => {
 
   /** Neural voices for the narration picker — loaded once, on first use. */
   const ensureVoices = async () => {
-    if (voices) return;
+    if (voices || narrateEngine === 'kokoro') return; // kokoro's list is local, nothing to fetch
     try {
       const res = await api()?.ttsListVoices?.();
       const list = res?.result?.voices;
@@ -331,11 +339,33 @@ export const MediaStudioPanel: React.FC = () => {
     } catch { /* picker stays on "Default voice" — narration still works */ }
   };
 
-  /** Render a short sample of a voice to a temp file and play it inline. */
+  // The saved engine preference loads once; changing it here persists it, so
+  // tomorrow's videos keep the voice you chose today.
+  useEffect(() => {
+    let cancelled = false;
+    api()?.getSettings?.().then((s: any) => {
+      if (!cancelled && s?.narrationEngine === 'kokoro') setNarrateEngine('kokoro');
+    }).catch(() => { /* default Edge applies */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const changeNarrateEngine = (engine: '' | 'edge' | 'kokoro') => {
+    setNarrateEngine(engine);
+    setNarrateVoice(''); // an Edge voice name is meaningless under Kokoro
+    try { api()?.saveSettings?.({ narrationEngine: engine === 'kokoro' ? 'kokoro' : 'edge' }); } catch { /* preference stays session-local */ }
+  };
+
+  /** Render a short sample of a voice to a temp file and play it inline.
+   *  Routed through the SAME engine that will record — approving by ear a
+   *  sample from the other engine would approve a voice never shipped. */
   const sampleVoice = async (voice: string) => {
     setSampling(voice);
     try {
-      const res = await api()?.ttsSampleVoice?.(voice);
+      const res = await api()?.ttsSampleVoice?.(
+        narrateEngine === 'kokoro' ? (voice || 'af_heart') : voice,
+        undefined,
+        narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+      );
       if (res?.success && res.path) {
         // Same file:// playback the job previews use — no extra channel.
         setSamplePath(res.path);
@@ -360,6 +390,7 @@ export const MediaStudioPanel: React.FC = () => {
         <span className="ms-job-format">
           {j.format === 'long' ? 'long-form' : 'short'}
           {j.durationSeconds ? ` · ${j.durationSeconds}s recorded` : ''}
+          {j.narratedWith ? ` · narrated: ${j.narratedWith}` : ''}
         </span>
         {/* The script and the slides, before you commit to watching.
             Both were already produced and neither was ever shown: `script` has
@@ -483,6 +514,18 @@ export const MediaStudioPanel: React.FC = () => {
           <>
             {stageAction(j)!.action === 'narrate' && (
               <select
+                className="ms-input ms-engine-select"
+                value={narrateEngine}
+                onChange={e => changeNarrateEngine(e.target.value as '' | 'edge' | 'kokoro')}
+                aria-label="Narration engine"
+              >
+                {NARRATION_ENGINES.map(e => (
+                  <option key={e.label} value={e.value}>{e.label}</option>
+                ))}
+              </select>
+            )}
+            {stageAction(j)!.action === 'narrate' && narrateEngine !== 'kokoro' && (
+              <select
                 className="ms-input ms-voice-select"
                 value={narrateVoice}
                 onChange={e => setNarrateVoice(e.target.value)}
@@ -495,20 +538,38 @@ export const MediaStudioPanel: React.FC = () => {
                 ))}
               </select>
             )}
-            {stageAction(j)!.action === 'narrate' && narrateVoice && (
+            {stageAction(j)!.action === 'narrate' && narrateEngine === 'kokoro' && (
+              <select
+                className="ms-input ms-voice-select"
+                value={narrateVoice}
+                onChange={e => setNarrateVoice(e.target.value)}
+                aria-label="Kokoro narration voice"
+              >
+                <option value="">Heart (default)</option>
+                {KOKORO_VOICES.map(v => (
+                  <option key={v.name} value={v.name}>{v.label}</option>
+                ))}
+              </select>
+            )}
+            {stageAction(j)!.action === 'narrate' && (narrateVoice || narrateEngine === 'kokoro') && (
               <button
                 className="ms-btn"
-                disabled={sampling === narrateVoice}
+                disabled={sampling !== null}
                 onClick={() => sampleVoice(narrateVoice)}
               >
-                {sampling === narrateVoice ? 'Rendering…' : '▶ Sample'}
+                {sampling !== null ? 'Rendering…' : '▶ Sample'}
               </button>
             )}
             <button
               className="ms-btn ms-btn--primary"
               onClick={() => {
                 const a = stageAction(j)!;
-                run(j.id, () => api()?.mediaRun?.(j.id, a.action, a.action === 'narrate' ? { voice: narrateVoice || undefined } : undefined), a.label);
+                run(j.id, () => api()?.mediaRun?.(j.id, a.action, a.action === 'narrate'
+                  ? {
+                      voice: narrateVoice || undefined,
+                      engine: narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+                    }
+                  : undefined), a.label);
               }}
             >
               {stageAction(j)!.label}
