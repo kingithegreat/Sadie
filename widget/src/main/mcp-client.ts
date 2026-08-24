@@ -493,3 +493,55 @@ export function getMcpStatus(): Array<{ name: string; type: string; toolCount: n
     connected: true
   }));
 }
+
+// ─── Connect-on-add ───────────────────────────────────────────────────────────
+//
+// Storing a config and leaving the server unstarted until the next app launch
+// was the reachability defect wearing a success badge: the user clicked
+// Connect, the UI said it worked, and no tool existed until they happened to
+// restart. These let the IPC layer make "Connect" mean connected.
+
+/**
+ * Disconnect one server by name, closing its client. No-op when not connected.
+ */
+export async function disconnectMcpServer(name: string): Promise<void> {
+  const idx = connectedServers.findIndex(s => s.config.name === name);
+  if (idx < 0) return;
+  const [{ client, config }] = connectedServers.splice(idx, 1);
+  try {
+    await client.close();
+    console.log(`[MCP] Disconnected from "${config.name}"`);
+  } catch {
+    // Ignore close errors — the goal is dropping the reference either way.
+  }
+}
+
+/**
+ * Connect one server right now and bridge its tools into HomeBot's registry.
+ *
+ * Single attempt with the same timeouts as startup — a server that cannot
+ * start should say so in seconds, not hang the UI through a retry ladder.
+ * Never throws: the caller decides what the user sees.
+ */
+export async function connectSingleServer(
+  config: McpServerConfig,
+  registerTool: (name: string, definition: any, handler: any) => void
+): Promise<{ connected: boolean; toolCount: number; error?: string }> {
+  // A re-add of an existing name replaces the config; drop the old live
+  // connection first so tools are never bridged twice under one name.
+  await disconnectMcpServer(config.name);
+
+  if (config.enabled === false) {
+    return { connected: false, toolCount: 0 };
+  }
+
+  try {
+    await connectServer(config, registerTool);
+    const entry = connectedServers.find(s => s.config.name === config.name);
+    return { connected: true, toolCount: entry?.toolNames.length ?? 0 };
+  } catch (err: any) {
+    const error = err?.message || String(err);
+    console.error(`[MCP] Could not connect "${config.name}": ${error}`);
+    return { connected: false, toolCount: 0, error };
+  }
+}
