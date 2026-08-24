@@ -23,6 +23,18 @@ whose tsconfig covers only root `src/` and whose package has no lint or build
 script, so `--if-present` skips both. Green root CI does not mean the app
 compiles.
 
+**On Windows that command is complete.** If you are running anywhere else — WSL,
+a container, a Linux box — prefix the `jest` call with
+`TMPDIR="$HOME/homebot-test-tmp"`. 43 test files write fixtures to `os.tmpdir()`
+while the main-process file tools refuse any path outside `os.homedir()`; on
+Windows those coincide, on Linux they are `/tmp` versus home. Measured on Linux
+2026-08-24, same tree, only `TMPDIR` differing: **79 failures across 4 suites
+without it, 5 in 1 suite with it.** Those 5 are all `sd-cpp-setup.test.ts`, which
+refuses on non-Windows by design (`sd-cpp-setup.ts:177`) — on Linux that is the
+clean result, and anything beyond those 5 is yours. A silent fallback to `/tmp`
+looks identical to 79 real bugs, which is what stalled the Copilot agent for its
+entire history here.
+
 If you touched anything under `src/` at the repo root as well:
 
 ```bash
