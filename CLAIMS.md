@@ -6,6 +6,7 @@ Repo-native companion to the Notion [🔗 Work Claims Ledger](https://app.notion
 1. Check the table below for an existing claim on the same feature area. If one exists and looks recent/active, don't start a parallel build.
 2. `grep -rl <concept> src widget/src` for an existing module before writing a new one — HomeBot has two source trees (repo-root `src/` for pure/testable modules, `widget/src/` for the actual Electron app), so check both.
 3. Add a row below before writing code. Update it to "Ready for Integration" when pushed and self-tested.
+4. **Verify a claim against the repo before repeating it** — `gh pr view <n> --json state,mergedAt` is two seconds. The board is a lagging record, not a source of truth: on 2026-08-24 two rows said "Ready for integration" for PRs that had merged 48 hours earlier, and both got repeated as fact. Note that squash-merge means the original branch SHA is never an ancestor of main, so `git branch --contains` lies — check PR **state**, not commits.
 
 CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the build if a newly added file exports the same top-level identifier as an existing file — usually a sign two features were built in parallel without checking here first, or a scaffold was built without checking the real integration point (see the Step 1 entitlements gate channel-name mismatch, which was a variant of this same failure mode). See that script's header comment for how it works and how to suppress a genuine false positive.
 
