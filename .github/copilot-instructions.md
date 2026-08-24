@@ -33,11 +33,16 @@ Five things that cost hours when missed:
    ```
 
    43 test files write fixtures to `os.tmpdir()`, and the main-process file tools refuse any path
-   outside `os.homedir()`. On Linux those are `/tmp` and `/home/runner`, so without `TMPDIR` you
-   will see ~92 failures across 10 suites that are environmental, not bugs — `ci.yml` documents
-   exactly this. `.github/workflows/copilot-setup-steps.yml` installs dependencies and exports
-   `TMPDIR` for you; pass it on the command line anyway, because a silent fallback to `/tmp` looks
-   identical to real breakage.
+   outside `os.homedir()`. On Linux those are `/tmp` and home, so without `TMPDIR` the suite fails
+   for environmental reasons, not bugs. Measured on Linux 2026-08-24, same tree, only `TMPDIR`
+   differing: **79 failures across 4 suites → 5 failures in 1 suite**.
+   `.github/workflows/copilot-setup-steps.yml` installs dependencies and exports `TMPDIR` for you;
+   pass it on the command line anyway, because a silent fallback to `/tmp` looks identical to real
+   breakage.
+
+   **On Linux, 5 failures in `sd-cpp-setup.test.ts` is the clean result** — `sd-cpp-setup.ts:177`
+   refuses on non-Windows by design. Do not try to fix those, and do not report them as a
+   regression. Anything beyond those 5 is yours.
 
    **If the suite will not run, say so.** Write "typecheck clean, unit tests not run in this
    environment" in the PR body. Never write "tests passing" or "verified" for something you did not

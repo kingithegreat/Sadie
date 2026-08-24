@@ -27,14 +27,37 @@ main-process file tools refuse any path outside `os.homedir()` —
 profile root, so the two coincide and nobody notices. On Linux `os.tmpdir()` is
 `/tmp` and home is `/home/runner`, so every fixture path is denied.
 
-`ci.yml` records what that costs: *"The first run of this job on ubuntu failed 92
-tests across 10 suites for exactly that reason."* Those 92 failures are
-environmental. They are not bugs, and chasing them is worse than running nothing.
+**Measured on Linux, 2026-08-24**, same tree, same command, only `TMPDIR` differing:
+
+| | Suites failed | Tests failed |
+|---|---|---|
+| without `TMPDIR` | 4 | 79 |
+| `TMPDIR="$HOME/homebot-test-tmp"` | 1 | 5 |
+
+The 74 tests that flip are environmental — `codebase-tool`, `edit-file-tool` and
+`filesystem`, all denied by the home boundary. They are not bugs, and chasing
+them is worse than running nothing. (`ci.yml` records 92 across 10 suites from an
+older tree; expect the shape, not the exact count.)
 
 `os.tmpdir()` honours `TMPDIR` on Linux, so pointing it inside `$HOME` makes the
 suite meaningful. `.github/workflows/copilot-setup-steps.yml` also exports it,
 but export it on the command line anyway — a silent fallback to `/tmp` is
 indistinguishable from real breakage.
+
+## The 5 that remain are supposed to fail here
+
+All of them are `src/main/__tests__/sd-cpp-setup.test.ts`, and all share one
+cause — `sd-cpp-setup.ts:177` refuses by design:
+
+```
+if (process.platform !== 'win32') {
+  throw new Error('Automatic setup currently supports Windows only.');
+}
+```
+
+That is a real product decision, not a broken test. **On Linux, 5 failed in
+`sd-cpp-setup.test.ts` is the clean result.** Do not "fix" them, and do not
+report them as a regression. Anything beyond those 5 is yours.
 
 ## When you cannot run it
 

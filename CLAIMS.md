@@ -231,9 +231,27 @@ branches sit ~50 commits behind main with nothing merged. Two causes, both envir
 `ci.yml`'s Windows TEMP step). **It does nothing until it is on `main`** — the platform only reads
 it from the default branch, and the job must stay named `copilot-setup-steps`.
 
-The `TMPDIR` fix is reasoned from `ci.yml`'s own record, not yet observed passing in a Copilot
-session. First agent to run there: report whether the suite goes green, and how many of the
-remaining failures are the Windows-path suites.
+**The `TMPDIR` fix is measured, not reasoned.** Run on Linux 2026-08-24 against this tree, same
+command, only `TMPDIR` differing:
+
+| | Suites failed | Tests failed |
+|---|---|---|
+| without `TMPDIR` | 4 | 79 |
+| `TMPDIR="$HOME/homebot-test-tmp"` | 1 | 5 |
+
+The 74 that flip are `codebase-tool`, `edit-file-tool` and `filesystem` — all denied by the home
+boundary, none of them bugs.
+
+The 5 that remain are all `sd-cpp-setup.test.ts` and share one cause: `sd-cpp-setup.ts:177`
+throws "Automatic setup currently supports Windows only." That is a product decision, not a
+broken test, so **on Linux 5 failures in that one suite is the clean result.** Recorded in the
+instruction files so no agent burns a session "fixing" it or reports it as a regression.
+
+Still unobserved: the same run inside an actual Copilot session. The environment is a GitHub
+Actions Linux runner either way, so the mechanism is the same, but `copilot-setup-steps` exporting
+`TMPDIR` via `GITHUB_ENV` into the agent's own shell is the one link that cannot be checked from
+outside. That is why the instructions also pass `TMPDIR` on the command line. First agent to run
+there: confirm the count is 5.
 
 **New files, and what reads them:**
 

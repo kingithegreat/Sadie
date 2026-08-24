@@ -77,13 +77,15 @@ cd .. && npx jest && npm run docs:check
 HomeBot ships Windows-only, and `ci.yml` runs the widget job on `windows-latest` because that is
 the only platform the suite passes on. 43 test files write fixtures to `os.tmpdir()` while the
 main-process file tools refuse any path outside `os.homedir()` — the same directory on Windows,
-`/tmp` versus `/home/runner` on Linux. An ubuntu run failed 92 tests across 10 suites for exactly
-that reason.
+`/tmp` versus home on Linux. Measured on Linux 2026-08-24, same tree, only `TMPDIR` differing:
+**79 failures across 4 suites without it, 5 in 1 suite with it.** Those last 5 are all
+`sd-cpp-setup.test.ts`, which refuses on non-Windows by design (`sd-cpp-setup.ts:177`) — on Linux
+that is the clean result, not a regression.
 
 | Tool | Runs on | Can run the widget suite |
 |---|---|---|
 | Cline, Claude Code (local) | Aden's Windows box | Yes — no excuse for an unverified claim |
-| Copilot coding agent | Linux Actions runner | Only with `TMPDIR="$HOME/homebot-test-tmp"`, and a few Windows-path suites may still fail |
+| Copilot coding agent | Linux Actions runner | Yes with `TMPDIR="$HOME/homebot-test-tmp"` — expect 5 failures in `sd-cpp-setup.test.ts`, nothing else |
 | Claude Code on the web | Linux container | Same as Copilot; often no `node_modules` at all |
 
 `.github/workflows/copilot-setup-steps.yml` installs both packages and exports `TMPDIR` for the
