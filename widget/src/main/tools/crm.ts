@@ -675,6 +675,53 @@ export const crmToolHandlers: Record<string, ToolHandler> = {
 
 // ============= EXPORTS =============
 
+/**
+ * CRM write tools carry requiresConfirmation, the same double gate as
+ * email_send / media_approve_job. Without it these were invisible to the
+ * permission system twice over: no DEFAULT_SETTINGS.permissions entry AND no
+ * confirmation flag, so executeTool's `!requiresConfirmation` default allowed
+ * every create/update/advance/export to run unconfirmed. Reads (searches,
+ * brief, stages, audit log) stay confirmation-free and ship allowed.
+ */
+const CRM_WRITE_TOOLS: ReadonlySet<string> = new Set([
+  'crm_create_company',
+  'crm_update_company',
+  'crm_create_contact',
+  'crm_update_contact',
+  'crm_create_deal',
+  'crm_update_deal',
+  'crm_advance_deal',
+  'crm_log_activity',
+  'crm_add_note',
+  'crm_create_task',
+  'crm_complete_task',
+  'crm_rename_stage',
+  'crm_match_email', // creates contacts/companies and logs activity
+  'crm_export', // bulk-exports every CRM table to disk
+]);
+
+for (const def of [
+  crmCreateCompanyDef,
+  crmUpdateCompanyDef,
+  crmCreateContactDef,
+  crmUpdateContactDef,
+  crmCreateDealDef,
+  crmUpdateDealDef,
+  crmAdvanceDealDef,
+  crmLogActivityDef,
+  crmAddNoteDef,
+  crmCreateTaskDef,
+  crmCompleteTaskDef,
+  crmRenameStageDef,
+  crmMatchEmailDef,
+  crmExportDef,
+]) {
+  if (!CRM_WRITE_TOOLS.has(def.name)) {
+    throw new Error(`CRM write-tool list is out of sync with defs: ${def.name}`);
+  }
+  def.requiresConfirmation = true;
+}
+
 export const crmToolDefs: ToolDefinition[] = [
   crmCreateCompanyDef,
   crmUpdateCompanyDef,
