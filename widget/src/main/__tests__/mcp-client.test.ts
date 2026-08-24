@@ -37,6 +37,7 @@ import {
   getMcpStatus,
   discoverExternalMcpServers,
   shutdownMcpServers,
+  connectSingleServer,
 } from '../mcp-client';
 
 let tmpDir: string;
@@ -266,5 +267,75 @@ describe('discoverExternalMcpServers', () => {
       try { fs.unlinkSync(cursorFile); } catch (_) {}
       if (createdDir) { try { fs.rmdirSync(cursorDir); } catch (_) {} }
     }
+  });
+});
+
+// ── connectSingleServer (connect-on-add) ─────────────────────────────────────
+
+describe('connectSingleServer — Connect means connected', () => {
+  const registerTool = jest.fn();
+  const SDK = () => require('@modelcontextprotocol/sdk/client/index.js');
+
+  beforeEach(async () => {
+    registerTool.mockClear();
+    await shutdownMcpServers();
+  });
+
+  test('starts the server now and returns its live tool count', async () => {
+    SDK().Client.mockImplementationOnce(() => ({
+      connect: jest.fn().mockResolvedValue(undefined),
+      listTools: jest.fn().mockResolvedValue({ tools: [
+        { name: 'search', description: 'Search', inputSchema: { type: 'object', properties: {} } },
+        { name: 'fetch', description: 'Fetch', inputSchema: { type: 'object', properties: {} } },
+      ]}),
+      callTool: jest.fn(),
+      close: jest.fn().mockResolvedValue(undefined),
+    }));
+    const res = await connectSingleServer(
+      { type: 'stdio', name: 'live-srv', command: 'npx', args: ['-y', 'x'], enabled: true },
+      registerTool,
+    );
+    expect(res).toMatchObject({ connected: true, toolCount: 2 });
+    expect(registerTool).toHaveBeenCalledWith(
+      'mcp_live-srv_search',
+      expect.objectContaining({ requiresConfirmation: true }),
+      expect.any(Function),
+    );
+  });
+
+  test('a failed start is reported as a result — never thrown — and leaves nothing half-open', async () => {
+    SDK().Client.mockImplementationOnce(() => ({
+      connect: jest.fn().mockRejectedValue(new Error('spawn ENOENT')),
+      listTools: jest.fn(),
+      callTool: jest.fn(),
+      close: jest.fn().mockResolvedValue(undefined),
+    }));
+    const res = await connectSingleServer({ type: 'stdio', name: 'broken', command: 'nope' }, registerTool);
+    expect(res.connected).toBe(false);
+    expect(res.error).toContain('ENOENT');
+    expect(getMcpStatus()).toHaveLength(0);
+  });
+
+  test('re-adding a name replaces the old live connection instead of doubling it', async () => {
+    const makeClient = () => ({
+      connect: jest.fn().mockResolvedValue(undefined),
+      listTools: jest.fn().mockResolvedValue({ tools: [{ name: 't', inputSchema: { type: 'object' } }] }),
+      callTool: jest.fn(),
+      close: jest.fn().mockResolvedValue(undefined),
+    });
+    const first = makeClient();
+    const second = makeClient();
+    SDK().Client.mockImplementationOnce(() => first).mockImplementationOnce(() => second);
+    const cfg = { type: 'stdio' as const, name: 'dup', command: 'x' };
+    await connectSingleServer(cfg, registerTool);
+    await connectSingleServer(cfg, registerTool);
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(getMcpStatus()).toHaveLength(1);
+  });
+
+  test('a disabled server is stored without connecting and says so plainly', async () => {
+    const res = await connectSingleServer({ type: 'stdio', name: 'off', command: 'x', enabled: false }, registerTool);
+    expect(res).toEqual({ connected: false, toolCount: 0 });
+    expect(getMcpStatus()).toHaveLength(0);
   });
 });
