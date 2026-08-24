@@ -6,26 +6,39 @@
  * to paths inside the user's home directory.
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
+import { isWithinHomeDir } from '../utils/home-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const HOME_DIR = os.homedir();
 
 // ---- Safety: restrict repo paths to home directory ----
 function validateRepoPath(repoPath: string): { valid: boolean; resolved: string; error?: string } {
   const resolved = path.resolve(repoPath || process.cwd());
-  if (!resolved.toLowerCase().startsWith(HOME_DIR.toLowerCase())) {
+  if (!isWithinHomeDir(resolved, HOME_DIR)) {
     return { valid: false, resolved, error: `Repo path must be within home directory (${HOME_DIR})` };
   }
   return { valid: true, resolved };
 }
 
-async function git(args: string, cwd: string): Promise<string> {
-  const { stdout } = await execAsync(`git ${args}`, { cwd, timeout: 15000, windowsHide: true });
+/**
+ * git argv runner — arguments go to the git binary verbatim, never through a
+ * shell. The previous `exec(\`git ${args}\`)` shape relied on every call site
+ * hand-sanitizing interpolated values (branch names, commit messages) against
+ * cmd.exe metacharacters; one forgotten strip is a command injection. With an
+ * ARGV array there is nothing to escape.
+ */
+async function git(args: string[], cwd: string): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, {
+    cwd,
+    timeout: 15000,
+    windowsHide: true,
+    maxBuffer: 4 * 1024 * 1024,
+  });
   return stdout.trim();
 }
 
@@ -157,8 +170,8 @@ export const gitStatusHandler: ToolHandler = async (args): Promise<ToolResult> =
     const v = validateRepoPath(repoPath);
     if (!v.valid) return { success: false, error: v.error };
 
-    const porcelain = await git('status --porcelain=v1', v.resolved);
-    const branch = await git('rev-parse --abbrev-ref HEAD', v.resolved).catch(() => 'unknown');
+    const porcelain = await git(['status', '--porcelain=v1'], v.resolved);
+    const branch = await git(['rev-parse', '--abbrev-ref', 'HEAD'], v.resolved).catch(() => 'unknown');
 
     const staged: string[] = [];
     const unstaged: string[] = [];
@@ -192,7 +205,7 @@ export const gitLogHandler: ToolHandler = async (args): Promise<ToolResult> => {
 
     const format = '%H|%an|%ae|%ad|%s';
     const output = await git(
-      `log --pretty=format:"${format}" --date=short -n ${limit} ${branchArg}`,
+      ['log', `--pretty=format:${format}`, '--date=short', '-n', String(limit), branchArg],
       v.resolved
     );
 
@@ -218,17 +231,17 @@ export const gitDiffHandler: ToolHandler = async (args): Promise<ToolResult> => 
 
     const target = String(args.target || 'unstaged').trim();
 
-    let diffCmd: string;
+    let diffArgs: string[];
     if (target === 'staged') {
-      diffCmd = 'diff --cached';
+      diffArgs = ['diff', '--cached'];
     } else if (target === 'unstaged') {
-      diffCmd = 'diff';
+      diffArgs = ['diff'];
     } else {
       const safeTarget = target.replace(/[^a-zA-Z0-9_\-./~: ]/g, '');
-      diffCmd = `diff ${safeTarget}`;
+      diffArgs = ['diff', safeTarget];
     }
 
-    const output = await git(diffCmd, v.resolved);
+    const output = await git(diffArgs, v.resolved);
     const truncated = output.length > 8192;
 
     return {
@@ -250,9 +263,12 @@ export const gitBranchesHandler: ToolHandler = async (args): Promise<ToolResult>
     const v = validateRepoPath(repoPath);
     if (!v.valid) return { success: false, error: v.error };
 
-    const flag = args.include_remote ? '-a' : '';
-    const output = await git(`branch ${flag} --format="%(refname:short)|%(objectname:short)|%(upstream:short)"`, v.resolved);
-    const current = await git('rev-parse --abbrev-ref HEAD', v.resolved).catch(() => '');
+    const flagArgs = args.include_remote ? ['-a'] : [];
+    const output = await git(
+      ['branch', ...flagArgs, '--format=%(refname:short)|%(objectname:short)|%(upstream:short)'],
+      v.resolved
+    );
+    const current = await git(['rev-parse', '--abbrev-ref', 'HEAD'], v.resolved).catch(() => '');
 
     const branches = output
       .split('\n')
@@ -277,13 +293,15 @@ export const gitCommitHandler: ToolHandler = async (args): Promise<ToolResult> =
     const message = String(args.message || '').trim();
     if (!message) return { success: false, error: 'commit message is required' };
 
-    // Whitelist: strip any character that could break shell quoting or inject commands
-    const safeMessage = message.replace(/[^a-zA-Z0-9 _.,:;!?()\-=+@#&\/\[\]{}]/g, '').slice(0, 200);
+    // git runs via ARGV (see git()), so the message needs no shell quoting
+    // rules — only a length cap. The old charset whitelist existed to protect
+    // the `exec("git ...")` string form and mangled legitimate messages.
+    const safeMessage = message.slice(0, 500);
     if (args.stage_all !== false) {
-      await git('add -A', v.resolved);
+      await git(['add', '-A'], v.resolved);
     }
 
-    const output = await git(`commit -m "${safeMessage}"`, v.resolved);
+    const output = await git(['commit', '-m', safeMessage], v.resolved);
     const hashLine = output.split('\n').find((l) => l.includes('['));
 
     return {

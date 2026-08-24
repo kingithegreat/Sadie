@@ -6,11 +6,20 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 
-// Mock child_process for ripgrep
+// Mock child_process: `execFile` (the ripgrep path) fails with ENOENT so the
+// handler deterministically falls back to the Node walker, which is what these
+// tests exercise; `exec` stays mockable for any other caller.
 const mockExecImpl = jest.fn();
 jest.mock('child_process', () => ({
   exec: mockExecImpl,
-  execFile: jest.fn()
+  execFile: ((_file: string, _args: unknown[], _opts?: unknown, cb?: Function) => {
+    const callback = typeof _opts === 'function' ? _opts : cb;
+    if (callback) {
+      const err = new Error('spawn rg ENOENT') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      callback(err);
+    }
+  }) as any,
 }));
 
 import {
