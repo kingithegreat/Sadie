@@ -299,3 +299,60 @@ describe('ImageGenerator — stays readable for a non-technical user', () => {
     expect(screen.getByText(/Online — free, no account/i)).toBeInTheDocument();
   });
 });
+
+describe('ImageGenerator — a durable result the user can come back to', () => {
+  // Rung 1 of the image-edit ladder. The panel used to hold the finished
+  // image in React state only: Clear, or closing the panel, destroyed it
+  // forever. The main process now persists every generation to the same
+  // folder the chat path has always used and returns where it went.
+  const SAVED = { savedPath: 'C:/Users/adenk/AppData/Roaming/HomeBot/generated-images/img-1.png' };
+
+  test('says where the durable copy lives and offers to show it', async () => {
+    (window as any).electron = {
+      executeImageGenerate: jest.fn().mockResolvedValue({ status: 'success', image: 'abc', ...SAVED }),
+      showInFolder: jest.fn(),
+    };
+    render(<ImageGenerator />);
+    fireEvent.change(screen.getByPlaceholderText(/Describe the image/i), {
+      target: { value: 'a lighthouse' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Generate/i }));
+
+    expect(await screen.findByText(/Saved with your other generated images/i)).toBeInTheDocument();
+    const show = screen.getByRole('button', { name: /Show in folder/i });
+    fireEvent.click(show);
+    // The reveal hands over the on-disk path, not the base64.
+    expect((window as any).electron.showInFolder).toHaveBeenCalledWith(SAVED.savedPath);
+  });
+
+  test('Clear destroys only the view — the note says the file survives', async () => {
+    (window as any).electron = {
+      executeImageGenerate: jest.fn().mockResolvedValue({ status: 'success', image: 'abc', ...SAVED }),
+      showInFolder: jest.fn(),
+    };
+    render(<ImageGenerator />);
+    fireEvent.change(screen.getByPlaceholderText(/Describe the image/i), {
+      target: { value: 'a lighthouse' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Generate/i }));
+    await screen.findByText(/Saved with your other generated images/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear image' }));
+    expect(screen.queryByText(/Show in folder/i)).toBeNull();
+    // No promise that the image is gone — it is not.
+  });
+
+  test('when persistence failed, no durable promise is made', async () => {
+    (window as any).electron = {
+      executeImageGenerate: jest.fn().mockResolvedValue({ status: 'success', image: 'abc', savedPath: null }),
+      showInFolder: jest.fn(),
+    };
+    render(<ImageGenerator />);
+    fireEvent.change(screen.getByPlaceholderText(/Describe the image/i), {
+      target: { value: 'a lighthouse' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Generate/i }));
+    await screen.findByAltText('Generated');
+    expect(screen.queryByText(/Saved with your other generated images/i)).toBeNull();
+  });
+});
