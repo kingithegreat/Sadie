@@ -157,6 +157,59 @@ export const MediaStudioPanel: React.FC = () => {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  /**
+   * The video engine. Rendering is the one stage with a dependency the app does
+   * not ship, and the old answer to a missing one was to tell the user to run
+   * `winget install Gyan.FFmpeg` — a package manager, aimed at someone the
+   * product says outright is not technical. Now the panel offers to do it.
+   */
+  const [engine, setEngine] = useState<{ ready: boolean; supported: boolean } | null>(null);
+  const [engineNote, setEngineNote] = useState<string>('');
+  const [engineBusy, setEngineBusy] = useState(false);
+
+  const checkEngine = useCallback(async () => {
+    try {
+      const s = await api()?.mediaFfmpegStatus?.();
+      if (s) setEngine({ ready: !!s.ready, supported: s.supported !== false });
+    } catch { /* leave it unknown rather than claiming it is missing */ }
+  }, []);
+
+  useEffect(() => { checkEngine(); }, [checkEngine]);
+
+  // Progress arrives on a push channel because the download is long enough that
+  // a spinner alone is indistinguishable from a hang.
+  useEffect(() => {
+    const off = api()?.onMediaFfmpegProgress?.((p: any) => {
+      const mb = p?.receivedMB != null && p?.totalMB
+        ? ` ${p.receivedMB} of ${p.totalMB} MB`
+        : '';
+      setEngineNote(`${p?.note ?? 'Working…'}${mb}`);
+    });
+    return () => { try { off?.(); } catch { /* nothing to detach */ } };
+  }, []);
+
+  const setUpEngine = async () => {
+    setEngineBusy(true);
+    setEngineNote('Starting…');
+    setError(null);
+    try {
+      const res = await api()?.mediaFfmpegSetup?.();
+      if (res?.ok) {
+        setEngineNote('');
+        setDone(res.message || 'Ready — videos can now be made on this PC.');
+        await checkEngine();
+      } else {
+        setEngineNote('');
+        setError(res?.error || 'The video engine could not be set up.');
+      }
+    } catch (e: any) {
+      setEngineNote('');
+      setError(e?.message || 'The video engine could not be set up.');
+    } finally {
+      setEngineBusy(false);
+    }
+  };
+
   /** Every mutation reports the state machine's own refusal text verbatim. */
   /**
    * Let go of a job's video and audio before touching its files.
@@ -666,6 +719,39 @@ export const MediaStudioPanel: React.FC = () => {
 
       {error && <div className="ms-error" role="alert">{error}</div>}
       {done && <div className="ms-done" role="status">{done}</div>}
+
+      {/* The one dependency the app does not ship. Shown before anything fails,
+          so the wall is hit at "here is the button" rather than at the end of a
+          pipeline the user already spent a minute on. */}
+      {engine && !engine.ready && (
+        <div className="ms-engine" role="status">
+          {engineBusy ? (
+            <span className="ms-working" aria-live="polite">
+              <span className="ms-spinner" aria-hidden="true" />
+              {engineNote || 'Setting up the video engine…'}
+            </span>
+          ) : (
+            <>
+              <span className="ms-engine-text">
+                Making videos needs a one-off download (about 160 MB). Scripts, narration
+                and captions all work without it.
+              </span>
+              {engine.supported ? (
+                <button className="ms-btn ms-btn--primary" onClick={setUpEngine}>
+                  Set it up for me
+                </button>
+              ) : (
+                <a
+                  className="ms-btn"
+                  href="https://ffmpeg.org/download.html"
+                  target="_blank"
+                  rel="noreferrer"
+                >Show me how</a>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <div className="ms-new">
         <input
