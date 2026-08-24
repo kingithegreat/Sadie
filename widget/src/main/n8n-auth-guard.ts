@@ -29,15 +29,34 @@ export function guardJsCode(secret: string): string {
     `// Auth Guard — deployed by HomeBot; validates X-HOMEBOT-Auth.`,
     `let secret = ${JSON.stringify(secret)};`,
     `if (!secret) secret = process.env.HOMEBOT_WEBHOOK_SECRET;`,
-    `if (secret) {`,
-    `  const hdrs = $input.first()?.json?.headers || {};`,
-    `  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';`,
-    `  if (incoming !== secret) {`,
-    `    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');`,
-    `  }`,
+    `const hdrs = $input.first()?.json?.headers || {};`,
+    `const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';`,
+    // No secret means this workflow was never deployed by HomeBot — almost
+    // always a hand-import. Refusing is the only safe reading: the alternative
+    // is an open webhook that runs file and browser automation.
+    `if (!secret) {`,
+    `  throw new Error('Unauthorized: this workflow has no HomeBot secret. Deploy it from HomeBot instead of importing it by hand.');`,
+    `}`,
+    `if (incoming !== secret) {`,
+    `  throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');`,
     `}`,
     `return $input.all();`,
   ].join('\n');
+}
+
+/**
+ * The guard shipped inside the repo's workflow JSONs.
+ *
+ * Identical to the deployed guard but with an EMPTY secret, so it denies until
+ * HomeBot patches it on import. The per-install secret cannot live in the repo
+ * — it is generated per machine — so the shipped copy has to be the
+ * deny-by-default one.
+ *
+ * It keeps the shared marker deliberately, so `injectAuthGuards` recognises it
+ * and upgrades it in place rather than adding a second guard node.
+ */
+export function placeholderGuardJsCode(): string {
+  return guardJsCode('');
 }
 
 interface N8nNode {

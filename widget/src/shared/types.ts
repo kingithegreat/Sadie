@@ -492,7 +492,7 @@ export interface ElectronAPI {
   ttsStop?: () => Promise<{ success: boolean; error?: string }>;
   // Voice picker: list neural voices; render a short sample of one to a file.
   ttsListVoices?: () => Promise<any>;
-  ttsSampleVoice?: (voice: string, sampleText?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  ttsSampleVoice?: (voice: string, sampleText?: string, engine?: 'edge' | 'kokoro') => Promise<{ success: boolean; path?: string; error?: string; engine?: string }>;
 
   // Scheduler (Pro-gated — handlers may resolve to GateBlockedResponse for free users)
   schedulerList?: () => Promise<ScheduledJob[] | GateBlockedResponse>;
@@ -518,7 +518,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; engine?: 'edge' | 'kokoro' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
