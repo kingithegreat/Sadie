@@ -259,3 +259,125 @@ describe('anti-parrot filter is exact, not a blanket ban on the stem', () => {
     expect(dedupeQuestions([plain('What is X?')])).toHaveLength(0);
   });
 });
+
+// ── fillQuiz ────────────────────────────────────────────────────────────────
+//
+// Reported live: "quiz was meant to give me 5 questions and it gave me 3".
+//
+// Both handlers ran a fixed `ceil(count/batch) + 2` attempts and then returned
+// whatever they had with success: true — only a ZERO-length result counted as
+// an error. The comment directly above that loop claimed it kept generating
+// "instead of silently returning fewer questions", which is precisely what it
+// did once the budget ran out.
+
+import { fillQuiz, QUIZ_DRY_ROUNDS } from '../quiz/generate';
+
+/** A batch of `n` distinct, valid questions as the model would return them. */
+const batchJson = (n: number, seed: string) =>
+  JSON.stringify(Array.from({ length: n }, (_, i) => ({
+    type: 'multiple-choice',
+    question: `${seed} question ${i}?`,
+    code: '',
+    options: ['a', 'b', 'c', 'd'],
+    correctIndex: 0,
+    explanation: 'because',
+  })));
+
+describe('fillQuiz', () => {
+  test('reaches the requested count when batches are healthy', async () => {
+    let call = 0;
+    const r = await fillQuiz({
+      questionCount: 5,
+      generate: async (want) => batchJson(want, `b${call++}`),
+    });
+
+    expect(r.questions).toHaveLength(5);
+    expect(r.shortfall).toBe(0);
+    expect(r.stoppedBecause).toBe('full');
+  });
+
+  test('keeps going when batches come back SHORT — the reported bug', async () => {
+    // One usable question per batch, which is what happens when a small model
+    // echoes the worked example in the prompt and dedupe strips the echo.
+    let call = 0;
+    const r = await fillQuiz({
+      questionCount: 5,
+      generate: async () => batchJson(1, `only${call++}`),
+    });
+
+    // The old budget was ceil(5/3)+2 = 4 attempts, which at one per batch
+    // returned 4 and called it success. It must now reach all five.
+    expect(r.questions).toHaveLength(5);
+    expect(r.shortfall).toBe(0);
+  });
+
+  test('reports the shortfall rather than passing a short quiz off as success', async () => {
+    // The model repeats itself: every batch is the same question.
+    const r = await fillQuiz({
+      questionCount: 5,
+      generate: async () => batchJson(1, 'identical'),
+    });
+
+    expect(r.questions).toHaveLength(1);
+    expect(r.shortfall).toBe(4);
+    expect(r.requested).toBe(5);
+  });
+
+  test('stops once batches stop adding anything new', async () => {
+    let calls = 0;
+    const r = await fillQuiz({
+      questionCount: 20,
+      generate: async () => { calls++; return batchJson(1, 'same'); },
+    });
+
+    // One productive batch, then QUIZ_DRY_ROUNDS empty ones. Spending twenty
+    // rounds to confirm the model is stuck is worse than saying so.
+    expect(calls).toBe(1 + QUIZ_DRY_ROUNDS);
+    expect(r.stoppedBecause).toBe('no-new-questions');
+  });
+
+  test('a batch that throws is a dry round, not a fatal error', async () => {
+    let call = 0;
+    const r = await fillQuiz({
+      questionCount: 2,
+      generate: async () => {
+        call++;
+        if (call === 1) throw new Error('provider hiccup');
+        return batchJson(2, 'after');
+      },
+    });
+
+    // A transient failure must not lose the quiz.
+    expect(r.questions).toHaveLength(2);
+    expect(r.shortfall).toBe(0);
+  });
+
+  test('unusable output everywhere yields nothing, and says so', async () => {
+    const r = await fillQuiz({ questionCount: 5, generate: async () => 'not json at all' });
+
+    expect(r.questions).toHaveLength(0);
+    expect(r.shortfall).toBe(5);
+    expect(r.stoppedBecause).toBe('no-new-questions');
+  });
+
+  test('never returns more than asked for', async () => {
+    const r = await fillQuiz({ questionCount: 2, generate: async () => batchJson(10, 'lots') });
+    expect(r.questions).toHaveLength(2);
+  });
+
+  test('the avoid-list grows, so later batches can be told what was already asked', async () => {
+    const seen: number[] = [];
+    await fillQuiz({
+      questionCount: 4,
+      generate: async (_want, existing) => {
+        seen.push(existing.length);
+        return batchJson(1, `q${seen.length}`);
+      },
+    });
+
+    // First batch has nothing to avoid; each later one knows more.
+    expect(seen[0]).toBe(0);
+    expect(seen[1]).toBe(1);
+    expect(seen[2]).toBe(2);
+  });
+});
