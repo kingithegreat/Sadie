@@ -492,7 +492,7 @@ export interface ElectronAPI {
   ttsStop?: () => Promise<{ success: boolean; error?: string }>;
   // Voice picker: list neural voices; render a short sample of one to a file.
   ttsListVoices?: () => Promise<any>;
-  ttsSampleVoice?: (voice: string, sampleText?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  ttsSampleVoice?: (voice: string, sampleText?: string, engine?: 'edge' | 'kokoro') => Promise<{ success: boolean; path?: string; error?: string; engine?: string }>;
 
   // Scheduler (Pro-gated — handlers may resolve to GateBlockedResponse for free users)
   schedulerList?: () => Promise<ScheduledJob[] | GateBlockedResponse>;
@@ -518,12 +518,25 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; engine?: 'edge' | 'kokoro' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaReject?: (id: string, revise: boolean, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
+  /** Whether the video engine is usable, and whether HomeBot installed it. */
+  mediaFfmpegStatus?: () => Promise<{
+    ready: boolean;
+    path: string | null;
+    managed: boolean;
+    running: boolean;
+    supported: boolean;
+  }>;
+  /** Download and unpack the video engine. Progress arrives on onMediaFfmpegProgress. */
+  mediaFfmpegSetup?: () => Promise<{ ok: boolean; path?: string; message?: string; error?: string }>;
+  onMediaFfmpegProgress?: (cb: (p: {
+    phase: string; note: string; receivedMB?: number; totalMB?: number | null;
+  }) => void) => () => void;
   /**
    * Record that a video went out, with the id or link the platform gave it.
    * HomeBot does not upload — this is the user reporting back, which is what
@@ -791,7 +804,7 @@ export interface ElectronAPI {
   // Automation Center
   loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
   createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
-  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
+  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => Promise<{ success: boolean }>;
   /**
    * Removes the automation and the n8n workflow it deployed. Without `force`
    * this refuses when the workflow cannot be deleted, keeping the automation so

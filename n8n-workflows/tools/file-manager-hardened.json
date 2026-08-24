@@ -177,7 +177,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
+        "jsCode": "// Auth Guard — deployed by HomeBot; validates X-HOMEBOT-Auth.\nlet secret = \"\";\nif (!secret) secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nconst hdrs = $input.first()?.json?.headers || {};\nconst incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\nif (!secret) {\n  throw new Error('Unauthorized: this workflow has no HomeBot secret. Deploy it from HomeBot instead of importing it by hand.');\n}\nif (incoming !== secret) {\n  throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n}\nreturn $input.all();"
       }
     }
   ],

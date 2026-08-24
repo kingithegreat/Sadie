@@ -9,21 +9,22 @@
  * All paths are restricted to the user's home directory.
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
+import { isWithinHomeDir } from '../utils/home-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const HOME_DIR = os.homedir();
 
 // ---- Security ----
 
 function validatePath(rawPath: string): { valid: boolean; resolved: string; error?: string } {
   const resolved = path.resolve(rawPath || process.cwd());
-  if (!resolved.toLowerCase().startsWith(HOME_DIR.toLowerCase())) {
+  if (!isWithinHomeDir(resolved, HOME_DIR)) {
     return { valid: false, resolved, error: `Path must be within home directory (${HOME_DIR})` };
   }
   return { valid: true, resolved };
@@ -194,24 +195,43 @@ export const grepCodeHandler: ToolHandler = async (args): Promise<ToolResult> =>
     const contextLines = Math.min(Math.max(0, Number(args.context_lines) || 0), 5);
     const filePattern = String(args.file_pattern || '');
 
-    // Try using ripgrep (rg) first, then fall back to PowerShell/findstr
+    // Try using ripgrep (rg) first, then fall back to a Node.js recursive search
     let matches: Array<{ file: string; line: number; text: string; context?: string[] }> = [];
 
     try {
-      // Try ripgrep
-      const caseFlag = caseSensitive ? '' : '-i';
-      const contextFlag = contextLines > 0 ? `-C ${contextLines}` : '';
-      const globFlag = filePattern ? `--glob '${filePattern}'` : '';
-      const rgCmd = `rg --no-heading --line-number --max-count ${maxResults} ${caseFlag} ${contextFlag} ${globFlag} --max-filesize 1M -- "${pattern.replace(/"/g, '\\"')}" "${v.resolved.replace(/"/g, '\\"')}"`;
+      // ripgrep, invoked with an ARGV array — never a shell string. The pattern,
+      // glob and directory arrive verbatim as arguments, so cmd.exe
+      // metacharacters (& | ^ %VAR%) in an LLM-supplied file_pattern cannot
+      // break out the way they could when this was one interpolated string.
+      const rgArgs = [
+        '--no-heading',
+        '--line-number',
+        '--max-count', String(maxResults),
+        '--max-filesize', '1M',
+      ];
+      if (!caseSensitive) rgArgs.push('-i');
+      if (contextLines > 0) rgArgs.push('-C', String(contextLines));
+      if (filePattern) rgArgs.push('--glob', filePattern);
+      rgArgs.push('--', pattern, v.resolved);
 
-      const { stdout } = await execAsync(rgCmd, {
-        timeout: 30000,
-        windowsHide: true,
-        maxBuffer: MAX_OUTPUT_GREP,
-        env: { ...process.env, RIPGREP_CONFIG_PATH: '' }
-      });
-
-      matches = parseRgOutput(stdout, v.resolved, maxResults);
+      try {
+        const { stdout } = await execFileAsync('rg', rgArgs, {
+          timeout: 30000,
+          windowsHide: true,
+          maxBuffer: MAX_OUTPUT_GREP,
+          env: { ...process.env, RIPGREP_CONFIG_PATH: '' },
+        });
+        matches = parseRgOutput(stdout, v.resolved, maxResults);
+      } catch (err: any) {
+        // exit 1 means rg RAN and found nothing — an empty result, not a
+        // failure. Anything else (spawn failure, rg error) falls back to
+        // nodeGrep so a missing binary never turns into "no matches".
+        if (err?.code === 1) {
+          matches = parseRgOutput(String(err.stdout || ''), v.resolved, maxResults);
+        } else {
+          throw err;
+        }
+      }
     } catch {
       // ripgrep not available or failed — use Node.js recursive search
       matches = await nodeGrep(v.resolved, pattern, caseSensitive, filePattern, maxResults, contextLines);

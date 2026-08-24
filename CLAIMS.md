@@ -14,8 +14,11 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
 | Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
+| Kokoro as optional narration provider | claude/kokoro-narration-provider | Ready for integration | Aden picked Kokoro by ear (2026-08-23). voice.ts provider seam (Edge stays default + fallback; result names the engine that actually rendered), media_narrate `engine` arg, jobs record `narratedWith`, MediaStudioPanel engine picker with voice list that follows the engine and sampling routed through the SAME engine. kokoro-js rides the existing @huggingface/transformers stack (onnxruntime already ships for Whisper) — ~1 MB added, no Python. 10 seam tests; full suite serial green; docs regenerated. Does NOT touch message-router or the render graph. |
+| Backup import can no longer repoint traffic endpoints | claude/backup-endpoint-guard (#209) | Merged | settings-import.ts (analyzeImportedEndpoints / stripImportedSettings), homebot:import-settings handler (confirm dialog when a backup would move n8nUrl/ollamaUrl/searxngUrl/codeApiUrl/customLLM.baseUrl; skips endpoints when nobody can answer — fail closed). Credentials stay stripped unconditionally. 16 settings-import tests. |
 | Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
 | Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Ready for integration | PrivacySwitch.tsx only. |
+| Tool-surface hardening (audit remediation) | claude/tool-surface-hardening | Ready for integration | grep_code/git via execFile argv (cmd-injection class removed), 14 CRM writes gated (requiresConfirmation + permissions entries), per-hop redirect SSRF revalidation + IPv6 private ranges, api_request POST confirmation, batch allow-once honors requiresConfirmation, shared home-boundary/url-boundary utils replace five drift-prone startsWith guards. New gate: `tool-permissions-parity.test.ts` — every native tool needs a permission entry or requiresConfirmation; every permission key needs a tool. Full widget suite + tsc green on current main. Does NOT touch message-router routing logic or the media pipeline. |
 
 *(Model freshness + knobs merged as #182 — claim retired.)*
 
@@ -68,39 +71,6 @@ matter most, because that is where both sessions were working.
 Standing traps that have not changed: bot-opened PRs still park every `pull_request` run at
 `action_required` (approve them, or the required checks never report), and with two sessions
 merging, a green PR goes `BEHIND` within minutes — `gh pr update-branch <n>` and re-approve.
-| Model freshness + cloud temperature knob | claude/model-freshness-and-knobs | In progress | Touches custom-llm-client.ts, config-manager.ts, model-lifecycle.ts (new), shared/types.ts, useSettingsState.tsx, CloudProviderSection.tsx. Does NOT touch message-router.ts, model-advisor.ts, media tools, or PrivacySwitch. |
-| n8n Auth Guard injection + secret embedding | claude/n8n-auth-guard | Ready for Integration | PR #191, auto-merge on. injectAuthGuards() in widget/src/main/n8n-auth-guard.ts runs inside importWorkflow; guards embed the per-install secret directly (Code nodes see EMPTY process.env — env-based guards were inert). 30 unit tests green locally. |
-
-## Integration notes — 2026-08-2
-Five PRs merged today (#152, #162, #164, #165, #168). Four of them change the rules of the road
-for every session working here:
-
-1. **`e2e-all` is now a REQUIRED check** (branch protection has six contexts). Two consequences:
-   - **A branch created before #165 cannot merge** — it lacks the `e2e-all` job, the context never
-     reports, and the PR sits BLOCKED forever. Rebase onto or merge current main first.
-   - **Every bot-opened PR parks its `pull_request` runs at `action_required`** — silently; the
-     required check simply never appears. This is EVERY auto-opened PR, not just workflow-touching
-     ones. After the auto-PR appears, approve the held runs:
-     `gh api -X POST repos/kingithegreat/Sadie/actions/runs/<id>/approve`
-2. **Floating overlays: portal, don't blocklist.** `chatgpt-theme.css` has a
-   `.app-container > *:not(...)` rule at (0,12,0) that silently captures any non-excluded child's
-   `position: fixed` (13 of 18 overlay classes were captured and shipped broken). Use
-   `widget/src/renderer/components/anchoredOverlay.tsx` / `createPortal(document.body)`. Extend
-   the `:not()` list only for something that must genuinely stay a child of `.app-container`.
-3. **Dial `127.0.0.1:11434`, never `localhost:11434`.** Docker Desktop's model runner binds
-   `0.0.0.0:11434` with an empty model store and wins the IPv6 race — installed models read as
-   "not found". Found live on Aden's machine.
-4. **Changing the preload surface? Run `npm run docs:write`** (repo root) — `docs/api-reference.md`
-   is generated and the root CI job has a drift gate that goes red otherwise.
-
-Also useful: destructive UI actions go through `ConfirmDestructive.tsx` (button text names the
-consequence, never "OK"); upstream stable-diffusion.cpp renamed its binary to `sd-cli.exe` and its
-mode to `img_gen` (old names handled with fallbacks — don't reintroduce `sd.exe`/`txt2img`
-assumptions); live-engine verification tests are gated behind `HOMEBOT_LIVE=1` (see
-`media-pipeline.live.test.ts` for the pattern).
-
-Fuller narrative: the 2026-08-13→15 daily log in Aden's Ai-Brain vault, and the Notion Lessons &
-Playbook.
 
 ## Known non-duplicates
 
@@ -214,7 +184,7 @@ anyone who has not read this.
 |---|---|---|
 | **Remotion** (React video rendering) | **No** | Free tier is for-profit orgs of **up to 3 employees**, so Aden qualifies personally today. But the licence forbids shipping a derivative — *"not allowed to copy or modify Remotion code for the purpose of selling, renting, licensing, relicensing, or sublicensing your own derivate"* — and HomeBot is a sold product whose headline feature is making videos. Every user would run Remotion through it, and the free tier is per-company so their headcount may count too. That is a licence negotiation with Remotion, not a code change. |
 | **Agent Reach** | **No wrapper** | It has **no fetch, read or search commands at all**. Its verbs are `setup, install, configure, doctor, uninstall, skill, format, transcribe, check-update, watch, version`. It is a playbook plus a dependency installer — the agent reads its SKILL.md and calls `curl r.jina.ai`, `yt-dlp`, `gh` itself. An MCP wrapper would re-implement what `tools/web.ts` and `main/reader-fetch.ts` already do. Run `agent-reach skill --install` instead. |
-| **Voicebox** (TTS/STT) | **Yes — optional provider, never bundled** | MIT, local, keyless, and it ships **Kokoro** and **Qwen3-TTS**, which clear the msedge-tts ceiling of 24 kHz / 96 kbps mono that caps narration quality today. It is a Tauri + Python stack, so bundling it would drag a Python runtime into the installer and fight Track A. Detect it, use it, fall back to Edge TTS. **Measure before integrating** — `.claude/skills/render-verification` covers how. |
+| **Voicebox** (TTS/STT) | **Yes — optional provider, never bundled** | MIT, local, keyless, and it ships **Kokoro** and **Qwen3-TTS**, which clear the msedge-tts ceiling of 24 kHz / 96 kbps mono that caps narration quality today. It is a Tauri + Python stack, so bundling it would drag a Python runtime into the installer and fight Track A. Detect it, use it, fall back to Edge TTS. **Measure before integrating** — `.claude/skills/render-verification` covers how. **Measured 2026-08-23** (`narration-measure\`): Kokoro-82M hard-codes 24 kHz output, so it does **NOT** clear the rate ceiling — half the assumption above is wrong. What it clears is the codec half: lossless PCM vs Edge's 96 kbps MP3 (+8–9 dB more top-octave energy; one lossy pass into the mux instead of two). Same script: 18.75 s vs 18.94 s, levels within 1.7 dB. A/B samples on disk (`edge-ava.mp3` vs `kokoro-heart.wav`) awaiting Aden's ear call before any wiring. |
 
 ### And one idea worth stealing
 
@@ -240,3 +210,77 @@ Do not start one in parallel.
   from that list. **Do not write a second mode-switching mechanism.**
 - **`SearchBlockedError` + `isSearchBlockPage`** in `tools/web.ts` — being refused is not the
   same as finding nothing, and only the first can be fixed by the user.
+
+## Rules of the road — agent tooling, 2026-08-24
+
+No product code changed here. This is the per-tool wiring so Cline and Copilot can honour the
+rules the other files already state.
+
+**Copilot could not verify anything, and that is why nothing of its landed.** Its entire commit
+history in this repo is four `Initial plan` commits and a VS Code session checkpoint; its three
+branches sit ~50 commits behind main with nothing merged. Two causes, both environmental:
+
+1. Its ephemeral environment had no `node_modules`, so the verification command in
+   `.github/copilot-instructions.md` could not run.
+2. Even installed, the widget suite cannot pass on Linux — 43 test files write to `os.tmpdir()`
+   and the main-process file tools refuse anything outside `os.homedir()`. `ci.yml` already
+   records the cost: 92 failures across 10 suites on ubuntu.
+
+`.github/workflows/copilot-setup-steps.yml` fixes both — both packages installed,
+`better-sqlite3` rebuilt against Node, and `TMPDIR` pointed inside `$HOME` (the Linux analogue of
+`ci.yml`'s Windows TEMP step). **It does nothing until it is on `main`** — the platform only reads
+it from the default branch, and the job must stay named `copilot-setup-steps`.
+
+**The `TMPDIR` fix is measured, not reasoned.** Run on Linux 2026-08-24 against this tree, same
+command, only `TMPDIR` differing:
+
+| | Suites failed | Tests failed |
+|---|---|---|
+| without `TMPDIR` | 4 | 79 |
+| `TMPDIR="$HOME/homebot-test-tmp"` | 1 | 5 |
+
+The 74 that flip are `codebase-tool`, `edit-file-tool` and `filesystem` — all denied by the home
+boundary, none of them bugs.
+
+The 5 that remain are all `sd-cpp-setup.test.ts` and share one cause: `sd-cpp-setup.ts:177`
+throws "Automatic setup currently supports Windows only." That is a product decision, not a
+broken test, so **on Linux 5 failures in that one suite is the clean result.** Recorded in the
+instruction files so no agent burns a session "fixing" it or reports it as a regression.
+
+Still unobserved: the same run inside an actual Copilot session. The environment is a GitHub
+Actions Linux runner either way, so the mechanism is the same, but `copilot-setup-steps` exporting
+`TMPDIR` via `GITHUB_ENV` into the agent's own shell is the one link that cannot be checked from
+outside. That is why the instructions also pass `TMPDIR` on the command line. First agent to run
+there: confirm the count is 5.
+
+**New files, and what reads them:**
+
+| Path | Read by | Holds |
+|---|---|---|
+| `.github/workflows/copilot-setup-steps.yml` | Copilot agent | Dependency install + `TMPDIR` |
+| `.github/instructions/*.instructions.md` | Copilot cloud agent, Copilot code review | Rules scoped by `applyTo` glob — they arrive only when you open matching files |
+| `.clinerules/` (now a **folder**) | Cline | All `.md` combined; was a single file |
+| `.clinerules/workflows/*.md` | Cline | `/verify.md`, `/claim.md`, `/identity.md` — runnable, not prose |
+| `.clineignore` | Cline | Read filter: build output, lockfiles, binaries |
+
+Because `.clinerules/` is now a folder, Cline no longer falls back to `AGENTS.md` on its own —
+`01-homebot.md` instructs it to read that first, so keep that line intact.
+
+**Two things only Aden can do**, both one click:
+
+- Turn on the repo setting that skips workflow approval for Copilot coding agent Actions runs.
+  Until then the `action_required` loop in `AGENTS.md` has to be run after every bot push — ten
+  runs were held in one day, five for three days.
+- Nothing else. The rest of this is in the repo.
+
+**Division of labour, because the tools are not interchangeable.** Cline runs on Aden's Windows
+box and can run the widget suite, so it owns `widget/` work. Linux-bound agents (Copilot, Claude
+Code on the web) are better spent on the root package, pure modules in `src/`, docs, CI and n8n
+workflows — and must write "unit tests not run in this environment" rather than implying green.
+
+**Attribution is still broken and this only half-fixes it.** 686 commits share the identity
+`kingithegreat <adenk@example.com>`, so `git blame` cannot say which agent wrote a line, and the
+Media Studio track credited to ox-alpha above cannot be verified from git at all. Exactly one
+commit in repo history is attributable to it. `/identity.md` sets a repo-local `git config
+user.name` for Cline; Copilot already signs as `copilot-swe-agent[bot]`. Existing history is not
+rewritable — this only fixes commits from here on.

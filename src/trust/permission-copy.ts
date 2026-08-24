@@ -148,6 +148,37 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   media_advance_job: { label: 'Move a video along', detail: 'Move a video to its next stage. Cannot approve or publish it.' },
   media_approve_job: { label: 'Approve a video', detail: 'Approve a finished video so it can be scheduled and published.' },
   media_reject_job: { label: 'Reject a video', detail: 'Reject a video, or send it back for another revision.' },
+  media_list_music: { label: 'List music', detail: 'See the music available for video narration soundtracks.' },
+  // Skills
+  use_skill: { label: 'Load a skill', detail: 'Load a saved step-by-step recipe into the conversation. It only returns instructions.' },
+  list_skills: { label: 'List skills', detail: 'See which skill recipes are installed.' },
+  // Vision — read-only
+  look_at_browser: { label: 'Read the open page', detail: 'Look at the page currently open in the browser panel and answer questions about it.' },
+  // Navigation — moves the user to another panel
+  navigate_to_mode: { label: 'Take you to another mode', detail: 'Open a HomeBot panel (Media Studio, Automations, and so on) for you. Nothing is read or changed on disk.' },
+  // CRM — reads
+  crm_search_companies: { label: 'Search CRM companies', detail: 'Look up companies in the business CRM.' },
+  crm_search_contacts: { label: 'Search CRM contacts', detail: 'Look up people in the business CRM.' },
+  crm_search_deals: { label: 'Search deals', detail: 'Look up deals in the sales pipeline.' },
+  crm_find_stale_deals: { label: 'Find quiet deals', detail: 'List open deals with no recent activity.' },
+  crm_daily_brief: { label: 'Summarise the CRM', detail: 'Summarise stale deals, tasks and pipeline totals.' },
+  crm_get_stages: { label: 'List pipeline stages', detail: 'Show the stages a deal moves through.' },
+  crm_audit_log: { label: 'Read CRM history', detail: 'Read the record of every change made in the CRM.' },
+  // CRM — writes (each also shows its own confirmation in chat)
+  crm_create_company: { label: 'Create a CRM company', detail: 'Add a new company to the business CRM.' },
+  crm_update_company: { label: 'Update a CRM company', detail: 'Change fields on an existing company record.' },
+  crm_create_contact: { label: 'Create a CRM contact', detail: 'Add a new person to the business CRM.' },
+  crm_update_contact: { label: 'Update a CRM contact', detail: 'Change fields on an existing contact record.' },
+  crm_create_deal: { label: 'Create a deal', detail: 'Add a new deal/opportunity to the pipeline.' },
+  crm_update_deal: { label: 'Update a deal', detail: 'Change fields on an existing deal.' },
+  crm_advance_deal: { label: 'Move a deal along', detail: 'Move a deal to its next pipeline stage.' },
+  crm_log_activity: { label: 'Log a touchpoint', detail: 'Record an email, call or meeting against a CRM record.' },
+  crm_add_note: { label: 'Add a CRM note', detail: 'Attach a note to a contact, company or deal.' },
+  crm_create_task: { label: 'Create a CRM task', detail: 'Add a follow-up task to the CRM.' },
+  crm_complete_task: { label: 'Complete a CRM task', detail: 'Mark a CRM task as done.' },
+  crm_rename_stage: { label: 'Rename a pipeline stage', detail: 'Change the display name of a pipeline stage.' },
+  crm_match_email: { label: 'Match an email to the CRM', detail: 'Link an email sender to CRM records, creating them if needed.' },
+  crm_export: { label: 'Export the CRM', detail: 'Write every CRM table to files on disk.' },
   // Processes
   list_processes: { label: 'List running programs', detail: 'See which programs are running on this computer.' },
   get_process_info: { label: 'Check a running program', detail: 'Read details about a running program.' },

@@ -737,8 +737,8 @@ const electronAPI: ElectronAPI = {
   },
   // Voice picker: list neural voices and render a sample of one to a file.
   ttsListVoices: async (): Promise<any> => ipcRenderer.invoke('homebot:tts-list-voices'),
-  ttsSampleVoice: async (voice: string, sampleText?: string): Promise<{ success: boolean; path?: string; error?: string }> =>
-    ipcRenderer.invoke('homebot:tts-sample-voice', voice, sampleText),
+  ttsSampleVoice: async (voice: string, sampleText?: string, engine?: 'edge' | 'kokoro'): Promise<{ success: boolean; path?: string; error?: string; engine?: string }> =>
+    ipcRenderer.invoke('homebot:tts-sample-voice', voice, sampleText, engine),
 
   // Scheduler — recurring / daily jobs
   schedulerList: async () => ipcRenderer.invoke('homebot:scheduler-list'),
@@ -760,6 +760,13 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:approve', id, note),
   mediaReject: async (id: string, revise: boolean, note?: string) =>
     ipcRenderer.invoke('homebot:media:reject', id, revise, note),
+  mediaFfmpegStatus: async () => ipcRenderer.invoke('homebot:media:ffmpeg-status'),
+  mediaFfmpegSetup: async () => ipcRenderer.invoke('homebot:media:ffmpeg-setup'),
+  onMediaFfmpegProgress: (cb: (p: any) => void) => {
+    const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
+    ipcRenderer.on('homebot:media:ffmpeg-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:media:ffmpeg-progress', listener);
+  },
   mediaMarkPublished: async (id: string, videoId: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:mark-published', id, videoId, note),
   mediaDelete: async (id: string, keepFiles?: boolean) =>

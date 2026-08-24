@@ -145,6 +145,12 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
   const [editInstructions, setEditInstructions] = useState('');
   const [editTrigger, setEditTrigger] = useState<'manual' | 'schedule'>('manual');
   const [editSchedule, setEditSchedule] = useState(60);
+  // The create form collects a description and an optional webhook URL; the
+  // edit form collected neither, so both could be set once and never changed.
+  // The IPC handler has always accepted them — only the interface never sent
+  // them, which made a stored value uneditable rather than unsupported.
+  const [editDesc, setEditDesc] = useState('');
+  const [editN8nUrl, setEditN8nUrl] = useState('');
 
   const loadAutomations = useCallback(async () => {
     setLoading(true);
@@ -311,6 +317,8 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
     setEditInstructions(auto.instructions);
     setEditTrigger(auto.trigger);
     setEditSchedule(auto.scheduleMinutes || 60);
+    setEditDesc(auto.description || '');
+    setEditN8nUrl(auto.n8nWebhookUrl || '');
   }, []);
 
   const cancelEdit = useCallback(() => {
@@ -323,22 +331,34 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
       await window.electron?.updateAutomation?.({
         id: editingId,
         name: editName.trim(),
+        description: editDesc.trim(),
         instructions: editInstructions.trim(),
         trigger: editTrigger,
         scheduleMinutes: editTrigger === 'schedule' ? editSchedule : undefined,
+        // Sent even when cleared, so emptying the field actually detaches the
+        // workflow. The handler maps '' to undefined; omitting the key instead
+        // would leave a stale URL in place and look like the edit was ignored.
+        n8nWebhookUrl: editN8nUrl.trim(),
       });
       setAutomations(prev => prev.map(a => a.id === editingId ? {
         ...a,
         name: editName.trim(),
+        description: editDesc.trim(),
         instructions: editInstructions.trim(),
         trigger: editTrigger,
         scheduleMinutes: editTrigger === 'schedule' ? editSchedule : a.scheduleMinutes,
+        n8nWebhookUrl: editN8nUrl.trim() || undefined,
       } : a));
       setEditingId(null);
     } catch {
       setError('Failed to save changes');
     }
-  }, [editingId, editName, editInstructions, editTrigger, editSchedule]);
+    // editDesc and editN8nUrl belong here. Without them the callback closes
+    // over the values from the render that created it, so the new inputs looked
+    // like they worked — the boxes updated on screen — while the ORIGINAL
+    // values were sent to disk. Caught by the tests asserting what the handler
+    // receives rather than what the form shows.
+  }, [editingId, editName, editInstructions, editTrigger, editSchedule, editDesc, editN8nUrl]);
 
   const applyExample = useCallback((ex: typeof EXAMPLE_AUTOMATIONS[0]) => {
     setFormName(ex.name);
@@ -623,6 +643,15 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
                   <input id="edit-name" className="setting-input" placeholder="Automation name" value={editName} onChange={e => setEditName(e.target.value)} />
                   <label className="form-label" htmlFor="edit-instructions">Instructions</label>
                   <textarea id="edit-instructions" className="setting-input setting-textarea" placeholder="What should this automation do?" value={editInstructions} onChange={e => setEditInstructions(e.target.value)} rows={4} />
+                  <label className="form-label" htmlFor="edit-description">Description</label>
+                  <input
+                    id="edit-description"
+                    className="setting-input"
+                    data-testid="edit-description"
+                    placeholder="Short description of what this does"
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                  />
                   <label className="form-label" htmlFor="edit-trigger">Trigger</label>
                   <select id="edit-trigger" className="setting-input" title="Trigger type" value={editTrigger} onChange={e => setEditTrigger(e.target.value as 'manual' | 'schedule')}>
                     <option value="manual">Manual</option>
@@ -634,6 +663,19 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
                       <input id="edit-schedule" className="setting-input" type="number" min={1} placeholder="60" value={editSchedule} onChange={e => setEditSchedule(Number(e.target.value))} />
                     </>
                   )}
+                  <label className="form-label" htmlFor="edit-n8n-url">Workflow webhook URL</label>
+                  <input
+                    id="edit-n8n-url"
+                    className="setting-input"
+                    data-testid="edit-n8n-url"
+                    placeholder="Leave blank to run this automation inside HomeBot"
+                    value={editN8nUrl}
+                    onChange={(e) => setEditN8nUrl(e.target.value)}
+                  />
+                  <small className="setting-hint">
+                    Clearing this detaches the workflow — the automation keeps running, just inside
+                    HomeBot rather than through your workflow server.
+                  </small>
                   <div className="form-actions automation-edit-actions">
                     <button type="button" className="btn-primary" onClick={saveEdit} disabled={!editName.trim() || !editInstructions.trim()}>Save</button>
                     <button type="button" className="btn-secondary" onClick={cancelEdit}>Cancel</button>

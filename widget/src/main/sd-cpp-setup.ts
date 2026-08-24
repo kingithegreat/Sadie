@@ -32,13 +32,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import axios from 'axios';
-import { execFile } from 'child_process';
 import { getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
+import { makeDownloadIO } from './binary-download';
+import type { DownloadIO, ProgressFn, ReleaseAsset } from './binary-download';
 
 // ---- resolution (pure, tested) ---------------------------------------------
 
-export interface ReleaseAsset { name: string; browser_download_url: string; size: number }
 export interface RepoFile { path: string; size: number }
 
 /**
@@ -89,67 +88,17 @@ export interface SetupProgress {
   totalMB?: number | null;
 }
 
-export type ProgressFn = (p: SetupProgress) => void;
-
 // ---- IO seams (injectable for tests) ---------------------------------------
 
-export interface SetupIO {
-  getJson(url: string): Promise<any>;
-  /** Stream url to destPath, reporting bytes as they arrive. */
-  download(url: string, destPath: string, onBytes: (received: number, total: number | null) => void): Promise<void>;
-  /** Extract a zip and return the directory it was extracted into. */
-  extractZip(zipPath: string, intoDir: string): Promise<void>;
-  freeDiskGB(dir: string): number | null;
-}
+/**
+ * The download/extract/disk seams now live in `binary-download.ts`, shared with
+ * the ffmpeg setup — the two were copies of each other, which is exactly what
+ * `check-duplicate-exports.mjs` is for. Kept as a named type because the tests
+ * and the orchestrator both refer to it.
+ */
+export type SetupIO = DownloadIO;
 
-const UA = { 'User-Agent': 'HomeBot local image setup' };
-
-export const realIO: SetupIO = {
-  async getJson(url) {
-    const res = await axios.get(url, { timeout: 30_000, headers: UA });
-    return res.data;
-  },
-  async download(url, destPath, onBytes) {
-    const tmp = `${destPath}.part`;
-    const res = await axios.get(url, {
-      responseType: 'stream', timeout: 60_000, headers: UA,
-      maxRedirects: 10,
-    });
-    const total = Number(res.headers['content-length']) || null;
-    let received = 0;
-    await new Promise<void>((resolve, reject) => {
-      const out = fs.createWriteStream(tmp);
-      res.data.on('data', (chunk: Buffer) => { received += chunk.length; onBytes(received, total); });
-      res.data.on('error', reject);
-      out.on('error', reject);
-      out.on('finish', resolve);
-      res.data.pipe(out);
-    });
-    // A truncated download must never be renamed into place.
-    if (total && Math.abs(fs.statSync(tmp).size - total) > 1024) {
-      fs.unlinkSync(tmp);
-      throw new Error('The download stopped early — check the internet connection and try again.');
-    }
-    fs.renameSync(tmp, destPath);
-  },
-  async extractZip(zipPath, intoDir) {
-    // Windows-only product (electron-builder targets win/nsis); Expand-Archive
-    // ships with every supported Windows and saves a zip dependency.
-    await new Promise<void>((resolve, reject) => {
-      execFile('powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command',
-          `Expand-Archive -LiteralPath "${zipPath}" -DestinationPath "${intoDir}" -Force`],
-        { timeout: 120_000 },
-        (err, _o, stderr) => err ? reject(new Error(stderr || err.message)) : resolve());
-    });
-  },
-  freeDiskGB(dir) {
-    try {
-      const st = (fs as any).statfsSync(dir);
-      return (st.bavail * st.bsize) / 1024 ** 3;
-    } catch { return null; }
-  },
-};
+const realIO: SetupIO = makeDownloadIO('HomeBot local image setup');
 
 // ---- the orchestrator -------------------------------------------------------
 
@@ -169,7 +118,7 @@ export function isSetupRunning(): boolean { return running; }
  * resolved value is a summary for the same audience. Throws with
  * plain-language messages — the UI shows them verbatim.
  */
-export async function runAutoSetup(onProgress: ProgressFn, io: SetupIO = realIO): Promise<string> {
+export async function runAutoSetup(onProgress: ProgressFn<SetupProgress>, io: SetupIO = realIO): Promise<string> {
   if (running) throw new Error('Setup is already running.');
   running = true;
   try {

@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app, shell } from 'electron';
+import { ipcMain, BrowserWindow, app, shell, dialog } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
 
@@ -59,7 +59,7 @@ import { resolveCloudLLM, describeActiveModel } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
 import { resolveWithinHome } from './utils/path-guard';
-import { sanitizeImportedSettings } from './utils/settings-import';
+import { sanitizeImportedSettings, analyzeImportedEndpoints, stripImportedSettings } from './utils/settings-import';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
@@ -956,6 +956,46 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('homebot:media:reject', async (_e, id: string, revise: boolean, note?: string) =>
     applyMediaTransition(id, revise ? 'needs_revision' : 'rejected', { by: 'human', humanDecision: true, note }));
 
+  // Is the video engine available, and did HomeBot install it?
+  //
+  // Reports `ready` from actually running the binary, not from the file being
+  // present — the two came apart for sd.cpp when a rename left an exe that
+  // existed and could not be used.
+  ipcMain.handle('homebot:media:ffmpeg-status', async () => {
+    const { findFfmpeg } = await import('./media-render');
+    const { findManagedFfmpeg, isFfmpegSetupRunning } = await import('./ffmpeg-setup');
+    const managed = findManagedFfmpeg();
+    const found = await findFfmpeg(managed);
+    return {
+      ready: !!found,
+      path: found,
+      managed: !!found && found === managed,
+      running: isFfmpegSetupRunning(),
+      supported: process.platform === 'win32',
+    };
+  });
+
+  // Download and unpack the video engine, streaming progress to the panel.
+  //
+  // The old copy told a non-technical user to run `winget install Gyan.FFmpeg`.
+  // This is the same answer `sd-cpp-setup` gave for local image generation:
+  // do it for them, and say what is happening while it runs.
+  ipcMain.handle('homebot:media:ffmpeg-setup', async (e) => {
+    const { runFfmpegSetup } = await import('./ffmpeg-setup');
+    const send = (p: any) => {
+      try { e.sender.send('homebot:media:ffmpeg-progress', p); } catch { /* window closed mid-download */ }
+    };
+    try {
+      const bin = await runFfmpegSetup(send);
+      return { ok: true, path: bin, message: 'Ready — videos can now be made on this PC.' };
+    } catch (err: any) {
+      // These messages are already written for a person; pass them through.
+      const message = err?.message || 'The video engine could not be set up.';
+      send({ phase: 'error', note: message });
+      return { ok: false, error: message };
+    }
+  });
+
   // Record that a video went out, and where.
   //
   // `markPublished` was exported, unit-tested and called by nothing: the only
@@ -1702,13 +1742,19 @@ try {
     return getVoicesHandler({}, {} as any);
   });
 
-  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string) => {
+  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string, engine?: string) => {
     const { renderNarrationToFile } = await import('./tools/voice');
     const text = (sampleText || 'Hi, this is how I sound. I can narrate your video from start to finish.').slice(0, 300);
     const file = path.join(os.tmpdir(), `homebot-voice-sample-${Date.now()}.mp3`);
     try {
-      const rendered = await renderNarrationToFile(text, file, { voice: voice || undefined });
-      return { success: true, path: rendered.path };
+      // The sample must come from the SAME engine that will record the video —
+      // approving a voice by ear only means something if it is this voice,
+      // rendered by this engine.
+      const rendered = await renderNarrationToFile(text, file, {
+        voice: voice || undefined,
+        engine: engine === 'kokoro' || engine === 'edge' ? engine : undefined,
+      });
+      return { success: true, path: rendered.path, engine: rendered.engine };
     } catch (err: any) {
       return { success: false, error: err?.message || String(err) };
     }
@@ -1851,9 +1897,72 @@ try {
       const bundle = JSON.parse(raw);
       if (!bundle._homebot_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
 
+      let keptEndpoints: string[] | undefined;
+      let skippedEndpoints: string[] | undefined;
+
       if (bundle.settings) {
         const current = getSettings();
-        saveSettings({ ...current, ...sanitizeImportedSettings(bundle.settings) });
+        // Credentials never survive an import. Endpoints (n8nUrl and friends)
+        // decide where traffic goes — including who receives X-HOMEBOT-Auth —
+        // so a backup that would MOVE one is confirmed with the user first;
+        // if nobody can be asked, endpoints are skipped rather than applied.
+        const changes = analyzeImportedEndpoints(bundle.settings, current);
+        let importedSettings = bundle.settings;
+        if (changes.length === 0) {
+          const { settings } = stripImportedSettings(bundle.settings);
+          importedSettings = settings;
+        } else {
+          const detail = changes
+            .map((c) => `${c.key}: ${c.from || '(not set)'} → ${c.to}`)
+            .join('\n');
+          let restoreEndpoints: boolean | undefined;
+          try {
+            const answer = await dialog.showMessageBox({
+              type: 'warning',
+              buttons: ['Keep my endpoints', 'Restore from backup'],
+              defaultId: 0,
+              cancelId: 0,
+              title: 'Backup changes where HomeBot sends traffic',
+              message: 'This backup would change where HomeBot sends your chats and data:',
+              detail,
+            });
+            restoreEndpoints = answer.response === 1;
+          } catch {
+            restoreEndpoints = undefined; // nobody home to ask — fail closed below
+          }
+          if (restoreEndpoints === true) {
+            const { settings } = stripImportedSettings(bundle.settings);
+            // Endpoints were explicitly approved; put them back over the
+            // stripped copy. Credentials stay stripped either way.
+            for (const c of changes) {
+              if (c.key.includes('.')) continue; // customLLM handled as a whole below
+              (settings as Record<string, unknown>)[c.key] = (
+                bundle.settings as Record<string, unknown>
+              )[c.key];
+            }
+            if (changes.some((c) => c.key === 'customLLM.baseUrl')) {
+              const srcLlm = (bundle.settings as Record<string, unknown>).customLLM as
+                | Record<string, unknown>
+                | undefined;
+              const dstLlm = (settings as Record<string, unknown>).customLLM as
+                | Record<string, unknown>
+                | undefined;
+              if (srcLlm && dstLlm && Object.prototype.hasOwnProperty.call(srcLlm, 'baseUrl')) {
+                dstLlm.baseUrl = srcLlm.baseUrl;
+              }
+            }
+            importedSettings = settings;
+            keptEndpoints = changes.map((c) => c.key);
+          } else {
+            const { settings, strippedEndpoints: stripped } =
+              stripImportedSettings(bundle.settings);
+            importedSettings = settings;
+            skippedEndpoints = stripped.filter((k) =>
+              changes.some((c) => c.key === k)
+            );
+          }
+        }
+        saveSettings({ ...current, ...sanitizeImportedSettings(importedSettings) });
       }
       if (bundle.preferences) {
         MemoryManager.savePreferences(bundle.preferences);
@@ -1861,7 +1970,12 @@ try {
       if (bundle.conversations) {
         MemoryManager.saveConversationStore(bundle.conversations);
       }
-      return { success: true, restoredAt: new Date().toISOString() };
+      return {
+        success: true,
+        restoredAt: new Date().toISOString(),
+        ...(keptEndpoints ? { keptEndpoints } : {}),
+        ...(skippedEndpoints ? { skippedEndpoints } : {}),
+      };
     } catch (err: any) {
       console.error('[IPC] homebot:import-settings error:', err.message);
       return { success: false, error: err.message };
