@@ -1,18 +1,23 @@
-/**
+﻿/**
  * n8n API layer tests
  *
  * Covers the transport selection added for authenticated n8n access:
- * - REST path (API key from HomeBot Settings → X-N8N-API-KEY header)
+ * - REST path (API key from HomeBot Settings â†’ X-N8N-API-KEY header)
  * - Docker CLI fallback when no key is configured (incl. the supported
  *   `n8n update:workflow --active=true` activation, replacing the old
  *   direct-SQLite hack)
  * - workflow JSON validation shared with the import tool
  */
 
+jest.mock('electron', () => ({
+  app: {
+    getPath: (_name: string) => require('os').tmpdir(),
+  },
+}));
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
 jest.mock('axios', () => ({
   __esModule: true,
-  default: { request: jest.fn(), get: jest.fn() },
+  default: { request: jest.fn(), get: jest.fn(), post: jest.fn() },
 }));
 
 import { execFile } from 'child_process';
@@ -50,7 +55,7 @@ function useApiKey(apiKey?: string, baseUrl = 'http://myhost:5678/') {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default: no API key → CLI fallback
+  // Default: no API key â†’ CLI fallback
   useApiKey(undefined);
 });
 
@@ -115,11 +120,11 @@ describe('REST path (API key configured)', () => {
     expect(call.method).toBe('POST');
     expect(call.url).toBe('http://myhost:5678/api/v1/workflows');
     expect(call.headers['X-N8N-API-KEY']).toBe('secret-key');
-    // Public API rejects unknown top-level props — active/versionId must be stripped
+    // Public API rejects unknown top-level props â€” active/versionId must be stripped
     expect(call.data).toEqual({
       name: VALID_WORKFLOW.name,
       // Deployment injects an Auth Guard between the webhook and its first
-      // downstream node (see n8n-auth-guard.ts) — assert the rewired graph.
+      // downstream node (see n8n-auth-guard.ts) â€” assert the rewired graph.
       nodes: expect.arrayContaining([
         expect.objectContaining({ name: 'Webhook', type: 'n8n-nodes-base.webhook' }),
         expect.objectContaining({ name: 'Auth Guard', type: 'n8n-nodes-base.code' }),
@@ -206,13 +211,13 @@ describe('verifyN8nConnection', () => {
     expect(res.error).toContain('not reachable');
   });
 
-  test('reachable, no key → authenticated is null', async () => {
+  test('reachable, no key â†’ authenticated is null', async () => {
     mockAxios.get.mockResolvedValue({ status: 200 });
     const res = await verifyN8nConnection({ baseUrl: 'http://up:5678', apiKey: '' });
     expect(res).toEqual({ reachable: true, authenticated: null });
   });
 
-  test('reachable + valid key → authenticated true', async () => {
+  test('reachable + valid key â†’ authenticated true', async () => {
     mockAxios.get
       .mockResolvedValueOnce({ status: 200 }) // healthz
       .mockResolvedValueOnce({ status: 200, data: { data: [] } }); // /api/v1/workflows
@@ -223,7 +228,7 @@ describe('verifyN8nConnection', () => {
     expect((authCall[1] as any).headers['X-N8N-API-KEY']).toBe('good');
   });
 
-  test('reachable + rejected key → authenticated false with a 401 message', async () => {
+  test('reachable + rejected key â†’ authenticated false with a 401 message', async () => {
     mockAxios.get
       .mockResolvedValueOnce({ status: 200 })
       .mockRejectedValueOnce({ response: { status: 401 } });
@@ -239,7 +244,7 @@ describe('verifyN8nConnection', () => {
  *
  * The guards are "import unless a workflow by this name already exists", and
  * they read a FAILED listing as "none exist". Every launch where Docker was
- * not ready yet imported another copy — Aden's n8n ended up with six copies of
+ * not ready yet imported another copy â€” Aden's n8n ended up with six copies of
  * "HomeBot: Web Fetch" and four of "System Health Check".
  */
 describe('not knowing is not the same as knowing there are none', () => {
@@ -275,3 +280,125 @@ describe('not knowing is not the same as knowing there are none', () => {
     expect(importCalls).toHaveLength(0);
   });
 });
+
+/**
+ * Self-healing guard replacement.
+ *
+ * The skip-if-exists deploy guards stopped duplicates, but they also made
+ * every guard upgrade impossible: a workflow deployed before Auth Guard
+ * injection keeps serving unauthenticated requests through every release,
+ * because the one function that could replace it sees the name and skips.
+ * Found live 2026-08-24: "HomeBot: Media Research" had no guard at all and
+ * returned full Wikipedia research to any caller on the network.
+ *
+ * The fix: when the existing workflow's nodes carry no guard marker, replace
+ * it (delete + reimport) instead of skipping. When there is no API key the
+ * node contents cannot be read, so nothing is deleted on a guess â€” the
+ * function reports honestly instead.
+ */
+describe('a stale unguarded workflow is replaced, not skipped', () => {
+  const { ensureMediaResearchWorkflow } = require('../n8n-api');
+
+  const GUARD_MARKER = "hdrs['x-homebot-auth']";
+
+  const guardedNodes = [
+    { id: 'a', name: 'Webhook', type: 'n8n-nodes-base.webhook', typeVersion: 1.1, position: [0, 0], parameters: { path: 'homebot/media-research' } },
+    { id: 'g', name: 'Auth Guard', type: 'n8n-nodes-base.code', typeVersion: 2, position: [200, 0], parameters: { jsCode: `let secret = "abc";\nconst hdrs = $input.first()?.json?.headers || {};\n${GUARD_MARKER}` } },
+  ];
+  const unguardedNodes = [
+    { id: 'a', name: 'Webhook', type: 'n8n-nodes-base.webhook', typeVersion: 1.1, position: [0, 0], parameters: { path: 'homebot/media-research' } },
+    { id: 'q', name: 'Build query', type: 'n8n-nodes-base.code', typeVersion: 2, position: [200, 0], parameters: { jsCode: 'return [];' } },
+  ];
+
+  const listViaRest = (workflows: Array<{ id: string; name: string }>) => {
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      if (method === 'GET' && String(url).includes('/workflows?')) {
+        return { data: { data: workflows.map((w) => ({ ...w })) } };
+      }
+      if (method === 'GET' && /\/workflows\/[^/]+$/.test(String(url))) {
+        const id = String(url).split('/').pop();
+        const wf = workflows.find((w) => w.id === id);
+        return { data: { id, name: wf?.name, nodes: wf && (wf as any).nodes || unguardedNodes } };
+      }
+      throw new Error('unexpected axios call: ' + method + ' ' + url);
+    });
+  };
+
+  test('an existing workflow with no guard marker is deleted and reimported', async () => {
+    useApiKey('key');
+    const stale = { id: 'stale-1', name: 'HomeBot: Media Research', nodes: unguardedNodes };
+    listViaRest([stale]);
+
+    let deleted: string[] = [];
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      if (method === 'GET' && String(url).includes('/workflows?')) {
+        return { data: { data: [{ id: stale.id, name: stale.name }] } };
+      }
+      if (method === 'GET' && /\/workflows\/[^/]+$/.test(String(url))) {
+        return { data: { id: stale.id, name: stale.name, nodes: unguardedNodes } };
+      }
+      if (method === 'DELETE') {
+        deleted.push(String(url));
+        return { data: {} };
+      }
+      if (method === 'POST' && String(url).endsWith('/workflows')) {
+        return { data: { id: 'new-1' } };
+      }
+      if (method === 'POST' && String(url).includes('/activate')) {
+        return { data: {} };
+      }
+      throw new Error('unexpected axios call: ' + method + ' ' + url);
+    });
+    // checkWebhook pings the webhook via axios.post â€” answer it so the final
+    // verify passes. A 200 with any body means "available".
+    (mockAxios.post as jest.Mock).mockResolvedValue({ status: 200, data: {} });
+
+    const res = await ensureMediaResearchWorkflow();
+    expect(res.deployed).toBe(true);
+    expect(deleted.some((u) => u.includes('stale-1'))).toBe(true);
+    // And a fresh import happened after the delete (the POST to
+    // /api/v1/workflows; the activate POST and the webhook ping POST are
+    // separate calls). axios.request receives ONE config object, so the mock
+    // calls destructure accordingly.
+    const posts = mockAxios.request.mock.calls.filter(
+      ([cfg]: any) => cfg?.method === 'POST' && String(cfg?.url).endsWith('/api/v1/workflows'),
+    );
+    expect(posts.length).toBe(1);
+  });
+
+  test('a workflow that already has the guard is left alone', async () => {
+    useApiKey('key');
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      if (method === 'GET' && String(url).includes('/workflows?')) {
+        return { data: { data: [{ id: 'ok-1', name: 'HomeBot: Media Research' }] } };
+      }
+      if (method === 'GET' && /\/workflows\/[^/]+$/.test(String(url))) {
+        return { data: { id: 'ok-1', name: 'HomeBot: Media Research', nodes: guardedNodes } };
+      }
+      if (method === 'DELETE') {
+        throw new Error('must not delete a guarded workflow');
+      }
+      if (method === 'POST') {
+        throw new Error('must not reimport a guarded workflow');
+      }
+      throw new Error('unexpected axios call: ' + method + ' ' + url);
+    });
+
+    const res = await ensureMediaResearchWorkflow();
+    expect(res.deployed).toBe(true);
+  });
+
+  test('without an API key nothing is deleted â€” node contents are unreadable, so replacement would be a guess', async () => {
+    useApiKey(undefined);
+    failListingSafe();
+    const res = await ensureMediaResearchWorkflow();
+    // With no key and no Docker, listing fails and we report honestly.
+    expect(res.deployed).toBe(false);
+
+    function failListingSafe() {
+      mockExecFile.mockImplementation((_c: string, _a: string[], _o: any, cb: any) =>
+        cb(Object.assign(new Error('no docker'), { code: 1 }), '', 'err'));
+    }
+  });
+});
+
