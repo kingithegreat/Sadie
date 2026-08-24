@@ -60,14 +60,31 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ navContext }
         setNotice({ text: built.error, error: true });
         return;
       }
-      await (window as any).electron?.mcpAddServer?.(built.config);
+      const res = await (window as any).electron?.mcpAddServer?.(built.config);
       await loadServers();
       setValues((prev) => ({ ...prev, [entry.id]: {} }));
       setExpandedId(null);
-      setNotice({
-        text: `${entry.name} connected. Restart HomeBot to bring it live — its tools then ask permission before acting.`,
-        error: false,
-      });
+      if (res?.connected) {
+        // The server started and its tools are bridged RIGHT NOW — say so,
+        // with the count, so "connected" is a fact and not a hope.
+        const noun = res.toolCount === 1 ? '1 tool is' : `${res.toolCount ?? 0} tools are`;
+        setNotice({
+          text: `${entry.name} connected — ${noun} live now and will ask permission before acting.`,
+          error: false,
+        });
+      } else if (res?.error) {
+        // Saved but did not start. Say what happened and what happens next;
+        // a silent failure here would read as broken, not pending.
+        setNotice({
+          text: `${entry.name} was saved, but did not start just now: ${res.error}. HomeBot will try again when it next starts.`,
+          error: true,
+        });
+      } else {
+        setNotice({
+          text: `${entry.name} saved. Restart HomeBot to bring it live — its tools then ask permission before acting.`,
+          error: false,
+        });
+      }
     } catch (e: any) {
       setNotice({ text: `Could not save ${entry.name}: ${e?.message || e}`, error: true });
     } finally {

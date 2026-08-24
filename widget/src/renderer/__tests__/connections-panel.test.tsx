@@ -95,4 +95,26 @@ describe('ConnectionsPanel', () => {
     expect(screen.getByText(/mediates every connection/i)).toBeTruthy();
     expect(screen.getByText(/hand-entry form/i)).toBeTruthy();
   });
+
+  test('when the server starts immediately, the notice says tools are live — not restart', async () => {
+    // Isolate: an earlier test's mockResolvedValue persists across clearAllMocks,
+    // and a polluted server list pre-marks Memory "Connected" so its form — and
+    // its real Connect button — never render.
+    mockListServers.mockResolvedValue([]);
+    mockAddServer.mockResolvedValue({ success: true, connected: true, toolCount: 3 });
+    render(<ConnectionsPanel navContext={{ service: 'memory' }} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    await screen.findByText(/live now and will ask permission before acting/);
+    // "Restart" would now be a lie.
+    expect(screen.queryByText(/Restart HomeBot/)).toBeNull();
+  });
+
+  test('when the server fails to start, the notice says saved-but-not-started and why', async () => {
+    mockListServers.mockResolvedValue([]);
+    mockAddServer.mockResolvedValue({ success: true, connected: false, error: 'spawn npx ENOENT' });
+    render(<ConnectionsPanel navContext={{ service: 'memory' }} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    const notice = await screen.findByText(/did not start just now: spawn npx ENOENT/);
+    expect(notice.className).toContain('cnx-notice-error');
+  });
 });
