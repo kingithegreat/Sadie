@@ -158,6 +158,36 @@ export const MediaStudioPanel: React.FC = () => {
   useEffect(() => { refresh(); }, [refresh]);
 
   /** Every mutation reports the state machine's own refusal text verbatim. */
+  /**
+   * Let go of a job's video and audio before touching its files.
+   *
+   * Reported as "Delete keeps failing". A `<video>` or `<audio>` pointed at a
+   * `file:///` source keeps an open handle on it, and on Windows an open handle
+   * makes the file undeletable — so `rmSync` on the job folder fails with EBUSY
+   * every single time for any job whose render or narration is on screen. Which
+   * is every job worth deleting.
+   *
+   * Clearing `src` and calling `load()` drops the handle. The await yields a
+   * frame so the release lands before main tries to remove the directory.
+   */
+  const releaseMediaThen = async (id: string, fn: () => Promise<any>) => {
+    try {
+      const nodes = document.querySelectorAll<HTMLMediaElement>(
+        `[data-testid="ms-video-${id}"], [data-testid="ms-audio-${id}"]`
+      );
+      nodes.forEach(el => {
+        try { el.pause(); } catch { /* not playing */ }
+        el.removeAttribute('src');
+        try { el.load(); } catch { /* already torn down */ }
+      });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    } catch {
+      // Releasing is best-effort; main retries too, and a delete that works
+      // anyway must not be blocked by this.
+    }
+    return fn();
+  };
+
   const run = async (id: string, fn: () => Promise<any>, label = '') => {
     setBusy(id); setBusyLabel(label); setError(null); setDone(null);
     try {
@@ -424,6 +454,7 @@ export const MediaStudioPanel: React.FC = () => {
             className="ms-audio"
             controls
             preload="none"
+            data-testid={`ms-audio-${j.id}`}
             src={`file:///${j.narrationPath.replace(/\\/g, '/')}`}
           />
         ) : null}
@@ -615,7 +646,7 @@ export const MediaStudioPanel: React.FC = () => {
                 </p>
               ),
               confirmLabel: 'Delete it',
-              onConfirm: () => run(j.id, () => api()?.mediaDelete?.(j.id), 'Deleting'),
+              onConfirm: () => run(j.id, () => releaseMediaThen(j.id, () => api()?.mediaDelete?.(j.id)), 'Deleting'),
             })}
           >Delete</button>
         )}
