@@ -262,3 +262,99 @@ export function buildAvoidClause(existing: ParsedQuizQuestion[], max = 20): stri
     'Generate questions covering DIFFERENT aspects of the topic.',
   ].join('\n');
 }
+
+/**
+ * Fill a quiz to the requested size, or report honestly that it could not.
+ *
+ * Both quiz handlers used to run a fixed `ceil(count/batch) + 2` attempts and
+ * then return whatever they had with `success: true`. Only a ZERO-length result
+ * counted as an error, so asking for 5 and receiving 3 looked like success —
+ * reported live: "quiz was meant to give me 5 questions and it gave me 3".
+ *
+ * The comment above that loop claimed it kept generating "instead of silently
+ * returning fewer questions". It did not: once the attempt budget ran out it
+ * returned short, silently, which is the behaviour the comment denied.
+ *
+ * Two things had to change and both are here so the two callers cannot drift:
+ *
+ *  - A more generous budget, because rejects are NORMAL. The prompt embeds a
+ *    worked EXAMPLE, small models echo it, and dedupeQuestions then strips the
+ *    echo — so a batch of 3 routinely yields 1 or 2.
+ *  - Stop early when it stops helping. Consecutive batches that add nothing new
+ *    mean the model is repeating itself, and ten more rounds will not fix that.
+ *    Spending a minute to confirm it is stuck is worse than saying so.
+ *
+ * `shortfall` is the point of the whole thing: the caller can tell the user
+ * "here are 3, I could not make 5" instead of handing over 3 and saying nothing.
+ */
+export interface QuizFillResult {
+  questions: ParsedQuizQuestion[];
+  /** What was asked for. */
+  requested: number;
+  /** requested - questions.length. Zero when the quiz is full. */
+  shortfall: number;
+  /** Batches actually run, for the log. */
+  attempts: number;
+  /** Why it stopped, so a short quiz is explainable rather than mysterious. */
+  stoppedBecause: 'full' | 'no-new-questions' | 'attempt-limit';
+}
+
+/** Consecutive empty batches before concluding the model is repeating itself. */
+export const QUIZ_DRY_ROUNDS = 2;
+
+export async function fillQuiz(opts: {
+  questionCount: number;
+  batchSize?: number;
+  /** Runs one batch and returns the model's raw text. */
+  generate: (count: number, existing: ParsedQuizQuestion[]) => Promise<string>;
+  onBatch?: (info: { attempt: number; got: number; total: number; raw: string }) => void;
+}): Promise<QuizFillResult> {
+  const requested = Math.max(1, Math.trunc(opts.questionCount) || 1);
+  const batchSize = opts.batchSize ?? 3;
+
+  // Room for rejects rather than the bare minimum: the old +2 assumed batches
+  // mostly succeed, and they mostly do not.
+  const maxAttempts = Math.ceil(requested / batchSize) + 6;
+
+  let questions: ParsedQuizQuestion[] = [];
+  let dryRounds = 0;
+  let attempts = 0;
+  let stoppedBecause: QuizFillResult['stoppedBecause'] = 'attempt-limit';
+
+  while (attempts < maxAttempts && questions.length < requested) {
+    attempts++;
+    const want = Math.min(batchSize, requested - questions.length);
+
+    let raw = '';
+    try {
+      raw = await opts.generate(want, questions);
+    } catch {
+      // A failed batch is a dry round, not a fatal error — the next one may
+      // work, and a transient provider hiccup should not lose the quiz.
+      raw = '';
+    }
+
+    const before = questions.length;
+    questions = dedupeQuestions([...questions, ...parseQuizBatch(raw || '')], requested);
+    const gained = questions.length - before;
+
+    opts.onBatch?.({ attempt: attempts, got: gained, total: questions.length, raw: raw || '' });
+
+    if (gained > 0) {
+      dryRounds = 0;
+    } else if (++dryRounds >= QUIZ_DRY_ROUNDS) {
+      stoppedBecause = 'no-new-questions';
+      break;
+    }
+  }
+
+  if (questions.length >= requested) stoppedBecause = 'full';
+
+  return {
+    questions,
+    requested,
+    shortfall: Math.max(0, requested - questions.length),
+    attempts,
+    stoppedBecause,
+  };
+}
