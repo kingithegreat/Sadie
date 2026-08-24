@@ -9,6 +9,11 @@ Repo-native companion to the Notion [🔗 Work Claims Ledger](https://app.notion
 
 CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the build if a newly added file exports the same top-level identifier as an existing file — usually a sign two features were built in parallel without checking here first, or a scaffold was built without checking the real integration point (see the Step 1 entitlements gate channel-name mismatch, which was a variant of this same failure mode). See that script's header comment for how it works and how to suppress a genuine false positive.
 
+4. **Verify a claim against the repo before repeating or trusting it** — the board is a
+   LAGGING record, not a source of truth. Check `gh pr view <n> --json state,mergedAt`;
+   squash-merge means the original SHA is never an ancestor, so `git branch -r --contains`
+   lies. Two agents repeated rows here that had been stale for 48 hours.
+
 ## Active claims
 
 | Feature | Branch | Status | Notes |
