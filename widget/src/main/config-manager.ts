@@ -284,6 +284,9 @@ export const DEFAULT_SETTINGS: Settings = {
     // Vision — read-only safe
     vision_describe: true,
     vision_query: true,
+    look_at_browser: true,
+    // Navigation — moves the user to a panel; no data is read or written
+    navigate_to_mode: true,
     // Voice — safe
     speak: true,
     stop_speaking: true,
@@ -347,6 +350,33 @@ export const DEFAULT_SETTINGS: Settings = {
     media_advance_job: true,
     media_approve_job: false,
     media_reject_job: false,
+    media_list_music: true,
+    // Skills — loading instructions is safe
+    use_skill: true,
+    list_skills: true,
+    // CRM — reads ship allowed; every write carries requiresConfirmation in
+    // crm.ts and ships denied here (see the CRM_WRITE_TOOLS note there).
+    crm_search_companies: true,
+    crm_search_contacts: true,
+    crm_search_deals: true,
+    crm_find_stale_deals: true,
+    crm_daily_brief: true,
+    crm_get_stages: true,
+    crm_audit_log: true,
+    crm_create_company: false,
+    crm_update_company: false,
+    crm_create_contact: false,
+    crm_update_contact: false,
+    crm_create_deal: false,
+    crm_update_deal: false,
+    crm_advance_deal: false,
+    crm_log_activity: false,
+    crm_add_note: false,
+    crm_create_task: false,
+    crm_complete_task: false,
+    crm_rename_stage: false,
+    crm_match_email: false,
+    crm_export: false,
     // Git — read-only operations safe
     git_status: true,
     git_log: true,
