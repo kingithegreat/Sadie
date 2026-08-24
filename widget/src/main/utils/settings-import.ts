@@ -8,7 +8,7 @@
  *    is no restore flow that legitimately needs a backup to overwrite API
  *    keys; users who want that copy them through Settings.
  *
- * 2. Endpoints (ENDPOINT_SETTING_KEYS, plus customLLM.baseUrl) — these decide
+ * 2. Endpoints (ENDPOINT_SETTING_KEYS, plus customLLM.apiUrl) — these decide
  *    WHERE traffic goes: the n8n host that receives chat and automation
  *    requests stamped with X-HOMEBOT-Auth, the Ollama/SearXNG/Code-API hosts,
  *    and the custom-LLM base URL. A malicious backup that repoints them turns
@@ -37,7 +37,7 @@ const CREDENTIAL_SETTING_KEYS: ReadonlySet<string> = new Set([
 
 /**
  * Top-level settings keys whose value is a traffic destination. Nested
- * customLLM.baseUrl is handled alongside these — see below.
+ * customLLM.apiUrl is handled alongside these — see below.
  */
 const ENDPOINT_SETTING_KEYS: ReadonlySet<string> = new Set([
   'n8nUrl', // receives chat + automation calls carrying X-HOMEBOT-Auth
@@ -56,12 +56,25 @@ function stripNestedCredentials(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Remove the nested chat endpoint from an imported customLLM.
+ *
+ * The field is `apiUrl`. This function named `baseUrl` throughout when it
+ * landed — a field CustomLLMConfig does not declare — so it deleted nothing,
+ * reported nothing, and `customLLM.apiUrl` passed through untouched. A hostile
+ * backup still repointed every chat request at the importer's chosen server,
+ * which is the specific hole the module exists to close.
+ *
+ * Worse than an unguarded import, because the code read as though it were
+ * handled. Guard against a name, not a memory:
+ *   git show HEAD:widget/src/shared/types.ts | grep -A6 'interface CustomLLMConfig'
+ */
 function stripNestedEndpoint(value: unknown): { value: unknown; stripped: boolean } {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const obj = value as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(obj, 'baseUrl')) return { value, stripped: false };
+    if (!Object.prototype.hasOwnProperty.call(obj, 'apiUrl')) return { value, stripped: false };
     const out: Record<string, unknown> = { ...obj };
-    delete out.baseUrl;
+    delete out.apiUrl;
     return { value: out, stripped: true };
   }
   return { value, stripped: false };
@@ -106,15 +119,15 @@ export function analyzeImportedEndpoints(
   if (
     imp.customLLM &&
     typeof imp.customLLM === 'object' &&
-    Object.prototype.hasOwnProperty.call(imp.customLLM, 'baseUrl')
+    Object.prototype.hasOwnProperty.call(imp.customLLM, 'apiUrl')
   ) {
-    const to = normalize((imp.customLLM as Record<string, unknown>).baseUrl);
+    const to = normalize((imp.customLLM as Record<string, unknown>).apiUrl);
     const curLlm = cur.customLLM;
     const from =
       curLlm && typeof curLlm === 'object'
-        ? normalize((curLlm as Record<string, unknown>).baseUrl)
+        ? normalize((curLlm as Record<string, unknown>).apiUrl)
         : undefined;
-    if (to && to !== from) changes.push({ key: 'customLLM.baseUrl', from, to });
+    if (to && to !== from) changes.push({ key: 'customLLM.apiUrl', from, to });
   }
 
   return changes;
@@ -158,11 +171,11 @@ export function stripImportedSettings<T extends Record<string, unknown>>(
   if (
     sanitized.customLLM &&
     typeof sanitized.customLLM === 'object' &&
-    Object.prototype.hasOwnProperty.call(sanitized.customLLM, 'baseUrl')
+    Object.prototype.hasOwnProperty.call(sanitized.customLLM, 'apiUrl')
   ) {
     const res = stripNestedEndpoint(sanitized.customLLM);
     sanitized.customLLM = res.value;
-    if (res.stripped) strippedEndpoints.push('customLLM.baseUrl');
+    if (res.stripped) strippedEndpoints.push('customLLM.apiUrl');
   }
   return { settings: sanitized as Partial<T>, strippedEndpoints };
 }

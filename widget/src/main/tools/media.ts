@@ -510,15 +510,21 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
 export const narrateMediaJobDef: ToolDefinition = {
   name: 'media_narrate',
   description:
-    'Record the narration for a video whose script is ready, using the same voice HomeBot ' +
-    'speaks with. Produces an audio file and moves the job to media_production. No account ' +
-    'or API key is needed.',
+    'Record the narration for a video whose script is ready. Produces an audio file and ' +
+    'moves the job to media_production. No account or API key is needed. The result names ' +
+    'the engine that actually rendered — Kokoro requests fall back to Edge when the local ' +
+    'model cannot run.',
   category: 'media',
   parameters: {
     type: 'object',
     properties: {
       job: { type: 'string', description: 'Job id or title' },
       voice: { type: 'string', description: 'Optional voice name; defaults to HomeBot\'s configured voice' },
+      engine: {
+        type: 'string',
+        enum: ['edge', 'kokoro'],
+        description: "Narration engine. 'kokoro' runs locally (English, downloads ≈90 MB of weights on first use); anything it cannot do falls back to 'edge'. Default: the saved narrationEngine preference.",
+      },
     },
     required: ['job'],
   },
@@ -543,6 +549,7 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     const out = path.join(dir, 'narration.mp3');
     const audio = await renderNarrationToFile(job.script, out, {
       voice: args.voice ? String(args.voice) : undefined,
+      engine: args.engine === 'kokoro' || args.engine === 'edge' ? args.engine : undefined,
     });
 
     // Captions come from the script we already have, timed against the real
@@ -562,10 +569,13 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     }
 
     // Record the audio before transitioning, so a failed transition cannot
-    // discard a render that took real time.
+    // discard a render that took real time. `narratedWith` records WHICH
+    // engine produced it — a Kokoro request that silently fell back to Edge
+    // must be visible on the job, not discoverable by ear after publishing.
     let updated: MediaJob = {
       ...job,
       narrationPath: audio.path,
+      narratedWith: audio.engine,
       captionsPath: fs.existsSync(srtPath) ? srtPath : undefined,
       durationSeconds: Math.round(caps.durationSeconds),
     };
@@ -577,12 +587,15 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
 
     const kb = Math.round(audio.bytes / 1024);
     // Report the MEASURED duration, not the word-count estimate — the estimate
-    // was only ever a stand-in until real audio existed.
+    // was only ever a stand-in until real audio existed. Name the engine: a
+    // Kokoro request answered by Edge is a fact the user needs, not trivia.
     return ok(withNextStep([
-      `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB.`,
-      `audio:    ${audio.path}`,
+      `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB, engine: ${audio.engine}.`,
+      audio.engine === 'edge' && args.engine === 'kokoro'
+        ? 'Requested Kokoro but it could not render — Edge was used instead (see the job record).'
+        : `audio:    ${audio.path}`,
       updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
-    ], updated));
+    ].filter(Boolean) as string[], updated));
   } catch (e: any) {
     return err(`Could not record the narration: ${errText(e)}`);
   }
@@ -724,7 +737,11 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       findFfmpeg, renderVideo, FFMPEG_MISSING_MESSAGE,
     } = await import('../media-render');
 
-    const ffmpeg = await findFfmpeg();
+    // The copy "Set it up for me" downloads lives in userData, not on PATH, so
+    // it has to be handed to the finder — otherwise the download succeeds and
+    // rendering still reports ffmpeg missing.
+    const { findManagedFfmpeg } = await import('../ffmpeg-setup');
+    const ffmpeg = await findFfmpeg(findManagedFfmpeg());
     // Not an error in the job's sense: nothing is wrong with the video, a tool
     // is missing from the machine. Leave the job where it is so rendering can
     // simply be retried once ffmpeg is there.

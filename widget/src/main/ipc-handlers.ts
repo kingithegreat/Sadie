@@ -956,6 +956,46 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('homebot:media:reject', async (_e, id: string, revise: boolean, note?: string) =>
     applyMediaTransition(id, revise ? 'needs_revision' : 'rejected', { by: 'human', humanDecision: true, note }));
 
+  // Is the video engine available, and did HomeBot install it?
+  //
+  // Reports `ready` from actually running the binary, not from the file being
+  // present — the two came apart for sd.cpp when a rename left an exe that
+  // existed and could not be used.
+  ipcMain.handle('homebot:media:ffmpeg-status', async () => {
+    const { findFfmpeg } = await import('./media-render');
+    const { findManagedFfmpeg, isFfmpegSetupRunning } = await import('./ffmpeg-setup');
+    const managed = findManagedFfmpeg();
+    const found = await findFfmpeg(managed);
+    return {
+      ready: !!found,
+      path: found,
+      managed: !!found && found === managed,
+      running: isFfmpegSetupRunning(),
+      supported: process.platform === 'win32',
+    };
+  });
+
+  // Download and unpack the video engine, streaming progress to the panel.
+  //
+  // The old copy told a non-technical user to run `winget install Gyan.FFmpeg`.
+  // This is the same answer `sd-cpp-setup` gave for local image generation:
+  // do it for them, and say what is happening while it runs.
+  ipcMain.handle('homebot:media:ffmpeg-setup', async (e) => {
+    const { runFfmpegSetup } = await import('./ffmpeg-setup');
+    const send = (p: any) => {
+      try { e.sender.send('homebot:media:ffmpeg-progress', p); } catch { /* window closed mid-download */ }
+    };
+    try {
+      const bin = await runFfmpegSetup(send);
+      return { ok: true, path: bin, message: 'Ready — videos can now be made on this PC.' };
+    } catch (err: any) {
+      // These messages are already written for a person; pass them through.
+      const message = err?.message || 'The video engine could not be set up.';
+      send({ phase: 'error', note: message });
+      return { ok: false, error: message };
+    }
+  });
+
   // Record that a video went out, and where.
   //
   // `markPublished` was exported, unit-tested and called by nothing: the only
@@ -1684,13 +1724,19 @@ try {
     return getVoicesHandler({}, {} as any);
   });
 
-  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string) => {
+  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string, engine?: string) => {
     const { renderNarrationToFile } = await import('./tools/voice');
     const text = (sampleText || 'Hi, this is how I sound. I can narrate your video from start to finish.').slice(0, 300);
     const file = path.join(os.tmpdir(), `homebot-voice-sample-${Date.now()}.mp3`);
     try {
-      const rendered = await renderNarrationToFile(text, file, { voice: voice || undefined });
-      return { success: true, path: rendered.path };
+      // The sample must come from the SAME engine that will record the video —
+      // approving a voice by ear only means something if it is this voice,
+      // rendered by this engine.
+      const rendered = await renderNarrationToFile(text, file, {
+        voice: voice || undefined,
+        engine: engine === 'kokoro' || engine === 'edge' ? engine : undefined,
+      });
+      return { success: true, path: rendered.path, engine: rendered.engine };
     } catch (err: any) {
       return { success: false, error: err?.message || String(err) };
     }

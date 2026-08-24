@@ -16,6 +16,7 @@ import * as net from 'net';
 import * as dns from 'dns';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isPrivateIPv4, isPrivateIPv6 } from '../utils/url-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 // ----- Allowlist -----
@@ -88,19 +89,8 @@ function isAllowlisted(hostname: string): boolean {
 }
 
 // ----- SSRF helpers -----
-
-function isPrivateIPv4(ip: string): boolean {
-  const parts = ip.split('.').map(s => parseInt(s, 10));
-  if (parts.length !== 4 || parts.some(p => Number.isNaN(p))) return false;
-  const n = ((parts[0] << 24) >>> 0) | ((parts[1] << 16) >>> 0) | ((parts[2] << 8) >>> 0) | (parts[3] >>> 0);
-  const inRange = (start: string, bits: number) => {
-    const sp = start.split('.').map(s => parseInt(s, 10));
-    const sn = ((sp[0] << 24) >>> 0) | ((sp[1] << 16) >>> 0) | ((sp[2] << 8) >>> 0) | (sp[3] >>> 0);
-    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-    return (n & mask) === (sn & mask);
-  };
-  return inRange('10.0.0.0', 8) || inRange('172.16.0.0', 12) || inRange('192.168.0.0', 16) || inRange('127.0.0.0', 8) || inRange('169.254.0.0', 16);
-}
+// (isPrivateIPv4 / isPrivateIPv6 live in utils/url-boundary.ts so all three
+// fetchers share one copy of the range tables.)
 
 async function validateApiUrl(raw: string): Promise<{ ok: boolean; message?: string }> {
   let parsed: URL;
@@ -113,8 +103,8 @@ async function validateApiUrl(raw: string): Promise<{ ok: boolean; message?: str
   const hostname = parsed.hostname.toLowerCase();
   if (!hostname) return { ok: false, message: 'Empty hostname' };
 
-  // Block loopback literals
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+  // Block loopback hostnames
+  if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
     return { ok: false, message: 'Loopback hostname blocked' };
   }
   // Block .local / .internal
@@ -122,9 +112,13 @@ async function validateApiUrl(raw: string): Promise<{ ok: boolean; message?: str
     return { ok: false, message: 'Local domains blocked' };
   }
 
-  // IP literal check
-  if (net.isIP(hostname)) {
-    if (isPrivateIPv4(hostname)) return { ok: false, message: 'Private IP blocked' };
+  // IP literal check (v4 private ranges; v6 loopback/ULA/link-local/mapped)
+  const ipVersion = net.isIP(hostname);
+  if (ipVersion === 4 && isPrivateIPv4(hostname)) {
+    return { ok: false, message: 'Private IP blocked' };
+  }
+  if (ipVersion === 6 && isPrivateIPv6(hostname)) {
+    return { ok: false, message: 'Private/loopback IPv6 blocked' };
   }
 
   // Allowlist check (before DNS to avoid wasteful resolution)
@@ -133,15 +127,15 @@ async function validateApiUrl(raw: string): Promise<{ ok: boolean; message?: str
   }
 
   // DNS resolution check for non-IP hostnames
-  if (!net.isIP(hostname)) {
+  if (ipVersion === 0) {
     try {
       const records = await dns.promises.lookup(hostname, { all: true });
       for (const rec of records) {
         if (rec.family === 4 && isPrivateIPv4(rec.address)) {
           return { ok: false, message: 'DNS resolved to private IP' };
         }
-        if (rec.family === 6 && rec.address === '::1') {
-          return { ok: false, message: 'DNS resolved to loopback' };
+        if (rec.family === 6 && isPrivateIPv6(rec.address)) {
+          return { ok: false, message: 'DNS resolved to private/loopback IPv6' };
         }
       }
     } catch {
@@ -189,7 +183,11 @@ function httpsRequest(
           else if (Array.isArray(v)) respHeaders[k] = v.join(', ');
         }
 
-        // Follow single redirect
+        // Follow a single redirect — but re-validate the target first. The
+        // allowlist applies to the FIRST hop only otherwise: any allowlisted
+        // host (or an open redirect on it) could bounce this request at an
+        // arbitrary host. validateApiUrl also rejects http: targets, so a
+        // https→http downgrade dies here too.
         if (
           res.statusCode &&
           res.statusCode >= 301 &&
@@ -199,7 +197,13 @@ function httpsRequest(
           const loc = res.headers.location.startsWith('http')
             ? res.headers.location
             : new URL(res.headers.location, url).href;
-          return httpsRequest(loc, 'GET', undefined, {}, timeout).then(resolve).catch(reject);
+          return validateApiUrl(loc)
+            .then((check) => {
+              if (!check.ok) throw new Error(`Blocked redirect (${check.message}): ${loc}`);
+              return httpsRequest(loc, 'GET', undefined, {}, timeout);
+            })
+            .then(resolve)
+            .catch(reject);
         }
 
         let data = '';
@@ -231,7 +235,9 @@ export const apiRequestDef: ToolDefinition = {
     'when the dedicated tool is not available or the endpoint is not pre-built. ' +
     'POST requests require user confirmation.',
   category: 'web',
-  requiresConfirmation: false, // set per method in handler
+  // GETs run without a dialog; POSTs are confirmed in the handler (see
+  // apiRequestHandler) because ToolDefinition can only express a per-tool flag.
+  requiresConfirmation: false,
   parameters: {
     type: 'object',
     properties: {
@@ -264,7 +270,7 @@ export const apiRequestDef: ToolDefinition = {
 
 // ----- Handler -----
 
-export const apiRequestHandler: ToolHandler = async (args): Promise<ToolResult> => {
+export const apiRequestHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
   const url = String(args.url ?? '').trim();
   const method: 'GET' | 'POST' = args.method === 'POST' ? 'POST' : 'GET';
   const body = args.body !== undefined ? String(args.body) : undefined;
@@ -288,6 +294,25 @@ export const apiRequestHandler: ToolHandler = async (args): Promise<ToolResult> 
   const check = await validateApiUrl(url);
   if (!check.ok) {
     return { success: false, error: `api_request blocked: ${check.message}` };
+  }
+
+  // POST can change state on the remote API, so it needs a consent gate. The
+  // definition keeps requiresConfirmation=false (GETs must keep flowing) and
+  // this implements what that field's old comment promised — "set per method
+  // in handler" — but the code never actually did.
+  if (method === 'POST') {
+    if (!context?.requestConfirmation) {
+      return {
+        success: false,
+        error: 'api_request POST needs your confirmation, and this run has no way to ask for it. Run it from chat, or use GET for read-only calls.',
+      };
+    }
+    const confirmed = await context.requestConfirmation(
+      `POST to ${url}${body ? `\nBody: ${String(body).slice(0, 200)}${String(body).length > 200 ? '...' : ''}` : ''}?`
+    );
+    if (!confirmed) {
+      return { success: false, error: 'Operation cancelled by user' };
+    }
   }
 
   try {

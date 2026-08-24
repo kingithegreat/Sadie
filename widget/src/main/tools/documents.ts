@@ -8,9 +8,14 @@ import { ToolDefinition, ToolHandler, ToolResult, ToolContext } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveUserPath } from './filesystem';
+import { isWithinHomeDir } from '../utils/home-boundary';
+import { homeDir } from '../user-paths';
 
 const fsPromises = fs.promises;
-const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
+// user-paths.homeDir() — never empty, never shell-dependent (see user-paths.ts;
+// the old `process.env.HOME || USERPROFILE` here preferred whatever a shell
+// exported and could silently re-root the sandbox).
+const HOME_DIR = homeDir();
 
 // Lazy load document parsers
 let pdfParse: any = null;
@@ -61,7 +66,7 @@ function resolveLocalDocumentPath(targetPath: string): { valid: boolean; resolve
   }
 
   const resolved = path.resolve(resolveUserPath(targetPath));
-  if (!HOME_DIR || !resolved.toLowerCase().startsWith(HOME_DIR.toLowerCase())) {
+  if (!isWithinHomeDir(resolved, HOME_DIR)) {
     return { valid: false, resolved, error: `Access denied: Path must be within your home directory (${HOME_DIR})` };
   }
 

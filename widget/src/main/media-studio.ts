@@ -68,6 +68,9 @@ export interface MediaJob {
   sources?: string[];
   /** Absolute path to the recorded narration audio, once it exists. */
   narrationPath?: string;
+  /** Which engine actually rendered the narration ('edge' | 'kokoro') — a
+   *  silent fallback must be visible on the job, not discoverable by ear. */
+  narratedWith?: string;
   /** Absolute path to the SRT subtitles generated alongside the narration. */
   captionsPath?: string;
   /** True spoken length, measured from the audio rather than estimated. */
