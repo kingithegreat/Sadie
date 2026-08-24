@@ -36,7 +36,7 @@ import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
-import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
+import { getAllToolDefinitions, executeTool, getFocusedOllamaTools, registerTool } from './tools/index';
 import { registerAutomationRunner, registerAutomationTierProvider } from './tools/automation';
 import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
@@ -47,6 +47,7 @@ import {
   loadMcpConfig,
   saveMcpConfig,
   getMcpStatus,
+  connectSingleServer,
   type McpServerConfig
 } from './mcp-client';
 import {
@@ -1780,7 +1781,26 @@ try {
       current.servers.push(config);
     }
     saveMcpConfig(current);
-    return { success: true };
+
+    // Connect NOW, not at next launch. Store-then-nothing-until-restart made
+    // "Connect" read as success while producing no tools — the reachability
+    // defect wearing a success badge. The result says what actually happened,
+    // so the UI can promise only what is true.
+    let live: { connected: boolean; toolCount: number; error?: string } = { connected: false, toolCount: 0 };
+    if (config.enabled !== false) {
+      try {
+        live = await connectSingleServer(config, registerTool);
+      } catch (err: any) {
+        live = { connected: false, toolCount: 0, error: err?.message || String(err) };
+      }
+    }
+
+    return {
+      success: true,
+      connected: live.connected,
+      toolCount: live.toolCount,
+      error: live.error
+    };
   });
 
   ipcMain.handle('homebot:mcp-remove-server', async (_event, name: string) => {
