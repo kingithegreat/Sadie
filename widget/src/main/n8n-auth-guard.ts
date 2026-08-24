@@ -21,7 +21,7 @@
 export const AUTH_GUARD_NODE_TYPE = 'n8n-nodes-base.code';
 
 /** Marker shared by all guard variants (env-based legacy ones included). */
-const GUARD_MARKER = "hdrs['x-homebot-auth']";
+export const GUARD_MARKER = "hdrs['x-homebot-auth']";
 
 /** Generate the guard script with the per-install secret baked in. */
 export function guardJsCode(secret: string): string {
