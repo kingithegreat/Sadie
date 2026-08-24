@@ -355,21 +355,49 @@ function canRun(bin: string): Promise<boolean> {
  *
  * HOMEBOT_FFMPEG is honoured first so a test or a portable install can point at
  * a binary without touching PATH.
+ *
+ * `managedPath` is the copy HomeBot downloaded for the user via "Set it up for
+ * me" — passed in rather than looked up here so this module stays free of
+ * Electron and testable. It is checked BEFORE PATH deliberately: if the user
+ * asked HomeBot to install a working ffmpeg, that one should win over whatever
+ * broken or codec-poor build happens to be on PATH.
+ *
+ * Nothing calls this without the managed path in production; a search order
+ * that silently skips the copy we just downloaded is exactly the "capability
+ * exists and nothing reaches it" failure this codebase keeps producing.
  */
-export async function findFfmpeg(): Promise<string | null> {
+export async function findFfmpeg(
+  managedPath?: string | null,
+  /**
+   * How to decide a binary is usable. Injectable so the search ORDER can be
+   * asserted without needing a real ffmpeg on the test machine — the default is
+   * the real thing, and production never passes this.
+   */
+  probe: (bin: string) => Promise<boolean> = canRun,
+): Promise<string | null> {
   const explicit = process.env.HOMEBOT_FFMPEG?.trim();
-  if (explicit && fs.existsSync(explicit) && await canRun(explicit)) return explicit;
-  if (await canRun('ffmpeg')) return 'ffmpeg';
+  if (explicit && fs.existsSync(explicit) && await probe(explicit)) return explicit;
+  if (managedPath && fs.existsSync(managedPath) && await probe(managedPath)) return managedPath;
+  if (await probe('ffmpeg')) return 'ffmpeg';
   for (const candidate of EXTRA_FFMPEG_PATHS) {
-    if (fs.existsSync(candidate) && await canRun(candidate)) return candidate;
+    if (fs.existsSync(candidate) && await probe(candidate)) return candidate;
   }
   return null;
 }
 
+/**
+ * Shown when rendering cannot proceed.
+ *
+ * It used to open with "Get it from https://ffmpeg.org/download.html (on
+ * Windows: winget install Gyan.FFmpeg)" — a download page and a package manager
+ * aimed at someone the product explicitly says is not technical. The one-click
+ * route comes first now; the manual route stays for anyone who wants it.
+ */
 export const FFMPEG_MISSING_MESSAGE =
-  'Rendering needs ffmpeg, which is not installed. Get it from https://ffmpeg.org/download.html ' +
-  '(on Windows: winget install Gyan.FFmpeg), then try again. Everything else about the video — ' +
-  'script, narration and captions — is already saved.';
+  'Making the video needs a video engine, which is not set up yet. Choose ' +
+  '"Set it up for me" in the Media Studio and HomeBot will download it (about 160 MB) — ' +
+  'there is nothing else to do. Everything else about this video — script, narration and ' +
+  'captions — is already saved. To do it by hand instead: https://ffmpeg.org/download.html';
 
 /**
  * How loud the music sits under the narration before ducking.

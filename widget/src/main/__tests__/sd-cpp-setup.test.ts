@@ -27,8 +27,11 @@ jest.mock('electron', () => ({
 import * as fs from 'fs';
 import {
   pickBinaryAsset, pickModelFile, runAutoSetup,
-  type SetupIO, type SetupProgress, type ReleaseAsset, type RepoFile,
+  type SetupIO, type SetupProgress, type RepoFile,
 } from '../sd-cpp-setup';
+// ReleaseAsset moved to the shared downloader when sd-cpp and ffmpeg setup
+// stopped keeping two copies of it.
+import type { ReleaseAsset } from '../binary-download';
 
 // ---- selection --------------------------------------------------------------
 
