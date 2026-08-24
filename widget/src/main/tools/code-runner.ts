@@ -16,10 +16,16 @@ import { ToolDefinition, ToolHandler, ToolResult } from './types';
 const execFileAsync = promisify(execFile);
 
 // ---- Safety blocklist (PowerShell + Python terms) ----
+//
+// This is a pattern FILTER, not a sandbox: the snippet runs with full user
+// rights. It exists to catch the obvious network/exfil/destruction attempts,
+// not to contain a determined one — requiresConfirmation is the real gate.
 const BLOCKED_PATTERNS: RegExp[] = [
-  // Network/download
+  // Network/download — .NET HTTP classes the Invoke-* patterns miss
   /Invoke-WebRequest|iwr\b|curl\b|wget\b|Invoke-RestMethod|irm\b/i,
-  /requests\.get|urllib|httpx|aiohttp/i,
+  /System\.Net\.Http|WebClient|HttpWebRequest|FtpWebRequest|Start-BitsTransfer/i,
+  /Sockets\.(Tcp|Udp)Client/i,
+  /requests\.get|urllib|httpx|aiohttp|\bsocket\b|ftplib|smtplib|telnetlib|http\.client|xmlrpc/i,
   // File system destruction
   /Remove-Item.*-Recurse|-rf\s/i,
   /rmdir|rd\s.*\/s/i,
@@ -29,9 +35,11 @@ const BLOCKED_PATTERNS: RegExp[] = [
   // Process spawning (nested)
   /Start-Process|Invoke-Expression|iex\b/i,
   /subprocess\.(?:call|run|Popen)|os\.system|os\.popen/i,
-  // Environment / credential access
+  // Environment / credential access (broad PowerShell env dumps + targeted reads)
   /\$env:.*PASSWORD|\$env:.*SECRET|\$env:.*TOKEN/i,
   /os\.environ.*(?:PASSWORD|SECRET|TOKEN|KEY)/i,
+  /os\.getenv\s*\(\s*['"][^'"]*(?:PASSWORD|SECRET|TOKEN|API_?KEY)/i,
+  /Get-Content\s+Env:|\[Environment\]::GetEnvironmentVariable/i,
   // Persistence
   /schtasks|Register-ScheduledTask/i,
 ];
@@ -52,7 +60,8 @@ export const runCodeDef: ToolDefinition = {
   description:
     'Run a short code snippet in Python or PowerShell and return stdout/stderr. ' +
     'Useful for calculations, data transforms, file parsing, and quick scripts. ' +
-    'Requires user confirmation. Network access and destructive commands are blocked. ' +
+    'Requires user confirmation. Common network, registry, and destructive ' +
+    'patterns are rejected by a filter (this is not a security sandbox). ' +
     'Execution is limited to 10 seconds.',
   category: 'utility',
   requiresConfirmation: true,
