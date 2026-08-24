@@ -737,8 +737,8 @@ const electronAPI: ElectronAPI = {
   },
   // Voice picker: list neural voices and render a sample of one to a file.
   ttsListVoices: async (): Promise<any> => ipcRenderer.invoke('homebot:tts-list-voices'),
-  ttsSampleVoice: async (voice: string, sampleText?: string): Promise<{ success: boolean; path?: string; error?: string }> =>
-    ipcRenderer.invoke('homebot:tts-sample-voice', voice, sampleText),
+  ttsSampleVoice: async (voice: string, sampleText?: string, engine?: 'edge' | 'kokoro'): Promise<{ success: boolean; path?: string; error?: string; engine?: string }> =>
+    ipcRenderer.invoke('homebot:tts-sample-voice', voice, sampleText, engine),
 
   // Scheduler — recurring / daily jobs
   schedulerList: async () => ipcRenderer.invoke('homebot:scheduler-list'),
