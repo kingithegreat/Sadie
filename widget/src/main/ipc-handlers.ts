@@ -1724,13 +1724,19 @@ try {
     return getVoicesHandler({}, {} as any);
   });
 
-  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string) => {
+  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string, engine?: string) => {
     const { renderNarrationToFile } = await import('./tools/voice');
     const text = (sampleText || 'Hi, this is how I sound. I can narrate your video from start to finish.').slice(0, 300);
     const file = path.join(os.tmpdir(), `homebot-voice-sample-${Date.now()}.mp3`);
     try {
-      const rendered = await renderNarrationToFile(text, file, { voice: voice || undefined });
-      return { success: true, path: rendered.path };
+      // The sample must come from the SAME engine that will record the video —
+      // approving a voice by ear only means something if it is this voice,
+      // rendered by this engine.
+      const rendered = await renderNarrationToFile(text, file, {
+        voice: voice || undefined,
+        engine: engine === 'kokoro' || engine === 'edge' ? engine : undefined,
+      });
+      return { success: true, path: rendered.path, engine: rendered.engine };
     } catch (err: any) {
       return { success: false, error: err?.message || String(err) };
     }
