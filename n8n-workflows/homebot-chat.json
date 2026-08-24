@@ -16,7 +16,10 @@
       "name": "HomeBot Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [200, 300],
+      "position": [
+        200,
+        300
+      ],
       "webhookId": "homebot-chat-main"
     },
     {
@@ -32,7 +35,10 @@
       "name": "HomeBot Stream Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [200, 520],
+      "position": [
+        200,
+        520
+      ],
       "webhookId": "homebot-chat-stream"
     },
     {
@@ -48,7 +54,10 @@
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [620, 300]
+      "position": [
+        620,
+        300
+      ]
     },
     {
       "parameters": {
@@ -63,7 +72,10 @@
       "name": "Ollama Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
       "typeVersion": 1,
-      "position": [480, 520]
+      "position": [
+        480,
+        520
+      ]
     },
     {
       "parameters": {
@@ -76,17 +88,23 @@
       "name": "Web Search",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1,
-      "position": [700, 520]
+      "position": [
+        700,
+        520
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
+        "jsCode": "// Auth Guard — deployed by HomeBot; validates X-HOMEBOT-Auth.\nlet secret = \"\";\nif (!secret) secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nconst hdrs = $input.first()?.json?.headers || {};\nconst incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\nif (!secret) {\n  throw new Error('Unauthorized: this workflow has no HomeBot secret. Deploy it from HomeBot instead of importing it by hand.');\n}\nif (incoming !== secret) {\n  throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n}\nreturn $input.all();"
       },
       "id": "auth-guard-main",
       "name": "Auth Guard",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 300]
+      "position": [
+        400,
+        300
+      ]
     },
     {
       "parameters": {
@@ -99,7 +117,10 @@
       "name": "Read File",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1,
-      "position": [1060, 520]
+      "position": [
+        1060,
+        520
+      ]
     },
     {
       "parameters": {
@@ -112,7 +133,10 @@
       "name": "Write File",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1,
-      "position": [1240, 520]
+      "position": [
+        1240,
+        520
+      ]
     },
     {
       "parameters": {
@@ -125,7 +149,10 @@
       "name": "Get Weather",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1,
-      "position": [700, 700]
+      "position": [
+        700,
+        700
+      ]
     },
     {
       "parameters": {
@@ -138,7 +165,10 @@
       "name": "List Directory",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1,
-      "position": [880, 700]
+      "position": [
+        880,
+        700
+      ]
     },
     {
       "parameters": {
@@ -150,7 +180,10 @@
       "name": "Respond Main",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1000, 300]
+      "position": [
+        1000,
+        300
+      ]
     },
     {
       "parameters": {
@@ -162,7 +195,10 @@
       "name": "Respond Stream",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1000, 520]
+      "position": [
+        1000,
+        520
+      ]
     },
     {
       "parameters": {
@@ -177,95 +213,185 @@
       "name": "AI Agent Stream",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [620, 520]
+      "position": [
+        620,
+        520
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (secret) {\n  const hdrs = $input.first()?.json?.headers || {};\n  const incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\n  if (incoming !== secret) {\n    throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n  }\n}\nreturn $input.all();"
+        "jsCode": "// Auth Guard — deployed by HomeBot; validates X-HOMEBOT-Auth.\nlet secret = \"\";\nif (!secret) secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nconst hdrs = $input.first()?.json?.headers || {};\nconst incoming = hdrs['x-homebot-auth'] || hdrs['X-HOMEBOT-Auth'] || '';\nif (!secret) {\n  throw new Error('Unauthorized: this workflow has no HomeBot secret. Deploy it from HomeBot instead of importing it by hand.');\n}\nif (incoming !== secret) {\n  throw new Error('Unauthorized: invalid or missing X-HOMEBOT-Auth header');\n}\nreturn $input.all();"
       },
       "id": "auth-guard-stream",
       "name": "Auth Guard Stream",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 700]
+      "position": [
+        400,
+        700
+      ]
     }
   ],
   "connections": {
     "HomeBot Webhook": {
       "main": [
-        [{ "node": "Auth Guard", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Auth Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Auth Guard": {
       "main": [
-        [{ "node": "AI Agent", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "HomeBot Stream Webhook": {
       "main": [
-        [{ "node": "Auth Guard Stream", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Auth Guard Stream",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Auth Guard Stream": {
       "main": [
-        [{ "node": "AI Agent Stream", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "AI Agent Stream",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "AI Agent": {
       "main": [
-        [{ "node": "Respond Main", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond Main",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "AI Agent Stream": {
       "main": [
-        [{ "node": "Respond Stream", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond Stream",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Ollama Chat Model": {
       "ai_languageModel": [
         [
-          { "node": "AI Agent", "type": "ai_languageModel", "index": 0 },
-          { "node": "AI Agent Stream", "type": "ai_languageModel", "index": 0 }
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Stream",
+            "type": "ai_languageModel",
+            "index": 0
+          }
         ]
       ]
     },
     "Web Search": {
       "ai_tool": [
         [
-          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
-          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Stream",
+            "type": "ai_tool",
+            "index": 0
+          }
         ]
       ]
     },
     "Read File": {
       "ai_tool": [
         [
-          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
-          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Stream",
+            "type": "ai_tool",
+            "index": 0
+          }
         ]
       ]
     },
     "Write File": {
       "ai_tool": [
         [
-          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
-          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Stream",
+            "type": "ai_tool",
+            "index": 0
+          }
         ]
       ]
     },
     "Get Weather": {
       "ai_tool": [
         [
-          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
-          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Stream",
+            "type": "ai_tool",
+            "index": 0
+          }
         ]
       ]
     },
     "List Directory": {
       "ai_tool": [
         [
-          { "node": "AI Agent", "type": "ai_tool", "index": 0 },
-          { "node": "AI Agent Stream", "type": "ai_tool", "index": 0 }
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Stream",
+            "type": "ai_tool",
+            "index": 0
+          }
         ]
       ]
     }
@@ -275,6 +401,8 @@
   },
   "staticData": null,
   "tags": [
-    { "name": "HomeBot" }
+    {
+      "name": "HomeBot"
+    }
   ]
 }
