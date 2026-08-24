@@ -331,6 +331,13 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
             <span className="dashboard-action-icon">⚡</span>
             <span className="dashboard-action-label">Automations</span>
           </button>
+          <button
+            className="dashboard-action-btn"
+            onClick={() => onModeChange('connections')}
+          >
+            <span className="dashboard-action-icon">🔌</span>
+            <span className="dashboard-action-label">Connect Services</span>
+          </button>
         </div>
       </div>
 
