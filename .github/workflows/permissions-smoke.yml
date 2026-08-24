@@ -24,9 +24,17 @@ jobs:
           node-version: '22'
 
       - name: Install deps
+        # npm ci has no built-in retry; registry timeouts have failed this
+        # REQUIRED check twice on their own. Three attempts, 15s apart.
         run: |
           cd widget
-          npm ci
+          for i in 1 2 3; do
+            if npm ci; then exit 0; fi
+            echo "npm ci attempt $i failed — retrying in 15s"
+            sleep 15
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
 
       - name: Run smoke test
         run: |
