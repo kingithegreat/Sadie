@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (176)** — `window.electron`
+**Preload methods (179)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1031,34 +1031,35 @@ licenseValidate           listCustomLLMModels       listFeedSources           li
 listTools                 loadAutomations           loadConversations         loadQuizProgress
 maximizeWindow            mcpAddServer              mcpGetStatus              mcpListServers
 mcpRemoveServer           mcpToggleServer           mediaAdvance              mediaApprove
-mediaCreate               mediaDelete               mediaList                 mediaMarkPublished
-mediaParseFeed            mediaReject               mediaRun                  minimizeWindow
-onAssistantToolActivity   onBatchSummary            onBrowserState            onConfigRecovered
-onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied  onHideWindow
-onMessage                 onModelFallback           onNavigate                onOllamaDownloadProgress
-onOllamaStatus            onPermissionRequest       onProactiveBriefing       onPullModelProgress
-onReminderFired           onSdCppSetupProgress      onShowWindow              onStreamChunk
-onStreamEnd               onStreamError             onSupervisorStatus        onTerminalExit
-onTerminalOutput          onTitleUpdated            onUpdateAvailable         onUpdateDownloaded
-onUpdateProgress          onWidgetModeChanged       openExternalUrl           openFile
-parseDocument             pullModel                 pullModelStream           ragClear
-ragIndex                  ragList                   readConsentLog            readDebugLogs
-readPermissionAudit       readTelemetryEvents       removeHideWindowListener  removeShowWindowListener
-resetPermissions          resolveActiveModel        restartApp                runAutomation
-runDiagnostics            saveConversation          saveQuizProgress          saveSettings
-schedulerAdd              schedulerList             schedulerRemove           schedulerToggle
-sdCppAutoSetup            sdCppSetup                sdCppStatus               searchConversations
-sendConfirmationResponse  sendMessage               sendPermissionResponse    sendStreamMessage
-setActiveConversation     setAlwaysOnTop            setUncensoredMode         showInFolder
-skillsList                skillsOpenFolder          startOllama               startSpeechRecognition
-subscribeToStream         summarizeWebContent       terminalClose             terminalCreate
-terminalKill              terminalRun               testN8nConnection         toggleWidgetMode
-ttsListVoices             ttsSampleVoice            ttsSpeak                  ttsStop
-updateAutomation          updateMessage             workspaceList             workspaceRead
-workspaceRoot             workspaceSave             writeClipboard            writeDocument
+mediaCreate               mediaDelete               mediaFfmpegSetup          mediaFfmpegStatus
+mediaList                 mediaMarkPublished        mediaParseFeed            mediaReject
+mediaRun                  minimizeWindow            onAssistantToolActivity   onBatchSummary
+onBrowserState            onConfigRecovered         onConfirmationRequest     onConversationCompacted
+onHardwareProfileApplied  onHideWindow              onMediaFfmpegProgress     onMessage
+onModelFallback           onNavigate                onOllamaDownloadProgress  onOllamaStatus
+onPermissionRequest       onProactiveBriefing       onPullModelProgress       onReminderFired
+onSdCppSetupProgress      onShowWindow              onStreamChunk             onStreamEnd
+onStreamError             onSupervisorStatus        onTerminalExit            onTerminalOutput
+onTitleUpdated            onUpdateAvailable         onUpdateDownloaded        onUpdateProgress
+onWidgetModeChanged       openExternalUrl           openFile                  parseDocument
+pullModel                 pullModelStream           ragClear                  ragIndex
+ragList                   readConsentLog            readDebugLogs             readPermissionAudit
+readTelemetryEvents       removeHideWindowListener  removeShowWindowListener  resetPermissions
+resolveActiveModel        restartApp                runAutomation             runDiagnostics
+saveConversation          saveQuizProgress          saveSettings              schedulerAdd
+schedulerList             schedulerRemove           schedulerToggle           sdCppAutoSetup
+sdCppSetup                sdCppStatus               searchConversations       sendConfirmationResponse
+sendMessage               sendPermissionResponse    sendStreamMessage         setActiveConversation
+setAlwaysOnTop            setUncensoredMode         showInFolder              skillsList
+skillsOpenFolder          startOllama               startSpeechRecognition    subscribeToStream
+summarizeWebContent       terminalClose             terminalCreate            terminalKill
+terminalRun               testN8nConnection         toggleWidgetMode          ttsListVoices
+ttsSampleVoice            ttsSpeak                  ttsStop                   updateAutomation
+updateMessage             workspaceList             workspaceRead             workspaceRoot
+workspaceSave             writeClipboard            writeDocument
 ```
 
-**IPC channels, renderer → main (128)**
+**IPC channels, renderer → main (130)**
 
 ```
 homebot:__e2e_get_router_logs         homebot:__e2e_invoke_tool_batch
@@ -1096,6 +1097,7 @@ homebot:mcp-get-status                homebot:mcp-list-servers
 homebot:mcp-remove-server             homebot:mcp-toggle-server
 homebot:media:advance                 homebot:media:approve
 homebot:media:create                  homebot:media:delete
+homebot:media:ffmpeg-setup            homebot:media:ffmpeg-status
 homebot:media:list                    homebot:media:mark-published
 homebot:media:parse-feed              homebot:media:reject
 homebot:media:run                     homebot:message
@@ -1127,24 +1129,25 @@ homebot:update-automation             homebot:update-message
 homebot:web-service-status            homebot:write-document
 ```
 
-**IPC channels, main → renderer (30)**
+**IPC channels, main → renderer (31)**
 
 ```
 homebot:assistant-tool-activity   homebot:batch-summary
 homebot:config-recovered          homebot:confirmation-request
 homebot:conversation-compacted    homebot:hardware-profile-applied
-homebot:model-fallback            homebot:n8n-status
-homebot:ollama-download-progress  homebot:ollama-status
-homebot:permission-request        homebot:proactive-briefing
-homebot:pull-model-progress       homebot:reminder-fired
-homebot:reply                     homebot:router-log
-homebot:sd-cpp:setup-progress     homebot:stream-chunk
-homebot:stream-end                homebot:stream-error
-homebot:stream-start              homebot:stream-ttfb
-homebot:supervisor-status         homebot:title-updated
-homebot:tool-call                 homebot:tool-result
-homebot:update-available          homebot:update-downloaded
-homebot:update-progress           homebot:widget-mode-changed
+homebot:media:ffmpeg-progress     homebot:model-fallback
+homebot:n8n-status                homebot:ollama-download-progress
+homebot:ollama-status             homebot:permission-request
+homebot:proactive-briefing        homebot:pull-model-progress
+homebot:reminder-fired            homebot:reply
+homebot:router-log                homebot:sd-cpp:setup-progress
+homebot:stream-chunk              homebot:stream-end
+homebot:stream-error              homebot:stream-start
+homebot:stream-ttfb               homebot:supervisor-status
+homebot:title-updated             homebot:tool-call
+homebot:tool-result               homebot:update-available
+homebot:update-downloaded         homebot:update-progress
+homebot:widget-mode-changed
 ```
 
 <!-- END GENERATED: surface-index -->
