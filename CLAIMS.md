@@ -14,15 +14,17 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
+| Connections catalogue (Track G) | claude/connections-catalogue (#218) | Merged 2026-08-24 | New `connections` mode + ConnectionsPanel: one card per curated service (Notion, GitHub, Slack, Brave Search, Web Fetch, Memory), cost stated before connecting, keys linked to where they come from. Every entry goes through the SAME mcpAddServer IPC as the hand-entry form in PrivacySettingsTab — no second storage format or permission path. Chat reaches it via navigate_to_mode ('connections', derived from APP_MODES as designed); navContext.service pre-opens that card. 17 tests across shared catalogue + rendered panel; widget tsc/eslint clean; full serial suite 3349 passed; root 205 passed. Does NOT touch mcp-client.ts, permissions, or message-router. |
 | Delete a downloaded model | claude/delete-model-ui (#183) | Merged 2026-08-22 | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
-| Kokoro as optional narration provider | claude/kokoro-narration-provider (#214) | Merged | Aden picked Kokoro by ear (2026-08-23). voice.ts provider seam (Edge stays default + fallback; result names the engine that actually rendered), media_narrate `engine` arg, jobs record `narratedWith`, MediaStudioPanel engine picker with voice list that follows the engine and sampling routed through the SAME engine. kokoro-js rides the existing @huggingface/transformers stack (onnxruntime already ships for Whisper) — ~1 MB added, no Python. 10 seam tests; full suite serial green; docs regenerated. Does NOT touch message-router or the render graph. Measurement scratch lives in untracked `narration-measure/` in the main worktree — audio samples, safe to delete. |
+| Kokoro as optional narration provider | claude/kokoro-narration-provider (#214) | Merged | Aden picked Kokoro by ear (2026-08-23). voice.ts provider seam (Edge stays default + fallback; result names the engine that actually rendered), media_narrate `engine` arg, jobs record `narratedWith`, MediaStudioPanel engine picker with voice list that follows the engine and sampling routed through the SAME engine. kokoro-js rides the existing @huggingface/transformers stack (onnxruntime already ships for Whisper) — ~1 MB added, no Python. 10 seam tests; full suite serial green; docs regenerated. Does NOT touch message-router or the render graph. |
 | Backup import can no longer repoint traffic endpoints | claude/backup-endpoint-guard (#209) | Merged | settings-import.ts (analyzeImportedEndpoints / stripImportedSettings), homebot:import-settings handler (confirm dialog when a backup would move n8nUrl/ollamaUrl/searxngUrl/codeApiUrl/customLLM.baseUrl; skips endpoints when nobody can answer — fail closed). Credentials stay stripped unconditionally. 16 settings-import tests. |
-| Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
+| Quiz reaches the requested count | claude/quiz-full-count (#186) | Merged 2026-08-24 | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
 | Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Merged 2026-08-22 | PrivacySwitch.tsx only. |
-| Connections catalogue (MCP front door) | claude/connections-catalogue | In progress | Track G, claimed from Aden 2026-08-24. A short curated list of services people actually use — one click each, MCP details pre-filled, saying what it can reach and whether it needs a paid account — sitting ABOVE the existing hand-entry form in PrivacySettingsTab (which stays underneath for anything not listed). "Connect my Notion" from chat lands there via the navigate_to_mode payload, not an empty panel. The --strict-mcp-config boundary stays visible: HomeBot mediates every server it installs; nothing appears by inheriting a global config. Does NOT change mcp-client.ts wire format or bypass the permission gate. |
 | Tool-surface hardening (audit remediation) | claude/tool-surface-hardening | Ready for integration | grep_code/git via execFile argv (cmd-injection class removed), 14 CRM writes gated (requiresConfirmation + permissions entries), per-hop redirect SSRF revalidation + IPv6 private ranges, api_request POST confirmation, batch allow-once honors requiresConfirmation, shared home-boundary/url-boundary utils replace five drift-prone startsWith guards. New gate: `tool-permissions-parity.test.ts` — every native tool needs a permission entry or requiresConfirmation; every permission key needs a tool. Full widget suite + tsc green on current main. Does NOT touch message-router routing logic or the media pipeline. |
 
-*(Model freshness + knobs merged as #182 — claim retired.)*
+*(Model freshness + knobs merged as #182 — claim retired. The earlier "Connections catalogue
+(MCP front door), In progress" placeholder row is superseded by the shipped Track G row above;
+the free-setup guidance row (Track D) lives on claude/track-d-free-setup, PR #220.)*
 
 ## Integration notes — 2026-08-22 session (read before your next PR)
 
@@ -108,7 +110,7 @@ pillars**, and he added two requirements on top:
 | D · Plain language + free-setup guidance | **unowned** | |
 | E · Keep the lights on (CI) | shared | |
 | F · Coding platform front door | ox-alpha | Workspace, terminal, 14 git tools, CLI bridges all exist; **no Code mode** |
-| G · Connections catalogue | this session | MCP works but is buried under Settings → Advanced → Permissions |
+| G · Connections catalogue | ox-alpha | #218 gives it a front door: `connections` mode reachable from the mode bar, dashboard, and chat navigation |
 | H · Automations people can build | this session | Create/edit/run/schedule work; triggers are manual+schedule only |
 | I · Chat as the front door | this session | **No navigation capability exists at all** |
 
