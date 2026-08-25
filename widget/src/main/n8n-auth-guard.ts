@@ -86,6 +86,53 @@ function isGuardNode(node: N8nNode): boolean {
 }
 
 /**
+ * Matches the embedded-secret assignment `guardJsCode` writes, capturing the
+ * JSON string literal so it can be decoded and tested for emptiness. The
+ * placeholder copy ships as `let secret = "";` and every legacy env-based
+ * guard has no such line at all.
+ */
+const EMBEDDED_SECRET_RE = /\nlet secret = ("(?:[^"\\]|\\.)*");/;
+
+export type WorkflowGuardState =
+  /** At least one guard node, and every one carries an embedded non-empty secret. */
+  | 'embedded'
+  /**
+   * Guard nodes exist but at least one cannot actually authenticate: a
+   * placeholder that denies everyone, or a pre-#191 env-based guard that —
+   * on n8n ≥1.122.5 — sees an empty process.env and silently passes EVERYONE.
+   * Both carry the shared marker, which is why marker presence alone is not
+   * proof of protection.
+   */
+  | 'marker-only'
+  /** No guard node at all — predates the Auth Guard, or hand-imported bare. */
+  | 'none';
+
+/**
+ * Can this deployed workflow actually authenticate requests?
+ *
+ * The distinction exists because "has the marker" and "rejects strangers" are
+ * different facts. The 2026-08-24 audit measured homebot/media-research serving
+ * research with no auth header at all; its guard carried the marker and read
+ * its secret from process.env, which Code nodes never see. Detecting by marker
+ * alone would have blessed exactly that workflow.
+ */
+export function workflowGuardState(wf: N8nWorkflow): WorkflowGuardState {
+  if (!wf || !Array.isArray(wf.nodes)) return 'none';
+  const guards = wf.nodes.filter(isGuardNode);
+  if (guards.length === 0) return 'none';
+  for (const g of guards) {
+    const js = g.parameters?.jsCode as string;
+    const m = js.match(EMBEDDED_SECRET_RE);
+    let secret: string = '';
+    if (m) {
+      try { secret = JSON.parse(m[1]) as string; } catch { /* treat as not embedded */ }
+    }
+    if (!secret) return 'marker-only';
+  }
+  return 'embedded';
+}
+
+/**
  * Insert Auth Guard nodes after every Webhook trigger that doesn't already
  * have one, and upgrade any existing guard to the embedded-secret form (the
  * old process.env-based guards are inert on current n8n — Code nodes see no

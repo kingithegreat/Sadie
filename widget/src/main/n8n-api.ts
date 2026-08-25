@@ -449,6 +449,40 @@ export async function listWorkflows(): Promise<Array<{ id: string; name: string 
 }
 
 /**
+ * Fetch one workflow's full definition (nodes + connections), or null when it
+ * cannot be read.
+ *
+ * The deploy guards only get id+name from the list, but deciding whether an
+ * existing copy still does its job — e.g. whether it carries a working Auth
+ * Guard — needs the nodes. Null means "cannot tell", never "does not exist";
+ * callers must not treat it as either. (Same honesty rule as tryListWorkflows
+ * above, for the same reason.)
+ */
+export async function exportWorkflowJson(id: string): Promise<object | null> {
+  if (hasApiKey()) {
+    try {
+      const wf = await apiRequest<object>('GET', `/workflows/${encodeURIComponent(id)}`);
+      return wf && typeof wf === 'object' ? wf : null;
+    } catch (e: any) {
+      console.warn(`[n8n-api] Could not read workflow ${id} via REST:`, e?.message || e);
+      return null;
+    }
+  }
+  try {
+    const out = await dockerExec('n8n', 'export:workflow', `--id=${id}`);
+    // export:workflow prints the JSON document; be tolerant of any leading or
+    // trailing noise around it rather than trusting the shape of the output.
+    const start = out.indexOf('{');
+    const end = out.lastIndexOf('}');
+    if (start === -1 || end <= start) return null;
+    return JSON.parse(out.slice(start, end + 1));
+  } catch (e: any) {
+    console.warn(`[n8n-api] Could not read workflow ${id} via CLI:`, e?.message || e);
+    return null;
+  }
+}
+
+/**
  * Build a web-fetch workflow: receives { url, max_length } via webhook,
  * fetches the page via HTTP Request node, strips HTML to plain text, returns it.
  */
@@ -577,11 +611,24 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
  * Deploy the web-fetch workflow to n8n if it doesn't already exist.
  */
 /**
- * Deploy the Media Studio research workflow if it is not already there.
+ * Deploy the Media Studio research workflow if it is not already there — and
+ * REPLACE a copy that cannot defend itself.
  *
- * Idempotent by name: import, activate, and restart only when there is no API
- * key (REST activation registers the webhook live; the CLI path needs a
- * restart to pick it up).
+ * "Already exists" used to be decided by name alone, which made the deploy
+ * unable to ever self-heal: any copy that predates the Auth Guard (or arrived
+ * by hand-import) sat there through every future release, serving research to
+ * unauthenticated callers. Measured live on 2026-08-24: homebot/media-research
+ * answered an unauthenticated POST with 5 KB of Wikipedia content. The guard
+ * machinery was fine; nothing ever re-ran it over old deployments.
+ *
+ * So idempotence is now judged per copy, not per name:
+ * - copies with embedded-secret guards are left alone;
+ * - copies without a working guard (none at all, a placeholder, or an inert
+ *   env-based one) are deleted and freshly imported — importWorkflow injects
+ *   and patches the guard on every path;
+ * - a copy whose definition cannot be READ stops the whole thing: deleting or
+ *   duplicating on a guess is how this function once put six copies of Web
+ *   Fetch into Aden's n8n.
  *
  * Reports success only after the webhook actually answers. That is not
  * belt-and-braces — the CLI path cannot activate a workflow at all on current
@@ -604,6 +651,7 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
 export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean; reason?: string }> {
   const { MEDIA_RESEARCH_PATH, buildMediaResearchWorkflowJson } = await import('./n8n-media-workflows');
   const { checkWebhook } = await import('./n8n-webhook-check');
+  const { workflowGuardState } = await import('./n8n-auth-guard');
   const verify = () => checkWebhook(MEDIA_RESEARCH_PATH, 'research for Media Studio scripts');
 
   try {
@@ -613,9 +661,36 @@ export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean
       // duplicates accumulate in the user's n8n.
       return { deployed: false, reason: 'Could not read the workflow list from n8n, so nothing was imported.' };
     }
-    const already = existing.some(w => w.name.includes('Media Research'));
+    const matches = existing.filter(w => w.name.includes('Media Research'));
 
-    if (!already) {
+    // Phase 1 — read every match before touching anything, so a mid-way read
+    // failure can never leave half the copies deleted.
+    const guardedIds: string[] = [];
+    const replaceIds: string[] = [];
+    for (const wf of matches) {
+      const detail = await exportWorkflowJson(wf.id);
+      if (detail === null) {
+        return {
+          deployed: false,
+          reason: `Found "${wf.name}" in n8n but could not read its definition (id ${wf.id}), `
+            + 'so HomeBot will not touch it. It may predate the Auth Guard — open n8n and check '
+            + 'it has an "Auth Guard" node straight after its Webhook trigger.',
+        };
+      }
+      if (workflowGuardState(detail as any) === 'embedded') guardedIds.push(wf.id);
+      else replaceIds.push(wf.id);
+    }
+
+    // Phase 2 — remove every copy that cannot authenticate. An open webhook is
+    // worse than no webhook: it runs real work for anyone who can reach the port.
+    let replaced = 0;
+    for (const id of replaceIds) {
+      await deleteWorkflow(id);
+      replaced += 1;
+      console.log('[n8n-api] Removed Media Research copy without a working Auth Guard:', id);
+    }
+
+    if (guardedIds.length === 0) {
       const id = await importWorkflow(buildMediaResearchWorkflowJson());
       // Activation failure must not mask a successful import, and must not be
       // reported as the final word — the webhook check below decides.
@@ -623,7 +698,7 @@ export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean
         console.warn('[n8n-api] Media Research activate failed:', e?.message || e);
       });
       if (!hasApiKey()) await restartN8n();
-      console.log('[n8n-api] Media Research workflow imported, id:', id);
+      console.log('[n8n-api] Media Research workflow imported, id:', id, replaced > 0 ? `(replaced ${replaced} unguarded cop${replaced === 1 ? 'y' : 'ies'})` : '');
     }
 
     const check = await verify();
@@ -634,7 +709,7 @@ export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean
     }
     return {
       deployed: false,
-      reason: already
+      reason: guardedIds.length > 0
         ? 'The workflow is in n8n but is not switched on, so its webhook does not answer. '
           + 'Open n8n, find "HomeBot: Media Research" and toggle Active — or add an n8n API key '
           + 'in HomeBot Settings, which lets HomeBot activate it directly.'

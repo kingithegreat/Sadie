@@ -1,4 +1,4 @@
-import { injectAuthGuards } from '../n8n-auth-guard';
+import { guardJsCode, injectAuthGuards, placeholderGuardJsCode, workflowGuardState } from '../n8n-auth-guard';
 
 const SECRET = 'test-secret-123';
 
@@ -104,5 +104,73 @@ describe('injectAuthGuards', () => {
     const before = JSON.stringify(wf);
     injectAuthGuards(wf, SECRET);
     expect(JSON.stringify(wf)).toBe(before);
+  });
+});
+
+/**
+ * workflowGuardState — can this DEPLOYED copy actually authenticate?
+ *
+ * The 2026-08-24 audit measured homebot/media-research serving research with
+ * no auth header at all. Its guard carried the shared marker and read its
+ * secret from process.env, which Code nodes never see (n8n ≥1.122.5) — so it
+ * silently passed everyone. Marker presence alone would have blessed exactly
+ * that workflow; these tests pin the three states apart.
+ */
+describe('workflowGuardState', () => {
+  const ENV_ERA_GUARD =
+    "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (!secret) return $input.all();\nconst incoming = hdrs['x-homebot-auth'];\nif (incoming !== secret) throw new Error('no');";
+
+  function wfWithGuards(jsCodes: string[]): any {
+    const nodes: any[] = [
+      { name: 'Webhook', type: 'n8n-nodes-base.webhook', position: [0, 0], parameters: {} },
+      ...jsCodes.map((jsCode, i) => ({
+        name: i === 0 ? 'Auth Guard' : `Auth Guard ${i + 1}`,
+        type: 'n8n-nodes-base.code',
+        typeVersion: 2,
+        position: [200 + i * 100, 300],
+        parameters: { jsCode },
+      })),
+    ];
+    return { name: 'WF', nodes, connections: {} };
+  }
+
+  test('a copy with an embedded-secret guard is protected', () => {
+    expect(workflowGuardState(wfWithGuards([guardJsCode(SECRET)]))).toBe('embedded');
+  });
+
+  test('the shipped placeholder is marker-only, not protected', () => {
+    // Denies by default — safe but inert. Replacement fixes the feature.
+    expect(workflowGuardState(wfWithGuards([placeholderGuardJsCode()]))).toBe('marker-only');
+  });
+
+  test('an env-era guard carries the marker yet protects nobody', () => {
+    expect(workflowGuardState(wfWithGuards([ENV_ERA_GUARD]))).toBe('marker-only');
+  });
+
+  test('one weak guard among strong ones still counts as unprotected', () => {
+    expect(workflowGuardState(wfWithGuards([guardJsCode(SECRET), placeholderGuardJsCode()]))).toBe('marker-only');
+  });
+
+  test('no guard node at all', () => {
+    expect(workflowGuardState({ name: 'WF', nodes: [], connections: {} })).toBe('none');
+    expect(workflowGuardState(undefined as any)).toBe('none');
+  });
+
+  test('a code node bearing the marker counts as a guard even when it is only a comment', () => {
+    // This is the whole module's convention: isGuardNode matches the marker
+    // substring, and injectAuthGuards' "recognises a renamed guard" behaviour
+    // depends on it. workflowGuardState deliberately reuses that predicate
+    // rather than inventing a second, stricter one — two definitions of "is a
+    // guard" in one file would drift. The blast radius of the loose edge is
+    // bounded: replacement only ever considers workflows NAMED like ours, so
+    // a coincidental comment costs one redundant re-import of our own copy,
+    // never a user's hand-built workflow.
+    const wf = wfWithGuards([]);
+    wf.nodes.push({
+      name: 'Build query',
+      type: 'n8n-nodes-base.code',
+      parameters: { jsCode: "// reads hdrs['x-homebot-auth'] for logging" },
+    });
+    expect(workflowGuardState(wf)).toBe('marker-only');
   });
 });

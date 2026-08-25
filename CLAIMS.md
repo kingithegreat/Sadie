@@ -13,6 +13,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
+| Media Research workflow self-heals its Auth Guard | claude/n8n-guard-self-heal | Ready for integration | The 2026-08-24 audit found `homebot/media-research` serving 5,072 bytes to an unauthenticated POST: `ensureMediaResearchWorkflow` skipped any workflow whose NAME matched, so pre-guard copies could never be revisited. Now each name-matched copy is fetched (`exportWorkflowJson`, REST or `n8n export:workflow`) and judged by `workflowGuardState` — embedded-secret guard = keep; none / placeholder / inert env-era marker = delete then re-import through the guarded path; unreadable definition = touch nothing and say so. Deletion always precedes import. 14 new tests across n8n-auth-guard + n8n-api suites; tsc clean; eslint clean; full serial suite green except two renderer suites that flake under machine load and pass in isolation (unrelated files). Does NOT touch webhook-auth.ts, mcp-client.ts, or scheduler. |
 | Connections catalogue (Track G) | claude/connections-catalogue (#218) | Merged 2026-08-24 09:18Z | New `connections` mode + ConnectionsPanel: one card per curated service (Notion, GitHub, Slack, Brave Search, Web Fetch, Memory), cost stated before connecting, keys linked to where they come from. Every entry goes through the SAME mcpAddServer IPC as the hand-entry form in PrivacySettingsTab — no second storage format or permission path. Chat reaches it via navigate_to_mode ('connections', derived from APP_MODES as designed); navContext.service pre-opens that card. 17 tests across shared catalogue + rendered panel; widget tsc/eslint clean; full serial suite 3349 passed; root 205 passed. Does NOT touch mcp-client.ts, permissions, or message-router. |
 | MCP connect-on-add | claude/mcp-connect-on-add | Ready for integration | Closes the weakest link the end-to-end trace found: mcp-add-server used to store config and start nothing until relaunch — the user clicked Connect, the UI said it worked, no tool existed. Now the handler calls connectSingleServer immediately (single attempt, same timeouts as startup; re-adding a name replaces the old live connection instead of double-bridging tools) and returns {connected, toolCount, error}, so ConnectionsPanel says "N tools are live now" / "saved but did not start: <reason>" / restart note — only what is true. Disabled servers still just save. Does NOT touch permissions or the permission gate; parity gate unaffected (mcp_ stays dynamic). 6 new tests; mcp-client + connections-panel suites 31/31; tsc clean; eslint clean on all five changed files. |
 | Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
@@ -170,6 +171,14 @@ Two PRs were in flight at handoff; both have auto-merge enabled and need no manu
   POST to a deployed webhook WITHOUT `X-HOMEBOT-Auth` and confirm the guard rejects it
   before any node executes. Green CI does not prove the deployed instance has embedded-
   secret guards — old workflows keep their legacy guards until re-imported.
+  **Update 2026-08-25:** this verification ran, by body not status — `homebot/chat` refuses
+  unauthenticated calls (guard works), but `homebot/media-research` served 5,072 bytes of
+  real Wikipedia research to an unauthenticated POST: a stale pre-guard copy that no deploy
+  ever revisited (name-exists ⇒ skip). The durable fix — `ensureMediaResearchWorkflow`
+  replaces copies without a working embedded-secret guard instead of skipping them — is on
+  `claude/n8n-guard-self-heal`. The one-time remediation for already-deployed workflows
+  still needs the app itself (API key is safeStorage-encrypted; that is correct and stays
+  Aden's).
 - The `compose-edit-during-test` stash in the main worktree is REDUNDANT (superseded by
   commit e49cc3e on #191) — drop it after #191 merges.
 - Worktrees: main tree is `C:\Users\adenk\Desktop\sadie`, the auth-guard branch lives in

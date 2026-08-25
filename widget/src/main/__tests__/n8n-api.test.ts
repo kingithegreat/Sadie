@@ -14,6 +14,10 @@ jest.mock('axios', () => ({
   __esModule: true,
   default: { request: jest.fn(), get: jest.fn() },
 }));
+// checkWebhook is the deployment oracle behind ensureMediaResearchWorkflow.
+// Mocked so these tests decide what the probe answers instead of standing up
+// an HTTP layer — the probe itself is covered in its own suite.
+jest.mock('../n8n-webhook-check', () => ({ checkWebhook: jest.fn() }));
 
 import { execFile } from 'child_process';
 import axios from 'axios';
@@ -27,7 +31,10 @@ import {
   extractWebhookUrl,
   verifyN8nConnection,
   buildWorkflowJson,
+  exportWorkflowJson,
 } from '../n8n-api';
+import { guardJsCode } from '../n8n-auth-guard';
+import { checkWebhook } from '../n8n-webhook-check';
 
 const mockExecFile = execFile as unknown as jest.Mock;
 const mockAxios = axios as jest.Mocked<typeof axios>;
@@ -273,5 +280,175 @@ describe('not knowing is not the same as knowing there are none', () => {
       ([, args]: any) => Array.isArray(args) && args.some((a: string) => String(a).includes('import:workflow')),
     );
     expect(importCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * The self-heal. "A workflow of this name exists" used to end the check, which
+ * meant a copy deployed before the Auth Guard (or hand-imported bare) sat
+ * there through every release — measured live 2026-08-24 as homebot/
+ * media-research returning 5 KB of research to an unauthenticated POST.
+ * These tests pin the new rule: judge each COPY by its guard, replace the
+ * defenceless ones, and never destroy anything on an unreadable guess.
+ */
+describe('ensureMediaResearchWorkflow replaces copies without a working guard', () => {
+  const { ensureMediaResearchWorkflow } = require('../n8n-api');
+
+  const API_BASE = 'http://myhost:5678/api/v1';
+  const ENV_ERA_GUARD =
+    "const secret = process.env.HOMEBOT_WEBHOOK_SECRET;\nif (!secret) return $input.all();\nconst incoming = hdrs['x-homebot-auth'];";
+
+  /** Full workflow definition as the n8n API / export returns it. */
+  const exported = (id: string, guardJs?: string) => ({
+    id,
+    name: 'HomeBot: Media Research',
+    nodes: [
+      { name: 'Webhook', type: 'n8n-nodes-base.webhook', parameters: { path: 'homebot/media-research' } },
+      ...(guardJs ? [{ name: 'Auth Guard', type: 'n8n-nodes-base.code', parameters: { jsCode: guardJs } }] : []),
+      { name: 'Build query', type: 'n8n-nodes-base.code', parameters: {} },
+      { name: 'Respond', type: 'n8n-nodes-base.respondToWebhook', parameters: {} },
+    ],
+    connections: {},
+    settings: { executionOrder: 'v1' },
+  });
+
+  /** Script mockAxios.request by METHOD url → response or thrown error. */
+  function rest(routes: Record<string, { data?: any; reject?: any }>) {
+    mockAxios.request.mockImplementation(async (cfg: any) => {
+      const key = `${String(cfg.method).toUpperCase()} ${cfg.url}`;
+      const hit = routes[key];
+      if (!hit) throw Object.assign(new Error(`unrouted call: ${key}`), { response: { status: 404 } });
+      if (hit.reject) throw hit.reject;
+      return { data: hit.data ?? {} };
+    });
+  }
+
+  beforeEach(() => {
+    useApiKey('secret-key');
+    (checkWebhook as jest.Mock).mockReset();
+    (checkWebhook as jest.Mock).mockResolvedValue({
+      path: 'homebot/media-research', powers: '', status: 'available',
+    });
+  });
+
+  const callsFor = (method: string, url: string): any[] =>
+    (mockAxios.request.mock.calls as any[]).filter(
+      (c: any[]) => c[0]?.method === method && c[0]?.url === url,
+    );
+  const IMPORT_URL = `${API_BASE}/workflows`; // exact — '/workflows/x/activate' must not match
+
+  test('a pre-guard copy is deleted and freshly imported, delete before import', async () => {
+    rest({
+      [`GET ${API_BASE}/workflows?limit=200`]: { data: { data: [{ id: 9, name: 'HomeBot: Media Research' }] } },
+      [`GET ${API_BASE}/workflows/9`]: { data: exported('9') }, // no guard node
+      [`DELETE ${API_BASE}/workflows/9`]: {},
+      [`POST ${API_BASE}/workflows`]: { data: { id: 'new-1' } },
+      [`POST ${API_BASE}/workflows/new-1/activate`]: {},
+    });
+
+    await expect(ensureMediaResearchWorkflow()).resolves.toEqual({ deployed: true });
+
+    expect(callsFor('DELETE', `${API_BASE}/workflows/9`)).toHaveLength(1);
+    expect(callsFor('POST', IMPORT_URL)).toHaveLength(1);
+    // The fresh import must carry the guard — that is the whole repair.
+    const postBody = callsFor('POST', IMPORT_URL)[0][0].data;
+    expect(postBody.nodes.some((n: any) => n.name === 'Auth Guard')).toBe(true);
+    // Order matters: the open webhook closes before the replacement goes in.
+    const calls = mockAxios.request.mock.calls as any[];
+    expect(
+      calls.findIndex((c) => c[0]?.method === 'DELETE') < calls.findIndex((c) => c[0]?.method === 'POST'),
+    ).toBe(true);
+  });
+
+  test('an env-era guard carries the marker but is still replaced', async () => {
+    rest({
+      [`GET ${API_BASE}/workflows?limit=200`]: { data: { data: [{ id: 9, name: 'HomeBot: Media Research' }] } },
+      [`GET ${API_BASE}/workflows/9`]: { data: exported('9', ENV_ERA_GUARD) },
+      [`DELETE ${API_BASE}/workflows/9`]: {},
+      [`POST ${API_BASE}/workflows`]: { data: { id: 'new-1' } },
+      [`POST ${API_BASE}/workflows/new-1/activate`]: {},
+    });
+
+    await expect(ensureMediaResearchWorkflow()).resolves.toEqual({ deployed: true });
+    expect(callsFor('DELETE', `${API_BASE}/workflows/9`)).toHaveLength(1);
+  });
+
+  test('a copy with an embedded-secret guard is left entirely alone', async () => {
+    rest({
+      [`GET ${API_BASE}/workflows?limit=200`]: { data: { data: [{ id: 9, name: 'HomeBot: Media Research' }] } },
+      [`GET ${API_BASE}/workflows/9`]: { data: exported('9', guardJsCode('real-secret')) },
+    });
+
+    await expect(ensureMediaResearchWorkflow()).resolves.toEqual({ deployed: true });
+    expect(mockAxios.request.mock.calls.filter((c: any[]) => c[0]?.method !== 'GET')).toHaveLength(0);
+  });
+
+  test('mixed duplicates: only the unguarded one dies, no duplicate import', async () => {
+    rest({
+      [`GET ${API_BASE}/workflows?limit=200`]: { data: { data: [
+        { id: 9, name: 'HomeBot: Media Research' },
+        { id: 10, name: 'HomeBot: Media Research' },
+      ] } },
+      [`GET ${API_BASE}/workflows/9`]: { data: exported('9') },
+      [`GET ${API_BASE}/workflows/10`]: { data: exported('10', guardJsCode('real-secret')) },
+      [`DELETE ${API_BASE}/workflows/9`]: {},
+    });
+
+    await expect(ensureMediaResearchWorkflow()).resolves.toEqual({ deployed: true });
+    expect(callsFor('DELETE', `${API_BASE}/workflows/9`)).toHaveLength(1);
+    expect(callsFor('DELETE', `${API_BASE}/workflows/10`)).toHaveLength(0);
+    // A working copy remains — importing again would mint a duplicate.
+    expect(callsFor('POST', IMPORT_URL)).toHaveLength(0);
+  });
+
+  test('a copy whose definition cannot be read stops everything, hands off nothing', async () => {
+    rest({
+      [`GET ${API_BASE}/workflows?limit=200`]: { data: { data: [{ id: 9, name: 'HomeBot: Media Research' }] } },
+      [`GET ${API_BASE}/workflows/9`]: { reject: Object.assign(new Error('boom'), { response: { status: 500 } }) },
+    });
+
+    const res = await ensureMediaResearchWorkflow();
+    expect(res.deployed).toBe(false);
+    expect(String(res.reason)).toMatch(/could not read/i);
+    expect(String(res.reason)).toContain('Auth Guard');
+    expect(mockAxios.request.mock.calls.filter((c: any[]) => c[0]?.method === 'DELETE')).toHaveLength(0);
+    expect(callsFor('POST', IMPORT_URL)).toHaveLength(0);
+  });
+
+  test('when the probe says the webhook does not answer, it says so instead of claiming success', async () => {
+    (checkWebhook as jest.Mock).mockResolvedValue({
+      path: 'homebot/media-research', powers: '', status: 'not_deployed',
+    });
+    rest({
+      [`GET ${API_BASE}/workflows?limit=200`]: { data: { data: [{ id: 9, name: 'HomeBot: Media Research' }] } },
+      [`GET ${API_BASE}/workflows/9`]: { data: exported('9', guardJsCode('real-secret')) },
+    });
+
+    const res = await ensureMediaResearchWorkflow();
+    expect(res.deployed).toBe(false);
+    expect(String(res.reason)).toMatch(/toggle active|api key/i);
+  });
+});
+
+describe('exportWorkflowJson', () => {
+  beforeEach(() => useApiKey(undefined)); // CLI path
+
+  test('parses the exported JSON document from docker output', async () => {
+    mockExecFile.mockImplementation((_c: string, _a: string[], _o: any, cb: any) =>
+      cb(null, JSON.stringify({ id: '7', name: 'X', nodes: [], connections: {} }), ''));
+    await expect(exportWorkflowJson('7')).resolves.toEqual(
+      { id: '7', name: 'X', nodes: [], connections: {} });
+  });
+
+  test('survives noise around the document', async () => {
+    mockExecFile.mockImplementation((_c: string, _a: string[], _o: any, cb: any) =>
+      cb(null, 'some banner line\n{"id":"7","nodes":[]}\ntrailing text', ''));
+    await expect(exportWorkflowJson('7')).resolves.toEqual({ id: '7', nodes: [] });
+  });
+
+  test('returns null — never throws — when export fails', async () => {
+    mockExecFile.mockImplementation((_c: string, _a: string[], _o: any, cb: any) =>
+      cb(Object.assign(new Error('no container'), { code: 1 }), '', 'not running'));
+    await expect(exportWorkflowJson('7')).resolves.toBeNull();
   });
 });
