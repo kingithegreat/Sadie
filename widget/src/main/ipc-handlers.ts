@@ -1063,6 +1063,24 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // ── Comprehensive first-run diagnostics ───────────────────────────────────
   // Runs disk-space, service-reachability, write-permissions, and GPU checks
   // in parallel. All checks are non-destructive and safe to call at any time.
+  /**
+   * What HomeBot can actually do right now, and what to do about the rest.
+   *
+   * Distinct from run-diagnostics, which reports SERVICES. This reports
+   * CAPABILITIES in the user's words, and carries the fix for each broken one.
+   */
+  ipcMain.handle('homebot:capability-report', async () => {
+    try {
+      const { probeCapabilities } = await import('./capability-probe');
+      const { buildCapabilityReport, summarise } = await import('../shared/capability-report');
+      const input = await probeCapabilities(getSettings() as any);
+      const capabilities = buildCapabilityReport(input);
+      return { success: true, capabilities, summary: summarise(capabilities) };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   ipcMain.handle('homebot:run-diagnostics', async () => {
     try {
       const { runDiagnostics } = await import('./diagnostics');
