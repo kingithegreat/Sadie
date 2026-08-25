@@ -14,6 +14,7 @@ import { diffText, toHunks } from '../../../src/diff/line-diff';
 import * as os from 'os';
 import * as https from 'https';
 import { spawn, execFile } from 'child_process';
+import { saveGeneratedImage } from './generated-images';
 
 // ── Timeout constants (ms) ─────────────────────────────────────────────────
 const HEALTH_CHECK_TIMEOUT = 2000;
@@ -368,12 +369,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       );
 
       if (toolResult.success && toolResult.result?.image_base64) {
+        // Rung 1 of the image-edit ladder: the result must be durable. The
+        // chat path has always written here; the panel used to keep the image
+        // in React state only, so Clear or closing the panel destroyed it.
+        const imgDir = path.join(app.getPath('userData'), 'generated-images');
+        const filename = saveGeneratedImage(toolResult.result.image_base64, imgDir);
         return {
           status: 'success',
           timestamp: new Date().toISOString(),
           operation: 'image_generate',
           source: toolResult.result.source || 'unknown',
           image: toolResult.result.image_base64,
+          filename,
+          savedPath: filename ? path.join(imgDir, filename) : null,
           metadata: { prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
           validation: { validated: true },
           error: { message: '', code: '' }
