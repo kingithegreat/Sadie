@@ -89,7 +89,6 @@ test.describe('First-run onboarding and config persistence', () => {
       firstRun: false,
       telemetryEnabled: true,
       permissions: { delete_file: false },
-      defaultTeam: 'GSW',
       n8nUrl: 'http://localhost:5678',
       widgetHotkey: 'Ctrl+Shift+Space',
       alwaysOnTop: true
@@ -105,7 +104,6 @@ test.describe('First-run onboarding and config persistence', () => {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.firstRun).toBe(false);
     expect(config.telemetryEnabled).toBe(true);
-    expect(config.defaultTeam).toBe('GSW');
 
     await app.close();
   });

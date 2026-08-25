@@ -6,15 +6,10 @@ Repo-native companion to the Notion [🔗 Work Claims Ledger](https://app.notion
 1. Check the table below for an existing claim on the same feature area. If one exists and looks recent/active, don't start a parallel build.
 2. `grep -rl <concept> src widget/src` for an existing module before writing a new one — HomeBot has two source trees (repo-root `src/` for pure/testable modules, `widget/src/` for the actual Electron app), so check both.
 3. Add a row below before writing code. Update it to "Ready for Integration" when pushed and self-tested.
-4. **Verify a claim against the repo before repeating it** — `gh pr view <n> --json state,mergedAt` is two seconds. The board is a lagging record, not a source of truth: on 2026-08-24 two rows said "Ready for integration" for PRs that had merged 48 hours earlier, and both got repeated as fact. Note that squash-merge means the original branch SHA is never an ancestor of main, so `git branch --contains` lies — check PR **state**, not commits.
+4. **Verify a claim against the repo before repeating it** — `gh pr view <n> --json state,mergedAt` is two seconds. The board is a lagging record, not a source of truth: on 2026-08-24 two rows said "Ready for integration" for PRs that had merged 48 hours earlier, and both got repeated as fact. Note that squash-merge means the original branch SHA is never an ancestor of main, so `git branch --contains` lies — check PR **state**, not commits. **`gh pr list --head <branch>` lies too**, in the opposite direction: it returned "no PR" for `claude/dead-capability-sweep-rebased`, whose content had merged as #118 and is on main today — the PR had been opened from the pre-rebase branch name, so the lookup found nothing and the branch looked like stranded work waiting to be rescued. And do not trust a commit SUBJECT either: #228 reads `docs(claims):` but carries the entire Track H file-trigger feature across nine files. When the question is "did this ship?", grep main for the CONTENT.
 5. **Each session works in its own git worktree. `C:\Users\adenk\Desktop\sadie` is nobody's checkout.** Two sessions sharing one HEAD interleaved reflog entries, reset a branch underneath a running merge, and clobbered an uncommitted claim row — three losses on 2026-08-24, one costing a full rebuild, all tracing to this. Aden provisions per-session worktrees (e.g. `Desktop\sadie-ox`, with `node_modules` junctioned so the widget suite runs immediately); ask for yours instead of touching the shared tree. Never run mutating git commands against another session's worktree — `git worktree list` first, every time.
 
 CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the build if a newly added file exports the same top-level identifier as an existing file — usually a sign two features were built in parallel without checking here first, or a scaffold was built without checking the real integration point (see the Step 1 entitlements gate channel-name mismatch, which was a variant of this same failure mode). See that script's header comment for how it works and how to suppress a genuine false positive.
-
-4. **Verify a claim against the repo before repeating or trusting it** — the board is a
-   LAGGING record, not a source of truth. Check `gh pr view <n> --json state,mergedAt`;
-   squash-merge means the original SHA is never an ancestor, so `git branch -r --contains`
-   lies. Two agents repeated rows here that had been stale for 48 hours.
 
 ## Active claims
 
@@ -30,12 +25,36 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 | Backup import can no longer repoint traffic endpoints | claude/backup-endpoint-guard (#209) | Merged | settings-import.ts (analyzeImportedEndpoints / stripImportedSettings), homebot:import-settings handler (confirm dialog when a backup would move n8nUrl/ollamaUrl/searxngUrl/codeApiUrl/customLLM.baseUrl; skips endpoints when nobody can answer — fail closed). Credentials stay stripped unconditionally. 16 settings-import tests. |
 | Tool-surface hardening (audit remediation) | claude/tsh-integration (#230) | PR open — gated 2026-08-25 | grep_code/git via execFile argv (cmd-injection class removed), 14 CRM writes gated (requiresConfirmation + permissions entries), per-hop redirect SSRF revalidation + IPv6 private ranges, api_request POST confirmation, batch allow-once honors requiresConfirmation, shared home-boundary/url-boundary utils replace five drift-prone startsWith guards. New gate: `tool-permissions-parity.test.ts` — every native tool needs a permission entry or requiresConfirmation; every permission key needs a tool. Full widget suite + tsc green on current main. Does NOT touch message-router routing logic or the media pipeline. |
 | Visual pass: icons redrawn + chrome polish + indigo-violet theme | claude/visual-pass | Ready for integration | Aden asked for a visual pass, then a full-app theme change. Commit 1: all 35 `IconName` glyphs redrawn to Lucide-grid geometry in components/Icon.tsx (worst offenders: settings gear was a lumpy hand-trace, sparkle read as an asterisk) — union unchanged so ~40 call sites need no edit, no new deps. ICON & CHROME POLISH PASS appended to chatgpt-theme.css: .hb-icon optical alignment, shared hover-lift/press-sink/:focus-visible model across chrome buttons, disabled honesty, on-palette ::selection, reduced-motion respected. Commit 2 (THEME PASS): accent moved from system blue to **indigo-violet** — base oklch tokens hue 250→285, --homebot-blue-* hex values retuned (names kept), Apple-layer --accent #0A84FF→#7C5CFF with tinted glass materials, light-theme accent #6D4AFF, ambient washes re-tinted, composer focus glow, conversation-item active spine, glass mode-bar pill + toast materials, unified quiet scrollbars, last literal blue (.theme-btn.active) fixed. User-friendly preserved: text contrast untouched, white-on-accent ≥4.5:1, zero layout dimensions changed, all passes removable as single blocks. Verified: tsc clean; eslint 0 errors; full serial suite 237 passed / 2 failed suites that fail identically on pristine origin/main. Worktree: Desktop/sadie-visual. |
+| Rewrite a rough request into one HomeBot can act on | claude/prompt-improve (#213) | PR open — auto-merge armed | Not this session's work; listed so nobody starts a parallel build. Green on every reporting required context. Released from `BEHIND` twice on 2026-08-26. One e2e shard went red on an `onnxruntime-node` postinstall that could not reach `api.nuget.org` — zero tests ran, no code defect — and rerun attempt 2 cleared it. |
+| Delete dead `summarizeWebContent` + `defaultTeam` | claude/delete-dead-capability (#232) | PR open — auto-merge armed 2026-08-26 | Closes the 2026-08-22 reachability audit; these were its last two open items. Both re-verified dead on current main BEFORE deleting: `summarizeWebContent` had an IPC handler, a preload bridge method and an ElectronAPI declaration, and zero renderer callers; `defaultTeam` was a `'GSW'` default plus en/es locale strings that no component reads — its only readers were a test fixture and six e2e `seedConfig` blocks asserting that a default nobody consumes persists. Removes the channel, bridge, type declarations, config default, i18n keys and the test/e2e references. No behaviour change: nothing could reach any of it. Verified — `tsc --noEmit` exit 0; full widget suite 3417 passed / 0 failed; `check-docs-drift.mjs` in sync (179 preload methods, 130 renderer→main); CI `widget` SUCCESS. `docs/api-reference.md` regenerated. Does NOT touch message-router, media, or permissions. |
+| Repo operating rules — gate authority and board truth | claude/gate-truth-docs | PR open 2026-08-26 | `CLAUDE.md` only, no code, no tests affected. Rule 12 was inverted and actively harmful: it called the e2e matrix advisory and cited "failed 28 of 30 runs, zero passes", so it told every new session to ignore a gate that has since been rebuilt — `e2e-all` is now a REQUIRED context and an `if: always()` aggregator (a skipped shard cannot wave it through), and its last 27 concluded runs are 25 green / 2 red. Rewritten to state the real blocking set, and to add the `strict: true` trap that cost a day here: an all-green PR still cannot merge while `BEHIND` main and auto-merge does NOT rescue it — `gh pr update-branch <n>` does. Rule 13 extended: an ABSENT required check reads exactly like a passing one. |
 
-Merged since the last board refresh, verified against `gh pr view` 2026-08-24: delete-model (#183),
-privacy-switch naming (#178), quiz full count (#186), Kokoro narration engine (#214), Code mode
-(#201), feeds mode (#202), navigation primitive (#196), backup endpoint guard (#209), and
-MCP connect-on-add (#221 — verified merged 10:57Z during this review). The old
-per-row claims are retired — do not rebuild any of these.
+Retired 2026-08-26. Every row below was verified MERGED with `gh pr view --json state,mergedAt`
+before being struck — which on this refresh meant ALL NINE rows the board still called active.
+Six were outright wrong: five said "Ready for integration" or "PR open" and one said "In progress"
+for work that had already shipped. Do not rebuild any of these.
+
+| Was claimed as | Actually | Merged |
+|---|---|---|
+| automation-event-triggers — Ready for integration | #228 (Track H file trigger shipped in full; the `docs(claims):` subject hides a 9-file feature) | 2026-08-25 13:04Z |
+| image-edit-rung-1 — Ready for integration | #226 | 2026-08-25 12:43Z |
+| tsh-integration — PR open, gated | #230 | 2026-08-25 10:42Z |
+| media-dead-states — In progress | #225 | 2026-08-24 22:01Z |
+| kokoro-narration-provider — Ready for integration | #214 | 2026-08-24 01:35Z |
+| delete-model-ui — Ready for integration | #183 | 2026-08-22 11:25Z |
+| connections-catalogue | #218 | 2026-08-24 09:18Z |
+| track-d-free-setup | #220 | 2026-08-24 09:51Z |
+| backup-endpoint-guard | #209 | merged |
+
+Also merged earlier and already retired: privacy-switch naming (#178), quiz full count (#186),
+Code mode (#201), feeds mode (#202), navigation primitive (#196), MCP connect-on-add (#221),
+dead-capability sweep + Anthropic usage in diagnostics (#118 — `scripts/find-dead-capabilities.mjs`
+is ON MAIN today; a detector already exists, do not write a second one).
+
+Closed 2026-08-26: **#227 (`claude/n8n-guard-self-heal`)** — every commit on it had already
+merged by another route (#223 self-heal, #221 connect-on-add, #219 board refresh), it sat
+CONFLICTING with main, and nothing unique remained. Remote branch deleted. Do not rebuild or
+re-open it; #223 is the surviving implementation of the Media Research self-heal.
 
 ## Integration notes — 2026-08-22 session (read before your next PR)
 

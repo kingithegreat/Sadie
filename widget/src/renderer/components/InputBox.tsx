@@ -73,6 +73,48 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   type LocalImage = ImageAttachment & { id: string };
   type LocalDocument = DocumentAttachment & { id: string };
   const [inputValue, setInputValue] = useState('');
+
+  // Sharpening a draft before sending it. The draft before the rewrite is kept
+  // so Undo is one click — replacing what someone typed with no way back is a
+  // hostile thing for an app to do, however good the rewrite is.
+  const [improving, setImproving] = useState(false);
+  const [preImproveDraft, setPreImproveDraft] = useState<string | null>(null);
+  const [improveNote, setImproveNote] = useState<string | null>(null);
+
+  const handleImprovePrompt = useCallback(async () => {
+    if (improving) return;
+    const draft = inputValue;
+    setImproving(true);
+    setImproveNote(null);
+    try {
+      const res = await window.electron?.improvePrompt?.(draft);
+      if (!res?.success || !res.improved) {
+        // Says why rather than doing nothing — a button that silently no-ops
+        // reads as broken.
+        setImproveNote(res?.error || 'Could not rewrite that just now.');
+        return;
+      }
+      setPreImproveDraft(draft);
+      setInputValue(res.improved);
+    } catch {
+      setImproveNote('Could not rewrite that just now.');
+    } finally {
+      setImproving(false);
+    }
+  }, [inputValue, improving]);
+
+  const handleUndoImprove = useCallback(() => {
+    if (preImproveDraft === null) return;
+    setInputValue(preImproveDraft);
+    setPreImproveDraft(null);
+    setImproveNote(null);
+  }, [preImproveDraft]);
+
+  // Typing after a rewrite means the user has taken it from here, so the undo
+  // offer stops applying — restoring at that point would discard their edits.
+  useEffect(() => {
+    if (preImproveDraft !== null && inputValue !== '' && improveNote) setImproveNote(null);
+  }, [inputValue, preImproveDraft, improveNote]);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [attachedImages, setAttachedImages] = useState<LocalImage[]>([]);
   const [attachedDocuments, setAttachedDocuments] = useState<LocalDocument[]>([]);
@@ -607,6 +649,12 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
         <div className="drop-overlay" role="status" aria-live="polite"><div className="drop-inner">📥 Drop files to attach</div></div>
       )}
 
+      {improveNote && (
+        <div className="improve-note" data-testid="improve-note" role="status">
+          {improveNote}
+        </div>
+      )}
+
       <div className="input-top">
         <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message HomeBot" maxLength={4000} />
         <div className={`char-counter${inputValue.length > 3000 ? (inputValue.length > 3800 ? ' danger' : ' warning') : ''}`}>{inputValue.length} / 4000</div>
@@ -615,6 +663,31 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
           <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden-file-input" aria-label="Attach images" onChange={handleFileChange} />
           <input ref={docInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.json,.csv" multiple className="hidden-file-input" aria-label="Attach documents" onChange={handleDocChange} />
           <input ref={ragInputRef} type="file" accept="*" className="hidden-file-input" aria-label="Index file for RAG" onChange={handleRagFileChange} />
+          <Tooltip content="Rewrite this so HomeBot can act on it">
+            <button
+              className="attach-button improve-prompt-button"
+              aria-label="Improve this prompt"
+              data-testid="improve-prompt"
+              onClick={handleImprovePrompt}
+              disabled={improving || !inputValue.trim()}
+              type="button"
+            >
+              {improving ? '…' : '✨'}
+            </button>
+          </Tooltip>
+          {preImproveDraft !== null && (
+            <Tooltip content="Put your original wording back">
+              <button
+                className="attach-button improve-undo-button"
+                aria-label="Undo the rewrite"
+                data-testid="improve-undo"
+                onClick={handleUndoImprove}
+                type="button"
+              >
+                ↶
+              </button>
+            </Tooltip>
+          )}
           <Tooltip content="Attach images">
             <button className="attach-button" aria-label="Attach images to this message" onClick={handleAttachClick}><Icon name="image" /></button>
           </Tooltip>

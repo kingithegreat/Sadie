@@ -824,11 +824,6 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:fetch-page-content', url);
   },
 
-  // Summarize web page content via n8n/Ollama
-  summarizeWebContent: async (url: string, content: string) => {
-    return await ipcRenderer.invoke('homebot:summarize-web-content', url, content);
-  },
-
   // RAG: index a local file (or web content when content is provided)
   ragIndex: async (filePath: string, content?: string) => {
     return await ipcRenderer.invoke('homebot:rag-index', filePath, content);
@@ -878,6 +873,10 @@ const electronAPI: ElectronAPI = {
   // Home screen — what works right now and how to fix what does not
   getCapabilityReport: async () =>
     ipcRenderer.invoke('homebot:capability-report'),
+
+  // Sharpen a draft request before sending it
+  improvePrompt: async (draft: string) =>
+    ipcRenderer.invoke('homebot:improve-prompt', { draft }),
 
   // Automation Center
   loadAutomations: async () =>

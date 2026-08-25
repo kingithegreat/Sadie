@@ -1026,33 +1026,33 @@ getCapabilityReport       getConfigPath             getConversation           ge
 getCrmDashboard           getEnv                    getGeneratedImage         getMode
 getPerfAggregates         getPerfHistory            getSettings               getSupervisorStatus
 getUncensoredMode         getWidgetMode             hasPermission             importSettings
-installUpdate             invoke                    licenseActivate           licenseDeactivate
-licenseStatus             licenseValidate           listCustomLLMModels       listFeedSources
-listOllamaModels          listTools                 loadAutomations           loadConversations
-loadQuizProgress          maximizeWindow            mcpAddServer              mcpGetStatus
-mcpListServers            mcpRemoveServer           mcpToggleServer           mediaAdvance
-mediaApprove              mediaCreate               mediaDelete               mediaFfmpegSetup
-mediaFfmpegStatus         mediaList                 mediaMarkPublished        mediaParseFeed
-mediaReject               mediaRun                  minimizeWindow            onAssistantToolActivity
-onBatchSummary            onBrowserState            onConfigRecovered         onConfirmationRequest
-onConversationCompacted   onHardwareProfileApplied  onHideWindow              onMediaFfmpegProgress
-onMessage                 onModelFallback           onNavigate                onOllamaDownloadProgress
-onOllamaStatus            onPermissionRequest       onProactiveBriefing       onPullModelProgress
-onReminderFired           onSdCppSetupProgress      onShowWindow              onStreamChunk
-onStreamEnd               onStreamError             onSupervisorStatus        onTerminalExit
-onTerminalOutput          onTitleUpdated            onUpdateAvailable         onUpdateDownloaded
-onUpdateProgress          onWidgetModeChanged       openExternalUrl           openFile
-parseDocument             pullModel                 pullModelStream           ragClear
-ragIndex                  ragList                   readConsentLog            readDebugLogs
-readPermissionAudit       readTelemetryEvents       removeHideWindowListener  removeShowWindowListener
-resetPermissions          resolveActiveModel        restartApp                runAutomation
-runDiagnostics            saveConversation          saveQuizProgress          saveSettings
-schedulerAdd              schedulerList             schedulerRemove           schedulerToggle
-sdCppAutoSetup            sdCppSetup                sdCppStatus               searchConversations
-sendConfirmationResponse  sendMessage               sendPermissionResponse    sendStreamMessage
-setActiveConversation     setAlwaysOnTop            setUncensoredMode         showInFolder
-skillsList                skillsOpenFolder          startOllama               startSpeechRecognition
-subscribeToStream         summarizeWebContent       terminalClose             terminalCreate
+improvePrompt             installUpdate             invoke                    licenseActivate
+licenseDeactivate         licenseStatus             licenseValidate           listCustomLLMModels
+listFeedSources           listOllamaModels          listTools                 loadAutomations
+loadConversations         loadQuizProgress          maximizeWindow            mcpAddServer
+mcpGetStatus              mcpListServers            mcpRemoveServer           mcpToggleServer
+mediaAdvance              mediaApprove              mediaCreate               mediaDelete
+mediaFfmpegSetup          mediaFfmpegStatus         mediaList                 mediaMarkPublished
+mediaParseFeed            mediaReject               mediaRun                  minimizeWindow
+onAssistantToolActivity   onBatchSummary            onBrowserState            onConfigRecovered
+onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied  onHideWindow
+onMediaFfmpegProgress     onMessage                 onModelFallback           onNavigate
+onOllamaDownloadProgress  onOllamaStatus            onPermissionRequest       onProactiveBriefing
+onPullModelProgress       onReminderFired           onSdCppSetupProgress      onShowWindow
+onStreamChunk             onStreamEnd               onStreamError             onSupervisorStatus
+onTerminalExit            onTerminalOutput          onTitleUpdated            onUpdateAvailable
+onUpdateDownloaded        onUpdateProgress          onWidgetModeChanged       openExternalUrl
+openFile                  parseDocument             pullModel                 pullModelStream
+ragClear                  ragIndex                  ragList                   readConsentLog
+readDebugLogs             readPermissionAudit       readTelemetryEvents       removeHideWindowListener
+removeShowWindowListener  resetPermissions          resolveActiveModel        restartApp
+runAutomation             runDiagnostics            saveConversation          saveQuizProgress
+saveSettings              schedulerAdd              schedulerList             schedulerRemove
+schedulerToggle           sdCppAutoSetup            sdCppSetup                sdCppStatus
+searchConversations       sendConfirmationResponse  sendMessage               sendPermissionResponse
+sendStreamMessage         setActiveConversation     setAlwaysOnTop            setUncensoredMode
+showInFolder              skillsList                skillsOpenFolder          startOllama
+startSpeechRecognition    subscribeToStream         terminalClose             terminalCreate
 terminalKill              terminalRun               testN8nConnection         toggleWidgetMode
 ttsListVoices             ttsSampleVoice            ttsSpeak                  ttsStop
 updateAutomation          updateMessage             workspaceList             workspaceRead
@@ -1087,42 +1087,42 @@ homebot:get-perf-aggregates           homebot:get-perf-history
 homebot:get-settings                  homebot:get-uncensored-mode
 homebot:get-widget-mode               homebot:grab-browse-content
 homebot:has-permission                homebot:import-settings
-homebot:install-update                homebot:license:activate
-homebot:license:deactivate            homebot:license:status
-homebot:license:validate              homebot:list-custom-llm-models
-homebot:list-feed-sources             homebot:list-ollama-models
-homebot:list-tools                    homebot:load-automations
-homebot:load-conversations            homebot:load-quiz-progress
-homebot:mcp-add-server                homebot:mcp-get-status
-homebot:mcp-list-servers              homebot:mcp-remove-server
-homebot:mcp-toggle-server             homebot:media:advance
-homebot:media:approve                 homebot:media:create
-homebot:media:delete                  homebot:media:ffmpeg-setup
-homebot:media:ffmpeg-status           homebot:media:list
-homebot:media:mark-published          homebot:media:parse-feed
-homebot:media:reject                  homebot:media:run
-homebot:message                       homebot:n8n-test-connection
-homebot:open-browse                   homebot:open-external-url
-homebot:open-file                     homebot:open-web-service
-homebot:parse-document                homebot:permission-response
-homebot:pull-model                    homebot:pull-model-stream
-homebot:rag-clear                     homebot:rag-index
-homebot:rag-list                      homebot:read-consent-log
-homebot:read-debug-logs               homebot:read-permission-audit
-homebot:read-telemetry-events         homebot:reset-permissions
-homebot:resolve-active-model          homebot:restart-app
-homebot:run-automation                homebot:run-diagnostics
-homebot:save-conversation             homebot:save-quiz-progress
-homebot:save-settings                 homebot:scheduler-add
-homebot:scheduler-list                homebot:scheduler-remove
-homebot:scheduler-toggle              homebot:sd-cpp:auto-setup
-homebot:sd-cpp:setup                  homebot:sd-cpp:status
-homebot:search-conversations          homebot:set-active-conversation
-homebot:set-always-on-top             homebot:set-uncensored-mode
-homebot:show-in-folder                homebot:skills-list
-homebot:skills-open-folder            homebot:start-ollama
-homebot:start-speech-recognition      homebot:stream-cancel
-homebot:stream-message                homebot:summarize-web-content
+homebot:improve-prompt                homebot:install-update
+homebot:license:activate              homebot:license:deactivate
+homebot:license:status                homebot:license:validate
+homebot:list-custom-llm-models        homebot:list-feed-sources
+homebot:list-ollama-models            homebot:list-tools
+homebot:load-automations              homebot:load-conversations
+homebot:load-quiz-progress            homebot:mcp-add-server
+homebot:mcp-get-status                homebot:mcp-list-servers
+homebot:mcp-remove-server             homebot:mcp-toggle-server
+homebot:media:advance                 homebot:media:approve
+homebot:media:create                  homebot:media:delete
+homebot:media:ffmpeg-setup            homebot:media:ffmpeg-status
+homebot:media:list                    homebot:media:mark-published
+homebot:media:parse-feed              homebot:media:reject
+homebot:media:run                     homebot:message
+homebot:n8n-test-connection           homebot:open-browse
+homebot:open-external-url             homebot:open-file
+homebot:open-web-service              homebot:parse-document
+homebot:permission-response           homebot:pull-model
+homebot:pull-model-stream             homebot:rag-clear
+homebot:rag-index                     homebot:rag-list
+homebot:read-consent-log              homebot:read-debug-logs
+homebot:read-permission-audit         homebot:read-telemetry-events
+homebot:reset-permissions             homebot:resolve-active-model
+homebot:restart-app                   homebot:run-automation
+homebot:run-diagnostics               homebot:save-conversation
+homebot:save-quiz-progress            homebot:save-settings
+homebot:scheduler-add                 homebot:scheduler-list
+homebot:scheduler-remove              homebot:scheduler-toggle
+homebot:sd-cpp:auto-setup             homebot:sd-cpp:setup
+homebot:sd-cpp:status                 homebot:search-conversations
+homebot:set-active-conversation       homebot:set-always-on-top
+homebot:set-uncensored-mode           homebot:show-in-folder
+homebot:skills-list                   homebot:skills-open-folder
+homebot:start-ollama                  homebot:start-speech-recognition
+homebot:stream-cancel                 homebot:stream-message
 homebot:toggle-widget-mode            homebot:tts-list-voices
 homebot:tts-sample-voice              homebot:tts-speak
 homebot:tts-stop                      homebot:update-automation

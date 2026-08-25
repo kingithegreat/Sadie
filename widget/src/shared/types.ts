@@ -258,7 +258,6 @@ export interface Settings {
   // Per-tool permissions (keys are tool names)
   permissions?: Record<string, boolean>;
   permissionPromptTimeoutMs?: number;
-  defaultTeam?: string;
   // Web search API keys
   /**
    * A self-hosted SearXNG instance, e.g. http://localhost:8080. The only search
@@ -609,6 +608,13 @@ export interface ElectronAPI {
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
   onConfigRecovered?: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => () => void;
   onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
+  /** Rewrite a draft request so the assistant can act on it. */
+  improvePrompt?: (draft: string) => Promise<{
+    success: boolean;
+    improved?: string;
+    source?: 'cloud' | 'local';
+    error?: string;
+  }>;
   /** Fetch RSS/Atom feeds for the Feeds panel. */
   fetchFeeds?: (sources?: string[]) => Promise<{
     success: boolean;
@@ -630,8 +636,6 @@ export interface ElectronAPI {
 
   // Fetch a web page and extract its text content
   fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;
-  // Summarize web page content via n8n/Ollama
-  summarizeWebContent?: (url: string, content: string) => Promise<{ success: boolean; result?: { summary: string }; error?: string }>;
   // RAG: index a local file path (or web content when content is provided)
   ragIndex?: (filePath: string, content?: string) => Promise<{ success: boolean; result?: { doc_id: string; filename: string; chunks_indexed: number; message: string }; error?: string }>;
   // RAG: list all indexed documents

@@ -664,56 +664,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  // ── Summarize web content via n8n (Ollama), with local fallback ──
-  ipcMain.handle('homebot:summarize-web-content', async (_event, url: string, content: string) => {
-    try {
-      if (!content) return { success: false, error: 'No content to summarize' };
-
-      const model = getSettings().chatModel || 'qwen2.5:7b';
-      const truncated = content.length > 6000 ? content.slice(0, 6000) : content;
-      const prompt = `Summarize this web page concisely. Include key information, services/products offered, and contact details if present. Use bullet points for clarity.\n\nURL: ${url}\n\nContent:\n${truncated}`;
-
-      // Try n8n first
-      try {
-        const settings = getSettings();
-        const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
-        console.log('[WebSummary] Trying n8n...');
-        const n8nRes = await axios.post(`${n8nBase}/webhook/homebot/chat`, {
-          message: prompt,
-          user_id: 'desktop-user',
-          conversation_id: 'web-summary',
-          timestamp: new Date().toISOString()
-        }, { timeout: 60_000, headers: homebotWebhookHeaders() });
-
-        const summary = n8nRes.data?.output || n8nRes.data?.data?.assistant?.content || '';
-        if (summary) {
-          console.log('[WebSummary] n8n returned summary:', summary.length, 'chars');
-          return { success: true, summary };
-        }
-      } catch (n8nErr: any) {
-        console.log('[WebSummary] n8n unavailable, using local Ollama:', n8nErr?.message);
-      }
-
-      // Local Ollama fallback
-      const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
-        model,
-        prompt,
-        system: 'You are a helpful assistant that summarizes web pages concisely with bullet points.',
-        stream: false,
-        options: { temperature: 0.5, num_predict: 1500 }
-      }, { timeout: 90_000 });
-
-      const summary = response.data?.response || '';
-      if (summary) {
-        console.log('[WebSummary] Local Ollama returned summary:', summary.length, 'chars');
-        return { success: true, summary };
-      }
-      return { success: false, error: 'No summary generated' };
-    } catch (err: any) {
-      return { success: false, error: String(err?.message || err) };
-    }
-  });
-
   // ── RAG: index a local file or web content ──
   ipcMain.handle('homebot:rag-index', async (_event, filePath: string, content?: string) => {
     try {
@@ -2276,6 +2226,69 @@ try {
     fs.writeFileSync(tmp, JSON.stringify(automations, null, 2), 'utf8');
     fs.renameSync(tmp, AUTOMATIONS_FILE);
   }
+
+  /**
+   * Rewrite a draft request so the assistant can act on it.
+   *
+   * Routed EXACTLY like conversation titles: resolveCloudLLM decides, and when
+   * cloud is off the local model does it. The privacy switch has to govern this
+   * the same as everything else — a "helpful" rewrite that quietly posted the
+   * user's half-finished thought to a cloud provider would be the worst
+   * possible place to make an exception.
+   */
+  ipcMain.handle('homebot:improve-prompt', async (_ev, payload: { draft?: string }) => {
+    const draft = String(payload?.draft ?? '');
+    try {
+      const {
+        checkImprovable, cleanImprovedPrompt, isUsefulImprovement,
+        buildImproveUserPrompt, IMPROVE_SYSTEM_PROMPT,
+      } = await import('../shared/prompt-improve');
+
+      const check = checkImprovable(draft);
+      if (!check.ok) return { success: false, error: check.message };
+
+      const settings = getSettings();
+      const cloud = resolveCloudLLM(settings);
+      let raw = '';
+
+      if (cloud.active && cloud.config) {
+        raw = await generateFromCustomLLM(
+          cloud.config,
+          IMPROVE_SYSTEM_PROMPT,
+          buildImproveUserPrompt(draft),
+          { timeoutMs: 25_000 },
+        );
+      } else {
+        const ollamaBase = getConfiguredOllamaBaseUrl();
+        const model = settings.chatModel || process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const resp = await axios.post(
+          `${ollamaBase}/api/generate`,
+          {
+            model,
+            prompt: `${IMPROVE_SYSTEM_PROMPT}
+
+${buildImproveUserPrompt(draft)}`,
+            stream: false,
+            // Low temperature: this is a rewrite, not a brainstorm. Creativity
+            // here shows up as invented requirements.
+            options: { temperature: 0.2, num_predict: 400 },
+          },
+          { timeout: OLLAMA_OP_TIMEOUT }
+        );
+        raw = resp.data?.response ?? '';
+      }
+
+      const improved = cleanImprovedPrompt(raw);
+      if (!isUsefulImprovement(draft, improved)) {
+        // Returning the draft back unchanged would look like a broken button.
+        return { success: false, error: 'That already reads clearly — nothing worth changing.' };
+      }
+
+      return { success: true, improved, source: cloud.active ? 'cloud' : 'local' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not rewrite that just now.' };
+    }
+  });
 
   ipcMain.handle('homebot:load-automations', async () => {
     return { automations: readAutomations() };
