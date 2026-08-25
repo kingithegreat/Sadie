@@ -2281,15 +2281,21 @@ try {
     return { sources: catalogueSources() };
   });
 
-  ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
+  ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
     const automations = readAutomations();
     const automation: any = {
       id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: data.name,
       description: data.description,
       instructions: data.instructions,
-      trigger: data.trigger === 'schedule' ? 'schedule' : 'manual',
+      // 'file' must survive this coercion — it used to collapse to 'manual',
+      // which made the UI's file trigger save as an automation that nothing
+      // would ever fire. The scheduler's file-watch engine owns validation of
+      // the folder; a bad path arms nothing and says so on the record.
+      trigger: data.trigger === 'schedule' ? 'schedule' : data.trigger === 'file' ? 'file' : 'manual',
       scheduleMinutes: data.trigger === 'schedule' ? (data.scheduleMinutes || 60) : undefined,
+      watchPath: data.trigger === 'file' ? (data.watchPath || undefined) : undefined,
+      watchPattern: data.trigger === 'file' ? (data.watchPattern || undefined) : undefined,
       enabled: true,
       createdAt: new Date().toISOString(),
     };
@@ -2319,7 +2325,7 @@ try {
     return { automation, error };
   }));
 
-  ipcMain.handle('homebot:update-automation', gatedAutomationHandler('homebot:update-automation', getCurrentTier, async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
+  ipcMain.handle('homebot:update-automation', gatedAutomationHandler('homebot:update-automation', getCurrentTier, async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => {
     const automations = readAutomations();
     const idx = automations.findIndex((a: any) => a.id === data.id);
     if (idx === -1) return { success: false, error: 'Automation not found' };
@@ -2328,6 +2334,10 @@ try {
     if (data.name !== undefined) auto.name = data.name;
     if (data.description !== undefined) auto.description = data.description;
     if (data.instructions !== undefined) auto.instructions = data.instructions;
+    // Empty strings clear the fields — the edit form sends them explicitly so
+    // unsetting the folder actually unsets it (same contract as n8nWebhookUrl).
+    if (data.watchPath !== undefined) auto.watchPath = data.watchPath || undefined;
+    if (data.watchPattern !== undefined) auto.watchPattern = data.watchPattern || undefined;
     if (data.trigger !== undefined) auto.trigger = data.trigger;
     if (data.scheduleMinutes !== undefined) auto.scheduleMinutes = data.scheduleMinutes;
     if (data.n8nWebhookUrl !== undefined) auto.n8nWebhookUrl = data.n8nWebhookUrl || undefined;
