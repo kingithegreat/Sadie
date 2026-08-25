@@ -20,7 +20,6 @@ const baseSettings: Settings = {
     launch_app: false,
     screenshot: false,
   },
-  defaultTeam: '',
 };
 
 function makeMockElectron(saveSettings = jest.fn().mockResolvedValue(undefined)) {

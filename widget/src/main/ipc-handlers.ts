@@ -664,56 +664,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  // ── Summarize web content via n8n (Ollama), with local fallback ──
-  ipcMain.handle('homebot:summarize-web-content', async (_event, url: string, content: string) => {
-    try {
-      if (!content) return { success: false, error: 'No content to summarize' };
-
-      const model = getSettings().chatModel || 'qwen2.5:7b';
-      const truncated = content.length > 6000 ? content.slice(0, 6000) : content;
-      const prompt = `Summarize this web page concisely. Include key information, services/products offered, and contact details if present. Use bullet points for clarity.\n\nURL: ${url}\n\nContent:\n${truncated}`;
-
-      // Try n8n first
-      try {
-        const settings = getSettings();
-        const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
-        console.log('[WebSummary] Trying n8n...');
-        const n8nRes = await axios.post(`${n8nBase}/webhook/homebot/chat`, {
-          message: prompt,
-          user_id: 'desktop-user',
-          conversation_id: 'web-summary',
-          timestamp: new Date().toISOString()
-        }, { timeout: 60_000, headers: homebotWebhookHeaders() });
-
-        const summary = n8nRes.data?.output || n8nRes.data?.data?.assistant?.content || '';
-        if (summary) {
-          console.log('[WebSummary] n8n returned summary:', summary.length, 'chars');
-          return { success: true, summary };
-        }
-      } catch (n8nErr: any) {
-        console.log('[WebSummary] n8n unavailable, using local Ollama:', n8nErr?.message);
-      }
-
-      // Local Ollama fallback
-      const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
-        model,
-        prompt,
-        system: 'You are a helpful assistant that summarizes web pages concisely with bullet points.',
-        stream: false,
-        options: { temperature: 0.5, num_predict: 1500 }
-      }, { timeout: 90_000 });
-
-      const summary = response.data?.response || '';
-      if (summary) {
-        console.log('[WebSummary] Local Ollama returned summary:', summary.length, 'chars');
-        return { success: true, summary };
-      }
-      return { success: false, error: 'No summary generated' };
-    } catch (err: any) {
-      return { success: false, error: String(err?.message || err) };
-    }
-  });
-
   // ── RAG: index a local file or web content ──
   ipcMain.handle('homebot:rag-index', async (_event, filePath: string, content?: string) => {
     try {

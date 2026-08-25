@@ -28,6 +28,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 | Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
 | Kokoro as optional narration provider | claude/kokoro-narration-provider | Ready for integration | Aden picked Kokoro by ear (2026-08-23). voice.ts provider seam (Edge stays default + fallback; result names the engine that actually rendered), media_narrate `engine` arg, jobs record `narratedWith`, MediaStudioPanel engine picker with voice list that follows the engine and sampling routed through the SAME engine. kokoro-js rides the existing @huggingface/transformers stack (onnxruntime already ships for Whisper) — ~1 MB added, no Python. 10 seam tests; full suite serial green; docs regenerated. Does NOT touch message-router or the render graph. |
 | Backup import can no longer repoint traffic endpoints | claude/backup-endpoint-guard (#209) | Merged | settings-import.ts (analyzeImportedEndpoints / stripImportedSettings), homebot:import-settings handler (confirm dialog when a backup would move n8nUrl/ollamaUrl/searxngUrl/codeApiUrl/customLLM.baseUrl; skips endpoints when nobody can answer — fail closed). Credentials stay stripped unconditionally. 16 settings-import tests. |
+| Delete dead `summarizeWebContent` + `defaultTeam` | claude/delete-dead-capability | Ready for integration | The two leftovers the 2026-08-22 reachability audit named. Re-verified dead on current main before deleting: `summarizeWebContent` has zero renderer callers across preload → ipc-handlers:668 → shared/types; `defaultTeam` is read by nothing (only mocks, locale strings no component references, and e2e assertions that a default persists). Removes the IPC channel, bridge method, type declarations, config default, i18n keys and the test/e2e references. No behavior change — nothing could reach any of it. |
 | Tool-surface hardening (audit remediation) | claude/tsh-integration (#230) | PR open — gated 2026-08-25 | grep_code/git via execFile argv (cmd-injection class removed), 14 CRM writes gated (requiresConfirmation + permissions entries), per-hop redirect SSRF revalidation + IPv6 private ranges, api_request POST confirmation, batch allow-once honors requiresConfirmation, shared home-boundary/url-boundary utils replace five drift-prone startsWith guards. New gate: `tool-permissions-parity.test.ts` — every native tool needs a permission entry or requiresConfirmation; every permission key needs a tool. Full widget suite + tsc green on current main. Does NOT touch message-router routing logic or the media pipeline. |
 
 Merged since the last board refresh, verified against `gh pr view` 2026-08-24: delete-model (#183),
@@ -79,8 +80,9 @@ matter most, because that is where both sessions were working.
 
 7. **A reachability audit ran on 2026-08-22.** Before adding a capability, check it can be
    REACHED — six defects in one session were all "the code works and nothing calls it". Two are
-   fixed (#183 delete-model, #185 briefing opt-out); `summarizeWebContent` and `defaultTeam` are
-   still dead and safe to delete.
+   fixed (#183 delete-model, #185 briefing opt-out); the last two, `summarizeWebContent` and
+   `defaultTeam`, were deleted on `claude/delete-dead-capability` (2026-08-26) after re-verifying
+   neither had a caller.
 
 Standing traps that have not changed: bot-opened PRs still park every `pull_request` run at
 `action_required` (approve them, or the required checks never report), and with two sessions

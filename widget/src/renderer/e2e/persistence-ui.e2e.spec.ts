@@ -22,7 +22,6 @@ function seedConfig(dir: string) {
       firstRun: false,
       telemetryEnabled: true,
       permissions: { delete_file: false },
-      defaultTeam: 'GSW',
       n8nUrl: 'http://localhost:5678',
       modelRoutingMode: 'off',
       widgetHotkey: 'Ctrl+Shift+Space',
