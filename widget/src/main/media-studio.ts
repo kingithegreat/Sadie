@@ -30,7 +30,6 @@ export const MEDIA_STATES = [
   'approved',
   'scheduled',
   'published',
-  'analysing',
 ] as const;
 
 /** Explicit, retryable failure states — a stall must be visible, not implicit. */
@@ -115,8 +114,13 @@ const TRANSITIONS: Record<MediaJobState, readonly MediaJobState[]> = {
   awaiting_approval:['approved', 'rejected', 'needs_revision'],
   approved:         ['scheduled', 'published', 'rejected'],
   scheduled:        ['published', 'blocked', 'rejected'],
-  published:        ['analysing'],
-  analysing:        [],
+  // Terminal by choice: the video is out, with the platform id recorded.
+  // An 'analysing' state used to live here — enterable from published via the
+  // panel's carry-on button, terminal by declaration, consumed by no code and
+  // exited by nothing. A job entered it and was stranded with "delete" as its
+  // only remaining action. When real analytics exists it returns WITH its exit;
+  // until then the honest terminal state for a published video is this one.
+  published:        [],
 
   // Failure states are retryable — each returns to the stage that can redo it.
   blocked:          ['idea', 'researching', 'script_draft', 'media_production', 'scheduled', 'rejected'],

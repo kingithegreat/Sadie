@@ -2,17 +2,22 @@
  * n8n API layer tests
  *
  * Covers the transport selection added for authenticated n8n access:
- * - REST path (API key from HomeBot Settings → X-N8N-API-KEY header)
+ * - REST path (API key from HomeBot Settings â†’ X-N8N-API-KEY header)
  * - Docker CLI fallback when no key is configured (incl. the supported
  *   `n8n update:workflow --active=true` activation, replacing the old
  *   direct-SQLite hack)
  * - workflow JSON validation shared with the import tool
  */
 
+jest.mock('electron', () => ({
+  app: {
+    getPath: (_name: string) => require('os').tmpdir(),
+  },
+}));
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
 jest.mock('axios', () => ({
   __esModule: true,
-  default: { request: jest.fn(), get: jest.fn() },
+  default: { request: jest.fn(), get: jest.fn(), post: jest.fn() },
 }));
 // checkWebhook is the deployment oracle behind ensureMediaResearchWorkflow.
 // Mocked so these tests decide what the probe answers instead of standing up
@@ -57,7 +62,7 @@ function useApiKey(apiKey?: string, baseUrl = 'http://myhost:5678/') {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default: no API key → CLI fallback
+  // Default: no API key â†’ CLI fallback
   useApiKey(undefined);
 });
 
@@ -122,11 +127,11 @@ describe('REST path (API key configured)', () => {
     expect(call.method).toBe('POST');
     expect(call.url).toBe('http://myhost:5678/api/v1/workflows');
     expect(call.headers['X-N8N-API-KEY']).toBe('secret-key');
-    // Public API rejects unknown top-level props — active/versionId must be stripped
+    // Public API rejects unknown top-level props â€” active/versionId must be stripped
     expect(call.data).toEqual({
       name: VALID_WORKFLOW.name,
       // Deployment injects an Auth Guard between the webhook and its first
-      // downstream node (see n8n-auth-guard.ts) — assert the rewired graph.
+      // downstream node (see n8n-auth-guard.ts) â€” assert the rewired graph.
       nodes: expect.arrayContaining([
         expect.objectContaining({ name: 'Webhook', type: 'n8n-nodes-base.webhook' }),
         expect.objectContaining({ name: 'Auth Guard', type: 'n8n-nodes-base.code' }),
@@ -213,13 +218,13 @@ describe('verifyN8nConnection', () => {
     expect(res.error).toContain('not reachable');
   });
 
-  test('reachable, no key → authenticated is null', async () => {
+  test('reachable, no key â†’ authenticated is null', async () => {
     mockAxios.get.mockResolvedValue({ status: 200 });
     const res = await verifyN8nConnection({ baseUrl: 'http://up:5678', apiKey: '' });
     expect(res).toEqual({ reachable: true, authenticated: null });
   });
 
-  test('reachable + valid key → authenticated true', async () => {
+  test('reachable + valid key â†’ authenticated true', async () => {
     mockAxios.get
       .mockResolvedValueOnce({ status: 200 }) // healthz
       .mockResolvedValueOnce({ status: 200, data: { data: [] } }); // /api/v1/workflows
@@ -230,7 +235,7 @@ describe('verifyN8nConnection', () => {
     expect((authCall[1] as any).headers['X-N8N-API-KEY']).toBe('good');
   });
 
-  test('reachable + rejected key → authenticated false with a 401 message', async () => {
+  test('reachable + rejected key â†’ authenticated false with a 401 message', async () => {
     mockAxios.get
       .mockResolvedValueOnce({ status: 200 })
       .mockRejectedValueOnce({ response: { status: 401 } });
@@ -246,7 +251,7 @@ describe('verifyN8nConnection', () => {
  *
  * The guards are "import unless a workflow by this name already exists", and
  * they read a FAILED listing as "none exist". Every launch where Docker was
- * not ready yet imported another copy — Aden's n8n ended up with six copies of
+ * not ready yet imported another copy â€” Aden's n8n ended up with six copies of
  * "HomeBot: Web Fetch" and four of "System Health Check".
  */
 describe('not knowing is not the same as knowing there are none', () => {

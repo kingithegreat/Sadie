@@ -407,3 +407,49 @@ describe('disk the Media Studio is holding', () => {
     }
   });
 });
+
+describe('persisted-state migration — the removed analysing state', () => {
+  // 'analysing' was enterable from published, terminal by declaration, and
+  // consumed by nothing: a job that entered it could never leave. It is gone
+  // from the state machine, but a jobs file written before the removal can
+  // still contain one. Reading it back must tell the truth about what the job
+  // actually is — a published video whose analysis never ran.
+  it('a job stranded in analysing reads back as published', () => {
+    const { writeJobs } = require('../tools/media');
+    const stranded = {
+      id: 'media_stranded',
+      title: 'Already out',
+      format: 'short',
+      state: 'analysing',
+      videoId: 'yt_old123',
+      publishedAt: '2026-08-20T00:00:00.000Z',
+      createdAt: '2026-08-19T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
+      history: [{ at: '2026-08-20T00:00:00.000Z', from: 'published', to: 'analysing', by: 'analytics' }],
+    };
+    writeJobs([stranded as any]);
+
+    const jobs = readJobs();
+    expect(jobs[0].state).toBe('published');
+    expect(jobs[0].videoId).toBe('yt_old123');
+    // History is evidence, not state — it keeps the record of where the job went.
+    expect(jobs[0].history).toHaveLength(1);
+
+    // The migration persisted: a second read is stable, not a flip-flop.
+    expect(readJobs()[0].state).toBe('published');
+  });
+
+  it('leaves jobs in live states exactly as they were', () => {
+    const { writeJobs } = require('../tools/media');
+    writeJobs([{
+      id: 'media_draft',
+      title: 'Still cooking',
+      format: 'short',
+      state: 'script_qa',
+      createdAt: '2026-08-19T00:00:00.000Z',
+      updatedAt: '2026-08-19T00:00:00.000Z',
+      history: [],
+    } as any]);
+    expect(readJobs()[0].state).toBe('script_qa');
+  });
+});
