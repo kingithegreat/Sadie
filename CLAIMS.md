@@ -92,6 +92,7 @@ Identifiers intentionally exported by more than one file (add the exact name, on
 - `Settings` — legitimately distinct `Settings` shapes in `widget/src/main/config-manager.ts`, `widget/src/renderer/types.ts`, `widget/src/shared/types.ts`
 - `StoredConversation`, `ConversationStore`, `ConversationSearchResult` — mirrored between `widget/src/main/memory-manager.ts` and `widget/src/shared/types.ts`
 - `ScheduledJob` — mirrored between `widget/src/main/scheduler.ts` and `widget/src/shared/types.ts`
+- `Capability` — unrelated: `src/entitlements.ts` exports the licensing-tier union (what a license allows); `widget/src/shared/capability-report.ts` exports a doctor-screen health row (`id`/`label`/`state`/`detail`/`fix`). Same word, different domains.
 - `searchFilesDef`, `searchFilesHandler` — both `widget/src/main/tools/filesystem.ts` and `widget/src/main/tools/search.ts` (pre-existing, not reviewed as part of this change — verify these are intentional before touching either file)
 
 
