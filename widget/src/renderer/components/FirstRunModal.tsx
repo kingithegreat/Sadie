@@ -13,18 +13,25 @@ type SetupPath = 'local' | 'cloud' | null;
 // the hardest stop in the app, on one of the two paths off the very first
 // screen. SettingsPanel already links out this way in five places; the wizard,
 // which is the one place a first-time user lands, was the exception.
+//
+// ORDER MATTERS: a first-time user reads this grid top-left to bottom-right and
+// picks the first name they recognise. Every provider with a genuinely free
+// tier therefore sits ABOVE every paid-only one — someone who has never heard
+// of any of these should never land on "paid" before seeing that free exists.
 const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint?: string; signupUrl?: string }[] = [
+  // ── Free tier available — shown first ──
   { id: 'groq', name: 'Groq', freeHint: 'Free tier available', signupUrl: 'https://console.groq.com/keys' },
   { id: 'openrouter', name: 'OpenRouter', freeHint: 'Free models available', signupUrl: 'https://openrouter.ai/keys' },
   { id: 'google-ai-studio', name: 'Google AI Studio', freeHint: 'Free tier', signupUrl: 'https://aistudio.google.com/app/apikey' },
   { id: 'google-gemini', name: 'Google Gemini Native', freeHint: 'Free tier', signupUrl: 'https://aistudio.google.com/app/apikey' },
+  { id: 'cerebras', name: 'Cerebras', freeHint: 'Free tier', signupUrl: 'https://cloud.cerebras.ai/' },
+  { id: 'sambanova', name: 'SambaNova', freeHint: 'Free tier', signupUrl: 'https://cloud.sambanova.ai/apis' },
+  { id: 'huggingface', name: 'Hugging Face', freeHint: 'Free inference', signupUrl: 'https://huggingface.co/settings/tokens' },
+  // ── Paid only — deliberately last ──
   { id: 'anthropic', name: 'Anthropic', signupUrl: 'https://console.anthropic.com/settings/keys' },
   { id: 'openai', name: 'OpenAI', signupUrl: 'https://platform.openai.com/api-keys' },
   { id: 'deepseek', name: 'DeepSeek', signupUrl: 'https://platform.deepseek.com/api_keys' },
-  { id: 'cerebras', name: 'Cerebras', freeHint: 'Free tier', signupUrl: 'https://cloud.cerebras.ai/' },
-  { id: 'sambanova', name: 'SambaNova', freeHint: 'Free tier', signupUrl: 'https://cloud.sambanova.ai/apis' },
   { id: 'together', name: 'Together AI', signupUrl: 'https://api.together.ai/settings/api-keys' },
-  { id: 'huggingface', name: 'Hugging Face', freeHint: 'Free inference', signupUrl: 'https://huggingface.co/settings/tokens' },
 ];
 
 const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
@@ -446,7 +453,7 @@ export default function FirstRunModal({
                   <span className="wizard-path-icon">☁️</span>
                   <strong>Online</strong>
                   <span className="wizard-path-desc">
-                    Faster and smarter, works on any computer. Needs a free account with a provider.
+                    Faster and smarter, works on any computer. Several providers have genuinely free tiers — no card needed.
                   </span>
                 </button>
               </div>
@@ -635,6 +642,17 @@ export default function FirstRunModal({
                   </button>
                 ))}
               </div>
+
+              {/* The chip badge can only say "free"; the specific promise —
+                  free tier vs free models vs free inference — renders here,
+                  for the provider actually selected. Every entry's freeHint
+                  text existed but was only ever tested for truthiness, so a
+                  newcomer could never read what "free" commits them to. */}
+              {selectedCloudProvider?.freeHint && (
+                <p className="wizard-step-desc">
+                  {selectedCloudProvider.name}: {selectedCloudProvider.freeHint}.
+                </p>
+              )}
 
               {/* Only shown once a provider is chosen, so it points at one
                   specific page rather than asking the reader to choose again. */}

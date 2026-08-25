@@ -22,7 +22,7 @@ import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 type MediaJobState =
   | 'idea' | 'researching' | 'script_draft' | 'script_qa' | 'media_production'
   | 'render_qa' | 'awaiting_approval' | 'approved' | 'scheduled' | 'published'
-  | 'analysing' | 'blocked' | 'failed' | 'needs_revision' | 'rejected';
+  | 'blocked' | 'failed' | 'needs_revision' | 'rejected';
 
 interface MediaJobEvent { at: string; from: string; to: string; by: string; note?: string }
 
@@ -83,7 +83,8 @@ const NEXT_STAGE: Partial<Record<MediaJobState, MediaJobState>> = {
   // collects — a generic "Move to published" set the state with no id, which is
   // precisely the "looks published and is not" case the state machine warns
   // about, and it left the double-publish guard (keyed on videoId) dead.
-  published: 'analysing',
+  // `published → analysing` was removed with the analysing state itself: it
+  // offered a button into a terminal dead end that no code consumed.
   needs_revision: 'script_draft',
 };
 
@@ -95,7 +96,7 @@ const label = (s: string) => s.replace(/_/g, ' ');
 function stateClass(s: MediaJobState): string {
   if (s === 'awaiting_approval') return 'ms-state ms-state--attention';
   if (FAILURE.includes(s)) return 'ms-state ms-state--bad';
-  if (s === 'published' || s === 'analysing') return 'ms-state ms-state--done';
+  if (s === 'published') return 'ms-state ms-state--done';
   return 'ms-state';
 }
 

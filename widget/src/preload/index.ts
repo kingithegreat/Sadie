@@ -875,6 +875,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:fetch-feeds', { sources }),
   listFeedSources: async () =>
     ipcRenderer.invoke('homebot:list-feed-sources'),
+  // Home screen — what works right now and how to fix what does not
+  getCapabilityReport: async () =>
+    ipcRenderer.invoke('homebot:capability-report'),
 
   // Sharpen a draft request before sending it
   improvePrompt: async (draft: string) =>
