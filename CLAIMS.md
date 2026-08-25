@@ -11,22 +11,26 @@ Repo-native companion to the Notion [🔗 Work Claims Ledger](https://app.notion
 
 CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the build if a newly added file exports the same top-level identifier as an existing file — usually a sign two features were built in parallel without checking here first, or a scaffold was built without checking the real integration point (see the Step 1 entitlements gate channel-name mismatch, which was a variant of this same failure mode). See that script's header comment for how it works and how to suppress a genuine false positive.
 
+4. **Verify a claim against the repo before repeating or trusting it** — the board is a
+   LAGGING record, not a source of truth. Check `gh pr view <n> --json state,mergedAt`;
+   squash-merge means the original SHA is never an ancestor, so `git branch -r --contains`
+   lies. Two agents repeated rows here that had been stale for 48 hours.
+
 ## Active claims
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
 | Connections catalogue (Track G) | claude/connections-catalogue (#218) | Merged 2026-08-24 09:18Z | New `connections` mode + ConnectionsPanel: one card per curated service (Notion, GitHub, Slack, Brave Search, Web Fetch, Memory), cost stated before connecting, keys linked to where they come from. Every entry goes through the SAME mcpAddServer IPC as the hand-entry form in PrivacySettingsTab — no second storage format or permission path. Chat reaches it via navigate_to_mode ('connections', derived from APP_MODES as designed); navContext.service pre-opens that card. 17 tests across shared catalogue + rendered panel; widget tsc/eslint clean; full serial suite 3349 passed; root 205 passed. Does NOT touch mcp-client.ts, permissions, or message-router. |
-| MCP connect-on-add | claude/mcp-connect-on-add | Ready for integration | Closes the weakest link the end-to-end trace found: mcp-add-server used to store config and start nothing until relaunch — the user clicked Connect, the UI said it worked, no tool existed. Now the handler calls connectSingleServer immediately (single attempt, same timeouts as startup; re-adding a name replaces the old live connection instead of double-bridging tools) and returns {connected, toolCount, error}, so ConnectionsPanel says "N tools are live now" / "saved but did not start: <reason>" / restart note — only what is true. Disabled servers still just save. Does NOT touch permissions or the permission gate; parity gate unaffected (mcp_ stays dynamic). 6 new tests; mcp-client + connections-panel suites 31/31; tsc clean; eslint clean on all five changed files. |
 | Free-setup guidance in plain language (Track D) | claude/track-d-free-setup (#220) | Merged 2026-08-24 09:51Z | First-run wizard tells the truth about cost: free-tier providers now listed ABOVE paid-only ones in the cloud grid (a newcomer reads top-left first), the selected provider's actual free promise renders instead of an unused freeHint string (dead code — only its truthiness was ever read), and the Online card no longer implies every provider is free. 4 new tests in first-run-modal.test.tsx (35 total pass); tsc + eslint clean. Guidance layer only — does NOT build the doctor screen (#204), does NOT touch mcp-client or permissions. |
 | Media job dead states + image-edit ladder rung 1 | claude/media-dead-states | In progress | Aden's tasking, working in sadie-ox worktree. Part 1: media-studio.ts declares 'scheduled' and 'analysing' with transitions INTO them — trace what advances a job OUT; wire the exit or remove the state, never half-real. Part 2: image-editing ladder rung 1 only — a durable result the user can come back to. Verification by numbers per .claude/skills/render-verification. Area exclusive today: widget/src/main/media-*.ts, tools/media.ts, MediaStudioPanel.tsx. |
-| Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
-| Kokoro as optional narration provider | claude/kokoro-narration-provider | Ready for integration | Aden picked Kokoro by ear (2026-08-23). voice.ts provider seam (Edge stays default + fallback; result names the engine that actually rendered), media_narrate `engine` arg, jobs record `narratedWith`, MediaStudioPanel engine picker with voice list that follows the engine and sampling routed through the SAME engine. kokoro-js rides the existing @huggingface/transformers stack (onnxruntime already ships for Whisper) — ~1 MB added, no Python. 10 seam tests; full suite serial green; docs regenerated. Does NOT touch message-router or the render graph. |
 | Backup import can no longer repoint traffic endpoints | claude/backup-endpoint-guard (#209) | Merged | settings-import.ts (analyzeImportedEndpoints / stripImportedSettings), homebot:import-settings handler (confirm dialog when a backup would move n8nUrl/ollamaUrl/searxngUrl/codeApiUrl/customLLM.baseUrl; skips endpoints when nobody can answer — fail closed). Credentials stay stripped unconditionally. 16 settings-import tests. |
-| Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
-| Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Ready for integration | PrivacySwitch.tsx only. |
 | Tool-surface hardening (audit remediation) | claude/tool-surface-hardening | Ready for integration | grep_code/git via execFile argv (cmd-injection class removed), 14 CRM writes gated (requiresConfirmation + permissions entries), per-hop redirect SSRF revalidation + IPv6 private ranges, api_request POST confirmation, batch allow-once honors requiresConfirmation, shared home-boundary/url-boundary utils replace five drift-prone startsWith guards. New gate: `tool-permissions-parity.test.ts` — every native tool needs a permission entry or requiresConfirmation; every permission key needs a tool. Full widget suite + tsc green on current main. Does NOT touch message-router routing logic or the media pipeline. |
 
-*(Model freshness + knobs merged as #182 — claim retired.)*
+Merged since the last board refresh, verified against `gh pr view` 2026-08-24: delete-model (#183),
+privacy-switch naming (#178), quiz full count (#186), Kokoro narration engine (#214), Code mode
+(#201), feeds mode (#202), navigation primitive (#196), backup endpoint guard (#209), and
+MCP connect-on-add (#221 — verified merged 10:57Z during this review). The old
+per-row claims are retired — do not rebuild any of these.
 
 ## Integration notes — 2026-08-22 session (read before your next PR)
 
@@ -111,7 +115,7 @@ pillars**, and he added two requirements on top:
 | C · Platform trust / reachability | this session | Ongoing audit |
 | D · Plain language + free-setup guidance | **unowned** | |
 | E · Keep the lights on (CI) | shared | |
-| F · Coding platform front door | ox-alpha | Workspace, terminal, 14 git tools, CLI bridges all exist; **no Code mode** |
+| F · Coding platform front door | ox-alpha | Code mode shipped (#201, WorkspaceShell destination); the remaining question is what a user can actually DO once they arrive there |
 | G · Connections catalogue | ox-alpha | #218 gives it a front door: `connections` mode reachable from the mode bar, dashboard, and chat navigation |
 | H · Automations people can build | this session | Create/edit/run/schedule work; triggers are manual+schedule only |
 | I · Chat as the front door | this session | **No navigation capability exists at all** |
