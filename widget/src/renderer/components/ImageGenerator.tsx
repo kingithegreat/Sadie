@@ -38,6 +38,8 @@ const ImageGenerator: React.FC = () => {
   const [backend, setBackend] = useState('hybrid');
   const [loading, setLoading] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  /** Where the durable copy lives on disk — null only if persistence failed. */
+  const [savedPath, setSavedPath] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<any>(null);
   const [statusBanner, setStatusBanner] = useState<{ level: 'green'|'yellow'|'red'; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +78,7 @@ const ImageGenerator: React.FC = () => {
     setLoading(true);
     setError(null);
     setGeneratedImage(null);
+    setSavedPath(null);
     setMetadata(null);
     setStatusBanner(null);
 
@@ -101,6 +104,7 @@ const ImageGenerator: React.FC = () => {
 
       if (result.status === 'success' && result.image) {
         setGeneratedImage(`data:image/png;base64,${result.image}`);
+        setSavedPath(result.savedPath || null);
         setMetadata(result.metadata || {});
         setStatusBanner({ level: 'green', text: `Generated via ${result.source || 'unknown'}` });
       } else {
@@ -269,6 +273,19 @@ const ImageGenerator: React.FC = () => {
             <button type="button" onClick={() => setGeneratedImage(null)} aria-label="Clear image">Clear</button>
             <a href={generatedImage} download={`homebot-image-${Date.now()}.png`} className="btn-download">Download</a>
           </div>
+          {savedPath && (
+            <p className="image-saved-note">
+              Saved with your other generated images.{' '}
+              <button
+                type="button"
+                className="image-show-folder"
+                onClick={() => (window as any).electron?.showInFolder?.(savedPath)}
+              >
+                Show in folder
+              </button>{' '}
+              — clearing here keeps the file.
+            </p>
+          )}
           {/* Was a raw `JSON.stringify(metadata, null, 2)` dumped into a <pre>.
               Nobody outside this repo can read that, and it was the only thing
               shown about a finished image. The facts a person actually wants —

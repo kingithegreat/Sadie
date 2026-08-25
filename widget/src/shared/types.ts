@@ -618,6 +618,13 @@ export interface ElectronAPI {
   }>;
   /** The named feed sources HomeBot knows about. */
   listFeedSources?: () => Promise<{ sources: Array<{ id: string; description: string }> }>;
+  /** What HomeBot can do right now, with a fix for anything that is not working. */
+  getCapabilityReport?: () => Promise<{
+    success: boolean;
+    capabilities?: import('./capability-report').Capability[];
+    summary?: { ready: number; total: number; needsAttention: import('./capability-report').Capability[] };
+    error?: string;
+  }>;
   /** The assistant moving the user to another panel, carrying context with them. */
   onNavigate?: (cb: (request: import('./navigation').NavRequest) => void) => () => void;
 
