@@ -126,7 +126,6 @@ export interface Settings {
   permissionPromptTimeoutMs?: number;
 
   // Misc / developer defaults
-  defaultTeam?: string;
   uncensoredMode?: boolean;
   // Web search — a self-hosted SearXNG URL (free, unmetered, no key) plus the
   // metered key-based providers it falls through to.
@@ -412,10 +411,7 @@ export const DEFAULT_SETTINGS: Settings = {
     // default servers), not a native tool — mcp_ytdlp_* below.
     mcp_ytdlp_get_video_info: true,
     mcp_ytdlp_download_video: false,
-  },
-
-  // Default NBA team for new users
-  defaultTeam: 'GSW'
+  }
 };
 
 // A convenience function for asserting permissions on a tool.

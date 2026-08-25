@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (181)** — `window.electron`
+**Preload methods (180)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1052,15 +1052,14 @@ schedulerToggle           sdCppAutoSetup            sdCppSetup                sd
 searchConversations       sendConfirmationResponse  sendMessage               sendPermissionResponse
 sendStreamMessage         setActiveConversation     setAlwaysOnTop            setUncensoredMode
 showInFolder              skillsList                skillsOpenFolder          startOllama
-startSpeechRecognition    subscribeToStream         summarizeWebContent       terminalClose
-terminalCreate            terminalKill              terminalRun               testN8nConnection
-toggleWidgetMode          ttsListVoices             ttsSampleVoice            ttsSpeak
-ttsStop                   updateAutomation          updateMessage             workspaceList
-workspaceRead             workspaceRoot             workspaceSave             writeClipboard
-writeDocument
+startSpeechRecognition    subscribeToStream         terminalClose             terminalCreate
+terminalKill              terminalRun               testN8nConnection         toggleWidgetMode
+ttsListVoices             ttsSampleVoice            ttsSpeak                  ttsStop
+updateAutomation          updateMessage             workspaceList             workspaceRead
+workspaceRoot             workspaceSave             writeClipboard            writeDocument
 ```
 
-**IPC channels, renderer → main (132)**
+**IPC channels, renderer → main (131)**
 
 ```
 homebot:__e2e_get_router_logs         homebot:__e2e_invoke_tool_batch
@@ -1124,11 +1123,11 @@ homebot:set-uncensored-mode           homebot:show-in-folder
 homebot:skills-list                   homebot:skills-open-folder
 homebot:start-ollama                  homebot:start-speech-recognition
 homebot:stream-cancel                 homebot:stream-message
-homebot:summarize-web-content         homebot:toggle-widget-mode
-homebot:tts-list-voices               homebot:tts-sample-voice
-homebot:tts-speak                     homebot:tts-stop
-homebot:update-automation             homebot:update-message
-homebot:web-service-status            homebot:write-document
+homebot:toggle-widget-mode            homebot:tts-list-voices
+homebot:tts-sample-voice              homebot:tts-speak
+homebot:tts-stop                      homebot:update-automation
+homebot:update-message                homebot:web-service-status
+homebot:write-document
 ```
 
 **IPC channels, main → renderer (31)**

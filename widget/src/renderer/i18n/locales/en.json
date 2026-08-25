@@ -79,7 +79,6 @@
     "welcome": "Welcome to HomeBot",
     "setupDescription": "Let's configure your preferences.",
     "telemetryLabel": "Telemetry",
-    "defaultTeam": "Default NBA Team",
     "finish": "Finish"
   },
   "confirmation": {

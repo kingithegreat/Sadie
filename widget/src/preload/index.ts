@@ -824,11 +824,6 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:fetch-page-content', url);
   },
 
-  // Summarize web page content via n8n/Ollama
-  summarizeWebContent: async (url: string, content: string) => {
-    return await ipcRenderer.invoke('homebot:summarize-web-content', url, content);
-  },
-
   // RAG: index a local file (or web content when content is provided)
   ragIndex: async (filePath: string, content?: string) => {
     return await ipcRenderer.invoke('homebot:rag-index', filePath, content);
