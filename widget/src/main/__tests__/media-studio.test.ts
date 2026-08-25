@@ -155,7 +155,8 @@ describe('failures are explicit and retryable', () => {
   });
 
   it('reports ordinary progress as a step count', () => {
-    expect(describeProgress(jobAt('script_draft'))).toMatch(/step 3 of 11/);
+    // 10 states since 'analysing' was removed — the count tracks MEDIA_STATES.
+    expect(describeProgress(jobAt('script_draft'))).toMatch(/step 3 of 10/);
   });
 });
 
@@ -242,10 +243,20 @@ describe('idempotent publishing', () => {
 
   it('refuses to re-enter a publishing state once a video id exists', () => {
     const published = markPublished(jobAt('approved'), 'yt_abc123', { publishingEnabled: true });
-    const analysing = transition(published, 'analysing', { by: 'analytics' });
-    // Even a legal-looking route back must not republish.
-    expect(() => transition({ ...analysing, state: 'approved' }, 'scheduled', { publishingEnabled: true }))
+    // Even a forged state cannot sneak back into publishing: the video id is
+    // the key the guard checks, not the state field a caller can rewrite.
+    expect(() => transition({ ...published, state: 'approved' }, 'scheduled', { publishingEnabled: true }))
       .toThrow(/already been published/i);
+  });
+
+  it('published is terminal — no carry-on button route out of it exists', () => {
+    const published = markPublished(jobAt('approved'), 'yt_abc123', { publishingEnabled: true });
+    // The removed 'analysing' state was reachable from here and had no exit:
+    // a job entered it and was stranded with delete as its only action.
+    expect(allowedNext('published')).toEqual([]);
+    // And the transition map refuses to send anything INTO a removed state.
+    expect(() => transition(published, 'analysing' as MediaJobState, { by: 'analytics' }))
+      .toThrow(InvalidTransitionError);
   });
 
   it('requires the platform id, refusing an empty one', () => {
