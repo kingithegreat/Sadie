@@ -11,11 +11,6 @@ Repo-native companion to the Notion [🔗 Work Claims Ledger](https://app.notion
 
 CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the build if a newly added file exports the same top-level identifier as an existing file — usually a sign two features were built in parallel without checking here first, or a scaffold was built without checking the real integration point (see the Step 1 entitlements gate channel-name mismatch, which was a variant of this same failure mode). See that script's header comment for how it works and how to suppress a genuine false positive.
 
-4. **Verify a claim against the repo before repeating or trusting it** — the board is a
-   LAGGING record, not a source of truth. Check `gh pr view <n> --json state,mergedAt`;
-   squash-merge means the original SHA is never an ancestor, so `git branch -r --contains`
-   lies. Two agents repeated rows here that had been stale for 48 hours.
-
 ## Active claims
 
 | Feature | Branch | Status | Notes |
@@ -34,6 +29,11 @@ privacy-switch naming (#178), quiz full count (#186), Kokoro narration engine (#
 (#201), feeds mode (#202), navigation primitive (#196), backup endpoint guard (#209), and
 MCP connect-on-add (#221 — verified merged 10:57Z during this review). The old
 per-row claims are retired — do not rebuild any of these.
+
+Closed 2026-08-26: **#227 (`claude/n8n-guard-self-heal`)** — every commit on it had already
+merged by another route (#223 self-heal, #221 connect-on-add, #219 board refresh), it sat
+CONFLICTING with main, and nothing unique remained. Remote branch deleted. Do not rebuild or
+re-open it; #223 is the surviving implementation of the Media Research self-heal.
 
 ## Integration notes — 2026-08-22 session (read before your next PR)
 
