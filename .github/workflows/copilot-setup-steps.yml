@@ -1,0 +1,107 @@
+name: Copilot setup steps
+
+# Copilot coding agent works in an ephemeral GitHub Actions environment. Without
+# this file that environment has no node_modules, so the verification command in
+# .github/copilot-instructions.md ("cd widget && npx tsc --noEmit && npm run lint
+# && npx jest ...") cannot run at all.
+#
+# That was the state this repo was in, and the evidence is in the log: every
+# Copilot commit here is an "Initial plan" or a VS Code session checkpoint, and
+# its three branches sit ~50 commits behind main with nothing merged. An agent
+# told to prove its work, in an environment where proving anything is impossible,
+# stalls exactly like that.
+#
+# Constraints from the platform, both load-bearing:
+#   - the job MUST be named `copilot-setup-steps` and be the only job here;
+#   - this file MUST be on the DEFAULT BRANCH before Copilot picks it up, so it
+#     does nothing until it lands on main.
+# A step that exits non-zero makes Copilot skip the remaining steps and start
+# work anyway, so the cheap smoke check goes last where nothing follows it.
+#
+# The triggers exist so this is testable as an ordinary workflow instead of only
+# being observable through a Copilot session. They are path-scoped to this file:
+# it is not a gate on anything else and must not become one.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            widget/package-lock.json
+
+      # BOTH packages, mirroring ci.yml's `widget` job for the same reason it
+      # documents: widget/src/main/tools/crm.ts imports ../../../../src/crm/store
+      # -- a ROOT file -- and that file requires better-sqlite3, which Node
+      # resolves from the root package. Installing only widget/ leaves ten CRM and
+      # email tests failing on a module present in widget's tree but not where the
+      # importer looks for it.
+      #
+      # --ignore-scripts skips electron-builder's install-app-deps (which rebuilds
+      # native modules against ELECTRON's ABI -- the wrong ABI for Jest, which
+      # runs on plain Node) and electron's own binary download. Nothing in the
+      # typecheck/lint/unit-test path needs either.
+      - name: Install (root)
+        run: npm ci --ignore-scripts
+
+      - name: Install (widget)
+        working-directory: widget
+        run: npm ci --ignore-scripts
+
+      # --ignore-scripts also skipped better-sqlite3's own build, and the CRM
+      # store is file-backed sqlite -- without this, require() fails outright in
+      # the CRM and email suites.
+      - name: Build native modules against Node
+        run: |
+          npm rebuild better-sqlite3
+          cd widget && npm rebuild better-sqlite3
+
+      # The step that decides whether Copilot sees signal or noise.
+      #
+      # 43 widget test files write fixtures to os.tmpdir(), and the main-process
+      # file tools refuse any path outside os.homedir() (tools/git.ts:17,
+      # tools/diff.ts:15, workspace-ipc). On Windows those two coincide. On Linux
+      # os.tmpdir() is /tmp while homedir is /home/runner, so every fixture path
+      # is denied. ci.yml records the exact cost: "The first run of this job on
+      # ubuntu failed 92 tests across 10 suites for exactly that reason."
+      #
+      # os.tmpdir() honours TMPDIR on Linux, so pointing it inside HOME is the
+      # direct analogue of ci.yml's "Point TEMP inside the home directory" step.
+      #
+      # GITHUB_ENV is documented to carry across steps in this job; whether it
+      # survives into Copilot's own shell afterwards is NOT something that can be
+      # verified from outside a session. So the instructions file also tells the
+      # agent to pass TMPDIR on the command line itself. Both, deliberately: a
+      # silent fallback to /tmp looks identical to 92 real bugs, and an agent
+      # chasing 92 phantom failures is worse off than one that ran nothing.
+      - name: Point TMPDIR inside the home directory
+        run: |
+          tmp="$HOME/homebot-test-tmp"
+          mkdir -p "$tmp"
+          echo "TMPDIR=$tmp" >> "$GITHUB_ENV"
+          echo "TMP=$tmp" >> "$GITHUB_ENV"
+          echo "HOME=$HOME"
+          echo "TMPDIR now=$tmp"
+
+      # Prove the environment can do the cheapest thing the instructions ask of
+      # it. A setup file that installs dependencies and still leaves the app
+      # unbuildable is the failure this whole file exists to remove, and the
+      # session log is the only place anyone would see it.
+      - name: Smoke - typecheck the widget
+        working-directory: widget
+        run: npx tsc --noEmit

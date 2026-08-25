@@ -6,20 +6,31 @@ Repo-native companion to the Notion [🔗 Work Claims Ledger](https://app.notion
 1. Check the table below for an existing claim on the same feature area. If one exists and looks recent/active, don't start a parallel build.
 2. `grep -rl <concept> src widget/src` for an existing module before writing a new one — HomeBot has two source trees (repo-root `src/` for pure/testable modules, `widget/src/` for the actual Electron app), so check both.
 3. Add a row below before writing code. Update it to "Ready for Integration" when pushed and self-tested.
+4. **Verify a claim against the repo before repeating it** — `gh pr view <n> --json state,mergedAt` is two seconds. The board is a lagging record, not a source of truth: on 2026-08-24 two rows said "Ready for integration" for PRs that had merged 48 hours earlier, and both got repeated as fact. Note that squash-merge means the original branch SHA is never an ancestor of main, so `git branch --contains` lies — check PR **state**, not commits.
+5. **Each session works in its own git worktree. `C:\Users\adenk\Desktop\sadie` is nobody's checkout.** Two sessions sharing one HEAD interleaved reflog entries, reset a branch underneath a running merge, and clobbered an uncommitted claim row — three losses on 2026-08-24, one costing a full rebuild, all tracing to this. Aden provisions per-session worktrees (e.g. `Desktop\sadie-ox`, with `node_modules` junctioned so the widget suite runs immediately); ask for yours instead of touching the shared tree. Never run mutating git commands against another session's worktree — `git worktree list` first, every time.
 
 CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the build if a newly added file exports the same top-level identifier as an existing file — usually a sign two features were built in parallel without checking here first, or a scaffold was built without checking the real integration point (see the Step 1 entitlements gate channel-name mismatch, which was a variant of this same failure mode). See that script's header comment for how it works and how to suppress a genuine false positive.
+
+4. **Verify a claim against the repo before repeating or trusting it** — the board is a
+   LAGGING record, not a source of truth. Check `gh pr view <n> --json state,mergedAt`;
+   squash-merge means the original SHA is never an ancestor, so `git branch -r --contains`
+   lies. Two agents repeated rows here that had been stale for 48 hours.
 
 ## Active claims
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| Delete a downloaded model | claude/delete-model-ui (#183) | Ready for integration | ModelsSettingsTab.tsx, useSettingsState.tsx, ipc-handlers (delete-ollama-model validation). Does NOT touch media tools or message-router.ts. |
-| Backup import can no longer repoint traffic endpoints | claude/backup-endpoint-guard | Ready for integration | settings-import.ts (analyzeImportedEndpoints / stripImportedSettings), homebot:import-settings handler (confirm dialog when a backup would move n8nUrl/ollamaUrl/searxngUrl/codeApiUrl/customLLM.baseUrl; skips endpoints when nobody can answer — fail closed). Credentials stay stripped unconditionally. 16 settings-import tests. Does NOT touch export, message-router, or media. |
-| Quiz reaches the requested count | claude/quiz-full-count (#186) | Ready for integration | `fillQuiz` in **root** src/quiz/generate.ts, both quiz IPC handlers, QuizPanel.tsx. Does NOT touch media, settings or routing. |
-| Privacy switch names the waiting model | claude/privacy-switch-names-provider (#178) | Ready for integration | PrivacySwitch.tsx only. |
+| Connections catalogue (Track G) | claude/connections-catalogue (#218) | Merged 2026-08-24 09:18Z | New `connections` mode + ConnectionsPanel: one card per curated service (Notion, GitHub, Slack, Brave Search, Web Fetch, Memory), cost stated before connecting, keys linked to where they come from. Every entry goes through the SAME mcpAddServer IPC as the hand-entry form in PrivacySettingsTab — no second storage format or permission path. Chat reaches it via navigate_to_mode ('connections', derived from APP_MODES as designed); navContext.service pre-opens that card. 17 tests across shared catalogue + rendered panel; widget tsc/eslint clean; full serial suite 3349 passed; root 205 passed. Does NOT touch mcp-client.ts, permissions, or message-router. |
+| Free-setup guidance in plain language (Track D) | claude/track-d-free-setup (#220) | Merged 2026-08-24 09:51Z | First-run wizard tells the truth about cost: free-tier providers now listed ABOVE paid-only ones in the cloud grid (a newcomer reads top-left first), the selected provider's actual free promise renders instead of an unused freeHint string (dead code — only its truthiness was ever read), and the Online card no longer implies every provider is free. 4 new tests in first-run-modal.test.tsx (35 total pass); tsc + eslint clean. Guidance layer only — does NOT build the doctor screen (#204), does NOT touch mcp-client or permissions. |
+| Media job dead states + image-edit ladder rung 1 | claude/media-dead-states | In progress | Aden's tasking, working in sadie-ox worktree. Part 1: media-studio.ts declares 'scheduled' and 'analysing' with transitions INTO them — trace what advances a job OUT; wire the exit or remove the state, never half-real. Part 2: image-editing ladder rung 1 only — a durable result the user can come back to. Verification by numbers per .claude/skills/render-verification. Area exclusive today: widget/src/main/media-*.ts, tools/media.ts, MediaStudioPanel.tsx. |
+| Backup import can no longer repoint traffic endpoints | claude/backup-endpoint-guard (#209) | Merged | settings-import.ts (analyzeImportedEndpoints / stripImportedSettings), homebot:import-settings handler (confirm dialog when a backup would move n8nUrl/ollamaUrl/searxngUrl/codeApiUrl/customLLM.baseUrl; skips endpoints when nobody can answer — fail closed). Credentials stay stripped unconditionally. 16 settings-import tests. |
 | Tool-surface hardening (audit remediation) | claude/tool-surface-hardening | Ready for integration | grep_code/git via execFile argv (cmd-injection class removed), 14 CRM writes gated (requiresConfirmation + permissions entries), per-hop redirect SSRF revalidation + IPv6 private ranges, api_request POST confirmation, batch allow-once honors requiresConfirmation, shared home-boundary/url-boundary utils replace five drift-prone startsWith guards. New gate: `tool-permissions-parity.test.ts` — every native tool needs a permission entry or requiresConfirmation; every permission key needs a tool. Full widget suite + tsc green on current main. Does NOT touch message-router routing logic or the media pipeline. |
 
-*(Model freshness + knobs merged as #182 — claim retired.)*
+Merged since the last board refresh, verified against `gh pr view` 2026-08-24: delete-model (#183),
+privacy-switch naming (#178), quiz full count (#186), Kokoro narration engine (#214), Code mode
+(#201), feeds mode (#202), navigation primitive (#196), backup endpoint guard (#209), and
+MCP connect-on-add (#221 — verified merged 10:57Z during this review). The old
+per-row claims are retired — do not rebuild any of these.
 
 ## Integration notes — 2026-08-22 session (read before your next PR)
 
@@ -104,8 +115,8 @@ pillars**, and he added two requirements on top:
 | C · Platform trust / reachability | this session | Ongoing audit |
 | D · Plain language + free-setup guidance | **unowned** | |
 | E · Keep the lights on (CI) | shared | |
-| F · Coding platform front door | ox-alpha | Workspace, terminal, 14 git tools, CLI bridges all exist; **no Code mode** |
-| G · Connections catalogue | this session | MCP works but is buried under Settings → Advanced → Permissions |
+| F · Coding platform front door | ox-alpha | Code mode shipped (#201, WorkspaceShell destination); the remaining question is what a user can actually DO once they arrive there |
+| G · Connections catalogue | ox-alpha | #218 gives it a front door: `connections` mode reachable from the mode bar, dashboard, and chat navigation |
 | H · Automations people can build | this session | Create/edit/run/schedule work; triggers are manual+schedule only |
 | I · Chat as the front door | this session | **No navigation capability exists at all** |
 
@@ -209,3 +220,77 @@ Do not start one in parallel.
   from that list. **Do not write a second mode-switching mechanism.**
 - **`SearchBlockedError` + `isSearchBlockPage`** in `tools/web.ts` — being refused is not the
   same as finding nothing, and only the first can be fixed by the user.
+
+## Rules of the road — agent tooling, 2026-08-24
+
+No product code changed here. This is the per-tool wiring so Cline and Copilot can honour the
+rules the other files already state.
+
+**Copilot could not verify anything, and that is why nothing of its landed.** Its entire commit
+history in this repo is four `Initial plan` commits and a VS Code session checkpoint; its three
+branches sit ~50 commits behind main with nothing merged. Two causes, both environmental:
+
+1. Its ephemeral environment had no `node_modules`, so the verification command in
+   `.github/copilot-instructions.md` could not run.
+2. Even installed, the widget suite cannot pass on Linux — 43 test files write to `os.tmpdir()`
+   and the main-process file tools refuse anything outside `os.homedir()`. `ci.yml` already
+   records the cost: 92 failures across 10 suites on ubuntu.
+
+`.github/workflows/copilot-setup-steps.yml` fixes both — both packages installed,
+`better-sqlite3` rebuilt against Node, and `TMPDIR` pointed inside `$HOME` (the Linux analogue of
+`ci.yml`'s Windows TEMP step). **It does nothing until it is on `main`** — the platform only reads
+it from the default branch, and the job must stay named `copilot-setup-steps`.
+
+**The `TMPDIR` fix is measured, not reasoned.** Run on Linux 2026-08-24 against this tree, same
+command, only `TMPDIR` differing:
+
+| | Suites failed | Tests failed |
+|---|---|---|
+| without `TMPDIR` | 4 | 79 |
+| `TMPDIR="$HOME/homebot-test-tmp"` | 1 | 5 |
+
+The 74 that flip are `codebase-tool`, `edit-file-tool` and `filesystem` — all denied by the home
+boundary, none of them bugs.
+
+The 5 that remain are all `sd-cpp-setup.test.ts` and share one cause: `sd-cpp-setup.ts:177`
+throws "Automatic setup currently supports Windows only." That is a product decision, not a
+broken test, so **on Linux 5 failures in that one suite is the clean result.** Recorded in the
+instruction files so no agent burns a session "fixing" it or reports it as a regression.
+
+Still unobserved: the same run inside an actual Copilot session. The environment is a GitHub
+Actions Linux runner either way, so the mechanism is the same, but `copilot-setup-steps` exporting
+`TMPDIR` via `GITHUB_ENV` into the agent's own shell is the one link that cannot be checked from
+outside. That is why the instructions also pass `TMPDIR` on the command line. First agent to run
+there: confirm the count is 5.
+
+**New files, and what reads them:**
+
+| Path | Read by | Holds |
+|---|---|---|
+| `.github/workflows/copilot-setup-steps.yml` | Copilot agent | Dependency install + `TMPDIR` |
+| `.github/instructions/*.instructions.md` | Copilot cloud agent, Copilot code review | Rules scoped by `applyTo` glob — they arrive only when you open matching files |
+| `.clinerules/` (now a **folder**) | Cline | All `.md` combined; was a single file |
+| `.clinerules/workflows/*.md` | Cline | `/verify.md`, `/claim.md`, `/identity.md` — runnable, not prose |
+| `.clineignore` | Cline | Read filter: build output, lockfiles, binaries |
+
+Because `.clinerules/` is now a folder, Cline no longer falls back to `AGENTS.md` on its own —
+`01-homebot.md` instructs it to read that first, so keep that line intact.
+
+**Two things only Aden can do**, both one click:
+
+- Turn on the repo setting that skips workflow approval for Copilot coding agent Actions runs.
+  Until then the `action_required` loop in `AGENTS.md` has to be run after every bot push — ten
+  runs were held in one day, five for three days.
+- Nothing else. The rest of this is in the repo.
+
+**Division of labour, because the tools are not interchangeable.** Cline runs on Aden's Windows
+box and can run the widget suite, so it owns `widget/` work. Linux-bound agents (Copilot, Claude
+Code on the web) are better spent on the root package, pure modules in `src/`, docs, CI and n8n
+workflows — and must write "unit tests not run in this environment" rather than implying green.
+
+**Attribution is still broken and this only half-fixes it.** 686 commits share the identity
+`kingithegreat <adenk@example.com>`, so `git blame` cannot say which agent wrote a line, and the
+Media Studio track credited to ox-alpha above cannot be verified from git at all. Exactly one
+commit in repo history is attributable to it. `/identity.md` sets a repo-local `git config
+user.name` for Cline; Copilot already signs as `copilot-swe-agent[bot]`. Existing history is not
+rewritable — this only fixes commits from here on.

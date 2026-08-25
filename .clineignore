@@ -1,0 +1,59 @@
+# Files Cline should not read.
+#
+# Context is the scarcest resource in a session, and every one of these is either
+# generated, enormous, or both. Reading them costs a large share of the window
+# and teaches nothing about the codebase — build output in particular actively
+# misleads, because it is a stale snapshot of source that has since changed.
+#
+# This is a READ filter, not a write ban. Cline can still be asked to change a
+# lockfile deliberately; it just will not pull one in while exploring. Lockfiles
+# matter here — #214 had to ship a follow-up commit for a widget lockfile that
+# was missed — so if you add a dependency, update the lockfile on purpose.
+
+# Dependencies
+node_modules/
+widget/node_modules/
+
+# Build output
+out/
+dist/
+dist-electron/
+widget/dist/
+widget/out/
+widget/build/
+
+# Test and report artifacts
+playwright-report/
+test-results/
+widget/playwright-report/
+widget/test-results/
+coverage/
+
+# Lockfiles — thousands of lines, no signal while exploring
+package-lock.json
+widget/package-lock.json
+
+# Generated and append-only records
+CHANGELOG.md
+logs/
+*.log
+
+# Local state and binaries
+memory/database/
+memory/cache/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+
+# Media fixtures and binaries
+*.mp4
+*.mp3
+*.wav
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.onnx

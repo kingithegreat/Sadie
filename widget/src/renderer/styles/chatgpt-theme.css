@@ -9756,6 +9756,22 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   height: 2rem;
 }
 
+/* The one-off video-engine download. Informational, not an error — nothing has
+   gone wrong yet, and colouring it red would say otherwise. */
+.ms-engine {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .6rem .75rem;
+  margin-bottom: .6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, oklch(60% 0.02 250 / 0.35));
+  background: var(--bg-secondary, oklch(50% 0.02 250 / 0.12));
+}
+
+.ms-engine-text { flex: 1 1 16rem; font-size: .88rem; }
+a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 /* The rendered video, shown where it is approved. Capped by height rather
    than width because shorts are 1080x1920 — sized by width, a portrait video
    would push every other job off the screen. */

@@ -17,11 +17,12 @@ import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
+import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 
 type MediaJobState =
   | 'idea' | 'researching' | 'script_draft' | 'script_qa' | 'media_production'
   | 'render_qa' | 'awaiting_approval' | 'approved' | 'scheduled' | 'published'
-  | 'analysing' | 'blocked' | 'failed' | 'needs_revision' | 'rejected';
+  | 'blocked' | 'failed' | 'needs_revision' | 'rejected';
 
 interface MediaJobEvent { at: string; from: string; to: string; by: string; note?: string }
 
@@ -36,6 +37,9 @@ interface MediaJob {
   script?: string;
   /** Set once narration has been recorded; absolute path to the MP3. */
   narrationPath?: string;
+  /** Which engine actually narrated ('edge' | 'kokoro') — a silent fallback
+   *  must be visible here, not discoverable by ear after publishing. */
+  narratedWith?: string;
   /**
    * Set once the render stage has produced a file; absolute path to the MP4.
    *
@@ -79,7 +83,8 @@ const NEXT_STAGE: Partial<Record<MediaJobState, MediaJobState>> = {
   // collects — a generic "Move to published" set the state with no id, which is
   // precisely the "looks published and is not" case the state machine warns
   // about, and it left the double-publish guard (keyed on videoId) dead.
-  published: 'analysing',
+  // `published → analysing` was removed with the analysing state itself: it
+  // offered a button into a terminal dead end that no code consumed.
   needs_revision: 'script_draft',
 };
 
@@ -91,7 +96,7 @@ const label = (s: string) => s.replace(/_/g, ' ');
 function stateClass(s: MediaJobState): string {
   if (s === 'awaiting_approval') return 'ms-state ms-state--attention';
   if (FAILURE.includes(s)) return 'ms-state ms-state--bad';
-  if (s === 'published' || s === 'analysing') return 'ms-state ms-state--done';
+  if (s === 'published') return 'ms-state ms-state--done';
   return 'ms-state';
 }
 
@@ -126,9 +131,13 @@ export const MediaStudioPanel: React.FC = () => {
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatIdeas, setChatIdeas] = useState<Array<{ id: string; content: string; createdAt: number }> | null>(null);
   // Narration voice picker. Voices load lazily with the first narrate action;
-  // sampling renders a short clip to a temp file and plays it.
+  // sampling renders a short clip to a temp file and plays it. The ENGINE is
+  // persisted (narrationEngine) and the voice list follows it — an Edge voice
+  // name means nothing to the local model, so offering it next to "record"
+  // would be a silent mismatch waiting to ship.
   const [voices, setVoices] = useState<Array<{ name: string; friendlyName?: string; locale?: string }> | null>(null);
   const [narrateVoice, setNarrateVoice] = useState('');
+  const [narrateEngine, setNarrateEngine] = useState<'' | 'edge' | 'kokoro'>('');
   const [sampling, setSampling] = useState<string | null>(null);
   /** Last rendered voice sample, played inline via file:// like the previews. */
   const [samplePath, setSamplePath] = useState<string | null>(null);
@@ -148,6 +157,59 @@ export const MediaStudioPanel: React.FC = () => {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  /**
+   * The video engine. Rendering is the one stage with a dependency the app does
+   * not ship, and the old answer to a missing one was to tell the user to run
+   * `winget install Gyan.FFmpeg` — a package manager, aimed at someone the
+   * product says outright is not technical. Now the panel offers to do it.
+   */
+  const [engine, setEngine] = useState<{ ready: boolean; supported: boolean } | null>(null);
+  const [engineNote, setEngineNote] = useState<string>('');
+  const [engineBusy, setEngineBusy] = useState(false);
+
+  const checkEngine = useCallback(async () => {
+    try {
+      const s = await api()?.mediaFfmpegStatus?.();
+      if (s) setEngine({ ready: !!s.ready, supported: s.supported !== false });
+    } catch { /* leave it unknown rather than claiming it is missing */ }
+  }, []);
+
+  useEffect(() => { checkEngine(); }, [checkEngine]);
+
+  // Progress arrives on a push channel because the download is long enough that
+  // a spinner alone is indistinguishable from a hang.
+  useEffect(() => {
+    const off = api()?.onMediaFfmpegProgress?.((p: any) => {
+      const mb = p?.receivedMB != null && p?.totalMB
+        ? ` ${p.receivedMB} of ${p.totalMB} MB`
+        : '';
+      setEngineNote(`${p?.note ?? 'Working…'}${mb}`);
+    });
+    return () => { try { off?.(); } catch { /* nothing to detach */ } };
+  }, []);
+
+  const setUpEngine = async () => {
+    setEngineBusy(true);
+    setEngineNote('Starting…');
+    setError(null);
+    try {
+      const res = await api()?.mediaFfmpegSetup?.();
+      if (res?.ok) {
+        setEngineNote('');
+        setDone(res.message || 'Ready — videos can now be made on this PC.');
+        await checkEngine();
+      } else {
+        setEngineNote('');
+        setError(res?.error || 'The video engine could not be set up.');
+      }
+    } catch (e: any) {
+      setEngineNote('');
+      setError(e?.message || 'The video engine could not be set up.');
+    } finally {
+      setEngineBusy(false);
+    }
+  };
 
   /** Every mutation reports the state machine's own refusal text verbatim. */
   /**
@@ -323,7 +385,7 @@ export const MediaStudioPanel: React.FC = () => {
 
   /** Neural voices for the narration picker — loaded once, on first use. */
   const ensureVoices = async () => {
-    if (voices) return;
+    if (voices || narrateEngine === 'kokoro') return; // kokoro's list is local, nothing to fetch
     try {
       const res = await api()?.ttsListVoices?.();
       const list = res?.result?.voices;
@@ -331,11 +393,33 @@ export const MediaStudioPanel: React.FC = () => {
     } catch { /* picker stays on "Default voice" — narration still works */ }
   };
 
-  /** Render a short sample of a voice to a temp file and play it inline. */
+  // The saved engine preference loads once; changing it here persists it, so
+  // tomorrow's videos keep the voice you chose today.
+  useEffect(() => {
+    let cancelled = false;
+    api()?.getSettings?.().then((s: any) => {
+      if (!cancelled && s?.narrationEngine === 'kokoro') setNarrateEngine('kokoro');
+    }).catch(() => { /* default Edge applies */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const changeNarrateEngine = (engine: '' | 'edge' | 'kokoro') => {
+    setNarrateEngine(engine);
+    setNarrateVoice(''); // an Edge voice name is meaningless under Kokoro
+    try { api()?.saveSettings?.({ narrationEngine: engine === 'kokoro' ? 'kokoro' : 'edge' }); } catch { /* preference stays session-local */ }
+  };
+
+  /** Render a short sample of a voice to a temp file and play it inline.
+   *  Routed through the SAME engine that will record — approving by ear a
+   *  sample from the other engine would approve a voice never shipped. */
   const sampleVoice = async (voice: string) => {
     setSampling(voice);
     try {
-      const res = await api()?.ttsSampleVoice?.(voice);
+      const res = await api()?.ttsSampleVoice?.(
+        narrateEngine === 'kokoro' ? (voice || 'af_heart') : voice,
+        undefined,
+        narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+      );
       if (res?.success && res.path) {
         // Same file:// playback the job previews use — no extra channel.
         setSamplePath(res.path);
@@ -360,6 +444,7 @@ export const MediaStudioPanel: React.FC = () => {
         <span className="ms-job-format">
           {j.format === 'long' ? 'long-form' : 'short'}
           {j.durationSeconds ? ` · ${j.durationSeconds}s recorded` : ''}
+          {j.narratedWith ? ` · narrated: ${j.narratedWith}` : ''}
         </span>
         {/* The script and the slides, before you commit to watching.
             Both were already produced and neither was ever shown: `script` has
@@ -483,6 +568,18 @@ export const MediaStudioPanel: React.FC = () => {
           <>
             {stageAction(j)!.action === 'narrate' && (
               <select
+                className="ms-input ms-engine-select"
+                value={narrateEngine}
+                onChange={e => changeNarrateEngine(e.target.value as '' | 'edge' | 'kokoro')}
+                aria-label="Narration engine"
+              >
+                {NARRATION_ENGINES.map(e => (
+                  <option key={e.label} value={e.value}>{e.label}</option>
+                ))}
+              </select>
+            )}
+            {stageAction(j)!.action === 'narrate' && narrateEngine !== 'kokoro' && (
+              <select
                 className="ms-input ms-voice-select"
                 value={narrateVoice}
                 onChange={e => setNarrateVoice(e.target.value)}
@@ -495,20 +592,38 @@ export const MediaStudioPanel: React.FC = () => {
                 ))}
               </select>
             )}
-            {stageAction(j)!.action === 'narrate' && narrateVoice && (
+            {stageAction(j)!.action === 'narrate' && narrateEngine === 'kokoro' && (
+              <select
+                className="ms-input ms-voice-select"
+                value={narrateVoice}
+                onChange={e => setNarrateVoice(e.target.value)}
+                aria-label="Kokoro narration voice"
+              >
+                <option value="">Heart (default)</option>
+                {KOKORO_VOICES.map(v => (
+                  <option key={v.name} value={v.name}>{v.label}</option>
+                ))}
+              </select>
+            )}
+            {stageAction(j)!.action === 'narrate' && (narrateVoice || narrateEngine === 'kokoro') && (
               <button
                 className="ms-btn"
-                disabled={sampling === narrateVoice}
+                disabled={sampling !== null}
                 onClick={() => sampleVoice(narrateVoice)}
               >
-                {sampling === narrateVoice ? 'Rendering…' : '▶ Sample'}
+                {sampling !== null ? 'Rendering…' : '▶ Sample'}
               </button>
             )}
             <button
               className="ms-btn ms-btn--primary"
               onClick={() => {
                 const a = stageAction(j)!;
-                run(j.id, () => api()?.mediaRun?.(j.id, a.action, a.action === 'narrate' ? { voice: narrateVoice || undefined } : undefined), a.label);
+                run(j.id, () => api()?.mediaRun?.(j.id, a.action, a.action === 'narrate'
+                  ? {
+                      voice: narrateVoice || undefined,
+                      engine: narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+                    }
+                  : undefined), a.label);
               }}
             >
               {stageAction(j)!.label}
@@ -605,6 +720,39 @@ export const MediaStudioPanel: React.FC = () => {
 
       {error && <div className="ms-error" role="alert">{error}</div>}
       {done && <div className="ms-done" role="status">{done}</div>}
+
+      {/* The one dependency the app does not ship. Shown before anything fails,
+          so the wall is hit at "here is the button" rather than at the end of a
+          pipeline the user already spent a minute on. */}
+      {engine && !engine.ready && (
+        <div className="ms-engine" role="status">
+          {engineBusy ? (
+            <span className="ms-working" aria-live="polite">
+              <span className="ms-spinner" aria-hidden="true" />
+              {engineNote || 'Setting up the video engine…'}
+            </span>
+          ) : (
+            <>
+              <span className="ms-engine-text">
+                Making videos needs a one-off download (about 160 MB). Scripts, narration
+                and captions all work without it.
+              </span>
+              {engine.supported ? (
+                <button className="ms-btn ms-btn--primary" onClick={setUpEngine}>
+                  Set it up for me
+                </button>
+              ) : (
+                <a
+                  className="ms-btn"
+                  href="https://ffmpeg.org/download.html"
+                  target="_blank"
+                  rel="noreferrer"
+                >Show me how</a>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <div className="ms-new">
         <input
