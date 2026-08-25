@@ -10,24 +10,24 @@
   --bg-light:   oklch(20% 0.012 250);
   --bg-hover:   oklch(18% 0.010 250);
 
-  /* ── Blue accent system — vibrant, modern ── */
-  --accent-primary: oklch(65% 0.18 250);
-  --accent-hover:   oklch(72% 0.20 250);
-  --accent-light:   oklch(82% 0.12 250);
-  --accent-dark:    oklch(48% 0.16 250);
-  --accent-muted:   oklch(65% 0.18 250 / 0.15);
+  /* ── Indigo-violet accent system — the modern AI-app signature ──
+     2026-08 theme change: moved off generic system blue (hue 250), which read
+     as "default Windows link colour", to hue 285. Everything downstream that
+     references these tokens follows automatically. */
+  --accent-primary: oklch(66% 0.19 285);
+  --accent-hover:   oklch(73% 0.19 285);
+  --accent-light:   oklch(84% 0.11 285);
+  --accent-dark:    oklch(50% 0.19 285);
+  --accent-muted:   oklch(66% 0.19 285 / 0.16);
 
   /* Named brand tokens (hex for compatibility).
-     Nudged off the fully-saturated #0088FF, which is within a hair of the
-     default Windows link blue and read as a system colour rather than ours.
-     Same blue family, a little more indigo and a little less electric, and now
-     a three-stop scale so the logo tile and the gradient buttons are lit from
-     the same source. --homebot-blue-500 keeps its name and its role, so the
-     seven rules already using it need no edit. */
-  --homebot-blue-300: #5FB0FF;
-  --homebot-blue-500: #1E83F7;
-  --homebot-blue-700: #0A56D6;
-  --homebot-navy: #0a1628;
+     Values retuned with the indigo-violet theme; names kept because seven
+     existing rules reference them. Same three-stop scale so the logo tile
+     and gradient buttons stay lit from one source. */
+  --homebot-blue-300: #A78BFA;
+  --homebot-blue-500: #7C5CFF;
+  --homebot-blue-700: #5B3BE6;
+  --homebot-navy: #12102a;
 
   /* ── Text — softer primaries to reduce eye strain ── */
   --text-primary:   oklch(92% 0.005 250);
@@ -42,7 +42,7 @@
   --bg-chat:          oklch(7% 0.006 250);
   --bg-input:         oklch(10% 0.008 250);
   --bg-panel:         oklch(11% 0.010 250);
-  --bg-user-msg:      oklch(45% 0.14 250);
+  --bg-user-msg:      oklch(46% 0.15 285);
   --bg-assistant-msg: oklch(10% 0.008 250);
   --bg-card:          oklch(12% 0.008 250);
   --bg-secondary:     oklch(12% 0.008 250);
@@ -56,7 +56,7 @@
   --border-light:   oklch(100% 0 0 / 0.06);
   --border-medium:  oklch(100% 0 0 / 0.10);
   --border-color:   oklch(100% 0 0 / 0.08);
-  --border-focus:   oklch(65% 0.18 250 / 0.45);
+  --border-focus:   oklch(66% 0.19 285 / 0.45);
 
   /* ── Status colors ── */
   --success:      oklch(72% 0.18 150);
@@ -74,7 +74,7 @@
   --shadow-md:   0 4px 14px oklch(0% 0 0 / 0.18), 0 2px 4px oklch(0% 0 0 / 0.08);
   --shadow-lg:   0 12px 40px oklch(0% 0 0 / 0.25), 0 4px 12px oklch(0% 0 0 / 0.10);
   --shadow-xl:   0 20px 60px oklch(0% 0 0 / 0.35), 0 8px 20px oklch(0% 0 0 / 0.15);
-  --shadow-glow: 0 0 24px oklch(65% 0.18 250 / 0.12);
+  --shadow-glow: 0 0 24px oklch(66% 0.19 285 / 0.14);
   --shadow-inset: inset 0 1px 0 oklch(100% 0 0 / 0.04);
 
   /* ── Spacing — 4px base ── */
@@ -2038,7 +2038,7 @@ body {
   cursor: pointer; font-size: 0.85rem; transition: var(--transition-fast);
 }
 .theme-btn:hover { border-color: var(--accent-primary, #0088FF); }
-.theme-btn.active { border-color: var(--accent-primary, #0088FF); background: rgba(0,136,255,0.15); color: var(--accent-primary, #0088FF); }
+.theme-btn.active { border-color: var(--accent-primary); background: oklch(66% 0.19 285 / 0.15); color: var(--accent-primary); }
 
 .model-grid {
   display: grid;
@@ -8715,16 +8715,18 @@ body {
   --r-lg: 20px;
   --r-pill: 999px;
 
-  /* One accent, used sparingly. Apple's system blue. */
-  --accent: #0A84FF;
-  --accent-hover: #339CFF;
-  --accent-quiet: rgba(10, 132, 255, 0.14);
+  /* One accent, used sparingly. Indigo-violet — the app's own identity,
+     deliberately NOT system blue so HomeBot stops reading as a Windows app. */
+  --accent: #7C5CFF;
+  --accent-hover: #927BFF;
+  --accent-quiet: rgba(124, 92, 255, 0.16);
   --accent-contrast: #ffffff;
 
-  /* Materials — translucency is the single most "Apple" cue */
-  --material-thin: rgba(28, 28, 30, 0.62);
-  --material-regular: rgba(28, 28, 30, 0.78);
-  --material-thick: rgba(22, 22, 24, 0.92);
+  /* Materials — translucency is the single most "Apple" cue, tinted toward
+     the indigo ground so glass panels sit in the palette instead of on it. */
+  --material-thin: rgba(24, 22, 38, 0.62);
+  --material-regular: rgba(24, 22, 38, 0.78);
+  --material-thick: rgba(18, 16, 30, 0.92);
   --material-blur: saturate(180%) blur(20px);
   --hairline: rgba(255, 255, 255, 0.09);
 
@@ -8744,9 +8746,9 @@ body {
   --material-regular: rgba(250, 250, 252, 0.82);
   --material-thick: rgba(255, 255, 255, 0.94);
   --hairline: rgba(0, 0, 0, 0.09);
-  --accent: #007AFF;
-  --accent-hover: #0069DB;
-  --accent-quiet: rgba(0, 122, 255, 0.12);
+  --accent: #6D4AFF;
+  --accent-hover: #5A38F0;
+  --accent-quiet: rgba(109, 74, 255, 0.12);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.09);
   --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.13);
@@ -10490,4 +10492,100 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
     transform: none;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME PASS — indigo-violet identity, 2026-08
+
+   The token layer moved from system blue to indigo-violet; this block brings
+   the few hard-coded blues and the component-level details along so the whole
+   app reads as one palette. Same rules as every appended pass: additive,
+   removable as one block, no layout dimensions touched.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ambient ground follows the new accent ──────────────────────────────────
+   Re-states the depth-pass washes in the violet family; being later in the
+   file it simply wins. */
+.app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(60% 0.17 285 / 0.10), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(62% 0.14 262 / 0.07), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* ── Composer: the most-looked-at surface in the app ─────────────────────── */
+.input-container {
+  transition: border-color var(--dur-fast, 140ms) var(--ease-apple, ease),
+              box-shadow var(--dur-fast, 140ms) var(--ease-apple, ease);
+}
+.input-container:focus-within {
+  border-color: oklch(66% 0.19 285 / 0.55);
+  box-shadow:
+    0 0 0 3px oklch(66% 0.19 285 / 0.10),
+    0 8px 24px oklch(0% 0 0 / 0.30);
+}
+
+/* ── Conversation list: active item earns an accent spine ─────────────────── */
+.conversation-item.active {
+  box-shadow: inset 2px 0 0 var(--accent-primary);
+  background: linear-gradient(
+    90deg,
+    oklch(66% 0.19 285 / 0.10),
+    transparent 70%
+  );
+}
+.sidebar-filter-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px oklch(66% 0.19 285 / 0.12);
+}
+
+/* ── Mode bar: a glass pill the buttons sit inside ────────────────────────── */
+.mode-switcher {
+  background: var(--material-thin, rgba(24, 22, 38, 0.62));
+  -webkit-backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.09));
+  border-radius: var(--r-pill, 999px);
+}
+
+/* ── Toasts: real material instead of a flat strip ────────────────────────── */
+.toast-item {
+  background: var(--material-thick, rgba(18, 16, 30, 0.92));
+  -webkit-backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.09));
+  border-radius: var(--r-md, 14px);
+  box-shadow: var(--shadow-2, 0 4px 16px rgba(0, 0, 0, 0.24));
+}
+
+/* ── Scrollbars: quiet by default, present on hover ────────────────────────
+   One rule set wins over the earlier per-surface scrollbar blocks because it
+   is last; applies to everything that scrolls inside the app shell. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: oklch(100% 0 0 / 0.10);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(100% 0 0 / 0.20);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: oklch(0% 0 0 / 0.18);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0% 0 0 / 0.32);
+  background-clip: padding-box;
+}
+
+/* ── Cards keep their depth lift, now tinted to match ─────────────────────── */
+.daily-card:hover,
+.automation-card:hover,
+.template-card:hover {
+  border-color: oklch(66% 0.19 285 / 0.35);
+}
+
 
