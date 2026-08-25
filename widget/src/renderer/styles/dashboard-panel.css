@@ -480,3 +480,33 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── What's working ──────────────────────────────────────────────────────────
+   The capability report on Home. Colour carries meaning here, so each state
+   also carries an icon and a word — colour alone excludes anyone who cannot
+   distinguish these two reds and greens. */
+.cap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.cap-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+}
+.cap-ready       { border-left-color: #3fb950; }
+.cap-needs_setup { border-left-color: #d29922; }
+.cap-missing     { border-left-color: #f85149; }
+.cap-unknown     { border-left-color: #8b949e; }
+
+.cap-head { display: flex; align-items: center; gap: 8px; }
+.cap-icon { flex: 0 0 auto; }
+.cap-label { font-weight: 600; }
+.cap-state { margin-left: auto; font-size: 0.82em; opacity: 0.75; }
+
+.cap-detail { margin: 6px 0 0; font-size: 0.9em; opacity: 0.85; }
+.cap-fix { margin: 6px 0 0; font-size: 0.9em; }
+
+.cap-summary { font-weight: 400; opacity: 0.75; }
+.cap-refresh { margin-left: 12px; font-size: 0.8em; }
+.cap-toggle { margin-top: 10px; font-size: 0.85em; background: none; border: none; cursor: pointer; text-decoration: underline; color: inherit; opacity: 0.8; }
+.cap-all-good, .cap-loading, .cap-error { margin: 4px 0 0; opacity: 0.8; }
