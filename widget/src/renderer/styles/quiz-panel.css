@@ -778,3 +778,16 @@
   color: var(--text-muted);
   font-weight: 500;
 }
+
+/* Fewer questions than were asked for. Informational, not an error: the quiz
+   still works, it is just shorter than requested. */
+.quiz-notice {
+  margin-bottom: .75rem;
+  padding: .6rem .75rem;
+  border-radius: 8px;
+  border-left: 3px solid oklch(78% 0.15 85);
+  background: oklch(78% 0.15 85 / 0.08);
+  color: var(--text-secondary);
+  font-size: .85rem;
+  line-height: 1.45;
+}

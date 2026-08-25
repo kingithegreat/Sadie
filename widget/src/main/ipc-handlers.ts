@@ -36,7 +36,7 @@ import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
-import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
+import { getAllToolDefinitions, executeTool, getFocusedOllamaTools, registerTool } from './tools/index';
 import { registerAutomationRunner, registerAutomationTierProvider } from './tools/automation';
 import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
@@ -47,6 +47,7 @@ import {
   loadMcpConfig,
   saveMcpConfig,
   getMcpStatus,
+  connectSingleServer,
   type McpServerConfig
 } from './mcp-client';
 import {
@@ -64,7 +65,7 @@ import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
-import { parseQuizBatch, dedupeQuestions, buildAvoidClause, ParsedQuizQuestion } from '../../../src/quiz/generate';
+import { buildAvoidClause, fillQuiz } from '../../../src/quiz/generate';
 import {
   getCurrentTier,
   getLicenseStatus,
@@ -1780,7 +1781,26 @@ try {
       current.servers.push(config);
     }
     saveMcpConfig(current);
-    return { success: true };
+
+    // Connect NOW, not at next launch. Store-then-nothing-until-restart made
+    // "Connect" read as success while producing no tools — the reachability
+    // defect wearing a success badge. The result says what actually happened,
+    // so the UI can promise only what is true.
+    let live: { connected: boolean; toolCount: number; error?: string } = { connected: false, toolCount: 0 };
+    if (config.enabled !== false) {
+      try {
+        live = await connectSingleServer(config, registerTool);
+      } catch (err: any) {
+        live = { connected: false, toolCount: 0, error: err?.message || String(err) };
+      }
+    }
+
+    return {
+      success: true,
+      connected: live.connected,
+      toolCount: live.toolCount,
+      error: live.error
+    };
   });
 
   ipcMain.handle('homebot:mcp-remove-server', async (_event, name: string) => {
@@ -2758,13 +2778,10 @@ try {
       // prompt-example echoes are removed across batches. Because rejects
       // can leave a batch short, keep generating (bounded) until the quiz
       // is full instead of silently returning fewer questions.
-      const BATCH_SIZE = 3;
-      let allQuestions: ParsedQuizQuestion[] = [];
-      const maxAttempts = Math.ceil(questionCount / BATCH_SIZE) + 2;
-
-      for (let b = 0; b < maxAttempts && allQuestions.length < questionCount; b++) {
-        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
-        const prompt = `Generate exactly ${count} ${difficulty} difficulty quiz questions about ${topic}.
+      const filled = await fillQuiz({
+        questionCount,
+        generate: async (count, existing) => {
+          const prompt = `Generate exactly ${count} ${difficulty} difficulty quiz questions about ${topic}.
 RULES:
 - Respond with ONLY a JSON array, nothing else
 - Every question MUST have exactly 4 options in the "options" array
@@ -2773,25 +2790,33 @@ RULES:
 - Mix question types: multiple-choice, code-output, bug-fix, concept
 
 EXAMPLE (follow this format exactly):
-[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]${buildAvoidClause(allQuestions)}`;
+[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]${buildAvoidClause(existing)}`;
 
-        const raw0 = await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.');
+          return await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.') || '';
+        },
+        onBatch: ({ attempt, got, total, raw }) => {
+          console.log(`[Quiz] Batch ${attempt}: +${got} valid question(s), ${total} so far, from ${raw.length} chars`);
+          if (got === 0) console.warn(`[Quiz] Batch ${attempt}: nothing usable. Raw:`, raw.slice(0, 300));
+        },
+      });
 
-        const batchQuestions = parseQuizBatch(raw0 || '');
-        console.log(`[Quiz] Batch ${b + 1}/${maxAttempts}: ${batchQuestions.length} valid question(s) from ${String(raw0 || '').length} chars`);
-        if (batchQuestions.length === 0) {
-          console.warn(`[Quiz] Batch ${b + 1}: nothing usable. Raw:`, String(raw0 || '').slice(0, 300));
-        }
-        allQuestions = dedupeQuestions([...allQuestions, ...batchQuestions], questionCount);
-      }
-
-      if (allQuestions.length === 0) {
+      if (filled.questions.length === 0) {
         return { success: false, error: 'Could not generate quiz questions. Check that your LLM provider is running and accessible.' };
       }
 
-      const validated = allQuestions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
+      const validated = filled.questions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
 
-      return { success: true, questions: validated };
+      // Say when it came up short instead of quietly handing over fewer.
+      // Reported live: asked for 5, given 3, told nothing.
+      return {
+        success: true,
+        questions: validated,
+        requested: filled.requested,
+        shortfall: filled.shortfall,
+        ...(filled.shortfall > 0 ? {
+          notice: `Only ${validated.length} of the ${filled.requested} questions came out usable this time — the rest were repeats or malformed. Try again, or pick a broader topic.`,
+        } : {}),
+      };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
@@ -2857,13 +2882,10 @@ EXAMPLE (follow this format exactly):
 
       // Same validated pipeline as the general quiz handler — see
       // src/quiz/generate. Bounded retry because rejects can shorten a batch.
-      const BATCH_SIZE = 3;
-      let allQuestions: ParsedQuizQuestion[] = [];
-      const maxAttempts = Math.ceil(questionCount / BATCH_SIZE) + 2;
-
-      for (let b = 0; b < maxAttempts && allQuestions.length < questionCount; b++) {
-        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
-        const prompt = `Based on ONLY the following study material, generate exactly ${count} ${difficulty} quiz questions about "${topic}".
+      const filled = await fillQuiz({
+        questionCount,
+        generate: async (count, existing) => {
+          const prompt = `Based on ONLY the following study material, generate exactly ${count} ${difficulty} quiz questions about "${topic}".
 
 STUDY MATERIAL:
 ${ragContext.slice(0, 3000)}
@@ -2875,22 +2897,30 @@ RULES:
 - Base questions strictly on the material above
 
 EXAMPLE FORMAT:
-[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]${buildAvoidClause(allQuestions)}`;
+[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]${buildAvoidClause(existing)}`;
 
-        const raw0 = await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.');
+          return await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.') || '';
+        },
+        onBatch: ({ attempt, got, total, raw }) => {
+          console.log(`[Quiz/RAG] Batch ${attempt}: +${got} valid question(s), ${total} so far, from ${raw.length} chars`);
+        },
+      });
 
-        const batchQuestions = parseQuizBatch(raw0 || '');
-        console.log(`[Quiz/RAG] Batch ${b + 1}/${maxAttempts}: ${batchQuestions.length} valid question(s) from ${String(raw0 || '').length} chars`);
-        allQuestions = dedupeQuestions([...allQuestions, ...batchQuestions], questionCount);
-      }
-
-      if (allQuestions.length === 0) {
+      if (filled.questions.length === 0) {
         return { success: false, error: 'Could not generate questions from your notes. Try a different topic or add more study material.' };
       }
 
-      const validated = allQuestions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
+      const validated = filled.questions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
 
-      return { success: true, questions: validated };
+      return {
+        success: true,
+        questions: validated,
+        requested: filled.requested,
+        shortfall: filled.shortfall,
+        ...(filled.shortfall > 0 ? {
+          notice: `Only ${validated.length} of the ${filled.requested} questions came out usable from your notes — the rest were repeats or malformed. Try a broader topic, or add more material.`,
+        } : {}),
+      };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
