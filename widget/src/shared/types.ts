@@ -810,8 +810,8 @@ export interface ElectronAPI {
 
   // Automation Center
   loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
-  createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
-  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => Promise<{ success: boolean }>;
+  createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
+  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => Promise<{ success: boolean }>;
   /**
    * Removes the automation and the n8n workflow it deployed. Without `force`
    * this refuses when the workflow cannot be deleted, keeping the automation so
@@ -874,8 +874,13 @@ export interface SavedAutomation {
   name: string;
   description: string;
   instructions: string;
-  trigger: 'manual' | 'schedule';
+  /** "file" = runs when a new file appears in watchPath */
+  trigger: 'manual' | 'schedule' | 'file';
   scheduleMinutes?: number;
+  /** For trigger="file": the watched folder (inside the user folder). */
+  watchPath?: string;
+  /** For trigger="file": optional filename filter like "*.csv". */
+  watchPattern?: string;
   n8nWebhookUrl?: string;
   enabled: boolean;
   lastRun?: string;
