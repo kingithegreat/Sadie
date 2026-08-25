@@ -676,15 +676,17 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
             </button>
           </Tooltip>
           {preImproveDraft !== null && (
-            <button
-              className="attach-button improve-undo-button"
-              aria-label="Undo the rewrite"
-              data-testid="improve-undo"
-              onClick={handleUndoImprove}
-              type="button"
-            >
-              ↶
-            </button>
+            <Tooltip content="Put your original wording back">
+              <button
+                className="attach-button improve-undo-button"
+                aria-label="Undo the rewrite"
+                data-testid="improve-undo"
+                onClick={handleUndoImprove}
+                type="button"
+              >
+                ↶
+              </button>
+            </Tooltip>
           )}
           <Tooltip content="Attach images">
             <button className="attach-button" aria-label="Attach images to this message" onClick={handleAttachClick}><Icon name="image" /></button>
