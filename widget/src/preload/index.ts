@@ -874,6 +874,10 @@ const electronAPI: ElectronAPI = {
   getCapabilityReport: async () =>
     ipcRenderer.invoke('homebot:capability-report'),
 
+  // Sharpen a draft request before sending it
+  improvePrompt: async (draft: string) =>
+    ipcRenderer.invoke('homebot:improve-prompt', { draft }),
+
   // Automation Center
   loadAutomations: async () =>
     ipcRenderer.invoke('homebot:load-automations'),

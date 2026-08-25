@@ -68,7 +68,10 @@ test('keyboard focus alone shows help on an icon-only control', async () => {
 
   // The attach buttons' entire visible label is an emoji. This is the case a
   // native `title` cannot serve at all.
-  const attach = page.locator('.attach-button').first();
+  // Named on purpose: ".attach-button" first() would land on the prompt-improve
+  // button, which is disabled while the textarea is empty — and a disabled
+  // control cannot take focus at all, so this test would see no tooltip.
+  const attach = page.getByRole('button', { name: 'Attach images to this message' });
   await attach.evaluate((el: HTMLElement) => el.focus());
   await page.waitForTimeout(250); // focus is deliberately delay-free
 
