@@ -10374,3 +10374,120 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   color: var(--text-secondary, oklch(70% 0 0));
 }
 .setup-progress--error { color: oklch(60% 0.19 25); }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ICON & CHROME POLISH PASS — 2026-08 visual refresh
+
+   Companion to the redrawn glyph set in components/Icon.tsx. Same discipline
+   as the depth pass above: appended, additive only, removable as one block.
+   Nothing here changes layout dimensions — it aligns icons optically inside
+   their buttons, gives every chrome control one consistent affordance model
+   (hover lift + press sink + visible keyboard ring), and softens the global
+   text selection so it stops flashing pure Windows blue.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Icon optics ─────────────────────────────────────────────────────────────
+   Inline SVGs sit on the text baseline by default, which made them look
+   half-a-pixel low inside flex buttons and let flex containers shrink them
+   into ovals. Block + no-shrink fixes both without touching any button. */
+.hb-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* ── One affordance model for all round/quiet chrome buttons ───────────────
+   header-btn, mode-btn, attach-button, ws-activity-btn and voice-button all
+   had slightly different hover stories. These rules ADD a shared layer:
+   colour transitions they already have stay; this contributes the motion.
+   transform is translateY/scale only — never layout properties. */
+.header-btn,
+.mode-btn,
+.attach-button,
+.ws-activity-btn,
+.voice-button,
+.code-copy-btn {
+  transition: background-color 160ms var(--ease-out, ease),
+              border-color 160ms var(--ease-out, ease),
+              color 160ms var(--ease-out, ease),
+              transform 120ms var(--ease-out, ease),
+              box-shadow 160ms var(--ease-out, ease);
+}
+
+.header-btn:hover,
+.attach-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.header-btn:active,
+.mode-btn:active,
+.attach-button:not(:disabled):active,
+.voice-button:active,
+.code-copy-btn:active {
+  transform: scale(0.94);
+}
+
+.send-button:not(:disabled):hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 14px oklch(65% 0.18 250 / 0.35);
+}
+.send-button:not(:disabled):active { transform: scale(0.96); }
+
+/* Disabled controls stop pretending to be interactive. */
+.attach-button:disabled,
+.send-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: saturate(0.6);
+}
+
+/* ── Keyboard visibility ───────────────────────────────────────────────────
+   One consistent focus ring everywhere in the chrome, using the token that
+   already exists. :focus-visible only — mouse users see nothing change. */
+.header-btn:focus-visible,
+.mode-btn:focus-visible,
+.attach-button:focus-visible,
+.send-button:focus-visible,
+.voice-button:focus-visible,
+.code-copy-btn:focus-visible,
+.remove-image:focus-visible,
+.remove-document:focus-visible {
+  outline: 2px solid var(--border-focus, oklch(65% 0.18 250 / 0.45));
+  outline-offset: 2px;
+}
+
+/* ── Mode bar: quiet rest, confident active ────────────────────────────────
+   The active pill gains a faint accent wash and an inner top highlight so it
+   reads as raised rather than merely coloured; inactive buttons lose their
+   border entirely at rest so the row reads calmer. */
+.mode-switcher .mode-btn {
+  box-shadow: inset 0 1px 0 transparent;
+}
+.mode-switcher .mode-btn.active {
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.18),
+    0 2px 8px oklch(65% 0.18 250 / 0.25);
+}
+
+/* ── Selection ────────────────────────────────────────────────────────────
+   Native selection blue fights the brand palette when highlighting chat text;
+   this keeps it readable but on-palette, in both themes. */
+::selection {
+  background: oklch(65% 0.18 250 / 0.32);
+  color: inherit;
+}
+[data-theme='light'] ::selection {
+  background: oklch(62% 0.17 250 / 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-btn, .mode-btn, .attach-button, .voice-button, .code-copy-btn,
+  .send-button {
+    transition: none;
+  }
+  .header-btn:hover, .attach-button:not(:disabled):hover { transform: none; }
+  .header-btn:active, .mode-btn:active, .attach-button:not(:disabled):active,
+  .voice-button:active, .code-copy-btn:active, .send-button:not(:disabled):active {
+    transform: none;
+  }
+}
+
