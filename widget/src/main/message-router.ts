@@ -1780,6 +1780,11 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(weather|temperature|forecast|rain|snow|wind|humidity)\b/.test(m)) cats.add('web');
   if (/\b(file|folder|directory|create|write|read|delete|move|copy|rename|save|open|desktop|documents|downloads)\b/.test(m)) cats.add('filesystem');
   if (/\b(search|google|look\s*up|web|browse|url|http|news|headline)\b/.test(m)) cats.add('web');
+  // "Search my project for all TODO comments" — "search" alone routes to
+  // 'web', and nothing else in the sentence says files, so the turn went out
+  // offering web tools for what is really a grep over local code. A named
+  // project or a TODO/FIXME target is a code-search signal.
+  if (/\b(project|codebase|todos?|fixmes?)\b/.test(m)) cats.add('filesystem');
   if (/\b(email|mail|inbox|send|draft|compose)\b/.test(m)) cats.add('communication');
   // Plurals matter more than they look. This read
   // `(reminder|calendar|schedule|meeting|event|appointment)` with a trailing
@@ -2121,11 +2126,18 @@ export async function streamFromLLM(
     .slice(-6)
     .some(m => /\bhttps?:\/\/\S+/i.test(m.content || ''));
   const shouldOfferTools = !skipToolsForGreeting
-    && shouldOfferToolsForMessage(message, {
-      hasImages: !!images?.length,
-      hasDocuments,
-      contextHasUrl,
-    });
+    // The phrase gate alone missed whole categories — "make me a short video"
+    // is filesystem/terminal/web phrasing to no one. When the intent
+    // classifier recognises ANY tool category, that alone opens the gate.
+    // (Mirrors the Ollama path below; this escape was missing on the
+    // custom-LLM path, which is why OpenRouter sessions lost the Media
+    // Studio, filesystem and every other tool.)
+    && (shouldOfferToolsForMessage(message, {
+        hasImages: !!images?.length,
+        hasDocuments,
+        contextHasUrl,
+      })
+      || intentCategories.length > 0);
 
   // Per-conversation model override (set via sidebar context menu)
   const storedConvForModel = MemoryManager.getConversation(conversationId);
