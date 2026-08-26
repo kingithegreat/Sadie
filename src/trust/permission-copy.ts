@@ -140,6 +140,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   navigate_browser: { label: 'Open a web page', detail: 'Open a web address in the browser panel.' },
   media_setup_research: { label: 'Set up video research', detail: 'Add a workflow to your n8n so video scripts are written from real fetched sources.' },
   media_narrate: { label: 'Record narration', detail: 'Turn a video script into an audio file using the built-in voice. Nothing is uploaded.' },
+  media_narrate_clip: { label: 'Narrate one of your videos', detail: 'Watch a video clip already on this machine, write a commentary for it and save a narrated copy beside it. The clip is analysed with your Google AI Studio key; nothing else is uploaded.' },
   media_write_script: { label: 'Write a video script', detail: 'Research a video and write its narration using your configured model.' },
   media_render: { label: 'Render a video', detail: 'Combine the narration, captions and a background into a video file on your machine. Nothing is uploaded.' },
   media_delete_job: { label: 'Delete a video and its files', detail: 'Permanently removes a Media Studio job and everything it produced — narration, captions, images and the rendered video. Cannot be undone.' },
