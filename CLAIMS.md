@@ -15,4 +15,5 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| _(none)_ | — | — | Visual pass merged as #233 (2026-08-25, content verified: `hb-icon` styles on main); NBA voiceover pipeline merged as #236 (2026-08-26). Both rows retired 2026-08-26. Add your row here BEFORE writing code. |
+| _(none)_ | — | — | Visual pass merged as #233 (2026-08-25, content verified on main); NBA voiceover pipeline merged as #236 (2026-08-26). The reachability row stays until its PR lands. Retired 2026-08-26. Add your row here BEFORE writing code. |
+| _(none)_ | � | � | No other claim is open as of 2026-08-26. Everything below merged. Add your row here BEFORE writing code. |
