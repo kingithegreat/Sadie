@@ -60,6 +60,7 @@ import { automationToolDefs, automationToolHandlers } from './automation';
 import { skillToolDefs, skillToolHandlers } from './skills';
 import { crmToolDefs, crmToolHandlers } from './crm';
 import { mediaToolDefs, mediaToolHandlers } from './media';
+import { narrateClipToolDefs, narrateClipToolHandlers } from './narrate-clip';
 import { browserControlToolDefs, browserControlToolHandlers } from './browser-control';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
@@ -1124,6 +1125,12 @@ export function initializeTools(force = false): void {
   // Register Media Studio tools (video pipeline + the human approval gate)
   for (const def of mediaToolDefs) {
     const handler = mediaToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register bring-your-own clip narration (Gemini script → engine → mux)
+  for (const def of narrateClipToolDefs) {
+    const handler = narrateClipToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
