@@ -1,6 +1,6 @@
 import path from 'path';
 import * as fs from 'fs';
-import { _electron as electron, ElectronApplication, Page } from 'playwright';
+import { _electron as electron, ElectronApplication, Page } from '@playwright/test';
 
 async function isHomeBotAppWindow(page: Page): Promise<boolean> {
   try {

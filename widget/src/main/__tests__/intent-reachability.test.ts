@@ -126,6 +126,18 @@ const CASES: Array<{ prompt: string; needsOneOf: string[] }> = [
   { prompt: 'open spotify for me',
     needsOneOf: ['launch_app'] },
 
+  // The custom-LLM path (OpenRouter etc.) gates tools on the phrase gate
+  // alone, and these three live requests all died at it — the model answered
+  // "I don't have a Media Studio tool" from inside an app whose Media Studio
+  // is the headline feature. detectToolCategories must fire for each so the
+  // `|| intentCategories.length > 0` escape in the router opens the gate.
+  { prompt: 'Search my project for all TODO comments',
+    needsOneOf: ['grep_code', 'search_files', 'list_files'] },
+  { prompt: 'create me a short video about mash potatoes dancing',
+    needsOneOf: ['media_create_job'] },
+  { prompt: 'make it in the media studio',
+    needsOneOf: ['media_create_job', 'media_list_jobs'] },
+
   // Web.
   { prompt: 'search the web for the latest on the election',
     needsOneOf: ['web_search'] },

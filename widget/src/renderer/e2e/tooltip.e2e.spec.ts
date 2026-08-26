@@ -39,7 +39,7 @@ test('a tooltip is actually visible, not merely in the DOM', async () => {
 
   // The actual regression: no ancestor may clip it. Playwright's toBeVisible()
   // does NOT account for overflow clipping, so it has to be asserted directly.
-  const clippers = await tip.evaluate((el) => {
+  const clippers = await tip.evaluate((el: HTMLElement) => {
     const out: string[] = [];
     let p = el.parentElement;
     while (p && p !== document.body) {
@@ -81,7 +81,7 @@ test('keyboard focus alone shows help on an icon-only control', async () => {
   // Escape dismisses without taking focus off the control.
   await page.keyboard.press('Escape');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
-  expect(await attach.evaluate((el) => el === document.activeElement)).toBe(true);
+  expect(await attach.evaluate((el: HTMLElement) => el === document.activeElement)).toBe(true);
 
   await app.close();
 });
