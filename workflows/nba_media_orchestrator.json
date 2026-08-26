@@ -1,0 +1,192 @@
+{
+  "name": "NBA Media Orchestrator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "NBA_Raw",
+          "mode": "name"
+        },
+        "eventTrigger": "fileCreated",
+        "options": {}
+      },
+      "id": "drive-new-raw-clip",
+      "name": "New Raw Clip",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "webhookId": "nba-media-orchestrator-drive"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nba-analyzer:8000/analyze",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoPath: $json.name, folder: 'NBA_Raw' }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "call-gemini-analyzer",
+      "name": "Gemini Script Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 300],
+      "notes": "Calls scripts/analyze_clip.py running as a small HTTP wrapper (or a serverless equivalent). Returns { duration_sec, script, timestamps }. Set the URL to wherever the analyzer is reachable. Credentials belong in an n8n credential, never inline."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://colab.research.google.com/api/workers/nba-xtts/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ script: $json.script, outputName: 'output.wav' }) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "signal-colab-worker",
+      "name": "Signal Colab XTTS Worker",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "notes": "Signals notebooks/xtts_voice_clone.ipynb (watch mode) with the narration text. The notebook polls Drive for script.txt; this node's URL must point at whatever bridge exposes the Colab worker (e.g. ngrok tunnel to the notebook's flask endpoint). Auth via n8n credential."
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.outputFileId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-narration",
+      "name": "Download Narration WAV",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [660, 300],
+      "notes": "Downloads /NBA_Voiceovers/output.wav produced by the Colab worker."
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('New Raw Clip').item.json.id }}",
+          "mode": "id"
+        },
+        "destinationDrive": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "name"
+        },
+        "destinationFolder": {
+          "__rl": true,
+          "value": "NBA_Staging",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "stage-raw-and-wav",
+      "name": "Move Pair to Staging",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [880, 300],
+      "notes": "Moves the raw clip into NBA_Staging so the raw and narrated artifacts sit side by side for the local mux step."
+    },
+    {
+      "parameters": {
+        "command": "=python scripts/mux_media.py \"{{ $('Move Pair to Staging').item.json.stagedVideoPath }}\" \"{{ $('Download Narration WAV').item.json.stagedWavPath }}\" -o \"{{ $('Move Pair to Staging').item.json.stagedVideoPath.replace('.mp4', '_final.mp4') }}\"",
+        "executeOnce": false,
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "local-ffmpeg-mux",
+      "name": "FFmpeg Mux (local)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1100, 300],
+      "notes": "Runs scripts/mux_media.py on the HomeBot box (n8n self-hosted there). Video stream-copied, narration encoded AAC. Output: <stem>_final.mp4 in staging."
+    }
+  ],
+  "connections": {
+    "New Raw Clip": {
+      "main": [
+        [
+          {
+            "node": "Gemini Script Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Script Generation": {
+      "main": [
+        [
+          {
+            "node": "Signal Colab XTTS Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signal Colab XTTS Worker": {
+      "main": [
+        [
+          {
+            "node": "Download Narration WAV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Narration WAV": {
+      "main": [
+        [
+          {
+            "node": "Move Pair to Staging",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Pair to Staging": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg Mux (local)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Pacific/Auckland"
+  },
+  "tags": [
+    {
+      "name": "nba-pipeline"
+    }
+  ]
+}
