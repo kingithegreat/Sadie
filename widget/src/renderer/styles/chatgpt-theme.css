@@ -9071,7 +9071,26 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .ws-status-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
 .ws-status-dirty { font-weight: 600; }
 
-/* Code editor: transparent textarea over a highlighted <pre> */
+  /* The labelled way home from Code mode. Sits first in the status bar —
+     high-contrast against the bar, reads as a button, impossible to miss.
+     The activity-bar icon stays for people who learned it. */
+  .ws-status-home {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 10px;
+    margin-right: 8px;
+    background: var(--accent, #7c5cff);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter var(--dur-fast) var(--ease-apple);
+  }
+  .ws-status-home:hover { filter: brightness(1.12); }
+  .ws-status-home:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .code-editor {
   display: grid;
   grid-template-columns: auto 1fr;
