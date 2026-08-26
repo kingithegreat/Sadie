@@ -167,7 +167,7 @@ test('cancel stops stream', async () => {
   // Wait for first chunk to ensure streaming started, then cancel via preload API
   await expect(assistant).toContainText('chunk-1', { timeout: 10000 });
   const msgId = await assistant.getAttribute('data-message-id');
-  await page.evaluate((id) => (window as any).electron.cancelStream?.(id), msgId);
+  await page.evaluate((id: string | null) => (window as any).electron.cancelStream?.(id), msgId);
 
   // Wait for the renderer to observe the cancelled/finished state so we know cancel was processed
   await expect(assistant).toHaveAttribute('data-state', /cancelled|finished/, { timeout: 10000 });
@@ -252,7 +252,7 @@ test('handles upstream error', async () => {
 
   // Invoke a test-only handler to simulate upstream error (deterministic)
   const msgId = await assistant.getAttribute('data-message-id');
-  await page.evaluate(async (id) => {
+  await page.evaluate(async (id: string | null) => {
     try {
       // @ts-ignore - test hook
       await (window as any).electron.invoke('homebot:__e2e_trigger_upstream_error', { streamId: id, message: 'Upstream error (simulated)' });

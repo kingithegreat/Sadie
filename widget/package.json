@@ -145,5 +145,16 @@
   },
   "browserslist": [
     "chrome >= 130"
-  ]
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "electron-winstaller",
+      "esbuild",
+      "msedge-tts",
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp"
+    ]
+  }
 }

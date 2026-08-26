@@ -9071,7 +9071,26 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .ws-status-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
 .ws-status-dirty { font-weight: 600; }
 
-/* Code editor: transparent textarea over a highlighted <pre> */
+  /* The labelled way home from Code mode. Sits first in the status bar —
+     high-contrast against the bar, reads as a button, impossible to miss.
+     The activity-bar icon stays for people who learned it. */
+  .ws-status-home {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 10px;
+    margin-right: 8px;
+    background: var(--accent, #7c5cff);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter var(--dur-fast) var(--ease-apple);
+  }
+  .ws-status-home:hover { filter: brightness(1.12); }
+  .ws-status-home:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .code-editor {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -10587,6 +10606,33 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 .template-card:hover {
   border-color: oklch(66% 0.19 285 / 0.35);
 }
+
+/* ── Quiet avatars ─────────────────────────────────────────────────────────
+   The illustrated PNG badges (golden hero / mascot) were the loudest thing in
+   the chat. Replaced in MessageBubble.tsx by glyphs from the icon set; these
+   rules quiet the container to match: transparent surface, hairline ring,
+   muted glyph. Assistant reads in the accent, user in plain text colour.
+   Same 32px box — zero layout change. */
+.message-avatar {
+  background: transparent;
+  border: 1px solid var(--hairline, oklch(100% 0 0 / 0.09));
+  color: var(--text-secondary, oklch(75% 0.008 250));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.message-avatar.assistant {
+  color: var(--accent-primary);
+  border-color: oklch(66% 0.19 285 / 0.30);
+}
+[data-theme='light'] .message-avatar {
+  border-color: oklch(0% 0 0 / 0.10);
+}
+[data-theme='light'] .message-avatar.assistant {
+  color: var(--accent-primary);
+  border-color: oklch(50% 0.19 285 / 0.30);
+}
+
 
 /* ── Improve this prompt ─────────────────────────────────────────────────────
    Sits with the attach buttons; the undo only appears after a rewrite. */

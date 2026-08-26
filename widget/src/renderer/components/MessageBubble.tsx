@@ -4,8 +4,6 @@ import type { ContextMenuItem } from "./ContextMenu";
 import { OverlayPortal, anchoredStyle, useAnchoredPosition, useDismissOnOutside } from "./anchoredOverlay";
 import Icon from "./Icon";
 import type { ChatMessage } from "../types";
-import homebotChatAvatarUrl from '../assets/HomeBotChatAvatar.png';
-import userChatAvatarUrl from '../assets/UserChatAvatar.png';
 
 // highlight.js — core + common languages (tree-shaken)
 import hljs from 'highlight.js/lib/core';
@@ -908,14 +906,14 @@ export function MessageBubble({
           </div>
 
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={homebotChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
+            <Icon name={isUser ? "user" : "sparkle"} size={16} label={isUser ? "You" : "HomeBot"} />
           </div>
         </>
       ) : (
         <>
           {/* ASSISTANT: avatar first, content second */}
           <div className={`message-avatar ${isUser ? "user" : "assistant"}`}>
-            {isUser ? <img src={userChatAvatarUrl} alt="You" className="avatar-img" /> : <img src={homebotChatAvatarUrl} alt="HomeBot" className="avatar-img" />}
+            <Icon name={isUser ? "user" : "sparkle"} size={16} label={isUser ? "You" : "HomeBot"} />
           </div>
 
           <div className="message-content">
