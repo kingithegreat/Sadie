@@ -15,7 +15,7 @@ jest.mock('electron', () => ({
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { narrateClipHandler, resolveWithinHome, buildAnalyzerArgs, buildMuxArgs, parseAnalyzerOutput } = require('../tools/narrate-clip');
+const { narrateClipHandler, buildAnalyzerArgs, buildMuxArgs, parseAnalyzerOutput } = require('../tools/narrate-clip');
 
 const mockExecFile = jest.fn();
 jest.mock('child_process', () => ({
@@ -58,30 +58,6 @@ beforeEach(() => {
   mockExecFile.mockReset();
   mockRenderNarrationToFile.mockReset();
   mockKey = '';
-});
-
-describe('resolveWithinHome', () => {
-  it('accepts an existing file inside home', () => {
-    const dir = tmpUnderHome();
-    const p = path.join(dir, 'clip-exists.mp4');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(p, 'x');
-    expect(resolveWithinHome(p)).toBe(path.resolve(p));
-    fs.unlinkSync(p);
-  });
-
-  it('rejects paths outside home', () => {
-    const outside = process.platform === 'win32' ? 'D:\\definitely-not-here.mp4' : '/definitely/not/here.mp4';
-    expect(resolveWithinHome(outside)).toBeNull();
-  });
-
-  it('rejects nonexistent files', () => {
-    expect(resolveWithinHome(path.join(os.homedir(), 'no-such-clip-ever.mp4'))).toBeNull();
-  });
-
-  it('rejects empty input', () => {
-    expect(resolveWithinHome('')).toBeNull();
-  });
 });
 
 describe('buildAnalyzerArgs / buildMuxArgs / parseAnalyzerOutput', () => {

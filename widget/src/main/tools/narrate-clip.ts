@@ -30,31 +30,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { app } from 'electron';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { resolveWithinHome } from '../utils/path-guard';
 
 const ANALYZE_TIMEOUT_MS = 300_000;
 const MUX_TIMEOUT_MS = 120_000;
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm']);
 
 // ---- pure helpers (exported for tests) ----
-
-/**
- * Resolve a user-supplied path against the home boundary. Returns the resolved
- * absolute path, or null when it escapes home or does not exist.
- */
-export function resolveWithinHome(rawPath: string): string | null {
-  if (!rawPath || typeof rawPath !== 'string') return null;
-  const resolved = path.resolve(rawPath.trim());
-  const home = os.homedir();
-  const homeLower = home.toLowerCase();
-  const norm = resolved.toLowerCase();
-  if (norm !== homeLower && !norm.startsWith(homeLower + path.sep)) return null;
-  try {
-    if (!fs.existsSync(resolved)) return null;
-  } catch {
-    return null;
-  }
-  return resolved;
-}
 
 /** argv tail for scripts/analyze_clip.py: <video> -o <out> */
 export function buildAnalyzerArgs(videoPath: string, outPath: string): string[] {
@@ -173,8 +155,9 @@ export const narrateClipDef: ToolDefinition = {
 
 export const narrateClipHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
-    const videoPath = resolveWithinHome(String(args.videoPath || ''));
-    if (!videoPath) {
+    // Shared home-boundary guard (#230) — one implementation for every tool.
+    const boundary = resolveWithinHome(String(args.videoPath || ''));
+    if ('error' in boundary || !fs.existsSync(boundary.resolved)) {
       return {
         success: false,
         error:
@@ -182,6 +165,7 @@ export const narrateClipHandler: ToolHandler = async (args): Promise<ToolResult>
           '(for example C:\\Users\\you\\Videos\\clip.mp4).',
       };
     }
+    const videoPath = boundary.resolved;
     if (!VIDEO_EXTENSIONS.has(path.extname(videoPath).toLowerCase())) {
       return { success: false, error: 'Only .mp4, .mov and .webm clips can be narrated.' };
     }
