@@ -1,0 +1,270 @@
+{
+  "name": "NBA Media Orchestrator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "NBA_Raw",
+          "mode": "name"
+        },
+        "eventTrigger": "fileCreated",
+        "options": {}
+      },
+      "id": "drive-new-raw-clip",
+      "name": "New Raw Clip",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "webhookId": "nba-media-orchestrator-drive"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-raw-clip",
+      "name": "Download Raw Clip",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [220, 300],
+      "notes": "Downloads the clip that just landed in NBA_Raw. Output binary field: data."
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $env.NBA_STAGING_DIR }}/{{ $('New Raw Clip').item.json.name }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "stage-raw-clip",
+      "name": "Stage Raw Clip (disk)",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [440, 300],
+      "notes": "Writes the clip to the local staging directory. Gemini uploads from a local path, so the file must be on the n8n host first. Set NBA_STAGING_DIR in the n8n process environment."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:{{ $env.NBA_ANALYZER_PORT || 8000 }}/analyze",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoPath: $env.NBA_STAGING_DIR + '/' + $('New Raw Clip').item.json.name }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "call-gemini-analyzer",
+      "name": "Gemini Script Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300],
+      "notes": "Calls scripts/analyzer_server.py running on this machine ('python scripts/analyzer_server.py'). It wraps scripts/analyze_clip.py: uploads the staged clip to the Gemini File API and returns { duration_sec, script, timestamps }. GEMINI_API_KEY must be set in that server's environment."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Wrap the narration text as script.txt for the Drive handoff to the Colab worker.\nconst item = items[0];\nconst script = item.json.script;\nif (!script || typeof script !== 'string') {\n  throw new Error('analyzer returned no script — check its response');\n}\nconst buffer = Buffer.from(script, 'utf-8');\nitems[0].json = { fileName: 'script.txt' };\nitems[0].binary = {\n  data: await this.helpers.prepareBinaryData(buffer, 'script.txt', 'text/plain'),\n};\nreturn items;"
+      },
+      "id": "script-to-binary",
+      "name": "Script To File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300],
+      "notes": "Turns the analyzer's `script` string into a script.txt binary so it can be uploaded to Drive."
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "name": "script.txt",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "name"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "NBA_Voiceovers",
+          "mode": "name"
+        },
+        "binaryData": true,
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "drop-script-for-notebook",
+      "name": "Drop Script For Notebook",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1100, 300],
+      "notes": "Uploads /MyDrive/NBA_Voiceovers/script.txt. The Colab watch-mode cell polls for exactly this file; no HTTP bridge into Colab exists or is needed."
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "output.wav",
+          "mode": "name"
+        },
+        "options": {
+          "folderId": {
+            "__rl": true,
+            "value": "NBA_Voiceovers",
+            "mode": "name"
+          }
+        }
+      },
+      "id": "download-narration-wav",
+      "name": "Download Narration WAV",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1320, 300],
+      "retryOnFail": true,
+      "maxTries": 10,
+      "waitBetweenTries": 60000,
+      "notes": "Downloads /MyDrive/NBA_Voiceovers/output.wav rendered by notebooks/xtts_voice_clone.ipynb (watch mode). The render takes minutes on a T4, so this node retries every 60 s up to 10 times before failing honestly."
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $env.NBA_STAGING_DIR }}/output.wav",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "stage-narration-wav",
+      "name": "Stage Narration WAV (disk)",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "command": "=python \"{{ $env.NBA_REPO_DIR }}/scripts/mux_media.py\" \"{{ $env.NBA_STAGING_DIR }}/{{ $('New Raw Clip').item.json.name }}\" \"{{ $env.NBA_STAGING_DIR }}/output.wav\" -o \"{{ $env.NBA_STAGING_DIR }}/{{ $('New Raw Clip').item.json.name.replace(/\\.[^.]+$/, '') }}_final.mp4\"",
+        "executeOnce": false,
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "local-ffmpeg-mux",
+      "name": "FFmpeg Mux (local)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1760, 300],
+      "notes": "Runs scripts/mux_media.py on the n8n host. Video stream-copied, narration encoded AAC. Output: <stem>_final.mp4 in the staging directory. Requires python and ffmpeg on PATH of the n8n process, and NBA_REPO_DIR pointing at this repository."
+    }
+  ],
+  "connections": {
+    "New Raw Clip": {
+      "main": [
+        [
+          {
+            "node": "Download Raw Clip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Raw Clip": {
+      "main": [
+        [
+          {
+            "node": "Stage Raw Clip (disk)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage Raw Clip (disk)": {
+      "main": [
+        [
+          {
+            "node": "Gemini Script Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Script Generation": {
+      "main": [
+        [
+          {
+            "node": "Script To File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Script To File": {
+      "main": [
+        [
+          {
+            "node": "Drop Script For Notebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop Script For Notebook": {
+      "main": [
+        [
+          {
+            "node": "Download Narration WAV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Narration WAV": {
+      "main": [
+        [
+          {
+            "node": "Stage Narration WAV (disk)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage Narration WAV (disk)": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg Mux (local)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Pacific/Auckland"
+  },
+  "tags": [
+    {
+      "name": "nba-pipeline"
+    }
+  ]
+}
