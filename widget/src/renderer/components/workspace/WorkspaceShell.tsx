@@ -339,6 +339,15 @@ export default function WorkspaceShell({
 
       {/* Status bar */}
       <footer className="ws-status" aria-label="Status bar">
+        {/* The visible way home. The activity-bar icon at the far bottom-left
+            was the only pointer exit and nobody found it — the shell covers
+            the mode tabs, so "no way to nav home from code" was a fair read.
+            A labelled button in the status bar is where VS Code users look for
+            state, and it reads as an action, not chrome. Escape still works. */}
+        <button type="button" className="ws-status-home" onClick={onClose}>
+          <Icon name="dashboard" size={13} />
+          Home
+        </button>
         <span className="ws-status-item">{active ? active.path : root}</span>
         <span className="ws-status-spacer" />
         {assistantActivity && <span className="ws-status-item ws-status-assistant">{assistantActivity}</span>}
