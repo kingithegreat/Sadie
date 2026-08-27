@@ -191,7 +191,31 @@ jobs:
     # cosmetics systems in a sibling project) and scaffold-vs-integration
     # mismatches (e.g. Step 1's entitlements gate channel-name bug) — see
     # CLAIMS.md.
-    if: github.event_name == 'pull_request'
+    #
+    # Runs on BOTH push and pull_request, deliberately. It used to carry
+    # `if: github.event_name == 'pull_request'`, and that one line quietly cost
+    # every bot-opened PR its merge.
+    #
+    # auto-merge.yml opens PRs as github-actions[bot]. GitHub attributes that
+    # pull_request event to the bot and holds every workflow on it at
+    # action_required — measured 2026-08-24 on #215: six held runs on one
+    # commit (CI, Lint, Permissions Smoke, Playwright E2E, Widget E2E, Copilot
+    # setup steps). The push-triggered runs are attributed to the pusher, so
+    # they run fine — but this job SKIPPED on those, so the required context
+    # reported "skipped" and never "success". A one-commit PR that nobody
+    # touches again therefore waits forever on an approval nobody knows to
+    # give. That is the "ten runs held, five for three days" note.
+    #
+    # With this gate removed, all five required checks (build,
+    # duplicate-export-guard, ESLint, Permissions smoke test, widget) are
+    # satisfied by push-triggered runs alone, so a claude/** branch can go
+    # green and auto-merge unattended.
+    #
+    # On push, github.base_ref is empty; the script falls back to
+    # GITHUB_BASE_REF then 'main', and ci.yml's push triggers never include
+    # main itself, so there is no self-diff. Verified both directions with an
+    # empty base ref: a deliberate colliding export exits 1 and names the file,
+    # a clean tree exits 0 — it gates rather than merely reporting.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -199,4 +223,4 @@ jobs:
           fetch-depth: 0
 
       - name: Check for duplicate exports vs. base branch
-        run: node scripts/check-duplicate-exports.mjs "${{ github.base_ref }}"
+        run: node scripts/check-duplicate-exports.mjs "${{ github.base_ref || 'main' }}"
