@@ -545,6 +545,42 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaDelete?: (id: string, keepFiles?: boolean) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
+
+  // ---- Ancient Pathways (Animated Documentary Pipeline) ----
+  mediaAncientPathwaysEpisodes?: () => Promise<{
+    ok: boolean;
+    episodes: Array<{
+      id: string;
+      code: string;
+      season: number;
+      title: string;
+      era: string;
+      mainCharacter: string;
+      sceneCount: number;
+      thumbnail?: string;
+    }>;
+    available: boolean;
+    dir?: string | null;
+  }>;
+  mediaAncientPathwaysStatus?: () => Promise<{
+    ok: boolean;
+    available: boolean;
+    dir: string | null;
+    lock: { locked: boolean; pid?: number; ageSec?: number; message?: string };
+  }>;
+  mediaAncientPathwaysRun?: (episodeId: string) => Promise<{
+    ok: boolean;
+    job?: any;
+    renderPath?: string;
+    error?: string;
+  }>;
+  onMediaAncientPathwaysProgress?: (cb: (p: {
+    jobId: string;
+    episodeId: string;
+    stage: string;
+    note: string;
+  }) => void) => () => void;
+
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
   licenseValidate?: () => Promise<LicenseActionResult>;

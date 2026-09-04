@@ -145,6 +145,24 @@ export const MediaStudioPanel: React.FC = () => {
   const [publishingFor, setPublishingFor] = useState<string | null>(null);
   const [publishedLink, setPublishedLink] = useState('');
 
+  // "From Ancient Pathways…" — 2D animated history series
+  const [apOpen, setApOpen] = useState(false);
+  const [apLoading, setApLoading] = useState(false);
+  const [apError, setApError] = useState<string | null>(null);
+  const [apEpisodes, setApEpisodes] = useState<Array<{
+    id: string;
+    code: string;
+    season: number;
+    title: string;
+    era: string;
+    mainCharacter: string;
+    sceneCount: number;
+  }> | null>(null);
+  const [apStatus, setApStatus] = useState<{
+    available: boolean;
+    lock?: { locked: boolean; message?: string };
+  } | null>(null);
+
   const api = () => (window as any).electron;
 
   const refresh = useCallback(async () => {
@@ -185,6 +203,16 @@ export const MediaStudioPanel: React.FC = () => {
         ? ` ${p.receivedMB} of ${p.totalMB} MB`
         : '';
       setEngineNote(`${p?.note ?? 'Working…'}${mb}`);
+    });
+    return () => { try { off?.(); } catch { /* nothing to detach */ } };
+  }, []);
+
+  // Ancient Pathways episode stage progress streaming
+  useEffect(() => {
+    const off = api()?.onMediaAncientPathwaysProgress?.((p: any) => {
+      if (p?.note) {
+        setBusyLabel(`Ancient Pathways: ${p.note}`);
+      }
     });
     return () => { try { off?.(); } catch { /* nothing to detach */ } };
   }, []);
@@ -381,6 +409,41 @@ export const MediaStudioPanel: React.FC = () => {
   /** One idea → one ordinary job, via the shared composition. */
   const createFromChatIdea = async (idea: { id: string; content: string; createdAt: number }) => {
     await run('new', () => api()?.mediaCreate?.(chatIdeaToJobInput(idea)));
+  };
+
+  /** Ancient Pathways episode catalogue & status loader */
+  const loadAncientPathways = async () => {
+    setApLoading(true);
+    setApError(null);
+    try {
+      const res = await api()?.mediaAncientPathwaysEpisodes?.();
+      if (res?.ok && Array.isArray(res.episodes)) {
+        setApEpisodes(res.episodes);
+      } else {
+        setApError(res?.error || 'Could not load Ancient Pathways episodes.');
+      }
+      const st = await api()?.mediaAncientPathwaysStatus?.();
+      if (st) setApStatus(st);
+    } catch (e: any) {
+      setApError(e?.message || 'Could not connect to Ancient Pathways.');
+    } finally {
+      setApLoading(false);
+    }
+  };
+
+  const openApSection = () => {
+    setApOpen(true);
+    if (!apEpisodes) loadAncientPathways();
+  };
+
+  const produceAncientPathwaysEpisode = async (episodeId: string) => {
+    await run('new', async () => {
+      const res = await api()?.mediaAncientPathwaysRun?.(episodeId);
+      if (res?.ok) {
+        setDone(`Episode complete: ${res.renderPath ? '1080p master video ready to review' : 'Finished'}`);
+      }
+      return res;
+    }, `Producing ${episodeId} episode…`);
   };
 
   /** Neural voices for the narration picker — loaded once, on first use. */
@@ -880,6 +943,62 @@ export const MediaStudioPanel: React.FC = () => {
                       onClick={() => createFromChatIdea(idea)}
                     >
                       Make a video
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Ancient Pathways: Broadcast-grade animated historical video essay series */}
+      <div className="ms-feed">
+        {!apOpen ? (
+          <button type="button" className="ms-btn" onClick={openApSection}>
+            From Ancient Pathways…
+          </button>
+        ) : (
+          <>
+            <div className="ms-feed-row">
+              <span className="ms-engine-text">
+                <strong>Ancient Pathways:</strong> Leila & Flappy 2D Animated History Series (9 Episodes)
+                {apStatus?.lock?.locked && (
+                  <span className="ms-state ms-state--bad" style={{ marginLeft: 8 }}>
+                    {apStatus.lock.message || 'Render in progress'}
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="ms-btn"
+                onClick={() => { setApOpen(false); setApError(null); }}
+                aria-label="Close Ancient Pathways section"
+              >✕</button>
+            </div>
+            {apError && <div className="ms-error" role="alert">{apError}</div>}
+            {apLoading && <span className="ms-working"><span className="ms-spinner" />Looking for episodes…</span>}
+            {apEpisodes && (
+              <ul className="ms-feed-episodes" aria-label="Ancient Pathways episodes">
+                {apEpisodes.map(ep => (
+                  <li key={ep.id} className="ms-feed-episode">
+                    <div className="ms-feed-ep-main">
+                      <span className="ms-feed-ep-title">
+                        <span className="ms-job-format" style={{ marginRight: 6 }}>
+                          Season {ep.season} · {ep.code}
+                        </span>
+                        {ep.title}
+                      </span>
+                      <span className="ms-feed-ep-meta">
+                        {ep.era} · {ep.mainCharacter} · {ep.sceneCount} scenes
+                      </span>
+                    </div>
+                    <button
+                      className="ms-btn ms-btn--primary"
+                      disabled={busy !== null}
+                      onClick={() => produceAncientPathwaysEpisode(ep.id)}
+                    >
+                      Produce Episode
                     </button>
                   </li>
                 ))}
