@@ -50,43 +50,72 @@ $MAX_FILE_COUNT = 1000
 # HELPER FUNCTIONS
 # ============================================================================
 
+function Test-UnderDirectory {
+    <#
+        Is $Path the directory $Directory, or something inside it?
+
+        A bare StartsWith has no separator boundary, so "...\Local\Temp" also
+        matches "...\Local\Temp_backup" - a sibling that is NOT inside TEMP but
+        inherits both TEMP's blocked-check exemption and its allowlist entry,
+        reaching AppData content the blocked list exists to refuse. Compare on
+        a separator instead. Returns $false for an unset or unresolvable
+        directory rather than throwing, because these lists are built from
+        environment variables that are not guaranteed to be set.
+    #>
+    param([string]$Path, [string]$Directory)
+
+    if ([string]::IsNullOrWhiteSpace($Directory)) { return $false }
+    try {
+        $dir = [System.IO.Path]::GetFullPath($Directory)
+    } catch {
+        return $false
+    }
+    $dir = $dir.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+
+    return $Path.Equals($dir, [StringComparison]::OrdinalIgnoreCase) -or
+           $Path.StartsWith($dir + [System.IO.Path]::DirectorySeparatorChar,
+                            [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Test-SafePath {
     param([string]$TestPath)
-    
+
     if ([string]::IsNullOrWhiteSpace($TestPath)) {
         return @{ Valid = $false; Reason = "Path is empty" }
     }
-    
+
     try {
         $resolvedPath = [System.IO.Path]::GetFullPath($TestPath)
     } catch {
         return @{ Valid = $false; Reason = "Invalid path format" }
     }
-    
-    # TEMP lives under AppData but is explicitly allowed, so it beats the blocked check
-    $tempPath = [System.IO.Path]::GetFullPath($env:TEMP)
-    $isTemp = $resolvedPath.StartsWith($tempPath, [StringComparison]::OrdinalIgnoreCase)
-    
+
+    # TEMP lives under AppData but is explicitly allowlisted as the scratch
+    # area, so it beats the blocked check. Traversal cannot inherit this:
+    # GetFullPath above already normalised "..", so a path climbing out of TEMP
+    # no longer starts with it.
+    $isTemp = Test-UnderDirectory -Path $resolvedPath -Directory $env:TEMP
+
     # Check blocked directories
     foreach ($blockedDir in $BLOCKED_DIRECTORIES) {
-        if (-not $isTemp -and $resolvedPath.StartsWith($blockedDir, [StringComparison]::OrdinalIgnoreCase)) {
+        if (-not $isTemp -and (Test-UnderDirectory -Path $resolvedPath -Directory $blockedDir)) {
             return @{ Valid = $false; Reason = "Path is in blocked directory" }
         }
     }
-    
+
     # Check allowed directories
     $isAllowed = $false
     foreach ($allowedDir in $ALLOWED_DIRECTORIES) {
-        if ($resolvedPath.StartsWith($allowedDir, [StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-UnderDirectory -Path $resolvedPath -Directory $allowedDir) {
             $isAllowed = $true
             break
         }
     }
-    
+
     if (-not $isAllowed) {
         return @{ Valid = $false; Reason = "Path is not in allowed directories" }
     }
-    
+
     return @{ Valid = $true; ResolvedPath = $resolvedPath }
 }
 

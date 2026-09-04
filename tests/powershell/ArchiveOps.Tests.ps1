@@ -26,6 +26,38 @@ Describe "HomeBot ArchiveOps.ps1 Tests" {
             $json.success | Should Be $false
             $json.error | Should Match "blocked directory"
         }
+
+        It "Should block a Temp-prefixed sibling that is not inside TEMP" {
+            # TEMP is exempt from the blocked check because it is the
+            # allowlisted scratch area. A bare StartsWith has no separator
+            # boundary, so "...\Local\Temp_backup" once inherited both that
+            # exemption and TEMP's allowlist entry, reaching AppData content
+            # the blocked list exists to refuse.
+            $file1 = Join-Path $TestSandbox "source.txt"
+            Set-Content -LiteralPath $file1 -Value "data" -Force
+
+            $localAppData = Split-Path ([System.IO.Path]::GetFullPath($env:TEMP)) -Parent
+            $sibling = Join-Path $localAppData "Temp_backup\escaped.zip"
+
+            $result = & $ScriptPath -Action create -Destination $sibling -Files @($file1) -Confirmed $true
+            $json = $result | ConvertFrom-Json
+
+            $json.success | Should Be $false
+            $json.error | Should Match "blocked directory"
+        }
+
+        It "Should block traversal that climbs out of TEMP" {
+            $file1 = Join-Path $TestSandbox "source.txt"
+            Set-Content -LiteralPath $file1 -Value "data" -Force
+
+            $escaped = Join-Path $env:TEMP "..\..\Roaming\escaped.zip"
+
+            $result = & $ScriptPath -Action create -Destination $escaped -Files @($file1) -Confirmed $true
+            $json = $result | ConvertFrom-Json
+
+            $json.success | Should Be $false
+            $json.error | Should Match "blocked directory"
+        }
     }
 
     Context "Create, List, and Extract Cycle" {
