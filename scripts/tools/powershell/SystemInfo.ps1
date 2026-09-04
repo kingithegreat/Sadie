@@ -153,11 +153,14 @@ function Get-NetworkInformation {
                         Where-Object { $_.AddressFamily -eq 'IPv4' } | 
                         Select-Object -First 1
             
+            $speed = $_.LinkSpeed
+            try { $speed = [math]::Round([double]$_.LinkSpeed / 1MB, 0) } catch {}
+            
             @{
                 name = $_.Name
                 description = $_.InterfaceDescription
                 status = $_.Status
-                speed_mbps = [math]::Round($_.LinkSpeed / 1MB, 0)
+                speed_mbps = $speed
                 mac_address = $_.MacAddress
                 ip_address = if ($ipConfig) { $ipConfig.IPAddress } else { $null }
             }

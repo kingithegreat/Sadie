@@ -29,9 +29,10 @@ param(
 # ============================================================================
 
 $ALLOWED_DIRECTORIES = @(
-    "C:\Users\adenk\Documents",
-    "C:\Users\adenk\Desktop",
-    "C:\Users\adenk\Downloads"
+    (Join-Path $env:USERPROFILE "Documents"),
+    (Join-Path $env:USERPROFILE "Desktop"),
+    (Join-Path $env:USERPROFILE "Downloads"),
+    $env:TEMP
 )
 
 $BLOCKED_DIRECTORIES = @(
@@ -39,7 +40,7 @@ $BLOCKED_DIRECTORIES = @(
     "C:\Program Files",
     "C:\Program Files (x86)",
     "C:\ProgramData",
-    "C:\Users\adenk\AppData"
+    (Join-Path $env:USERPROFILE "AppData")
 )
 
 $MAX_EXTRACTED_SIZE_MB = 500
@@ -62,9 +63,13 @@ function Test-SafePath {
         return @{ Valid = $false; Reason = "Invalid path format" }
     }
     
+    # TEMP lives under AppData but is explicitly allowed, so it beats the blocked check
+    $tempPath = [System.IO.Path]::GetFullPath($env:TEMP)
+    $isTemp = $resolvedPath.StartsWith($tempPath, [StringComparison]::OrdinalIgnoreCase)
+    
     # Check blocked directories
     foreach ($blockedDir in $BLOCKED_DIRECTORIES) {
-        if ($resolvedPath.StartsWith($blockedDir, [StringComparison]::OrdinalIgnoreCase)) {
+        if (-not $isTemp -and $resolvedPath.StartsWith($blockedDir, [StringComparison]::OrdinalIgnoreCase)) {
             return @{ Valid = $false; Reason = "Path is in blocked directory" }
         }
     }
