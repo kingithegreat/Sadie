@@ -11061,7 +11061,11 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 9999;
+  /* Below the full-screen overlays that live inside .app-container
+     (shortcuts 9999, notification history 9998, settings 9000). Grain is
+     decoration; it must never sit over a functional surface. Toasts and
+     the context menu (10000, document.body portals) stay above it. */
+  z-index: 8000;
   pointer-events: none;
   opacity: 0.5;
   background-image:
