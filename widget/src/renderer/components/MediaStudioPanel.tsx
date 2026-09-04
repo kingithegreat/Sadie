@@ -618,6 +618,16 @@ export const MediaStudioPanel: React.FC = () => {
               data-testid={`ms-video-${j.id}`}
               src={`file:///${j.renderPath.replace(/\\/g, '/')}`}
             />
+            <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="ms-btn"
+                onClick={() => api()?.showInFolder?.(j.renderPath!)}
+                title="Reveal MP4 in Windows File Explorer"
+              >
+                📂 Open file location
+              </button>
+            </div>
           </>
         ) : j.narrationPath ? (
           /* Hearing the narration is the only way to judge it before there is
