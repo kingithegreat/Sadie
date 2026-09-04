@@ -10,7 +10,9 @@
       "C:\\Program Files",
       "C:\\Program Files (x86)",
       "C:\\ProgramData",
-      "%USERPROFILE%\\AppData"
+      "%USERPROFILE%\\AppData",
+      "C:\\System Volume Information",
+      "C:\\$Recycle.Bin"
     ],
     "blocked_extensions": [
       ".exe",
