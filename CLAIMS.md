@@ -15,6 +15,50 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| _(none)_ | â€” | â€” | Visual pass merged as #233 (2026-08-25, content verified on main); NBA voiceover pipeline merged as #236 (2026-08-26). The reachability row stays until its PR lands. Retired 2026-08-26. Add your row here BEFORE writing code. |
-| _(none)_ | — | — | No other claim is open as of 2026-08-26. Everything below merged. Add your row here BEFORE writing code. |
-| Narrate my clip — BYO video narration inside HomeBot (chat-reachable) | claude/narrate-my-clip | Ready for integration | Aden redirected the NBA pipeline: he wants it in the app, not in PowerShell/Drive. New native tool `media_narrate_clip` — give it a video path in chat, it runs the Gemini vision scripter (`scripts/analyze_clip.py`, key read through `apiKeyForProvider(settings,'google-ai-studio')`, never a second lookup), synthesizes narration through the EXISTING engine seam (`renderNarrationToFile`), muxes onto the original clip with ffmpeg (-c:v copy) and hands back the final path beside the source. Home-boundary enforced on input and output; fails closed with plain setup guidance when no Gemini key; analyzer key travels via env, never argv. Verified in sadie-nba3 (own npm ci, not the pnpm-touched shared tree): tsc clean; eslint 0 errors; new suite 13 tests incl. full mocked happy-path asserting key-in-env and copy-only mux args; permission-copy registry entry added (gate caught it — that is what gates are for); tool-permissions-parity passes; full serial widget suite 242 suites / 3461 tests green; root 213 green. Does NOT touch media-studio state machine, voice.ts internals, or message-router routing logic. Colab/XTTS clone remains rung 2 behind the existing engine picker. Worktree: Desktop/sadie-nba3. |
+| PowerShell tool safety hardening + Pester coverage for SafetyValidation, CalendarOps, EmailOps | claude/powershell-pester-coverage | Ready for Integration | Extends #173/#245 coverage to the shared safety gate. SafetyValidation.ps1 had: hardcoded `C:\Users\adenk` paths (portability), the same bare-`StartsWith` allowlist bug fixed for TEMP in 8908863 (`...\Desktop` prefix-matched `...\DesktopEvil` — allowlist bypass), and `"C:\$Recycle.Bin"` double-quoted so PowerShell interpolated `$Recycle` to empty — the Recycle Bin was silently NOT blocked. Fixed with the same `Test-UnderDirectory` separator-boundary helper as ArchiveOps, `$USERPROFILE`-based lists, and a single-quoted Recycle Bin entry; local-URL warning regex anchored so `http://evil.com/?x=localhost` no longer reads as local. Merged origin/main's parallel hardening of the same gate (string-param normalisation, config-file loading, fail-closed missing-path guard) and kept `Test-UnderDirectory` as the boundary check — main's normalization layer + my separator-boundary comparisons. Three new Pester suites; no Outlook COM in the deterministic paths. |
+
+(No open claims as of this writing — Pro monetization Steps 1 & 2 are merged; see Notion ledger for history.)
+
+## Integration notes — 2026-08-15 session (read before your next PR)
+
+Five PRs merged today (#152, #162, #164, #165, #168). Four of them change the rules of the road
+for every session working here:
+
+1. **`e2e-all` is now a REQUIRED check** (branch protection has six contexts). Two consequences:
+   - **A branch created before #165 cannot merge** — it lacks the `e2e-all` job, the context never
+     reports, and the PR sits BLOCKED forever. Rebase onto or merge current main first.
+   - **Every bot-opened PR parks its `pull_request` runs at `action_required`** — silently; the
+     required check simply never appears. This is EVERY auto-opened PR, not just workflow-touching
+     ones. After the auto-PR appears, approve the held runs:
+     `gh api -X POST repos/kingithegreat/Sadie/actions/runs/<id>/approve`
+2. **Floating overlays: portal, don't blocklist.** `chatgpt-theme.css` has a
+   `.app-container > *:not(...)` rule at (0,12,0) that silently captures any non-excluded child's
+   `position: fixed` (13 of 18 overlay classes were captured and shipped broken). Use
+   `widget/src/renderer/components/anchoredOverlay.tsx` / `createPortal(document.body)`. Extend
+   the `:not()` list only for something that must genuinely stay a child of `.app-container`.
+3. **Dial `127.0.0.1:11434`, never `localhost:11434`.** Docker Desktop's model runner binds
+   `0.0.0.0:11434` with an empty model store and wins the IPv6 race — installed models read as
+   "not found". Found live on Aden's machine.
+4. **Changing the preload surface? Run `npm run docs:write`** (repo root) — `docs/api-reference.md`
+   is generated and the root CI job has a drift gate that goes red otherwise.
+
+Also useful: destructive UI actions go through `ConfirmDestructive.tsx` (button text names the
+consequence, never "OK"); upstream stable-diffusion.cpp renamed its binary to `sd-cli.exe` and its
+mode to `img_gen` (old names handled with fallbacks — don't reintroduce `sd.exe`/`txt2img`
+assumptions); live-engine verification tests are gated behind `HOMEBOT_LIVE=1` (see
+`media-pipeline.live.test.ts` for the pattern).
+
+Fuller narrative: the 2026-08-13?15 daily log in Aden's Ai-Brain vault, and the Notion Lessons &
+Playbook.
+
+## Known non-duplicates
+
+Identifiers intentionally exported by more than one file (add the exact name, one per bullet, to suppress `check-duplicate-exports.mjs` false positives). Pre-registered from the existing codebase so a future file rename doesn't trip the check:
+
+- `UpgradePrompt` — mirrored between `src/entitlements.ts` (pure) and `widget/src/shared/types.ts` (renderer-facing copy)
+- `GateBlockedResponse` — same pure/renderer mirror pattern, `src/handlers/featureGate.ts` + `widget/src/shared/types.ts`
+- `isGateBlocked` — same pattern, `src/handlers/featureGate.ts` + `widget/src/shared/upgrade.ts`
+- `Settings` — legitimately distinct `Settings` shapes in `widget/src/main/config-manager.ts`, `widget/src/renderer/types.ts`, `widget/src/shared/types.ts`
+- `StoredConversation`, `ConversationStore`, `ConversationSearchResult` — mirrored between `widget/src/main/memory-manager.ts` and `widget/src/shared/types.ts`
+- `ScheduledJob` — mirrored between `widget/src/main/scheduler.ts` and `widget/src/shared/types.ts`
+- `searchFilesDef`, `searchFilesHandler` — both `widget/src/main/tools/filesystem.ts` and `widget/src/main/tools/search.ts` (pre-existing, not reviewed as part of this change — verify these are intentional before touching either file)
