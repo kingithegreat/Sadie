@@ -83,10 +83,10 @@ describe('ModelSelector — dropdown', () => {
     expect(screen.getByText('Models')).toBeInTheDocument();
   });
 
-  test('lists Installed section with model count', async () => {
+  test('lists the On this PC section with model count', async () => {
     await renderSelector();
     await act(async () => { fireEvent.click(getMainBtn()); });
-    expect(screen.getByText(/Installed \(3\)/)).toBeInTheDocument();
+    expect(screen.getByText(/On this PC \(3\)/)).toBeInTheDocument();
   });
 
   test('lists installed ollama models in the dropdown', async () => {
@@ -133,10 +133,81 @@ describe('ModelSelector — dropdown', () => {
     expect(screen.queryByText('Models')).toBeNull();
   });
 
-  test('shows Available to Download section for uninstalled recommended models', async () => {
+  test('shows the Add more section for uninstalled recommended models', async () => {
     await renderSelector();
     await act(async () => { fireEvent.click(getMainBtn()); });
-    expect(screen.getByText(/Available to Download/)).toBeInTheDocument();
+    expect(screen.getByText(/Add more to your PC/)).toBeInTheDocument();
+  });
+
+  test('groups uninstalled models under purpose sub-groups', async () => {
+    await renderSelector();
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    expect(screen.getByText(/Everyday chat/)).toBeInTheDocument();
+    expect(screen.getByText(/Coding/)).toBeInTheDocument();
+    expect(screen.getByText(/Deep reasoning/)).toBeInTheDocument();
+    expect(screen.getByText(/Fast on small PCs/)).toBeInTheDocument();
+    expect(screen.getByText(/No guardrails/)).toBeInTheDocument();
+  });
+
+  test('floats GPU-picked installed models under a Best for your PC subsection', async () => {
+    // 8GB VRAM recommends qwen2.5:7b, which is installed in the mock set.
+    await renderSelector({ vramGB: 8 });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    expect(screen.getByText(/Best for your PC/)).toBeInTheDocument();
+    expect(screen.getByText(/Everything else/)).toBeInTheDocument();
+    const subgroup = screen.getByText(/Best for your PC/).closest('.model-subgroup-label');
+    expect(subgroup).not.toBeNull();
+  });
+
+  test('does not show the Best for your PC subsection when VRAM is unknown', async () => {
+    await renderSelector({ vramGB: null });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    expect(screen.queryByText(/Best for your PC/)).toBeNull();
+  });
+
+  test('filter box narrows the list to matching models', async () => {
+    await renderSelector();
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    const input = screen.getByLabelText('Filter models') as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: 'coder' } }); });
+    expect(screen.getByText('Qwen 2.5 Coder (7B)')).toBeInTheDocument();
+    expect(screen.queryByText('Mistral (7B)')).toBeNull();
+    expect(screen.queryByText('Dolphin (7B)')).toBeNull();
+  });
+
+  test('prev/next arrows cycle only the filtered subset while a filter is active', async () => {
+    const onModelChange = jest.fn();
+    // "a" matches mistral, qwen2.5 (has an "a"), and phi4-mini ("Mini") —
+    // narrower than all 3 installed models? No: qwen2.5:7b has no "a" in its
+    // VISIBLE strings until you hit its id. Use "mistral" instead: exactly one
+    // installed model, so next wraps back onto itself.
+    await renderSelector({ currentModel: 'phi4-mini', onModelChange });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    const input = screen.getByLabelText('Filter models') as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: 'mistral' } }); });
+    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
+    expect(onModelChange).toHaveBeenCalledWith('mistral:latest', false);
+    // Wraps within the one visible model.
+    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
+    expect(onModelChange).toHaveBeenLastCalledWith('mistral:latest', false);
+    // And never lands on a filtered-out model like phi4-mini.
+    expect(onModelChange).not.toHaveBeenCalledWith('phi4-mini', false);
+  });
+
+  test('filter with no matches shows a recovery message, not a blank list', async () => {
+    await renderSelector();
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    const input = screen.getByLabelText('Filter models') as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: 'zzz-nothing' } }); });
+    expect(screen.getByText(/No models match/i)).toBeInTheDocument();
+  });
+
+  test('Escape in the filter box closes the dropdown', async () => {
+    await renderSelector();
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    const input = screen.getByLabelText('Filter models') as HTMLInputElement;
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByText('Models')).toBeNull();
   });
 
   test('the empty state offers an action rather than a question', async () => {
