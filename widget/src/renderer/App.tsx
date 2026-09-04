@@ -1213,6 +1213,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         addToast(`Media Studio refused: ${res.error || 'unknown reason'}`, 'error');
         return;
       }
+      if (res?.job?.id) {
+        setNavContext({ jobId: res.job.id });
+      }
       setMode('media');
     } catch (e: any) {
       addToast('Could not create the video job.', 'error');
@@ -1558,7 +1561,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         </Suspense>
       ) : mode === 'media' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <MediaStudioPanel />
+          <MediaStudioPanel navContext={navContext} />
         </Suspense>
       ) : mode === 'code' ? (
         // WorkspaceShell is the VS Code–shaped IDE: Explorer, tabbed editor,

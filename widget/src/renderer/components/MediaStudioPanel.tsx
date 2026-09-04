@@ -100,9 +100,19 @@ function stateClass(s: MediaJobState): string {
   return 'ms-state';
 }
 
-export const MediaStudioPanel: React.FC = () => {
+export interface MediaStudioPanelProps {
+  /**
+   * Context handed over when the assistant or chat sends the user here,
+   * so Media Studio opens with what was just discussed (title, topic, format,
+   * podcast feed, Ancient Pathways episode, or existing job) rather than blank.
+   */
+  navContext?: Record<string, unknown> | null;
+}
+
+export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }) => {
   const [confirmDialog, confirm] = useConfirmDestructive();
   const [jobs, setJobs] = useState<MediaJob[]>([]);
+  const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   /**
@@ -325,8 +335,8 @@ export const MediaStudioPanel: React.FC = () => {
     setTitle('');
   };
 
-  const loadFeed = async () => {
-    const u = feedUrl.trim();
+  const loadFeed = async (overrideUrl?: unknown) => {
+    const u = (typeof overrideUrl === 'string' ? overrideUrl : feedUrl).trim();
     if (!u) return;
     setFeedLoading(true);
     setFeedError(null);
@@ -500,6 +510,68 @@ export const MediaStudioPanel: React.FC = () => {
     }
   };
 
+  // Context handed over when chat or the assistant sent the user to Media Studio.
+  // Without this, the handoff is only a redirect to an empty panel.
+  useEffect(() => {
+    if (!navContext) return;
+
+    const targetJobId = typeof navContext.jobId === 'string'
+      ? navContext.jobId.trim()
+      : (typeof navContext.id === 'string' ? navContext.id.trim() : '');
+    if (targetJobId) {
+      setHighlightedJobId(targetJobId);
+    }
+
+    const t = typeof navContext.title === 'string' ? navContext.title.trim() : (
+      typeof navContext.topic === 'string' ? navContext.topic.trim() : (
+        typeof navContext.idea === 'string' ? navContext.idea.trim() : ''
+      )
+    );
+    if (t) setTitle(prev => prev || t);
+
+    if (navContext.format === 'short' || navContext.format === 'long') {
+      setFormat(navContext.format);
+    }
+
+    const source = typeof navContext.source === 'string' ? navContext.source.trim().toLowerCase() : '';
+    const episodeId = typeof navContext.episodeId === 'string' ? navContext.episodeId.trim() : '';
+    const search = typeof navContext.search === 'string' ? navContext.search.trim() : '';
+
+    if (source === 'ancient-pathways' || episodeId || search) {
+      setApOpen(true);
+      loadAncientPathways();
+      if (episodeId) setApSearch(episodeId);
+      else if (search) setApSearch(search);
+    } else if (source === 'chat') {
+      setChatOpen(true);
+      loadChatIdeas();
+    }
+
+    const feed = typeof navContext.feedUrl === 'string' ? navContext.feedUrl.trim() : (
+      typeof navContext.url === 'string' && (source === 'podcast' || source === 'feed') ? navContext.url.trim() : ''
+    );
+    if (feed) {
+      setFeedOpen(true);
+      setFeedUrl(feed);
+      loadFeed(feed);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navContext]);
+
+  // Scroll to and highlight a specific job when targeted by navigation or creation handoff
+  useEffect(() => {
+    if (!highlightedJobId || !jobs.length) return;
+    const el = document.querySelector(`[data-job-id="${highlightedJobId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ms-job--highlighted');
+      const timer = setTimeout(() => {
+        el.classList.remove('ms-job--highlighted');
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedJobId, jobs]);
+
   const getJobProgressStep = (j: MediaJob): number => {
     if (['idea', 'researching', 'script_draft', 'script_qa'].includes(j.state)) return 1;
     if (j.state === 'media_production') {
@@ -519,7 +591,11 @@ export const MediaStudioPanel: React.FC = () => {
   const stalled = jobs.filter(j => FAILURE.includes(j.state));
 
   const renderJob = (j: MediaJob, showApproval: boolean) => (
-    <li key={j.id} className="ms-job">
+    <li
+      key={j.id}
+      className={`ms-job ${highlightedJobId === j.id ? 'ms-job--highlighted' : ''}`}
+      data-job-id={j.id}
+    >
       <div className="ms-job-main">
         <span className="ms-job-title">{j.title}</span>
         <span className="ms-job-format">
@@ -841,6 +917,8 @@ export const MediaStudioPanel: React.FC = () => {
     if (!apSearch.trim()) return true;
     const q = apSearch.toLowerCase();
     return (
+      (ep.code && ep.code.toLowerCase().includes(q)) ||
+      (ep.id && ep.id.toLowerCase().includes(q)) ||
       ep.title.toLowerCase().includes(q) ||
       ep.era.toLowerCase().includes(q) ||
       ep.mainCharacter.toLowerCase().includes(q) ||
@@ -940,7 +1018,7 @@ export const MediaStudioPanel: React.FC = () => {
               />
               <button
                 className="ms-btn ms-btn--primary"
-                onClick={loadFeed}
+                onClick={() => loadFeed()}
                 disabled={!feedUrl.trim() || feedLoading}
               >
                 {feedLoading ? 'Looking…' : 'Show episodes'}

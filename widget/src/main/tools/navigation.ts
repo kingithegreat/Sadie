@@ -55,8 +55,9 @@ export const navigateToModeDef: ToolDefinition = {
         type: 'object',
         description:
           'Context for the destination to open with — the idea for a video, draft instructions ' +
-          'for an automation, the topic for a quiz. Omit only if there is genuinely nothing to ' +
-          'carry over.',
+          'for an automation, the topic for a quiz. For Media Studio (mode="media"), supports ' +
+          '`title`, `format` ("short"|"long"), `source` ("ancient-pathways"|"podcast"|"chat"), ' +
+          '`episodeId`, `feedUrl`, and `jobId`. Omit only if there is genuinely nothing to carry over.',
       },
       reason: {
         type: 'string',

@@ -10881,4 +10881,11 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   content: "💬 ";
 }
 
+/* Highlighted job target from chat/navigation handoff */
+.ms-job--highlighted {
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 2px var(--accent-primary), 0 4px 16px oklch(70% 0.15 250 / 0.25) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
 
