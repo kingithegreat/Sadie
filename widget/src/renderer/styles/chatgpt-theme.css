@@ -10613,25 +10613,332 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
    rules quiet the container to match: transparent surface, hairline ring,
    muted glyph. Assistant reads in the accent, user in plain text colour.
    Same 32px box — zero layout change. */
+/* ── Orb avatars ────────────────────────────────────────────────────────────
+   Gemini-style glowing gradient orbs, per Aden. The assistant is the signature
+   indigo-violet sphere with a breathing glow; the user is a quieter slate
+   orb. White glyphs ride on top. Same 32px box — zero layout change. */
 .message-avatar {
-  background: transparent;
-  border: 1px solid var(--hairline, oklch(100% 0 0 / 0.09));
-  color: var(--text-secondary, oklch(75% 0.008 250));
+  background:
+    radial-gradient(circle at 30% 28%, oklch(100% 0 0 / 0.35), transparent 45%),
+    conic-gradient(from 210deg, #7C5CFF, #4F46E5, #22D3EE, #7C5CFF);
+  border: none;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow:
+    0 0 12px oklch(60% 0.18 285 / 0.40),
+    0 0 26px oklch(60% 0.18 285 / 0.18),
+    inset 0 0 8px oklch(100% 0 0 / 0.20);
 }
+.message-avatar.user {
+  background:
+    radial-gradient(circle at 30% 28%, oklch(100% 0 0 / 0.28), transparent 48%),
+    linear-gradient(135deg, oklch(48% 0.07 260), oklch(32% 0.05 262));
+  color: oklch(96% 0.005 250);
+  box-shadow:
+    0 0 8px oklch(50% 0.08 260 / 0.30),
+    inset 0 0 6px oklch(100% 0 0 / 0.14);
+}
+/* The assistant orb breathes — a slow glow cycle that reads as "thinking". */
 .message-avatar.assistant {
-  color: var(--accent-primary);
-  border-color: oklch(66% 0.19 285 / 0.30);
+  animation: orb-breathe 3.6s ease-in-out infinite;
 }
-[data-theme='light'] .message-avatar {
-  border-color: oklch(0% 0 0 / 0.10);
+@keyframes orb-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 12px oklch(60% 0.18 285 / 0.40),
+      0 0 26px oklch(60% 0.18 285 / 0.18),
+      inset 0 0 8px oklch(100% 0 0 / 0.20);
+  }
+  50% {
+    box-shadow:
+      0 0 18px oklch(62% 0.19 285 / 0.60),
+      0 0 42px oklch(60% 0.18 285 / 0.30),
+      inset 0 0 10px oklch(100% 0 0 / 0.28);
+  }
 }
-[data-theme='light'] .message-avatar.assistant {
-  color: var(--accent-primary);
-  border-color: oklch(50% 0.19 285 / 0.30);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   INTERACTIVITY PASS — the app answers back. 2026-08.
+
+   "Seems interactive" is a feeling built from dozens of small confirmations:
+   everything clickable presses, everything hoverable moves, waiting is
+   animated, and the composer reacts to every state. Appended and removable as
+   one block. Transforms and opacity only — layout is untouched.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. The waiting dots dance ───────────────────────────────────────────────
+   Three dots bouncing in sequence reads as "alive" — a static row reads as
+   "frozen". Staggered delays, gentle arc, 1.2s cycle. */
+.streaming-indicator .dot {
+  animation: dot-dance 1.2s ease-in-out infinite;
 }
+.streaming-indicator .dot:nth-child(2) { animation-delay: 0.15s; }
+.streaming-indicator .dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dot-dance {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30%           { transform: translateY(-5px); opacity: 1; }
+}
+
+/* ── 2. Everything clickable presses ────────────────────────────────────────
+   One consistent press model across every control that did not already have
+   one. 0.96 scale + 80ms is the universal "yes, that click landed". */
+.conversation-item,
+.message-action-btn,
+.theme-btn,
+.input-actions button {
+  transition: transform 80ms ease, background-color 160ms ease,
+              color 160ms ease, border-color 160ms ease,
+              box-shadow 160ms ease;
+}
+.conversation-item:active,
+.message-action-btn:active,
+.theme-btn:active,
+.input-actions button:active {
+  transform: scale(0.97);
+}
+
+/* ── 3. Sidebar: conversations slide toward you ───────────────────────────── */
+.conversation-item {
+  cursor: pointer;
+  transition: transform 140ms var(--ease-out, ease),
+              background-color 140ms ease,
+              border-color 140ms ease;
+}
+.conversation-item:hover {
+  transform: translateX(3px);
+}
+
+/* ── 4. Composer icons: each one lifts and brightens ───────────────────────── */
+.input-actions button {
+  cursor: pointer;
+}
+.input-actions button:not(:disabled):hover {
+  transform: translateY(-2px);
+  color: var(--accent-light, oklch(84% 0.11 285));
+}
+.input-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── 5. Send: leans forward when it has something to send ──────────────────── */
+.send-button:not(:disabled) {
+  cursor: pointer;
+  transition: transform 120ms var(--ease-out, ease),
+              filter 160ms ease, box-shadow 160ms ease;
+}
+.send-button:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.03);
+}
+
+/* ── 6. Orbs surge when you hover their message ─────────────────────────── */
+.message-avatar {
+  transition: box-shadow 200ms ease, transform 200ms var(--ease-out, ease);
+}
+.message-wrapper:hover .message-avatar {
+  transform: scale(1.08);
+}
+.message-wrapper:hover .message-avatar.assistant {
+  box-shadow:
+    0 0 20px oklch(62% 0.19 285 / 0.65),
+    0 0 44px oklch(60% 0.18 285 / 0.35),
+    inset 0 0 10px oklch(100% 0 0 / 0.30);
+}
+.message-wrapper:hover .message-avatar.user {
+  box-shadow:
+    0 0 14px oklch(55% 0.10 260 / 0.45),
+    inset 0 0 8px oklch(100% 0 0 / 0.20);
+}
+
+/* ── 7. Links in messages: underline slides in ──────────────────────────────── */
+.message-link,
+.file-link {
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  transition: background-size 200ms var(--ease-out, ease);
+}
+.message-wrapper:hover .message-link:hover,
+.message-wrapper:hover .file-link:hover,
+.message-link:hover,
+.file-link:hover {
+  background-size: 100% 1px;
+}
+
+/* ── 8. Mode bar buttons: a glow ring on hover ──────────────────────────────── */
+.mode-btn {
+  cursor: pointer;
+}
+.mode-btn:not(.active):hover {
+  background: oklch(66% 0.19 285 / 0.12);
+  color: var(--accent-light, oklch(84% 0.11 285));
+}
+
+/* ── 9. Reduced motion: state changes remain, motion goes ───────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .streaming-indicator .dot { animation: none; }
+  .message-avatar.assistant { animation: none; }
+  .conversation-item, .input-actions button, .send-button,
+  .message-action-btn, .theme-btn {
+    transition: none;
+  }
+  .conversation-item:hover { transform: none; }
+  .message-wrapper:hover .message-avatar { transform: none; }
+  .input-actions button:not(:disabled):hover { transform: none; }
+  .send-button:not(:disabled):hover { transform: none; }
+}
+
+
+/* ════════════════════════════════════════════════════════════════════════════
+   STUNNING PASS — atmosphere, depth, glass, motion. 2026-08.
+
+   The mandate: visually stunning and modern. Everything below is additive and
+   removable as one block, and — same rule as every pass here — nothing that
+   changes layout dimensions. Colours, shadows, blurs, gradients, transforms,
+   opacity only. Readability is the hard floor: every text surface keeps or
+   raises its contrast.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Aurora atmosphere ───────────────────────────────────────────────────
+   Three drifting light sources instead of one static wash: violet from the
+   north-west, deep indigo from the south-east, and a faint cyan counter-glow.
+   The drift is background-position only — compositor-friendly, invisible to
+   layout — and stops for reduced-motion users. */
+.app-container {
+  background-image:
+    radial-gradient(120% 80% at 15% -10%, oklch(55% 0.19 285 / 0.14), transparent 55%),
+    radial-gradient(100% 70% at 105% 108%, oklch(48% 0.16 262 / 0.11), transparent 58%),
+    radial-gradient(70% 55% at 50% 120%, oklch(65% 0.12 200 / 0.05), transparent 65%);
+  background-size: 100% 100%, 100% 100%, 100% 100%;
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+@keyframes aurora-drift {
+  from { background-position: 0% 0%, 100% 100%, 50% 100%; }
+  to   { background-position: 3% 4%, 96% 94%, 46% 96%; }
+}
+
+/* ── 2. Header: floats on the atmosphere ──────────────────────────────────── */
+.app-header {
+  background: var(--material-thin, rgba(24, 22, 38, 0.62));
+  -webkit-backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.07));
+}
+
+/* ── 3. Chat surface: the messages float on glass ─────────────────────────── */
+.chat-interface {
+  background: transparent;
+}
+
+/* ── 4. Message bubbles: two materials, one language ─────────────────────────
+   User: the accent gradient — warm, confident, unmistakably "you said this".
+   Assistant: quiet glass — the app speaking, not a card shouting. */
+.message-wrapper.user .message-bubble {
+  background: linear-gradient(
+    135deg,
+    oklch(52% 0.17 285 / 0.92),
+    oklch(44% 0.16 268 / 0.88)
+  );
+  border: 1px solid oklch(70% 0.15 285 / 0.35);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.14),
+    0 4px 16px oklch(40% 0.14 285 / 0.28);
+}
+.message-wrapper.user .message-bubble:hover {
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.18),
+    0 6px 22px oklch(40% 0.14 285 / 0.36);
+}
+
+.message-wrapper.assistant .message-bubble {
+  background: linear-gradient(
+    180deg,
+    oklch(100% 0 0 / 0.045),
+    oklch(100% 0 0 / 0.015)
+  );
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.05),
+    0 2px 10px oklch(0% 0 0 / 0.18);
+}
+
+/* ── 5. Entrance: messages arrive, they don't appear ───────────────────────── */
+@keyframes message-arrive {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.message-wrapper {
+  animation: message-arrive 320ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+/* ── 6. Composer: the centrepiece ─────────────────────────────────────────── */
+.input-container {
+  background: var(--material-regular, rgba(24, 22, 38, 0.78));
+  -webkit-backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.09));
+  border-radius: var(--r-lg, 20px);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.06),
+    0 8px 28px oklch(0% 0 0 / 0.30);
+  transition:
+    border-color var(--dur-base, 220ms) var(--ease-apple, ease),
+    box-shadow var(--dur-base, 220ms) var(--ease-apple, ease);
+}
+.input-container:focus-within {
+  border-color: oklch(66% 0.19 285 / 0.60);
+  box-shadow:
+    0 0 0 3px oklch(66% 0.19 285 / 0.12),
+    0 0 32px oklch(60% 0.18 285 / 0.18),
+    0 10px 32px oklch(0% 0 0 / 0.34);
+}
+
+/* Send: a lit button, not a flat one */
+.send-button {
+  background: linear-gradient(135deg, var(--homebot-blue-500), var(--homebot-blue-700));
+  border: 1px solid oklch(70% 0.15 285 / 0.4);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.22),
+    0 2px 10px oklch(50% 0.17 285 / 0.35);
+}
+.send-button:not(:disabled):hover {
+  filter: brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.26),
+    0 4px 18px oklch(50% 0.17 285 / 0.5);
+}
+
+/* ── 7. Code blocks: inset machines ────────────────────────────────────────── */
+.message-bubble pre,
+.code-block-wrapper {
+  border: 1px solid oklch(0% 0 0 / 0.35);
+  border-radius: var(--r-sm, 10px);
+  box-shadow: inset 0 2px 8px oklch(0% 0 0 / 0.25);
+  overflow: hidden;
+}
+
+/* ── 8. Action pills: appear on hover with a fade, not a pop ───────────────── */
+.message-wrapper .message-action-btn,
+.message-wrapper .bookmark-btn {
+  opacity: 0.55;
+  transition: opacity var(--dur-fast, 140ms) var(--ease-apple, ease),
+              background-color var(--dur-fast, 140ms) var(--ease-apple, ease);
+}
+.message-wrapper:hover .message-action-btn,
+.message-wrapper:hover .bookmark-btn {
+  opacity: 1;
+}
+
+/* ── 9. Reduced motion: the atmosphere holds still ─────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .app-container { animation: none; }
+  .message-wrapper { animation: none; }
+}
+
 
 
 /* ── Improve this prompt ─────────────────────────────────────────────────────
