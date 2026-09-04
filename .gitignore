@@ -145,3 +145,6 @@ widget/jest-result.json
 .keys/
 *.private.pem
 license-signing.private.pem
+
+# Agent scratch space (checkpoint workspaces, generated asset probes)
+workspace/
