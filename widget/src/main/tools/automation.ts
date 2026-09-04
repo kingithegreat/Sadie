@@ -23,6 +23,7 @@ import {
   validateWorkflowJson,
   extractWebhookUrl,
 } from '../n8n-api';
+import { isWithinHomeDir } from '../utils/home-boundary';
 
 // ---- Persistence (mirrors the Automation Center store in ipc-handlers.ts) ----
 
@@ -31,8 +32,16 @@ interface StoredAutomation {
   name: string;
   description: string;
   instructions: string;
-  trigger: 'manual' | 'schedule';
+  trigger: 'manual' | 'schedule' | 'file';
   scheduleMinutes?: number;
+  /** For trigger="file": the folder watched for new files. */
+  watchPath?: string;
+  /**
+   * For trigger="file": optional filename filter, e.g. "*.csv" or "report*".
+   * Matches the file's base name only (never folders), case-insensitively.
+   * Absent = any file counts.
+   */
+  watchPattern?: string;
   n8nWebhookUrl?: string;
   enabled: boolean;
   lastRun?: string;
@@ -41,7 +50,8 @@ interface StoredAutomation {
   createdAt: string;
 }
 
-function automationsFilePath(): string {
+/** Where the shared automation store lives — also read by the file-watch trigger engine. */
+export function automationsFilePath(): string {
   try {
     return path.join(app.getPath('userData'), 'automations.json');
   } catch {
@@ -147,11 +157,49 @@ function summarize(auto: StoredAutomation) {
     description: auto.description || undefined,
     trigger: auto.trigger,
     schedule_minutes: auto.trigger === 'schedule' ? auto.scheduleMinutes : undefined,
+    watch_path: auto.trigger === 'file' ? auto.watchPath : undefined,
+    watch_pattern: auto.trigger === 'file' ? (auto.watchPattern || undefined) : undefined,
     enabled: auto.enabled,
     uses_n8n: !!auto.n8nWebhookUrl,
     last_run: auto.lastRun,
     last_status: auto.lastStatus,
   };
+}
+
+/**
+ * Validate the folder an automation watches, or say plainly why it cannot
+ * work. The same rules the watcher enforces at fire time, applied at save
+ * time — a trigger that can never arm must be rejected when it is created,
+ * not discovered broken the first time a file lands.
+ *
+ * The home boundary matches the file tools' posture: HomeBot watches the
+ * user's own space, not arbitrary drives or network shares.
+ */
+export function validateWatchConfig(
+  watchPath: string,
+  homeDir: string,
+): { ok: true; resolved: string } | { ok: false; error: string } {
+  const trimmed = String(watchPath || '').trim();
+  if (!trimmed) return { ok: false, error: 'watch_path is required when trigger is "file"' };
+  let resolved: string;
+  try {
+    resolved = path.resolve(trimmed);
+  } catch {
+    return { ok: false, error: `watch_path "${trimmed}" is not a valid path` };
+  }
+  if (!isWithinHomeDir(resolved, homeDir)) {
+    return { ok: false, error: 'The watched folder must be inside your user folder (HomeBot only automates your own files).' };
+  }
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    return { ok: false, error: `Folder "${resolved}" does not exist yet. Create it first (or pick an existing one).` };
+  }
+  if (!stat.isDirectory()) {
+    return { ok: false, error: `"${resolved}" is a file, not a folder. Point the trigger at a folder.` };
+  }
+  return { ok: true, resolved };
 }
 
 async function fireAutomation(auto: StoredAutomation): Promise<ToolResult> {
@@ -208,12 +256,24 @@ export const createAutomationDef: ToolDefinition = {
       },
       trigger: {
         type: 'string',
-        description: 'How the automation runs: "manual" (on demand, default) or "schedule" (repeats automatically)',
-        enum: ['manual', 'schedule'],
+        description:
+          'How the automation runs: "manual" (on demand, default), "schedule" (repeats automatically), ' +
+          'or "file" (runs when a new file appears in a watched folder)',
+        enum: ['manual', 'schedule', 'file'],
       },
       schedule_minutes: {
         type: 'number',
         description: 'For trigger="schedule": interval in minutes between runs (default 60, e.g. 1440 for daily)',
+      },
+      watch_path: {
+        type: 'string',
+        description:
+          'For trigger="file": the folder to watch, inside the user folder. The automation runs each time a new file appears there.',
+      },
+      watch_pattern: {
+        type: 'string',
+        description:
+          'Optional, for trigger="file": filename filter like "*.csv" or "report*". Omit to run for any file.',
       },
       run_now: {
         type: 'boolean',
@@ -289,12 +349,20 @@ export const updateAutomationDef: ToolDefinition = {
       },
       trigger: {
         type: 'string',
-        description: 'Change how it runs: "manual" or "schedule"',
-        enum: ['manual', 'schedule'],
+        description: 'Change how it runs: "manual", "schedule", or "file" (a watched folder)',
+        enum: ['manual', 'schedule', 'file'],
       },
       schedule_minutes: {
         type: 'number',
         description: 'New interval in minutes (for trigger="schedule")',
+      },
+      watch_path: {
+        type: 'string',
+        description: 'New folder to watch (for trigger="file")',
+      },
+      watch_pattern: {
+        type: 'string',
+        description: 'New filename filter like "*.csv" (for trigger="file"). Empty string clears it.',
       },
     },
     required: ['automation'],
@@ -365,11 +433,28 @@ export const createAutomationHandler: ToolHandler = async (args): Promise<ToolRe
     if (!name) return { success: false, error: 'name is required' };
     if (!instructions) return { success: false, error: 'instructions is required' };
 
-    const trigger: 'manual' | 'schedule' = args.trigger === 'schedule' ? 'schedule' : 'manual';
+    const trigger: 'manual' | 'schedule' | 'file' =
+      args.trigger === 'schedule' ? 'schedule'
+      : args.trigger === 'file' ? 'file'
+      : 'manual';
     let scheduleMinutes: number | undefined;
     if (trigger === 'schedule') {
       scheduleMinutes = Number(args.schedule_minutes) || 60;
       if (scheduleMinutes < 1) return { success: false, error: 'schedule_minutes must be at least 1' };
+    }
+    let watchPath: string | undefined;
+    let watchPattern: string | undefined;
+    if (trigger === 'file') {
+      const check = validateWatchConfig(String(args.watch_path || ''), app.getPath('home'));
+      if (!check.ok) return { success: false, error: check.error };
+      watchPath = check.resolved;
+      const pattern = String(args.watch_pattern || '').trim();
+      if (pattern) {
+        if (/[/\\]/.test(pattern)) {
+          return { success: false, error: 'watch_pattern matches file names only — no slashes. e.g. "*.csv" or "report*".' };
+        }
+        watchPattern = pattern;
+      }
     }
 
     const automations = readAutomations();
@@ -385,6 +470,8 @@ export const createAutomationHandler: ToolHandler = async (args): Promise<ToolRe
       instructions,
       trigger,
       scheduleMinutes,
+      watchPath,
+      watchPattern,
       enabled: true,
       createdAt: new Date().toISOString(),
     };
@@ -405,9 +492,12 @@ export const createAutomationHandler: ToolHandler = async (args): Promise<ToolRe
     automations.push(automation);
     writeAutomations(automations);
 
-    const note = trigger === 'schedule'
-      ? `Scheduled to run every ${scheduleMinutes} minutes; the schedule arms automatically within a minute.`
-      : 'Run it any time with run_automation or the ▶ button in the Automation Center.';
+    const note =
+      trigger === 'schedule'
+        ? `Scheduled to run every ${scheduleMinutes} minutes; the schedule arms automatically within a minute.`
+        : trigger === 'file'
+          ? `Armed — it runs when a new file appears in "${watchPath}"${watchPattern ? ` matching ${watchPattern}` : ''}.`
+          : 'Run it any time with run_automation or the ▶ button in the Automation Center.';
 
     if (args.run_now) {
       const runResult = await fireAutomation(automation);
@@ -462,13 +552,39 @@ export const updateAutomationHandler: ToolHandler = async (args): Promise<ToolRe
     if (args.new_name !== undefined && String(args.new_name).trim()) auto.name = String(args.new_name).trim();
     if (args.description !== undefined) auto.description = String(args.description);
     if (args.instructions !== undefined && String(args.instructions).trim()) auto.instructions = String(args.instructions).trim();
-    if (args.trigger !== undefined) auto.trigger = args.trigger === 'schedule' ? 'schedule' : 'manual';
+    if (args.trigger !== undefined) {
+      const t = String(args.trigger);
+      auto.trigger = t === 'schedule' ? 'schedule' : t === 'file' ? 'file' : 'manual';
+    }
     if (args.schedule_minutes !== undefined) {
       const mins = Number(args.schedule_minutes);
       if (!mins || mins < 1) return { success: false, error: 'schedule_minutes must be at least 1' };
       auto.scheduleMinutes = mins;
     }
     if (auto.trigger === 'schedule' && !auto.scheduleMinutes) auto.scheduleMinutes = 60;
+
+    // Watched-folder changes are validated the same way as creation — an
+    // update must not be able to sneak a trigger past the home boundary or
+    // point it at a folder that does not exist.
+    if (args.watch_path !== undefined || args.watch_pattern !== undefined || args.trigger === 'file') {
+      const candidate = String(args.watch_path ?? auto.watchPath ?? '');
+      const check = validateWatchConfig(candidate, app.getPath('home'));
+      if (!check.ok) return { success: false, error: check.error };
+      auto.watchPath = check.resolved;
+      if (args.watch_pattern !== undefined) {
+        const pattern = String(args.watch_pattern).trim();
+        if (pattern && /[/\\]/.test(pattern)) {
+          return { success: false, error: 'watch_pattern matches file names only — no slashes. e.g. "*.csv" or "report*".' };
+        }
+        auto.watchPattern = pattern || undefined;
+      }
+    }
+    if (auto.trigger !== 'file') {
+      // Leaving the file trigger behind drops its config rather than keeping
+      // a stale folder on the record.
+      auto.watchPath = undefined;
+      auto.watchPattern = undefined;
+    }
 
     writeAutomations(automations);
     return { success: true, result: { updated: summarize(auto) } };
@@ -561,6 +677,42 @@ export const deleteAutomationHandler: ToolHandler = async (args): Promise<ToolRe
 };
 
 // ============= EXPORTS =============
+
+/**
+ * Fire one saved automation by id through the registered engine, from OUTSIDE
+ * the chat tool layer — this is what the file-watch trigger engine in
+ * scheduler.ts calls when a watched folder produces a file. Reads the record
+ * fresh (the store is shared with the UI and IPC, and may have changed since
+ * the watcher armed), so a deleted or disabled automation does not fire.
+ *
+ * Returns whether it ran; the run status is persisted onto the record either
+ * way, exactly as manual and scheduled runs are.
+ */
+export async function fireAutomationById(
+  id: string,
+  detail?: Record<string, unknown>,
+): Promise<{ fired: boolean; success?: boolean; error?: string }> {
+  const auto = readAutomations().find(a => a.id === id);
+  if (!auto || !auto.enabled) return { fired: false, error: 'automation missing or disabled' };
+  if (!automationRunner) {
+    return { fired: false, error: 'execution engine unavailable' };
+  }
+  const outcome = await automationRunner(auto);
+  try {
+    const automations = readAutomations();
+    const stored = automations.find(a => a.id === id);
+    if (stored) {
+      stored.lastRun = new Date().toISOString();
+      stored.lastResult =
+        outcome.result || outcome.error || (detail?.fileName ? `Triggered by ${String(detail.fileName)}` : 'Done');
+      stored.lastStatus = outcome.success ? 'success' : 'error';
+      writeAutomations(automations);
+    }
+  } catch (e) {
+    console.error('[Automation Tools] Failed to persist trigger-run status:', e);
+  }
+  return { fired: true, success: outcome.success, error: outcome.error };
+}
 
 export const automationToolDefs: ToolDefinition[] = [
   createAutomationDef,

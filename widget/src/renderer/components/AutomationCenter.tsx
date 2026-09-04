@@ -83,7 +83,17 @@ const TEMPLATE_AUTOMATIONS: AutomationTemplate[] = [
   },
 ];
 
-export const AutomationCenter: React.FC = () => {
+export interface AutomationCenterProps {
+  /**
+   * Context handed over when the assistant sent the user here, so the create
+   * form opens holding what was just discussed in chat instead of blank. Keys
+   * it does not understand are ignored, which is what lets other callers hand
+   * over richer context later without changing this signature.
+   */
+  navContext?: Record<string, unknown> | null;
+}
+
+export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }) => {
   const [automations, setAutomations] = useState<SavedAutomation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,9 +105,33 @@ export const AutomationCenter: React.FC = () => {
   const [formName, setFormName] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formInstructions, setFormInstructions] = useState('');
-  const [formTrigger, setFormTrigger] = useState<'manual' | 'schedule'>('manual');
+  const [formTrigger, setFormTrigger] = useState<'manual' | 'schedule' | 'file'>('manual');
   const [formSchedule, setFormSchedule] = useState(60);
+  const [formWatchPath, setFormWatchPath] = useState('');
+  const [formWatchPattern, setFormWatchPattern] = useState('');
   const [formN8nUrl, setFormN8nUrl] = useState('');
+
+  // Open the create form already filled in when the assistant sent the user
+  // here with context. Without this the handoff is only a redirect: someone who
+  // just described an automation in chat would arrive at an empty form and have
+  // to type it all again.
+  //
+  // Only fills blank fields, so arriving here a second time cannot wipe work in
+  // progress.
+  useEffect(() => {
+    if (!navContext) return;
+    const name = typeof navContext.name === 'string' ? navContext.name.trim() : '';
+    const instructions =
+      typeof navContext.instructions === 'string' ? navContext.instructions.trim() : '';
+    const description =
+      typeof navContext.description === 'string' ? navContext.description.trim() : '';
+    if (!name && !instructions && !description) return;
+
+    setIsCreating(true);
+    if (name) setFormName(prev => prev || name);
+    if (instructions) setFormInstructions(prev => prev || instructions);
+    if (description) setFormDesc(prev => prev || description);
+  }, [navContext]);
   const [formUseN8n, setFormUseN8n] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [n8nOnline, setN8nOnline] = useState(false);
@@ -111,8 +145,16 @@ export const AutomationCenter: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
-  const [editTrigger, setEditTrigger] = useState<'manual' | 'schedule'>('manual');
+  const [editTrigger, setEditTrigger] = useState<'manual' | 'schedule' | 'file'>('manual');
   const [editSchedule, setEditSchedule] = useState(60);
+  const [editWatchPath, setEditWatchPath] = useState('');
+  const [editWatchPattern, setEditWatchPattern] = useState('');
+  // The create form collects a description and an optional webhook URL; the
+  // edit form collected neither, so both could be set once and never changed.
+  // The IPC handler has always accepted them — only the interface never sent
+  // them, which made a stored value uneditable rather than unsupported.
+  const [editDesc, setEditDesc] = useState('');
+  const [editN8nUrl, setEditN8nUrl] = useState('');
 
   const loadAutomations = useCallback(async () => {
     setLoading(true);
@@ -168,6 +210,8 @@ export const AutomationCenter: React.FC = () => {
         instructions: formInstructions.trim(),
         trigger: formTrigger,
         scheduleMinutes: formTrigger === 'schedule' ? formSchedule : undefined,
+        watchPath: formTrigger === 'file' ? formWatchPath.trim() : undefined,
+        watchPattern: formTrigger === 'file' ? (formWatchPattern.trim() || undefined) : undefined,
         n8nWebhookUrl: formN8nUrl.trim() || undefined,
         deployToN8n: formUseN8n,
       });
@@ -179,6 +223,8 @@ export const AutomationCenter: React.FC = () => {
         setFormDesc('');
         setFormInstructions('');
         setFormTrigger('manual');
+        setFormWatchPath('');
+        setFormWatchPattern('');
         setFormN8nUrl('');
         setFormUseN8n(false);
         setIsCreating(false);
@@ -189,7 +235,7 @@ export const AutomationCenter: React.FC = () => {
     } finally {
       setDeploying(false);
     }
-  }, [formName, formDesc, formInstructions, formTrigger, formSchedule, formUseN8n, formN8nUrl, checkoutUrl]);
+  }, [formName, formDesc, formInstructions, formTrigger, formSchedule, formWatchPath, formWatchPattern, formUseN8n, formN8nUrl, checkoutUrl]);
 
   const handleToggle = useCallback(async (id: string) => {
     const auto = automations.find(a => a.id === id);
@@ -279,6 +325,10 @@ export const AutomationCenter: React.FC = () => {
     setEditInstructions(auto.instructions);
     setEditTrigger(auto.trigger);
     setEditSchedule(auto.scheduleMinutes || 60);
+    setEditWatchPath(auto.watchPath || '');
+    setEditWatchPattern(auto.watchPattern || '');
+    setEditDesc(auto.description || '');
+    setEditN8nUrl(auto.n8nWebhookUrl || '');
   }, []);
 
   const cancelEdit = useCallback(() => {
@@ -291,22 +341,41 @@ export const AutomationCenter: React.FC = () => {
       await window.electron?.updateAutomation?.({
         id: editingId,
         name: editName.trim(),
+        description: editDesc.trim(),
         instructions: editInstructions.trim(),
         trigger: editTrigger,
         scheduleMinutes: editTrigger === 'schedule' ? editSchedule : undefined,
+        // Watch fields are sent whenever the automation uses (or just left) the
+        // file trigger, so clearing the box actually clears the folder on disk
+        // rather than silently keeping a stale watch.
+        watchPath: editTrigger === 'file' ? editWatchPath.trim() : '',
+        watchPattern: editTrigger === 'file' ? editWatchPattern.trim() : '',
+        // Sent even when cleared, so emptying the field actually detaches the
+        // workflow. The handler maps '' to undefined; omitting the key instead
+        // would leave a stale URL in place and look like the edit was ignored.
+        n8nWebhookUrl: editN8nUrl.trim(),
       });
       setAutomations(prev => prev.map(a => a.id === editingId ? {
         ...a,
         name: editName.trim(),
+        description: editDesc.trim(),
         instructions: editInstructions.trim(),
         trigger: editTrigger,
         scheduleMinutes: editTrigger === 'schedule' ? editSchedule : a.scheduleMinutes,
+        watchPath: editTrigger === 'file' ? editWatchPath.trim() : undefined,
+        watchPattern: editTrigger === 'file' ? (editWatchPattern.trim() || undefined) : undefined,
+        n8nWebhookUrl: editN8nUrl.trim() || undefined,
       } : a));
       setEditingId(null);
     } catch {
       setError('Failed to save changes');
     }
-  }, [editingId, editName, editInstructions, editTrigger, editSchedule]);
+    // editDesc and editN8nUrl belong here. Without them the callback closes
+    // over the values from the render that created it, so the new inputs looked
+    // like they worked — the boxes updated on screen — while the ORIGINAL
+    // values were sent to disk. Caught by the tests asserting what the handler
+    // receives rather than what the form shows.
+  }, [editingId, editName, editInstructions, editTrigger, editSchedule, editWatchPath, editWatchPattern, editDesc, editN8nUrl]);
 
   const applyExample = useCallback((ex: typeof EXAMPLE_AUTOMATIONS[0]) => {
     setFormName(ex.name);
@@ -492,10 +561,11 @@ export const AutomationCenter: React.FC = () => {
             <select
               id="auto-trigger"
               value={formTrigger}
-              onChange={e => setFormTrigger(e.target.value as 'manual' | 'schedule')}
+              onChange={e => setFormTrigger(e.target.value as 'manual' | 'schedule' | 'file')}
             >
               <option value="manual">Manual (run on demand)</option>
               <option value="schedule">Scheduled</option>
+              <option value="file">When a file appears in a folder</option>
             </select>
           </div>
 
@@ -516,6 +586,34 @@ export const AutomationCenter: React.FC = () => {
                 <option value={1440}>24 hours</option>
               </select>
             </div>
+          )}
+
+          {formTrigger === 'file' && (
+            <>
+              <div className="form-group">
+                <label htmlFor="auto-watch-path">Folder to watch</label>
+                <input
+                  id="auto-watch-path"
+                  type="text"
+                  value={formWatchPath}
+                  onChange={e => setFormWatchPath(e.target.value)}
+                  placeholder="e.g. C:\Users\you\Downloads\invoices"
+                />
+                <span className="form-hint">
+                  The automation runs each time a new file appears in this folder. It must be inside your user folder.
+                </span>
+              </div>
+              <div className="form-group">
+                <label htmlFor="auto-watch-pattern">File name filter (optional)</label>
+                <input
+                  id="auto-watch-pattern"
+                  type="text"
+                  value={formWatchPattern}
+                  onChange={e => setFormWatchPattern(e.target.value)}
+                  placeholder="e.g. *.csv or report* — leave blank for any file"
+                />
+              </div>
+            </>
           )}
 
           <div className="form-group">
@@ -563,7 +661,7 @@ export const AutomationCenter: React.FC = () => {
             <button
               className="btn-primary"
               onClick={handleCreate}
-              disabled={!formName.trim() || !formInstructions.trim() || deploying}
+              disabled={!formName.trim() || !formInstructions.trim() || deploying || (formTrigger === 'file' && !formWatchPath.trim())}
             >
               {deploying ? 'Deploying to n8n...' : formUseN8n ? 'Create & Deploy to n8n' : 'Create Automation'}
             </button>
@@ -591,10 +689,20 @@ export const AutomationCenter: React.FC = () => {
                   <input id="edit-name" className="setting-input" placeholder="Automation name" value={editName} onChange={e => setEditName(e.target.value)} />
                   <label className="form-label" htmlFor="edit-instructions">Instructions</label>
                   <textarea id="edit-instructions" className="setting-input setting-textarea" placeholder="What should this automation do?" value={editInstructions} onChange={e => setEditInstructions(e.target.value)} rows={4} />
+                  <label className="form-label" htmlFor="edit-description">Description</label>
+                  <input
+                    id="edit-description"
+                    className="setting-input"
+                    data-testid="edit-description"
+                    placeholder="Short description of what this does"
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                  />
                   <label className="form-label" htmlFor="edit-trigger">Trigger</label>
-                  <select id="edit-trigger" className="setting-input" title="Trigger type" value={editTrigger} onChange={e => setEditTrigger(e.target.value as 'manual' | 'schedule')}>
+                  <select id="edit-trigger" className="setting-input" title="Trigger type" value={editTrigger} onChange={e => setEditTrigger(e.target.value as 'manual' | 'schedule' | 'file')}>
                     <option value="manual">Manual</option>
                     <option value="schedule">Schedule</option>
+                    <option value="file">When a file appears</option>
                   </select>
                   {editTrigger === 'schedule' && (
                     <>
@@ -602,8 +710,43 @@ export const AutomationCenter: React.FC = () => {
                       <input id="edit-schedule" className="setting-input" type="number" min={1} placeholder="60" value={editSchedule} onChange={e => setEditSchedule(Number(e.target.value))} />
                     </>
                   )}
+                  {editTrigger === 'file' && (
+                    <>
+                      <label className="form-label" htmlFor="edit-watch-path">Folder to watch</label>
+                      <input
+                        id="edit-watch-path"
+                        className="setting-input"
+                        data-testid="edit-watch-path"
+                        placeholder="Folder inside your user folder"
+                        value={editWatchPath}
+                        onChange={(e) => setEditWatchPath(e.target.value)}
+                      />
+                      <label className="form-label" htmlFor="edit-watch-pattern">File name filter (optional)</label>
+                      <input
+                        id="edit-watch-pattern"
+                        className="setting-input"
+                        data-testid="edit-watch-pattern"
+                        placeholder="*.csv, report* — blank for any file"
+                        value={editWatchPattern}
+                        onChange={(e) => setEditWatchPattern(e.target.value)}
+                      />
+                    </>
+                  )}
+                  <label className="form-label" htmlFor="edit-n8n-url">Workflow webhook URL</label>
+                  <input
+                    id="edit-n8n-url"
+                    className="setting-input"
+                    data-testid="edit-n8n-url"
+                    placeholder="Leave blank to run this automation inside HomeBot"
+                    value={editN8nUrl}
+                    onChange={(e) => setEditN8nUrl(e.target.value)}
+                  />
+                  <small className="setting-hint">
+                    Clearing this detaches the workflow — the automation keeps running, just inside
+                    HomeBot rather than through your workflow server.
+                  </small>
                   <div className="form-actions automation-edit-actions">
-                    <button type="button" className="btn-primary" onClick={saveEdit} disabled={!editName.trim() || !editInstructions.trim()}>Save</button>
+                    <button type="button" className="btn-primary" onClick={saveEdit} disabled={!editName.trim() || !editInstructions.trim() || (editTrigger === 'file' && !editWatchPath.trim())}>Save</button>
                     <button type="button" className="btn-secondary" onClick={cancelEdit}>Cancel</button>
                   </div>
                 </div>
@@ -612,9 +755,15 @@ export const AutomationCenter: React.FC = () => {
                 <div className="automation-title-row">
                   <h3>{auto.name}</h3>
                   <div className="automation-badges">
-                    <span className="trigger-badge">{auto.trigger}</span>
+                    <span className="trigger-badge">{auto.trigger === 'file' ? 'on file' : auto.trigger}</span>
                     {auto.trigger === 'schedule' && auto.scheduleMinutes && (
                       <span className="schedule-badge">every {auto.scheduleMinutes >= 60 ? `${auto.scheduleMinutes / 60}h` : `${auto.scheduleMinutes}m`}</span>
+                    )}
+                    {auto.trigger === 'file' && auto.watchPath && (
+                      <span className="schedule-badge" title={auto.watchPath}>
+                        {auto.watchPattern ? `${auto.watchPattern} in ` : ''}
+                        {auto.watchPath.split(/[\\/]/).filter(Boolean).pop() || auto.watchPath}
+                      </span>
                     )}
                     {auto.n8nWebhookUrl && (
                       <span className="schedule-badge" title={auto.n8nWebhookUrl}>n8n</span>

@@ -15,6 +15,7 @@
 import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
 import axios from 'axios';
+import { injectAuthGuards } from './n8n-auth-guard';
 
 const CONTAINER = 'homebot-n8n';
 const N8N_BASE = 'http://localhost:5678';
@@ -268,6 +269,18 @@ return {
 }
 
 export async function importWorkflow(workflowJson: object): Promise<string> {
+  // Defense in depth: every app-deployed workflow gets Auth Guard nodes after
+  // its webhook triggers, whatever builder produced the JSON. The per-install
+  // secret is embedded into the guard (Code nodes cannot read container env —
+  // see n8n-auth-guard.ts). Idempotent — already-guarded workflows are only
+  // upgraded if their guard predates the embedded-secret form.
+  const { getWebhookSecret } = await import('./webhook-auth');
+  const guarded = injectAuthGuards(
+    workflowJson as Parameters<typeof injectAuthGuards>[0],
+    getWebhookSecret(),
+  ).wf;
+  workflowJson = guarded as object;
+
   const check = validateWorkflowJson(workflowJson);
   if (!check.ok) throw new Error(`Invalid workflow JSON: ${check.errors.join('; ')}`);
 
@@ -307,8 +320,20 @@ export async function importWorkflow(workflowJson: object): Promise<string> {
 /**
  * Activate a workflow.
  * - REST path: `POST /api/v1/workflows/{id}/activate` — webhooks register live.
- * - CLI fallback: `n8n update:workflow --active=true` (n8n's own supported
- *   command), which requires a container restart to register webhooks.
+ * - CLI fallback: `n8n update:workflow --active=true`, which requires a
+ *   container restart to register webhooks.
+ *
+ * **Known limitation of the CLI fallback** (verified on n8n 1.122.5,
+ * 2026-08-22): `import:workflow` does not create a `workflow_history` row for
+ * the imported version, so the subsequent activation fails with
+ * SQLITE_CONSTRAINT (FOREIGN KEY, activeVersionId → workflow_history) and —
+ * even when the flag is forced in the database — webhook serving reports
+ * "Active version not found". Only n8n's own save/activation path creates the
+ * version bookkeeping. The REST path is therefore the only reliable way to
+ * deploy; without an API key we fail loudly instead of leaving a silently
+ * broken automation behind. The user can still activate an imported workflow
+ * by hand in the n8n editor (that path writes proper versions), or better,
+ * configure the API key under Settings → n8n.
  */
 export async function activateWorkflow(workflowId: string): Promise<void> {
   if (hasApiKey()) {
@@ -316,9 +341,24 @@ export async function activateWorkflow(workflowId: string): Promise<void> {
     console.log('[n8n-api] Activated workflow via REST API:', workflowId);
     return;
   }
-  const out = await dockerExec('n8n', 'update:workflow', `--id=${workflowId}`, '--active=true');
-  console.log('[n8n-api] activate result:', out);
+  try {
+    const out = await dockerExec('n8n', 'update:workflow', `--id=${workflowId}`, '--active=true');
+    console.log('[n8n-api] activate result:', out);
+  } catch (err: any) {
+    const raw = String(err?.message || err);
+    if (/FOREIGN KEY constraint failed|GOT ERROR|SQLITE_CONSTRAINT/i.test(raw)) {
+      throw new Error(
+        'Could not activate the workflow via the Docker CLI fallback: this n8n version ' +
+          'cannot serve workflows imported with `n8n import:workflow` (missing active-version ' +
+          'bookkeeping). Configure an n8n API key in Settings → n8n so deployments use the ' +
+          'REST API, or activate the workflow manually in the n8n editor at ' +
+          `${N8N_BASE}. Raw output: ${raw}`
+      );
+    }
+    throw err;
+  }
 }
+
 
 export async function restartN8n(): Promise<void> {
   console.log('[n8n-api] Restarting n8n container...');
@@ -406,6 +446,58 @@ async function tryListWorkflows(): Promise<Array<{ id: string; name: string }> |
 
 export async function listWorkflows(): Promise<Array<{ id: string; name: string }>> {
   return (await tryListWorkflows()) ?? [];
+}
+
+/**
+ * Find an existing workflow by name whose deployed copy LACKS the Auth Guard.
+ *
+ * The skip-if-exists rule ("a workflow by this name is already there, don't
+ * import another") was written to stop duplicates, and it did — but it also
+ * made every guard upgrade impossible: a workflow deployed before guard
+ * injection keeps serving unauthenticated requests through every release,
+ * because the one function that could replace it sees the name and skips.
+ *
+ * A workflow needs replacing when its nodes contain no Auth Guard marker at
+ * all. The marker string lives in n8n-auth-guard.ts (GUARD_MARKER); checking
+ * for it rather than for a specific secret means this also catches future
+ * guard-format changes as long as they keep the marker.
+ *
+ * Returns the id of a stale workflow, or null if none found / not checkable
+ * (no API key → node contents are not readable via the CLI list, so we must
+ * NOT delete on a guess).
+ */
+async function findStaleGuardedWorkflow(
+  existing: Array<{ id: string; name: string }>,
+  namePart: string,
+): Promise<string | null> {
+  if (!hasApiKey()) return null; // cannot read nodes without REST; never delete blind
+
+  const candidates = existing.filter((w) => w.name.includes(namePart));
+  if (candidates.length === 0) return null;
+
+  const { GUARD_MARKER } = await import('./n8n-auth-guard');
+
+  for (const wf of candidates) {
+    try {
+      const full = await apiRequest<{ nodes?: Array<{ type?: string; parameters?: { jsCode?: string } }> }>(
+        'GET',
+        `/workflows/${encodeURIComponent(wf.id)}`,
+      );
+      const nodes = Array.isArray(full?.nodes) ? full.nodes : [];
+      const hasGuard = nodes.some(
+        (n) =>
+          n.type === 'n8n-nodes-base.code' &&
+          typeof n.parameters?.jsCode === 'string' &&
+          n.parameters.jsCode.includes(GUARD_MARKER),
+      );
+      if (!hasGuard) return wf.id;
+    } catch (e: any) {
+      // If we cannot read it, we cannot judge it. Leave it alone rather than
+      // deleting a workflow that might be fine.
+      console.warn(`[n8n-api] Could not read workflow ${wf.id} to check its guard:`, e?.message || e);
+    }
+  }
+  return null;
 }
 
 /**
@@ -573,7 +665,19 @@ export async function ensureMediaResearchWorkflow(): Promise<{ deployed: boolean
       // duplicates accumulate in the user's n8n.
       return { deployed: false, reason: 'Could not read the workflow list from n8n, so nothing was imported.' };
     }
-    const already = existing.some(w => w.name.includes('Media Research'));
+    const stale = await findStaleGuardedWorkflow(existing, 'Media Research');
+
+    if (stale) {
+      // The deployed copy predates guard injection: it serves real research to
+      // any caller on the network. Skipping because "a workflow by this name
+      // exists" would leave that hole in place through every future release —
+      // the repair path existed and never ran. Replace it.
+      console.warn('[n8n-api] Media Research workflow has no Auth Guard; replacing it');
+      await deleteWorkflow(stale);
+    }
+    // A stale workflow was just deleted, so a fresh import is required even
+    // though the name still appears in the listing we fetched earlier.
+    const already = existing.some(w => w.name.includes('Media Research')) && stale === null;
 
     if (!already) {
       const id = await importWorkflow(buildMediaResearchWorkflowJson());

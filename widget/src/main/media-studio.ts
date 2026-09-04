@@ -30,7 +30,6 @@ export const MEDIA_STATES = [
   'approved',
   'scheduled',
   'published',
-  'analysing',
 ] as const;
 
 /** Explicit, retryable failure states — a stall must be visible, not implicit. */
@@ -68,10 +67,23 @@ export interface MediaJob {
   sources?: string[];
   /** Absolute path to the recorded narration audio, once it exists. */
   narrationPath?: string;
+  /** Which engine actually rendered the narration ('edge' | 'kokoro') — a
+   *  silent fallback must be visible on the job, not discoverable by ear. */
+  narratedWith?: string;
   /** Absolute path to the SRT subtitles generated alongside the narration. */
   captionsPath?: string;
   /** True spoken length, measured from the audio rather than estimated. */
   durationSeconds?: number;
+  /**
+   * Absolute paths to the generated scene images, in running order, once the
+   * render stage has made them. `null` marks a scene whose image failed and
+   * which reuses a neighbour — kept rather than dropped so the preview shows
+   * the same number of slides the video actually has.
+   *
+   * These were previously computed, written into the ffmpeg concat file, and
+   * thrown away — so nothing could show the user what they were approving.
+   */
+  scenePaths?: Array<string | null>;
   /** Absolute path to a rendered file, once one exists. */
   renderPath?: string;
   /** YouTube video id, only ever set after publishing. */
@@ -102,8 +114,13 @@ const TRANSITIONS: Record<MediaJobState, readonly MediaJobState[]> = {
   awaiting_approval:['approved', 'rejected', 'needs_revision'],
   approved:         ['scheduled', 'published', 'rejected'],
   scheduled:        ['published', 'blocked', 'rejected'],
-  published:        ['analysing'],
-  analysing:        [],
+  // Terminal by choice: the video is out, with the platform id recorded.
+  // An 'analysing' state used to live here — enterable from published via the
+  // panel's carry-on button, terminal by declaration, consumed by no code and
+  // exited by nothing. A job entered it and was stranded with "delete" as its
+  // only remaining action. When real analytics exists it returns WITH its exit;
+  // until then the honest terminal state for a published video is this one.
+  published:        [],
 
   // Failure states are retryable — each returns to the stage that can redo it.
   blocked:          ['idea', 'researching', 'script_draft', 'media_production', 'scheduled', 'rejected'],

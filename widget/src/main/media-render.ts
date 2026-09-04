@@ -203,6 +203,10 @@ export function buildRenderArgs(opts: {
   fps?: number;
   /** libass force_style string; defaults to defaultSubtitleStyle(shape). */
   subtitleStyle?: string;
+  /** Absolute path to a background music track. Omit for narration only. */
+  musicPath?: string | null;
+  /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
+  musicVolume?: number;
 }): string[] {
   const { w, h } = dimensionsFor(opts.shape);
   const fps = opts.fps ?? 30;
@@ -216,6 +220,7 @@ export function buildRenderArgs(opts: {
     args.push('-f', 'lavfi', '-i', `color=c=0x0F1319:s=${w}x${h}:r=${fps}`);
   }
   args.push('-i', opts.audioPath);
+  if (opts.musicPath) args.push('-i', opts.musicPath);
 
   const filters: string[] = [];
   if (opts.imagePath) {
@@ -243,7 +248,17 @@ export function buildRenderArgs(opts: {
   // yuv420p or the file will not play in most browsers or on phones.
   filters.push('format=yuv420p');
 
-  args.push('-vf', filters.join(','));
+  // With music, the video and audio graphs move into one -filter_complex:
+  // ffmpeg will not accept -vf alongside -filter_complex for the same output.
+  // Without music the original -vf form is used unchanged, so switching music
+  // off cannot alter a render that already worked.
+  if (opts.musicPath) {
+    const music = buildMusicAudioGraph({ narrationInput: 1, musicInput: 2, volume: opts.musicVolume });
+    args.push('-filter_complex', `[0:v]${filters.join(',')}[v];${music.graph}`);
+    args.push('-map', '[v]', '-map', music.outLabel);
+  } else {
+    args.push('-vf', filters.join(','));
+  }
   args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
   // Forced at the encoder, not just in the filter chain. A JPEG input is
   // full-range, so the encoder picked yuvj420p — the deprecated variant that
@@ -272,6 +287,10 @@ export function buildTimelineRenderArgs(opts: {
   captionsPath?: string | null;
   fps?: number;
   subtitleStyle?: string;
+  /** Absolute path to a background music track. Omit for narration only. */
+  musicPath?: string | null;
+  /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
+  musicVolume?: number;
 }): string[] {
   const { w, h } = dimensionsFor(opts.shape);
   const fps = opts.fps ?? 30;
@@ -280,6 +299,7 @@ export function buildTimelineRenderArgs(opts: {
   // -safe 0 because the script holds absolute paths.
   args.push('-f', 'concat', '-safe', '0', '-i', opts.concatPath);
   args.push('-i', opts.audioPath);
+  if (opts.musicPath) args.push('-i', opts.musicPath);
 
   const filters: string[] = [
     // Normalise the frame rate BEFORE burning captions, not with an output -r.
@@ -298,7 +318,16 @@ export function buildTimelineRenderArgs(opts: {
   }
   filters.push('format=yuv420p');
 
-  args.push('-vf', filters.join(','));
+  // Same branch as buildRenderArgs: -vf and -filter_complex cannot both drive
+  // one output, so music moves the whole graph into filter_complex and the
+  // no-music path stays exactly as it was.
+  if (opts.musicPath) {
+    const music = buildMusicAudioGraph({ narrationInput: 1, musicInput: 2, volume: opts.musicVolume });
+    args.push('-filter_complex', `[0:v]${filters.join(',')}[v];${music.graph}`);
+    args.push('-map', '[v]', '-map', music.outLabel);
+  } else {
+    args.push('-vf', filters.join(','));
+  }
   args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
   // See buildRenderArgs: generated scenes arrive as JPEG/PNG and the encoder
   // otherwise settles on full-range yuvj420p.
@@ -326,21 +355,93 @@ function canRun(bin: string): Promise<boolean> {
  *
  * HOMEBOT_FFMPEG is honoured first so a test or a portable install can point at
  * a binary without touching PATH.
+ *
+ * `managedPath` is the copy HomeBot downloaded for the user via "Set it up for
+ * me" — passed in rather than looked up here so this module stays free of
+ * Electron and testable. It is checked BEFORE PATH deliberately: if the user
+ * asked HomeBot to install a working ffmpeg, that one should win over whatever
+ * broken or codec-poor build happens to be on PATH.
+ *
+ * Nothing calls this without the managed path in production; a search order
+ * that silently skips the copy we just downloaded is exactly the "capability
+ * exists and nothing reaches it" failure this codebase keeps producing.
  */
-export async function findFfmpeg(): Promise<string | null> {
+export async function findFfmpeg(
+  managedPath?: string | null,
+  /**
+   * How to decide a binary is usable. Injectable so the search ORDER can be
+   * asserted without needing a real ffmpeg on the test machine — the default is
+   * the real thing, and production never passes this.
+   */
+  probe: (bin: string) => Promise<boolean> = canRun,
+): Promise<string | null> {
   const explicit = process.env.HOMEBOT_FFMPEG?.trim();
-  if (explicit && fs.existsSync(explicit) && await canRun(explicit)) return explicit;
-  if (await canRun('ffmpeg')) return 'ffmpeg';
+  if (explicit && fs.existsSync(explicit) && await probe(explicit)) return explicit;
+  if (managedPath && fs.existsSync(managedPath) && await probe(managedPath)) return managedPath;
+  if (await probe('ffmpeg')) return 'ffmpeg';
   for (const candidate of EXTRA_FFMPEG_PATHS) {
-    if (fs.existsSync(candidate) && await canRun(candidate)) return candidate;
+    if (fs.existsSync(candidate) && await probe(candidate)) return candidate;
   }
   return null;
 }
 
+/**
+ * Shown when rendering cannot proceed.
+ *
+ * It used to open with "Get it from https://ffmpeg.org/download.html (on
+ * Windows: winget install Gyan.FFmpeg)" — a download page and a package manager
+ * aimed at someone the product explicitly says is not technical. The one-click
+ * route comes first now; the manual route stays for anyone who wants it.
+ */
 export const FFMPEG_MISSING_MESSAGE =
-  'Rendering needs ffmpeg, which is not installed. Get it from https://ffmpeg.org/download.html ' +
-  '(on Windows: winget install Gyan.FFmpeg), then try again. Everything else about the video — ' +
-  'script, narration and captions — is already saved.';
+  'Making the video needs a video engine, which is not set up yet. Choose ' +
+  '"Set it up for me" in the Media Studio and HomeBot will download it (about 160 MB) — ' +
+  'there is nothing else to do. Everything else about this video — script, narration and ' +
+  'captions — is already saved. To do it by hand instead: https://ffmpeg.org/download.html';
+
+/**
+ * How loud the music sits under the narration before ducking.
+ *
+ * Low on purpose. Background music that competes with a voice is the single
+ * most common way a generated video becomes unwatchable, and the narration is
+ * the reason the video exists.
+ */
+export const MUSIC_VOLUME_DEFAULT = 0.18;
+
+/**
+ * The audio graph that mixes a music bed under narration.
+ *
+ * Ducking rather than a fixed level: `sidechaincompress` pushes the music down
+ * whenever the narration is speaking and lets it back up in the gaps, which is
+ * what makes a bed sound deliberate instead of like two files playing at once.
+ *
+ * Three details are load-bearing:
+ *
+ *  - `asplit` — the narration is needed twice, once as the sidechain KEY and
+ *    once as an actual mixed input. A filter output cannot be consumed twice.
+ *  - `aloop` — a two-minute track under a six-minute video would otherwise stop
+ *    dead two minutes in. Looping is bounded by the amix duration below.
+ *  - `duration=first` with narration FIRST — the video ends when the speech
+ *    ends. With music first, the infinite loop would define the length and the
+ *    render would never terminate.
+ *
+ * `normalize=0` matters too: amix halves every input by default, which would
+ * quietly drop the narration to half volume the moment music was switched on.
+ */
+export function buildMusicAudioGraph(opts: {
+  narrationInput: number;
+  musicInput: number;
+  volume?: number;
+}): { graph: string; outLabel: string } {
+  const volume = opts.volume ?? MUSIC_VOLUME_DEFAULT;
+  const graph = [
+    `[${opts.narrationInput}:a]asplit=2[narmix][narkey]`,
+    `[${opts.musicInput}:a]volume=${volume},aloop=loop=-1:size=2147483647[musicloop]`,
+    `[musicloop][narkey]sidechaincompress=threshold=0.03:ratio=8:attack=5:release=400[ducked]`,
+    `[narmix][ducked]amix=inputs=2:duration=first:normalize=0[aout]`,
+  ].join(';');
+  return { graph, outLabel: '[aout]' };
+}
 
 export interface RenderResult {
   path: string;
@@ -363,6 +464,10 @@ export async function renderVideo(opts: {
   zoom?: boolean;
   /** Concat script for a multi-scene render; a single still is used when absent. */
   concatPath?: string | null;
+  /** Absolute path to a background music track. Omit for narration only. */
+  musicPath?: string | null;
+  /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
+  musicVolume?: number;
 }): Promise<RenderResult> {
   if (!fs.existsSync(opts.audioPath)) {
     throw new Error(`No narration audio at ${opts.audioPath}`);

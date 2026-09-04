@@ -5,7 +5,7 @@ import { looksLikeToolJson, extractToolCallsFromText, extractProseToolCalls } fr
 import axios from 'axios';
 import { debug as logDebug, error as logError } from '../shared/logger';
 import streamFromHomeBotProxy from './stream-proxy-client';
-import { HomeBotRequest, HomeBotResponse, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
+import { HomeBotRequest, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
 import { getSkillCatalogue, matchSkills } from './skills';
@@ -18,10 +18,27 @@ import { getSettings, saveSettings } from './config-manager';
 import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig, PROVIDER_API_URLS } from './custom-llm-client';
 import { markRequestStart, markFirstToken } from './utils/perf-logger';
-import { setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
+import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
 import { enrichNbaGames, enrichWeather, enrichGenericQuery } from './tools/enrichment';
 import { homebotWebhookHeaders } from './webhook-auth';
+import {
+  mapErrorToHomeBotResponse,
+  classifyError,
+  shouldSurfaceCloudErrorWithoutFallback,
+  describeCloudTarget,
+} from './router/error-recovery';
+import { isSmallModel, OLLAMA_CHAT_MODEL } from './router/model-size';
+import {
+  formatWebSearchResult,
+  buildSourceCardsToken,
+  buildSynthesisPrompt,
+  buildToolSynthesisPrompt,
+  buildSearchContextForModel,
+} from './router/synthesis-prompts';
+// Re-exported: these were part of this module's surface before the split.
+export { isSmallModel } from './router/model-size';
+import { homeDir } from './user-paths';
 import { ragSearch, ragSearchWarmup } from './tools/rag';
 // matchSkills moved here from skills-loader.ts — that file and skills.ts were
 // two parallel builds of the same feature (caught by the duplicate-export
@@ -656,169 +673,6 @@ async function memorizeIfUseful(userMsg: string): Promise<void> {
   }
 }
 
-function mapErrorToHomeBotResponse(error: any): HomeBotResponse {
-  if (error.code === 'ECONNREFUSED') {
-    return {
-      success: false,
-      error: true,
-      // Was "Connection refused by backend." — a reader who does not know
-      // what a backend is learns nothing and is told to do nothing.
-      message: "HomeBot couldn't reach the AI. It may still be starting up — try again in a moment.",
-      details: error.message,
-      response: 'NETWORK_ERROR'
-    };
-  }
-  if (error.code === 'ECONNABORTED') {
-    return {
-      success: false,
-      error: true,
-      message: 'That took too long to answer. The model may still be loading — try again in a moment.',
-      details: error.message,
-      response: 'TIMEOUT'
-    };
-  }
-  return {
-    success: false,
-    error: true,
-    message: 'Something went wrong. Trying again usually fixes it.',
-    details: error.message,
-    response: 'UNKNOWN_ERROR'
-  };
-}
-
-// ── Error recovery hints ────────────────────────────────────────────────────
-
-export interface RecoveryHint {
-  service: 'ollama' | 'n8n' | 'model' | 'unknown';
-  userMessage: string;
-  action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings';
-  actionLabel?: string;
-  model?: string;
-}
-
-/**
- * Classify a stream error and produce an actionable hint for the renderer.
- * Attach the result as `recoveryHint` on the `homebot:stream-error` payload.
- */
-export function classifyError(message: string, details?: string): RecoveryHint {
-  const combined = `${message} ${details ?? ''}`.toLowerCase();
-
-  // Both services down (most specific — check first)
-  if (combined.includes('both') && combined.includes('unavailable')) {
-    return {
-      service: 'ollama',
-      userMessage: "HomeBot can't reach the AI on this PC. Start it below, then send your message again.",
-      action: 'start-ollama',
-      actionLabel: 'Retry',
-    };
-  }
-
-  // Model not found (404 or "not found" text) — check before generic Ollama
-  if (combined.includes('not found') || (combined.includes('model') && combined.includes('404'))) {
-    const modelMatch = combined.match(/model\s*"?([a-z0-9._:\/-]+)"?/i);
-    const model = modelMatch?.[1];
-    return {
-      service: 'model',
-      userMessage: model
-        ? `The ${model} model hasn't been downloaded yet. Download it below — it only needs doing once.`
-        : "That AI model hasn't been downloaded yet. You can pick a different one in Settings.",
-      action: model ? 'pull-model' : 'check-settings',
-      actionLabel: model ? `Pull ${model}` : 'Settings',
-      model: model || undefined,
-    };
-  }
-
-  // A cloud provider refusing the request — checked BEFORE the Ollama branch
-  // below, and this order is load-bearing.
-  //
-  // Both callers hard-code the label: finishFailedStream is invoked with
-  // `errorLabel: 'Ollama error'` and `'Ollama streaming error'`, and there are
-  // only those two call sites. `combined` is `${message} ${details}`, so the
-  // words "ollama" and "error" are present for EVERY failure that reaches here,
-  // whichever service actually failed. With the Ollama branch first it matched
-  // unconditionally and returned before this one was ever reached.
-  //
-  // So a rejected key, an exhausted quota or a 429 all rendered "The AI on this
-  // PC isn't running. Start it below", with a Start Ollama button. The user
-  // pressed it, was told Ollama was running, retried, and failed identically —
-  // and the actual fix (Settings → key or billing) was never mentioned.
-  //
-  // The existing unit test passed throughout because it called
-  // classifyError('Cloud API error …') with the cloud text as the FIRST
-  // argument, which no production path does.
-  if (combined.includes('cloud api error') || combined.includes('status code 429') ||
-      combined.includes('rate limit') || combined.includes('quota') ||
-      combined.includes('insufficient_quota') || combined.includes('unauthorized') ||
-      combined.includes('forbidden') || combined.includes('authentication')) {
-    return {
-      service: 'unknown',
-      userMessage: 'The online AI service refused the request. That is usually the key, the billing, or a usage limit — check Settings.',
-      action: 'check-settings',
-      actionLabel: 'Settings',
-    };
-  }
-
-  // Ollama connection refused / reset
-  if (combined.includes('econnrefused') || combined.includes('econnreset') ||
-      (combined.includes('ollama') && (combined.includes('unavailable') || combined.includes('error')))) {
-    return {
-      service: 'ollama',
-      // The renderer draws a StartOllamaButton directly beneath this. Telling
-      // someone to open a terminal, next to a button that does it for them, is
-      // the worst of both.
-      userMessage: "The AI on this PC isn't running. Start it below, then send your message again.",
-      action: 'start-ollama',
-      actionLabel: 'Retry',
-    };
-  }
-
-  // n8n unavailable
-  if (combined.includes('n8n') || combined.includes('upstream')) {
-    return {
-      service: 'n8n',
-      userMessage: 'Automations are unavailable right now — HomeBot will answer using the AI on this PC instead.',
-      action: 'retry',
-      actionLabel: 'Retry with Ollama',
-    };
-  }
-
-  // Timeout
-  if (combined.includes('timeout') || combined.includes('etimedout') || combined.includes('timed out')) {
-    return {
-      service: 'unknown',
-      userMessage: 'That took too long to answer. The model may still be starting up — try again in a moment.',
-      action: 'retry',
-      actionLabel: 'Retry',
-    };
-  }
-
-  // (The cloud-provider branch used to sit here, after the Ollama check that
-  // always matched first. It now runs above, where it can actually be reached.)
-
-  return {
-    service: 'unknown',
-    userMessage: message || 'Something went wrong.',
-    action: 'retry',
-    actionLabel: 'Retry',
-  };
-}
-
-function shouldSurfaceCloudErrorWithoutFallback(errMsg: string): boolean {
-  const normalized = errMsg.toLowerCase();
-  return /status code 4\d\d/.test(normalized)
-    || normalized.includes('rate limit')
-    || normalized.includes('quota')
-    || normalized.includes('insufficient_quota')
-    || normalized.includes('unauthorized')
-    || normalized.includes('forbidden')
-    || normalized.includes('authentication')
-    || (normalized.includes('invalid') && (normalized.includes('api') || normalized.includes('model')));
-}
-
-function describeCloudTarget(config: import('../shared/types').CustomLLMConfig): string {
-  const provider = config.provider?.toUpperCase?.() || 'CLOUD';
-  return config.model ? `${provider} ${config.model}` : provider;
-}
 
 // ── Music link helpers ──────────────────────────────────────────────────────
 
@@ -1695,209 +1549,6 @@ export async function analyzeAndRouteMessage(message: string): Promise<RoutingDe
 // Summarize tool results into a human-readable assistant message. Keep this
 // deterministic and brief so the UI can present a helpful summary after tools
 // execute.
-function takeSentences(text: string, maxChars = 400, maxSentences = 3): string {
-  const cleaned = (text || '').replace(/\s+/g, ' ').trim();
-  if (!cleaned) return '';
-  let out = '';
-  let count = 0;
-  for (const part of cleaned.split(/(?<=[.!?])\s+/)) {
-    if (!part) continue;
-    const candidate = out ? `${out} ${part}` : part;
-    if (candidate.length > maxChars || count >= maxSentences) break;
-    out = candidate;
-    count++;
-  }
-  return out || cleaned.slice(0, maxChars);
-}
-
-function formatWebSearchResult(payload: any): string {
-  const res = payload?.result ?? payload;
-  if (!res) return '';
-  // Delegate to buildSearchContext for unified formatting — both paths now share
-  // the same source-extraction, budget, and numbered-source layout.
-  // buildSearchContext is a function declaration so hoisting makes it safe to call here.
-  const context = buildSearchContext(res, 4000);
-  const parts: string[] = [];
-  if (context) parts.push(context);
-  if (res.note) parts.push(res.note);
-  return parts.filter(Boolean).join('\n');
-}
-
-/**
- * Build a rich search context string from a web_search result payload.
- * Prefers the multi-source `sources[]` array (parallel-fetched page content),
- * falls back to legacy topResultContent + results[].snippet.
- * Returns the context string and an inline source attribution block.
- */
-function buildSearchContext(sr: any, charBudget = 3000): string {
-  const parts: string[] = [];
-
-  // Prefer Tavily AI answer — already synthesised
-  if (sr.aiAnswer) parts.push(`Summary: ${sr.aiAnswer}`);
-
-  // Best path: use sources[] with full fetched page content
-  if (Array.isArray(sr.sources) && sr.sources.length > 0) {
-    const perSrc = Math.floor(charBudget / sr.sources.length);
-    sr.sources.forEach((src: any, i: number) => {
-      const raw = (src.content || '').replace(/\s+/g, ' ').trim();
-      const condensed = takeSentences(raw, perSrc, 6);
-      if (!condensed && !src.title) return;
-      const header = src.title ? `[${i + 1}] ${src.title}` : `[${i + 1}]`;
-      const url = src.url ? ` — ${src.url}` : '';
-      parts.push(`${header}${url}\n${condensed || '(no content)'}`);
-    });
-    return parts.filter(Boolean).join('\n\n');
-  }
-
-  // Legacy path: topResultContent + snippets
-  if (sr.topResultContent?.content || sr.topResultContent?.contentText) {
-    const raw = (sr.topResultContent.content || sr.topResultContent.contentText || '')
-      .replace(/\s+/g, ' ').trim();
-    const cleaned = raw.split(/\n/).filter((l: string) =>
-      !/(\[&>|]:h-|]:w-|]:mb-|]:rounded|]:overflow|]:max-h-)/.test(l)
-    ).join(' ').trim();
-    const condensed = takeSentences(cleaned, charBudget, 8);
-    if (condensed) parts.push(condensed);
-    if (sr.topResultContent.url) parts.push(`Source: ${sr.topResultContent.url}`);
-  }
-
-  if (Array.isArray(sr.results) && sr.results.length > 0) {
-    const snippets = sr.results.slice(0, 5).map((r: any, i: number) =>
-      `${i + 1}. ${r.title || ''}: ${r.snippet || ''}${r.url ? ` (${r.url})` : ''}`
-    ).join('\n');
-    if (snippets) parts.push(snippets);
-  }
-
-  return parts.filter(Boolean).join('\n\n');
-}
-
-/**
- * Build a compact source-cards token from web search results.
- * The renderer detects __HOMEBOT_SOURCES__: and renders clickable cards.
- */
-function buildSourceCardsToken(sr: any): string {
-  if (!sr || !Array.isArray(sr.results) || sr.results.length === 0) return '';
-  const cards = sr.results.slice(0, 6).map((r: any) => ({
-    t: (r.title || '').slice(0, 120),
-    u: r.url || '',
-    s: (r.snippet || '').slice(0, 200),
-  })).filter((c: any) => c.u);
-  if (cards.length === 0) return '';
-  return `\n\n__HOMEBOT_SOURCES__:${JSON.stringify(cards)}`;
-}
-
-/**
- * Wrap search context in a synthesis prompt that forces the model to answer
- * directly from evidence — suppressing the "check YouTube/CFR" padding pattern
- * and prohibiting the "I'm unable to fetch" false disclaimer.
- *
- * Exported so it can be unit-tested without spinning up Electron.
- */
-export function makeSynthesisPrompt(searchContext: string, question: string): string {
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  return `[SEARCH RESULTS — retrieved ${today}]\n${searchContext}\n[/SEARCH RESULTS]\n\n` +
-    `IMPORTANT: You have already been given the search results above. ` +
-    `DO NOT say you are unable to fetch, access, or retrieve information — you have the results. ` +
-    `DO NOT start your response with any disclaimer such as "I'm unable to fetch", ` +
-    `"I cannot access", "I don't have real-time access", or anything similar. ` +
-    `Answer directly and immediately.\n\n` +
-    `Today's date is ${today}.\n\n` +
-    `Using ONLY the search results above, answer the following question concisely. ` +
-    `Report the key facts and cite sources inline (e.g. "According to [title], ..."). ` +
-    `If the results contain limited information, state what was found — do NOT suggest the user ` +
-    `check YouTube, news websites, Wikipedia, or any other source.\n\n` +
-    `CRITICAL: Do NOT fabricate, guess, or invent ANY facts, dates, statistics, odds, scores, ` +
-    `or names not explicitly present in the search results above. If you cannot find a specific ` +
-    `answer in the results, say "Based on the search results, I couldn't find specific information ` +
-    `about [topic]" and summarize what IS in the results instead. ` +
-    `NEVER make up betting odds, scores, dates, or rankings. ` +
-    `For sports data: if games show as "Scheduled" or "Pre-game", say they haven't been played yet — ` +
-    `do NOT guess final scores, stat lines, or outcomes. Only report what is explicitly in the results.\n\n` +
-    `Question: ${question}`;
-}
-
-/**
- * Compact synthesis prompt for small models (~4096 token context).
- * Trims the search context harder and uses a single short instruction block
- * instead of 4 paragraphs the 3B model can't keep in attention.
- */
-export function makeSynthesisPromptCompact(searchContext: string, question: string): string {
-  const trimmed = searchContext.slice(0, 1500);
-  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  return `[SEARCH RESULTS — ${today}]\n${trimmed}\n[/SEARCH RESULTS]\n\n` +
-    `Today is ${today}. Answer the question ONLY from the results above.\n` +
-    `RULES: Do NOT say you cannot access data. Do NOT invent or guess ANY facts, ` +
-    `odds, scores, dates, or statistics not in the results. If the answer is not in ` +
-    `the results, say so honestly. For scheduled games, say they haven't been played.\n\n` +
-    `Question: ${question}`;
-}
-
-/**
- * Build a synthesis prompt sized for the current model.
- * Small models get a trimmed context + compact instructions.
- * Large models get the full verbose version.
- */
-export function buildSynthesisPrompt(searchContext: string, question: string): string {
-  const settings = getSettings();
-  const cloud = resolveCloudLLM(settings);
-  // When using cloud LLM the model is the cloud one — check that.
-  // When using local Ollama, check the chat model.
-  const modelName = cloud.active
-    ? (cloud.config?.model || '')
-    : (settings.chatModel || OLLAMA_CHAT_MODEL);
-  return isSmallModel(modelName)
-    ? makeSynthesisPromptCompact(searchContext, question)
-    : makeSynthesisPrompt(searchContext, question);
-}
-
-/**
- * Build a synthesis prompt for structured tool results (weather, NBA, etc.).
- * Feeds the formatted data + user question to the LLM for a natural summary.
- */
-function buildToolSynthesisPrompt(toolData: string, userQuestion: string, toolType: string): string {
-  const settings = getSettings();
-  const cloud = resolveCloudLLM(settings);
-  const modelName = cloud.active
-    ? (cloud.config?.model || '')
-    : (settings.chatModel || OLLAMA_CHAT_MODEL);
-  const small = isSmallModel(modelName);
-
-  const hints: Record<string, string> = {
-    weather: small
-      ? 'Summarize in 2 sentences. Include practical advice (jacket, umbrella).'
-      : 'Summarize naturally in 2-3 sentences. Be conversational — mention how it feels and give practical advice (e.g. bring a jacket, good day for a walk). Don\'t repeat every data point.',
-    standings: small
-      ? 'Summarize top 3-4 teams per conference and playoff picture in 3-4 sentences.'
-      : 'Summarize the key takeaways in 3-5 sentences. Highlight the conference leaders, any surprising teams, and the playoff race. Don\'t repeat the full table — the user can see it.',
-    games: small
-      ? 'Summarize the notable games and scores in 2-3 sentences.'
-      : 'Highlight the most notable matchups, key results, and any standout performances in 3-4 sentences. Don\'t list every game — pick the interesting ones.',
-  };
-
-  const instruction = hints[toolType] || 'Summarize the key information in 2-4 sentences. Be conversational.';
-  const data = small ? toolData.slice(0, 2000) : toolData.slice(0, 4000);
-
-  return `[TOOL DATA]\n${data}\n[/TOOL DATA]\n\nThe user asked: "${userQuestion}"\n\n${instruction}`;
-}
-
-/**
- * Build search context with a budget appropriate for the active model.
- * Small models get 1500 chars; large models get the default 3000.
- */
-function buildSearchContextForModel(sr: any): string {
-  const settings = getSettings();
-  const cloud = resolveCloudLLM(settings);
-  const modelName = cloud.active
-    ? (cloud.config?.model || '')
-    : (settings.chatModel || OLLAMA_CHAT_MODEL);
-  const budget = isSmallModel(modelName) ? 1500 : 3000;
-  return buildSearchContext(sr, budget);
-}
-
-/**
- * Route a synthesis call to the best available model.
- * Uses the cloud LLM when one is configured; falls back to local Ollama otherwise.
- */
 async function synthesisStream(
   augmentedMessage: string,
   convId: string,
@@ -2106,44 +1757,6 @@ export async function processIncomingRequest(request: HomeBotRequestWithImages |
 
 // Vision model for image analysis
 const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'moondream';
-// Default model for chat (should support tools)
-const OLLAMA_CHAT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
-
-/**
- * Returns true for models at or below ~9B parameters, based on their name.
- * Small models get the compact system prompt to preserve usable context.
- *
- * The bound was raised from 3B to 9B; the docstring said 3B for long enough
- * that a reader could reasonably conclude the 7B models in daily use took the
- * full-size path. They do not — see the note in the body.
- */
-export function isSmallModel(modelName: string): boolean {
-  const n = modelName.toLowerCase();
-  // Explicit small-size tags. The bound is 9B, not 3B.
-  //
-  // It WAS 3B, which meant none of this applied to the models actually in use:
-  // qwen2.5:7b, qwen2.5-coder:7b and dolphin-mistral:7b all took the full-size
-  // path. Five optimisations were dead as a result — the compact system prompt
-  // (~425 vs ~2,000 tokens), the 12-tool cap, the 12-turn history window, the
-  // 1,500-char search budget, and long-reply trimming. The 12-tool cap in
-  // particular exists precisely because a 7B model chooses badly from ~85 tool
-  // schemas, which is the likeliest reason tool calls have been unreliable.
-  //
-  // 9B is the ceiling: gemma2:9b and llama3.1:8b are included, while a 13B+
-  // model — which handles a full prompt comfortably — is not.
-  if (/[:\-_]([0-9](\.[0-9]+)?b)\b/.test(n)) return true;
-  // Known small model families:
-  //   phi-mini / phi3.5-mini — phi3 alone is NOT small (ships at 3.8b and 14b; only mini qualifies)
-  //   gemma:2b / gemma2:2b
-  //   qwen sub-3b sizes
-  //   moondream — 1.8b vision model, 4GB-friendly alternative to llava
-  //   dolphin-phi — 2.7b uncensored, 4GB-friendly alternative to dolphin-llama3:8b
-  //   smollm, tinyllama, tinydolphin
-  if (/\b(phi[- ]?[0-9]?(\.[0-9]+)?[- ]?mini|gemma:2b|gemma2:2b|qwen[:\-_]?[0-9]*[:\-_]?[01]\.?[05]b|smollm|tinyllama|tinydolphin|moondream|dolphin-phi)\b/.test(n)) return true;
-  // Cloud API small models (Haiku family, GPT-3.5, mini variants)
-  if (/\b(haiku|gpt-3\.5|gpt-4o-mini|o1-mini)\b/.test(n)) return true;
-  return false;
-}
 
 /** Select the appropriate system prompt based on model size. */
 export function getSystemPromptForModel(modelName: string, guidelines?: string): string {
@@ -2167,6 +1780,11 @@ export function detectToolCategories(message: string): string[] {
   if (/\b(weather|temperature|forecast|rain|snow|wind|humidity)\b/.test(m)) cats.add('web');
   if (/\b(file|folder|directory|create|write|read|delete|move|copy|rename|save|open|desktop|documents|downloads)\b/.test(m)) cats.add('filesystem');
   if (/\b(search|google|look\s*up|web|browse|url|http|news|headline)\b/.test(m)) cats.add('web');
+  // "Search my project for all TODO comments" — "search" alone routes to
+  // 'web', and nothing else in the sentence says files, so the turn went out
+  // offering web tools for what is really a grep over local code. A named
+  // project or a TODO/FIXME target is a code-search signal.
+  if (/\b(project|codebase|todos?|fixmes?)\b/.test(m)) cats.add('filesystem');
   if (/\b(email|mail|inbox|send|draft|compose)\b/.test(m)) cats.add('communication');
   // Plurals matter more than they look. This read
   // `(reminder|calendar|schedule|meeting|event|appointment)` with a trailing
@@ -2499,8 +2117,27 @@ export async function streamFromLLM(
   const hasDocuments = options?.hasDocuments ?? false;
   const skipToolsForGreeting = isSimpleGreeting(message);
   const intentCategories = detectToolCategories(message);
+  // Did a link appear recently? "Summarise that" carries no URL of its own, and
+  // judging each message in isolation is what made a follow-up impossible —
+  // the link was one turn back, so the model was handed no tools and had to
+  // improvise. Only the last few turns: a URL from twenty messages ago is not
+  // what "that page" means.
+  const contextHasUrl = getHistory(conversationId)
+    .slice(-6)
+    .some(m => /\bhttps?:\/\/\S+/i.test(m.content || ''));
   const shouldOfferTools = !skipToolsForGreeting
-    && shouldOfferToolsForMessage(message, { hasImages: !!images?.length, hasDocuments });
+    // The phrase gate alone missed whole categories — "make me a short video"
+    // is filesystem/terminal/web phrasing to no one. When the intent
+    // classifier recognises ANY tool category, that alone opens the gate.
+    // (Mirrors the Ollama path below; this escape was missing on the
+    // custom-LLM path, which is why OpenRouter sessions lost the Media
+    // Studio, filesystem and every other tool.)
+    && (shouldOfferToolsForMessage(message, {
+        hasImages: !!images?.length,
+        hasDocuments,
+        contextHasUrl,
+      })
+      || intentCategories.length > 0);
 
   // Per-conversation model override (set via sidebar context menu)
   const storedConvForModel = MemoryManager.getConversation(conversationId);
@@ -3599,6 +3236,13 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     // Load search API keys from persisted settings
     try {
       const settings = getSettings();
+      // Loaded at startup as well as on save — set in only one place, a
+      // configured instance would go unused until the user opened Settings and
+      // pressed Save, which nobody would think to do.
+      if ((settings as any).searxngUrl) {
+        setSearxngUrl((settings as any).searxngUrl);
+        console.log('[HomeBot] SearXNG URL loaded from settings');
+      }
       if (settings.tavilyApiKey) {
         setTavilyApiKey(settings.tavilyApiKey);
         console.log('[HomeBot] Tavily API key loaded from settings');
@@ -3960,7 +3604,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const fileName = `${fileLabel}_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
               const now = new Date().toLocaleString();
               const fileContent = `Weather Report for ${location}\nGenerated: ${now}\n\n${weatherSummary.replace(/\*\*/g, '').replace(/🌤️|📊/g, '')}`;
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const desktopPath = require('path').join(HOME, 'Desktop', fileName);
               let writeSuccess = false;
               let writeError = '';
@@ -4004,7 +3648,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const nbaContent = `NBA ${isSeason ? 'Season Results' : 'Games Report'}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
               // Write to file
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const teamSuffix = teamQuery ? `_${teamQuery}` : '';
               const nbaFileName = isSeason ? `nba_season_results${teamSuffix}.txt` : `nba_games${teamSuffix}.txt`;
               const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
@@ -4063,7 +3707,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
 
               // Write to file — use explicit filename if provided
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const safeFileName = filename
                 ? filename.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt'
                 : topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
@@ -4142,7 +3786,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
               const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
               const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${surfSummary}`;
-              const HOME = process.env.HOME || process.env.USERPROFILE || '';
+              const HOME = homeDir();
               const surfFilePath = require('path').join(HOME, 'Desktop', surfFileName);
               let surfWriteOk = false;
               try {
@@ -5056,7 +4700,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const fileContent = `${isSurf ? 'Surf Conditions' : 'Weather Report'} for ${location}\nGenerated: ${now}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🌤️|🏄|📊/g, '')}`;
                   
                   // Step 2: Write file to Desktop
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const desktopPath = require('path').join(HOME, 'Desktop', fileName);
                   let writeSuccess = false;
                   let writeError = '';
@@ -5103,7 +4747,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
                   const nbaContent = `NBA ${isSeason ? 'Season Results' : 'Games Report'}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/📰|🏀|🏆|📍|🏟️/g, '')}`;
 
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const teamSuffix = teamQuery ? `_${teamQuery}` : '';
                   const nbaFileName = isSeason ? `nba_season_results${teamSuffix}.txt` : `nba_games${teamSuffix}.txt`;
                   const nbaDesktopPath = require('path').join(HOME, 'Desktop', nbaFileName);
@@ -5160,7 +4804,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   const fileBody = synthesizedContent.trim() || enriched.summary.replace(/\*\*/g, '').replace(/📄|🔗/g, '');
                   const searchContent = `${topic}\nGenerated: ${new Date().toLocaleString()}\n\n${fileBody}`;
 
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const safeFileName = filename
                     ? filename.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt'
                     : topic.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_').slice(0, 40) + '.txt';
@@ -5208,7 +4852,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
                   const surfContent = `Surf Conditions for ${location}\nGenerated: ${new Date().toLocaleString()}\n\n${enriched.summary.replace(/\*\*/g, '').replace(/🏄|📊/g, '')}`;
 
-                  const HOME = process.env.HOME || process.env.USERPROFILE || '';
+                  const HOME = homeDir();
                   const surfFileName = `surf_conditions_${location.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
                   const surfFilePath = require('path').join(HOME, 'Desktop', surfFileName);
                   let surfWriteOk = false;

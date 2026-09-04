@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { homebotWebhookHeaders } from '../webhook-auth';
 import {
   createJob,
   transition,
@@ -42,7 +43,23 @@ export function readJobs(): MediaJob[] {
     const file = jobsFilePath();
     if (!fs.existsSync(file)) return [];
     const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    // The 'analysing' state was removed (it was enterable, terminal, and
+    // consumed by nothing — a one-way trap door). A job persisted in it is in
+    // fact a published video whose analysis never ran, so it reads back as
+    // what is true: published. History keeps the record of where it went.
+    let migrated = false;
+    for (const j of arr) {
+      if (j?.state === 'analysing') {
+        j.state = 'published';
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      try { fs.copyFileSync(file, `${file}.analysing-backup-${Date.now()}`); } catch { /* best effort */ }
+      writeJobs(arr);
+    }
+    return arr;
   } catch (e) {
     // Back up rather than discard — the next write would otherwise overwrite
     // recoverable work, and a media job can represent hours of rendering.
@@ -428,8 +445,27 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
-    if (job.state !== 'idea' && job.state !== 'researching' && job.state !== 'needs_revision') {
-      return err(`"${job.title}" is at ${describeProgress(job)} — scripting runs from idea, researching or needs_revision.`);
+    // A job can reach script_draft WITHOUT a script: the panel's generic
+    // "Move to …" button advances the state and does none of the work. That
+    // left a job wedged with no way out — media_narrate refused for having no
+    // script, and scripting refused for being past the scripting stage.
+    //
+    // Reported from real use: "is there a god" sat in script draft offering
+    // "Record narration", which answered "has no script yet".
+    //
+    // So writing IS allowed from the script stages, but only when there is no
+    // script to lose. A job that already has one goes through needs_revision,
+    // which is what that state is for.
+    const atScriptStage = job.state === 'script_draft' || job.state === 'script_qa';
+    const recoveringEmptyScript = atScriptStage && !job.script?.trim();
+    if (
+      !recoveringEmptyScript &&
+      job.state !== 'idea' && job.state !== 'researching' && job.state !== 'needs_revision'
+    ) {
+      return err(
+        `"${job.title}" is at ${describeProgress(job)} — scripting runs from idea, researching or needs_revision. ` +
+        `To rewrite a script that already exists, send it back first with media_reject_job.`,
+      );
     }
 
     // Imported here rather than at module load: this pulls in the LLM client,
@@ -447,11 +483,32 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
       script: script.text,
       sources: research.text.split('\n').filter(l => l.trim()).slice(0, 12),
     };
-    if (updated.state !== 'researching') {
-      updated = transition(updated, 'researching', { by: 'script stage' });
+    if (recoveringEmptyScript) {
+      // Already parked at the right stage — the state was reached without the
+      // work, so filling in the work is the whole fix. Transitioning would
+      // throw anyway: script_draft leads to script_qa or needs_revision, never
+      // back to researching.
+      updated = {
+        ...updated,
+        history: [
+          ...updated.history,
+          {
+            at: new Date().toISOString(),
+            from: updated.state,
+            to: updated.state,
+            by: 'script stage',
+            note: `script filled in by ${script.via} (the stage had been reached without one)`,
+          },
+        ],
+      };
+      upsert(updated);
+    } else {
+      if (updated.state !== 'researching') {
+        updated = transition(updated, 'researching', { by: 'script stage' });
+      }
+      updated = transition(updated, 'script_draft', { by: 'script stage', note: `written by ${script.via}` });
+      upsert(updated);
     }
-    updated = transition(updated, 'script_draft', { by: 'script stage', note: `written by ${script.via}` });
-    upsert(updated);
 
     const problems = checkScript(updated, script.text);
     const seconds = estimateSpokenSeconds(script.text);
@@ -469,15 +526,21 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
 export const narrateMediaJobDef: ToolDefinition = {
   name: 'media_narrate',
   description:
-    'Record the narration for a video whose script is ready, using the same voice HomeBot ' +
-    'speaks with. Produces an audio file and moves the job to media_production. No account ' +
-    'or API key is needed.',
+    'Record the narration for a video whose script is ready. Produces an audio file and ' +
+    'moves the job to media_production. No account or API key is needed. The result names ' +
+    'the engine that actually rendered — Kokoro requests fall back to Edge when the local ' +
+    'model cannot run.',
   category: 'media',
   parameters: {
     type: 'object',
     properties: {
       job: { type: 'string', description: 'Job id or title' },
       voice: { type: 'string', description: 'Optional voice name; defaults to HomeBot\'s configured voice' },
+      engine: {
+        type: 'string',
+        enum: ['edge', 'kokoro'],
+        description: "Narration engine. 'kokoro' runs locally (English, downloads ≈90 MB of weights on first use); anything it cannot do falls back to 'edge'. Default: the saved narrationEngine preference.",
+      },
     },
     required: ['job'],
   },
@@ -502,6 +565,7 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     const out = path.join(dir, 'narration.mp3');
     const audio = await renderNarrationToFile(job.script, out, {
       voice: args.voice ? String(args.voice) : undefined,
+      engine: args.engine === 'kokoro' || args.engine === 'edge' ? args.engine : undefined,
     });
 
     // Captions come from the script we already have, timed against the real
@@ -521,10 +585,13 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     }
 
     // Record the audio before transitioning, so a failed transition cannot
-    // discard a render that took real time.
+    // discard a render that took real time. `narratedWith` records WHICH
+    // engine produced it — a Kokoro request that silently fell back to Edge
+    // must be visible on the job, not discoverable by ear after publishing.
     let updated: MediaJob = {
       ...job,
       narrationPath: audio.path,
+      narratedWith: audio.engine,
       captionsPath: fs.existsSync(srtPath) ? srtPath : undefined,
       durationSeconds: Math.round(caps.durationSeconds),
     };
@@ -536,12 +603,15 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
 
     const kb = Math.round(audio.bytes / 1024);
     // Report the MEASURED duration, not the word-count estimate — the estimate
-    // was only ever a stand-in until real audio existed.
+    // was only ever a stand-in until real audio existed. Name the engine: a
+    // Kokoro request answered by Edge is a fact the user needs, not trivia.
     return ok(withNextStep([
-      `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB.`,
-      `audio:    ${audio.path}`,
+      `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB, engine: ${audio.engine}.`,
+      audio.engine === 'edge' && args.engine === 'kokoro'
+        ? 'Requested Kokoro but it could not render — Edge was used instead (see the job record).'
+        : `audio:    ${audio.path}`,
       updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
-    ], updated));
+    ].filter(Boolean) as string[], updated));
   } catch (e: any) {
     return err(`Could not record the narration: ${errText(e)}`);
   }
@@ -581,7 +651,7 @@ async function researchActuallyReturnsSources(): Promise<{ ok: boolean; detail: 
     const res = await axios.post(
       `${base}/webhook/${MEDIA_RESEARCH_PATH}`,
       { topic: 'Book of Jonah' },
-      { timeout: 45_000, validateStatus: () => true },
+      { timeout: 45_000, validateStatus: () => true, headers: homebotWebhookHeaders() },
     );
     if (res.status !== 200) return { ok: false, detail: `the webhook answered HTTP ${res.status}` };
 
@@ -651,6 +721,18 @@ const renderMediaJobDef: ToolDefinition = {
       },
       style: { type: 'string', description: 'Optional art direction for generated scenes' },
       zoom: { type: 'boolean', description: 'Slow zoom, single-image renders only. Default true.' },
+      music: {
+        type: 'boolean',
+        description:
+          'Mix background music under the narration, from the folder set in Settings. ' +
+          'Defaults to the Settings choice; pass false to render this one silent.',
+      },
+      track: {
+        type: 'string',
+        description:
+          'Specific music track filename from the folder set in Settings. ' +
+          'Overrides the default seeded pick. Use media_list_music to see what is available.',
+      },
     },
     required: ['job'],
   },
@@ -671,7 +753,11 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       findFfmpeg, renderVideo, FFMPEG_MISSING_MESSAGE,
     } = await import('../media-render');
 
-    const ffmpeg = await findFfmpeg();
+    // The copy "Set it up for me" downloads lives in userData, not on PATH, so
+    // it has to be handed to the finder — otherwise the download succeeds and
+    // rendering still reports ffmpeg missing.
+    const { findManagedFfmpeg } = await import('../ffmpeg-setup');
+    const ffmpeg = await findFfmpeg(findManagedFfmpeg());
     // Not an error in the job's sense: nothing is wrong with the video, a tool
     // is missing from the machine. Leave the job where it is so rendering can
     // simply be retried once ffmpeg is there.
@@ -681,6 +767,44 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     if (image && !fs.existsSync(image)) {
       return err(`No image at ${image}.`);
     }
+
+    // Background music, from the user's own folder. Chosen by the job's seed so
+    // a re-render of the same video reuses the same track — a re-render should
+    // be a re-render, not a different video.
+    const { getSettings: getMediaSettings } = await import('../config-manager');
+    const { chooseMusic } = await import('../media-music');
+    const { seedForVideo: seedForMusic } = await import('../media-visuals');
+    const mediaSettings = getMediaSettings();
+    const musicWanted = args.music === undefined
+      ? !!mediaSettings?.mediaMusicEnabled
+      : Boolean(args.music);
+
+    // A specific track the caller asked for. Validated against the folder so
+    // the model cannot invent a path that does not exist.
+    const requestedTrack = args.track ? String(args.track).trim() : '';
+    let music = chooseMusic({
+      enabled: musicWanted,
+      folder: mediaSettings?.mediaMusicFolder || '',
+      seed: seedForMusic(job.id),
+    });
+    if (requestedTrack && musicWanted) {
+      const { listMusicTracks } = await import('../media-music');
+      const folder = (mediaSettings?.mediaMusicFolder || '').trim();
+      const tracks = listMusicTracks(folder);
+      const found = tracks.find(t => path.basename(t).toLowerCase() === requestedTrack.toLowerCase());
+      if (found) {
+        music = { path: found, available: tracks.length };
+      } else if (tracks.length > 0) {
+        music = { path: null, available: tracks.length, reason: `"${requestedTrack}" is not in the music folder — use media_list_music to see what is` };
+      }
+    }
+
+    // A reason, never a failure: a silent video is a legitimate outcome, and
+    // the point of saying so is that "I chose no music" is distinguishable from
+    // "it tried and quietly gave up".
+    const musicNote = music.path
+      ? `music: ${path.basename(music.path)}`
+      : (music.reason ? `no music — ${music.reason}` : '');
 
     const dir = mediaAssetsDir(job.id);
     const out = path.join(dir, 'video.mp4');
@@ -692,6 +816,9 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // none of them stops the video being made.
     let concatPath: string | null = null;
     let visualNote = '';
+    // Kept so the panel can show the slides. Declared out here because the
+    // scene block below is conditional and the transition happens after it.
+    let scenePaths: Array<string | null> | undefined;
     const wantScenes = String(args.visuals ?? 'scenes') === 'scenes' && !image;
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
@@ -716,6 +843,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         });
         const filled = fillMissingImages(images);
         const made = filled.filter(Boolean).length;
+        // Record the slides whether or not the concat file gets built: if every
+        // image failed, an empty list is still the honest answer, and the panel
+        // says so rather than showing nothing and looking broken.
+        scenePaths = images.map(i => i.path);
         if (made) {
           const timeline = timelineFromCues(scenes, i => filled[i]);
           concatPath = path.join(dir, 'scenes.txt');
@@ -738,25 +869,134 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       concatPath,
       durationSeconds: job.durationSeconds || 60,
       zoom: args.zoom === undefined ? true : Boolean(args.zoom),
+      musicPath: music.path,
     });
+
+    // The QA the `render_qa` state has always claimed and never done.
+    //
+    // A render can exit 0 and still be unwatchable: no audio track, digital
+    // silence where the narration should be, the wrong frame size, or minutes
+    // of picture after the speech ended. Asking a person to sit through one to
+    // discover that is the expensive way to find out.
+    //
+    // A failed check does NOT throw away the file — it is on disk and named in
+    // the reply, so a false negative costs a click, not a re-render.
+    const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
+    const { dimensionsFor: qaDimensions } = await import('../media-render');
+    const { w: qaW, h: qaH } = qaDimensions(shape);
+    let qa: { ok: boolean; failures: string[]; warnings: string[] };
+    try {
+      const facts = await inspectRender(ffmpeg, rendered.path);
+      qa = evaluateRenderQa(facts, {
+        width: qaW,
+        height: qaH,
+        narrationSeconds: job.durationSeconds ?? null,
+        hasMusic: !!music.path,
+      });
+    } catch (qaErr: any) {
+      // Being unable to MEASURE is not the same as measuring a fault. Say so
+      // and let the human look, rather than blocking a video over a broken
+      // probe.
+      qa = { ok: true, failures: [], warnings: [`could not check the file automatically: ${errText(qaErr)}`] };
+    }
+
+    if (!qa.ok) {
+      const blocked = transition(
+        { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
+        'needs_revision',
+        { by: 'render QA', note: describeQa(qa) },
+      );
+      upsert(blocked);
+      return err([
+        `Rendered "${blocked.title}", but it did not pass checks: ${qa.failures.join('; ')}.`,
+        `video: ${rendered.path}`,
+        'The file is on disk if you want to look — but it is not worth approving as it stands.',
+      ].join('\n'));
+    }
 
     // Record the file before transitioning, so a failed transition cannot
     // discard a render that took real minutes.
     const updated = transition(
-      { ...job, renderPath: rendered.path },
+      { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
       'render_qa',
       { by: 'render stage' },
     );
     upsert(updated);
 
     const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
+    const notes = [visualNote, musicNote, describeQa(qa)].filter(Boolean).join(', ');
     return ok(withNextStep([
-      `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${visualNote ? `, ${visualNote}` : ''}.`,
+      `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${notes ? `, ${notes}` : ''}.`,
       `video: ${rendered.path}`,
       'Watch it before approving; nothing publishes on its own.',
     ], updated));
   } catch (e: any) {
     return err(`Could not render the video: ${errText(e)}`);
+  }
+};
+
+const listMusicDef: ToolDefinition = {
+  name: 'media_list_music',
+  description:
+    'List the tracks in the background-music folder, so you can pick one that fits the video. ' +
+    'Shows each track’s name, duration, and whether it is the one the current job would use by default.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title — used to show which track the seed would pick' },
+    },
+    required: ['job'],
+  },
+};
+
+const listMusicHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err(`No media job matching "${args.job}".`);
+
+    const { getSettings } = await import('../config-manager');
+    const { listMusicTracks, chooseMusic, MUSIC_EXTENSIONS } = await import('../media-music');
+    const { seedForVideo } = await import('../media-visuals');
+    const { mp3DurationSeconds } = await import('../media-captions');
+
+    const settings = getSettings() as any;
+    const folder = (settings?.mediaMusicFolder || '').trim();
+    if (!folder) {
+      return err('No music folder is set in Settings. Set one first, then the tracks in it can be listed.');
+    }
+    if (!fs.existsSync(folder)) {
+      return err(`The music folder was not found: ${folder}`);
+    }
+
+    const tracks = listMusicTracks(folder);
+    if (tracks.length === 0) {
+      return ok(`No music files in ${folder} (looked for ${MUSIC_EXTENSIONS.join(', ')}).`);
+    }
+
+    const seed = seedForVideo(job.id);
+    const chosen = chooseMusic({ enabled: true, folder, seed });
+
+    const lines = tracks.map((t, i) => {
+      const name = path.basename(t);
+      let duration = '';
+      try {
+        const bytes = fs.statSync(t).size;
+        duration = `, ${Math.round(mp3DurationSeconds(bytes))}s`;
+      } catch { /* unreadable file — skip duration */ }
+      const marker = chosen.path === t ? ' ← default pick' : '';
+      return `${i + 1}. ${name}${duration}${marker}`;
+    });
+
+    return ok([
+      `Music folder: ${folder}`,
+      `${tracks.length} track(s):`,
+      ...lines,
+      '',
+      'Pass the filename to media_render as `track` to use a specific one, or omit to keep the default pick.',
+    ].join('\n'));
+  } catch (e: any) {
+    return err(`Could not list music: ${errText(e)}`);
   }
 };
 
@@ -798,12 +1038,37 @@ const deleteMediaJobHandler: ToolHandler = async (args) => {
       if (!contained) {
         return err(`Refusing to delete ${resolved}: it is not inside the media assets folder.`);
       }
-      try {
-        fs.rmSync(resolved, { recursive: true, force: true });
-      } catch (e: any) {
+      // Windows keeps a lock on a file any handle is still open on, and a
+      // <video>/<audio> element pointed at file:/// counts. The panel releases
+      // its players before calling this, but a lock can also be held by a
+      // player the user opened, an antivirus scan, or Explorer's preview pane —
+      // and those clear on their own within a moment.
+      //
+      // Reported as "Delete keeps failing": before this, one EBUSY meant the
+      // job could never be deleted at all.
+      let lastError: any = null;
+      for (const waitMs of [0, 120, 400]) {
+        if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs));
+        try {
+          fs.rmSync(resolved, { recursive: true, force: true });
+          lastError = null;
+          break;
+        } catch (e: any) {
+          lastError = e;
+        }
+      }
+
+      if (lastError) {
         // The record is left alone on purpose — removing it while the files
         // survive would strand them with nothing pointing at them.
-        return err(`Could not remove the files for "${job.title}": ${errText(e)}`);
+        const locked = /EBUSY|EPERM|ENOTEMPTY/i.test(String(lastError?.code || lastError?.message || ''));
+        return err(
+          `Could not remove the files for "${job.title}": ${errText(lastError)}` +
+          (locked
+            ? ' — something still has the video or audio open. Close any player showing it and try again, ' +
+              'or use "keep files" to remove it from the list without deleting them.'
+            : '')
+        );
       }
     }
 
@@ -819,6 +1084,7 @@ const deleteMediaJobHandler: ToolHandler = async (args) => {
 
 export const mediaToolDefs: ToolDefinition[] = [
   deleteMediaJobDef,
+  listMusicDef,
   writeMediaScriptDef,
   narrateMediaJobDef,
   renderMediaJobDef,
@@ -834,6 +1100,7 @@ export const mediaToolHandlers: Record<string, ToolHandler> = {
   media_write_script: writeMediaScriptHandler,
   media_narrate: narrateMediaJobHandler,
   media_render: renderMediaJobHandler,
+  media_list_music: listMusicHandler,
   media_setup_research: setupMediaResearchHandler,
   media_create_job: createMediaJobHandler,
   media_list_jobs: listMediaJobsHandler,

@@ -5,6 +5,10 @@
 import axios from 'axios';
 import { spawn } from 'child_process';
 import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
+// Subscription-CLI model lists live in shared/ so the renderer can offer them
+// without a network round-trip — see the note in that file for why that
+// mattered enough to move them.
+import { CLAUDE_CODE_MODELS, CODEX_MODELS } from '../shared/subscription-models';
 import type { ToolDefinition } from './tools/types';
 import { toOpenAITool, toAnthropicTool } from './tools/types';
 
@@ -122,33 +126,13 @@ const ANTHROPIC_MODELS: CustomModelInfo[] = [
  * resolves each to the current model in that tier, so they don't go stale.
  * No API key is involved; usage draws on the user's subscription limits.
  */
-const CLAUDE_CODE_MODELS: CustomModelInfo[] = [
-  { id: 'haiku', name: 'Claude Haiku (subscription)', description: 'Fastest and lightest — quick questions', provider: 'claude-code', costHint: 'Lightest on your plan' },
-  { id: 'sonnet', name: 'Claude Sonnet (subscription)', description: 'Balanced speed and intelligence — a good default', provider: 'claude-code', costHint: 'Included in your plan' },
-  { id: 'opus', name: 'Claude Opus (subscription)', description: 'Most capable for complex coding and reasoning', provider: 'claude-code', costHint: 'Heavier on your plan' },
-  { id: 'fable', name: 'Claude Fable (subscription)', description: 'Highest capability — hardest problems, long tasks', provider: 'claude-code', costHint: 'Heaviest on your plan' },
-];
-
-/**
- * Models offered when the provider is `codex` — OpenAI's Codex CLI signed in
- * with a ChatGPT account, so usage draws on the user's ChatGPT plan rather
- * than a metered API key. Same idea as CLAUDE_CODE_MODELS above.
- *
- * `default` lets the CLI pick whatever the account is entitled to, which is
- * the safest option when OpenAI rotates model names.
- */
-const CODEX_MODELS: CustomModelInfo[] = [
-  { id: 'default', name: 'Codex default (subscription)', description: 'Whatever your ChatGPT plan provides — safest choice', provider: 'codex', costHint: 'Included in your plan' },
-  { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex (subscription)', description: 'Coding-tuned', provider: 'codex', costHint: 'Included in your plan' },
-  { id: 'gpt-5.1', name: 'GPT-5.1 (subscription)', description: 'General purpose', provider: 'codex', costHint: 'Included in your plan' },
-];
-
 const OPENAI_MODELS: CustomModelInfo[] = [
   { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', provider: 'openai', costHint: '~$5/1M in' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable', provider: 'openai', costHint: '~$0.15/1M in' },
-  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: '128K context, vision', provider: 'openai', costHint: '~$10/1M in' },
-  { id: 'gpt-4', name: 'GPT-4', description: 'High intelligence', provider: 'openai', costHint: '~$30/1M in' },
-  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast, cost-effective', provider: 'openai', costHint: '~$0.50/1M in' },
+  // gpt-4-turbo, gpt-4 and gpt-3.5-turbo are retired/pointless next to 4o and
+  // were removed from the picker. Saved settings that still name one are
+  // remapped at load by model-lifecycle.ts; their MODEL_METADATA entries stay
+  // as the fallback for anything that skips migration.
   { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning', provider: 'openai', costHint: '~$15/1M in' },
   { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning', provider: 'openai', costHint: '~$3/1M in' },
 ];
@@ -219,22 +203,13 @@ const TOGETHER_MODELS: CustomModelInfo[] = [
 ];
 
 // Canonical API base URLs for each named provider
-export const PROVIDER_API_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  groq: 'https://api.groq.com/openai/v1',
-  deepseek: 'https://api.deepseek.com/v1',
-  'google-ai-studio': 'https://generativelanguage.googleapis.com/v1beta/openai',
-  'google-gemini': 'https://generativelanguage.googleapis.com/v1beta',
-  huggingface: 'https://api-inference.huggingface.co/v1',
-  cerebras: 'https://api.cerebras.ai/v1',
-  sambanova: 'https://api.sambanova.ai/v1',
-  together: 'https://api.together.xyz/v1',
-  // Kimi (Moonshot) speaks the OpenAI Chat Completions shape, so it needs no
-  // bespoke client — only a base URL and a key from platform.moonshot.ai.
-  moonshot: 'https://api.moonshot.ai/v1',
-};
+// Single definition, in shared/, because the renderer needs the same map and
+// the two copies had already drifted. Re-exported here so every existing
+// importer and test keeps working unchanged.
+export { PROVIDER_API_URLS } from '../shared/provider-urls';
+// Also imported for use within this file — a re-export does not bind the name
+// in local scope.
+import { PROVIDER_API_URLS } from '../shared/provider-urls';
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '');
@@ -1497,12 +1472,16 @@ export async function streamFromCustomLLM(
     ...conversationHistory,
     { role: 'user', content: userContent }
   ];
-  
+
+  const temperature = await resolveChatTemperature();
+
   const options: StreamOptions = {
     model: apiConfig.model || 'gpt-3.5-turbo',
     messages,
     apiConfig,
     maxTokens: getModelMetadata(apiConfig.model || '').maxTokens,
+    // undefined preserves each provider's own default (0.5 / 0.7).
+    temperature,
     tools,
     onChunk,
     onToolCall,
@@ -1550,6 +1529,30 @@ export async function streamFromCustomLLM(
       // AbortController will handle cancellation
     }
   };
+}
+
+/**
+ * The user's cloud-chat temperature, if they set one.
+ *
+ * Read here — the one point every provider path flows through — so the router
+ * and a dozen call sites don't each need the setting threaded in. Undefined
+ * when unset or unreadable (tests, missing config): each stream's own default
+ * then applies, which is the behaviour this knob replaces only deliberately.
+ *
+ * Async because config-manager must be reached by dynamic import: a static
+ * import would pull electron's `app` into every consumer of this module, and
+ * a relative require() does not survive bundling (the bundle-integrity gate
+ * exists because this exact shape shipped before).
+ */
+export async function resolveChatTemperature(): Promise<number | undefined> {
+  try {
+    const { getSettings } = await import('./config-manager');
+    const t = getSettings()?.chatTemperature;
+    if (typeof t !== 'number' || !Number.isFinite(t)) return undefined;
+    return Math.min(2, Math.max(0, t));
+  } catch {
+    return undefined;
+  }
 }
 
 /**

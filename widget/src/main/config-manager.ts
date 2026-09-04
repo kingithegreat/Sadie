@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
+import { migrateRetiredModel } from './model-lifecycle';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
@@ -81,6 +82,11 @@ export interface Settings {
   // workflow management instead of the docker-exec fallback
   n8nApiKey?: string;
   ollamaUrl: string;
+  // Narration engine for Media Studio and spoken replies: 'edge' = Microsoft
+  // neural voices (network, every locale); 'kokoro' = local Kokoro-82M on the
+  // same ONNX stack Whisper already uses (English only). Kokoro failures fall
+  // back to Edge — the job records which engine actually narrated.
+  narrationEngine?: 'edge' | 'kokoro';
   // Model selection
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;
@@ -104,6 +110,12 @@ export interface Settings {
    * cannot put a video on a channel until this is deliberately turned on.
    */
   mediaPublishingEnabled?: boolean;
+  /** Allow a rendering proxy as the last fetch fallback — see shared/types.ts. */
+  webReaderFallbackEnabled?: boolean;
+  /** Mix background music under video narration — see shared/types.ts. */
+  mediaMusicEnabled?: boolean;
+  /** Folder of the user's own music tracks. */
+  mediaMusicFolder?: string;
   telemetryConsentTimestamp?: string;
   telemetryConsentVersion?: string;
 
@@ -114,8 +126,10 @@ export interface Settings {
   permissionPromptTimeoutMs?: number;
 
   // Misc / developer defaults
-  defaultTeam?: string;
   uncensoredMode?: boolean;
+  // Web search — a self-hosted SearXNG URL (free, unmetered, no key) plus the
+  // metered key-based providers it falls through to.
+  searxngUrl?: string;
   // Web search API keys
   tavilyApiKey?: string;
   serperApiKey?: string;
@@ -125,10 +139,19 @@ export interface Settings {
   geminiApiKey?: string;
   /** Moonshot / Kimi — OpenAI-compatible API. */
   moonshotApiKey?: string;
+  /** One key per cloud provider — see shared/types.ts. Encrypted per value. */
+  providerApiKeys?: Record<string, string>;
   // Code model API (optional — routes coding queries to a cloud API instead of Ollama)
   codeApiKey?: string;
   codeApiProvider?: 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   codeApiUrl?: string;
+  /**
+   * Cloud chat temperature override, 0–2. Unset means each provider's default
+   * (0.5 for OpenAI-compatible, 0.7 for Anthropic) — the knob only exists to
+   * replace a default deliberately, not to add another one. Local Ollama
+   * models keep their tuned values regardless.
+   */
+  chatTemperature?: number;
   // Hardware profile — drives model defaults and VRAM recommendations
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
   // Custom chat guidelines appended to system prompt
@@ -181,6 +204,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceSilenceStopSec: 2,
   // Prefer IPv4 to avoid ::1 resolution issues on Windows
   ollamaUrl: 'http://127.0.0.1:11434',
+  narrationEngine: 'edge',
   modelRoutingMode: 'prompt',
   reflectionValidationEnabled: false,
   batchPreviewEnabled: false,
@@ -207,6 +231,12 @@ export const DEFAULT_SETTINGS: Settings = {
    * conscious act.
    */
   mediaPublishingEnabled: false,
+  // Off until a folder is chosen: there is nothing to play otherwise, and a
+  // toggle that appears on and does nothing is worse than one that is off.
+  // Off by default: the only fetch tier that sends a URL to a third party.
+  webReaderFallbackEnabled: false,
+  mediaMusicEnabled: false,
+  mediaMusicFolder: '',
 
   // onboarding defaults
   firstRun: true,
@@ -259,6 +289,9 @@ export const DEFAULT_SETTINGS: Settings = {
     // Vision — read-only safe
     vision_describe: true,
     vision_query: true,
+    look_at_browser: true,
+    // Navigation — moves the user to a panel; no data is read or written
+    navigate_to_mode: true,
     // Voice — safe
     speak: true,
     stop_speaking: true,
@@ -313,6 +346,9 @@ export const DEFAULT_SETTINGS: Settings = {
     navigate_browser: false,
     media_write_script: true,
     media_narrate: true,
+    // Reads a clip inside the user folder, writes the narrated result next to
+    // it; spends the user's own Gemini free-tier quota, nothing else.
+    media_narrate_clip: true,
     media_render: true,
     // Destructive and irreversible, so it also carries requiresConfirmation.
     media_delete_job: false,
@@ -322,6 +358,33 @@ export const DEFAULT_SETTINGS: Settings = {
     media_advance_job: true,
     media_approve_job: false,
     media_reject_job: false,
+    media_list_music: true,
+    // Skills — loading instructions is safe
+    use_skill: true,
+    list_skills: true,
+    // CRM — reads ship allowed; every write carries requiresConfirmation in
+    // crm.ts and ships denied here (see the CRM_WRITE_TOOLS note there).
+    crm_search_companies: true,
+    crm_search_contacts: true,
+    crm_search_deals: true,
+    crm_find_stale_deals: true,
+    crm_daily_brief: true,
+    crm_get_stages: true,
+    crm_audit_log: true,
+    crm_create_company: false,
+    crm_update_company: false,
+    crm_create_contact: false,
+    crm_update_contact: false,
+    crm_create_deal: false,
+    crm_update_deal: false,
+    crm_advance_deal: false,
+    crm_log_activity: false,
+    crm_add_note: false,
+    crm_create_task: false,
+    crm_complete_task: false,
+    crm_rename_stage: false,
+    crm_match_email: false,
+    crm_export: false,
     // Git — read-only operations safe
     git_status: true,
     git_log: true,
@@ -351,10 +414,7 @@ export const DEFAULT_SETTINGS: Settings = {
     // default servers), not a native tool — mcp_ytdlp_* below.
     mcp_ytdlp_get_video_info: true,
     mcp_ytdlp_download_video: false,
-  },
-
-  // Default NBA team for new users
-  defaultTeam: 'GSW'
+  }
 };
 
 // A convenience function for asserting permissions on a tool.
@@ -523,6 +583,16 @@ export function getSettings(): Settings {
       ...(savedSettings.permissions || {})
     } as Record<string, boolean>;
     merged.permissions = mergedPermissions;
+    // Retired cloud model IDs get remapped to their current-tier replacement
+    // here, at load — the corrected value persists on the next ordinary save,
+    // and the picker lists no longer offer the retired IDs at all.
+    if (merged.customLLM?.model) {
+      const migration = migrateRetiredModel(merged.customLLM.model);
+      if (migration.renamedFrom) {
+        console.warn(`[HomeBot] Saved model "${migration.renamedFrom}" is retired — using "${migration.model}" instead.`);
+        merged.customLLM = { ...merged.customLLM, model: migration.model };
+      }
+    }
     const demoMode = process.argv?.includes('--demo') || process.env.HOMEBOT_DEMO_MODE === '1' || process.env.HOMEBOT_DEMO_MODE === 'true';
     if (demoMode) {
       merged.telemetryEnabled = false;
@@ -540,6 +610,18 @@ export function getSettings(): Settings {
       const val = (merged as any)[key];
       if (typeof val === 'string' && val.length > 0) {
         (merged as any)[key] = decryptSecret(val);
+      }
+    }
+    // Decrypt every per-provider key. Same treatment as the flat secrets above
+    // — this map holds credentials for the providers the four named fields
+    // never covered, so it must not sit on disk in plaintext.
+    const providerKeys = (merged as any).providerApiKeys;
+    if (providerKeys && typeof providerKeys === 'object') {
+      for (const provider of Object.keys(providerKeys)) {
+        const val = providerKeys[provider];
+        if (typeof val === 'string' && val.length > 0) {
+          providerKeys[provider] = decryptSecret(val);
+        }
       }
     }
     // Decrypt nested customLLM.apiKey
@@ -604,6 +686,37 @@ export function saveSettings(settings: Settings): void {
           (toSave as any)[key] = encryptSecret(val);
         }
       }
+    }
+    // Per-provider keys: merged against the previous map, then encrypted.
+    //
+    // Same rule the flat secrets follow — a save that OMITS a provider means
+    // "unchanged", and only an explicit empty string clears it. The renderer
+    // sends the whole settings object, so without the merge, saving from a
+    // panel that had only loaded one provider would wipe every other
+    // provider's key. That is the lost-update bug the SECRET_KEYS loop above
+    // exists to prevent, and this map is just as easy to lose.
+    {
+      const previousMap: Record<string, string> = ((previous as any).providerApiKeys as Record<string, string>) || {};
+      const incoming = (toSave as any).providerApiKeys;
+      const mergedKeys: Record<string, string> = { ...previousMap };
+      if (incoming && typeof incoming === 'object') {
+        for (const [provider, value] of Object.entries(incoming)) {
+          if (typeof value !== 'string') continue;
+          if (value === '') delete mergedKeys[provider];
+          else mergedKeys[provider] = value;
+        }
+      }
+      const encrypted: Record<string, string> = {};
+      for (const [provider, value] of Object.entries(mergedKeys)) {
+        if (typeof value !== 'string' || value.length === 0) continue;
+        if (value.length > MAX_SECRET_CHARS) {
+          console.error('[CONFIG] providerApiKeys.%s suspiciously large (%d chars) — clearing to prevent bloat', provider, value.length);
+          continue;
+        }
+        encrypted[provider] = encryptSecret(value);
+      }
+      if (Object.keys(encrypted).length > 0) (toSave as any).providerApiKeys = encrypted;
+      else delete (toSave as any).providerApiKeys;
     }
     // Encrypt nested customLLM.apiKey with the same cap
     if (toSave.customLLM && typeof (toSave.customLLM as any).apiKey === 'string' && (toSave.customLLM as any).apiKey.length > 0) {

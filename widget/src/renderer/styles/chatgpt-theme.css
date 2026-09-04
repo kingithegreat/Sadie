@@ -10,24 +10,24 @@
   --bg-light:   oklch(20% 0.012 250);
   --bg-hover:   oklch(18% 0.010 250);
 
-  /* ── Blue accent system — vibrant, modern ── */
-  --accent-primary: oklch(65% 0.18 250);
-  --accent-hover:   oklch(72% 0.20 250);
-  --accent-light:   oklch(82% 0.12 250);
-  --accent-dark:    oklch(48% 0.16 250);
-  --accent-muted:   oklch(65% 0.18 250 / 0.15);
+  /* ── Indigo-violet accent system — the modern AI-app signature ──
+     2026-08 theme change: moved off generic system blue (hue 250), which read
+     as "default Windows link colour", to hue 285. Everything downstream that
+     references these tokens follows automatically. */
+  --accent-primary: oklch(66% 0.19 285);
+  --accent-hover:   oklch(73% 0.19 285);
+  --accent-light:   oklch(84% 0.11 285);
+  --accent-dark:    oklch(50% 0.19 285);
+  --accent-muted:   oklch(66% 0.19 285 / 0.16);
 
   /* Named brand tokens (hex for compatibility).
-     Nudged off the fully-saturated #0088FF, which is within a hair of the
-     default Windows link blue and read as a system colour rather than ours.
-     Same blue family, a little more indigo and a little less electric, and now
-     a three-stop scale so the logo tile and the gradient buttons are lit from
-     the same source. --homebot-blue-500 keeps its name and its role, so the
-     seven rules already using it need no edit. */
-  --homebot-blue-300: #5FB0FF;
-  --homebot-blue-500: #1E83F7;
-  --homebot-blue-700: #0A56D6;
-  --homebot-navy: #0a1628;
+     Values retuned with the indigo-violet theme; names kept because seven
+     existing rules reference them. Same three-stop scale so the logo tile
+     and gradient buttons stay lit from one source. */
+  --homebot-blue-300: #A78BFA;
+  --homebot-blue-500: #7C5CFF;
+  --homebot-blue-700: #5B3BE6;
+  --homebot-navy: #12102a;
 
   /* ── Text — softer primaries to reduce eye strain ── */
   --text-primary:   oklch(92% 0.005 250);
@@ -42,7 +42,7 @@
   --bg-chat:          oklch(7% 0.006 250);
   --bg-input:         oklch(10% 0.008 250);
   --bg-panel:         oklch(11% 0.010 250);
-  --bg-user-msg:      oklch(45% 0.14 250);
+  --bg-user-msg:      oklch(46% 0.15 285);
   --bg-assistant-msg: oklch(10% 0.008 250);
   --bg-card:          oklch(12% 0.008 250);
   --bg-secondary:     oklch(12% 0.008 250);
@@ -56,7 +56,7 @@
   --border-light:   oklch(100% 0 0 / 0.06);
   --border-medium:  oklch(100% 0 0 / 0.10);
   --border-color:   oklch(100% 0 0 / 0.08);
-  --border-focus:   oklch(65% 0.18 250 / 0.45);
+  --border-focus:   oklch(66% 0.19 285 / 0.45);
 
   /* ── Status colors ── */
   --success:      oklch(72% 0.18 150);
@@ -74,7 +74,7 @@
   --shadow-md:   0 4px 14px oklch(0% 0 0 / 0.18), 0 2px 4px oklch(0% 0 0 / 0.08);
   --shadow-lg:   0 12px 40px oklch(0% 0 0 / 0.25), 0 4px 12px oklch(0% 0 0 / 0.10);
   --shadow-xl:   0 20px 60px oklch(0% 0 0 / 0.35), 0 8px 20px oklch(0% 0 0 / 0.15);
-  --shadow-glow: 0 0 24px oklch(65% 0.18 250 / 0.12);
+  --shadow-glow: 0 0 24px oklch(66% 0.19 285 / 0.14);
   --shadow-inset: inset 0 1px 0 oklch(100% 0 0 / 0.04);
 
   /* ── Spacing — 4px base ── */
@@ -2038,13 +2038,38 @@ body {
   cursor: pointer; font-size: 0.85rem; transition: var(--transition-fast);
 }
 .theme-btn:hover { border-color: var(--accent-primary, #0088FF); }
-.theme-btn.active { border-color: var(--accent-primary, #0088FF); background: rgba(0,136,255,0.15); color: var(--accent-primary, #0088FF); }
+.theme-btn.active { border-color: var(--accent-primary); background: oklch(66% 0.19 285 / 0.15); color: var(--accent-primary); }
 
 .model-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
+
+/* Wraps the card so a delete control can sit on it — a <button> cannot
+   contain another <button>. */
+.model-card-wrap { position: relative; display: flex; }
+.model-card-wrap > .model-card { flex: 1; }
+
+.model-card-delete {
+  position: absolute; top: 4px; right: 4px;
+  width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 4px;
+  background: transparent; color: var(--text-muted);
+  font-size: 12px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: var(--transition-fast);
+}
+/* Revealed on hover or keyboard focus. Always-visible ✕ on every card turns a
+   model picker into a row of delete buttons. Focus matters as much as hover —
+   hover-only would put it out of reach of the keyboard entirely. */
+.model-card-wrap:hover .model-card-delete,
+.model-card-delete:focus-visible { opacity: 1; }
+.model-card-delete:hover:not(:disabled) {
+  background: oklch(55% 0.2 25 / 0.85); color: #fff;
+}
+.model-card-delete:disabled { cursor: not-allowed; opacity: 0; }
+.model-card-wrap:hover .model-card-delete:disabled { opacity: 0.35; }
 
 .model-card {
   background: var(--bg-medium);
@@ -4574,6 +4599,54 @@ body {
 .sp-section-toggle:first-child { border-top: none; }
 .sp-section-toggle:hover { color: var(--accent-primary, #4a6cf7); background: oklch(100% 0 0 / 0.05); }
 .sp-section-arrow { font-size: 14px; width: 18px; display: inline-block; }
+
+/* Which cloud providers already have a saved key */
+.sp-saved-keys { margin-top: 8px; }
+.sp-saved-keys-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sp-saved-key {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: var(--radius-sm);
+  background: oklch(100% 0 0 / 0.06); color: var(--text-secondary);
+  font-size: 12px;
+}
+.sp-saved-key.current {
+  background: var(--accent-primary, #4a6cf7); color: #fff;
+}
+.sp-saved-key-remove {
+  border: none; background: transparent; cursor: pointer;
+  color: inherit; opacity: 0.7; font-size: 11px; line-height: 1; padding: 0;
+}
+.sp-saved-key-remove:hover { opacity: 1; }
+
+/* Simple / Advanced view toggle — sits between the header and the body */
+.sp-view-toggle {
+  display: flex; gap: 4px; padding: 4px;
+  margin: 0 12px 4px; border-radius: var(--radius-sm);
+  background: oklch(100% 0 0 / 0.04);
+}
+.sp-view-btn {
+  flex: 1; padding: 8px 12px; border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: var(--transition-fast);
+}
+.sp-view-btn:hover { color: var(--text-primary); background: oklch(100% 0 0 / 0.05); }
+.sp-view-btn.active {
+  background: var(--accent-primary, #4a6cf7); color: #fff;
+}
+.sp-view-hint {
+  display: block; padding: 12px; margin-top: 4px;
+  border-top: 1px solid var(--border-light, #333);
+}
+
+/* The local-vs-cloud switch is the highest-stakes control here, so it reads as
+   a distinct block rather than one more row in a list. */
+.sp-privacy-switch {
+  border: 1px solid var(--border-light, #333);
+  border-radius: var(--radius-sm);
+  padding: 12px; margin: 4px 12px 8px;
+  background: oklch(100% 0 0 / 0.02);
+}
 
 /* Settings backup section */
 .sp-backup-section { border-top: 1px solid var(--border-light, #333); padding-top: 16px; margin-top: 8px; }
@@ -8642,16 +8715,18 @@ body {
   --r-lg: 20px;
   --r-pill: 999px;
 
-  /* One accent, used sparingly. Apple's system blue. */
-  --accent: #0A84FF;
-  --accent-hover: #339CFF;
-  --accent-quiet: rgba(10, 132, 255, 0.14);
+  /* One accent, used sparingly. Indigo-violet — the app's own identity,
+     deliberately NOT system blue so HomeBot stops reading as a Windows app. */
+  --accent: #7C5CFF;
+  --accent-hover: #927BFF;
+  --accent-quiet: rgba(124, 92, 255, 0.16);
   --accent-contrast: #ffffff;
 
-  /* Materials — translucency is the single most "Apple" cue */
-  --material-thin: rgba(28, 28, 30, 0.62);
-  --material-regular: rgba(28, 28, 30, 0.78);
-  --material-thick: rgba(22, 22, 24, 0.92);
+  /* Materials — translucency is the single most "Apple" cue, tinted toward
+     the indigo ground so glass panels sit in the palette instead of on it. */
+  --material-thin: rgba(24, 22, 38, 0.62);
+  --material-regular: rgba(24, 22, 38, 0.78);
+  --material-thick: rgba(18, 16, 30, 0.92);
   --material-blur: saturate(180%) blur(20px);
   --hairline: rgba(255, 255, 255, 0.09);
 
@@ -8671,9 +8746,9 @@ body {
   --material-regular: rgba(250, 250, 252, 0.82);
   --material-thick: rgba(255, 255, 255, 0.94);
   --hairline: rgba(0, 0, 0, 0.09);
-  --accent: #007AFF;
-  --accent-hover: #0069DB;
-  --accent-quiet: rgba(0, 122, 255, 0.12);
+  --accent: #6D4AFF;
+  --accent-hover: #5A38F0;
+  --accent-quiet: rgba(109, 74, 255, 0.12);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.09);
   --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.13);
@@ -8996,7 +9071,26 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .ws-status-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
 .ws-status-dirty { font-weight: 600; }
 
-/* Code editor: transparent textarea over a highlighted <pre> */
+  /* The labelled way home from Code mode. Sits first in the status bar —
+     high-contrast against the bar, reads as a button, impossible to miss.
+     The activity-bar icon stays for people who learned it. */
+  .ws-status-home {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 10px;
+    margin-right: 8px;
+    background: var(--accent, #7c5cff);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter var(--dur-fast) var(--ease-apple);
+  }
+  .ws-status-home:hover { filter: brightness(1.12); }
+  .ws-status-home:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .code-editor {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -9683,6 +9777,22 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   height: 2rem;
 }
 
+/* The one-off video-engine download. Informational, not an error — nothing has
+   gone wrong yet, and colouring it red would say otherwise. */
+.ms-engine {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .6rem .75rem;
+  margin-bottom: .6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, oklch(60% 0.02 250 / 0.35));
+  background: var(--bg-secondary, oklch(50% 0.02 250 / 0.12));
+}
+
+.ms-engine-text { flex: 1 1 16rem; font-size: .88rem; }
+a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 /* The rendered video, shown where it is approved. Capped by height rather
    than width because shorts are 1080x1920 — sized by width, a portrait video
    would push every other job off the screen. */
@@ -9692,6 +9802,74 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   max-height: 15rem;
   border-radius: 8px;
   background: #000;
+}
+
+/* Script and slide preview — closed by default, so a list of jobs stays a list */
+.ms-preview { margin-top: .4rem; }
+.ms-preview-toggle {
+  cursor: pointer; font-size: .82rem; color: var(--text-secondary);
+  padding: .15rem 0; list-style: revert;
+}
+.ms-preview-toggle:hover { color: var(--text-primary); }
+.ms-script {
+  margin: .35rem 0 0;
+  padding: .6rem .7rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  background: oklch(100% 0 0 / 0.03);
+  border-radius: 6px;
+  font-size: .85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+}
+.ms-slides {
+  display: flex; gap: .4rem; margin-top: .35rem;
+  overflow-x: auto; padding-bottom: .3rem;
+}
+.ms-slide {
+  flex: 0 0 auto;
+  height: 4.5rem; width: auto;
+  border-radius: 6px;
+  background: #000;
+}
+.ms-slide-missing {
+  display: flex; align-items: center; justify-content: center;
+  width: 4.5rem;
+  border: 1px dashed var(--border-light, #333);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+
+/* Fullscreen has to undo the preview sizing above.
+ *
+ * The browser gives a fullscreen element width/height 100% from its UA
+ * stylesheet, but an AUTHOR rule beats a UA rule — so `max-height: 15rem` kept
+ * applying and the video stayed a 15rem letterbox in the middle of a black
+ * screen. Pressing the fullscreen button appeared to do nothing, which is
+ * exactly how it was reported ("I couldn't make it full screen").
+ *
+ * :-webkit-full-screen is listed separately on purpose: a selector list is
+ * dropped WHOLE by any browser that does not understand one of its selectors,
+ * so combining the two with a comma would lose the rule for both. */
+.ms-video:fullscreen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+.ms-video:-webkit-full-screen {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  border-radius: 0;
+  object-fit: contain;
 }
 
 .ms-job-published {
@@ -10217,3 +10395,254 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   color: var(--text-secondary, oklch(70% 0 0));
 }
 .setup-progress--error { color: oklch(60% 0.19 25); }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ICON & CHROME POLISH PASS — 2026-08 visual refresh
+
+   Companion to the redrawn glyph set in components/Icon.tsx. Same discipline
+   as the depth pass above: appended, additive only, removable as one block.
+   Nothing here changes layout dimensions — it aligns icons optically inside
+   their buttons, gives every chrome control one consistent affordance model
+   (hover lift + press sink + visible keyboard ring), and softens the global
+   text selection so it stops flashing pure Windows blue.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Icon optics ─────────────────────────────────────────────────────────────
+   Inline SVGs sit on the text baseline by default, which made them look
+   half-a-pixel low inside flex buttons and let flex containers shrink them
+   into ovals. Block + no-shrink fixes both without touching any button. */
+.hb-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* ── One affordance model for all round/quiet chrome buttons ───────────────
+   header-btn, mode-btn, attach-button, ws-activity-btn and voice-button all
+   had slightly different hover stories. These rules ADD a shared layer:
+   colour transitions they already have stay; this contributes the motion.
+   transform is translateY/scale only — never layout properties. */
+.header-btn,
+.mode-btn,
+.attach-button,
+.ws-activity-btn,
+.voice-button,
+.code-copy-btn {
+  transition: background-color 160ms var(--ease-out, ease),
+              border-color 160ms var(--ease-out, ease),
+              color 160ms var(--ease-out, ease),
+              transform 120ms var(--ease-out, ease),
+              box-shadow 160ms var(--ease-out, ease);
+}
+
+.header-btn:hover,
+.attach-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.header-btn:active,
+.mode-btn:active,
+.attach-button:not(:disabled):active,
+.voice-button:active,
+.code-copy-btn:active {
+  transform: scale(0.94);
+}
+
+.send-button:not(:disabled):hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 14px oklch(65% 0.18 250 / 0.35);
+}
+.send-button:not(:disabled):active { transform: scale(0.96); }
+
+/* Disabled controls stop pretending to be interactive. */
+.attach-button:disabled,
+.send-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: saturate(0.6);
+}
+
+/* ── Keyboard visibility ───────────────────────────────────────────────────
+   One consistent focus ring everywhere in the chrome, using the token that
+   already exists. :focus-visible only — mouse users see nothing change. */
+.header-btn:focus-visible,
+.mode-btn:focus-visible,
+.attach-button:focus-visible,
+.send-button:focus-visible,
+.voice-button:focus-visible,
+.code-copy-btn:focus-visible,
+.remove-image:focus-visible,
+.remove-document:focus-visible {
+  outline: 2px solid var(--border-focus, oklch(65% 0.18 250 / 0.45));
+  outline-offset: 2px;
+}
+
+/* ── Mode bar: quiet rest, confident active ────────────────────────────────
+   The active pill gains a faint accent wash and an inner top highlight so it
+   reads as raised rather than merely coloured; inactive buttons lose their
+   border entirely at rest so the row reads calmer. */
+.mode-switcher .mode-btn {
+  box-shadow: inset 0 1px 0 transparent;
+}
+.mode-switcher .mode-btn.active {
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.18),
+    0 2px 8px oklch(65% 0.18 250 / 0.25);
+}
+
+/* ── Selection ────────────────────────────────────────────────────────────
+   Native selection blue fights the brand palette when highlighting chat text;
+   this keeps it readable but on-palette, in both themes. */
+::selection {
+  background: oklch(65% 0.18 250 / 0.32);
+  color: inherit;
+}
+[data-theme='light'] ::selection {
+  background: oklch(62% 0.17 250 / 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-btn, .mode-btn, .attach-button, .voice-button, .code-copy-btn,
+  .send-button {
+    transition: none;
+  }
+  .header-btn:hover, .attach-button:not(:disabled):hover { transform: none; }
+  .header-btn:active, .mode-btn:active, .attach-button:not(:disabled):active,
+  .voice-button:active, .code-copy-btn:active, .send-button:not(:disabled):active {
+    transform: none;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME PASS — indigo-violet identity, 2026-08
+
+   The token layer moved from system blue to indigo-violet; this block brings
+   the few hard-coded blues and the component-level details along so the whole
+   app reads as one palette. Same rules as every appended pass: additive,
+   removable as one block, no layout dimensions touched.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ambient ground follows the new accent ──────────────────────────────────
+   Re-states the depth-pass washes in the violet family; being later in the
+   file it simply wins. */
+.app-container {
+  background-image:
+    radial-gradient(115% 75% at 12% -8%, oklch(60% 0.17 285 / 0.10), transparent 58%),
+    radial-gradient(95% 65% at 102% 104%, oklch(62% 0.14 262 / 0.07), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* ── Composer: the most-looked-at surface in the app ─────────────────────── */
+.input-container {
+  transition: border-color var(--dur-fast, 140ms) var(--ease-apple, ease),
+              box-shadow var(--dur-fast, 140ms) var(--ease-apple, ease);
+}
+.input-container:focus-within {
+  border-color: oklch(66% 0.19 285 / 0.55);
+  box-shadow:
+    0 0 0 3px oklch(66% 0.19 285 / 0.10),
+    0 8px 24px oklch(0% 0 0 / 0.30);
+}
+
+/* ── Conversation list: active item earns an accent spine ─────────────────── */
+.conversation-item.active {
+  box-shadow: inset 2px 0 0 var(--accent-primary);
+  background: linear-gradient(
+    90deg,
+    oklch(66% 0.19 285 / 0.10),
+    transparent 70%
+  );
+}
+.sidebar-filter-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px oklch(66% 0.19 285 / 0.12);
+}
+
+/* ── Mode bar: a glass pill the buttons sit inside ────────────────────────── */
+.mode-switcher {
+  background: var(--material-thin, rgba(24, 22, 38, 0.62));
+  -webkit-backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.09));
+  border-radius: var(--r-pill, 999px);
+}
+
+/* ── Toasts: real material instead of a flat strip ────────────────────────── */
+.toast-item {
+  background: var(--material-thick, rgba(18, 16, 30, 0.92));
+  -webkit-backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  backdrop-filter: var(--material-blur, saturate(180%) blur(20px));
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.09));
+  border-radius: var(--r-md, 14px);
+  box-shadow: var(--shadow-2, 0 4px 16px rgba(0, 0, 0, 0.24));
+}
+
+/* ── Scrollbars: quiet by default, present on hover ────────────────────────
+   One rule set wins over the earlier per-surface scrollbar blocks because it
+   is last; applies to everything that scrolls inside the app shell. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: oklch(100% 0 0 / 0.10);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(100% 0 0 / 0.20);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: oklch(0% 0 0 / 0.18);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0% 0 0 / 0.32);
+  background-clip: padding-box;
+}
+
+/* ── Cards keep their depth lift, now tinted to match ─────────────────────── */
+.daily-card:hover,
+.automation-card:hover,
+.template-card:hover {
+  border-color: oklch(66% 0.19 285 / 0.35);
+}
+
+/* ── Quiet avatars ─────────────────────────────────────────────────────────
+   The illustrated PNG badges (golden hero / mascot) were the loudest thing in
+   the chat. Replaced in MessageBubble.tsx by glyphs from the icon set; these
+   rules quiet the container to match: transparent surface, hairline ring,
+   muted glyph. Assistant reads in the accent, user in plain text colour.
+   Same 32px box — zero layout change. */
+.message-avatar {
+  background: transparent;
+  border: 1px solid var(--hairline, oklch(100% 0 0 / 0.09));
+  color: var(--text-secondary, oklch(75% 0.008 250));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.message-avatar.assistant {
+  color: var(--accent-primary);
+  border-color: oklch(66% 0.19 285 / 0.30);
+}
+[data-theme='light'] .message-avatar {
+  border-color: oklch(0% 0 0 / 0.10);
+}
+[data-theme='light'] .message-avatar.assistant {
+  color: var(--accent-primary);
+  border-color: oklch(50% 0.19 285 / 0.30);
+}
+
+
+/* ── Improve this prompt ─────────────────────────────────────────────────────
+   Sits with the attach buttons; the undo only appears after a rewrite. */
+.improve-prompt-button:disabled { opacity: 0.4; cursor: default; }
+.improve-undo-button { opacity: 0.75; }
+.improve-note {
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  background: var(--surface-2, rgba(127, 127, 127, 0.1));
+  opacity: 0.9;
+}

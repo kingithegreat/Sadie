@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as childProcess from 'child_process';
 import { app } from 'electron';
 import { isE2E } from '../env';
+import { isPrivateIPv6 } from '../utils/url-boundary';
 
 // Keep-alive agents — reuse TCP+TLS connections across requests
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 6, timeout: 60000 });
@@ -41,6 +42,28 @@ export function setStableHordeApiKey(key: string | null) {
 
 export function getTavilyApiKey(): string | null {
   return _tavilyApiKey;
+}
+
+/**
+ * A self-hosted SearXNG instance.
+ *
+ * The only search backend here that is free, unmetered, keyless and accountless
+ * at the same time. It aggregates real engines server-side, so it is not a
+ * scraper and does not get challenge-paged the way the DuckDuckGo endpoints do
+ * after a couple of queries.
+ *
+ * A URL rather than a key, because the user runs the instance.
+ */
+let _searxngUrl: string | null = null;
+
+export function setSearxngUrl(url: string | null) {
+  // Trailing slashes are the difference between /search and //search on some
+  // reverse proxies, and this is pasted by hand.
+  _searxngUrl = url ? url.trim().replace(/\/+$/, '') : null;
+}
+
+export function getSearxngUrl(): string | null {
+  return _searxngUrl;
 }
 
 export function setSerperApiKey(key: string | null) {
@@ -238,8 +261,8 @@ async function isUrlSafe(urlString: string): Promise<{ ok: boolean; message?: st
     return { ok: true };
   }
   if (ipVersion === 6) {
-    // block IPv6 loopback
-    if (hostname === '::1') return { ok: false, message: 'IPv6 loopback blocked' };
+    // block IPv6 loopback, ULA, link-local and IPv4-mapped private forms
+    if (isPrivateIPv6(hostname)) return { ok: false, message: 'Private/loopback IPv6 blocked' };
     return { ok: true };
   }
 
@@ -252,7 +275,7 @@ async function isUrlSafe(urlString: string): Promise<{ ok: boolean; message?: st
         if (rec.address.startsWith('127.')) return { ok: false, message: 'Resolved to loopback' };
       }
       if (rec.family === 6) {
-        if (rec.address === '::1') return { ok: false, message: 'Resolved to IPv6 loopback' };
+        if (isPrivateIPv6(rec.address)) return { ok: false, message: 'Resolved to private/loopback IPv6' };
       }
     }
   } catch (err) {
@@ -457,6 +480,90 @@ async function searchGoogle(query: string, maxResults: number): Promise<Array<{ 
   return results;
 }
 
+/**
+ * A search provider refusing to serve us, as distinct from finding nothing.
+ *
+ * These are the same outcome to a naive caller and opposite things to a user:
+ * "no pages match your words" is answered by different words, and "we are
+ * refusing your requests" is not answered by anything the user types.
+ */
+export class SearchBlockedError extends Error {
+  constructor(public readonly provider: string) {
+    super(`${provider} is refusing requests right now (rate limit or bot check).`);
+    this.name = 'SearchBlockedError';
+  }
+}
+
+/**
+ * Recognise a challenge/rate-limit page.
+ *
+ * DuckDuckGo answers a throttled request with **HTTP 202 and a challenge page**,
+ * not an error status — so every status check passes and the parser simply finds
+ * no result blocks.
+ *
+ * Measured 2026-08-23 from this machine: the FIRST query of a session returned
+ * HTTP 200, 33.5 KB and 10 parsed results. Every subsequent query returned
+ * HTTP 202, ~14.2 KB, zero result blocks and zero outbound links.
+ * `html.duckduckgo.com` and `lite.duckduckgo.com` behaved identically, so this
+ * is not a parsing bug and no change to the scrapers fixes it.
+ *
+ * Without this, the keyless path — the entire search experience for anyone who
+ * has not set up an API key — silently returns nothing after its first query,
+ * and the user is advised to try different search terms.
+ */
+const SEARCH_BLOCK_MARKERS = /anomaly|unusual traffic|captcha|challenge-form|are you a robot/i;
+
+export function isSearchBlockPage(html: string): boolean {
+  // Length alone is not the signal — a genuinely sparse result page is small
+  // too. The markers are, and the block page is reliably short as well, so
+  // requiring both keeps a real (if thin) page from being called a block.
+  return html.length < 20_000 && SEARCH_BLOCK_MARKERS.test(html);
+}
+
+/**
+ * Search a self-hosted SearXNG instance.
+ *
+ * A real JSON API rather than a scrape, so there is no markup to drift and no
+ * challenge page to detect. Note that SearXNG ships with the JSON format
+ * DISABLED — `search.formats` in `settings.yml` must include `json`, or every
+ * request comes back 403. That is the single most common setup failure, so the
+ * error says it outright instead of reporting "search unavailable".
+ */
+async function searchSearxng(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  const base = getSearxngUrl();
+  if (!base) return [];
+
+  const url = `${base}/search?q=${encodeURIComponent(query)}&format=json&safesearch=0`;
+  console.log('[HomeBot Web] Searching SearXNG:', base);
+
+  let raw: string;
+  try {
+    raw = await httpGet(url, { 'Accept': 'application/json' });
+  } catch (err: any) {
+    // 403 here almost always means the JSON format is not enabled, and saying
+    // so turns a dead end into a two-line fix.
+    if (/\b403\b/.test(String(err?.message))) {
+      throw new Error(
+        'SearXNG refused the request (403). Add `json` to `search.formats` in its settings.yml and restart it.'
+      );
+    }
+    throw err;
+  }
+
+  const parsed = JSON.parse(raw);
+  const rows: any[] = Array.isArray(parsed?.results) ? parsed.results : [];
+
+  return rows
+    .filter(r => r && typeof r.url === 'string' && isAllowedDomain(r.url))
+    .slice(0, maxResults)
+    .map(r => ({
+      title: String(r.title || r.url),
+      url: r.url,
+      // SearXNG calls the snippet "content"; it is a preview, not page text.
+      snippet: String(r.content || ''),
+    }));
+}
+
 // Search using DuckDuckGo HTML (fallback — scraper, brittle)
 async function searchDuckDuckGo(query: string, maxResults: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
   const encodedQuery = encodeURIComponent(query);
@@ -465,6 +572,11 @@ async function searchDuckDuckGo(query: string, maxResults: number): Promise<Arra
   console.log('[HomeBot Web] Searching DuckDuckGo for:', query);
   const html = await httpGet(searchUrl);
   console.log('[HomeBot Web] DDG response length:', html.length);
+
+  // Throw rather than return [] — an empty array here is indistinguishable from
+  // a search that genuinely matched nothing, and the caller needs to tell the
+  // user two very different things.
+  if (isSearchBlockPage(html)) throw new SearchBlockedError('DuckDuckGo');
   
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
@@ -543,6 +655,10 @@ async function searchDDGLite(query: string, maxResults: number): Promise<Array<{
     'Accept-Language': 'en-US,en;q=0.5',
   });
   console.log('[HomeBot Web] DDG Lite response length:', html.length);
+
+  // Measured: lite is blocked at the same moment as the full endpoint, so this
+  // is not a second chance — it just needs to report the same truth.
+  if (isSearchBlockPage(html)) throw new SearchBlockedError('DuckDuckGo Lite');
 
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
@@ -887,6 +1003,14 @@ interface SearchProvider {
 
 const SEARCH_PROVIDERS: SearchProvider[] = [
   {
+    // First when configured, deliberately. The user stood this up themselves;
+    // it is unmetered and private, so spending a capped monthly key quota
+    // before trying it would be backwards.
+    name: 'SearXNG',
+    available: () => !!getSearxngUrl(),
+    search: async (query, max) => ({ results: await searchSearxng(query, max), sources: [] }),
+  },
+  {
     name: 'Tavily',
     available: () => !!getTavilyApiKey(),
     search: async (query, max, fetchCount) => {
@@ -973,11 +1097,23 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
 
     const fetchResultCount = Math.min(Math.max(1, args.fetchResultCount || 3), 5);
 
+    // Read once per search rather than per source. Defaults to OFF: this is
+    // the one fallback that sends a URL to a third party, and a local-first
+    // app does not opt the user into that quietly.
+    let readerAllowed = false;
+    try {
+      const { getSettings: getWebSettings } = await import('../config-manager');
+      readerAllowed = !!(getWebSettings() as any)?.webReaderFallbackEnabled;
+    } catch { /* settings unavailable (tests) — stay off */ }
+
     // Try each provider in order until one returns results.
     let results: Array<{ title: string; url: string; snippet: string }> = [];
     let tavilyAnswer: string | undefined;
     let tavilySources: Array<{ url: string; title: string; content: string }> = [];
     let searchProvider = 'none';
+    // Providers that refused us, as opposed to ones that found nothing. Only
+    // the first kind can be fixed by the user, and only by adding a key.
+    const blockedProviders: string[] = [];
 
     for (const provider of SEARCH_PROVIDERS) {
       if (!provider.available()) continue;
@@ -993,16 +1129,30 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
           break;
         }
       } catch (err: any) {
+        if (err instanceof SearchBlockedError) blockedProviders.push(provider.name);
         console.log(`[HomeBot Web] ${provider.name} failed: ${err.message}`);
       }
     }
-    
+
     if (results.length === 0) {
+      // Being refused is not the same as finding nothing, and the old message
+      // said the latter for both. "Try different search terms" is useless advice
+      // to someone who is rate-limited — the terms were never the problem, and
+      // every retry fails the same way.
+      const wasBlocked = blockedProviders.length > 0;
       return {
         success: true,
-        result: { 
-          query, 
-          message: 'No results found across multiple search engines. Try different search terms.',
+        result: {
+          query,
+          blocked: wasBlocked,
+          blockedProviders,
+          message: wasBlocked
+            ? `The free search engine is refusing requests right now (${blockedProviders.join(', ')} ` +
+              'returned a rate-limit page). This is not about the search terms — it happens after a ' +
+              'few searches and clears on its own after a while. Setting up a search key makes it ' +
+              'stop happening: Brave Search gives 2,000 searches a month free, Tavily 1,000. Both ' +
+              'are under Settings → Advanced → API keys.'
+            : 'No results found across multiple search engines. Try different search terms.',
           results: [],
           suggestion: 'For sports schedules, try searching for "[team name] schedule [year]" or visit official league websites like nba.com, nfl.com, etc.'
         }
@@ -1028,11 +1178,78 @@ export const webSearchHandler: ToolHandler = async (args): Promise<ToolResult> =
       console.log(`[HomeBot Web] Parallel-fetching ${toFetch.length} result(s)...`);
       const fetchResults = await Promise.allSettled(
         toFetch.map(async (r) => {
-          const html = await httpGet(r.url);
-          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-          const title = titleMatch ? stripHtml(titleMatch[1]).trim() : r.title;
-          let content = extractMainContent(html);
-          if (content.length < 200) throw new Error('Too little content');
+          let title = r.title;
+          let content = '';
+          let httpError: string | null = null;
+
+          // Cheap path first: a plain GET costs a fraction of a browser window.
+          try {
+            const html = await httpGet(r.url);
+            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch) title = stripHtml(titleMatch[1]).trim();
+            content = extractMainContent(html);
+          } catch (e: any) {
+            httpError = e?.message || String(e);
+          }
+
+          // Then the browser we already ship.
+          //
+          // Measured on a live search before this existed: 3 results, two HTTP
+          // 403 and one too thin, 0 of 3 read — so the answer came from search
+          // snippets and never saw an article. The user-agent was already a
+          // current Chrome string; those sites check TLS fingerprints and JS
+          // challenges, which no header satisfies. A hidden BrowserWindow is a
+          // real browser, so it simply gets the page.
+          if (content.length < 200) {
+            try {
+              const { fetchViaBrowser, isBrowserFetchAvailable } = await import('../browser-fetch');
+              if (isBrowserFetchAvailable()) {
+                console.log(`[HomeBot Web] HTTP gave ${httpError || `${content.length} chars`} for ${r.url} — retrying in the browser`);
+                // Shorter than the module default. This is a fallback running
+                // across several sources at once, and a site behind a JS
+                // challenge never resolves — measured: realgm.com burns the
+                // whole budget and still fails. Better to lose one source than
+                // to hold the answer up for everyone.
+                const page = await fetchViaBrowser(r.url, { maxChars: 4000, timeoutMs: 12_000 });
+                if (page.text.length >= 200) {
+                  content = page.text;
+                  if (page.title) title = page.title;
+                }
+              }
+            } catch (e: any) {
+              console.log(`[HomeBot Web] Browser fetch also failed for ${r.url}: ${e?.message || e}`);
+            }
+          }
+
+          // Last tier: a rendering proxy.
+          //
+          // The browser beats a plain block but not a JS challenge or a
+          // paywall shell — measured, realgm.com timed out at 30s and espn.com
+          // returned 139 characters of navigation. Jina Reader renders
+          // server-side and returned 90,007 and 87,099 characters for those
+          // same two pages.
+          //
+          // OFF unless the user allows it, because this is the only tier that
+          // sends the URL off the machine. The search query already reaches a
+          // search engine, but "which page you opened" is a separate
+          // disclosure and HomeBot is local-first. Never silent.
+          if (content.length < 200 && readerAllowed) {
+            try {
+              const { fetchViaReader } = await import('../reader-fetch');
+              console.log(`[HomeBot Web] Falling back to the reading service for ${r.url}`);
+              const page = await fetchViaReader(r.url, { maxChars: 4000, timeoutMs: 20_000 });
+              if (page.text.length >= 200) {
+                content = page.text;
+                if (page.title) title = page.title;
+              }
+            } catch (e: any) {
+              console.log(`[HomeBot Web] Reading service also failed for ${r.url}: ${e?.message || e}`);
+            }
+          }
+
+          // Both routes exhausted. Report the ORIGINAL HTTP reason when there
+          // was one — "Too little content" after a 403 hides why it failed.
+          if (content.length < 200) throw new Error(httpError || 'Too little content');
           if (content.length > 2500) content = content.substring(0, 2500) + '... [truncated]';
           return { url: r.url, title, content };
         })

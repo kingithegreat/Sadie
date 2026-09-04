@@ -190,7 +190,7 @@ export interface CustomLLMConfig {
   name: string;
   apiUrl: string;
   apiKey?: string;
-  provider: 'openai' | 'anthropic' | 'claude-code' | 'codex' | 'moonshot' | 'openrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
+  provider: 'openai' | 'anthropic' | 'claude-code' | 'codex' | 'moonshot' | 'openrouter' | 'tokenrouter' | 'groq' | 'deepseek' | 'google-ai-studio' | 'google-gemini' | 'huggingface' | 'cerebras' | 'sambanova' | 'together' | 'custom';
   model?: string;
   enabled: boolean;
   metadata?: ModelMetadata;
@@ -226,6 +226,25 @@ export interface Settings {
    */
   mediaPublishingEnabled?: boolean;
   /**
+   * Allow a rendering proxy (Jina Reader) as the LAST fetch fallback when a
+   * page cannot be read locally. Off by default: it is the only fetch tier
+   * that sends the URL off this machine.
+   */
+  webReaderFallbackEnabled?: boolean;
+  /** Mix background music under video narration. Off unless a folder is set. */
+  mediaMusicEnabled?: boolean;
+  /**
+   * Folder holding the user's own music tracks. A folder rather than a service:
+   * no account, no rate limit, no licence question, and it works offline.
+   * One track is chosen per video, seeded by the job id so a re-render reuses it.
+   */
+  mediaMusicFolder?: string;
+  /**
+   * Cloud chat temperature override (0–2). Unset = provider default.
+   * Mirrors the main-process Settings key.
+   */
+  chatTemperature?: number;
+  /**
    * Whether chats are written to conversation-history.json. Defaults to true.
    *
    * It was absent from this interface, which is why no control for it could be
@@ -239,8 +258,13 @@ export interface Settings {
   // Per-tool permissions (keys are tool names)
   permissions?: Record<string, boolean>;
   permissionPromptTimeoutMs?: number;
-  defaultTeam?: string;
   // Web search API keys
+  /**
+   * A self-hosted SearXNG instance, e.g. http://localhost:8080. The only search
+   * backend that is free, unmetered, keyless and accountless at once — and not
+   * a scraper, so it does not get challenge-paged like the DuckDuckGo endpoints.
+   */
+  searxngUrl?: string;
   tavilyApiKey?: string;
   serperApiKey?: string;
   // LLM provider API keys
@@ -249,6 +273,20 @@ export interface Settings {
   geminiApiKey?: string;
   /** Moonshot / Kimi — OpenAI-compatible API at api.moonshot.ai. */
   moonshotApiKey?: string;
+  /**
+   * One API key per cloud provider, keyed by `CustomLLMConfig['provider']`.
+   *
+   * The four fields above predate this and only cover anthropic, openai,
+   * gemini and moonshot — while the picker offers thirteen providers. groq,
+   * deepseek, huggingface, cerebras, sambanova, together and custom had
+   * nowhere to persist a key, so they shared the single `customLLM.apiKey`
+   * slot and configuring a second one destroyed the first.
+   *
+   * Read through `apiKeyForProvider`, never directly: the legacy fields are
+   * still written for the four they cover, so a downgrade does not lose them.
+   * Encrypted at rest per value, like every other secret.
+   */
+  providerApiKeys?: Record<string, string>;
   // Image generation API keys
   stableHordeApiKey?: string;
   // Code model routing
@@ -451,6 +489,9 @@ export interface ElectronAPI {
   // TTS (text-to-speech)
   ttsSpeak?: (text: string, rate?: number) => Promise<{ success: boolean; error?: string }>;
   ttsStop?: () => Promise<{ success: boolean; error?: string }>;
+  // Voice picker: list neural voices; render a short sample of one to a file.
+  ttsListVoices?: () => Promise<any>;
+  ttsSampleVoice?: (voice: string, sampleText?: string, engine?: 'edge' | 'kokoro') => Promise<{ success: boolean; path?: string; error?: string; engine?: string }>;
 
   // Scheduler (Pro-gated — handlers may resolve to GateBlockedResponse for free users)
   schedulerList?: () => Promise<ScheduledJob[] | GateBlockedResponse>;
@@ -476,12 +517,25 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render') =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; engine?: 'edge' | 'kokoro' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaReject?: (id: string, revise: boolean, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
+  /** Whether the video engine is usable, and whether HomeBot installed it. */
+  mediaFfmpegStatus?: () => Promise<{
+    ready: boolean;
+    path: string | null;
+    managed: boolean;
+    running: boolean;
+    supported: boolean;
+  }>;
+  /** Download and unpack the video engine. Progress arrives on onMediaFfmpegProgress. */
+  mediaFfmpegSetup?: () => Promise<{ ok: boolean; path?: string; message?: string; error?: string }>;
+  onMediaFfmpegProgress?: (cb: (p: {
+    phase: string; note: string; receivedMB?: number; totalMB?: number | null;
+  }) => void) => () => void;
   /**
    * Record that a video went out, with the id or link the platform gave it.
    * HomeBot does not upload — this is the user reporting back, which is what
@@ -554,11 +608,34 @@ export interface ElectronAPI {
   onHardwareProfileApplied?: (cb: (data: { profile: string; vramGB: number; gpuName: string | null }) => void) => () => void;
   onConfigRecovered?: (cb: (data: { reason: string; backupPath: string | null; timestamp: string }) => void) => () => void;
   onProactiveBriefing?: (cb: (data: { content: string }) => void) => () => void;
+  /** Rewrite a draft request so the assistant can act on it. */
+  improvePrompt?: (draft: string) => Promise<{
+    success: boolean;
+    improved?: string;
+    source?: 'cloud' | 'local';
+    error?: string;
+  }>;
+  /** Fetch RSS/Atom feeds for the Feeds panel. */
+  fetchFeeds?: (sources?: string[]) => Promise<{
+    success: boolean;
+    items: import('./feed-search').FeedItem[];
+    failures: Array<{ source: string; reason: string }>;
+    error?: string;
+  }>;
+  /** The named feed sources HomeBot knows about. */
+  listFeedSources?: () => Promise<{ sources: Array<{ id: string; description: string }> }>;
+  /** What HomeBot can do right now, with a fix for anything that is not working. */
+  getCapabilityReport?: () => Promise<{
+    success: boolean;
+    capabilities?: import('./capability-report').Capability[];
+    summary?: { ready: number; total: number; needsAttention: import('./capability-report').Capability[] };
+    error?: string;
+  }>;
+  /** The assistant moving the user to another panel, carrying context with them. */
+  onNavigate?: (cb: (request: import('./navigation').NavRequest) => void) => () => void;
 
   // Fetch a web page and extract its text content
   fetchPageContent?: (url: string) => Promise<{ success: boolean; result?: { url: string; content: string; length: number; truncated: boolean }; error?: string }>;
-  // Summarize web page content via n8n/Ollama
-  summarizeWebContent?: (url: string, content: string) => Promise<{ success: boolean; result?: { summary: string }; error?: string }>;
   // RAG: index a local file path (or web content when content is provided)
   ragIndex?: (filePath: string, content?: string) => Promise<{ success: boolean; result?: { doc_id: string; filename: string; chunks_indexed: number; message: string }; error?: string }>;
   // RAG: list all indexed documents
@@ -730,8 +807,8 @@ export interface ElectronAPI {
 
   // Automation Center
   loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
-  createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
-  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number }) => Promise<{ success: boolean }>;
+  createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
+  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => Promise<{ success: boolean }>;
   /**
    * Removes the automation and the n8n workflow it deployed. Without `force`
    * this refuses when the workflow cannot be deleted, keeping the automation so
@@ -794,8 +871,13 @@ export interface SavedAutomation {
   name: string;
   description: string;
   instructions: string;
-  trigger: 'manual' | 'schedule';
+  /** "file" = runs when a new file appears in watchPath */
+  trigger: 'manual' | 'schedule' | 'file';
   scheduleMinutes?: number;
+  /** For trigger="file": the watched folder (inside the user folder). */
+  watchPath?: string;
+  /** For trigger="file": optional filename filter like "*.csv". */
+  watchPattern?: string;
   n8nWebhookUrl?: string;
   enabled: boolean;
   lastRun?: string;

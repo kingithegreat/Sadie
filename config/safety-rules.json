@@ -1,16 +1,16 @@
 {
   "file_operations": {
     "allowed_directories": [
-      "C:\\Users\\adenk\\Documents",
-      "C:\\Users\\adenk\\Desktop",
-      "C:\\Users\\adenk\\Downloads"
+      "%USERPROFILE%\\Documents",
+      "%USERPROFILE%\\Desktop",
+      "%USERPROFILE%\\Downloads"
     ],
     "blocked_directories": [
       "C:\\Windows",
       "C:\\Program Files",
       "C:\\Program Files (x86)",
       "C:\\ProgramData",
-      "C:\\Users\\adenk\\AppData"
+      "%USERPROFILE%\\AppData"
     ],
     "blocked_extensions": [
       ".exe",

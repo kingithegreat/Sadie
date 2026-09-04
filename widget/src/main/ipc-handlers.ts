@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app, shell } from 'electron';
+import { ipcMain, BrowserWindow, app, shell, dialog } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
 
@@ -14,6 +14,7 @@ import { diffText, toHunks } from '../../../src/diff/line-diff';
 import * as os from 'os';
 import * as https from 'https';
 import { spawn, execFile } from 'child_process';
+import { saveGeneratedImage } from './generated-images';
 
 // ── Timeout constants (ms) ─────────────────────────────────────────────────
 const HEALTH_CHECK_TIMEOUT = 2000;
@@ -33,10 +34,10 @@ import {
 } from './config-manager';
 import { fetchAvailableCustomModels, generateFromCustomLLM } from './custom-llm-client';
 import { fetchPageContentHandler } from './tools/browser';
-import { setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
+import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
 import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
-import { getAllToolDefinitions, executeTool, getFocusedOllamaTools } from './tools/index';
+import { getAllToolDefinitions, executeTool, getFocusedOllamaTools, registerTool } from './tools/index';
 import { registerAutomationRunner, registerAutomationTierProvider } from './tools/automation';
 import type { ToolContext } from './tools/index';
 import { detectGpuVram, recommendConfig } from './moa';
@@ -47,6 +48,7 @@ import {
   loadMcpConfig,
   saveMcpConfig,
   getMcpStatus,
+  connectSingleServer,
   type McpServerConfig
 } from './mcp-client';
 import {
@@ -58,11 +60,13 @@ import { Message } from '../shared/types';
 import { resolveCloudLLM, describeActiveModel } from '../shared/cloud-llm';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { isDevelopment, isDemoMode } from './env';
+import { resolveWithinHome } from './utils/path-guard';
+import { sanitizeImportedSettings, analyzeImportedEndpoints, stripImportedSettings } from './utils/settings-import';
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
-import { parseQuizBatch, dedupeQuestions, buildAvoidClause, ParsedQuizQuestion } from '../../../src/quiz/generate';
+import { buildAvoidClause, fillQuiz } from '../../../src/quiz/generate';
 import {
   getCurrentTier,
   getLicenseStatus,
@@ -365,12 +369,19 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       );
 
       if (toolResult.success && toolResult.result?.image_base64) {
+        // Rung 1 of the image-edit ladder: the result must be durable. The
+        // chat path has always written here; the panel used to keep the image
+        // in React state only, so Clear or closing the panel destroyed it.
+        const imgDir = path.join(app.getPath('userData'), 'generated-images');
+        const filename = saveGeneratedImage(toolResult.result.image_base64, imgDir);
         return {
           status: 'success',
           timestamp: new Date().toISOString(),
           operation: 'image_generate',
           source: toolResult.result.source || 'unknown',
           image: toolResult.result.image_base64,
+          filename,
+          savedPath: filename ? path.join(imgDir, filename) : null,
           metadata: { prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
           validation: { validated: true },
           error: { message: '', code: '' }
@@ -555,6 +566,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
 
       // Refresh search API keys in memory
+      setSearxngUrl((merged as any).searxngUrl || null);
       setTavilyApiKey(merged.tavilyApiKey || null);
       setSerperApiKey(merged.serperApiKey || null);
       setStableHordeApiKey(merged.stableHordeApiKey || null);
@@ -647,56 +659,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
       // Local fallback
       return await fetchPageContentHandler({ url, max_length: 20000 }, { executionId: `web-fetch-${Date.now()}` });
-    } catch (err: any) {
-      return { success: false, error: String(err?.message || err) };
-    }
-  });
-
-  // ── Summarize web content via n8n (Ollama), with local fallback ──
-  ipcMain.handle('homebot:summarize-web-content', async (_event, url: string, content: string) => {
-    try {
-      if (!content) return { success: false, error: 'No content to summarize' };
-
-      const model = getSettings().chatModel || 'qwen2.5:7b';
-      const truncated = content.length > 6000 ? content.slice(0, 6000) : content;
-      const prompt = `Summarize this web page concisely. Include key information, services/products offered, and contact details if present. Use bullet points for clarity.\n\nURL: ${url}\n\nContent:\n${truncated}`;
-
-      // Try n8n first
-      try {
-        const settings = getSettings();
-        const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/$/, '');
-        console.log('[WebSummary] Trying n8n...');
-        const n8nRes = await axios.post(`${n8nBase}/webhook/homebot/chat`, {
-          message: prompt,
-          user_id: 'desktop-user',
-          conversation_id: 'web-summary',
-          timestamp: new Date().toISOString()
-        }, { timeout: 60_000, headers: homebotWebhookHeaders() });
-
-        const summary = n8nRes.data?.output || n8nRes.data?.data?.assistant?.content || '';
-        if (summary) {
-          console.log('[WebSummary] n8n returned summary:', summary.length, 'chars');
-          return { success: true, summary };
-        }
-      } catch (n8nErr: any) {
-        console.log('[WebSummary] n8n unavailable, using local Ollama:', n8nErr?.message);
-      }
-
-      // Local Ollama fallback
-      const response = await axios.post(`${getConfiguredOllamaBaseUrl()}/api/generate`, {
-        model,
-        prompt,
-        system: 'You are a helpful assistant that summarizes web pages concisely with bullet points.',
-        stream: false,
-        options: { temperature: 0.5, num_predict: 1500 }
-      }, { timeout: 90_000 });
-
-      const summary = response.data?.response || '';
-      if (summary) {
-        console.log('[WebSummary] Local Ollama returned summary:', summary.length, 'chars');
-        return { success: true, summary };
-      }
-      return { success: false, error: 'No summary generated' };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
@@ -920,7 +882,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string }) => {
     const { mediaToolHandlers, readJobs } = await import('./tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -933,7 +895,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       : action === 'narrate' ? 'media_narrate'
       : 'media_write_script';
     try {
-      const res: any = await mediaToolHandlers[tool]({ job: job.id }, { executionId: `panel-${action}` } as any);
+      const args: Record<string, unknown> = { job: job.id };
+      if (action === 'narrate' && opts?.voice) args.voice = opts.voice;
+      const res: any = await mediaToolHandlers[tool](args, { executionId: `panel-${action}` } as any);
       return res?.success
         ? { ok: true, message: String(res.result ?? '') }
         : { ok: false, error: String(res?.error ?? 'That stage failed.') };
@@ -950,6 +914,46 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   ipcMain.handle('homebot:media:reject', async (_e, id: string, revise: boolean, note?: string) =>
     applyMediaTransition(id, revise ? 'needs_revision' : 'rejected', { by: 'human', humanDecision: true, note }));
+
+  // Is the video engine available, and did HomeBot install it?
+  //
+  // Reports `ready` from actually running the binary, not from the file being
+  // present — the two came apart for sd.cpp when a rename left an exe that
+  // existed and could not be used.
+  ipcMain.handle('homebot:media:ffmpeg-status', async () => {
+    const { findFfmpeg } = await import('./media-render');
+    const { findManagedFfmpeg, isFfmpegSetupRunning } = await import('./ffmpeg-setup');
+    const managed = findManagedFfmpeg();
+    const found = await findFfmpeg(managed);
+    return {
+      ready: !!found,
+      path: found,
+      managed: !!found && found === managed,
+      running: isFfmpegSetupRunning(),
+      supported: process.platform === 'win32',
+    };
+  });
+
+  // Download and unpack the video engine, streaming progress to the panel.
+  //
+  // The old copy told a non-technical user to run `winget install Gyan.FFmpeg`.
+  // This is the same answer `sd-cpp-setup` gave for local image generation:
+  // do it for them, and say what is happening while it runs.
+  ipcMain.handle('homebot:media:ffmpeg-setup', async (e) => {
+    const { runFfmpegSetup } = await import('./ffmpeg-setup');
+    const send = (p: any) => {
+      try { e.sender.send('homebot:media:ffmpeg-progress', p); } catch { /* window closed mid-download */ }
+    };
+    try {
+      const bin = await runFfmpegSetup(send);
+      return { ok: true, path: bin, message: 'Ready — videos can now be made on this PC.' };
+    } catch (err: any) {
+      // These messages are already written for a person; pass them through.
+      const message = err?.message || 'The video engine could not be set up.';
+      send({ phase: 'error', note: message });
+      return { ok: false, error: message };
+    }
+  });
 
   // Record that a video went out, and where.
   //
@@ -1009,6 +1013,24 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // ── Comprehensive first-run diagnostics ───────────────────────────────────
   // Runs disk-space, service-reachability, write-permissions, and GPU checks
   // in parallel. All checks are non-destructive and safe to call at any time.
+  /**
+   * What HomeBot can actually do right now, and what to do about the rest.
+   *
+   * Distinct from run-diagnostics, which reports SERVICES. This reports
+   * CAPABILITIES in the user's words, and carries the fix for each broken one.
+   */
+  ipcMain.handle('homebot:capability-report', async () => {
+    try {
+      const { probeCapabilities } = await import('./capability-probe');
+      const { buildCapabilityReport, summarise } = await import('../shared/capability-report');
+      const input = await probeCapabilities(getSettings() as any);
+      const capabilities = buildCapabilityReport(input);
+      return { success: true, capabilities, summary: summarise(capabilities) };
+    } catch (err: any) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
+
   ipcMain.handle('homebot:run-diagnostics', async () => {
     try {
       const { runDiagnostics } = await import('./diagnostics');
@@ -1046,7 +1068,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   // Delete an Ollama model
   ipcMain.handle('homebot:delete-ollama-model', async (_event, modelName: string) => {
-    if (!modelName || typeof modelName !== 'string') {
+    // Same shape check the pull handler below already applies. Delete only
+    // tested for a non-empty string, so the destructive half of the pair was
+    // the more permissive one — the wrong way round, and only unnoticed
+    // because nothing in the UI called it until now.
+    if (!modelName || typeof modelName !== 'string' || !/^[a-z0-9._:/-]+$/i.test(modelName)) {
       return { success: false, error: 'Invalid model name' };
     }
     const ollamaBase = getConfiguredOllamaBaseUrl();
@@ -1668,6 +1694,31 @@ try {
     return stopSpeakingHandler({}, {} as any);
   });
 
+  // Voice picker: list the neural voices, and render a short sample of one to
+  // a file the renderer can play — hear a voice before committing a video to it.
+  ipcMain.handle('homebot:tts-list-voices', async () => {
+    const { getVoicesHandler } = await import('./tools/voice');
+    return getVoicesHandler({}, {} as any);
+  });
+
+  ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string, engine?: string) => {
+    const { renderNarrationToFile } = await import('./tools/voice');
+    const text = (sampleText || 'Hi, this is how I sound. I can narrate your video from start to finish.').slice(0, 300);
+    const file = path.join(os.tmpdir(), `homebot-voice-sample-${Date.now()}.mp3`);
+    try {
+      // The sample must come from the SAME engine that will record the video —
+      // approving a voice by ear only means something if it is this voice,
+      // rendered by this engine.
+      const rendered = await renderNarrationToFile(text, file, {
+        voice: voice || undefined,
+        engine: engine === 'kokoro' || engine === 'edge' ? engine : undefined,
+      });
+      return { success: true, path: rendered.path, engine: rendered.engine };
+    } catch (err: any) {
+      return { success: false, error: err?.message || String(err) };
+    }
+  });
+
   // ── MCP Server Management ───────────────────────────────────────────────────
 
   ipcMain.handle('homebot:mcp-get-status', async () => {
@@ -1688,7 +1739,26 @@ try {
       current.servers.push(config);
     }
     saveMcpConfig(current);
-    return { success: true };
+
+    // Connect NOW, not at next launch. Store-then-nothing-until-restart made
+    // "Connect" read as success while producing no tools — the reachability
+    // defect wearing a success badge. The result says what actually happened,
+    // so the UI can promise only what is true.
+    let live: { connected: boolean; toolCount: number; error?: string } = { connected: false, toolCount: 0 };
+    if (config.enabled !== false) {
+      try {
+        live = await connectSingleServer(config, registerTool);
+      } catch (err: any) {
+        live = { connected: false, toolCount: 0, error: err?.message || String(err) };
+      }
+    }
+
+    return {
+      success: true,
+      connected: live.connected,
+      toolCount: live.toolCount,
+      error: live.error
+    };
   });
 
   ipcMain.handle('homebot:mcp-remove-server', async (_event, name: string) => {
@@ -1794,15 +1864,83 @@ try {
 
   ipcMain.handle('homebot:import-settings', async (_event, filePath: string) => {
     try {
-      const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
+      // Same home-directory confinement as parse-document / write-document:
+      // an arbitrary path here would let a malicious or mistaken restore read
+      // any JSON on disk (error messages leak contents) — see path-guard.ts.
+      const guard = resolveWithinHome(filePath);
+      if ('error' in guard) return { success: false, error: guard.error };
+      const resolved = guard.resolved;
       if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
       const raw = fs.readFileSync(resolved, 'utf-8');
       const bundle = JSON.parse(raw);
       if (!bundle._homebot_backup) return { success: false, error: 'Not a valid HomeBot backup file' };
 
+      let keptEndpoints: string[] | undefined;
+      let skippedEndpoints: string[] | undefined;
+
       if (bundle.settings) {
         const current = getSettings();
-        saveSettings({ ...current, ...bundle.settings });
+        // Credentials never survive an import. Endpoints (n8nUrl and friends)
+        // decide where traffic goes — including who receives X-HOMEBOT-Auth —
+        // so a backup that would MOVE one is confirmed with the user first;
+        // if nobody can be asked, endpoints are skipped rather than applied.
+        const changes = analyzeImportedEndpoints(bundle.settings, current);
+        let importedSettings = bundle.settings;
+        if (changes.length === 0) {
+          const { settings } = stripImportedSettings(bundle.settings);
+          importedSettings = settings;
+        } else {
+          const detail = changes
+            .map((c) => `${c.key}: ${c.from || '(not set)'} → ${c.to}`)
+            .join('\n');
+          let restoreEndpoints: boolean | undefined;
+          try {
+            const answer = await dialog.showMessageBox({
+              type: 'warning',
+              buttons: ['Keep my endpoints', 'Restore from backup'],
+              defaultId: 0,
+              cancelId: 0,
+              title: 'Backup changes where HomeBot sends traffic',
+              message: 'This backup would change where HomeBot sends your chats and data:',
+              detail,
+            });
+            restoreEndpoints = answer.response === 1;
+          } catch {
+            restoreEndpoints = undefined; // nobody home to ask — fail closed below
+          }
+          if (restoreEndpoints === true) {
+            const { settings } = stripImportedSettings(bundle.settings);
+            // Endpoints were explicitly approved; put them back over the
+            // stripped copy. Credentials stay stripped either way.
+            for (const c of changes) {
+              if (c.key.includes('.')) continue; // customLLM handled as a whole below
+              (settings as Record<string, unknown>)[c.key] = (
+                bundle.settings as Record<string, unknown>
+              )[c.key];
+            }
+            if (changes.some((c) => c.key === 'customLLM.baseUrl')) {
+              const srcLlm = (bundle.settings as Record<string, unknown>).customLLM as
+                | Record<string, unknown>
+                | undefined;
+              const dstLlm = (settings as Record<string, unknown>).customLLM as
+                | Record<string, unknown>
+                | undefined;
+              if (srcLlm && dstLlm && Object.prototype.hasOwnProperty.call(srcLlm, 'baseUrl')) {
+                dstLlm.baseUrl = srcLlm.baseUrl;
+              }
+            }
+            importedSettings = settings;
+            keptEndpoints = changes.map((c) => c.key);
+          } else {
+            const { settings, strippedEndpoints: stripped } =
+              stripImportedSettings(bundle.settings);
+            importedSettings = settings;
+            skippedEndpoints = stripped.filter((k) =>
+              changes.some((c) => c.key === k)
+            );
+          }
+        }
+        saveSettings({ ...current, ...sanitizeImportedSettings(importedSettings) });
       }
       if (bundle.preferences) {
         MemoryManager.savePreferences(bundle.preferences);
@@ -1810,27 +1948,23 @@ try {
       if (bundle.conversations) {
         MemoryManager.saveConversationStore(bundle.conversations);
       }
-      return { success: true, restoredAt: new Date().toISOString() };
+      return {
+        success: true,
+        restoredAt: new Date().toISOString(),
+        ...(keptEndpoints ? { keptEndpoints } : {}),
+        ...(skippedEndpoints ? { skippedEndpoints } : {}),
+      };
     } catch (err: any) {
       console.error('[IPC] homebot:import-settings error:', err.message);
       return { success: false, error: err.message };
     }
   });
 
+
   // ── Document Viewer ────────────────────────────────────────────────────────
 
-  // Confine document read/write to the user's home directory. Without this a
-  // malicious LLM tool-call or a compromised renderer could read arbitrary
-  // files (~/.ssh/id_rsa, browser cookie stores, etc.) and return them.
-  function resolveWithinHome(filePath: string): { resolved: string } | { error: string } {
-    const resolved = path.resolve(filePath.replace(/^~/, os.homedir()));
-    const homeDir = os.homedir();
-    const homeWithSep = homeDir.toLowerCase() + path.sep;
-    if (resolved.toLowerCase() !== homeDir.toLowerCase() && !resolved.toLowerCase().startsWith(homeWithSep)) {
-      return { error: 'Access denied: path must be within home directory' };
-    }
-    return { resolved };
-  }
+  // resolveWithinHome lives in utils/path-guard.ts so every handler that
+  // takes an untrusted filesystem path uses one tested implementation.
 
   ipcMain.handle('homebot:parse-document', async (_event, filePath: string) => {
     try {
@@ -2093,19 +2227,114 @@ try {
     fs.renameSync(tmp, AUTOMATIONS_FILE);
   }
 
+  /**
+   * Rewrite a draft request so the assistant can act on it.
+   *
+   * Routed EXACTLY like conversation titles: resolveCloudLLM decides, and when
+   * cloud is off the local model does it. The privacy switch has to govern this
+   * the same as everything else — a "helpful" rewrite that quietly posted the
+   * user's half-finished thought to a cloud provider would be the worst
+   * possible place to make an exception.
+   */
+  ipcMain.handle('homebot:improve-prompt', async (_ev, payload: { draft?: string }) => {
+    const draft = String(payload?.draft ?? '');
+    try {
+      const {
+        checkImprovable, cleanImprovedPrompt, isUsefulImprovement,
+        buildImproveUserPrompt, IMPROVE_SYSTEM_PROMPT,
+      } = await import('../shared/prompt-improve');
+
+      const check = checkImprovable(draft);
+      if (!check.ok) return { success: false, error: check.message };
+
+      const settings = getSettings();
+      const cloud = resolveCloudLLM(settings);
+      let raw = '';
+
+      if (cloud.active && cloud.config) {
+        raw = await generateFromCustomLLM(
+          cloud.config,
+          IMPROVE_SYSTEM_PROMPT,
+          buildImproveUserPrompt(draft),
+          { timeoutMs: 25_000 },
+        );
+      } else {
+        const ollamaBase = getConfiguredOllamaBaseUrl();
+        const model = settings.chatModel || process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const resp = await axios.post(
+          `${ollamaBase}/api/generate`,
+          {
+            model,
+            prompt: `${IMPROVE_SYSTEM_PROMPT}
+
+${buildImproveUserPrompt(draft)}`,
+            stream: false,
+            // Low temperature: this is a rewrite, not a brainstorm. Creativity
+            // here shows up as invented requirements.
+            options: { temperature: 0.2, num_predict: 400 },
+          },
+          { timeout: OLLAMA_OP_TIMEOUT }
+        );
+        raw = resp.data?.response ?? '';
+      }
+
+      const improved = cleanImprovedPrompt(raw);
+      if (!isUsefulImprovement(draft, improved)) {
+        // Returning the draft back unchanged would look like a broken button.
+        return { success: false, error: 'That already reads clearly — nothing worth changing.' };
+      }
+
+      return { success: true, improved, source: cloud.active ? 'cloud' : 'local' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not rewrite that just now.' };
+    }
+  });
+
   ipcMain.handle('homebot:load-automations', async () => {
     return { automations: readAutomations() };
   });
 
-  ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
+  /**
+   * Fetch a set of RSS/Atom feeds for the Feeds panel.
+   *
+   * Filtering happens in the renderer against the list it already holds, so
+   * typing in the search box costs nothing — this is only for going and getting
+   * the feeds.
+   */
+  ipcMain.handle('homebot:fetch-feeds', async (_ev, payload: { sources?: string[] }) => {
+    try {
+      const { fetchFeeds, catalogueSources } = await import('./feed-reader');
+      const sources = Array.isArray(payload?.sources) && payload.sources.length > 0
+        ? payload.sources
+        // No choice made yet — show the catalogue rather than an empty screen.
+        : catalogueSources().map(s => s.id);
+      const result = await fetchFeeds(sources);
+      return { success: true, ...result };
+    } catch (err: any) {
+      return { success: false, items: [], failures: [], error: err?.message || 'Could not read feeds.' };
+    }
+  });
+
+  ipcMain.handle('homebot:list-feed-sources', async () => {
+    const { catalogueSources } = await import('./feed-reader');
+    return { sources: catalogueSources() };
+  });
+
+  ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {
     const automations = readAutomations();
     const automation: any = {
       id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: data.name,
       description: data.description,
       instructions: data.instructions,
-      trigger: data.trigger === 'schedule' ? 'schedule' : 'manual',
+      // 'file' must survive this coercion — it used to collapse to 'manual',
+      // which made the UI's file trigger save as an automation that nothing
+      // would ever fire. The scheduler's file-watch engine owns validation of
+      // the folder; a bad path arms nothing and says so on the record.
+      trigger: data.trigger === 'schedule' ? 'schedule' : data.trigger === 'file' ? 'file' : 'manual',
       scheduleMinutes: data.trigger === 'schedule' ? (data.scheduleMinutes || 60) : undefined,
+      watchPath: data.trigger === 'file' ? (data.watchPath || undefined) : undefined,
+      watchPattern: data.trigger === 'file' ? (data.watchPattern || undefined) : undefined,
       enabled: true,
       createdAt: new Date().toISOString(),
     };
@@ -2135,7 +2364,7 @@ try {
     return { automation, error };
   }));
 
-  ipcMain.handle('homebot:update-automation', gatedAutomationHandler('homebot:update-automation', getCurrentTier, async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; n8nWebhookUrl?: string }) => {
+  ipcMain.handle('homebot:update-automation', gatedAutomationHandler('homebot:update-automation', getCurrentTier, async (_event, data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => {
     const automations = readAutomations();
     const idx = automations.findIndex((a: any) => a.id === data.id);
     if (idx === -1) return { success: false, error: 'Automation not found' };
@@ -2144,6 +2373,10 @@ try {
     if (data.name !== undefined) auto.name = data.name;
     if (data.description !== undefined) auto.description = data.description;
     if (data.instructions !== undefined) auto.instructions = data.instructions;
+    // Empty strings clear the fields — the edit form sends them explicitly so
+    // unsetting the folder actually unsets it (same contract as n8nWebhookUrl).
+    if (data.watchPath !== undefined) auto.watchPath = data.watchPath || undefined;
+    if (data.watchPattern !== undefined) auto.watchPattern = data.watchPattern || undefined;
     if (data.trigger !== undefined) auto.trigger = data.trigger;
     if (data.scheduleMinutes !== undefined) auto.scheduleMinutes = data.scheduleMinutes;
     if (data.n8nWebhookUrl !== undefined) auto.n8nWebhookUrl = data.n8nWebhookUrl || undefined;
@@ -2273,7 +2506,14 @@ try {
           message: enrichedMessage,
           automation_id: auto.id,
           automation_name: auto.name,
-        }, { timeout: 120_000, headers: { 'Content-Type': 'application/json' } });
+        }, {
+          timeout: 120_000,
+          // Every app-deployed workflow carries an Auth Guard that validates
+          // this header. Without it the guard rejects HomeBot's own automation
+          // runner, and the catch below used to read that as a stale URL and
+          // delete the deployment.
+          headers: homebotWebhookHeaders({ 'Content-Type': 'application/json' }),
+        });
 
         const data = n8nRes.data;
         resultText = data?.output
@@ -2283,12 +2523,30 @@ try {
           || (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
       } catch (err: any) {
         const status = err?.response?.status;
-        console.log(`[Automation] n8n webhook failed (${status || err?.code || err?.message}), clearing stale URL and falling back to local`);
-        auto.n8nWebhookUrl = '';
-        auto.n8nWorkflowId = '';
-        const automations = readAutomations();
-        const idx = automations.findIndex((a: any) => a.id === auto.id);
-        if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+
+        // Only a 404 means the webhook is genuinely gone. Everything else —
+        // a timeout, a container restarting, n8n not up yet, a 500 from a
+        // guard rejecting us — is temporary, and this block used to treat all
+        // of them the same and DELETE the deployment.
+        //
+        // That is unrecoverable from the user's side: the ids are erased from
+        // disk, so the automation silently stops using n8n forever and there
+        // is nothing in the interface explaining why. One scheduled run during
+        // a restart was enough. Falling back to local for this run is the right
+        // response to a transient failure; forgetting the deployment is not.
+        const webhookIsGone = status === 404;
+
+        if (webhookIsGone) {
+          console.log(`[Automation] n8n webhook is gone (404), clearing stale URL and falling back to local`);
+          auto.n8nWebhookUrl = '';
+          auto.n8nWorkflowId = '';
+          const automations = readAutomations();
+          const idx = automations.findIndex((a: any) => a.id === auto.id);
+          if (idx !== -1) { automations[idx] = auto; writeAutomations(automations); }
+        } else {
+          console.log(`[Automation] n8n webhook failed (${status || err?.code || err?.message}) — falling back to local for this run, keeping the deployment`);
+        }
+
         useN8n = false;
       }
     }
@@ -2551,13 +2809,10 @@ try {
       // prompt-example echoes are removed across batches. Because rejects
       // can leave a batch short, keep generating (bounded) until the quiz
       // is full instead of silently returning fewer questions.
-      const BATCH_SIZE = 3;
-      let allQuestions: ParsedQuizQuestion[] = [];
-      const maxAttempts = Math.ceil(questionCount / BATCH_SIZE) + 2;
-
-      for (let b = 0; b < maxAttempts && allQuestions.length < questionCount; b++) {
-        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
-        const prompt = `Generate exactly ${count} ${difficulty} difficulty quiz questions about ${topic}.
+      const filled = await fillQuiz({
+        questionCount,
+        generate: async (count, existing) => {
+          const prompt = `Generate exactly ${count} ${difficulty} difficulty quiz questions about ${topic}.
 RULES:
 - Respond with ONLY a JSON array, nothing else
 - Every question MUST have exactly 4 options in the "options" array
@@ -2566,25 +2821,33 @@ RULES:
 - Mix question types: multiple-choice, code-output, bug-fix, concept
 
 EXAMPLE (follow this format exactly):
-[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]${buildAvoidClause(allQuestions)}`;
+[{"type":"multiple-choice","question":"Which keyword defines a function in Python?","code":"","options":["def","func","function","define"],"correctIndex":0,"explanation":"The def keyword is used to define functions in Python."},{"type":"code-output","question":"What does this code print?","code":"print(2 ** 3)","options":["6","8","9","23"],"correctIndex":1,"explanation":"2 ** 3 means 2 to the power of 3, which is 8."}]${buildAvoidClause(existing)}`;
 
-        const raw0 = await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.');
+          return await quizLLMGenerate(prompt, 'You are a quiz generator. Output ONLY a valid JSON array. No markdown, no backticks, no explanation.') || '';
+        },
+        onBatch: ({ attempt, got, total, raw }) => {
+          console.log(`[Quiz] Batch ${attempt}: +${got} valid question(s), ${total} so far, from ${raw.length} chars`);
+          if (got === 0) console.warn(`[Quiz] Batch ${attempt}: nothing usable. Raw:`, raw.slice(0, 300));
+        },
+      });
 
-        const batchQuestions = parseQuizBatch(raw0 || '');
-        console.log(`[Quiz] Batch ${b + 1}/${maxAttempts}: ${batchQuestions.length} valid question(s) from ${String(raw0 || '').length} chars`);
-        if (batchQuestions.length === 0) {
-          console.warn(`[Quiz] Batch ${b + 1}: nothing usable. Raw:`, String(raw0 || '').slice(0, 300));
-        }
-        allQuestions = dedupeQuestions([...allQuestions, ...batchQuestions], questionCount);
-      }
-
-      if (allQuestions.length === 0) {
+      if (filled.questions.length === 0) {
         return { success: false, error: 'Could not generate quiz questions. Check that your LLM provider is running and accessible.' };
       }
 
-      const validated = allQuestions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
+      const validated = filled.questions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
 
-      return { success: true, questions: validated };
+      // Say when it came up short instead of quietly handing over fewer.
+      // Reported live: asked for 5, given 3, told nothing.
+      return {
+        success: true,
+        questions: validated,
+        requested: filled.requested,
+        shortfall: filled.shortfall,
+        ...(filled.shortfall > 0 ? {
+          notice: `Only ${validated.length} of the ${filled.requested} questions came out usable this time — the rest were repeats or malformed. Try again, or pick a broader topic.`,
+        } : {}),
+      };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }
@@ -2650,13 +2913,10 @@ EXAMPLE (follow this format exactly):
 
       // Same validated pipeline as the general quiz handler — see
       // src/quiz/generate. Bounded retry because rejects can shorten a batch.
-      const BATCH_SIZE = 3;
-      let allQuestions: ParsedQuizQuestion[] = [];
-      const maxAttempts = Math.ceil(questionCount / BATCH_SIZE) + 2;
-
-      for (let b = 0; b < maxAttempts && allQuestions.length < questionCount; b++) {
-        const count = Math.min(BATCH_SIZE, questionCount - allQuestions.length);
-        const prompt = `Based on ONLY the following study material, generate exactly ${count} ${difficulty} quiz questions about "${topic}".
+      const filled = await fillQuiz({
+        questionCount,
+        generate: async (count, existing) => {
+          const prompt = `Based on ONLY the following study material, generate exactly ${count} ${difficulty} quiz questions about "${topic}".
 
 STUDY MATERIAL:
 ${ragContext.slice(0, 3000)}
@@ -2668,22 +2928,30 @@ RULES:
 - Base questions strictly on the material above
 
 EXAMPLE FORMAT:
-[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]${buildAvoidClause(allQuestions)}`;
+[{"type":"multiple-choice","question":"What is X?","code":"","options":["Answer A","Answer B","Answer C","Answer D"],"correctIndex":0,"explanation":"A is correct because..."}]${buildAvoidClause(existing)}`;
 
-        const raw0 = await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.');
+          return await quizLLMGenerate(prompt, 'You output ONLY valid JSON arrays. No markdown fences. No backticks. No explanation. Just raw JSON.') || '';
+        },
+        onBatch: ({ attempt, got, total, raw }) => {
+          console.log(`[Quiz/RAG] Batch ${attempt}: +${got} valid question(s), ${total} so far, from ${raw.length} chars`);
+        },
+      });
 
-        const batchQuestions = parseQuizBatch(raw0 || '');
-        console.log(`[Quiz/RAG] Batch ${b + 1}/${maxAttempts}: ${batchQuestions.length} valid question(s) from ${String(raw0 || '').length} chars`);
-        allQuestions = dedupeQuestions([...allQuestions, ...batchQuestions], questionCount);
-      }
-
-      if (allQuestions.length === 0) {
+      if (filled.questions.length === 0) {
         return { success: false, error: 'Could not generate questions from your notes. Try a different topic or add more study material.' };
       }
 
-      const validated = allQuestions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
+      const validated = filled.questions.map((q, i) => ({ id: `q-${Date.now()}-${i}`, ...q }));
 
-      return { success: true, questions: validated };
+      return {
+        success: true,
+        questions: validated,
+        requested: filled.requested,
+        shortfall: filled.shortfall,
+        ...(filled.shortfall > 0 ? {
+          notice: `Only ${validated.length} of the ${filled.requested} questions came out usable from your notes — the rest were repeats or malformed. Try a broader topic, or add more material.`,
+        } : {}),
+      };
     } catch (err: any) {
       return { success: false, error: String(err?.message || err) };
     }

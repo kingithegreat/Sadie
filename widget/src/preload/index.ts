@@ -38,6 +38,7 @@ import {
   Message,
 } from '../shared/types';
 import { IPC_SEND_MESSAGE } from '../shared/constants';
+import { NAV_CHANNEL, type NavRequest } from '../shared/navigation';
 
 // No local duplicate ElectronAPI — we import the canonical type above and ensure our implementation matches it.
 
@@ -265,6 +266,14 @@ const electronAPI: ElectronAPI = {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on('homebot:config-recovered', listener);
     return () => ipcRenderer.removeListener('homebot:config-recovered', listener);
+  },
+
+  // The assistant taking the user to another part of the app, with whatever
+  // they were just discussing carried along in `payload`.
+  onNavigate: (cb: (request: NavRequest) => void) => {
+    const listener = (_ev: IpcRendererEvent, request: NavRequest) => cb(request);
+    ipcRenderer.on(NAV_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(NAV_CHANNEL, listener);
   },
 
   onProactiveBriefing: (cb: (data: { content: string }) => void) => {
@@ -726,6 +735,10 @@ const electronAPI: ElectronAPI = {
   ttsStop: async (): Promise<{ success: boolean; error?: string }> => {
     return await ipcRenderer.invoke('homebot:tts-stop');
   },
+  // Voice picker: list neural voices and render a sample of one to a file.
+  ttsListVoices: async (): Promise<any> => ipcRenderer.invoke('homebot:tts-list-voices'),
+  ttsSampleVoice: async (voice: string, sampleText?: string, engine?: 'edge' | 'kokoro'): Promise<{ success: boolean; path?: string; error?: string; engine?: string }> =>
+    ipcRenderer.invoke('homebot:tts-sample-voice', voice, sampleText, engine),
 
   // Scheduler — recurring / daily jobs
   schedulerList: async () => ipcRenderer.invoke('homebot:scheduler-list'),
@@ -741,12 +754,19 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render') =>
-    ipcRenderer.invoke('homebot:media:run', id, action),
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string }) =>
+    ipcRenderer.invoke('homebot:media:run', id, action, opts),
   mediaApprove: async (id: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note),
   mediaReject: async (id: string, revise: boolean, note?: string) =>
     ipcRenderer.invoke('homebot:media:reject', id, revise, note),
+  mediaFfmpegStatus: async () => ipcRenderer.invoke('homebot:media:ffmpeg-status'),
+  mediaFfmpegSetup: async () => ipcRenderer.invoke('homebot:media:ffmpeg-setup'),
+  onMediaFfmpegProgress: (cb: (p: any) => void) => {
+    const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
+    ipcRenderer.on('homebot:media:ffmpeg-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:media:ffmpeg-progress', listener);
+  },
   mediaMarkPublished: async (id: string, videoId: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:mark-published', id, videoId, note),
   mediaDelete: async (id: string, keepFiles?: boolean) =>
@@ -804,11 +824,6 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:fetch-page-content', url);
   },
 
-  // Summarize web page content via n8n/Ollama
-  summarizeWebContent: async (url: string, content: string) => {
-    return await ipcRenderer.invoke('homebot:summarize-web-content', url, content);
-  },
-
   // RAG: index a local file (or web content when content is provided)
   ragIndex: async (filePath: string, content?: string) => {
     return await ipcRenderer.invoke('homebot:rag-index', filePath, content);
@@ -849,6 +864,19 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on('homebot:title-updated', handler);
     return () => ipcRenderer.removeListener('homebot:title-updated', handler);
   },
+
+  // Feeds panel — reading RSS/Atom sources
+  fetchFeeds: async (sources?: string[]) =>
+    ipcRenderer.invoke('homebot:fetch-feeds', { sources }),
+  listFeedSources: async () =>
+    ipcRenderer.invoke('homebot:list-feed-sources'),
+  // Home screen — what works right now and how to fix what does not
+  getCapabilityReport: async () =>
+    ipcRenderer.invoke('homebot:capability-report'),
+
+  // Sharpen a draft request before sending it
+  improvePrompt: async (draft: string) =>
+    ipcRenderer.invoke('homebot:improve-prompt', { draft }),
 
   // Automation Center
   loadAutomations: async () =>

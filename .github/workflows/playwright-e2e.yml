@@ -19,6 +19,10 @@ jobs:
     # OS, isolated) which covers the same specs reliably. Keep this as a visible
     # signal without letting its flakiness block merges.
     continue-on-error: true
+    # ~7 minutes normally. continue-on-error means a hang here blocks nothing,
+    # which is exactly why it would go unnoticed while burning runner minutes
+    # up to the 6-hour default.
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4

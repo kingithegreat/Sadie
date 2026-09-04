@@ -119,8 +119,23 @@ HomeBot's PowerShell scripts provide safe, validated tool operations with strict
 **Parameters**:
 - `ToolName` (required): Name of the tool being invoked
 - `Action` (required): Action being performed
-- `Parameters` (hashtable): Tool-specific parameters to validate
-- `UserConfirmed` (boolean): Whether user has confirmed the action
+- `Parameters` (object): Tool-specific parameters to validate. Accepts a hashtable, a
+  `PSCustomObject`, or a **JSON string** — optionally prefixed with `@`, which is how the n8n
+  expression templates render it.
+- `UserConfirmed` (object): `$true`/`$false`, `"true"`/`"false"`, the literal text `$true`/`$false`,
+  or `1`/`0`. **Anything unrecognised is treated as NOT confirmed** — this gate fails closed.
+- `RulesPath` (optional): Path to `config/safety-rules.json`. Defaults to the copy in this repo.
+  If a path is given explicitly and cannot be read, validation **fails** rather than proceeding.
+
+> [!important] Why `Parameters` and `UserConfirmed` are `[object]`
+> Callers reach this script through `powershell.exe -File`, which passes **every argument as a
+> string**. Typed `[hashtable]` and `[bool]` parameters cannot bind a string, so the script threw
+> during argument binding before running a single validation — which is what all three n8n callers
+> did, for the whole life of the script. Do not "tighten" these types back up.
+
+**Path tokens**: `allowed_directories` / `blocked_directories` in `safety-rules.json` may use
+`%USERPROFILE%` (or any environment variable) and a leading `~`. These expand at run time, so the
+whitelist follows whichever Windows profile the app is installed under. Never hardcode a username.
 
 **Validation Checks**:
 - Path safety (whitelists/blacklists)
@@ -132,9 +147,14 @@ HomeBot's PowerShell scripts provide safe, validated tool operations with strict
 
 **Example Usage**:
 ```powershell
-# Validate file delete
+# From PowerShell, with native types
 .\SafetyValidation.ps1 -ToolName "file_manager" -Action "delete" `
-  -Parameters @{Path="C:\Users\adenk\Desktop\test.txt"} -UserConfirmed $true
+  -Parameters @{Path="$env:USERPROFILE\Desktop\test.txt"} -UserConfirmed $true
+
+# From a subprocess (n8n, -File): every argument arrives as a string, and that is supported
+powershell.exe -NoProfile -File .\SafetyValidation.ps1 -ToolName "file_manager" -Action "delete" `
+  -Parameters '{"path":"C:\\Users\\me\\Desktop\\test.txt"}' -UserConfirmed "true" `
+  -RulesPath ".\config\safety-rules.json"
 
 # Validate email send
 .\SafetyValidation.ps1 -ToolName "email_manager" -Action "send" `
@@ -318,12 +338,28 @@ All scripts follow consistent error handling:
 - ✅ Get all information
 
 #### SafetyValidation.ps1 Tests
+
+Run them — they need nothing installed:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\powershell\Test-SafetyValidation.ps1
+```
+
+25 assertions, exiting non-zero on the first failure so it is CI-wirable. Deliberately Pester-free:
+the box this was written on has Pester 3.4.0, whose assertion syntax differs from Pester 5, and
+depending on neither keeps the gate runnable on a fresh clone. Coverage:
+
 - ❌ Validate blocked path (should fail)
 - ✅ Validate allowed path
 - ❌ Validate without confirmation (should require confirmation)
 - ❌ Validate dangerous extension (should fail)
 - ✅ Validate safe file operation
 - ❌ Validate system directory access (should fail)
+- ❌ A destructive action naming no path (nothing to whitelist-check)
+- ❌ Unparseable `-Parameters` (fails closed rather than passing unvalidated)
+- ❌ An explicit `-RulesPath` that does not exist
+- ✅ All three `-File` string-binding forms that used to throw
+- ✅ Portability: a foreign `USERPROFILE`, on a drive the session has no PSDrive for
 
 #### ArchiveOps.ps1 Tests
 - ✅ List ZIP contents

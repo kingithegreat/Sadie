@@ -58,15 +58,20 @@ test('the publishing switch exists and reaches the setting the state machine rea
   const dialog = page.locator('[role="dialog"][aria-label="Settings"]');
   await expect(dialog).toBeVisible({ timeout: 10_000 });
 
-  const toggle = dialog.locator('input[type="checkbox"]').filter({
-    has: page.locator('xpath=..').locator('text=Allow videos to reach Scheduled and Published'),
-  }).first();
-  const byLabel = dialog
+  // Settings opens in the Simple view — which model answers, the privacy
+  // switch, voice, appearance. The Media Studio publishing switch is a
+  // granular one, so it lives under Advanced.
+  await dialog.locator('.sp-view-btn', { hasText: 'Advanced' }).click();
+
+  // One locator, waited for. The previous `(await byLabel.count()) ? …` picked
+  // between two locators on a single instantaneous poll, so it resolved to the
+  // fallback whenever the panel had not finished rendering yet — passing or
+  // timing out depending on machine speed rather than on the app being right.
+  const control = dialog
     .locator('label.setting-label', { hasText: 'Allow videos to reach Scheduled and Published' })
     .locator('input[type="checkbox"]');
 
-  const control = (await byLabel.count()) ? byLabel : toggle;
-  await expect(control).toBeVisible();
+  await expect(control).toBeVisible({ timeout: 10_000 });
   await expect(control).not.toBeChecked();
 
   await control.scrollIntoViewIfNeeded();

@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { isWithinHomeDir } from '../utils/home-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const HOME_DIR = os.homedir();
@@ -204,7 +205,7 @@ export const diffFilesHandler: ToolHandler = async (args): Promise<ToolResult> =
     const fileB = path.resolve(String(args.file_b || ''));
 
     for (const p of [fileA, fileB]) {
-      if (!p.toLowerCase().startsWith(HOME_DIR.toLowerCase())) {
+      if (!isWithinHomeDir(p, HOME_DIR)) {
         return { success: false, error: `File path must be within home directory: ${p}` };
       }
     }

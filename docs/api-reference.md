@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (171)** — `window.electron`
+**Preload methods (180)** — `window.electron`
 
 ```
 addMessage                browserAttach             browserBack               browserBounds
@@ -1020,21 +1020,23 @@ clearPermissionAudit      closeWindow               compactConversation       cr
 createConversation        deleteAutomation          deleteConversation        deleteOllamaModel
 detectGpuVram             downloadOllama            downloadUpdate            executeImageGenerate
 exportChat                exportConversation        exportPermissionAudit     exportSettings
-exportTelemetryConsent    fetchPageContent          generateQuiz              generateQuizFromRag
-generateTitle             getAnalyticsSummary       getBatchSummaries         getConfigPath
-getConversation           getCrmActivity            getCrmDashboard           getEnv
-getGeneratedImage         getMode                   getPerfAggregates         getPerfHistory
-getSettings               getSupervisorStatus       getUncensoredMode         getWidgetMode
-hasPermission             importSettings            installUpdate             invoke
-licenseActivate           licenseDeactivate         licenseStatus             licenseValidate
-listCustomLLMModels       listOllamaModels          listTools                 loadAutomations
+exportTelemetryConsent    fetchFeeds                fetchPageContent          generateQuiz
+generateQuizFromRag       generateTitle             getAnalyticsSummary       getBatchSummaries
+getCapabilityReport       getConfigPath             getConversation           getCrmActivity
+getCrmDashboard           getEnv                    getGeneratedImage         getMode
+getPerfAggregates         getPerfHistory            getSettings               getSupervisorStatus
+getUncensoredMode         getWidgetMode             hasPermission             importSettings
+improvePrompt             installUpdate             invoke                    licenseActivate
+licenseDeactivate         licenseStatus             licenseValidate           listCustomLLMModels
+listFeedSources           listOllamaModels          listTools                 loadAutomations
 loadConversations         loadQuizProgress          maximizeWindow            mcpAddServer
 mcpGetStatus              mcpListServers            mcpRemoveServer           mcpToggleServer
 mediaAdvance              mediaApprove              mediaCreate               mediaDelete
-mediaList                 mediaMarkPublished        mediaParseFeed            mediaReject
-mediaRun                  minimizeWindow            onAssistantToolActivity   onBatchSummary
-onBrowserState            onConfigRecovered         onConfirmationRequest     onConversationCompacted
-onHardwareProfileApplied  onHideWindow              onMessage                 onModelFallback
+mediaFfmpegSetup          mediaFfmpegStatus         mediaList                 mediaMarkPublished
+mediaParseFeed            mediaReject               mediaRun                  minimizeWindow
+onAssistantToolActivity   onBatchSummary            onBrowserState            onConfigRecovered
+onConfirmationRequest     onConversationCompacted   onHardwareProfileApplied  onHideWindow
+onMediaFfmpegProgress     onMessage                 onModelFallback           onNavigate
 onOllamaDownloadProgress  onOllamaStatus            onPermissionRequest       onProactiveBriefing
 onPullModelProgress       onReminderFired           onSdCppSetupProgress      onShowWindow
 onStreamChunk             onStreamEnd               onStreamError             onSupervisorStatus
@@ -1050,31 +1052,32 @@ schedulerToggle           sdCppAutoSetup            sdCppSetup                sd
 searchConversations       sendConfirmationResponse  sendMessage               sendPermissionResponse
 sendStreamMessage         setActiveConversation     setAlwaysOnTop            setUncensoredMode
 showInFolder              skillsList                skillsOpenFolder          startOllama
-startSpeechRecognition    subscribeToStream         summarizeWebContent       terminalClose
-terminalCreate            terminalKill              terminalRun               testN8nConnection
-toggleWidgetMode          ttsSpeak                  ttsStop                   updateAutomation
-updateMessage             workspaceList             workspaceRead             workspaceRoot
-workspaceSave             writeClipboard            writeDocument
+startSpeechRecognition    subscribeToStream         terminalClose             terminalCreate
+terminalKill              terminalRun               testN8nConnection         toggleWidgetMode
+ttsListVoices             ttsSampleVoice            ttsSpeak                  ttsStop
+updateAutomation          updateMessage             workspaceList             workspaceRead
+workspaceRoot             workspaceSave             writeClipboard            writeDocument
 ```
 
-**IPC channels, renderer → main (124)**
+**IPC channels, renderer → main (131)**
 
 ```
 homebot:__e2e_get_router_logs         homebot:__e2e_invoke_tool_batch
 homebot:__e2e_ping                    homebot:__e2e_trigger_upstream_error
 homebot:add-message                   homebot:append-renderer-log
 homebot:automation:image:generate     homebot:browse-status
-homebot:capture-logs                  homebot:capture-screen
-homebot:changes-diff                  homebot:changes-list
-homebot:check-connection              homebot:check-ollama-installed
-homebot:clear-permission-audit        homebot:compact-conversation
-homebot:confirmation-response         homebot:create-automation
-homebot:create-conversation           homebot:delete-automation
-homebot:delete-conversation           homebot:delete-ollama-model
-homebot:detect-gpu-vram               homebot:download-ollama
-homebot:download-update               homebot:export-chat
-homebot:export-consent                homebot:export-conversation
-homebot:export-permission-audit       homebot:export-settings
+homebot:capability-report             homebot:capture-logs
+homebot:capture-screen                homebot:changes-diff
+homebot:changes-list                  homebot:check-connection
+homebot:check-ollama-installed        homebot:clear-permission-audit
+homebot:compact-conversation          homebot:confirmation-response
+homebot:create-automation             homebot:create-conversation
+homebot:delete-automation             homebot:delete-conversation
+homebot:delete-ollama-model           homebot:detect-gpu-vram
+homebot:download-ollama               homebot:download-update
+homebot:export-chat                   homebot:export-consent
+homebot:export-conversation           homebot:export-permission-audit
+homebot:export-settings               homebot:fetch-feeds
 homebot:fetch-page-content            homebot:generate-quiz
 homebot:generate-quiz-from-rag        homebot:generate-title
 homebot:get-analytics-summary         homebot:get-config-path
@@ -1084,9 +1087,10 @@ homebot:get-perf-aggregates           homebot:get-perf-history
 homebot:get-settings                  homebot:get-uncensored-mode
 homebot:get-widget-mode               homebot:grab-browse-content
 homebot:has-permission                homebot:import-settings
-homebot:install-update                homebot:license:activate
-homebot:license:deactivate            homebot:license:status
-homebot:license:validate              homebot:list-custom-llm-models
+homebot:improve-prompt                homebot:install-update
+homebot:license:activate              homebot:license:deactivate
+homebot:license:status                homebot:license:validate
+homebot:list-custom-llm-models        homebot:list-feed-sources
 homebot:list-ollama-models            homebot:list-tools
 homebot:load-automations              homebot:load-conversations
 homebot:load-quiz-progress            homebot:mcp-add-server
@@ -1094,6 +1098,7 @@ homebot:mcp-get-status                homebot:mcp-list-servers
 homebot:mcp-remove-server             homebot:mcp-toggle-server
 homebot:media:advance                 homebot:media:approve
 homebot:media:create                  homebot:media:delete
+homebot:media:ffmpeg-setup            homebot:media:ffmpeg-status
 homebot:media:list                    homebot:media:mark-published
 homebot:media:parse-feed              homebot:media:reject
 homebot:media:run                     homebot:message
@@ -1118,30 +1123,32 @@ homebot:set-uncensored-mode           homebot:show-in-folder
 homebot:skills-list                   homebot:skills-open-folder
 homebot:start-ollama                  homebot:start-speech-recognition
 homebot:stream-cancel                 homebot:stream-message
-homebot:summarize-web-content         homebot:toggle-widget-mode
-homebot:tts-speak                     homebot:tts-stop
-homebot:update-automation             homebot:update-message
-homebot:web-service-status            homebot:write-document
+homebot:toggle-widget-mode            homebot:tts-list-voices
+homebot:tts-sample-voice              homebot:tts-speak
+homebot:tts-stop                      homebot:update-automation
+homebot:update-message                homebot:web-service-status
+homebot:write-document
 ```
 
-**IPC channels, main → renderer (30)**
+**IPC channels, main → renderer (31)**
 
 ```
 homebot:assistant-tool-activity   homebot:batch-summary
 homebot:config-recovered          homebot:confirmation-request
 homebot:conversation-compacted    homebot:hardware-profile-applied
-homebot:model-fallback            homebot:n8n-status
-homebot:ollama-download-progress  homebot:ollama-status
-homebot:permission-request        homebot:proactive-briefing
-homebot:pull-model-progress       homebot:reminder-fired
-homebot:reply                     homebot:router-log
-homebot:sd-cpp:setup-progress     homebot:stream-chunk
-homebot:stream-end                homebot:stream-error
-homebot:stream-start              homebot:stream-ttfb
-homebot:supervisor-status         homebot:title-updated
-homebot:tool-call                 homebot:tool-result
-homebot:update-available          homebot:update-downloaded
-homebot:update-progress           homebot:widget-mode-changed
+homebot:media:ffmpeg-progress     homebot:model-fallback
+homebot:n8n-status                homebot:ollama-download-progress
+homebot:ollama-status             homebot:permission-request
+homebot:proactive-briefing        homebot:pull-model-progress
+homebot:reminder-fired            homebot:reply
+homebot:router-log                homebot:sd-cpp:setup-progress
+homebot:stream-chunk              homebot:stream-end
+homebot:stream-error              homebot:stream-start
+homebot:stream-ttfb               homebot:supervisor-status
+homebot:title-updated             homebot:tool-call
+homebot:tool-result               homebot:update-available
+homebot:update-downloaded         homebot:update-progress
+homebot:widget-mode-changed
 ```
 
 <!-- END GENERATED: surface-index -->

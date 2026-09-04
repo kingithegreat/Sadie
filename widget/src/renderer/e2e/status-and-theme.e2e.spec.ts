@@ -21,7 +21,6 @@ function seedConfig(dir: string, overrides: Record<string, unknown> = {}) {
       firstRun: false,
       telemetryEnabled: true,
       permissions: { delete_file: false },
-      defaultTeam: 'GSW',
       n8nUrl: 'http://localhost:5678',
       widgetHotkey: 'Ctrl+Shift+Space',
       alwaysOnTop: true,

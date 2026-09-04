@@ -33,6 +33,7 @@ import { assertPermission, hasStandingConsent } from '../config-manager';
 import { systemToolDefs, systemToolHandlers } from './system';
 import { webToolDefs, webToolHandlers } from './web';
 import { voiceToolDefs, voiceToolHandlers } from './voice';
+import { navigationToolDefs, navigationToolHandlers } from './navigation';
 import { memoryToolDefs, memoryToolHandlers } from './memory';
 import { documentToolDefs, documentToolHandlers } from './documents';
 import { nbaQueryDef, nbaQueryHandler } from './nba';
@@ -59,6 +60,7 @@ import { automationToolDefs, automationToolHandlers } from './automation';
 import { skillToolDefs, skillToolHandlers } from './skills';
 import { crmToolDefs, crmToolHandlers } from './crm';
 import { mediaToolDefs, mediaToolHandlers } from './media';
+import { narrateClipToolDefs, narrateClipToolHandlers } from './narrate-clip';
 import { browserControlToolDefs, browserControlToolHandlers } from './browser-control';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
@@ -775,7 +777,12 @@ export async function executeToolBatch(
     const callStartedAt = Date.now();
     // Prepare execution context including any transient overrides
     const callContext = { ...(context || {} as any), overrideAllowed: Array.from(overrides) } as any;
-    // If this call is explicitly overridden, call the handler directly (so tools can honor overrideAllowed)
+    // If this call is explicitly overridden, skip the PERMISSION check — the
+    // user just granted it by clicking "Allow once" on THIS batch, which is
+    // itself user consent for running it now. The per-call confirmation
+    // question still fires when a live channel exists, because argument
+    // detail ("which file gets deleted") is worth one more click when someone
+    // can answer it; modal-only flows have already had their click.
     if (overrides.has(call.name)) {
       const tool = getTool(call.name);
       if (!tool) {
@@ -783,6 +790,23 @@ export async function executeToolBatch(
         results.push(r);
         recordOutcome(call, r, callStartedAt);
         continue;
+      }
+      if (
+        tool.definition.requiresConfirmation &&
+        !hasStandingConsent(call.name) &&
+        callContext.requestConfirmation
+      ) {
+        try {
+          const confirmed = await callContext.requestConfirmation(
+            formatConfirmationMessage(call.name, call.arguments)
+          );
+          if (!confirmed) {
+            const r = { success: false, error: 'Operation cancelled by user' } as ToolResult;
+            results.push(r);
+            recordOutcome(call, r, callStartedAt);
+            continue;
+          }
+        } catch { /* a broken channel must not block an explicit grant */ }
       }
       try {
         const r = await tool.handler(call.arguments, callContext);
@@ -938,6 +962,14 @@ export function initializeTools(force = false): void {
     }
   }
   
+  // Register navigation tools — how the assistant takes the user to a panel
+  for (const def of navigationToolDefs) {
+    const handler = navigationToolHandlers[def.name];
+    if (handler) {
+      registerTool(def.name, def, handler);
+    }
+  }
+
   // Register memory tools (Qdrant-backed)
   for (const def of memoryToolDefs) {
     const handler = memoryToolHandlers[def.name];
@@ -1093,6 +1125,12 @@ export function initializeTools(force = false): void {
   // Register Media Studio tools (video pipeline + the human approval gate)
   for (const def of mediaToolDefs) {
     const handler = mediaToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register bring-your-own clip narration (Gemini script → engine → mux)
+  for (const def of narrateClipToolDefs) {
+    const handler = narrateClipToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

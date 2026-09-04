@@ -12,13 +12,14 @@ import ExcelJS from 'exceljs';
 import * as mammoth from 'mammoth';
 import PDFDocument from 'pdfkit';
 import { captureBefore, recordChange } from '../file-change-log';
+import { homeDir } from '../user-paths';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
 const fsPromises = fs.promises;
 
 // Safety: Restrict operations to user's home directory and below
-const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
+const HOME_DIR = homeDir();
 const DESKTOP_DIR = path.join(HOME_DIR, 'Desktop');
 
 
@@ -1052,9 +1053,19 @@ export const searchFilesHandler: ToolHandler = async (args, _context): Promise<T
       )
     : null;
 
-  const contentRegex: RegExp | null = contentQuery
-    ? new RegExp(contentQuery, caseSensitive ? '' : 'i')
-    : null;
+  // Model-supplied regex runs synchronously on the main process — cap length
+  // and refuse invalid patterns up front instead of throwing mid-walk.
+  let contentRegex: RegExp | null = null;
+  if (contentQuery) {
+    if (contentQuery.length > 500) {
+      return { success: false, error: 'content_query too long (max 500 characters)' };
+    }
+    try {
+      contentRegex = new RegExp(contentQuery, caseSensitive ? '' : 'i');
+    } catch (e: any) {
+      return { success: false, error: `Invalid content_query regex: ${e?.message || e}` };
+    }
+  }
 
   const results: Array<{ file: string; matches?: Array<{ line: number; text: string }> }> = [];
 

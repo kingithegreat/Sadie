@@ -15,12 +15,14 @@ interface ChatInterfaceProps {
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
+  /** Right-click a brainstormed idea → make it a Media Studio job. */
+  onSendToMediaStudio?: (message: ChatMessage) => void;
   /** Optional per-conversation system prompt shown/edited in the chat header */
   systemPrompt?: string;
   onUpdateSystemPrompt?: (prompt: string) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onBookmark, onReact, onEdit, systemPrompt, onUpdateSystemPrompt }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onBookmark, onReact, onEdit, onSendToMediaStudio, systemPrompt, onUpdateSystemPrompt }) => {
   const [guidelinesOpen, setGuidelinesOpen] = useState(false);
   const hasGuidelines = !!(systemPrompt && systemPrompt.trim());
 
@@ -39,7 +41,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
     <div className="chat-interface">
       {/* Scrollable message list */}
       <div className="messages-container">
-        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} onBookmark={onBookmark} onReact={onReact} onEdit={onEdit} />
+        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} onBookmark={onBookmark} onReact={onReact} onEdit={onEdit} onSendToMediaStudio={onSendToMediaStudio} />
       </div>
 
       {/* Suggested prompts when chat is empty */}

@@ -12,6 +12,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { logTelemetryEvent } from '../utils/logger';
+import { getSettings } from '../config-manager';
+import {
+  KOKORO_DEFAULT_VOICE,
+  isKokoroVoice,
+  type NarrationEngine,
+} from '../../shared/narration';
 
 // ── Preferred voice ──────────────────────────────────────────────────────────
 // Microsoft Ava is the newest, most natural US female neural voice (2024+).
@@ -26,6 +32,37 @@ const TTS_CACHE_DIR = path.join(os.tmpdir(), 'homebot-tts');
 let ttsInstance: MsEdgeTTS | null = null;
 let currentVoice: string = DEFAULT_VOICE;
 let ttsInitPromise: Promise<MsEdgeTTS> | null = null; // guards concurrent init
+
+/**
+ * Throw away the cached instance so the next call builds a fresh connection.
+ *
+ * Exported for the test that proves a dead socket does not poison every
+ * subsequent narration.
+ */
+export function resetTTS(): void {
+  ttsInstance = null;
+  ttsInitPromise = null;
+}
+
+/**
+ * Does this error mean the connection died, rather than the request being bad?
+ *
+ * Only a closed/failed stream is worth reconnecting for. Retrying a rejected
+ * SSML or an unknown voice would just fail twice as slowly.
+ */
+export function isRecoverableStreamError(err: unknown): boolean {
+  const msg = String((err as any)?.message || err || '').toLowerCase();
+  return (
+    msg.includes('turn.end') ||
+    msg.includes('stream closed') ||
+    msg.includes('websocket') ||
+    msg.includes('socket hang up') ||
+    msg.includes('econnreset') ||
+    msg.includes('epipe') ||
+    msg.includes('not connected') ||
+    msg.includes('closed before')
+  );
+}
 
 async function getTTS(voice?: string): Promise<MsEdgeTTS> {
   const targetVoice = voice || DEFAULT_VOICE;
@@ -71,9 +108,85 @@ async function getTTS(voice?: string): Promise<MsEdgeTTS> {
 
 // Ensure cache dir exists
 function ensureCacheDir() {
-  if (!fs.existsSync(TTS_CACHE_DIR)) {
-    fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
+  if (fs.existsSync(TTS_CACHE_DIR)) {
+    return;
   }
+  fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
+}
+
+// ── Narration engines ────────────────────────────────────────────────────────
+//
+// Edge TTS is the default and the fallback. Kokoro-82M runs locally through
+// the SAME onnxruntime stack Whisper speech recognition already ships, so it
+// adds ~1 MB of JS and zero new runtime classes — but it only speaks English,
+// has no pitch control, and its weights (~90 MB) download on first use. Every
+// Kokoro failure falls back to Edge, and the caller is told which engine ran.
+
+let kokoroTTS: any = null;
+let kokoroLoad: Promise<any> | null = null;
+
+async function getKokoro(): Promise<any> {
+  if (kokoroTTS) return kokoroTTS;
+  if (!kokoroLoad) {
+    kokoroLoad = (async () => {
+      const { KokoroTTS } = await import('kokoro-js');
+      console.log('[HomeBot Voice] loading Kokoro-82M — first use downloads ≈90 MB of weights');
+      // q8 + cpu is the configuration that was measured for the decision:
+      // 24 kHz mono PCM, -22.6 dB mean / -4.4 dB max on the A/B script.
+      const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+        dtype: 'q8',
+        device: 'cpu',
+      });
+      kokoroTTS = tts;
+      return tts;
+    })().catch((err) => {
+      kokoroLoad = null; // allow a retry once whatever was missing exists
+      throw err;
+    });
+  }
+  return kokoroLoad;
+}
+
+/** Test seam: drop the cached local model so a suite starts clean. */
+export function __resetKokoroForTest(): void {
+  kokoroTTS = null;
+  kokoroLoad = null;
+}
+
+/** ±percent rate maps onto Kokoro's speed factor, clamped to its sane range. */
+function kokoroSpeed(ratePercent?: number): number {
+  return Math.max(0.5, Math.min(2, 1 + (ratePercent || 0) / 100));
+}
+
+async function renderWithKokoro(
+  text: string,
+  dir: string,
+  opts?: { voice?: string; rate?: number }
+): Promise<{ path: string; bytes: number }> {
+  ensureCacheDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const tts = await getKokoro();
+  // An Edge-style voice name means nothing here; the panel swaps its voice
+  // list when Kokoro is selected, so anything unrecognized falls to Heart.
+  const voice = isKokoroVoice(opts?.voice) ? opts!.voice : KOKORO_DEFAULT_VOICE;
+  const audio = await tts.generate(text, { voice, speed: kokoroSpeed(opts?.rate) });
+  const wav = Buffer.from(audio.toWav());
+  if (wav.length === 0) throw new Error('Kokoro produced no audio');
+  const out = path.join(dir, 'narration.wav');
+  fs.writeFileSync(out, wav);
+  return { path: out, bytes: wav.length };
+}
+
+/**
+ * Which engine should narrate? An explicit request wins (the Media Studio
+ * picker sends one); otherwise the persisted preference; otherwise Edge.
+ */
+export function resolveNarrationEngine(explicit?: unknown): NarrationEngine {
+  if (explicit === 'kokoro' || explicit === 'edge') return explicit;
+  try {
+    if (getSettings().narrationEngine === 'kokoro') return 'kokoro';
+  } catch { /* settings unreadable — default applies */ }
+  return 'edge';
 }
 
 // ============= TOOL DEFINITIONS =============
@@ -93,10 +206,25 @@ function ensureCacheDir() {
 export async function renderNarrationToFile(
   text: string,
   outPath: string,
-  opts?: { voice?: string; rate?: number; pitch?: number },
-): Promise<{ path: string; bytes: number }> {
+  opts?: { voice?: string; rate?: number; pitch?: number; engine?: NarrationEngine }
+): Promise<{ path: string; bytes: number; engine: NarrationEngine }> {
   const clean = (text || '').trim();
   if (!clean) throw new Error('Nothing to narrate — the script is empty.');
+
+  // Kokoro first when asked; ANY failure (weights missing, no window, OOM,
+  // model error) falls back to Edge rather than failing the job. The returned
+  // `engine` is the one that ACTUALLY rendered, so a silent substitution can
+  // never ship unnoticed.
+  if (resolveNarrationEngine(opts?.engine) === 'kokoro') {
+    try {
+      const rendered = await renderWithKokoro(clean, path.dirname(outPath), opts);
+      try { logTelemetryEvent('tts_render', { engine: 'kokoro', outcome: 'success' }); } catch (_e) {}
+      return { ...rendered, engine: 'kokoro' };
+    } catch (err: any) {
+      console.warn(`[HomeBot Voice] Kokoro unavailable (${err?.message || err}); falling back to Edge TTS.`);
+      try { logTelemetryEvent('tts_fallback', { from: 'kokoro', to: 'edge', error: err?.message || String(err) }); } catch (_e) {}
+    }
+  }
 
   const tts = await getTTS(opts?.voice);
   const rate = opts?.rate ?? 0;
@@ -111,11 +239,58 @@ export async function renderNarrationToFile(
   // it made every speak call fall through to the Web Speech fallback.
   fs.mkdirSync(dir, { recursive: true });
 
-  const res: any = await tts.toFile(dir, clean, {
+  const prosody = {
     rate: rate >= 0 ? `+${rate}%` : `${rate}%`,
     pitch: pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`,
     volume: '100%',
-  } as any);
+  } as any;
+
+  // Enough to diagnose a recurrence without another round of guessing.
+  //
+  // This failure was reported from a real run and could NOT be reproduced from
+  // outside the app: long text, a reused instance after idle, and two
+  // concurrent syntheses on one socket all succeeded against the live service.
+  // So the next occurrence has to carry its own evidence — the app runs in
+  // Electron's network stack, not plain Node, and that is the difference this
+  // log is here to expose.
+  const started = Date.now();
+  const context = () =>
+    `voice=${currentVoice} chars=${clean.length} elapsed=${Date.now() - started}ms`;
+
+  let res: any;
+  try {
+    res = await tts.toFile(dir, clean, prosody);
+  } catch (err: any) {
+    console.warn(`[HomeBot Voice] synthesis failed — ${context()} — ${err?.message || err}`);
+    // The cached MsEdgeTTS holds a WebSocket to Microsoft's service, and that
+    // socket is closed from the other end after a period of inactivity. The
+    // instance survives, `getTTS`'s fast path keeps returning it, and every
+    // synthesis from then on fails the same way:
+    //
+    //   "Stream closed before the synthesis completed (no turn.end received)"
+    //
+    // Reported live as narration failing and then continuing to fail — which
+    // is the tell. A transient network problem does not repeat forever; a dead
+    // cached socket does, until the app restarts.
+    if (!isRecoverableStreamError(err)) throw err;
+
+    console.warn('[HomeBot Voice] TTS stream was closed; reconnecting and retrying once.');
+    resetTTS();
+    const fresh = await getTTS(opts?.voice);
+    try {
+      res = await fresh.toFile(dir, clean, prosody);
+      console.log(`[HomeBot Voice] retry succeeded — ${context()}`);
+    } catch (retryErr: any) {
+      // Both attempts failed. Say which, so a report distinguishes "the
+      // connection was stale" from "this text or voice cannot be synthesised".
+      console.error(`[HomeBot Voice] retry ALSO failed — ${context()} — ${retryErr?.message || retryErr}`);
+      throw new Error(
+        `Text-to-speech failed twice, on a fresh connection the second time. ` +
+        `That points at the service or the network rather than a stale connection. ` +
+        `(${context()}) Original error: ${retryErr?.message || retryErr}`
+      );
+    }
+  }
 
   // Trust the returned path when given, but still stat it: a path to an empty
   // file would otherwise be reported as a successful narration.
@@ -124,7 +299,7 @@ export async function renderNarrationToFile(
   for (const c of candidates) {
     try {
       const st = fs.statSync(c);
-      if (st.size > 0) return { path: c, bytes: st.size };
+      if (st.size > 0) return { path: c, bytes: st.size, engine: 'edge' };
     } catch { /* try the next candidate */ }
   }
   throw new Error('Text-to-speech produced no audio file.');
@@ -258,7 +433,8 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
       result: {
         message: 'Speaking text',
         voice: currentVoice,
-        engine: 'edge-neural',
+        engine: rendered.engine === 'kokoro' ? 'kokoro-local' : 'edge-neural',
+        ...(rendered.engine === 'kokoro' ? { note: 'pitch is not supported by the local engine' } : {}),
         usedFallback: currentVoice === FALLBACK_VOICE,
         textLength: text.length,
       }
