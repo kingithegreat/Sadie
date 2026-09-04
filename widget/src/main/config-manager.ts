@@ -346,6 +346,9 @@ export const DEFAULT_SETTINGS: Settings = {
     navigate_browser: false,
     media_write_script: true,
     media_narrate: true,
+    // Reads a clip inside the user folder, writes the narrated result next to
+    // it; spends the user's own Gemini free-tier quota, nothing else.
+    media_narrate_clip: true,
     media_render: true,
     // Destructive and irreversible, so it also carries requiresConfirmation.
     media_delete_job: false,
