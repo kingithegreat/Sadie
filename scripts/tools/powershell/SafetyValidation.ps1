@@ -25,9 +25,9 @@ param(
 # ============================================================================
 
 $ALLOWED_DIRECTORIES = @(
-    "C:\Users\adenk\Documents",
-    "C:\Users\adenk\Desktop",
-    "C:\Users\adenk\Downloads"
+    (Join-Path $env:USERPROFILE "Documents"),
+    (Join-Path $env:USERPROFILE "Desktop"),
+    (Join-Path $env:USERPROFILE "Downloads")
 )
 
 $BLOCKED_DIRECTORIES = @(
@@ -35,9 +35,12 @@ $BLOCKED_DIRECTORIES = @(
     "C:\Program Files",
     "C:\Program Files (x86)",
     "C:\ProgramData",
-    "C:\Users\adenk\AppData",
+    (Join-Path $env:USERPROFILE "AppData"),
     "C:\System Volume Information",
-    "C:\$Recycle.Bin"
+    # Single-quoted on purpose: inside double quotes PowerShell interpolates
+    # "$Recycle" as an (undefined) variable, turning this entry into "C:\.Bin"
+    # and silently unblocking the Recycle Bin.
+    'C:\$Recycle.Bin'
 )
 
 $BLOCKED_EXTENSIONS = @(
@@ -79,6 +82,33 @@ function Write-JsonOutput {
     return ($output | ConvertTo-Json -Depth 10 -Compress)
 }
 
+function Test-UnderDirectory {
+    <#
+        Is $Path the directory $Directory, or something inside it?
+
+        A bare StartsWith has no separator boundary, so "...\Desktop" also
+        matches "...\DesktopEvil" - a sibling that is NOT inside the allowed
+        directory yet passed the allowlist, and "...\AppDataX" would have been
+        compared against blocked entries the same lossy way. Compare on a
+        separator instead. Returns $false for an unset or unresolvable
+        directory rather than throwing, because these lists are built from
+        environment variables that are not guaranteed to be set.
+    #>
+    param([string]$Path, [string]$Directory)
+
+    if ([string]::IsNullOrWhiteSpace($Directory)) { return $false }
+    try {
+        $dir = [System.IO.Path]::GetFullPath($Directory)
+    } catch {
+        return $false
+    }
+    $dir = $dir.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+
+    return $Path.Equals($dir, [StringComparison]::OrdinalIgnoreCase) -or
+           $Path.StartsWith($dir + [System.IO.Path]::DirectorySeparatorChar,
+                            [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Test-PathSafety {
     param([string]$TestPath)
     
@@ -106,7 +136,7 @@ function Test-PathSafety {
     
     # Check blocked directories first (highest priority)
     foreach ($blockedDir in $BLOCKED_DIRECTORIES) {
-        if ($resolvedPath.StartsWith($blockedDir, [StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-UnderDirectory -Path $resolvedPath -Directory $blockedDir) {
             $violations += "Path '$resolvedPath' targets blocked system directory: $blockedDir"
             return @{
                 Valid = $false
@@ -119,7 +149,7 @@ function Test-PathSafety {
     # Check if path is in allowed directories
     $isAllowed = $false
     foreach ($allowedDir in $ALLOWED_DIRECTORIES) {
-        if ($resolvedPath.StartsWith($allowedDir, [StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-UnderDirectory -Path $resolvedPath -Directory $allowedDir) {
             $isAllowed = $true
             break
         }
@@ -262,10 +292,11 @@ function Test-ApiToolSafety {
         }
     }
     
-    # Check if URL is local or approved
+    # Check if URL is local or approved. Anchored: the previous unanchored
+    # pattern read "http://evil.com/?x=localhost" as a local call.
     if ($Parameters.ContainsKey('url')) {
         $url = $Parameters.url
-        $isLocal = $url -match 'localhost|127\.0\.0\.1|::1'
+        $isLocal = $url -match '^(https?://)?(localhost|127\.0\.0\.1|\[::1\]|::1)([:/]|$)'
         
         if (-not $isLocal) {
             $warnings += "External API call to: $url"

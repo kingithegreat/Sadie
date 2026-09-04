@@ -13,6 +13,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
+| PowerShell tool safety hardening + Pester coverage for SafetyValidation, CalendarOps, EmailOps | claude/powershell-pester-coverage | Ready for Integration | Extends #173/#245 coverage to the shared safety gate. SafetyValidation.ps1 had: hardcoded `C:\Users\adenk` paths (portability), the same bare-`StartsWith` allowlist bug fixed for TEMP in 8908863 (`...\Desktop` prefix-matched `...\DesktopEvil` — allowlist bypass), and `"C:\$Recycle.Bin"` double-quoted so PowerShell interpolated `$Recycle` to empty — the Recycle Bin was silently NOT blocked. Fixed with the same `Test-UnderDirectory` separator-boundary helper as ArchiveOps, `$USERPROFILE`-based lists, and a single-quoted Recycle Bin entry; local-URL warning regex anchored so `http://evil.com/?x=localhost` no longer reads as local. Three new Pester suites; no Outlook COM in the deterministic paths. |
 
 (No open claims as of this writing — Pro monetization Steps 1 & 2 are merged; see Notion ledger for history.)
 
