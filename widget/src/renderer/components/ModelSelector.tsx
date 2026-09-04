@@ -309,8 +309,13 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }))
     .filter(g => g.models.length > 0);
 
-  // Prev/next navigation through all models
-  const currentIndex = allModels.findIndex(m => {
+  // Prev/next navigation through all models. While a filter is active the
+  // arrows cycle only the visible subset — stepping to a model the user just
+  // filtered out reads as the arrows being broken.
+  const navModels = filter.trim() === ''
+    ? allModels
+    : allModels.filter(matchesFilter);
+  const navIndex = navModels.findIndex(m => {
     if (useCustomLLM && m.type === 'custom') return m.id === activeCustomModelId;
     return normalizeModelId(m.id) === normalizeModelId(currentModel);
   });
@@ -335,16 +340,16 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const handlePrevModel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (locked || allModels.length === 0) return;
-    const prevIndex = currentIndex <= 0 ? allModels.length - 1 : currentIndex - 1;
-    selectModelWithVramCheck(allModels[prevIndex]);
+    if (locked || navModels.length === 0) return;
+    const prevIndex = navIndex <= 0 ? navModels.length - 1 : navIndex - 1;
+    selectModelWithVramCheck(navModels[prevIndex]);
   };
 
   const handleNextModel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (locked || allModels.length === 0) return;
-    const nextIndex = currentIndex >= allModels.length - 1 ? 0 : currentIndex + 1;
-    selectModelWithVramCheck(allModels[nextIndex]);
+    if (locked || navModels.length === 0) return;
+    const nextIndex = navIndex >= navModels.length - 1 ? 0 : navIndex + 1;
+    selectModelWithVramCheck(navModels[nextIndex]);
   };
 
   const handleSelectModel = (model: ModelInfo) => {

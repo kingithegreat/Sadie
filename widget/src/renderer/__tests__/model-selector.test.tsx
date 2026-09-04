@@ -175,6 +175,25 @@ describe('ModelSelector — dropdown', () => {
     expect(screen.queryByText('Dolphin (7B)')).toBeNull();
   });
 
+  test('prev/next arrows cycle only the filtered subset while a filter is active', async () => {
+    const onModelChange = jest.fn();
+    // "a" matches mistral, qwen2.5 (has an "a"), and phi4-mini ("Mini") —
+    // narrower than all 3 installed models? No: qwen2.5:7b has no "a" in its
+    // VISIBLE strings until you hit its id. Use "mistral" instead: exactly one
+    // installed model, so next wraps back onto itself.
+    await renderSelector({ currentModel: 'phi4-mini', onModelChange });
+    await act(async () => { fireEvent.click(getMainBtn()); });
+    const input = screen.getByLabelText('Filter models') as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: 'mistral' } }); });
+    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
+    expect(onModelChange).toHaveBeenCalledWith('mistral:latest', false);
+    // Wraps within the one visible model.
+    fireEvent.click(screen.getByRole('button', { name: /next model/i }));
+    expect(onModelChange).toHaveBeenLastCalledWith('mistral:latest', false);
+    // And never lands on a filtered-out model like phi4-mini.
+    expect(onModelChange).not.toHaveBeenCalledWith('phi4-mini', false);
+  });
+
   test('filter with no matches shows a recovery message, not a blank list', async () => {
     await renderSelector();
     await act(async () => { fireEvent.click(getMainBtn()); });
