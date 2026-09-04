@@ -5,6 +5,7 @@ import {
   ANCIENT_PATHWAYS_EPISODES,
   checkRenderLock,
   findEpisodeDeliverable,
+  humanizeStage,
   resolveAncientPathwaysDir,
   runEpisodePipeline,
 } from '../ancient-pathways';
@@ -76,7 +77,30 @@ describe('ancient-pathways main module', () => {
         expect(ep.era.length).toBeGreaterThan(3);
         expect(ep.mainCharacter.length).toBeGreaterThan(3);
         expect(ep.sceneCount).toBe(14);
+        expect(ep.emoji).toBeDefined();
+        expect(ep.summary.length).toBeGreaterThan(10);
       }
+    });
+  });
+
+  describe('humanizeStage', () => {
+    it('translates technical stage names to zero-jargon plain English', () => {
+      expect(humanizeStage('script')).toBe('Writing story & scenes');
+      expect(humanizeStage('voice')).toBe('Recording character voices');
+      expect(humanizeStage('shots')).toBe('Setting up historical backgrounds');
+      expect(humanizeStage('keyframes')).toBe('Posing characters & expressions');
+      expect(humanizeStage('anim')).toBe('Animating characters & mouth sync');
+      expect(humanizeStage('render')).toBe('Creating final 1080p video with music');
+      expect(humanizeStage('doctor')).toBe('Checking video & sound quality');
+    });
+
+    it('prepends Completed when status is ok or done', () => {
+      expect(humanizeStage('anim', 'ok')).toBe('Completed: Animating characters & mouth sync');
+      expect(humanizeStage('script', 'done')).toBe('Completed: Writing story & scenes');
+    });
+
+    it('falls back to friendly Working on <stage> for unknown stages', () => {
+      expect(humanizeStage('custom_step')).toBe('Working on custom_step');
     });
   });
 

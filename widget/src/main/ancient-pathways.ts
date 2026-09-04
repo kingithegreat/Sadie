@@ -24,6 +24,29 @@ export interface AncientPathwaysEpisode {
   mainCharacter: string;
   sceneCount: number;
   thumbnail?: string;
+  emoji: string;
+  summary: string;
+}
+
+/**
+ * Maps technical pipeline stages to friendly, zero-jargon plain English.
+ */
+export function humanizeStage(stageName: string, status?: string): string {
+  const map: Record<string, string> = {
+    script: 'Writing story & scenes',
+    voice: 'Recording character voices',
+    shots: 'Setting up historical backgrounds',
+    keyframes: 'Posing characters & expressions',
+    anim: 'Animating characters & mouth sync',
+    render: 'Creating final 1080p video with music',
+    doctor: 'Checking video & sound quality',
+  };
+
+  const friendly = map[stageName.toLowerCase()] || `Working on ${stageName}`;
+  if (status && ['done', 'ok'].includes(status.toLowerCase())) {
+    return `Completed: ${friendly}`;
+  }
+  return friendly;
 }
 
 /**
@@ -40,6 +63,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'Master Architect Imhotep',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_01_Thumbnail.png',
+    emoji: '🏺',
+    summary: 'How Imhotep engineered the first stone pyramid in history.',
   },
   {
     id: 'greece',
@@ -50,6 +75,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'Philosopher Socrates',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_02_Thumbnail.png',
+    emoji: '🏛️',
+    summary: 'Socrates challenges Athenian thinkers at the dawn of democracy.',
   },
   {
     id: 'rome',
@@ -60,6 +87,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'Master Engineer Vitruvius',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_03_Thumbnail.png',
+    emoji: '⚔️',
+    summary: 'How revolutionary Roman concrete and aqueducts built an empire.',
   },
   {
     id: 'japan',
@@ -70,6 +99,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'Master Swordsmith Masamune',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_04_Thumbnail.png',
+    emoji: '🏯',
+    summary: 'Master swordsmith Masamune crafts katana under the Bushido code.',
   },
   {
     id: 'maya',
@@ -80,6 +111,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'High Astronomer-Priest Kukulkan',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_05_Thumbnail.png',
+    emoji: '🗿',
+    summary: 'Rainforest astronomers map the cosmos above massive step pyramids.',
   },
   {
     id: 'babylon',
@@ -90,6 +123,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'King Nebuchadnezzar II',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_06_Thumbnail.png',
+    emoji: '🦁',
+    summary: 'The brilliant glazed blue Ishtar Gate and the earliest written law.',
   },
   {
     id: 'vikings',
@@ -100,6 +135,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'Leif Erikson',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_07_Thumbnail.png',
+    emoji: '⛵',
+    summary: 'Navigating wild stormy seas with sunstones to reach new worlds.',
   },
   {
     id: 'china',
@@ -110,6 +147,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'General Meng Tian',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_08_Thumbnail.png',
+    emoji: '🐉',
+    summary: 'Defending the realm along the massive Great Wall of China.',
   },
   {
     id: 'indus',
@@ -120,6 +159,8 @@ export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
     mainCharacter: 'Dhara, city planner of Mohenjo-daro',
     sceneCount: 14,
     thumbnail: 'Ancient_Pathways_Episode_09_Thumbnail.png',
+    emoji: '🌊',
+    summary: 'The world’s first planned modern cities with running water systems.',
   },
 ];
 
@@ -314,7 +355,7 @@ export function runEpisodePipeline(options: RunEpisodeOptions): Promise<RunEpiso
           const stageStatus = stageMatch[3];
           options.onProgress?.({
             stage: stageName,
-            note: `${stageName}: ${stageStatus}`,
+            note: humanizeStage(stageName, stageStatus),
           });
         } else if (trimmed.length > 5 && trimmed.length < 80) {
           options.onProgress?.({

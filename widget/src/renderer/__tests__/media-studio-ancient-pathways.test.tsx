@@ -130,4 +130,51 @@ describe('Media Studio — From Ancient Pathways', () => {
 
     expect(screen.getByText('Another render is active (PID 4444)')).toBeInTheDocument();
   });
+
+  test('filters episodes when season pills are clicked', async () => {
+    setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    expect(screen.getByText(/Ancient Egypt: The Secret of the Pyramid Builders/)).toBeInTheDocument();
+    expect(screen.getByText(/Babylon: The Ishtar Gate/)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Season 1: Ancient Wonders/));
+    });
+
+    expect(screen.getByText(/Ancient Egypt: The Secret of the Pyramid Builders/)).toBeInTheDocument();
+    expect(screen.queryByText(/Babylon: The Ishtar Gate/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Season 2: Empires & Builders/));
+    });
+
+    expect(screen.queryByText(/Ancient Egypt: The Secret of the Pyramid Builders/)).toBeNull();
+    expect(screen.getByText(/Babylon: The Ishtar Gate/)).toBeInTheDocument();
+  });
+
+  test('filters episodes dynamically with search input', async () => {
+    setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    const searchInput = screen.getByLabelText('Search episodes');
+    await act(async () => {
+      fireEvent.change(searchInput, { target: { value: 'Egypt' } });
+    });
+
+    expect(screen.getByText(/Ancient Egypt: The Secret of the Pyramid Builders/)).toBeInTheDocument();
+    expect(screen.queryByText(/Babylon: The Ishtar Gate/)).toBeNull();
+  });
 });

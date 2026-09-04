@@ -558,6 +558,8 @@ export interface ElectronAPI {
       mainCharacter: string;
       sceneCount: number;
       thumbnail?: string;
+      emoji?: string;
+      summary?: string;
     }>;
     available: boolean;
     dir?: string | null;

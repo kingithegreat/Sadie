@@ -157,11 +157,15 @@ export const MediaStudioPanel: React.FC = () => {
     era: string;
     mainCharacter: string;
     sceneCount: number;
+    emoji?: string;
+    summary?: string;
   }> | null>(null);
   const [apStatus, setApStatus] = useState<{
     available: boolean;
     lock?: { locked: boolean; message?: string };
   } | null>(null);
+  const [seasonFilter, setSeasonFilter] = useState<number>(0);
+  const [apSearch, setApSearch] = useState<string>('');
 
   const api = () => (window as any).electron;
 
@@ -496,6 +500,20 @@ export const MediaStudioPanel: React.FC = () => {
     }
   };
 
+  const getJobProgressStep = (j: MediaJob): number => {
+    if (['idea', 'researching', 'script_draft', 'script_qa'].includes(j.state)) return 1;
+    if (j.state === 'media_production') {
+      if (!j.narrationPath) return 2;
+      if (!j.renderPath) return 3;
+      return 4;
+    }
+    if (['render_qa', 'awaiting_approval', 'approved', 'scheduled', 'published'].includes(j.state)) return 4;
+    if (j.renderPath) return 4;
+    if (j.narrationPath) return 3;
+    if (j.script) return 2;
+    return 1;
+  };
+
   const awaiting = jobs.filter(j => j.state === 'awaiting_approval');
   const active = jobs.filter(j => j.state !== 'awaiting_approval' && !FAILURE.includes(j.state));
   const stalled = jobs.filter(j => FAILURE.includes(j.state));
@@ -509,6 +527,35 @@ export const MediaStudioPanel: React.FC = () => {
           {j.durationSeconds ? ` · ${j.durationSeconds}s recorded` : ''}
           {j.narratedWith ? ` · narrated: ${j.narratedWith}` : ''}
         </span>
+
+        {/* 4-Step User-Friendly Progress Stepper */}
+        {(() => {
+          const currentStep = getJobProgressStep(j);
+          const steps = [
+            { num: 1, label: 'Story & Script' },
+            { num: 2, label: 'Voice & Audio' },
+            { num: 3, label: 'Animation & Visuals' },
+            { num: 4, label: '1080p Video' },
+          ];
+          return (
+            <div className="ms-stepper" aria-label={`Progress: Step ${currentStep} of 4`}>
+              {steps.map((s, idx) => {
+                const isDone = currentStep > s.num || j.state === 'published';
+                const isActive = currentStep === s.num && j.state !== 'published';
+                return (
+                  <React.Fragment key={s.num}>
+                    <div className={`ms-step ${isDone ? 'done' : ''} ${isActive ? 'active' : ''}`}>
+                      <span className="ms-step-dot" />
+                      <span>{s.num}. {s.label}</span>
+                    </div>
+                    {idx < steps.length - 1 && <div className="ms-step-line" />}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         {/* The script and the slides, before you commit to watching.
             Both were already produced and neither was ever shown: `script` has
             been on the job all along, and the scene image paths were built,
@@ -557,13 +604,21 @@ export const MediaStudioPanel: React.FC = () => {
             audio player — the narration is inside it, so offering both is two
             controls for one job. */}
         {j.renderPath ? (
-          <video
-            className="ms-video"
-            controls
-            preload="metadata"
-            data-testid={`ms-video-${j.id}`}
-            src={`file:///${j.renderPath.replace(/\\/g, '/')}`}
-          />
+          <>
+            <div className="ms-ready-banner" role="status">
+              <span style={{ fontSize: '1.2rem' }}>🎉</span>
+              <div>
+                <strong>Your episode is ready to watch!</strong> Play the video below, then approve below to publish.
+              </div>
+            </div>
+            <video
+              className="ms-video"
+              controls
+              preload="metadata"
+              data-testid={`ms-video-${j.id}`}
+              src={`file:///${j.renderPath.replace(/\\/g, '/')}`}
+            />
+          </>
         ) : j.narrationPath ? (
           /* Hearing the narration is the only way to judge it before there is
              a picture. file:// works because the renderer loads from disk. */
@@ -771,6 +826,18 @@ export const MediaStudioPanel: React.FC = () => {
     </li>
   );
 
+  const filteredEpisodes = (apEpisodes || []).filter(ep => {
+    if (seasonFilter !== 0 && ep.season !== seasonFilter) return false;
+    if (!apSearch.trim()) return true;
+    const q = apSearch.toLowerCase();
+    return (
+      ep.title.toLowerCase().includes(q) ||
+      ep.era.toLowerCase().includes(q) ||
+      ep.mainCharacter.toLowerCase().includes(q) ||
+      (ep.summary && ep.summary.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div className="media-studio">
       {confirmDialog}
@@ -847,7 +914,7 @@ export const MediaStudioPanel: React.FC = () => {
           same approval gate. */}
       <div className="ms-feed">
         {!feedOpen ? (
-          <button type="button" className="ms-btn" onClick={() => setFeedOpen(true)}>
+          <button type="button" className="ms-btn ms-btn-icon-podcast" onClick={() => setFeedOpen(true)}>
             From a podcast…
           </button>
         ) : (
@@ -906,7 +973,7 @@ export const MediaStudioPanel: React.FC = () => {
           from what they actually said. Same ordinary job, same approval gate. */}
       <div className="ms-feed">
         {!chatOpen ? (
-          <button type="button" className="ms-btn" onClick={openChatSection}>
+          <button type="button" className="ms-btn ms-btn-icon-chat" onClick={openChatSection}>
             From chat…
           </button>
         ) : (
@@ -955,56 +1022,110 @@ export const MediaStudioPanel: React.FC = () => {
       {/* Ancient Pathways: Broadcast-grade animated historical video essay series */}
       <div className="ms-feed">
         {!apOpen ? (
-          <button type="button" className="ms-btn" onClick={openApSection}>
+          <button type="button" className="ms-btn ms-btn-icon-ap" onClick={openApSection}>
             From Ancient Pathways…
           </button>
         ) : (
-          <>
-            <div className="ms-feed-row">
-              <span className="ms-engine-text">
-                <strong>Ancient Pathways:</strong> Leila & Flappy 2D Animated History Series (9 Episodes)
-                {apStatus?.lock?.locked && (
-                  <span className="ms-state ms-state--bad" style={{ marginLeft: 8 }}>
-                    {apStatus.lock.message || 'Render in progress'}
-                  </span>
-                )}
-              </span>
+          <div className="ms-ap-showcase">
+            <div className="ms-ap-hero">
+              <div>
+                <h3>🏛️ Ancient Pathways: Leila &amp; Flappy 2D Animated History</h3>
+                <p>
+                  Produce broadcast-ready 2D animated history documentaries with voice acting,
+                  historical backgrounds, and sound design in 1 click.
+                </p>
+              </div>
               <button
                 type="button"
                 className="ms-btn"
                 onClick={() => { setApOpen(false); setApError(null); }}
                 aria-label="Close Ancient Pathways section"
-              >✕</button>
+              >✕ Close</button>
             </div>
+
+            {apStatus?.lock?.locked && (
+              <div className="ms-state ms-state--bad" style={{ marginBottom: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>🔒</span>
+                <span>{apStatus.lock.message || 'Another render is active (PID 4444)'}</span>
+              </div>
+            )}
+
             {apError && <div className="ms-error" role="alert">{apError}</div>}
             {apLoading && <span className="ms-working"><span className="ms-spinner" />Looking for episodes…</span>}
             {apEpisodes && (
-              <ul className="ms-feed-episodes" aria-label="Ancient Pathways episodes">
-                {apEpisodes.map(ep => (
-                  <li key={ep.id} className="ms-feed-episode">
-                    <div className="ms-feed-ep-main">
-                      <span className="ms-feed-ep-title">
-                        <span className="ms-job-format" style={{ marginRight: 6 }}>
-                          Season {ep.season} · {ep.code}
-                        </span>
-                        {ep.title}
-                      </span>
-                      <span className="ms-feed-ep-meta">
-                        {ep.era} · {ep.mainCharacter} · {ep.sceneCount} scenes
-                      </span>
-                    </div>
+              <>
+                <div className="ms-ap-controls">
+                  <div className="ms-ap-pills" role="radiogroup" aria-label="Filter by season">
                     <button
-                      className="ms-btn ms-btn--primary"
-                      disabled={busy !== null}
-                      onClick={() => produceAncientPathwaysEpisode(ep.id)}
+                      type="button"
+                      className={`ms-ap-pill ${seasonFilter === 0 ? 'active' : ''}`}
+                      onClick={() => setSeasonFilter(0)}
                     >
-                      Produce Episode
+                      All Episodes ({apEpisodes.length})
                     </button>
-                  </li>
-                ))}
-              </ul>
+                    <button
+                      type="button"
+                      className={`ms-ap-pill ${seasonFilter === 1 ? 'active' : ''}`}
+                      onClick={() => setSeasonFilter(1)}
+                    >
+                      Season 1: Ancient Wonders ({apEpisodes.filter(e => e.season === 1).length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`ms-ap-pill ${seasonFilter === 2 ? 'active' : ''}`}
+                      onClick={() => setSeasonFilter(2)}
+                    >
+                      Season 2: Empires &amp; Builders ({apEpisodes.filter(e => e.season === 2).length})
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    className="ms-input ms-ap-search"
+                    placeholder="Search civilizations, heroes…"
+                    value={apSearch}
+                    onChange={e => setApSearch(e.target.value)}
+                    aria-label="Search episodes"
+                  />
+                </div>
+
+                <ul className="ms-feed-episodes ms-ap-grid" aria-label="Ancient Pathways episodes">
+                  {filteredEpisodes.map(ep => (
+                    <li key={ep.id} className="ms-ap-card">
+                      <div className="ms-ap-card-top">
+                        <div className="ms-ap-avatar" aria-hidden="true">
+                          {ep.emoji || '🏛️'}
+                        </div>
+                        <div className="ms-ap-card-details">
+                          <span className="ms-job-format" style={{ alignSelf: 'flex-start', marginBottom: 2 }}>
+                            Season {ep.season} · {ep.code}
+                          </span>
+                          <span className="ms-ap-card-title">{ep.title}</span>
+                          <span className="ms-ap-card-meta">
+                            {ep.era} · {ep.mainCharacter} · {ep.sceneCount} scenes
+                          </span>
+                        </div>
+                      </div>
+                      {ep.summary && (
+                        <p className="ms-ap-card-summary">{ep.summary}</p>
+                      )}
+                      <button
+                        className="ms-btn ms-btn--primary ms-ap-card-btn"
+                        disabled={busy !== null || !!apStatus?.lock?.locked}
+                        onClick={() => produceAncientPathwaysEpisode(ep.id)}
+                      >
+                        Produce Episode
+                      </button>
+                    </li>
+                  ))}
+                  {filteredEpisodes.length === 0 && (
+                    <li className="ms-feed-ep-meta" style={{ padding: 16 }}>
+                      No episodes match your search.
+                    </li>
+                  )}
+                </ul>
+              </>
             )}
-          </>
+          </div>
         )}
       </div>
 
