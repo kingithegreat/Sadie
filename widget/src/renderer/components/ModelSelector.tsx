@@ -23,7 +23,12 @@ interface ModelInfo {
   installed?: boolean;
   sizeGB?: number;
   costHint?: string;
+  /** What the model is FOR. Drives the purpose sections in the picker.
+   *  Explicit for curated entries; inferred from size for unknown installs. */
+  category?: ModelCategory;
 }
+
+export type ModelCategory = 'everyday' | 'coding' | 'reasoning' | 'lightweight' | 'uncensored';
 
 interface ModelSelectorProps {
   currentModel: string;
@@ -43,24 +48,49 @@ interface ModelSelectorProps {
 
 // Well-known models with descriptions — shown even if not installed (with a "pull" option)
 export const RECOMMENDED_MODELS: ModelInfo[] = [
-  { id: 'qwen2.5:7b', name: 'Qwen 2.5 (7B)', shortName: 'Qwen 7B', description: 'Smartest local model — best tool use & reasoning (4.4GB)', type: 'ollama', sizeGB: 4.4 },
-  { id: 'qwen2.5:14b', name: 'Qwen 2.5 (14B)', shortName: 'Qwen 14B', description: 'Stronger reasoning and coding for bigger GPUs (8.2GB)', type: 'ollama', sizeGB: 8.2 },
-  { id: 'gemma4:e4b', name: 'Gemma 4 (E4B)', shortName: 'Gemma4 E4B', description: 'Google quality-focused Gemma 4 — strong general chat, but heavier (~5.5GB)', type: 'ollama', sizeGB: 5.5 },
-  { id: 'gemma4:e2b', name: 'Gemma 4 (E2B)', shortName: 'Gemma4 E2B', description: 'Lighter Gemma 4 option for modest hardware (~3GB)', type: 'ollama', sizeGB: 3.0 },
-  { id: 'gemma3:4b', name: 'Gemma 3 (4B)', shortName: 'Gemma3 4B', description: 'Google lightweight — vision & multilingual (3.3GB)', type: 'ollama', sizeGB: 3.3 },
-  { id: 'mistral:latest', name: 'Mistral (7B)', shortName: 'Mistral', description: 'Best conversation quality (4.4GB)', type: 'ollama', sizeGB: 4.4 },
-  { id: 'mistral-small:latest', name: 'Mistral Small (24B)', shortName: 'Mistral Sm', description: 'Powerful reasoning, function calling (14GB)', type: 'ollama', sizeGB: 14 },
-  { id: 'mistral-nemo:latest', name: 'Mistral Nemo (12B)', shortName: 'Nemo', description: 'Great all-rounder, 128K context (7.1GB)', type: 'ollama', sizeGB: 7.1 },
-  { id: 'deepseek-r1:8b', name: 'DeepSeek R1 (8B)', shortName: 'DS-R1 8B', description: 'Chain-of-thought reasoning, slower but precise (4.9GB)', type: 'ollama', sizeGB: 4.9 },
-  { id: 'phi4-mini', name: 'Phi 4 Mini (3.8B)', shortName: 'Phi4', description: 'Best reasoning for small VRAM (2.5GB)', type: 'ollama', sizeGB: 2.5 },
-  { id: 'qwen2.5:3b', name: 'Qwen 2.5 (3B)', shortName: 'Qwen 3B', description: 'Good tool-calling, lightweight (2GB)', type: 'ollama', sizeGB: 2 },
-  { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder (7B)', shortName: 'Coder 7B', description: 'Best coding model (4.4GB)', type: 'ollama', sizeGB: 4.4 },
-  { id: 'qwen2.5-coder:14b', name: 'Qwen 2.5 Coder (14B)', shortName: 'Coder 14B', description: 'Higher-end local coding quality (8.2GB)', type: 'ollama', sizeGB: 8.2 },
-  { id: 'llama3.1:8b', name: 'Llama 3.1 (8B)', shortName: 'Llama 8B', description: 'Strong general-purpose (4.7GB)', type: 'ollama', sizeGB: 4.7 },
-  { id: 'llama3.1:70b', name: 'Llama 3.1 (70B)', shortName: 'Llama 70B', description: 'Top-tier local quality for high-end rigs (43GB)', type: 'ollama', sizeGB: 43 },
-  { id: 'llama3.2:3b', name: 'Llama 3.2 (3B)', shortName: 'Llama 3B', description: 'Reliable general chat (2GB)', type: 'ollama', sizeGB: 2 },
-  { id: 'dolphin-mistral:7b', name: 'Dolphin (7B)', shortName: 'Dolphin 7B', description: 'Uncensored — no safety guardrails (4.1GB)', type: 'ollama', sizeGB: 4.1 },
+  // 💬 Everyday chat — the models you hand a non-technical person first
+  { id: 'qwen2.5:7b', name: 'Qwen 2.5 (7B)', shortName: 'Qwen 7B', description: 'Smartest local model — best tool use & reasoning (4.4GB)', type: 'ollama', sizeGB: 4.4, category: 'everyday' },
+  { id: 'qwen2.5:14b', name: 'Qwen 2.5 (14B)', shortName: 'Qwen 14B', description: 'Stronger reasoning and coding for bigger GPUs (8.2GB)', type: 'ollama', sizeGB: 8.2, category: 'everyday' },
+  { id: 'gemma4:e4b', name: 'Gemma 4 (E4B)', shortName: 'Gemma4 E4B', description: 'Google quality-focused Gemma 4 — strong general chat, but heavier (~5.5GB)', type: 'ollama', sizeGB: 5.5, category: 'everyday' },
+  { id: 'mistral:latest', name: 'Mistral (7B)', shortName: 'Mistral', description: 'Best conversation quality (4.4GB)', type: 'ollama', sizeGB: 4.4, category: 'everyday' },
+  { id: 'mistral-nemo:latest', name: 'Mistral Nemo (12B)', shortName: 'Nemo', description: 'Great all-rounder, 128K context (7.1GB)', type: 'ollama', sizeGB: 7.1, category: 'everyday' },
+  { id: 'llama3.1:8b', name: 'Llama 3.1 (8B)', shortName: 'Llama 8B', description: 'Strong general-purpose (4.7GB)', type: 'ollama', sizeGB: 4.7, category: 'everyday' },
+  { id: 'llama3.1:70b', name: 'Llama 3.1 (70B)', shortName: 'Llama 70B', description: 'Top-tier local quality for high-end rigs (43GB)', type: 'ollama', sizeGB: 43, category: 'everyday' },
+  // 💻 Coding
+  { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder (7B)', shortName: 'Coder 7B', description: 'Best coding model (4.4GB)', type: 'ollama', sizeGB: 4.4, category: 'coding' },
+  { id: 'qwen2.5-coder:14b', name: 'Qwen 2.5 Coder (14B)', shortName: 'Coder 14B', description: 'Higher-end local coding quality (8.2GB)', type: 'ollama', sizeGB: 8.2, category: 'coding' },
+  // 🧠 Deep reasoning
+  { id: 'deepseek-r1:8b', name: 'DeepSeek R1 (8B)', shortName: 'DS-R1 8B', description: 'Chain-of-thought reasoning, slower but precise (4.9GB)', type: 'ollama', sizeGB: 4.9, category: 'reasoning' },
+  { id: 'mistral-small:latest', name: 'Mistral Small (24B)', shortName: 'Mistral Sm', description: 'Powerful reasoning, function calling (14GB)', type: 'ollama', sizeGB: 14, category: 'reasoning' },
+  // ⚡ Fast on small PCs
+  { id: 'gemma4:e2b', name: 'Gemma 4 (E2B)', shortName: 'Gemma4 E2B', description: 'Lighter Gemma 4 option for modest hardware (~3GB)', type: 'ollama', sizeGB: 3.0, category: 'lightweight' },
+  { id: 'gemma3:4b', name: 'Gemma 3 (4B)', shortName: 'Gemma3 4B', description: 'Google lightweight — vision & multilingual (3.3GB)', type: 'ollama', sizeGB: 3.3, category: 'lightweight' },
+  { id: 'phi4-mini', name: 'Phi 4 Mini (3.8B)', shortName: 'Phi4', description: 'Best reasoning for small VRAM (2.5GB)', type: 'ollama', sizeGB: 2.5, category: 'lightweight' },
+  { id: 'qwen2.5:3b', name: 'Qwen 2.5 (3B)', shortName: 'Qwen 3B', description: 'Good tool-calling, lightweight (2GB)', type: 'ollama', sizeGB: 2, category: 'lightweight' },
+  { id: 'llama3.2:3b', name: 'Llama 3.2 (3B)', shortName: 'Llama 3B', description: 'Reliable general chat (2GB)', type: 'ollama', sizeGB: 2, category: 'lightweight' },
+  // 🕊️ No guardrails
+  { id: 'dolphin-mistral:7b', name: 'Dolphin (7B)', shortName: 'Dolphin 7B', description: 'Uncensored — no safety guardrails (4.1GB)', type: 'ollama', sizeGB: 4.1, category: 'uncensored' },
 ];
+
+/** Purpose sub-group render order and labels, in non-technical words. */
+const CATEGORY_ORDER: { id: ModelCategory; label: string }[] = [
+  { id: 'everyday', label: '💬 Everyday chat' },
+  { id: 'coding', label: '💻 Coding' },
+  { id: 'reasoning', label: '🧠 Deep reasoning' },
+  { id: 'lightweight', label: '⚡ Fast on small PCs' },
+  { id: 'uncensored', label: '🕊️ No guardrails' },
+];
+
+/**
+ * Category for any model, including installs the catalog has never heard of.
+ * Explicit tags win; unknowns infer from size (small ⇒ fast-on-small-PCs) so a
+ * user's hand-pulled model still lands in a sensible section.
+ */
+function classifyModel(model: ModelInfo): ModelCategory {
+  if (model.category) return model.category;
+  if ((model.sizeGB ?? 99) <= 4) return 'lightweight';
+  return 'everyday';
+}
 
 function formatSize(bytes: number): string {
   const gb = bytes / (1024 * 1024 * 1024);
@@ -96,6 +126,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [vramWarning, setVramWarning] = useState<string | null>(null);
   const [freeDiskGB, setFreeDiskGB] = useState<number | null>(null);
   const diskProbedRef = useRef(false);
+  const [filter, setFilter] = useState('');
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const portalRef = useRef<HTMLDivElement>(null);
@@ -214,6 +245,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const allModels = [...customModelInfos, ...installedModelInfos];
 
+  // Type-to-filter: the catalog is 17+ models and growing; a person who knows
+  // "coder" should never scroll. Case-insensitive across every visible string.
+  const matchesFilter = (model: ModelInfo): boolean => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return true;
+    return [model.name, model.shortName, model.description, model.id]
+      .filter(Boolean)
+      .some(s => s!.toLowerCase().includes(q));
+  };
+  const filtered = <T extends ModelInfo>(models: T[]): T[] =>
+    models.filter(matchesFilter);
+
   const forcedModelId = lockedModelId || 'dolphin-mistral:7b';
 
   const activeCustomModelId = customLLM?.model || '';
@@ -249,8 +292,30 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   );
   const isRecommendedForGpu = (id: string) => recommendedIdSet.has(normalizeModelId(id));
 
-  // Prev/next navigation through all models
-  const currentIndex = allModels.findIndex(m => {
+  // GPU-picked installed models float to the top of "On this PC" under their
+  // own subsection — the picker's first answer to "which one should I use?"
+  const pickedInstalled = hasDetectedVram
+    ? installedModelInfos.filter(m => isRecommendedForGpu(m.id))
+    : [];
+  const pickedIds = new Set(pickedInstalled.map(m => normalizeModelId(m.id)));
+  const restInstalled = installedModelInfos.filter(m => !pickedIds.has(normalizeModelId(m.id)));
+
+  // Purpose groups for the download section, in CATEGORY_ORDER.
+  const downloadGroups = CATEGORY_ORDER
+    .map(({ id, label }) => ({
+      id,
+      label,
+      models: uninstalledRecommended.filter(m => classifyModel(m) === id),
+    }))
+    .filter(g => g.models.length > 0);
+
+  // Prev/next navigation through all models. While a filter is active the
+  // arrows cycle only the visible subset — stepping to a model the user just
+  // filtered out reads as the arrows being broken.
+  const navModels = filter.trim() === ''
+    ? allModels
+    : allModels.filter(matchesFilter);
+  const navIndex = navModels.findIndex(m => {
     if (useCustomLLM && m.type === 'custom') return m.id === activeCustomModelId;
     return normalizeModelId(m.id) === normalizeModelId(currentModel);
   });
@@ -275,16 +340,16 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const handlePrevModel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (locked || allModels.length === 0) return;
-    const prevIndex = currentIndex <= 0 ? allModels.length - 1 : currentIndex - 1;
-    selectModelWithVramCheck(allModels[prevIndex]);
+    if (locked || navModels.length === 0) return;
+    const prevIndex = navIndex <= 0 ? navModels.length - 1 : navIndex - 1;
+    selectModelWithVramCheck(navModels[prevIndex]);
   };
 
   const handleNextModel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (locked || allModels.length === 0) return;
-    const nextIndex = currentIndex >= allModels.length - 1 ? 0 : currentIndex + 1;
-    selectModelWithVramCheck(allModels[nextIndex]);
+    if (locked || navModels.length === 0) return;
+    const nextIndex = navIndex >= navModels.length - 1 ? 0 : navIndex + 1;
+    selectModelWithVramCheck(navModels[nextIndex]);
   };
 
   const handleSelectModel = (model: ModelInfo) => {
@@ -363,6 +428,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   useEffect(() => { if (locked) setIsOpen(false); }, [locked]);
 
+  // Reopening starts with a clean filter — a stale search is why a person
+  // concludes "the model I installed yesterday is gone".
+  useEffect(() => {
+    if (!isOpen && filter !== '') setFilter('');
+  }, [isOpen, filter]);
+
   const providerLabel = customLLM?.provider
     ? customLLM.provider.charAt(0).toUpperCase() + customLLM.provider.slice(1)
     : 'Cloud API';
@@ -432,15 +503,36 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             </Tooltip>
           </div>
 
+          <div className="model-search-row">
+            <input
+              className="model-search-input"
+              type="text"
+              placeholder="Search models…"
+              aria-label="Filter models"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setIsOpen(false); } }}
+              autoFocus
+            />
+            {filter && (
+              <button
+                className="model-search-clear"
+                type="button"
+                onClick={() => setFilter('')}
+                aria-label="Clear model filter"
+              >✕</button>
+            )}
+          </div>
+
           <div className="model-list">
             {/* Cloud API models */}
-            {customLLM?.enabled && (
+            {customLLM?.enabled && filtered(customModelInfos).length > 0 && (
               <>
                 <div className="model-section-label">
                   ☁️ {providerLabel}
                   {cloudLoading && <span className="cloud-loading"> loading...</span>}
                 </div>
-                {customModelInfos.map(model => {
+                {filtered(customModelInfos).map(model => {
                   const isActive = useCustomLLM && model.id === activeCustomModelId;
                   return (
                     <button key={model.id}
@@ -459,11 +551,46 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
               </>
             )}
 
-            {/* Installed local models */}
-            {installedModelInfos.length > 0 && (
+            {/* Installed local models. The GPU-picked subset floats to the top
+                under its own subsection so the section answers "which should I
+                use?" before it answers "what do I have?" */}
+            {(pickedInstalled.length > 0 || restInstalled.length > 0) && (
               <>
-                <div className="model-section-label">🦙 Installed ({installedModelInfos.length})</div>
-                {installedModelInfos.map(model => {
+                {installedModelInfos.length > 0 && (
+                  <div className="model-section-label">
+                    🦙 On this PC ({installedModelInfos.length})
+                  </div>
+                )}
+
+                {filtered(pickedInstalled).length > 0 && (
+                  <>
+                    <div className="model-subgroup-label">✨ Best for your PC</div>
+                    {filtered(pickedInstalled).map(model => {
+                      const warn = getVramWarning(model.sizeGB, vramGB);
+                      return (
+                        <button key={model.id}
+                          className={`model-option ${!useCustomLLM && normalizeModelId(currentModel) === normalizeModelId(model.id) ? 'active' : ''} ${warn !== 'ok' ? 'vram-warn' : ''}`}
+                          onClick={() => handleSelectModel(model)}>
+                          <div className="model-option-header">
+                            <span className="model-option-icon">🦙</span>
+                            <span className="model-option-name">{model.name}</span>
+                            <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB.toFixed(1)}GB` : ''}</span>
+                            <span className="reco-badge" title="Runs well on your detected GPU">✨</span>
+                            {warn === 'over' && <span className="vram-badge over" title={`Exceeds ${vramGB}GB VRAM — will use CPU offload (slow)`}>⚠️ slow</span>}
+                            {warn === 'tight' && <span className="vram-badge tight" title={`Tight fit for ${vramGB}GB VRAM`}>⚡ tight</span>}
+                            {!useCustomLLM && normalizeModelId(currentModel) === normalizeModelId(model.id) && <span className="active-badge">✓</span>}
+                          </div>
+                          <span className="model-option-desc">{model.description}</span>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
+
+                {filtered(restInstalled).length > 0 && pickedInstalled.length > 0 && (
+                  <div className="model-subgroup-label">Everything else</div>
+                )}
+                {filtered(restInstalled).map(model => {
                   const warn = getVramWarning(model.sizeGB, vramGB);
                   return (
                     <button key={model.id}
@@ -485,44 +612,55 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
               </>
             )}
 
-            {/* Recommended models not yet installed */}
-            {uninstalledRecommended.length > 0 && (
+            {/* Recommended models not yet installed, grouped by what they are
+                FOR. A person thinks "which one is good for coding?", never
+                "which one has the right parameter count". */}
+            {downloadGroups.length > 0 && (
               <>
-                <div className="model-section-label">📦 Available to Download</div>
-                {[...uninstalledRecommended]
-                  .sort((a, b) => Number(isRecommendedForGpu(b.id)) - Number(isRecommendedForGpu(a.id)))
-                  .map(model => {
-                  const warn = getVramWarning(model.sizeGB, vramGB);
-                  const diskFit = assessModelDownloadFit({ sizeGB: model.sizeGB, freeGB: freeDiskGB });
-                  const diskBlocked = diskFit.severity === 'insufficient';
+                <div className="model-section-label">📦 Add more to your PC</div>
+                {downloadGroups.map(group => {
+                  const groupModels = filtered(group.models);
+                  if (groupModels.length === 0) return null;
                   return (
-                    <div key={model.id} className={`model-option not-installed ${isRecommendedForGpu(model.id) ? 'gpu-recommended' : ''} ${warn !== 'ok' ? 'vram-warn' : ''} ${diskBlocked ? 'disk-blocked' : ''}`}>
-                      <div className="model-option-header">
-                        <span className="model-option-icon">📦</span>
-                        <span className="model-option-name">{model.name}</span>
-                        <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB}GB` : ''}</span>
-                        {isRecommendedForGpu(model.id) && <span className="reco-badge" title="Recommended for your detected GPU">✨ Recommended</span>}
-                        {warn === 'over' && <span className="vram-badge over" title={`Exceeds ${vramGB}GB VRAM`}>⚠️</span>}
-                        {warn === 'tight' && <span className="vram-badge tight" title={`Tight fit for ${vramGB}GB VRAM`}>⚡</span>}
-                        {diskFit.severity === 'insufficient' && <span className="disk-badge over" title={diskFit.message ?? 'Not enough disk space'}>💾</span>}
-                        {diskFit.severity === 'tight' && <span className="disk-badge tight" title={diskFit.message ?? 'Low disk space'}>💾</span>}
-                        <button
-                          type="button"
-                          className="pull-model-btn"
-                          onClick={(e) => handlePullModel(model.id, e)}
-                          disabled={pulling !== null || diskBlocked}
-                          title={diskBlocked ? (diskFit.message ?? 'Not enough disk space to download') : undefined}
-                        >
-                          {pulling === model.id ? '⏳ Pulling...' : diskBlocked ? '🚫 No space' : '⬇ Pull'}
-                        </button>
-                      </div>
-                      {diskBlocked && diskFit.message && (
-                        <span className="model-option-desc disk-warn-text">{diskFit.message}</span>
-                      )}
-                      {pulling === model.id && pullProgress && (
-                        <span className="model-option-desc pull-status">{pullProgress}</span>
-                      )}
-                      <span className="model-option-desc">{model.description}</span>
+                    <div key={group.id}>
+                      <div className="model-subgroup-label">{group.label}</div>
+                      {groupModels
+                        .sort((a, b) => Number(isRecommendedForGpu(b.id)) - Number(isRecommendedForGpu(a.id)))
+                        .map(model => {
+                        const warn = getVramWarning(model.sizeGB, vramGB);
+                        const diskFit = assessModelDownloadFit({ sizeGB: model.sizeGB, freeGB: freeDiskGB });
+                        const diskBlocked = diskFit.severity === 'insufficient';
+                        return (
+                          <div key={model.id} className={`model-option not-installed ${isRecommendedForGpu(model.id) ? 'gpu-recommended' : ''} ${warn !== 'ok' ? 'vram-warn' : ''} ${diskBlocked ? 'disk-blocked' : ''}`}>
+                            <div className="model-option-header">
+                              <span className="model-option-icon">📦</span>
+                              <span className="model-option-name">{model.name}</span>
+                              <span className="model-size-badge">{model.sizeGB ? `${model.sizeGB}GB` : ''}</span>
+                              {isRecommendedForGpu(model.id) && <span className="reco-badge" title="Recommended for your detected GPU">✨ Recommended</span>}
+                              {warn === 'over' && <span className="vram-badge over" title={`Exceeds ${vramGB}GB VRAM`}>⚠️</span>}
+                              {warn === 'tight' && <span className="vram-badge tight" title={`Tight fit for ${vramGB}GB VRAM`}>⚡</span>}
+                              {diskFit.severity === 'insufficient' && <span className="disk-badge over" title={diskFit.message ?? 'Not enough disk space'}>💾</span>}
+                              {diskFit.severity === 'tight' && <span className="disk-badge tight" title={diskFit.message ?? 'Low disk space'}>💾</span>}
+                              <button
+                                type="button"
+                                className="pull-model-btn"
+                                onClick={(e) => handlePullModel(model.id, e)}
+                                disabled={pulling !== null || diskBlocked}
+                                title={diskBlocked ? (diskFit.message ?? 'Not enough disk space to download') : undefined}
+                              >
+                                {pulling === model.id ? '⏳ Pulling...' : diskBlocked ? '🚫 No space' : '⬇ Pull'}
+                              </button>
+                            </div>
+                            {diskBlocked && diskFit.message && (
+                              <span className="model-option-desc disk-warn-text">{diskFit.message}</span>
+                            )}
+                            {pulling === model.id && pullProgress && (
+                              <span className="model-option-desc pull-status">{pullProgress}</span>
+                            )}
+                            <span className="model-option-desc">{model.description}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -537,6 +675,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 No AI models are available yet. Use the ▶ Start button at the top of
                 the window to launch the AI on this PC, or add an online service in
                 Settings.
+              </div>
+            )}
+
+            {/* Filter matched nothing — say so, and how to get back. */}
+            {filter.trim() !== '' &&
+             filtered(customModelInfos).length === 0 &&
+             filtered(pickedInstalled).length === 0 &&
+             filtered(restInstalled).length === 0 &&
+             filtered(uninstalledRecommended).length === 0 && (
+              <div className="model-option-empty">
+                No models match "{filter}". Press Escape or the ✕ to clear the search.
               </div>
             )}
 

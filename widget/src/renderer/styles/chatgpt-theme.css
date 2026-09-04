@@ -11135,3 +11135,62 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
     animation-duration: 3.6s;
   }
 }
+
+/* ── Model picker: search + purpose sub-groups ────────────────────────────────
+   The picker grew sections; these style the filter row and the smaller
+   sub-group labels under each section header. Same glass vocabulary as the
+   rest of the dropdown. */
+
+.model-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.06));
+  background: var(--bg-darker);
+}
+
+.model-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-md, 12px);
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  background: var(--bg-medium);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.model-search-input::placeholder { color: var(--text-muted); }
+.model-search-input:focus {
+  border-color: oklch(66% 0.19 285 / 0.55);
+  box-shadow: 0 0 0 3px oklch(66% 0.19 285 / 0.12);
+}
+
+.model-search-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.model-search-clear:hover { color: var(--text-primary); background: var(--bg-light); }
+
+.model-subgroup-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary, oklch(75% 0.008 250));
+  letter-spacing: 0.2px;
+}
+
+/* Sub-groups sit under sticky section headers; keep them visually quieter. */
+.model-section-label + .model-subgroup-label { padding-top: 8px; }
+
