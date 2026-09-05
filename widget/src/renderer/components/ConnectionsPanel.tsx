@@ -28,10 +28,23 @@ interface ConnectionsPanelProps {
  */
 export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ navContext }) => {
   const [configuredNames, setConfiguredNames] = useState<ReadonlySet<string>>(new Set());
-  const [expandedId, setExpandedId] = useState<string | null>(
-    () => findConnection(navContext?.service)?.id ?? null,
-  );
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Context handed over when chat or the assistant sent the user here. A
+  // chat handoff names a service; the panel should open that service's
+  // card. Earlier this was a lazy useState initializer that ran once, so a
+  // second handoff for a different service was silently dropped (F4).
+  useEffect(() => {
+    if (!navContext) return;
+    const service = typeof navContext.service === 'string' ? navContext.service : '';
+    if (!service) return;
+    const id = findConnection(service)?.id;
+    if (id) setExpandedId(id);
+  }, [navContext]);
+
   // Key values per entry id — held in memory only, sent once with Connect.
+  // Keyed by entryId so a handoff to a different service does not erase
+  // the user's typed keys for the card they had open.
   const [values, setValues] = useState<Record<string, Record<string, string>>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
