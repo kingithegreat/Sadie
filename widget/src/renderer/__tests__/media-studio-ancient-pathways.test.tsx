@@ -58,6 +58,22 @@ function setup(overrides: Record<string, any> = {}) {
       job: { id: 'j-sh1', title: 'Production: imhotep_master', state: 'render_qa' },
       renderPath: '/mock/workspace/productions/imhotep_master/scene_01/scene_master_1080p.mp4',
     });
+    const mediaMovieRun = jest.fn().mockResolvedValue({
+      ok: true,
+      report: {
+        projectId: 'imhotep-temple-01',
+        totalShots: 4,
+        completedShots: 4,
+        deferredShots: 0,
+        failedShots: 0,
+        skippedShots: 0,
+        results: [],
+      },
+    });
+    const mediaMovieListProjects = jest.fn().mockResolvedValue({
+      ok: true,
+      projects: [{ id: 'imhotep-temple-01', name: 'Imhotep Approaches the Temple' }],
+    });
 
     (window as any).electron = {
       mediaList: jest.fn().mockResolvedValue([]),
@@ -67,6 +83,8 @@ function setup(overrides: Record<string, any> = {}) {
       mediaAncientPathwaysDoctor,
       mediaAncientPathwaysShowrunner,
       onMediaAncientPathwaysProgress: jest.fn().mockReturnValue(() => {}),
+      mediaMovieRun,
+      mediaMovieListProjects,
       ...overrides,
     };
 
@@ -76,6 +94,8 @@ function setup(overrides: Record<string, any> = {}) {
       mediaAncientPathwaysRun,
       mediaAncientPathwaysDoctor,
       mediaAncientPathwaysShowrunner,
+      mediaMovieRun,
+      mediaMovieListProjects,
     };
  }
 
@@ -311,5 +331,69 @@ describe('Media Studio — From Ancient Pathways', () => {
     });
 
     expect(screen.getByText('Generate Scene')).toBeDisabled();
+  });
+
+  test('Load Projects button invokes mediaMovieListProjects', async () => {
+    const { mediaMovieListProjects } = setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Load Projects'));
+    });
+
+    expect(mediaMovieListProjects).toHaveBeenCalledTimes(1);
+  });
+
+  test('clicking a project invokes mediaMovieRun with project id', async () => {
+    const { mediaMovieListProjects, mediaMovieRun } = setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Load Projects'));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Imhotep Approaches the Temple'));
+    });
+
+    expect(mediaMovieRun).toHaveBeenCalledWith({ projectDir: 'imhotep-temple-01' });
+  });
+
+  test('movie router shows result on success', async () => {
+    const { mediaMovieRun } = setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Load Projects'));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Imhotep Approaches the Temple'));
+    });
+
+    // Wait for the result to appear
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 50));
+    });
+
+    expect(screen.getByText(/4 shot\(s\) generated/)).toBeInTheDocument();
   });
 });
