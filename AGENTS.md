@@ -63,14 +63,38 @@ something a person can click, type or say. If you cannot, you have built another
 
 ## CI does not test the app
 
-`ci.yml` runs at the **root**. The Electron app lives in `widget/`, and of its ~181 test files CI
-runs **one**. A green PR means: root typecheck, ~205 root tests, widget eslint, one smoke file. It
-does **not** mean the app compiles or its tests pass. Run these yourself:
+`ci.yml` runs at the **root**. The Electron app lives in `widget/`, and of its **248** test suites
+(~3,487 tests across 151 main, 79 renderer, 17 shared, 1 root) CI runs **one** smoke file. A green
+PR means: root typecheck, ~205 root tests, widget eslint, one smoke file. It does **not** mean
+the app compiles or its tests pass. Run these yourself:
 
 ```bash
 cd widget && npx tsc --noEmit && npm run lint && npx jest --config=jest.config.ts --runInBand --no-coverage
 cd .. && npx jest && npm run docs:check
 ```
+
+### `npm ci` needs both packages, then native rebuilds
+
+`widget/src/main/tools/crm.ts` imports `../../../../src/crm/store` — a **root-package** file — and
+`src/crm/store.ts:54` does `require('better-sqlite3')`, which Node resolves from the **root's**
+`node_modules/`. Installing only `widget/` leaves 10 CRM and email tests failing on a module that
+is present in widget's tree but not where the importer looks for it. `ci.yml:80-103` does this
+in order; mirror it locally:
+
+```bash
+# from the repo root
+npm ci --ignore-scripts                # root package (CRM store lives here)
+cd widget && npm ci --ignore-scripts   # widget
+npm rebuild better-sqlite3             # widget binding for Node ABI
+cd .. && npm rebuild better-sqlite3    # root binding
+```
+
+`--ignore-scripts` skips electron-builder's `install-app-deps` (slow, builds against Electron's
+ABI which Jest does not use). The explicit `npm rebuild better-sqlite3` after the install is
+what produces the Node-ABI binary the CRM store actually loads. Without these four steps the
+local `jest` run will report `crm-tools.test.ts` and `email-tool.test.ts` as failing on
+`Cannot find module 'better-sqlite3' from '../src/crm/store.ts'` — and that is the same single
+root cause for all 10 failures, not 10 separate bugs.
 
 ### Not every tool can run that
 
