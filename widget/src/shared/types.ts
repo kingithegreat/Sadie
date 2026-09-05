@@ -576,6 +576,13 @@ export interface ElectronAPI {
     renderPath?: string;
     error?: string;
   }>;
+  mediaAncientPathwaysDoctor?: (episodeId: string) => Promise<{
+    ok: boolean;
+    episodeId: string;
+    checks: Array<{ name: string; ok: boolean; detail: string }>;
+    failed: number;
+    error?: string;
+  }>;
   onMediaAncientPathwaysProgress?: (cb: (p: {
     jobId: string;
     episodeId: string;

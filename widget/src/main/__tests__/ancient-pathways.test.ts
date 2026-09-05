@@ -8,6 +8,7 @@ import {
   humanizeStage,
   resolveAncientPathwaysDir,
   runEpisodePipeline,
+  runDoctorChecks,
 } from '../ancient-pathways';
 
 describe('ancient-pathways main module', () => {
@@ -190,6 +191,22 @@ describe('ancient-pathways main module', () => {
 
       expect(res.ok).toBe(false);
       expect(res.error).toContain('Render in progress');
+    });
+  });
+
+  describe('runDoctorChecks', () => {
+    it('returns empty result when Ancient Pathways directory does not exist', async () => {
+      const res = await runDoctorChecks('egypt', path.join(tmpDir, 'does-not-exist'));
+      expect(res.episodeId).toBe('egypt');
+      expect(res.checks).toEqual([]);
+      expect(res.failed).toBe(0);
+    });
+
+    it('returns empty result when doctor.py does not exist', async () => {
+      const res = await runDoctorChecks('egypt', tmpDir);
+      expect(res.episodeId).toBe('egypt');
+      expect(res.checks).toEqual([]);
+      expect(res.failed).toBe(0);
     });
   });
 });
