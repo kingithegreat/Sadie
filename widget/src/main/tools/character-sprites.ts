@@ -50,6 +50,30 @@ export const mediaGenerateSpritesDef: ToolDefinition = {
   },
 };
 
+export const mediaMeasureMouthAnchorsDef: ToolDefinition = {
+  name: 'media_measure_mouth_anchors',
+  description:
+    'Runs the Ancient Pathways mouth anchor audit to measure mouth placement across all characters. ' +
+    'Reports the per-character median mouth position (rel_x, rel_y), the spread, ' +
+    'how many hand-placed anchors Aden has set, how many poses still need one, ' +
+    'and how far the automatic locator lands from his answers. No writes — reports only.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      measure: {
+        type: 'boolean',
+        description: 'If true, also benchmark the automatic locate_mouth against Aden\'s anchors (slower).',
+      },
+      suggest: {
+        type: 'boolean',
+        description: 'If true, propose anchors for poses that have none (written under _mouth_anchors_suggested, never overwriting hand-placed anchors).',
+      },
+    },
+    required: [],
+  },
+};
+
 /**
  * The sheet ground is chroma, not white, and that is load-bearing.
  *
@@ -373,7 +397,76 @@ export const mediaGenerateSpritesHandler: ToolHandler = async (args): Promise<To
   });
 };
 
-export const characterSpriteToolDefs: ToolDefinition[] = [mediaGenerateSpritesDef];
+export const mediaMeasureMouthAnchorsHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const apDir = resolveAncientPathwaysDir();
+  if (!apDir || !fs.existsSync(apDir)) {
+    return {
+      success: false,
+      error: 'Ancient Pathways directory not found. Mouth anchor measurement requires the AP repo at Desktop/Ancient Pathways.',
+    };
+  }
+
+  const scriptPath = path.join(apDir, 'scripts', 'learn_from_anchors.py');
+  if (!fs.existsSync(scriptPath)) {
+    return {
+      success: false,
+      error: 'learn_from_anchors.py not found in Ancient Pathways scripts directory.',
+    };
+  }
+
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const argParts = ['scripts/learn_from_anchors.py'];
+  if (args.measure) argParts.push('--measure');
+  if (args.suggest) argParts.push('--suggest');
+
+  return new Promise((resolve) => {
+    const proc = spawn(python, argParts, {
+      cwd: apDir,
+      windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        resolve({
+          success: false,
+          error: `Mouth anchor measurement failed (exit ${code}): ${stderr || stdout || 'unknown error'}`,
+        });
+        return;
+      }
+
+      resolve({
+        success: true,
+        result: {
+          character: 'all',
+          output: stdout.trim(),
+          message: `Measured mouth anchors across all characters. Output above shows per-character medians, spread, and anchor counts.`,
+        },
+      });
+    });
+
+    proc.on('error', (err) => {
+      resolve({
+        success: false,
+        error: `Could not launch Python: ${err.message}`,
+      });
+    });
+  });
+};
+
+export const characterSpriteToolDefs: ToolDefinition[] = [mediaGenerateSpritesDef, mediaMeasureMouthAnchorsDef];
 export const characterSpriteToolHandlers: Record<string, ToolHandler> = {
   media_generate_sprites: mediaGenerateSpritesHandler,
+  media_measure_mouth_anchors: mediaMeasureMouthAnchorsHandler,
 };

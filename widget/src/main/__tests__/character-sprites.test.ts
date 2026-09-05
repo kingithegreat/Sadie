@@ -59,6 +59,8 @@ import {
   buildCharacterSpritePrompt,
   mediaGenerateSpritesDef,
   mediaGenerateSpritesHandler,
+  mediaMeasureMouthAnchorsDef,
+  mediaMeasureMouthAnchorsHandler,
 } from '../tools/character-sprites';
 
 beforeEach(() => {
@@ -337,6 +339,95 @@ describe('mediaGenerateSpritesHandler', () => {
     expect(res.success).toBe(false);
     expect(res.error).toContain('Failed to generate character model sheet');
     expect(res.error).toContain('Network offline');
+  });
+});
+
+describe('mediaMeasureMouthAnchorsDef', () => {
+  it('conforms to ToolDefinition schema', () => {
+    expect(mediaMeasureMouthAnchorsDef.name).toBe('media_measure_mouth_anchors');
+    expect(mediaMeasureMouthAnchorsDef.category).toBe('media');
+    expect(typeof mediaMeasureMouthAnchorsDef.description).toBe('string');
+    expect(mediaMeasureMouthAnchorsDef.parameters.required).toEqual([]);
+  });
+});
+
+describe('mediaMeasureMouthAnchorsHandler', () => {
+  const dummyContext: any = {
+    sessionId: 'test-session',
+    messageId: 'test-msg',
+  };
+
+  it('fails when Ancient Pathways is not installed', async () => {
+    mockResolveAncientPathwaysDir.mockReturnValue(null);
+
+    const res = await mediaMeasureMouthAnchorsHandler({}, dummyContext);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('Ancient Pathways directory not found');
+  });
+
+  it('fails when learn_from_anchors.py is missing', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-missing-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({}, dummyContext);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('learn_from_anchors.py not found');
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
+  });
+
+  it('successfully runs the measurement script and returns output', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-measure-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(fakeApDir, 'scripts', 'learn_from_anchors.py'), '#!/usr/bin/env python3');
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+
+    const scriptOutput = 'ground truth: 195 hand-placed anchors across 6 characters\n  leila 34 ...';
+    mockSpawn.mockImplementation(() => createMockChildProcess(scriptOutput, '', 0));
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({}, dummyContext);
+      expect(res.success).toBe(true);
+      expect(res.result?.output).toContain('195 hand-placed anchors');
+      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py'], expect.objectContaining({ cwd: fakeApDir }));
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes --measure flag when requested', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-measure2-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(fakeApDir, 'scripts', 'learn_from_anchors.py'), '#!/usr/bin/env python3');
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+    mockSpawn.mockImplementation(() => createMockChildProcess('output', '', 0));
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({ measure: true }, dummyContext);
+      expect(res.success).toBe(true);
+      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py', '--measure'], expect.anything());
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes --suggest flag when requested', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-suggest-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(fakeApDir, 'scripts', 'learn_from_anchors.py'), '#!/usr/bin/env python3');
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+    mockSpawn.mockImplementation(() => createMockChildProcess('output', '', 0));
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({ suggest: true }, dummyContext);
+      expect(res.success).toBe(true);
+      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py', '--suggest'], expect.anything());
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
   });
 });
 
