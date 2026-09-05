@@ -99,9 +99,36 @@ describe('buildCharacterSpritePrompt', () => {
     expect(prompt).toContain('A E I O U M B L');
     expect(prompt).toContain('LOWER FACE ONLY');
 
-    // Checks whitespace separation contract (crucial for auto-slicing without bleed)
-    expect(prompt).toContain('clear white space');
+    // Separation contract (crucial for auto-slicing without bleed). The ground
+    // is magenta now, not white, so this asserts the separation AND the ground.
+    expect(prompt).toContain('clear ${SHEET_GROUND_NAME} space'.replace('${SHEET_GROUND_NAME}', 'magenta'));
     expect(prompt).toContain('never touching or overlapping');
+  });
+
+  it('asks for a magenta ground and never a white one', () => {
+    // Load-bearing, not cosmetic. On a white ground the cut cannot be made
+    // clean because the characters CONTAIN white - eyes, teeth, Leila's scarf,
+    // the glare on her glasses. Reaching the white sealed between two legs once
+    // took Flappy's eye whites from 534px to 23. On magenta the slicer measures
+    // 0 residual background with those whites intact.
+    // See Ancient Pathways docs/RIG_PLAN.md (R1/R4).
+    const prompt = buildCharacterSpritePrompt('A cheerful bird');
+    expect(prompt).toContain('magenta');
+    expect(prompt).toContain('#FF00FF');
+    expect(prompt).not.toContain('plain white background');
+    // The character must not wear the key, or it gets cut out with the ground.
+    expect(prompt).toContain('Do not put any magenta or pink anywhere on the character');
+  });
+
+  it('locks one style for the whole cast', () => {
+    // Leila shipped soft-painterly with no keyline while every guest shipped
+    // bold flat cel with a thick outline; the clash has been on record since
+    // 2026-08-30. The guests are the majority, so they set the standard.
+    const prompt = buildCharacterSpritePrompt('A historical guest');
+    expect(prompt).toContain('bold consistent outline');
+    expect(prompt).not.toContain('no hard black keyline');
+    // The 1,282 white specks that reached nine episodes came in through the art.
+    expect(prompt).toContain('No speckles, dots or noise');
   });
 
   it('uses default style when styleOverride is not provided', () => {

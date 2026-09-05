@@ -51,16 +51,49 @@ export const mediaGenerateSpritesDef: ToolDefinition = {
 };
 
 /**
+ * The sheet ground is chroma, not white, and that is load-bearing.
+ *
+ * On a white ground the cut cannot be made clean, because the characters
+ * CONTAIN white - eyes, teeth, Leila's scarf, the glare on her glasses. The
+ * slicer keys background by connectivity to the tile border to protect the
+ * scarf, which leaves white sealed inside an armpit or between two legs. An
+ * attempt to reach those pockets removed 10,070 px and took Flappy's eye
+ * whites from 534 px to 23. See Ancient Pathways docs/RIG_PLAN.md (R1/R4).
+ *
+ * On magenta the ground is unambiguous: measured 0 residual background pixels
+ * with the character's own whites intact to within 2 px.
+ */
+const SHEET_GROUND_NAME = 'magenta';
+const SHEET_GROUND_HEX = '#FF00FF';
+
+/**
+ * One style for the whole cast. Leila shipped soft-painterly with no keyline
+ * while every guest shipped bold flat cel with a thick outline, and the clash
+ * has been on record since 2026-08-30. The guests are the majority, so they
+ * set the standard.
+ */
+const CANONICAL_SHEET_STYLE =
+  'Clean 2D animation storybook style, flat cel colour with a bold consistent ' +
+  'outline of uniform weight around every figure, minimal gradient shading. ' +
+  'Consistent character design, proportions and costume across every single ' +
+  'cell. Solid magenta #FF00FF background with nothing else on it - no ' +
+  'shadows cast onto the ground, no vignette, no texture, no gradient. Do not ' +
+  'put any magenta or pink anywhere on the character, their clothing or their ' +
+  'props. No panel borders. No text anywhere except the eight small lowercase ' +
+  'panel labels. No watermark, no signature, no numbers, no captions under the ' +
+  'figures. No speckles, dots or noise anywhere.';
+
+/**
  * Constructs the strict 8-panel prompt from docs/S2_SHEET_REMAKE_PROMPTS.md.
  * Slicing requires clear whitespace between every figure and the canonical 8 groups.
  */
 export function buildCharacterSpritePrompt(description: string, styleOverride?: string): string {
   const style =
     styleOverride?.trim() ||
-    'Clean 2D animation storybook style, soft cel colour with gentle gradient shading, no hard black keyline - edges are darker tints of the fill colour. Consistent character design, proportions and costume across every single cell. Plain white background. No panel borders. No text anywhere except the eight small lowercase panel labels. No watermark, no signature, no numbers, no captions under the figures.';
+    CANONICAL_SHEET_STYLE;
 
   return (
-    'A 2D animation character model sheet on a plain white background, laid out as eight labelled panels in a grid. Each panel is labelled in small lowercase text at its top-left corner. Every cell contains exactly ONE character, fully separated from its neighbours by clear white space, never touching or overlapping another figure.\n\n' +
+    `A 2D animation character model sheet on a solid ${SHEET_GROUND_NAME} background (${SHEET_GROUND_HEX}), laid out as eight labelled panels in a grid. Each panel is labelled in small lowercase text at its top-left corner. Every cell contains exactly ONE character, fully separated from its neighbours by clear ${SHEET_GROUND_NAME} space, never touching or overlapping another figure.\n\n` +
     'Panel "turnaround": 5 full-body poses of the same character - front, three-quarter front, side, three-quarter back, back.\n' +
     'Panel "pose_a": 5 full-body poses - idle, walking, running, jumping, waving.\n' +
     'Panel "pose_b": 5 full-body poses - pointing, thinking with hand to chin, happy, sitting, reading.\n' +
@@ -174,7 +207,7 @@ export async function generateSpriteSheetImage(
 
   // Fallback to Pollinations FLUX
   const encoded = encodeURIComponent(prompt);
-  const pollUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1792&height=1024&model=flux&nologo=true`;
+  const pollUrl = `https://image.pollinations.ai/prompt/${encoded}?width=3072&height=2048&model=flux&nologo=true`;
   const buffer = await httpGetBuffer(pollUrl, 90000);
   return { buffer, source: 'pollinations-flux' };
 }
