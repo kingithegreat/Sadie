@@ -1,0 +1,419 @@
+/**
+ * ancient-pathways.ts — Bridge to the Ancient Pathways video essay & animation engine.
+ *
+ * Connects HomeBot's Media Studio to the standalone Python production pipeline
+ * at `Ancient Pathways/`. Drives staged episode renders (script -> voice ->
+ * shots -> keyframes -> anim -> render), monitors the `workspace/render.lock`
+ * mutex to protect against concurrent execution, streams real-time stage
+ * progress, and maps final 1080p MP4 deliverables directly into HomeBot's
+ * Media Studio review player.
+ */
+
+import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { app } from 'electron';
+
+export interface AncientPathwaysEpisode {
+  id: string;
+  code: string;
+  season: number;
+  title: string;
+  era: string;
+  mainCharacter: string;
+  sceneCount: number;
+  thumbnail?: string;
+  emoji: string;
+  summary: string;
+}
+
+/**
+ * Maps technical pipeline stages to friendly, zero-jargon plain English.
+ */
+export function humanizeStage(stageName: string, status?: string): string {
+  const map: Record<string, string> = {
+    script: 'Writing story & scenes',
+    voice: 'Recording character voices',
+    shots: 'Setting up historical backgrounds',
+    keyframes: 'Posing characters & expressions',
+    anim: 'Animating characters & mouth sync',
+    render: 'Creating final 1080p video with music',
+    doctor: 'Checking video & sound quality',
+  };
+
+  const friendly = map[stageName.toLowerCase()] || `Working on ${stageName}`;
+  if (status && ['done', 'ok'].includes(status.toLowerCase())) {
+    return `Completed: ${friendly}`;
+  }
+  return friendly;
+}
+
+/**
+ * The 9 canonical production episodes across Season 1 and Season 2.
+ * Mirrors `pipeline/episodes/__init__.py` in Ancient Pathways.
+ */
+export const ANCIENT_PATHWAYS_EPISODES: AncientPathwaysEpisode[] = [
+  {
+    id: 'egypt',
+    code: 'EP01',
+    season: 1,
+    title: 'Ancient Egypt: The Secret of the Pyramid Builders',
+    era: '2500 BCE (Old Kingdom Egypt)',
+    mainCharacter: 'Master Architect Imhotep',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_01_Thumbnail.png',
+    emoji: '🏺',
+    summary: 'How Imhotep engineered the first stone pyramid in history.',
+  },
+  {
+    id: 'greece',
+    code: 'EP02',
+    season: 1,
+    title: 'Ancient Greece: Socrates & The Birth of Democracy',
+    era: '430 BCE (Classical Athens)',
+    mainCharacter: 'Philosopher Socrates',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_02_Thumbnail.png',
+    emoji: '🏛️',
+    summary: 'Socrates challenges Athenian thinkers at the dawn of democracy.',
+  },
+  {
+    id: 'rome',
+    code: 'EP03',
+    season: 1,
+    title: "The Roman Empire: Colosseum Engineering & Caesar's Concrete",
+    era: '80 CE (Flavian Rome)',
+    mainCharacter: 'Master Engineer Vitruvius',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_03_Thumbnail.png',
+    emoji: '⚔️',
+    summary: 'How revolutionary Roman concrete and aqueducts built an empire.',
+  },
+  {
+    id: 'japan',
+    code: 'EP04',
+    season: 1,
+    title: 'Feudal Japan: Master Swordsmiths & The Samurai Code',
+    era: '1300 CE (Kamakura Japan)',
+    mainCharacter: 'Master Swordsmith Masamune',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_04_Thumbnail.png',
+    emoji: '🏯',
+    summary: 'Master swordsmith Masamune crafts katana under the Bushido code.',
+  },
+  {
+    id: 'maya',
+    code: 'EP05',
+    season: 1,
+    title: 'The Ancient Maya: Solar Pyramids & Rainforest Astronomy',
+    era: '900 CE (Terminal Classic Maya)',
+    mainCharacter: 'High Astronomer-Priest Kukulkan',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_05_Thumbnail.png',
+    emoji: '🗿',
+    summary: 'Rainforest astronomers map the cosmos above massive step pyramids.',
+  },
+  {
+    id: 'babylon',
+    code: 'EP06',
+    season: 2,
+    title: "Babylon: The Ishtar Gate & the World's Oldest Law",
+    era: '575 BCE (Neo-Babylonian Empire)',
+    mainCharacter: 'King Nebuchadnezzar II',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_06_Thumbnail.png',
+    emoji: '🦁',
+    summary: 'The brilliant glazed blue Ishtar Gate and the earliest written law.',
+  },
+  {
+    id: 'vikings',
+    code: 'EP07',
+    season: 2,
+    title: 'Viking Scandinavia: Longships, Sunstones & Bog Iron',
+    era: '1000 CE (Late Norse Age)',
+    mainCharacter: 'Leif Erikson',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_07_Thumbnail.png',
+    emoji: '⛵',
+    summary: 'Navigating wild stormy seas with sunstones to reach new worlds.',
+  },
+  {
+    id: 'china',
+    code: 'EP08',
+    season: 2,
+    title: 'Ancient China: The Great Wall & the Terracotta Army',
+    era: '215 BCE (Qin Dynasty)',
+    mainCharacter: 'General Meng Tian',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_08_Thumbnail.png',
+    emoji: '🐉',
+    summary: 'Defending the realm along the massive Great Wall of China.',
+  },
+  {
+    id: 'indus',
+    code: 'EP09',
+    season: 2,
+    title: 'The Indus Valley: The First Cities With Plumbing',
+    era: '2300 BCE (Mature Harappan Period)',
+    mainCharacter: 'Dhara, city planner of Mohenjo-daro',
+    sceneCount: 14,
+    thumbnail: 'Ancient_Pathways_Episode_09_Thumbnail.png',
+    emoji: '🌊',
+    summary: 'The world’s first planned modern cities with running water systems.',
+  },
+];
+
+/**
+ * Resolves the location of the Ancient Pathways repository.
+ * Searches:
+ *  1. ANCIENT_PATHWAYS_DIR env var
+ *  2. ~/Desktop/Ancient Pathways
+ *  3. Adjacent sibling folder to HomeBot
+ */
+export function resolveAncientPathwaysDir(): string | null {
+  const candidates: string[] = [];
+
+  if (process.env.ANCIENT_PATHWAYS_DIR) {
+    candidates.push(process.env.ANCIENT_PATHWAYS_DIR);
+  }
+
+  try {
+    const desktopPath = path.join(os.homedir(), 'Desktop', 'Ancient Pathways');
+    candidates.push(desktopPath);
+  } catch {
+    /* homedir lookup failed */
+  }
+
+  try {
+    candidates.push(path.resolve(process.cwd(), '..', 'Ancient Pathways'));
+    candidates.push(path.resolve(app.getAppPath(), '..', '..', 'Ancient Pathways'));
+  } catch {
+    /* app path lookup failed */
+  }
+
+  for (const dir of candidates) {
+    try {
+      if (fs.existsSync(dir) && fs.existsSync(path.join(dir, 'run_pipeline.py'))) {
+        return path.resolve(dir);
+      }
+    } catch {
+      /* continue looking */
+    }
+  }
+
+  return null;
+}
+
+export interface RenderLockStatus {
+  locked: boolean;
+  pid?: number;
+  ageSec?: number;
+  message?: string;
+}
+
+/**
+ * Checks `workspace/render.lock` inside the Ancient Pathways workspace.
+ * Mirrors `acquire_lock()` from `scripts/produce_any.py` and `run_pipeline.py`.
+ */
+export function checkRenderLock(ancientPathwaysDir: string): RenderLockStatus {
+  const lockFile = path.join(ancientPathwaysDir, 'workspace', 'render.lock');
+  if (!fs.existsSync(lockFile)) {
+    return { locked: false };
+  }
+
+  try {
+    const raw = fs.readFileSync(lockFile, 'utf8');
+    const data = JSON.parse(raw);
+    const pid = typeof data?.pid === 'number' ? data.pid : undefined;
+    const ts = typeof data?.ts === 'number' ? data.ts : 0;
+    const nowSec = Date.now() / 1000;
+    const ageSec = Math.max(0, Math.round(nowSec - ts));
+
+    // If lock is older than 6 hours, it's considered stale upstream
+    if (ageSec > 6 * 3600) {
+      return { locked: false, message: 'Stale lock (>6h old)' };
+    }
+
+    return {
+      locked: true,
+      pid,
+      ageSec,
+      message: `Another render is active (PID ${pid ?? 'unknown'}, running for ${Math.round(ageSec / 60)}m)`,
+    };
+  } catch {
+    return { locked: false, message: 'Unreadable lock file' };
+  }
+}
+
+/**
+ * Locates the finished 1080p deliverable for an episode.
+ */
+export function findEpisodeDeliverable(ancientPathwaysDir: string, episodeId: string): string | null {
+  const deliverablesDir = path.join(ancientPathwaysDir, 'workspace', 'deliverables');
+  if (!fs.existsSync(deliverablesDir)) return null;
+
+  const ep = ANCIENT_PATHWAYS_EPISODES.find(e => e.id.toLowerCase() === episodeId.toLowerCase());
+  const cap = episodeId.charAt(0).toUpperCase() + episodeId.slice(1).toLowerCase();
+
+  const candidates = [
+    path.join(deliverablesDir, `Ancient_Pathways_${cap}_1080p.mp4`),
+    path.join(deliverablesDir, `Ancient_Pathways_Episode_${cap}_1080p.mp4`),
+    ep ? path.join(deliverablesDir, `Ancient_Pathways_Episode_${ep.code}_${cap}_1080p.mp4`) : null,
+    ep ? path.join(deliverablesDir, `Ancient_Pathways_Episode_${ep.code}_1080p.mp4`) : null,
+  ].filter(Boolean) as string[];
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+
+  // General glob search fallback for any 1080p mp4 matching episode name
+  try {
+    const files = fs.readdirSync(deliverablesDir);
+    const needle = episodeId.toLowerCase();
+    const match = files.find(f => {
+      const lower = f.toLowerCase();
+      return lower.includes(needle) && lower.includes('1080p') && lower.endsWith('.mp4');
+    });
+    if (match) {
+      return path.join(deliverablesDir, match);
+    }
+  } catch {
+    /* readdir failed */
+  }
+
+  return null;
+}
+
+export interface RunEpisodeOptions {
+  episodeId: string;
+  dir?: string;
+  onProgress?: (progress: { stage: string; note: string }) => void;
+}
+
+export interface RunEpisodeResult {
+  ok: boolean;
+  renderPath?: string;
+  durationSeconds?: number;
+  error?: string;
+  log?: string;
+}
+
+/**
+ * Runs the staged production pipeline for an episode by spawning
+ * `python run_pipeline.py --episode <id>`.
+ */
+export function runEpisodePipeline(options: RunEpisodeOptions): Promise<RunEpisodeResult> {
+  return new Promise((resolve) => {
+    const dir = options.dir || resolveAncientPathwaysDir();
+    if (!dir || !fs.existsSync(dir)) {
+      resolve({
+        ok: false,
+        error: 'Ancient Pathways directory not found. Please ensure it is installed at Desktop/Ancient Pathways.',
+      });
+      return;
+    }
+
+    // Check lock first
+    const lock = checkRenderLock(dir);
+    if (lock.locked) {
+      resolve({
+        ok: false,
+        error: `Render in progress: ${lock.message}. Please wait for it to complete.`,
+      });
+      return;
+    }
+
+    const args = ['run_pipeline.py', '--episode', options.episodeId];
+
+    const child = spawn('python', args, {
+      cwd: dir,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUNBUFFERED: '1',
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      stdout += text;
+
+      // Extract stage indicators, e.g. "[OK] script", "[--] voice", "Stage: anim"
+      const lines = text.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.includes('ANCIENT PATHWAYS - stage') || trimmed.startsWith('===')) continue;
+
+        const stageMatch = trimmed.match(/\[(OK|--|\.\.|!!)\]\s+([a-z_]+)\s+([a-z]+)/i);
+        if (stageMatch) {
+          const stageName = stageMatch[2];
+          const stageStatus = stageMatch[3];
+          options.onProgress?.({
+            stage: stageName,
+            note: humanizeStage(stageName, stageStatus),
+          });
+        } else if (trimmed.length > 5 && trimmed.length < 80) {
+          options.onProgress?.({
+            stage: 'running',
+            note: trimmed,
+          });
+        }
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      resolve({
+        ok: false,
+        error: `Failed to spawn Python: ${err.message}`,
+        log: stderr,
+      });
+    });
+
+    child.on('close', (code) => {
+      if (code === 2 || stdout.includes('REFUSING: another render holds workspace/render.lock')) {
+        resolve({
+          ok: false,
+          error: 'Render refused: Another process is currently rendering. Wait for it to finish and try again.',
+          log: stdout,
+        });
+        return;
+      }
+
+      if (code !== 0) {
+        const errExcerpt = stderr.trim().split('\n').slice(-4).join(' ') ||
+          stdout.trim().split('\n').slice(-4).join(' ');
+        resolve({
+          ok: false,
+          error: `Pipeline exited with code ${code}: ${errExcerpt || 'Check logs'}`,
+          log: `${stdout}\n${stderr}`,
+        });
+        return;
+      }
+
+      const deliverable = findEpisodeDeliverable(dir, options.episodeId);
+      if (!deliverable) {
+        resolve({
+          ok: false,
+          error: `Pipeline succeeded, but no 1080p MP4 deliverable was found for '${options.episodeId}'.`,
+          log: stdout,
+        });
+        return;
+      }
+
+      resolve({
+        ok: true,
+        renderPath: deliverable,
+        log: stdout,
+      });
+    });
+  });
+}

@@ -771,6 +771,15 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:mark-published', id, videoId, note),
   mediaDelete: async (id: string, keepFiles?: boolean) =>
     ipcRenderer.invoke('homebot:media:delete', id, keepFiles),
+  mediaAncientPathwaysEpisodes: async () => ipcRenderer.invoke('homebot:media:ancient-pathways-episodes'),
+  mediaAncientPathwaysStatus: async () => ipcRenderer.invoke('homebot:media:ancient-pathways-status'),
+  mediaAncientPathwaysRun: async (episodeId: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-run', episodeId),
+  onMediaAncientPathwaysProgress: (cb: (p: any) => void) => {
+    const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
+    ipcRenderer.on('homebot:media:ancient-pathways-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:media:ancient-pathways-progress', listener);
+  },
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),

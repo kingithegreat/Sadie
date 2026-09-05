@@ -62,6 +62,7 @@ import { crmToolDefs, crmToolHandlers } from './crm';
 import { mediaToolDefs, mediaToolHandlers } from './media';
 import { narrateClipToolDefs, narrateClipToolHandlers } from './narrate-clip';
 import { browserControlToolDefs, browserControlToolHandlers } from './browser-control';
+import { characterSpriteToolDefs, characterSpriteToolHandlers } from './character-sprites';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -1137,6 +1138,12 @@ export function initializeTools(force = false): void {
   // Register CRM tools (companies, contacts, deals, activities, tasks, brief)
   for (const def of crmToolDefs) {
     const handler = crmToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register character sprite generation & auto-slicing (Imagen 3 / Remotion)
+  for (const def of characterSpriteToolDefs) {
+    const handler = characterSpriteToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
