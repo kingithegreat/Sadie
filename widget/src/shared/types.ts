@@ -583,6 +583,16 @@ export interface ElectronAPI {
     failed: number;
     error?: string;
   }>;
+  mediaAncientPathwaysShowrunner?: (options: {
+    prompt: string;
+    duration: number;
+    characters: string;
+    name: string;
+  }) => Promise<{
+    ok: boolean;
+    renderPath?: string;
+    error?: string;
+  }>;
   onMediaAncientPathwaysProgress?: (cb: (p: {
     jobId: string;
     episodeId: string;

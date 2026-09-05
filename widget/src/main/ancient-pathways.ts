@@ -554,3 +554,143 @@ export function runEpisodePipeline(options: RunEpisodeOptions): Promise<RunEpiso
     });
   });
 }
+
+export interface ShowrunnerOptions {
+  prompt: string;
+  duration: number;
+  characters: string;
+  name: string;
+  dir?: string;
+  onProgress?: (progress: { stage: string; note: string }) => void;
+}
+
+export interface ShowrunnerResult {
+  ok: boolean;
+  outputPath?: string;
+  durationSeconds?: number;
+  error?: string;
+  log?: string;
+}
+
+export function runShowrunner(options: ShowrunnerOptions): Promise<ShowrunnerResult> {
+  return new Promise((resolve) => {
+    const dir = options.dir || resolveAncientPathwaysDir();
+    if (!dir || !fs.existsSync(dir)) {
+      resolve({
+        ok: false,
+        error: 'Ancient Pathways directory not found. Please ensure it is installed at Desktop/Ancient Pathways.',
+      });
+      return;
+    }
+
+    const lock = checkRenderLock(dir);
+    if (lock.locked) {
+      resolve({
+        ok: false,
+        error: `Render in progress: ${lock.message}. Please wait for it to complete.`,
+      });
+      return;
+    }
+
+    const showrunner = path.join(dir, 'scripts', 'run_showrunner.py');
+    if (!fs.existsSync(showrunner)) {
+      resolve({
+        ok: false,
+        error: 'Showrunner script not found. Ensure your Ancient Pathways repo is up to date.',
+      });
+      return;
+    }
+
+    const args = [
+      showrunner,
+      '--prompt', options.prompt,
+      '--duration', String(options.duration),
+      '--characters', options.characters,
+      '--name', options.name,
+    ];
+
+    const child = spawn('python', args, {
+      cwd: dir,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUNBUFFERED: '1',
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      stdout += text;
+
+      const lines = text.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.length > 120) continue;
+
+        const stageMatch = trimmed.match(/\[(OK|--|\.\.|!!)\]\s+([a-z_]+)\s+([a-z]+)/i);
+        if (stageMatch) {
+          options.onProgress?.({
+            stage: stageMatch[2],
+            note: humanizeStage(stageMatch[2], stageMatch[3]),
+          });
+        } else {
+          options.onProgress?.({ stage: 'running', note: trimmed });
+        }
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      resolve({
+        ok: false,
+        error: `Failed to spawn Python: ${err.message}`,
+        log: stderr,
+      });
+    });
+
+    child.on('close', (code) => {
+      if (code === 2 || stdout.includes('REFUSING: another render holds workspace/render.lock')) {
+        resolve({
+          ok: false,
+          error: 'Render refused: Another process is currently rendering. Wait for it to finish and try again.',
+          log: stdout,
+        });
+        return;
+      }
+
+      if (code !== 0) {
+        const errExcerpt = stderr.trim().split('\n').slice(-4).join(' ') ||
+          stdout.trim().split('\n').slice(-4).join(' ');
+        resolve({
+          ok: false,
+          error: `Showrunner exited with code ${code}: ${errExcerpt || 'Check logs'}`,
+          log: `${stdout}\n${stderr}`,
+        });
+        return;
+      }
+
+      const outputPath = path.join(dir, 'workspace', 'productions', options.name, 'scene_01', 'scene_master_1080p.mp4');
+      if (!fs.existsSync(outputPath)) {
+        resolve({
+          ok: false,
+          error: `Showrunner succeeded, but no output was found at workspace/productions/${options.name}/scene_01/scene_master_1080p.mp4.`,
+          log: stdout,
+        });
+        return;
+      }
+
+      resolve({
+        ok: true,
+        outputPath,
+        log: stdout,
+      });
+    });
+  });
+}

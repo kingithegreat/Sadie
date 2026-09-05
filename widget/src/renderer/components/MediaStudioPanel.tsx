@@ -178,6 +178,13 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [apSearch, setApSearch] = useState<string>('');
   const [apDoctorChecks, setApDoctorChecks] = useState<Record<string, { checks: Array<{ name: string; ok: boolean; detail: string }>; failed: number; loading: boolean }>>({});
 
+  // Showrunner: free-first autonomous prompt-to-movie production
+  const [showrunnerPrompt, setShowrunnerPrompt] = useState('');
+  const [showrunnerDuration, setShowrunnerDuration] = useState(60);
+  const [showrunnerCharacters, setShowrunnerCharacters] = useState('');
+  const [showrunnerName, setShowrunnerName] = useState('');
+  const [showrunnerBusy, setShowrunnerBusy] = useState(false);
+
   const api = () => (window as any).electron;
 
   const refresh = useCallback(async () => {
@@ -459,6 +466,36 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       }
       return res;
     }, `Producing ${episodeId} episode…`);
+  };
+
+  const runShowrunner = async () => {
+    if (!showrunnerPrompt.trim() || !showrunnerCharacters.trim() || !showrunnerName.trim()) {
+      setError('Please fill in prompt, characters, and a production name.');
+      return;
+    }
+    setShowrunnerBusy(true);
+    setError(null);
+    try {
+      const res = await api()?.mediaAncientPathwaysShowrunner?.({
+        prompt: showrunnerPrompt,
+        duration: showrunnerDuration,
+        characters: showrunnerCharacters,
+        name: showrunnerName,
+      });
+      if (res?.ok) {
+        setDone(`Showrunner complete: ${res.renderPath ? '1080p master video ready to review' : 'Finished'}`);
+        setShowrunnerPrompt('');
+        setShowrunnerCharacters('');
+        setShowrunnerName('');
+      } else {
+        setError(res?.error || 'Showrunner failed.');
+      }
+      return res;
+    } catch (e: any) {
+      setError(e?.message || 'Failed to start showrunner.');
+    } finally {
+      setShowrunnerBusy(false);
+    }
   };
 
   const runDoctorCheck = async (episodeId: string) => {
@@ -1156,9 +1193,73 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
                 onClick={() => { setApOpen(false); setApError(null); }}
                 aria-label="Close Ancient Pathways section"
               >✕ Close</button>
-            </div>
+             </div>
 
-            {apStatus?.lock?.locked && (
+             {/* Showrunner: free-first autonomous prompt-to-movie production */}
+             <div className="ms-ap-showrunner">
+               <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>🎬 Showrunner — Generate a Scene</h4>
+               <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
+                 One-click autonomous production: type a prompt, pick characters, and the full pipeline
+                 (storyboard → voices → animation → broadcast audio mix) runs at 100% free cost.
+               </p>
+               <div className="ms-ap-showrunner-form">
+                 <textarea
+                   className="ms-input ms-ap-showrunner-prompt"
+                   placeholder="Prompt: e.g. 'Imhotep approaches and enters the great temple of Karnak at golden hour'"
+                   value={showrunnerPrompt}
+                   onChange={e => setShowrunnerPrompt(e.target.value)}
+                   disabled={showrunnerBusy || !!apStatus?.lock?.locked}
+                   rows={3}
+                   aria-label="Showrunner prompt"
+                 />
+                 <div className="ms-ap-showrunner-row">
+                   <input
+                     type="number"
+                     className="ms-input ms-ap-showrunner-duration"
+                     placeholder="Duration (seconds)"
+                     value={showrunnerDuration}
+                     onChange={e => setShowrunnerDuration(Number(e.target.value) || 60)}
+                     min={5}
+                     max={600}
+                     disabled={showrunnerBusy}
+                     aria-label="Duration in seconds"
+                   />
+                   <input
+                     type="text"
+                     className="ms-input ms-ap-showrunner-chars"
+                     placeholder="Characters (e.g. IMHOTEP,LEILA)"
+                     value={showrunnerCharacters}
+                     onChange={e => setShowrunnerCharacters(e.target.value)}
+                     disabled={showrunnerBusy || !!apStatus?.lock?.locked}
+                     aria-label="Character names"
+                   />
+                   <input
+                     type="text"
+                     className="ms-input ms-ap-showrunner-name"
+                     placeholder="Production name"
+                     value={showrunnerName}
+                     onChange={e => setShowrunnerName(e.target.value)}
+                     disabled={showrunnerBusy || !!apStatus?.lock?.locked}
+                     aria-label="Production name"
+                   />
+                 </div>
+                 <button
+                   type="button"
+                   className="ms-btn ms-btn--primary ms-ap-showrunner-btn"
+                   disabled={showrunnerBusy || !showrunnerPrompt.trim() || !!apStatus?.lock?.locked}
+                   onClick={runShowrunner}
+                 >
+                   {showrunnerBusy ? 'Generating…' : 'Generate Scene'}
+                 </button>
+                 {showrunnerBusy && (
+                   <span className="ms-working" style={{ marginLeft: 8 }}>
+                     <span className="ms-spinner" /> Producing broadcast-master scene…
+                   </span>
+                 )}
+               </div>
+             </div>
+
+             {apStatus?.lock?.locked && (
               <div className="ms-state ms-state--bad" style={{ marginBottom: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>🔒</span>
                 <span>{apStatus.lock.message || 'Another render is active (PID 4444)'}</span>

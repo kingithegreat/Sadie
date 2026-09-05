@@ -11367,6 +11367,47 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-weight: 500;
 }
 
+.ms-ap-showrunner {
+  margin: 18px 0 12px;
+  padding: 14px;
+  background: oklch(100% 0 0 / 0.03);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md, 8px);
+}
+
+.ms-ap-showrunner h4 {
+  font-size: 0.9rem;
+  margin: 0 0 6px;
+}
+
+.ms-ap-showrunner-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ms-ap-showrunner-prompt {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.84rem;
+  resize: vertical;
+}
+
+.ms-ap-showrunner-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ms-ap-showrunner-row input {
+  flex: 1 1 120px;
+  font-size: 0.82rem;
+}
+
+.ms-ap-showrunner-btn {
+  align-self: flex-start;
+}
+
 /* Stepper progress indicator */
 .ms-stepper {
   display: flex;

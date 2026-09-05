@@ -775,8 +775,15 @@ const electronAPI: ElectronAPI = {
   mediaAncientPathwaysStatus: async () => ipcRenderer.invoke('homebot:media:ancient-pathways-status'),
   mediaAncientPathwaysRun: async (episodeId: string) =>
     ipcRenderer.invoke('homebot:media:ancient-pathways-run', episodeId),
-  mediaAncientPathwaysDoctor: async (episodeId: string) =>
+   mediaAncientPathwaysDoctor: async (episodeId: string) =>
     ipcRenderer.invoke('homebot:media:ancient-pathways-doctor', episodeId),
+  mediaAncientPathwaysShowrunner: async (options: {
+    prompt: string;
+    duration: number;
+    characters: string;
+    name: string;
+  }) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-showrunner', options),
   onMediaAncientPathwaysProgress: (cb: (p: any) => void) => {
     const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
     ipcRenderer.on('homebot:media:ancient-pathways-progress', listener);
