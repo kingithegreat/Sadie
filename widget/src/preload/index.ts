@@ -789,6 +789,15 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on('homebot:media:ancient-pathways-progress', listener);
     return () => ipcRenderer.removeListener('homebot:media:ancient-pathways-progress', listener);
   },
+  mediaMovieRun: async (options: {
+    projectDir: string;
+    freeOnly?: boolean;
+    allowDeferred?: boolean;
+    allowWatermark?: boolean;
+  }) =>
+    ipcRenderer.invoke('homebot:media:movie:run', options),
+  mediaMovieListProjects: async () =>
+    ipcRenderer.invoke('homebot:media:movie:list-projects'),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),

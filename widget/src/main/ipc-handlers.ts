@@ -1180,7 +1180,77 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  // ── Comprehensive first-run diagnostics ───────────────────────────────────
+  // ── Movie Generation Router ────────────────────────────────────────────────
+  // Wires MovieProjectRunner.runProject() (which uses GenerationRouter + all 5
+  // providers, including the Ancient Pathways local 2D adapter) behind an IPC
+  // channel reachable from the MediaStudio UI.
+  ipcMain.handle('homebot:media:movie:run', async (_e, options: {
+    projectDir: string;
+    freeOnly?: boolean;
+    allowDeferred?: boolean;
+    allowWatermark?: boolean;
+  }) => {
+    try {
+      const { MovieProjectRunner } = await import('./movie/project-runner');
+      const { isWithinHomeDir } = await import('./utils/home-boundary');
+
+      const homeDir = os.homedir();
+      let resolved: string;
+      try {
+        resolved = path.resolve(options.projectDir);
+      } catch {
+        return { ok: false, error: 'Project directory path is invalid.' };
+      }
+
+      if (!isWithinHomeDir(resolved, homeDir)) {
+        return {
+          ok: false,
+          error: 'The project directory must be inside your user folder.',
+        };
+      }
+
+      const projectPath = path.join(resolved, 'project.json');
+      if (!fs.existsSync(projectPath)) {
+        return {
+          ok: false,
+          error: `No project.json found in ${resolved}. Create a movie project first.`,
+        };
+      }
+
+      const report = await MovieProjectRunner.runProject(resolved, {
+        freeOnly: options.freeOnly,
+        allowDeferred: options.allowDeferred,
+        allowWatermark: options.allowWatermark,
+      });
+
+      return { ok: true, report };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:movie:list-projects', async () => {
+    try {
+      const homeDir = os.homedir();
+      const projectsRoot = path.join(homeDir, 'Desktop', 'homebot-movie-projects');
+      if (!fs.existsSync(projectsRoot)) {
+        return { ok: true, projects: [] };
+      }
+      const dirs = fs.readdirSync(projectsRoot).filter((f) => {
+        const fp = path.join(projectsRoot, f);
+        return fs.statSync(fp).isDirectory() && fs.existsSync(path.join(fp, 'project.json'));
+      });
+      const projects = dirs.map((d) => {
+        const p = JSON.parse(fs.readFileSync(path.join(projectsRoot, d, 'project.json'), 'utf-8'));
+        return { id: d, projectDir: path.join(projectsRoot, d), ...p };
+      });
+      return { ok: true, projects };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  // ── Comprehensive first-run diagnostics
   // Runs disk-space, service-reachability, write-permissions, and GPU checks
   // in parallel. All checks are non-destructive and safe to call at any time.
   /**

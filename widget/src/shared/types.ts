@@ -600,6 +600,38 @@ export interface ElectronAPI {
     note: string;
   }) => void) => () => void;
 
+  mediaMovieRun?: (options: {
+    projectDir: string;
+    freeOnly?: boolean;
+    allowDeferred?: boolean;
+    allowWatermark?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    report?: {
+      projectId: string;
+      totalShots: number;
+      completedShots: number;
+      deferredShots: number;
+      failedShots: number;
+      skippedShots: number;
+      results: Array<{
+        shotId: string;
+        sceneId: string;
+        status: string;
+        provider: string;
+        files?: string[];
+        ticket?: string;
+        error?: string;
+      }>;
+    };
+    error?: string;
+  }>;
+  mediaMovieListProjects?: () => Promise<{
+    ok: boolean;
+    projects?: Array<Record<string, unknown>>;
+    error?: string;
+  }>;
+
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
   licenseValidate?: () => Promise<LicenseActionResult>;

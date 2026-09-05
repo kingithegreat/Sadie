@@ -185,6 +185,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [showrunnerName, setShowrunnerName] = useState('');
   const [showrunnerBusy, setShowrunnerBusy] = useState(false);
 
+  // Generation Router — shot-level routing through the 5-provider GenerationRouter
+  const [movieProjects, setMovieProjects] = useState<Array<Record<string, unknown>> | null>(null);
+  const [movieRunning, setMovieRunning] = useState(false);
+  const [movieResult, setMovieResult] = useState<string | null>(null);
+  const [movieError, setMovieError] = useState<string | null>(null);
+
   const api = () => (window as any).electron;
 
   const refresh = useCallback(async () => {
@@ -498,7 +504,46 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
-  const runDoctorCheck = async (episodeId: string) => {
+    const runMovieRouter = async (projectDir: string) => {
+    setMovieRunning(true);
+    setMovieError(null);
+    setMovieResult(null);
+    try {
+      const res = await api()?.mediaMovieRun?.({ projectDir });
+      if (res?.ok && res.report) {
+        const r = res.report;
+        const msg = [];
+        if (r.completedShots > 0) msg.push(`${r.completedShots} shot(s) generated`);
+        if (r.skippedShots > 0) msg.push(`${r.skippedShots} skipped (already done)`);
+        if (r.deferredShots > 0) msg.push(`${r.deferredShots} deferred to worker`);
+        if (r.failedShots > 0) msg.push(`${r.failedShots} failed`);
+        setMovieResult(msg.join(', ') || 'Pipeline complete');
+      } else {
+        setMovieError(res?.error || 'Generation router failed.');
+      }
+    } catch (e: any) {
+      setMovieError(e?.message || 'Failed to run generation router.');
+    } finally {
+      setMovieRunning(false);
+    }
+  };
+
+  const loadMovieProjects = async () => {
+    if (!movieProjects) {
+      try {
+        const res = await api()?.mediaMovieListProjects?.();
+        if (res?.ok) {
+          setMovieProjects(res.projects ?? []);
+        } else {
+          setMovieError(res?.error || 'Could not list movie projects.');
+        }
+      } catch (e: any) {
+        setMovieError(e?.message || 'Could not list movie projects.');
+      }
+    }
+  };
+
+const runDoctorCheck = async (episodeId: string) => {
     setApDoctorChecks(prev => ({
       ...prev,
       [episodeId]: { ...(prev[episodeId] || { checks: [], failed: 0 }), loading: true }
@@ -1258,6 +1303,58 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
                  )}
                </div>
              </div>
+
+              {/* Generation Router -- shot-level routing through all 5 providers */}
+              <div className="ms-ap-movie-router">
+                <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>Generation Router</h4>
+                <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
+                  Route individual shots through the best-available free provider:
+                  Ancient Pathways 2D, Colab T4 IP-Adapter, Pollinations, Imagen 3, or Local SD 1.5.
+                </p>
+                <button
+                  type="button"
+                  className="ms-btn ms-btn--secondary"
+                  disabled={movieRunning || !!movieProjects}
+                  onClick={loadMovieProjects}
+                >
+                  {movieProjects ? 'Projects Loaded' : (movieRunning ? 'Loading...' : 'Load Projects')}
+                </button>
+                {movieProjects && movieProjects.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    {movieProjects.map((p: any) => {
+                      const label = p.name || p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="ms-btn"
+                          style={{ marginRight: 8, marginTop: 4 }}
+                          disabled={movieRunning}
+                          onClick={() => runMovieRouter((p as any).projectDir || p.id)}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {movieRunning && (
+                  <span className="ms-working" style={{ marginLeft: 8 }}>
+                    <span className="ms-spinner" /> Running generation router...
+                  </span>
+                )}
+                {movieResult && (
+                  <div className="ms-state ms-state--ok" style={{ marginTop: 8, padding: '8px 12px' }}>
+                    {movieResult}
+                  </div>
+                )}
+                {movieError && (
+                  <div className="ms-error" role="alert" style={{ marginTop: 8 }}>
+                    {movieError}
+                  </div>
+                )}
+              </div>
+
 
              {apStatus?.lock?.locked && (
               <div className="ms-state ms-state--bad" style={{ marginBottom: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
