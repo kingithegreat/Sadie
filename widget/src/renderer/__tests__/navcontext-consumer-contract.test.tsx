@@ -31,8 +31,7 @@
  * reflect every arrival.
  */
 
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 // ---------- WorkspaceShell ----------
 
@@ -195,7 +194,6 @@ describe('navContext consumer contract — every panel honors a second handoff',
     expect(titleInput).not.toBeNull();
     // Simulate the user typing by setting the controlled input directly via
     // the same onChange path React Testing Library uses for fireEvent.
-    const { fireEvent } = await import('@testing-library/react');
     fireEvent.change(titleInput!, { target: { value: 'User typed this' } });
     expect(titleInput!.value).toBe('User typed this');
     // A handoff with no title must not erase the user's input.
