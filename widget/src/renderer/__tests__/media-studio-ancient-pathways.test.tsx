@@ -28,38 +28,49 @@ const MOCK_EPISODES = [
 ];
 
 function setup(overrides: Record<string, any> = {}) {
-  const mediaAncientPathwaysEpisodes = jest.fn().mockResolvedValue({
-    ok: true,
-    episodes: MOCK_EPISODES,
-    available: true,
-  });
-  const mediaAncientPathwaysStatus = jest.fn().mockResolvedValue({
-    ok: true,
-    available: true,
-    dir: '/mock/path/Ancient Pathways',
-    lock: { locked: false },
-  });
-  const mediaAncientPathwaysRun = jest.fn().mockResolvedValue({
-    ok: true,
-    job: { id: 'j-ap1', title: 'Ancient Pathways: Babylon', state: 'render_qa' },
-    renderPath: '/mock/path/Ancient_Pathways_Babylon_1080p.mp4',
-  });
+   const mediaAncientPathwaysEpisodes = jest.fn().mockResolvedValue({
+     ok: true,
+     episodes: MOCK_EPISODES,
+     available: true,
+   });
+   const mediaAncientPathwaysStatus = jest.fn().mockResolvedValue({
+     ok: true,
+     available: true,
+     dir: '/mock/path/Ancient Pathways',
+     lock: { locked: false },
+   });
+   const mediaAncientPathwaysRun = jest.fn().mockResolvedValue({
+     ok: true,
+     job: { id: 'j-ap1', title: 'Ancient Pathways: Babylon', state: 'render_qa' },
+     renderPath: '/mock/path/Ancient_Pathways_Babylon_1080p.mp4',
+   });
+   const mediaAncientPathwaysDoctor = jest.fn().mockResolvedValue({
+     ok: true,
+     episodeId: 'babylon',
+     checks: [
+       { name: 'rigs resolve', ok: true, detail: 'all 8 rigs resolve' },
+       { name: 'composition varies', ok: true, detail: 'stdev=0.12; centered=2/140' },
+     ],
+     failed: 0,
+   });
 
-  (window as any).electron = {
-    mediaList: jest.fn().mockResolvedValue([]),
-    mediaAncientPathwaysEpisodes,
-    mediaAncientPathwaysStatus,
-    mediaAncientPathwaysRun,
-    onMediaAncientPathwaysProgress: jest.fn().mockReturnValue(() => {}),
-    ...overrides,
-  };
+   (window as any).electron = {
+     mediaList: jest.fn().mockResolvedValue([]),
+     mediaAncientPathwaysEpisodes,
+     mediaAncientPathwaysStatus,
+     mediaAncientPathwaysRun,
+     mediaAncientPathwaysDoctor,
+     onMediaAncientPathwaysProgress: jest.fn().mockReturnValue(() => {}),
+     ...overrides,
+   };
 
-  return {
-    mediaAncientPathwaysEpisodes,
-    mediaAncientPathwaysStatus,
-    mediaAncientPathwaysRun,
-  };
-}
+   return {
+     mediaAncientPathwaysEpisodes,
+     mediaAncientPathwaysStatus,
+     mediaAncientPathwaysRun,
+     mediaAncientPathwaysDoctor,
+   };
+ }
 
 afterEach(() => {
   delete (window as any).electron;
@@ -176,5 +187,60 @@ describe('Media Studio — From Ancient Pathways', () => {
 
     expect(screen.getByText(/Ancient Egypt: The Secret of the Pyramid Builders/)).toBeInTheDocument();
     expect(screen.queryByText(/Babylon: The Ishtar Gate/)).toBeNull();
+  });
+
+  test('displays Run Quality Check button for episodes', async () => {
+    setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    const doctorButtons = screen.getAllByText('Run Quality Check');
+    expect(doctorButtons.length).toBeGreaterThan(0);
+  });
+
+  test('clicking Run Quality Check invokes mediaAncientPathwaysDoctor', async () => {
+    const { mediaAncientPathwaysDoctor } = setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    const doctorButtons = screen.getAllByText('Run Quality Check');
+    await act(async () => {
+      fireEvent.click(doctorButtons[0]);
+    });
+
+    expect(mediaAncientPathwaysDoctor).toHaveBeenCalledTimes(1);
+  });
+
+  test('displays passed quality checks after running doctor', async () => {
+    setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    const doctorButtons = screen.getAllByText('Run Quality Check');
+    await act(async () => {
+      fireEvent.click(doctorButtons[0]);
+    });
+
+    await act(async () => {
+      // Wait for the check to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
+    expect(screen.getByText(/All quality checks passed/)).toBeInTheDocument();
   });
 });

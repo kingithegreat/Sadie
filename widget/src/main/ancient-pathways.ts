@@ -285,6 +285,68 @@ export function findEpisodeDeliverable(ancientPathwaysDir: string, episodeId: st
   return null;
 }
 
+export interface DoctorCheckResult {
+  episodeId: string;
+  checks: Array<{ name: string; ok: boolean; detail: string }>;
+  failed: number;
+}
+
+export async function runDoctorChecks(episodeId: string, dir?: string): Promise<DoctorCheckResult> {
+  const apDir = dir || resolveAncientPathwaysDir();
+  if (!apDir || !fs.existsSync(apDir)) {
+    return { episodeId, checks: [], failed: 0 };
+  }
+
+  const doctorPath = path.join(apDir, 'scripts', 'doctor.py');
+  if (!fs.existsSync(doctorPath)) {
+    return { episodeId, checks: [], failed: 0 };
+  }
+
+  const child = spawn('python', [doctorPath, '--episode', episodeId], {
+    cwd: apDir,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8',
+    },
+  });
+
+  let stdout = '';
+  let stderr = '';
+
+  return new Promise((resolve) => {
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('close', () => {
+      const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+      const lines = stdout.split('\n');
+      for (const line of lines) {
+        const match = line.match(/\[(ok|FAIL)\]\s+(\d+\.?\d*)\s+(\S+)\s+(.+)/i);
+        if (match) {
+          const isOk = match[1].toUpperCase() === 'OK';
+          const idNum = parseFloat(match[2]);
+          const name = match[3];
+          const detail = match[4].trim();
+          checks.push({ name, ok: isOk, detail, id: idNum } as any);
+        }
+      }
+
+      const failed = checks.filter((c) => !c.ok).length;
+      resolve({ episodeId, checks: checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail })), failed });
+    });
+
+    child.on('error', () => {
+      resolve({ episodeId, checks: [], failed: 0 });
+    });
+  });
+}
+
 export interface RunEpisodeOptions {
   episodeId: string;
   dir?: string;

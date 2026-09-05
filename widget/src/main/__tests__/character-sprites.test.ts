@@ -59,6 +59,8 @@ import {
   buildCharacterSpritePrompt,
   mediaGenerateSpritesDef,
   mediaGenerateSpritesHandler,
+  mediaMeasureMouthAnchorsDef,
+  mediaMeasureMouthAnchorsHandler,
 } from '../tools/character-sprites';
 
 beforeEach(() => {
@@ -99,9 +101,36 @@ describe('buildCharacterSpritePrompt', () => {
     expect(prompt).toContain('A E I O U M B L');
     expect(prompt).toContain('LOWER FACE ONLY');
 
-    // Checks whitespace separation contract (crucial for auto-slicing without bleed)
-    expect(prompt).toContain('clear white space');
+    // Separation contract (crucial for auto-slicing without bleed). The ground
+    // is magenta now, not white, so this asserts the separation AND the ground.
+    expect(prompt).toContain('clear ${SHEET_GROUND_NAME} space'.replace('${SHEET_GROUND_NAME}', 'magenta'));
     expect(prompt).toContain('never touching or overlapping');
+  });
+
+  it('asks for a magenta ground and never a white one', () => {
+    // Load-bearing, not cosmetic. On a white ground the cut cannot be made
+    // clean because the characters CONTAIN white - eyes, teeth, Leila's scarf,
+    // the glare on her glasses. Reaching the white sealed between two legs once
+    // took Flappy's eye whites from 534px to 23. On magenta the slicer measures
+    // 0 residual background with those whites intact.
+    // See Ancient Pathways docs/RIG_PLAN.md (R1/R4).
+    const prompt = buildCharacterSpritePrompt('A cheerful bird');
+    expect(prompt).toContain('magenta');
+    expect(prompt).toContain('#FF00FF');
+    expect(prompt).not.toContain('plain white background');
+    // The character must not wear the key, or it gets cut out with the ground.
+    expect(prompt).toContain('Do not put any magenta or pink anywhere on the character');
+  });
+
+  it('locks one style for the whole cast', () => {
+    // Leila shipped soft-painterly with no keyline while every guest shipped
+    // bold flat cel with a thick outline; the clash has been on record since
+    // 2026-08-30. The guests are the majority, so they set the standard.
+    const prompt = buildCharacterSpritePrompt('A historical guest');
+    expect(prompt).toContain('bold consistent outline');
+    expect(prompt).not.toContain('no hard black keyline');
+    // The 1,282 white specks that reached nine episodes came in through the art.
+    expect(prompt).toContain('No speckles, dots or noise');
   });
 
   it('uses default style when styleOverride is not provided', () => {
@@ -310,6 +339,95 @@ describe('mediaGenerateSpritesHandler', () => {
     expect(res.success).toBe(false);
     expect(res.error).toContain('Failed to generate character model sheet');
     expect(res.error).toContain('Network offline');
+  });
+});
+
+describe('mediaMeasureMouthAnchorsDef', () => {
+  it('conforms to ToolDefinition schema', () => {
+    expect(mediaMeasureMouthAnchorsDef.name).toBe('media_measure_mouth_anchors');
+    expect(mediaMeasureMouthAnchorsDef.category).toBe('media');
+    expect(typeof mediaMeasureMouthAnchorsDef.description).toBe('string');
+    expect(mediaMeasureMouthAnchorsDef.parameters.required).toEqual([]);
+  });
+});
+
+describe('mediaMeasureMouthAnchorsHandler', () => {
+  const dummyContext: any = {
+    sessionId: 'test-session',
+    messageId: 'test-msg',
+  };
+
+  it('fails when Ancient Pathways is not installed', async () => {
+    mockResolveAncientPathwaysDir.mockReturnValue(null);
+
+    const res = await mediaMeasureMouthAnchorsHandler({}, dummyContext);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('Ancient Pathways directory not found');
+  });
+
+  it('fails when learn_from_anchors.py is missing', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-missing-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({}, dummyContext);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('learn_from_anchors.py not found');
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
+  });
+
+  it('successfully runs the measurement script and returns output', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-measure-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(fakeApDir, 'scripts', 'learn_from_anchors.py'), '#!/usr/bin/env python3');
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+
+    const scriptOutput = 'ground truth: 195 hand-placed anchors across 6 characters\n  leila 34 ...';
+    mockSpawn.mockImplementation(() => createMockChildProcess(scriptOutput, '', 0));
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({}, dummyContext);
+      expect(res.success).toBe(true);
+      expect(res.result?.output).toContain('195 hand-placed anchors');
+      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py'], expect.objectContaining({ cwd: fakeApDir }));
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes --measure flag when requested', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-measure2-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(fakeApDir, 'scripts', 'learn_from_anchors.py'), '#!/usr/bin/env python3');
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+    mockSpawn.mockImplementation(() => createMockChildProcess('output', '', 0));
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({ measure: true }, dummyContext);
+      expect(res.success).toBe(true);
+      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py', '--measure'], expect.anything());
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes --suggest flag when requested', async () => {
+    const fakeApDir = path.join(os.tmpdir(), `fake-ap-suggest-${Date.now()}`);
+    fs.mkdirSync(path.join(fakeApDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(fakeApDir, 'scripts', 'learn_from_anchors.py'), '#!/usr/bin/env python3');
+    mockResolveAncientPathwaysDir.mockReturnValue(fakeApDir);
+    mockSpawn.mockImplementation(() => createMockChildProcess('output', '', 0));
+
+    try {
+      const res = await mediaMeasureMouthAnchorsHandler({ suggest: true }, dummyContext);
+      expect(res.success).toBe(true);
+      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py', '--suggest'], expect.anything());
+    } finally {
+      fs.rmSync(fakeApDir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -176,6 +176,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   } | null>(null);
   const [seasonFilter, setSeasonFilter] = useState<number>(0);
   const [apSearch, setApSearch] = useState<string>('');
+  const [apDoctorChecks, setApDoctorChecks] = useState<Record<string, { checks: Array<{ name: string; ok: boolean; detail: string }>; failed: number; loading: boolean }>>({});
 
   const api = () => (window as any).electron;
 
@@ -458,6 +459,32 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       }
       return res;
     }, `Producing ${episodeId} episode…`);
+  };
+
+  const runDoctorCheck = async (episodeId: string) => {
+    setApDoctorChecks(prev => ({
+      ...prev,
+      [episodeId]: { ...(prev[episodeId] || { checks: [], failed: 0 }), loading: true }
+    }));
+    try {
+      const res = await api()?.mediaAncientPathwaysDoctor?.(episodeId);
+      if (res?.ok) {
+        setApDoctorChecks(prev => ({
+          ...prev,
+          [episodeId]: { checks: res.checks || [], failed: res.failed || 0, loading: false }
+        }));
+      } else {
+        setApDoctorChecks(prev => ({
+          ...prev,
+          [episodeId]: { checks: [], failed: 1, loading: false }
+        }));
+      }
+    } catch {
+      setApDoctorChecks(prev => ({
+        ...prev,
+        [episodeId]: { checks: [], failed: 1, loading: false }
+      }));
+    }
   };
 
   /** Neural voices for the narration picker — loaded once, on first use. */
@@ -1196,6 +1223,35 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
                       {ep.summary && (
                         <p className="ms-ap-card-summary">{ep.summary}</p>
                       )}
+                      {apDoctorChecks[ep.id] && (
+                        <div className="ms-ap-card-doctor">
+                          {apDoctorChecks[ep.id].loading ? (
+                            <span className="ms-working"><span className="ms-spinner" />Checking quality...</span>
+                          ) : apDoctorChecks[ep.id].failed > 0 ? (
+                            <div className="ms-ap-doctor-fail">
+                              <span className="ms-doctor-status">⚠️ {apDoctorChecks[ep.id].failed} check(s) failed</span>
+                              <details style={{ marginTop: 4 }}>
+                                <summary style={{ cursor: 'pointer', color: '#666' }}>View details</summary>
+                                <ul style={{ margin: 4, paddingLeft: 20 }}>
+                                  {apDoctorChecks[ep.id].checks.filter(c => !c.ok).map((check, i) => (
+                                    <li key={i} style={{ fontSize: 12, marginBottom: 2 }}>{check.name}: {check.detail}</li>
+                                  ))}
+                                </ul>
+                              </details>
+                            </div>
+                          ) : (
+                            <span className="ms-ap-doctor-pass">✓ All quality checks passed</span>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        className="ms-btn ms-ap-doctor-btn"
+                        style={{ marginTop: 4 }}
+                        onClick={() => runDoctorCheck(ep.id)}
+                        disabled={busy !== null || apDoctorChecks[ep.id]?.loading}
+                      >
+                        {apDoctorChecks[ep.id]?.loading ? 'Checking…' : 'Run Quality Check'}
+                      </button>
                       <button
                         className="ms-btn ms-btn--primary ms-ap-card-btn"
                         disabled={busy !== null || !!apStatus?.lock?.locked}

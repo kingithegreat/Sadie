@@ -1025,6 +1025,12 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     return { ok: true, available: true, dir, lock };
   });
 
+  ipcMain.handle('homebot:media:ancient-pathways-doctor', async (_e, episodeId: string) => {
+    const { runDoctorChecks } = await import('./ancient-pathways');
+    const result = await runDoctorChecks(episodeId);
+    return { ok: true, ...result };
+  });
+
   ipcMain.handle('homebot:media:ancient-pathways-run', async (e, episodeId: string) => {
     const {
       ANCIENT_PATHWAYS_EPISODES,
