@@ -50,6 +50,9 @@ test('a rendered video can be watched at the gate that approves it', async () =>
 
   // The point of showing it: this is the same row that approves it.
   expect(screen.getByText('Approve')).toBeTruthy();
+  // Celebratory ready banner and progress stepper provide clear guidance
+  expect(screen.getByText(/Your episode is ready to watch!/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Progress: Step 4 of 4')).toBeInTheDocument();
 });
 
 test('before a render exists the narration is still playable', async () => {

@@ -1010,6 +1010,100 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // ---- Ancient Pathways (Animated Documentary Pipeline) ----
+  ipcMain.handle('homebot:media:ancient-pathways-episodes', async () => {
+    const { ANCIENT_PATHWAYS_EPISODES, resolveAncientPathwaysDir } = await import('./ancient-pathways');
+    const dir = resolveAncientPathwaysDir();
+    return { ok: true, episodes: ANCIENT_PATHWAYS_EPISODES, available: !!dir, dir };
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-status', async () => {
+    const { resolveAncientPathwaysDir, checkRenderLock } = await import('./ancient-pathways');
+    const dir = resolveAncientPathwaysDir();
+    if (!dir) return { ok: true, available: false, dir: null, lock: { locked: false } };
+    const lock = checkRenderLock(dir);
+    return { ok: true, available: true, dir, lock };
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-run', async (e, episodeId: string) => {
+    const {
+      ANCIENT_PATHWAYS_EPISODES,
+      runEpisodePipeline,
+      resolveAncientPathwaysDir,
+    } = await import('./ancient-pathways');
+    const { readJobs, writeJobs } = await import('./tools/media');
+    const { createJob, transition } = await import('./media-studio');
+
+    const ep = ANCIENT_PATHWAYS_EPISODES.find(x => x.id.toLowerCase() === String(episodeId || '').toLowerCase());
+    if (!ep) return { ok: false, error: `Unknown episode '${episodeId}'.` };
+
+    const dir = resolveAncientPathwaysDir();
+    if (!dir) {
+      return {
+        ok: false,
+        error: 'Ancient Pathways directory not found. Please ensure it is installed at Desktop/Ancient Pathways.',
+      };
+    }
+
+    const jobs = readJobs();
+    let job = jobs.find(j => j.title.toLowerCase().includes(ep.title.toLowerCase()) || j.title.toLowerCase().includes(ep.id));
+    if (!job) {
+      job = createJob({
+        title: `Ancient Pathways: ${ep.title}`,
+        format: 'long',
+        brief: `${ep.code} · ${ep.era} · ${ep.mainCharacter}`,
+      });
+      jobs.push(job);
+    }
+
+    if (['idea', 'researching', 'script_draft', 'script_qa'].includes(job.state)) {
+      job = transition(job, 'media_production', { by: 'studio', note: 'Running Ancient Pathways pipeline' });
+    }
+    writeJobs(jobs);
+
+    const onProgress = (p: { stage: string; note: string }) => {
+      try {
+        e.sender.send('homebot:media:ancient-pathways-progress', {
+          jobId: job.id,
+          episodeId: ep.id,
+          ...p,
+        });
+      } catch {
+        /* window closed */
+      }
+    };
+
+    try {
+      const res = await runEpisodePipeline({
+        episodeId: ep.id,
+        dir,
+        onProgress,
+      });
+
+      if (!res.ok) {
+        return { ok: false, error: res.error || 'Episode render failed.' };
+      }
+
+      const updatedJobs = readJobs();
+      const idx = updatedJobs.findIndex(j => j.id === job.id);
+      if (idx >= 0) {
+        updatedJobs[idx].renderPath = res.renderPath;
+        if (updatedJobs[idx].state === 'media_production') {
+          updatedJobs[idx] = transition(updatedJobs[idx], 'render_qa', {
+            by: 'studio',
+            note: '1080p master render complete',
+          });
+        }
+        writeJobs(updatedJobs);
+        return { ok: true, job: updatedJobs[idx], renderPath: res.renderPath };
+      }
+
+      return { ok: true, renderPath: res.renderPath };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
   // ── Comprehensive first-run diagnostics ───────────────────────────────────
   // Runs disk-space, service-reachability, write-permissions, and GPU checks
   // in parallel. All checks are non-destructive and safe to call at any time.
