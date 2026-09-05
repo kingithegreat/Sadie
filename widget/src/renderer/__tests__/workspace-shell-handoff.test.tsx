@@ -121,6 +121,39 @@ describe('WorkspaceShell — navContext handoff (Track F)', () => {
     );
   });
 
+    test('a fresh shell adopts the handoff path as its root — header open path', async () => {
+    // Regression for App.tsx:1651. The header Workspace button opens
+    // WorkspaceShell as an overlay (`workspaceOpen` toggle), and that mount
+    // must carry the live navContext the same way the mode-bar Code button
+    // does. Before the wiring fix this path mounted <WorkspaceShell open />
+    // with no navContext, so a chat handoff ("help me with this repo") was
+    // silently lost whenever the user opened the workspace from the header
+    // rather than from the Code mode button.
+    //
+    // This mirrors the header-open contract: open=true, an onClose that
+    // toggles the overlay, and navContext present from a prior handoff.
+    const { workspaceRoot } = setupElectron();
+    const onClose = jest.fn();
+
+    await act(async () => {
+      render(
+        <WorkspaceShell
+          open
+          onClose={onClose}
+          // App.tsx now forwards the same navContext state on this path.
+          navContext={{ path: 'C:\\header-open-handoff' }}
+        />,
+      );
+    });
+
+    // With a directory handoff and no prior root, the bootstrap effect roots
+    // on the handoff path rather than calling workspaceRoot — i.e. the header
+    // open path does not regress to the empty-panel dead end.
+    await waitFor(() =>
+      expect(workspaceRoot).not.toHaveBeenCalled(),
+    );
+  });
+
   test('a directory handoff into an already-rooted shell adopts the new root when no root is set (per-field guard)', async () => {
     // This is the inverse case: user hands off a directory with no existing
     // root yet. The bootstrap effect (still gated on `!root`) handles it.
