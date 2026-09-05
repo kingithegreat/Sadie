@@ -351,7 +351,7 @@ describe('Media Studio — From Ancient Pathways', () => {
   });
 
   test('clicking a project invokes mediaMovieRun with project id', async () => {
-    const { mediaMovieListProjects, mediaMovieRun } = setup();
+    const { mediaMovieRun } = setup();
     await act(async () => {
       render(<MediaStudioPanel />);
     });
@@ -372,7 +372,7 @@ describe('Media Studio — From Ancient Pathways', () => {
   });
 
   test('movie router shows result on success', async () => {
-    const { mediaMovieRun } = setup();
+    setup();
     await act(async () => {
       render(<MediaStudioPanel />);
     });

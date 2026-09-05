@@ -6,6 +6,7 @@ import {
   mediaProduceMovieHandler,
 } from '../tools/media-movie';
 import { MovieProjectRunner } from '../movie/project-runner';
+import { ShotStatus } from '../movie/types';
 
 describe('media_produce_movie Tool', () => {
   let tmpDir: string;
@@ -13,6 +14,8 @@ describe('media_produce_movie Tool', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'movie-tool-test-'));
   });
+
+  const mockContext = { executionId: 'test-123' };
 
   afterEach(() => {
     try {
@@ -29,24 +32,24 @@ describe('media_produce_movie Tool', () => {
   });
 
   it('rejects missing or empty projectDir', async () => {
-    const res1 = await mediaProduceMovieHandler({});
+      const res1 = await mediaProduceMovieHandler({}, mockContext);
     expect(res1.success).toBe(false);
     expect(res1.error).toContain('projectDir must be a non-empty string path');
 
-    const res2 = await mediaProduceMovieHandler({ projectDir: '' });
+      const res2 = await mediaProduceMovieHandler({ projectDir: '' }, mockContext);
     expect(res2.success).toBe(false);
     expect(res2.error).toContain('projectDir must be a non-empty string path');
   });
 
   it('rejects non-existent directory', async () => {
     const fakeDir = path.join(tmpDir, 'nonexistent');
-    const res = await mediaProduceMovieHandler({ projectDir: fakeDir });
+      const res = await mediaProduceMovieHandler({ projectDir: fakeDir }, mockContext);
     expect(res.success).toBe(false);
     expect(res.error).toContain('Project directory does not exist');
   });
 
   it('rejects directory without project.json', async () => {
-    const res = await mediaProduceMovieHandler({ projectDir: tmpDir });
+      const res = await mediaProduceMovieHandler({ projectDir: tmpDir }, mockContext);
     expect(res.success).toBe(false);
     expect(res.error).toContain('No project.json found');
   });
@@ -70,14 +73,14 @@ describe('media_produce_movie Tool', () => {
         {
           shotId: 'shot_001',
           sceneId: 'scene_01',
-          status: 'video_generated',
+          status: ShotStatus.VIDEO_GENERATED,
           provider: 'ancient-pathways',
           files: ['shot_001.mp4'],
         },
       ],
     });
 
-    const res = await mediaProduceMovieHandler({ projectDir: tmpDir, freeOnly: true });
+      const res = await mediaProduceMovieHandler({ projectDir: tmpDir, freeOnly: true }, mockContext);
     expect(mockRun).toHaveBeenCalledWith(tmpDir, {
       freeOnly: true,
       allowDeferred: false,
