@@ -79,6 +79,12 @@ export default function WorkspaceShell({
     setStatus(null);
   }, [files, api]);
 
+  // Bootstrap root once. A whole-effect guard (`if (root) return`) silently
+  // drops every later handoff that carries a different starting point — the
+  // dead end the handoff exists to remove. Apply the no-clobber guard PER FIELD
+  // the way AutomationCenter does (`setFormName(prev => prev || name)`):
+  // re-root only when no root is chosen yet, but always honour the file part
+  // of the handoff so the targeted file lands in a tab.
   useEffect(() => {
     if (!open || root) return;
     let cancelled = false;
@@ -113,6 +119,32 @@ export default function WorkspaceShell({
     })();
     return () => { cancelled = true; };
   }, [open, root, navContext, api, openFile]);
+
+  // Apply each new navContext handoff, even after root is set. Per-field
+  // guards: never replace the user's current root (it would yank the tree
+  // away mid-task), but always try to open the targeted file in whichever
+  // root is active. openFile itself is a no-op if the file is already open
+  // (it just focuses the existing tab), so this is safe to re-run.
+  const ctxPath =
+    typeof navContext?.path === 'string' ? navContext.path.trim() : '';
+  useEffect(() => {
+    if (!open || !ctxPath) return;
+    let cancelled = false;
+    (async () => {
+      // If the handoff's path is a directory we could live under, adopt it
+      // (per-field guard — `prev => prev || ctxPath` keeps an existing root).
+      const asDir = await api?.workspaceList?.(ctxPath);
+      if (cancelled) return;
+      if (asDir?.success) {
+        setRoot(prev => prev || (asDir.path || ctxPath));
+        return;
+      }
+      // File path: open it. The bootstrap effect already roots to the parent
+      // if no root is set; if a root is already set we just focus the file.
+      void openFile(ctxPath);
+    })();
+    return () => { cancelled = true; };
+  }, [open, ctxPath, api, openFile]);
 
 
   const closeTab = useCallback((path: string) => {

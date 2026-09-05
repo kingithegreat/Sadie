@@ -1651,7 +1651,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       {/* Workspace — VS Code-shaped IDE: Explorer, tabbed editor, docked terminal */}
       {workspaceOpen && (
         <Suspense fallback={null}>
-          <WorkspaceShell open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} />
+                    {/* The header Workspace button opens this overlay independently of the
+              mode bar's Code button. Carrying navContext keeps the two entry
+              points consistent: a handoff that rooted the shell on a repo
+              ("help me with this repo") must survive the header-open path too.
+              Dropping navContext here makes Code mode reach the same
+              dead-end-on-second-handoff class the bootstrap effect guards. */ }
+          <WorkspaceShell
+            open={workspaceOpen}
+            onClose={() => setWorkspaceOpen(false)}
+            navContext={navContext}
+          />
         </Suspense>
       )}
 
