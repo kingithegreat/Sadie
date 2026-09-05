@@ -175,6 +175,14 @@ describe('MovieProjectRunner', () => {
       );
       expect(s2.status).toBe(ShotStatus.VIDEO_GENERATED);
 
+      // Verify shotDir decision.json
+      const shot1DecisionPath = path.join(tmpDir, 'scenes', 'scene_01', 'shot_001', 'decision.json');
+      expect(fs.existsSync(shot1DecisionPath)).toBe(true);
+      const shot1Decision = JSON.parse(fs.readFileSync(shot1DecisionPath, 'utf-8'));
+      expect(shot1Decision.shotId).toBe('shot_001');
+      expect(shot1Decision.chosen).toBe('mock-engine');
+      expect(shot1Decision.resultStatus).toBe('done');
+
       // Verify audit log
       const logPath = path.join(tmpDir, 'logs', 'router-decisions.jsonl');
       expect(fs.existsSync(logPath)).toBe(true);

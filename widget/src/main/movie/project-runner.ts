@@ -379,20 +379,29 @@ export class MovieProjectRunner {
         // Execute generation via router
         const { decision, result } = await router.generate(req);
 
-        // Append to audit log
-        const logEntry = {
+        // Record per-shot decision in shotDir/decision.json
+        const decisionRecord = {
           timestamp: new Date().toISOString(),
           shotId,
           sceneId,
           chosen: decision.chosen?.providerId ?? null,
           freeOnly: decision.freeOnly,
           summary: decision.summary,
+          resultStatus: result.status,
+          provider: result.provider,
           rejected: decision.rejected.map((r) => ({
             providerId: r.providerId,
             reason: r.reason,
           })),
         };
-        fs.appendFileSync(logPath, JSON.stringify(logEntry) + '\n', 'utf-8');
+        fs.writeFileSync(
+          path.join(shotDir, 'decision.json'),
+          JSON.stringify(decisionRecord, null, 2),
+          'utf-8',
+        );
+
+        // Append to project-wide audit log
+        fs.appendFileSync(logPath, JSON.stringify(decisionRecord) + '\n', 'utf-8');
 
         // Handle result
         if (result.status === 'done') {

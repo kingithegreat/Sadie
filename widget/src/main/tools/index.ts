@@ -63,6 +63,7 @@ import { mediaToolDefs, mediaToolHandlers } from './media';
 import { narrateClipToolDefs, narrateClipToolHandlers } from './narrate-clip';
 import { browserControlToolDefs, browserControlToolHandlers } from './browser-control';
 import { characterSpriteToolDefs, characterSpriteToolHandlers } from './character-sprites';
+import { movieToolDefs, movieToolHandlers } from './media-movie';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -1144,6 +1145,12 @@ export function initializeTools(force = false): void {
   // Register character sprite generation & auto-slicing (Imagen 3 / Remotion)
   for (const def of characterSpriteToolDefs) {
     const handler = characterSpriteToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register autonomous movie engine production orchestrator
+  for (const def of movieToolDefs) {
+    const handler = movieToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
