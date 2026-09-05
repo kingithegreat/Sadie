@@ -352,6 +352,7 @@ export const DEFAULT_SETTINGS: Settings = {
     media_generate_sprites: true,
     media_measure_mouth_anchors: true,
     media_render: true,
+    media_produce_movie: true,
     // Destructive and irreversible, so it also carries requiresConfirmation.
     media_delete_job: false,
     media_setup_research: false,
