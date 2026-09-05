@@ -9,6 +9,7 @@ import {
   resolveAncientPathwaysDir,
   runEpisodePipeline,
   runDoctorChecks,
+  scanReachability,
 } from '../ancient-pathways';
 
 describe('ancient-pathways main module', () => {
@@ -207,6 +208,68 @@ describe('ancient-pathways main module', () => {
       expect(res.episodeId).toBe('egypt');
       expect(res.checks).toEqual([]);
       expect(res.failed).toBe(0);
+    });
+  });
+
+  describe('scanReachability', () => {
+    it('flags functions defined but with zero cross-module callers', () => {
+      const pipelineDir = path.join(tmpDir, 'pipeline', 'anim');
+      fs.mkdirSync(pipelineDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(pipelineDir, 'rig.py'),
+        `class CharacterRig:\n    def render_pose(self):\n        pass\n`,
+      );
+      fs.writeFileSync(
+        path.join(pipelineDir, 'main.py'),
+        `def main():\n    pass\n`,
+      );
+
+      const findings = scanReachability(tmpDir);
+
+      const renderPoseFinding = findings.find((f) => f.symbol === 'render_pose');
+      expect(renderPoseFinding).toBeDefined();
+      expect(renderPoseFinding!.callers).toBe(0);
+      expect(renderPoseFinding!.issue).toContain('no other module');
+    });
+
+    it('does not flag functions called from another module', () => {
+      const pipelineDir = path.join(tmpDir, 'pipeline', 'anim');
+      fs.mkdirSync(pipelineDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(pipelineDir, 'rigger.py'),
+        `def rig_character():\n    pass\n`,
+      );
+      fs.writeFileSync(
+        path.join(pipelineDir, 'renderer.py'),
+        `from pipeline.anim.rigger import rig_character\ndef render_scene():\n    rig_character()\n`,
+      );
+
+      const findings = scanReachability(tmpDir);
+
+      const rigCharFinding = findings.find((f) => f.symbol === 'rig_character');
+      expect(rigCharFinding).toBeUndefined();
+    });
+
+    it('does not flag private functions (underscore-prefixed)', () => {
+      const pipelineDir = path.join(tmpDir, 'pipeline', 'anim');
+      fs.mkdirSync(pipelineDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(pipelineDir, 'helper.py'),
+        `def _private_helper():\n    pass\n`,
+      );
+
+      const findings = scanReachability(tmpDir);
+
+      expect(findings.find((f) => f.symbol === '_private_helper')).toBeUndefined();
+      expect(findings.find((f) => f.symbol === 'private_helper')).toBeUndefined();
+    });
+
+    it('returns empty array when no pipeline directory exists', () => {
+      const findings = scanReachability(tmpDir);
+      expect(findings).toEqual([]);
     });
   });
 });

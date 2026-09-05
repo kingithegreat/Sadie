@@ -291,6 +291,70 @@ export interface DoctorCheckResult {
   failed: number;
 }
 
+export interface ReachabilityFinding {
+  symbol: string;
+  definedIn: string;
+  callers: number;
+  issue: string;
+}
+
+function scanReachability(apDir: string): ReachabilityFinding[] {
+  const findings: ReachabilityFinding[] = [];
+  const pyFiles: string[] = [];
+  const collect = (dir: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) {
+        if (entry !== 'node_modules' && entry !== '__pycache__' && entry !== '.git') {
+          collect(full);
+        }
+      } else if (entry.endsWith('.py')) {
+        pyFiles.push(full);
+      }
+    }
+  };
+
+  for (const sub of ['pipeline', 'scripts', 'src']) {
+    collect(path.join(apDir, sub));
+  }
+
+  if (pyFiles.length === 0) return findings;
+
+  for (const file of pyFiles) {
+    const content = fs.readFileSync(file, 'utf8');
+    for (const line of content.split('\n')) {
+      const defMatch = line.match(/^\s*def\s+(\w+)\s*\(/);
+      if (!defMatch) continue;
+      const fnName = defMatch[1];
+      if (fnName.startsWith('_')) continue;
+
+      let callers = 0;
+      for (const other of pyFiles) {
+        if (other === file) continue;
+        const otherContent = fs.readFileSync(other, 'utf8');
+        if (new RegExp(`\\b${fnName}\\s*\\(`).test(otherContent)) {
+          callers++;
+        }
+      }
+
+      if (callers === 0) {
+        findings.push({
+          symbol: fnName,
+          definedIn: path.relative(apDir, file),
+          callers: 0,
+          issue: `def ${fnName}() defined but called from no other module in pipeline/`,
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+export { scanReachability };
+
 export async function runDoctorChecks(episodeId: string, dir?: string): Promise<DoctorCheckResult> {
   const apDir = dir || resolveAncientPathwaysDir();
   if (!apDir || !fs.existsSync(apDir)) {
@@ -334,6 +398,17 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
           const name = match[3];
           const detail = match[4].trim();
           checks.push({ name, ok: isOk, detail, id: idNum } as any);
+        }
+      }
+
+      const reachability = scanReachability(apDir);
+      if (reachability.length > 0) {
+        for (const f of reachability) {
+          checks.push({
+            name: `reachability:${f.symbol}`,
+            ok: false,
+            detail: `${f.issue} (defined in ${f.definedIn}, ${f.callers} cross-module callers found)`,
+          });
         }
       }
 
