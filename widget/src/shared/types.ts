@@ -663,6 +663,23 @@ export interface ElectronAPI {
     totalShots?: number;
     error?: string;
   }>;
+  mediaStoryboardBreakdown?: (args: {
+    script: string;
+    genre?: string;
+    shotCount?: number;
+    title?: string;
+    projectId?: string;
+    autoGenerateFrames?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    projectId?: string;
+    title?: string;
+    genre?: string;
+    shots?: Array<Record<string, any>>;
+    totalDurationSec?: number;
+    projectDir?: string;
+    error?: string;
+  }>;
 
 
   licenseStatus?: () => Promise<LicenseStatus>;

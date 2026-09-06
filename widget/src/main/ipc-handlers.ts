@@ -1368,6 +1368,16 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  ipcMain.handle('homebot:media:storyboard:breakdown', async (_ev, args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) => {
+    try {
+      const { directScriptToStoryboard } = await import('./movie/script-director');
+      const res = await directScriptToStoryboard(args || ({} as any));
+      return res;
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
 
   // ── Comprehensive first-run diagnostics
   // Runs disk-space, service-reachability, write-permissions, and GPU checks

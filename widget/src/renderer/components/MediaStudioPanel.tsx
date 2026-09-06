@@ -110,11 +110,19 @@ export interface MediaStudioPanelProps {
   navContext?: Record<string, unknown> | null;
 }
 
+const DIRECTOR_PRESETS = [
+  { label: '🏛️ Ancient Egypt', genre: 'historical_epic', prompt: 'Imhotep unrolls the Great Pyramid blueprints under the golden dusk of Giza as the stone masons raise the massive granite pillars.' },
+  { label: '🤖 Cyberpunk 2088', genre: 'cyberpunk_scifi', prompt: 'A cybernetic detective in a rain-soaked neon alley tracks an encrypted AI memory core hidden in an abandoned terminal.' },
+  { label: '🚀 Deep Space', genre: 'cyberpunk_scifi', prompt: 'An astronaut ventures outside the orbital station to investigate an ancient glowing alien beacon drifting in Saturn’s rings.' },
+  { label: '🐆 Nature Wildlife', genre: 'documentary_nature', prompt: 'A snow leopard stalks silently across the Himalayan mountain ridge at dawn, eyes fixed on the distant prey.' },
+  { label: '🕵️ Film Noir', genre: 'noir_thriller', prompt: 'Detective Malone sits in a smoke-filled office in 1948 when a mysterious shadowed figure slips a blackmail envelope under the door.' },
+];
+
 export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }) => {
   const [confirmDialog, confirm] = useConfirmDestructive();
   const [jobs, setJobs] = useState<MediaJob[]>([]);
-  // Workspace Mode: 'director' | 'timeline' | 'stage' | 'router' | 'ap'
-  const [activeWorkspace, setActiveWorkspace] = useState<'director' | 'timeline' | 'stage' | 'router' | 'ap'>('director');
+  // Workspace Mode: 'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard'
+  const [activeWorkspace, setActiveWorkspace] = useState<'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard'>('director');
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   // CapCut Timeline State
@@ -225,6 +233,65 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [movieResult, setMovieResult] = useState<string | null>(null);
   const [movieError, setMovieError] = useState<string | null>(null);
 
+  // Visual Storyboard Deck State
+  const [storyboardProjects, setStoryboardProjects] = useState<Array<{
+    projectId: string;
+    title: string;
+    createdAt: string;
+    notes?: string;
+    totalShots: number;
+    renderedFrames: number;
+    totalDurationSec: number;
+    projectDir: string;
+  }> | null>(null);
+  const [selectedStoryboardId, setSelectedStoryboardId] = useState<string | null>(null);
+  const [activeStoryboard, setActiveStoryboard] = useState<{
+    project: Record<string, any>;
+    scenes: Array<{
+      sceneId: string;
+      title?: string;
+      shots: Array<{
+        shotId: string;
+        order: number;
+        prompt: string;
+        framing: string;
+        lens: string;
+        movement: string;
+        durationSec: number;
+        narration: string;
+        status: string;
+        frameImagePath: string | null;
+      }>;
+    }>;
+    projectDir: string;
+  } | null>(null);
+  const [storyboardLoading, setStoryboardLoading] = useState<boolean>(false);
+  const [storyboardSaving, setStoryboardSaving] = useState<boolean>(false);
+  const [generatingShotId, setGeneratingShotId] = useState<string | null>(null);
+  const [newStoryboardTitle, setNewStoryboardTitle] = useState<string>('');
+  const [newStoryboardNotes, setNewStoryboardNotes] = useState<string>('');
+  const [isCreatingStoryboard, setIsCreatingStoryboard] = useState<boolean>(false);
+  const [storyboardMessage, setStoryboardMessage] = useState<string | null>(null);
+  const [storyboardError, setStoryboardError] = useState<string | null>(null);
+
+  // Script-to-Storyboard Director State
+  const [directorOpen, setDirectorOpen] = useState(false);
+  const [directorPrompt, setDirectorPrompt] = useState('');
+  const [directorGenre, setDirectorGenre] = useState('auto');
+  const [directorShotCount, setDirectorShotCount] = useState(4);
+  const [directorTitle, setDirectorTitle] = useState('');
+  const [directorAutoFrames, setDirectorAutoFrames] = useState(false);
+  const [directorBusy, setDirectorBusy] = useState(false);
+
+  // Animatic Player State
+  const [animaticOpen, setAnimaticOpen] = useState(false);
+  const [animaticPlaying, setAnimaticPlaying] = useState(false);
+  const [animaticIndex, setAnimaticIndex] = useState(0);
+  const [animaticElapsedSec, setAnimaticElapsedSec] = useState(0);
+  const [animaticLoop, setAnimaticLoop] = useState(false);
+  const [storyboardRendering, setStoryboardRendering] = useState(false);
+  const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
+
   const api = () => (window as any).electron;
 
   const refresh = useCallback(async () => {
@@ -237,6 +304,36 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Deep linking and cross-workspace handoff (e.g. from Chat or external tool invocation)
+  useEffect(() => {
+    if (navContext) {
+      const workspace = (navContext.workspace as string) || '';
+      if (workspace === 'storyboard') {
+        setActiveWorkspace('storyboard');
+        loadStoryboardProjects();
+        if (navContext.storyboardId || navContext.projectId) {
+          const id = (navContext.storyboardId || navContext.projectId) as string;
+          setSelectedStoryboardId(id);
+          loadStoryboard(id);
+        }
+        if (navContext.renderedMoviePath) {
+          setRenderedMoviePath(navContext.renderedMoviePath as string);
+        }
+
+      } else if (workspace === 'timeline') {
+        setActiveWorkspace('timeline');
+      } else if (workspace === 'stage') {
+        setActiveWorkspace('stage');
+      } else if (workspace === 'router') {
+        setActiveWorkspace('router');
+        loadMovieProjects();
+      } else if (workspace === 'ap') {
+        setActiveWorkspace('ap');
+        openApSection();
+      }
+    }
+  }, [navContext]);
 
   /**
    * The video engine. Rendering is the one stage with a dependency the app does
@@ -576,6 +673,508 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       }
     }
   };
+
+  const loadStoryboardProjects = async () => {
+    setStoryboardLoading(true);
+    setStoryboardError(null);
+    try {
+      const res = await api()?.mediaStoryboardList?.();
+      if (res?.ok && Array.isArray(res.storyboards)) {
+        setStoryboardProjects(res.storyboards);
+        if (res.storyboards.length > 0 && !selectedStoryboardId) {
+          const firstId = res.storyboards[0].projectId;
+          setSelectedStoryboardId(firstId);
+          await loadStoryboard(firstId);
+        }
+      } else {
+        setStoryboardError(res?.error || 'Could not list storyboard projects.');
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || 'Could not list storyboard projects.');
+    } finally {
+      setStoryboardLoading(false);
+    }
+  };
+
+  const loadStoryboard = async (projectId: string) => {
+    setStoryboardLoading(true);
+    setStoryboardError(null);
+    try {
+      const res = await api()?.mediaStoryboardGet?.(projectId);
+      if (res?.ok && res.result) {
+        setActiveStoryboard(res.result);
+        setSelectedStoryboardId(projectId);
+      } else {
+        setStoryboardError(res?.error || `Could not load storyboard: ${projectId}`);
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || `Could not load storyboard: ${projectId}`);
+    } finally {
+      setStoryboardLoading(false);
+    }
+  };
+
+  const handleCreateStoryboard = async () => {
+    if (!newStoryboardTitle.trim()) {
+      setStoryboardError('Please enter a title for the new storyboard.');
+      return;
+    }
+    const slug = newStoryboardTitle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-') + '-' + Date.now().toString(36).slice(-4);
+    setStoryboardLoading(true);
+    setStoryboardError(null);
+    try {
+      const initialShots = [
+        {
+          shotId: 'shot_001',
+          title: 'Opening Establishing Shot',
+          prompt: `${newStoryboardTitle}: cinematic wide establishing shot, atmospheric lighting, detailed background`,
+          framing: 'wide',
+          lens: '24mm',
+          movement: 'slow push in',
+          durationSec: 5,
+          narration: `Establishing the scene for ${newStoryboardTitle}.`,
+        },
+        {
+          shotId: 'shot_002',
+          title: 'Main Subject / Action',
+          prompt: `${newStoryboardTitle}: medium shot of subject performing key action, expressive lighting`,
+          framing: 'medium',
+          lens: '35mm',
+          movement: 'static',
+          durationSec: 5,
+          narration: 'The action unfolds as the primary conflict or subject takes center stage.',
+        },
+        {
+          shotId: 'shot_003',
+          title: 'Climactic Detail / Close-up',
+          prompt: `${newStoryboardTitle}: dramatic close up detail shot, shallow depth of field, high contrast cinematic`,
+          framing: 'close',
+          lens: '50mm',
+          movement: 'tilt up',
+          durationSec: 4,
+          narration: 'A critical revelation or reaction caps the sequence.',
+        },
+      ];
+      const res = await api()?.mediaStoryboardCreate?.({
+        projectId: slug,
+        title: newStoryboardTitle.trim(),
+        notes: newStoryboardNotes.trim(),
+        shots: initialShots,
+        freeOnly: true,
+      });
+      if (res?.ok) {
+        setNewStoryboardTitle('');
+        setNewStoryboardNotes('');
+        setIsCreatingStoryboard(false);
+        setStoryboardMessage(`Created storyboard "${res.result?.title || slug}"!`);
+        await loadStoryboardProjects();
+        await loadStoryboard(slug);
+      } else {
+        setStoryboardError(res?.error || 'Failed to create storyboard.');
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || 'Failed to create storyboard.');
+    } finally {
+      setStoryboardLoading(false);
+    }
+  };
+
+  const handleAutoDirectStoryboard = async () => {
+    if (!directorPrompt.trim()) {
+      setStoryboardError('Please enter a story prompt, scene description, or script to direct.');
+      return;
+    }
+    setDirectorBusy(true);
+    setStoryboardError(null);
+    try {
+      const res = await api()?.mediaStoryboardBreakdown?.({
+        script: directorPrompt.trim(),
+        genre: directorGenre !== 'auto' ? directorGenre : undefined,
+        shotCount: directorShotCount,
+        title: directorTitle.trim() || undefined,
+        autoGenerateFrames: directorAutoFrames,
+      });
+      if (res?.ok && res.projectId) {
+        setDirectorOpen(false);
+        setDirectorPrompt('');
+        setDirectorTitle('');
+        setStoryboardMessage(`🎉 Directed "${res.title}" with ${res.shots?.length || directorShotCount} shots (${res.genre || 'Cinematic'})!`);
+        await loadStoryboardProjects();
+        await loadStoryboard(res.projectId);
+      } else {
+        setStoryboardError(res?.error || 'Failed to auto-direct storyboard.');
+      }
+    } catch (err: any) {
+      setStoryboardError(err?.message || 'Failed to auto-direct storyboard.');
+    } finally {
+      setDirectorBusy(false);
+    }
+  };
+
+  const handleUpdateShot = (shotId: string, updates: Record<string, any>) => {
+    if (!activeStoryboard) return;
+    setActiveStoryboard(prev => {
+      if (!prev) return null;
+      const scenes = prev.scenes.map(sc => ({
+        ...sc,
+        shots: sc.shots.map(s => s.shotId === shotId ? { ...s, ...updates } : s),
+      }));
+      return { ...prev, scenes };
+    });
+  };
+
+  const handleSaveStoryboard = async () => {
+    if (!activeStoryboard || !selectedStoryboardId) return;
+    const scene = activeStoryboard.scenes[0];
+    if (!scene) return;
+    setStoryboardSaving(true);
+    setStoryboardError(null);
+    try {
+      const res = await api()?.mediaStoryboardSave?.({
+        projectId: selectedStoryboardId,
+        sceneId: scene.sceneId || 'scene_01',
+        shots: scene.shots,
+      });
+      if (res?.ok) {
+        setStoryboardMessage('Storyboard saved successfully.');
+        setTimeout(() => setStoryboardMessage(null), 3000);
+      } else {
+        setStoryboardError(res?.error || 'Failed to save storyboard.');
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || 'Failed to save storyboard.');
+    } finally {
+      setStoryboardSaving(false);
+    }
+  };
+
+  const handleGenerateFrame = async (shotId: string, prompt?: string) => {
+    if (!selectedStoryboardId) return;
+    setGeneratingShotId(shotId);
+    setStoryboardError(null);
+    try {
+      const res = await api()?.mediaStoryboardGenerateFrame?.({
+        projectId: selectedStoryboardId,
+        sceneId: activeStoryboard?.scenes[0]?.sceneId || 'scene_01',
+        shotId,
+        prompt,
+      });
+      if (res?.ok && res.result?.frameImagePath) {
+        handleUpdateShot(shotId, {
+          frameImagePath: res.result.frameImagePath,
+          status: 'COMPLETED',
+        });
+        setStoryboardMessage(`Generated keyframe for ${shotId} (${res.result.provider || 'Free'}).`);
+        setTimeout(() => setStoryboardMessage(null), 3500);
+      } else {
+        setStoryboardError(res?.error || `Could not generate frame for ${shotId}`);
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || `Could not generate frame for ${shotId}`);
+    } finally {
+      setGeneratingShotId(null);
+    }
+  };
+
+  const handleGenerateAllMissingFrames = async () => {
+    if (!activeStoryboard || !selectedStoryboardId) return;
+    const shots = activeStoryboard.scenes[0]?.shots || [];
+    const missing = shots.filter(s => !s.frameImagePath);
+    if (missing.length === 0) {
+      setStoryboardMessage('All shots already have generated frames!');
+      setTimeout(() => setStoryboardMessage(null), 3000);
+      return;
+    }
+    for (const shot of missing) {
+      await handleGenerateFrame(shot.shotId, shot.prompt);
+    }
+  };
+
+  const handleAddShot = () => {
+    if (!activeStoryboard) return;
+    setActiveStoryboard(prev => {
+      if (!prev) return null;
+      const scene = prev.scenes[0];
+      if (!scene) return prev;
+      const count = scene.shots.length + 1;
+      const shotId = `shot_${String(count).padStart(3, '0')}`;
+      const newShot = {
+        shotId,
+        order: count,
+        prompt: `Shot ${count}: cinematic angle, dynamic action, natural lighting`,
+        framing: 'medium',
+        lens: '35mm',
+        movement: 'static',
+        durationSec: 5,
+        narration: '',
+        status: 'PLANNED',
+        frameImagePath: null,
+      };
+      const scenes = [{ ...scene, shots: [...scene.shots, newShot] }, ...prev.scenes.slice(1)];
+      return { ...prev, scenes };
+    });
+  };
+
+  const handleDeleteShot = (shotId: string) => {
+    if (!activeStoryboard) return;
+    setActiveStoryboard(prev => {
+      if (!prev) return null;
+      const scene = prev.scenes[0];
+      if (!scene) return prev;
+      const filtered = scene.shots.filter(s => s.shotId !== shotId).map((s, idx) => ({ ...s, order: idx + 1 }));
+      return { ...prev, scenes: [{ ...scene, shots: filtered }, ...prev.scenes.slice(1)] };
+    });
+  };
+
+  const handleMoveShot = (index: number, direction: 'up' | 'down') => {
+    if (!activeStoryboard) return;
+    setActiveStoryboard(prev => {
+      if (!prev) return null;
+      const scene = prev.scenes[0];
+      if (!scene) return prev;
+      const shots = [...scene.shots];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= shots.length) return prev;
+      const temp = shots[index];
+      shots[index] = shots[targetIndex];
+      shots[targetIndex] = temp;
+      const reordered = shots.map((s, idx) => ({ ...s, order: idx + 1 }));
+      return { ...prev, scenes: [{ ...scene, shots: reordered }, ...prev.scenes.slice(1)] };
+    });
+  };
+
+  // Animatic Playback Timer
+  useEffect(() => {
+    if (!animaticOpen || !animaticPlaying || !activeStoryboard) return;
+    const scene = activeStoryboard.scenes[0];
+    const shots = scene?.shots || [];
+    if (shots.length === 0) return;
+
+    const interval = setInterval(() => {
+      setAnimaticElapsedSec(prev => {
+        const curShot = shots[animaticIndex];
+        const maxDur = curShot?.durationSec || 5;
+        const nextSec = prev + 0.1;
+        if (nextSec >= maxDur) {
+          if (animaticIndex < shots.length - 1) {
+            setAnimaticIndex(idx => idx + 1);
+            return 0;
+          } else {
+            if (animaticLoop) {
+              setAnimaticIndex(0);
+              return 0;
+            } else {
+              setAnimaticPlaying(false);
+              return maxDur;
+            }
+          }
+        }
+        return nextSec;
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [animaticOpen, animaticPlaying, animaticIndex, animaticLoop, activeStoryboard]);
+
+  const handleEnhancePrompt = (shotId: string) => {
+    if (!activeStoryboard) return;
+    const scene = activeStoryboard.scenes[0];
+    const shot = scene?.shots.find(s => s.shotId === shotId);
+    if (!shot) return;
+
+    let basePrompt = shot.prompt.trim();
+    if (!basePrompt) {
+      basePrompt = 'Scene subject in action';
+    }
+
+    const framingModifiers: Record<string, string> = {
+      wide: 'cinematic wide establishing angle, deep atmospheric perspective, environmental storytelling',
+      extreme_wide: 'epic panoramic vista, grand scale landscape, expansive dramatic horizon, 14mm anamorphic',
+      medium: '35mm anamorphic film still, balanced rule-of-thirds composition, natural fill and rim lighting',
+      close: 'striking character portrait close-up, 85mm f/1.4 lens, shallow depth of field, subtle facial catchlights',
+      extreme_close: 'hyper-detailed macro shot, dramatic chiaroscuro contrast, tactile texture detail',
+    };
+
+    const lensModifiers: Record<string, string> = {
+      '24mm': '24mm wide angle perspective, expansive field of view, crisp edge-to-edge clarity',
+      '35mm': 'classic 35mm cinema lens, realistic human perspective, natural depth',
+      '50mm': '50mm prime lens, clean natural geometry, subtle background falloff',
+      '85mm': '85mm portrait telephoto, creamy soft bokeh, subject separation, flattering compression',
+    };
+
+    const movementModifiers: Record<string, string> = {
+      'slow push in': 'dramatic forward push-in camera motion, building intensity',
+      'pan right': 'horizontal panoramic camera sweep',
+      'tilt up': 'low-angle upward camera tilt, sense of wonder and height',
+      'tracking': 'dynamic tracking camera motion, kinetic energy, smooth gimbal flow',
+      'static': 'stable locked-off tripod frame, formal balanced composition',
+    };
+
+    const framingCue = framingModifiers[shot.framing] || framingModifiers.medium;
+    const lensCue = lensModifiers[shot.lens] || '';
+    const moveCue = movementModifiers[shot.movement] || '';
+
+    const additions: string[] = [];
+    if (!basePrompt.toLowerCase().includes('lighting') && !basePrompt.toLowerCase().includes('cinematic')) {
+      additions.push('cinematic lighting, Kodak Vision3 color grading, 8k resolution');
+    }
+    if (!basePrompt.toLowerCase().includes(shot.framing.replace('_', ' '))) {
+      additions.push(framingCue);
+    }
+    if (lensCue && !basePrompt.toLowerCase().includes(shot.lens)) {
+      additions.push(lensCue);
+    }
+    if (moveCue && !basePrompt.toLowerCase().includes(shot.movement)) {
+      additions.push(moveCue);
+    }
+
+    const enhanced = additions.length > 0
+      ? `${basePrompt}, ${additions.join(', ')}`
+      : `${basePrompt}, cinematic lighting, photorealistic atmosphere, masterpiece`;
+
+    handleUpdateShot(shotId, { prompt: enhanced });
+    setStoryboardMessage(`Enhanced prompt for ${shotId}!`);
+    setTimeout(() => setStoryboardMessage(null), 2500);
+  };
+
+  const handleExportStoryboardHtml = () => {
+    if (!activeStoryboard) return;
+    const scene = activeStoryboard.scenes[0];
+    const shots = scene?.shots || [];
+    const totalDuration = shots.reduce((acc, s) => acc + (Number(s.durationSec) || 5), 0);
+    const title = activeStoryboard.project?.name || selectedStoryboardId || 'Storyboard';
+    const notes = activeStoryboard.project?.notes || '';
+
+    const escapeHtml = (str: string) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${escapeHtml(title)} — Visual Storyboard Sheet</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; margin: 0; padding: 24px; line-height: 1.5; }
+  .header { border-bottom: 2px solid #00f0ff; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+  h1 { margin: 0 0 4px 0; font-size: 1.8rem; color: #fff; }
+  .meta { color: #94a3b8; font-size: 0.9rem; }
+  .badges { display: flex; gap: 8px; margin-top: 8px; }
+  .badge { background: #1e293b; border: 1px solid #334155; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; color: #38bdf8; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+  .card { background: #111827; border: 1px solid #1f2937; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+  .card-header { background: #1e293b; padding: 8px 12px; display: flex; justify-content: space-between; font-weight: 600; font-size: 0.85rem; }
+  .thumb { aspect-ratio: 16/9; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; border-bottom: 1px solid #1f2937; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .card-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem; flex: 1; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { background: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; font-size: 0.72rem; color: #cbd5e1; }
+  .pill-accent { border-color: #00f0ff; color: #00f0ff; }
+  .label { font-size: 0.7rem; text-transform: uppercase; color: #64748b; font-weight: bold; margin-bottom: 2px; }
+  .prompt-box { background: #0b0f19; padding: 8px; border-radius: 4px; border: 1px solid #1e293b; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; }
+  .narration-box { font-style: italic; color: #fbbf24; }
+  @media print { body { background: #fff; color: #000; } .card { border: 1px solid #ccc; } .prompt-box { background: #f8fafc; color: #000; border-color: #e2e8f0; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>🎬 ${escapeHtml(title)}</h1>
+    <div class="meta">${notes ? escapeHtml(notes) + ' • ' : ''}Generated by HomeBot Movie Studio</div>
+  </div>
+  <div class="badges">
+    <span class="badge">${shots.length} SHOTS</span>
+    <span class="badge">⏱ ${totalDuration}s TOTAL</span>
+    <span class="badge">✓ $0.00 ZERO-COST</span>
+  </div>
+</div>
+<div class="grid">
+${shots.map((s, idx) => `
+  <div class="card">
+    <div class="card-header">
+      <span>#${idx + 1} — ${escapeHtml(s.shotId)}</span>
+      <span>⏱ ${s.durationSec || 5}s</span>
+    </div>
+    <div class="thumb">
+      ${s.frameImagePath ? `<img src="file:///${escapeHtml(s.frameImagePath.replace(/\\/g, '/'))}" alt="${escapeHtml(s.shotId)}" />` : `<span style="color:#64748b;font-size:0.8rem;">[Frame Not Generated]</span>`}
+    </div>
+    <div class="card-body">
+      <div class="pills">
+        <span class="pill pill-accent">${escapeHtml(s.framing)}</span>
+        <span class="pill">${escapeHtml(s.lens)}</span>
+        <span class="pill">${escapeHtml(s.movement)}</span>
+      </div>
+      <div>
+        <div class="label">Action Prompt:</div>
+        <div class="prompt-box">${escapeHtml(s.prompt)}</div>
+      </div>
+      ${s.narration ? `
+      <div>
+        <div class="label">Narration:</div>
+        <div class="narration-box">"${escapeHtml(s.narration)}"</div>
+      </div>` : ''}
+    </div>
+  </div>
+`).join('')}
+</div>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(selectedStoryboardId || 'storyboard').replace(/[^a-z0-9_-]/gi, '_')}-sheet.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setStoryboardMessage('Exported HTML production shot sheet!');
+    setTimeout(() => setStoryboardMessage(null), 3000);
+  };
+
+  const handleSendToTimeline = () => {
+    if (!activeStoryboard) return;
+    const scene = activeStoryboard.scenes[0];
+    if (scene && scene.shots.length > 0) {
+      let accumulated = 0;
+      const cuts: number[] = [];
+      for (let i = 0; i < scene.shots.length - 1; i++) {
+        accumulated += scene.shots[i].durationSec || 5;
+        cuts.push(accumulated);
+      }
+      setClipCuts(cuts);
+    }
+    setActiveWorkspace('timeline');
+    setDone(`Loaded storyboard sequence into CapCut timeline with ${scene?.shots?.length ? scene.shots.length - 1 : 0} edit cuts!`);
+    setTimeout(() => setDone(null), 4000);
+  };
+
+  const handleRenderMovie = async () => {
+    if (!selectedStoryboardId || !activeStoryboard) return;
+    setStoryboardRendering(true);
+    setStoryboardError(null);
+    setStoryboardMessage('Rendering 1080p broadcast movie (Ken Burns motion, narration, subtitles)...');
+    try {
+      const res = await api()?.mediaStoryboardRender?.({
+        projectId: selectedStoryboardId,
+        sceneId: activeStoryboard.scenes[0]?.sceneId || 'scene_01',
+        motion: true,
+        burnSubtitles: true,
+      });
+      if (res?.ok && res.moviePath) {
+        setRenderedMoviePath(res.moviePath);
+        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)!`);
+      } else {
+        setStoryboardError(res?.error || 'Failed to render movie.');
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || 'Failed to render movie.');
+    } finally {
+      setStoryboardRendering(false);
+    }
+  };
+
 
   const runDoctorCheck = async (episodeId: string) => {
     setApDoctorChecks(prev => ({
@@ -2717,6 +3316,786 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     );
   };
 
+  /* Visual Storyboard Deck Workspace */
+  const renderStoryboardWorkspace = () => {
+    const activeScene = activeStoryboard?.scenes?.[0];
+    const shots = activeScene?.shots || [];
+    const totalDuration = shots.reduce((acc, s) => acc + (Number(s.durationSec) || 5), 0);
+    const renderedFramesCount = shots.filter(s => !!s.frameImagePath).length;
+
+    return (
+      <div className="ms-storyboard-workspace" role="region" aria-label="Visual Storyboard Deck">
+        {/* Topbar: Title, Project Picker & Actions */}
+        <div className="ms-storyboard-topbar">
+          <div className="ms-storyboard-titles">
+            <h3>🎨 Visual Storyboard Deck</h3>
+            <p>Shot-by-shot sequence planning, camera framing, prompt crafting &amp; free AI keyframe generation.</p>
+          </div>
+
+          <div className="ms-storyboard-controls">
+            {storyboardProjects && storyboardProjects.length > 0 && (
+              <select
+                className="ms-storyboard-select"
+                value={selectedStoryboardId || ''}
+                aria-label="Select Storyboard Project"
+                onChange={e => {
+                  const id = e.target.value;
+                  if (id) {
+                    setSelectedStoryboardId(id);
+                    loadStoryboard(id);
+                  }
+                }}
+              >
+                {storyboardProjects.map(p => (
+                  <option key={p.projectId} value={p.projectId}>
+                    {p.title || p.projectId} ({p.totalShots} shots)
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              type="button"
+              className="ms-btn"
+              onClick={() => {
+                setIsCreatingStoryboard(!isCreatingStoryboard);
+                if (directorOpen) setDirectorOpen(false);
+              }}
+            >
+              {isCreatingStoryboard ? '✕ Cancel' : '+ New Storyboard'}
+            </button>
+
+            <button
+              type="button"
+              className={`ms-btn ms-btn--secondary ${directorOpen ? 'active' : ''}`}
+              onClick={() => {
+                setDirectorOpen(!directorOpen);
+                if (isCreatingStoryboard) setIsCreatingStoryboard(false);
+              }}
+              title="Auto-direct any story prompt or script into a multi-shot visual storyboard ($0.00)"
+            >
+              {directorOpen ? '✕ Cancel' : '🪄 Auto-Director'}
+            </button>
+
+            <button
+              type="button"
+              className="ms-btn ms-btn--primary"
+              disabled={storyboardSaving || !activeStoryboard}
+              onClick={handleSaveStoryboard}
+            >
+              {storyboardSaving ? 'Saving…' : '💾 Save Board'}
+            </button>
+
+            <button
+              type="button"
+              className="ms-btn"
+              disabled={!activeStoryboard || shots.length === 0}
+              onClick={() => {
+                setAnimaticIndex(0);
+                setAnimaticElapsedSec(0);
+                setAnimaticPlaying(true);
+                setAnimaticOpen(true);
+              }}
+              title="Play fullscreen animatic preview with real-time sequence pacing"
+            >
+              ▶ Play Animatic
+            </button>
+
+            <button
+              type="button"
+              className="ms-btn ms-btn--secondary"
+              disabled={generatingShotId !== null || !activeStoryboard || shots.length === 0}
+              onClick={handleGenerateAllMissingFrames}
+              title="Generate keyframes for all shots without images using free AI ($0.00)"
+            >
+              ⚡ Generate Frames
+            </button>
+
+            <button
+              type="button"
+              className="ms-btn"
+              disabled={!activeStoryboard || shots.length === 0}
+              onClick={handleExportStoryboardHtml}
+              title="Export standalone printable/shareable HTML production shot sheet"
+            >
+              📄 Export HTML
+            </button>
+
+            <button
+              type="button"
+              className="ms-btn"
+              onClick={handleSendToTimeline}
+              title="Switch to CapCut Timeline editor"
+            >
+              ✂️ Open in CapCut
+            </button>
+
+            <button
+              type="button"
+              className="ms-btn ms-btn--primary"
+              disabled={storyboardRendering || !activeStoryboard || shots.length === 0}
+              onClick={handleRenderMovie}
+              title="Render full broadcast 1080p movie with Ken Burns camera motion, speech narration, and burned subtitles ($0.00)"
+            >
+              {storyboardRendering ? (
+                <>
+                  <span className="ms-spinner" /> Rendering 1080p…
+                </>
+              ) : (
+                '🎬 Render Movie ($0.00)'
+              )}
+            </button>
+
+
+            <button
+              type="button"
+              className="ms-btn"
+              onClick={() => {
+                loadStoryboardProjects();
+                if (selectedStoryboardId) loadStoryboard(selectedStoryboardId);
+              }}
+              title="Reload storyboards from disk"
+            >
+              ↻
+            </button>
+          </div>
+        </div>
+
+        {/* Inline Create Drawer */}
+        {isCreatingStoryboard && (
+          <div className="ms-storyboard-create-box">
+            <h4 style={{ margin: 0, fontSize: '0.92rem', color: '#00f0ff' }}>Create New Visual Storyboard</h4>
+            <div className="ms-storyboard-create-row">
+              <input
+                type="text"
+                className="ms-input"
+                style={{ flex: 1, minWidth: 220 }}
+                placeholder="Storyboard title (e.g. 'Pyramid Construction at Dawn')"
+                value={newStoryboardTitle}
+                onChange={e => setNewStoryboardTitle(e.target.value)}
+                aria-label="Storyboard title"
+              />
+              <input
+                type="text"
+                className="ms-input"
+                style={{ flex: 2, minWidth: 260 }}
+                placeholder="Creative notes / visual aesthetic / era (optional)"
+                value={newStoryboardNotes}
+                onChange={e => setNewStoryboardNotes(e.target.value)}
+                aria-label="Storyboard notes"
+              />
+            </div>
+            <div className="ms-storyboard-create-actions">
+              <button
+                type="button"
+                className="ms-btn ms-btn--primary"
+                disabled={storyboardLoading || !newStoryboardTitle.trim()}
+                onClick={handleCreateStoryboard}
+              >
+                {storyboardLoading ? 'Creating…' : 'Create Storyboard Project'}
+              </button>
+              <button
+                type="button"
+                className="ms-btn"
+                onClick={() => setIsCreatingStoryboard(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Script-to-Storyboard Director Drawer */}
+        {directorOpen && (
+          <div className="ms-storyboard-create-box ms-storyboard-director-box">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.96rem', color: '#00f0ff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🪄</span> Script-to-Storyboard Director Engine ($0.00)
+                </h4>
+                <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                  Enter any story idea, synopsis, or raw script. The director engine automatically calibrates camera framing, lenses, motion, prompts, and spoken dialogue ($0.00 spend).
+                </p>
+              </div>
+              <button
+                type="button"
+                className="ms-shot-icon-btn ms-shot-icon-btn--del"
+                onClick={() => setDirectorOpen(false)}
+                aria-label="Close Auto-Director"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Preset Inspiration Chips */}
+            <div className="ms-director-presets">
+              <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>Inspiration Presets:</span>
+              {DIRECTOR_PRESETS.map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="ms-preset-chip"
+                  onClick={() => {
+                    setDirectorPrompt(p.prompt);
+                    setDirectorGenre(p.genre);
+                    if (!directorTitle) setDirectorTitle(p.label.replace(/^[^\s]+\s*/, ''));
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Script Input Textarea */}
+            <textarea
+              className="ms-input ms-director-textarea"
+              rows={3}
+              placeholder="Paste screenplay scene, narrative text, or describe your story idea (e.g. 'An ancient architect unrolls the temple blueprints under the torchlight of Karnak...')"
+              value={directorPrompt}
+              onChange={e => setDirectorPrompt(e.target.value)}
+              aria-label="Story script or scene prompt"
+            />
+
+            {/* Controls Row: Title, Genre, Shot Count, Auto-Frames */}
+            <div className="ms-director-controls-row">
+              <input
+                type="text"
+                className="ms-input"
+                style={{ flex: 2, minWidth: 180 }}
+                placeholder="Project title (optional)"
+                value={directorTitle}
+                onChange={e => setDirectorTitle(e.target.value)}
+                aria-label="Project title"
+              />
+
+              <select
+                className="ms-input ms-director-select"
+                value={directorGenre}
+                onChange={e => setDirectorGenre(e.target.value)}
+                aria-label="Cinematic genre"
+              >
+                <option value="auto">✨ Auto-Detect Genre</option>
+                <option value="historical_epic">🏛️ Historical Epic</option>
+                <option value="cyberpunk_scifi">🤖 Cyberpunk / Sci-Fi</option>
+                <option value="noir_thriller">🕵️ Neo-Noir Thriller</option>
+                <option value="documentary_nature">🐆 Nature Documentary</option>
+                <option value="fantasy_myth">🐉 Mythic Fantasy</option>
+                <option value="action_cinematic">💥 Action Blockbuster</option>
+              </select>
+
+              <select
+                className="ms-input ms-director-select"
+                value={directorShotCount}
+                onChange={e => setDirectorShotCount(Number(e.target.value) || 4)}
+                aria-label="Shot count"
+              >
+                <option value={3}>3 Shots (Quick Beat)</option>
+                <option value={4}>4 Shots (Standard Scene)</option>
+                <option value={5}>5 Shots (Dramatic Arc)</option>
+                <option value={6}>6 Shots (Extended Sequence)</option>
+              </select>
+
+              <label className="ms-director-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={directorAutoFrames}
+                  onChange={e => setDirectorAutoFrames(e.target.checked)}
+                />
+                <span>⚡ Auto-Generate Frames</span>
+              </label>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="ms-storyboard-create-actions">
+              <button
+                type="button"
+                className="ms-btn ms-btn--primary"
+                disabled={directorBusy || !directorPrompt.trim()}
+                onClick={handleAutoDirectStoryboard}
+              >
+                {directorBusy ? (
+                  <>
+                    <span className="ms-spinner" /> Directing Scene…
+                  </>
+                ) : (
+                  '🪄 Direct & Build Storyboard ($0.00)'
+                )}
+              </button>
+              <button
+                type="button"
+                className="ms-btn"
+                disabled={directorBusy}
+                onClick={() => setDirectorOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Notifications & Status */}
+        {storyboardError && <div className="ms-error" role="alert">{storyboardError}</div>}
+        {storyboardMessage && <div className="ms-done" role="status">{storyboardMessage}</div>}
+        {storyboardLoading && (
+          <div className="ms-working" style={{ margin: '8px 0' }}>
+            <span className="ms-spinner" /> Loading storyboard data…
+          </div>
+        )}
+
+        {/* Active Storyboard Meta Information */}
+        {activeStoryboard ? (
+          <>
+            <div className="ms-storyboard-meta-card">
+              <div className="ms-storyboard-meta-left">
+                <div className="ms-storyboard-meta-title">
+                  <span>🎬 {activeStoryboard.project?.name || selectedStoryboardId}</span>
+                  {activeStoryboard.project?.notes && (
+                    <span style={{ fontSize: '0.8rem', fontWeight: 400, color: '#94a3b8' }}>
+                      — {activeStoryboard.project.notes}
+                    </span>
+                  )}
+                </div>
+                <div className="ms-storyboard-meta-path">{activeStoryboard.projectDir}</div>
+              </div>
+              <div className="ms-storyboard-meta-badges">
+                <span className="ms-storyboard-badge">{shots.length} Shot(s)</span>
+                <span className="ms-storyboard-badge">⏱ {totalDuration}s Total</span>
+                <span className="ms-storyboard-badge">🖼 {renderedFramesCount}/{shots.length} Frames Generated</span>
+                <span className="ms-storyboard-badge ms-storyboard-badge--free">✓ $0.00 Free Policy</span>
+              </div>
+            </div>
+
+            {/* Rendered Movie Celebration Banner */}
+            {renderedMoviePath && (
+              <div
+                className="ms-movie-rendered-banner"
+                style={{
+                  background: 'rgba(15, 23, 42, 0.95)',
+                  border: '1px solid #38bdf8',
+                  borderRadius: '10px',
+                  padding: '12px 18px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                  boxShadow: '0 0 20px rgba(56, 189, 248, 0.2)',
+                  margin: '10px 0',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '1.6rem' }}>🎉</span>
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#38bdf8', fontSize: '0.92rem' }}>
+                      1080p Broadcast Movie Ready!
+                    </div>
+                    <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#94a3b8' }}>
+                      {renderedMoviePath}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="ms-btn ms-btn--primary"
+                    onClick={() => {
+                      if (api()?.openExternalUrl) {
+                        api().openExternalUrl(`file:///${renderedMoviePath.replace(/\\/g, '/')}`);
+                      }
+                    }}
+                  >
+                    ▶ Open Video
+                  </button>
+                  <button
+                    type="button"
+                    className="ms-btn"
+                    onClick={() => setRenderedMoviePath(null)}
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
+
+            {/* Sequence Pacing Deck */}
+            {shots.length > 0 && totalDuration > 0 && (
+              <div className="ms-storyboard-pacing-deck">
+                <div className="ms-storyboard-pacing-header">
+                  <span>Timeline Sequence Pacing ({totalDuration}s total)</span>
+                  <span>{shots.length} cuts</span>
+                </div>
+                <div className="ms-storyboard-pacing-bar">
+                  {shots.map((s, idx) => {
+                    const dur = Number(s.durationSec) || 5;
+                    const pct = Math.max(5, (dur / totalDuration) * 100);
+                    const colors = ['#0284c7', '#0d9488', '#16a34a', '#ca8a04', '#ea580c', '#9333ea', '#db2777'];
+                    const bg = colors[idx % colors.length];
+                    return (
+                      <div
+                        key={s.shotId}
+                        className="ms-pacing-segment"
+                        style={{ width: `${pct}%`, backgroundColor: bg }}
+                        title={`${s.shotId}: ${s.framing.toUpperCase()} (${dur}s)`}
+                      >
+                        {idx + 1} ({dur}s)
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Shot Cards Deck */}
+            <div className="ms-storyboard-deck">
+              {shots.map((shot, idx) => {
+                const isGenerating = generatingShotId === shot.shotId;
+                const framingPills = ['wide', 'medium', 'close', 'extreme_close'];
+                const lensPills = ['24mm', '35mm', '50mm', '85mm'];
+                const motionPills = ['static', 'pan right', 'slow push in', 'tilt up', 'tracking'];
+
+                return (
+                  <div key={shot.shotId} className="ms-shot-card">
+                    {/* Header */}
+                    <div className="ms-shot-card-header">
+                      <div className="ms-shot-number-badge">
+                        <span>#{idx + 1}</span>
+                        <span style={{ opacity: 0.6, fontSize: '0.72rem', fontFamily: 'monospace' }}>{shot.shotId}</span>
+                      </div>
+
+                      <div className="ms-shot-header-actions">
+                        <label style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                          <input
+                            type="number"
+                            className="ms-shot-duration-input"
+                            value={shot.durationSec || 5}
+                            min={1}
+                            max={120}
+                            aria-label={`Duration for ${shot.shotId}`}
+                            onChange={e => handleUpdateShot(shot.shotId, { durationSec: Number(e.target.value) || 5 })}
+                          />s
+                        </label>
+
+                        <button
+                          type="button"
+                          className="ms-shot-icon-btn"
+                          disabled={idx === 0}
+                          title="Move Shot Earlier"
+                          aria-label={`Move ${shot.shotId} earlier`}
+                          onClick={() => handleMoveShot(idx, 'up')}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="ms-shot-icon-btn"
+                          disabled={idx === shots.length - 1}
+                          title="Move Shot Later"
+                          aria-label={`Move ${shot.shotId} later`}
+                          onClick={() => handleMoveShot(idx, 'down')}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="ms-shot-icon-btn ms-shot-icon-btn--del"
+                          title="Delete Shot"
+                          aria-label={`Delete ${shot.shotId}`}
+                          onClick={() => handleDeleteShot(shot.shotId)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Viewport / Frame Preview */}
+                    <div className="ms-shot-viewport">
+                      <div className="ms-shot-frame-guide" />
+                      {shot.frameImagePath ? (
+                        <>
+                          <img
+                            src={`file:///${shot.frameImagePath.replace(/\\/g, '/')}`}
+                            alt={shot.shotId}
+                            className="ms-shot-thumb-img"
+                          />
+                          <div className="ms-shot-thumb-overlay">
+                            <button
+                              type="button"
+                              className="ms-btn ms-btn--primary"
+                              disabled={isGenerating}
+                              onClick={() => handleGenerateFrame(shot.shotId, shot.prompt)}
+                            >
+                              {isGenerating ? 'Rendering…' : '↻ Regenerate Frame'}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="ms-shot-thumb-placeholder">
+                          {isGenerating ? (
+                            <span className="ms-working">
+                              <span className="ms-spinner" /> Generating AI frame ($0.00)…
+                            </span>
+                          ) : (
+                            <>
+                              <span style={{ fontSize: '1.8rem' }}>🖼️</span>
+                              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No frame rendered yet</span>
+                              <button
+                                type="button"
+                                className="ms-btn ms-btn--primary"
+                                style={{ fontSize: '0.76rem', padding: '4px 10px' }}
+                                onClick={() => handleGenerateFrame(shot.shotId, shot.prompt)}
+                              >
+                                ⚡ Generate Frame ($0.00)
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Shot Controls & Inputs */}
+                    <div className="ms-shot-card-body">
+                      {/* Framing Pills */}
+                      <div className="ms-shot-pills-row">
+                        <span className="ms-shot-pill-label">Camera Shot Size</span>
+                        <div className="ms-shot-pills">
+                          {framingPills.map(f => (
+                            <button
+                              key={f}
+                              type="button"
+                              className={`ms-shot-pill ${shot.framing === f ? 'active' : ''}`}
+                              onClick={() => handleUpdateShot(shot.shotId, { framing: f })}
+                            >
+                              {f.replace('_', ' ')}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Lens & Motion Pills */}
+                      <div className="ms-shot-pills-row">
+                        <span className="ms-shot-pill-label">Focal Length &amp; Motion</span>
+                        <div className="ms-shot-pills">
+                          {lensPills.map(l => (
+                            <button
+                              key={l}
+                              type="button"
+                              className={`ms-shot-pill ${shot.lens === l ? 'active' : ''}`}
+                              onClick={() => handleUpdateShot(shot.shotId, { lens: l })}
+                            >
+                              {l}
+                            </button>
+                          ))}
+                          {motionPills.map(m => (
+                            <button
+                              key={m}
+                              type="button"
+                              className={`ms-shot-pill ${shot.movement === m ? 'active' : ''}`}
+                              onClick={() => handleUpdateShot(shot.shotId, { movement: m })}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Action Prompt */}
+                      <div className="ms-shot-field">
+                        <div className="ms-shot-field-header">
+                          <span className="ms-shot-label">Visual Action / Prompt:</span>
+                          <button
+                            type="button"
+                            className="ms-shot-enhance-btn"
+                            title="Enhance prompt with cinematic lighting, camera lens depth, and artistic details based on framing"
+                            onClick={() => handleEnhancePrompt(shot.shotId)}
+                          >
+                            ✨ Enhance Prompt
+                          </button>
+                        </div>
+                        <textarea
+                          className="ms-shot-textarea"
+                          value={shot.prompt}
+                          rows={2}
+                          placeholder="Visual prompt for image generator…"
+                          aria-label={`Prompt for ${shot.shotId}`}
+                          onChange={e => handleUpdateShot(shot.shotId, { prompt: e.target.value })}
+                        />
+                      </div>
+
+                      {/* Narration Script */}
+                      <div className="ms-shot-field">
+                        <span className="ms-shot-label">Narration / Script Line:</span>
+                        <input
+                          type="text"
+                          className="ms-input"
+                          style={{ fontSize: '0.78rem', padding: '5px 8px' }}
+                          value={shot.narration || ''}
+                          placeholder="Voiceover narration or dialogue line…"
+                          aria-label={`Narration for ${shot.shotId}`}
+                          onChange={e => handleUpdateShot(shot.shotId, { narration: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Add New Shot Card */}
+              <div
+                className="ms-shot-add-card"
+                role="button"
+                tabIndex={0}
+                aria-label="Add Shot to Storyboard"
+                onClick={handleAddShot}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddShot(); }}
+              >
+                <span className="ms-shot-add-icon">+</span>
+                <span className="ms-shot-add-label">Add Shot to Sequence</span>
+                <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>New shot card with custom camera framing</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="ms-runner-empty" style={{ padding: '40px 20px', textAlign: 'center' }}>
+            <span style={{ fontSize: '2rem', display: 'block', marginBottom: 8 }}>🎨</span>
+            <h4>No Storyboard Selected</h4>
+            <p style={{ maxWidth: 460, margin: '0 auto 16px', color: '#94a3b8' }}>
+              Select an existing storyboard from the dropdown above, or click "+ New Storyboard" to plan your first visual scene deck.
+            </p>
+            <button
+              type="button"
+              className="ms-btn ms-btn--primary"
+              onClick={() => setIsCreatingStoryboard(true)}
+            >
+              + Create First Storyboard
+            </button>
+          </div>
+        )}
+
+        {/* Fullscreen Animatic Player Modal */}
+        {animaticOpen && activeStoryboard && (
+          <div className="ms-animatic-overlay" role="dialog" aria-label="Storyboard Animatic Player">
+            <div className="ms-animatic-modal">
+              <div className="ms-animatic-header">
+                <div className="ms-animatic-title">
+                  <span>🎬 Animatic Playback: {activeStoryboard.project?.name || selectedStoryboardId}</span>
+                </div>
+                <div className="ms-animatic-header-right">
+                  <span className="ms-animatic-badge">
+                    Shot {animaticIndex + 1} of {shots.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="ms-shot-icon-btn ms-shot-icon-btn--del"
+                    aria-label="Close Animatic Player"
+                    onClick={() => {
+                      setAnimaticPlaying(false);
+                      setAnimaticOpen(false);
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Cinema Viewport */}
+              <div className="ms-animatic-screen">
+                {shots[animaticIndex]?.frameImagePath ? (
+                  <img
+                    src={`file:///${shots[animaticIndex].frameImagePath.replace(/\\/g, '/')}`}
+                    alt={shots[animaticIndex].shotId}
+                    className="ms-animatic-img"
+                  />
+                ) : (
+                  <div className="ms-animatic-placeholder">
+                    <span style={{ fontSize: '3rem' }}>🎨</span>
+                    <h4>{shots[animaticIndex]?.shotId} ({shots[animaticIndex]?.framing?.toUpperCase() || 'MEDIUM'})</h4>
+                    <p>{shots[animaticIndex]?.prompt}</p>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>Frame preview placeholder ($0.00)</span>
+                  </div>
+                )}
+
+                {/* HUD Camera Pills */}
+                <div className="ms-animatic-hud">
+                  <span className="ms-animatic-pill ms-animatic-pill--accent">{shots[animaticIndex]?.framing}</span>
+                  <span className="ms-animatic-pill">{shots[animaticIndex]?.lens}</span>
+                  <span className="ms-animatic-pill">{shots[animaticIndex]?.movement}</span>
+                </div>
+
+                {/* Subtitles (Dialogue or Action) */}
+                <div className="ms-animatic-subtitles">
+                  {shots[animaticIndex]?.narration ? (
+                    <span className="ms-animatic-sub-dialogue">"{shots[animaticIndex].narration}"</span>
+                  ) : (
+                    <span className="ms-animatic-sub-action">{shots[animaticIndex]?.prompt}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Scrubber Bar */}
+              <div className="ms-animatic-progress-bar">
+                <div
+                  className="ms-animatic-progress-fill"
+                  style={{
+                    width: `${Math.min(100, (animaticElapsedSec / (shots[animaticIndex]?.durationSec || 5)) * 100)}%`,
+                  }}
+                />
+              </div>
+
+              {/* Playback Controls */}
+              <div className="ms-animatic-controls">
+                <div className="ms-animatic-controls-left">
+                  <button
+                    type="button"
+                    className="ms-btn ms-btn--primary"
+                    onClick={() => setAnimaticPlaying(!animaticPlaying)}
+                  >
+                    {animaticPlaying ? '⏸ Pause' : '▶ Play'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ms-btn"
+                    disabled={animaticIndex === 0}
+                    onClick={() => {
+                      setAnimaticIndex(prev => Math.max(0, prev - 1));
+                      setAnimaticElapsedSec(0);
+                    }}
+                  >
+                    ⏮ Prev
+                  </button>
+                  <button
+                    type="button"
+                    className="ms-btn"
+                    disabled={animaticIndex === shots.length - 1}
+                    onClick={() => {
+                      setAnimaticIndex(prev => Math.min(shots.length - 1, prev + 1));
+                      setAnimaticElapsedSec(0);
+                    }}
+                  >
+                    Next ⏭
+                  </button>
+                  <button
+                    type="button"
+                    className={`ms-btn ${animaticLoop ? 'ms-btn--secondary' : ''}`}
+                    onClick={() => setAnimaticLoop(!animaticLoop)}
+                  >
+                    🔁 Loop: {animaticLoop ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                <div className="ms-animatic-timecode">
+                  <span>Shot #{animaticIndex + 1}: {Math.floor(animaticElapsedSec)}s / {shots[animaticIndex]?.durationSec || 5}s</span>
+                  <span style={{ opacity: 0.5 }}> | Total Sequence: {totalDuration}s</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="media-studio">
       {/* Blender DCC Top Mode Ribbon */}
@@ -2729,6 +4108,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
               <span className="ms-dcc-chip ms-chip--cyan">5-Tier Router</span>
               <span className="ms-dcc-chip ms-chip--purple">NLE CapCut</span>
               <span className="ms-dcc-chip ms-chip--green">Blender Stage</span>
+              <span className="ms-dcc-chip ms-chip--amber">Storyboard Deck</span>
             </div>
           </div>
         </div>
@@ -2744,6 +4124,22 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             <span className="ms-tab-icon">🎬</span>
             <span className="ms-tab-name">Director Console</span>
             <span className="ms-tab-badge">{jobs.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeWorkspace === 'storyboard'}
+            className={`ms-workspace-tab ${activeWorkspace === 'storyboard' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveWorkspace('storyboard');
+              if (!storyboardProjects && !storyboardLoading) {
+                loadStoryboardProjects();
+              }
+            }}
+          >
+            <span className="ms-tab-icon">🎨</span>
+            <span className="ms-tab-name">Storyboard</span>
+            <span className="ms-tab-badge">{storyboardProjects ? storyboardProjects.length : 'Deck'}</span>
           </button>
           <button
             type="button"
@@ -2807,6 +4203,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       {error && <div className="ms-error" role="alert">{error}</div>}
       {done && <div className="ms-done" role="status">{done}</div>}
 
+      {activeWorkspace === 'storyboard' && renderStoryboardWorkspace()}
       {activeWorkspace === 'timeline' && renderTimelineWorkspace()}
       {activeWorkspace === 'stage' && renderStageWorkspace()}
       {activeWorkspace === 'router' && renderMovieRouterWorkspace()}
@@ -2816,6 +4213,26 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         <>
           {/* Studio Quick Launch Hub */}
           <div className="ms-director-hub" role="region" aria-label="Studio Quick Launch">
+            <div
+              className="ms-hub-card"
+              onClick={() => {
+                setActiveWorkspace('storyboard');
+                if (!storyboardProjects && !storyboardLoading) {
+                  loadStoryboardProjects();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('storyboard'); }}
+            >
+              <div className="ms-hub-icon">🎨</div>
+              <div className="ms-hub-info">
+                <div className="ms-hub-title">Visual Storyboard Deck</div>
+                <div className="ms-hub-desc">Shot-by-shot sequence planning, camera framing, prompt crafting &amp; frame gen</div>
+              </div>
+              <span className="ms-hub-badge">{storyboardProjects ? `${storyboardProjects.length} Boards` : 'Visual Deck'}</span>
+            </div>
+
             <div
               className="ms-hub-card"
               onClick={() => {
