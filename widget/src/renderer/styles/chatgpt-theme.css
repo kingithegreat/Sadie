@@ -1,4 +1,4 @@
-﻿/* HomeBot â€” Premium Dark Desktop AI Theme */
+/* HomeBot â€” Premium Dark Desktop AI Theme */
 /* stylelint-disable property-no-unknown, property-no-vendor-prefix -- Electron (Chromium 130) target; oklch/color-mix/anchor/scroll-timeline are all supported */
 
 :root {
@@ -12703,58 +12703,262 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 }
 
 /* ==========================================================================
-   MOVIE ROUTER WORKSPACE STYLES
+   DIRECTOR STUDIO HUB & WORKSPACE STYLES
    ========================================================================== */
-.ms-router-workspace {
-  margin-top: 4px;
+.ms-director-hub {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.ms-router-card {
+.ms-hub-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.ms-hub-card:hover {
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.08) 0%, rgba(255, 133, 27, 0.06) 100%);
+  border-color: rgba(0, 240, 255, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 16px rgba(0, 240, 255, 0.15);
+}
+
+.ms-hub-icon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+
+.ms-hub-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ms-hub-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.01em;
+  margin-bottom: 2px;
+}
+
+.ms-hub-desc {
+  font-size: 0.74rem;
+  color: var(--text-secondary, #9aa0a6);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-hub-badge {
+  padding: 3px 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 8px;
+  background: rgba(0, 240, 255, 0.12);
+  color: #00e5ff;
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   MOVIE ROUTER & ANCIENT PATHWAYS WORKSPACE STYLES
+   ========================================================================== */
+.ms-workspace-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ms-router-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ms-router-title-group h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #ffffff 0%, #a0a6b5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ms-router-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.84rem;
+  color: var(--text-secondary, #9aa0a6);
+  max-width: 720px;
+  line-height: 1.4;
+}
+
+.ms-btn-back {
+  font-size: 0.82rem;
+  padding: 6px 14px;
+  border-radius: 8px;
+}
+
+.ms-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.ms-provider-card {
+  background: #0e1118;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.ms-provider-card:hover {
+  border-color: rgba(0, 240, 255, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 12px rgba(0, 240, 255, 0.1);
+}
+
+.ms-provider-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #ff9800;
+  letter-spacing: 0.04em;
+}
+
+.ms-provider-icon {
+  font-size: 1.5rem;
+}
+
+.ms-provider-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ms-provider-desc {
+  font-size: 0.76rem;
+  color: var(--text-secondary, #9aa0a6);
+  line-height: 1.35;
+  flex: 1;
+}
+
+.ms-provider-cost {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #00e676;
+  font-family: monospace;
+}
+
+.ms-movie-runner-deck {
   background: #0e1118;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 18px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-.ms-router-card h3 {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.ms-router-providers-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.ms-provider-badge {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  transition: all 0.2s ease;
+  gap: 14px;
 }
 
-.ms-provider-badge.active {
-  background: rgba(0, 240, 255, 0.05);
-  border-color: rgba(0, 240, 255, 0.3);
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.1);
+.ms-runner-deck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.ms-badge-title {
-  font-size: 0.85rem;
+.ms-runner-deck-header h4 {
+  margin: 0;
+  font-size: 1rem;
   font-weight: 700;
   color: #fff;
 }
 
-.ms-badge-meta {
+.ms-movie-projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-movie-project-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.ms-project-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ms-project-icon {
+  font-size: 1.2rem;
+}
+
+.ms-project-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.ms-project-path {
   font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.ms-runner-status {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+}
+
+.ms-runner--busy {
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  color: #00e5ff;
+}
+
+.ms-runner--ok {
+  background: rgba(0, 230, 118, 0.08);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+  color: #00e676;
+}
+
+.ms-runner--error {
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  color: #ff5252;
+}
+
+.ms-runner-empty {
+  font-size: 0.84rem;
   color: var(--text-secondary);
 }

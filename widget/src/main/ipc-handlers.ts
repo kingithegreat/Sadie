@@ -1010,6 +1010,31 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // ---- Video Editing (FFmpeg-based trim & splice) ----
+  ipcMain.handle('homebot:media:trim-clip', async (_e, args: { videoPath: string; startSec: number; durationSec: number }) => {
+    const { videoToolHandlers } = await import('./tools/media-video');
+    try {
+      const res: any = await videoToolHandlers.media_trim_clip(args, { executionId: 'panel-trim' } as any);
+      return res?.success
+        ? { ok: true, result: res.result }
+        : { ok: false, error: String(res?.error ?? 'Could not trim the video.') };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:splice-video', async (_e, args: { clips: string[]; outputPath: string }) => {
+    const { videoToolHandlers } = await import('./tools/media-video');
+    try {
+      const res: any = await videoToolHandlers.media_splice_video(args, { executionId: 'panel-splice' } as any);
+      return res?.success
+        ? { ok: true, result: res.result }
+        : { ok: false, error: String(res?.error ?? 'Could not splice the videos.') };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
   // ---- Ancient Pathways (Animated Documentary Pipeline) ----
   ipcMain.handle('homebot:media:ancient-pathways-episodes', async () => {
     const { ANCIENT_PATHWAYS_EPISODES, resolveAncientPathwaysDir } = await import('./ancient-pathways');

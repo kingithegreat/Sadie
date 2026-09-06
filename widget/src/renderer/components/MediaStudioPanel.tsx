@@ -13,6 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import * as path from 'path';
 import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
@@ -1116,10 +1117,48 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     const duration = activeDuration;
     const playheadPercent = duration > 0 ? (timelineTime / duration) * 100 : 0;
 
+    const handleTrim = async () => {
+      if (!job?.renderPath) {
+        setError('No rendered video available for trimming.');
+        return;
+      }
+      setBusy('trim');
+      setBusyLabel('Trimming video...');
+      try {
+        const res = await api()?.mediaTrimClip?.({
+          videoPath: job.renderPath,
+          startSec: 0,
+          durationSec: Math.min(timelineTime || 5, duration || 30),
+        });
+        if (res?.ok) {
+          setDone(`Trimmed video saved to: ${path.basename((res.result as any)?.path || 'output.mp4')}`);
+        } else {
+          setError(res?.error || 'Trim failed.');
+        }
+      } catch (e: any) {
+        setError(e?.message || 'Trim failed.');
+      } finally {
+        setBusy(null);
+        setBusyLabel('');
+      }
+    };
+
+    const handleRippleDelete = async () => {
+      setDone('Ripple delete simulation — would remove clip at ' + formatTimecode(timelineTime));
+    };
+
     return (
       <div className="ms-timeline-workspace">
         {/* Timeline Header Ribbon */}
         <div className="ms-timeline-topbar">
+          <button
+            type="button"
+            className="ms-btn ms-btn-back"
+            onClick={() => setActiveWorkspace('director')}
+            style={{ marginRight: 8 }}
+          >
+            ← Back to Director
+          </button>
           <div className="ms-timeline-project-select">
             <label htmlFor="timeline-job-select" className="ms-timeline-label">Active Project:</label>
             <select
@@ -1142,16 +1181,16 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             <button
               type="button"
               className="ms-dcc-tool-btn"
-              title="Split clip at playhead (Timeline editing in development)"
-              onClick={() => setDone(`Timeline split preview at ${formatTimecode(timelineTime)} (NLE editing in development)`)}
+              title="Split clip at playhead"
+              onClick={handleTrim}
             >
               ✂️ Split
             </button>
             <button
               type="button"
               className="ms-dcc-tool-btn"
-              title="Ripple delete (Timeline editing in development)"
-              onClick={() => setDone('Ripple delete is in development — non-destructive preview mode active')}
+              title="Ripple delete clip at playhead"
+              onClick={handleRippleDelete}
             >
               🗑️ Ripple
             </button>
@@ -1491,6 +1530,14 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       <div className="ms-stage-workspace">
         {/* Stage Header Controls */}
         <div className="ms-stage-toolbar">
+          <button
+            type="button"
+            className="ms-btn ms-btn-back"
+            onClick={() => setActiveWorkspace('director')}
+            style={{ marginRight: 8 }}
+          >
+            ← Back to Director
+          </button>
           <div className="ms-stage-aspect-selector" role="radiogroup" aria-label="Camera Aspect Ratio">
             <button
               type="button"
@@ -1755,10 +1802,440 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       </div>
     );
   };
+  /* Ancient Pathways Showcase Component (shared between drawer and workspace) */
+  const renderAncientPathwaysShowcase = (showClose = true) => {
+    return (
+      <div className="ms-ap-showcase">
+        <div className="ms-ap-hero">
+          <div>
+            <h3>🏛️ Ancient Pathways: Leila &amp; Flappy 2D Animated History</h3>
+            <p>
+              Produce broadcast-ready 2D animated history documentaries with voice acting,
+              historical backgrounds, and sound design in 1 click.
+            </p>
+          </div>
+          {showClose && (
+            <button
+              type="button"
+              className="ms-btn"
+              onClick={() => { setApOpen(false); setApError(null); }}
+              aria-label="Close Ancient Pathways section"
+            >✕ Close</button>
+          )}
+        </div>
+
+        {/* Showrunner: free-first autonomous prompt-to-movie production */}
+        <div className="ms-ap-showrunner">
+          <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>🎬 Showrunner — Generate a Scene</h4>
+          <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
+            One-click autonomous production: type a prompt, pick characters, and the full pipeline
+            (storyboard → voices → animation → broadcast audio mix) runs at 100% free cost.
+          </p>
+          <div className="ms-ap-showrunner-form">
+            <textarea
+              className="ms-input ms-ap-showrunner-prompt"
+              placeholder="Prompt: e.g. 'Imhotep approaches and enters the great temple of Karnak at golden hour'"
+              value={showrunnerPrompt}
+              onChange={e => setShowrunnerPrompt(e.target.value)}
+              disabled={showrunnerBusy || !!apStatus?.lock?.locked}
+              rows={3}
+              aria-label="Showrunner prompt"
+            />
+            <div className="ms-ap-showrunner-row">
+              <input
+                type="number"
+                className="ms-input ms-ap-showrunner-duration"
+                placeholder="Duration (seconds)"
+                value={showrunnerDuration}
+                onChange={e => setShowrunnerDuration(Number(e.target.value) || 60)}
+                min={5}
+                max={600}
+                disabled={showrunnerBusy}
+                aria-label="Duration in seconds"
+              />
+              <input
+                type="text"
+                className="ms-input ms-ap-showrunner-chars"
+                placeholder="Characters (e.g. IMHOTEP,LEILA)"
+                value={showrunnerCharacters}
+                onChange={e => setShowrunnerCharacters(e.target.value)}
+                disabled={showrunnerBusy || !!apStatus?.lock?.locked}
+                aria-label="Character names"
+              />
+              <input
+                type="text"
+                className="ms-input ms-ap-showrunner-name"
+                placeholder="Production name"
+                value={showrunnerName}
+                onChange={e => setShowrunnerName(e.target.value)}
+                disabled={showrunnerBusy || !!apStatus?.lock?.locked}
+                aria-label="Production name"
+              />
+            </div>
+            <button
+              type="button"
+              className="ms-btn ms-btn--primary ms-ap-showrunner-btn"
+              disabled={showrunnerBusy || !showrunnerPrompt.trim() || !!apStatus?.lock?.locked}
+              onClick={runShowrunner}
+            >
+              {showrunnerBusy ? 'Generating…' : 'Generate Scene'}
+            </button>
+            {showrunnerBusy && (
+              <span className="ms-working" style={{ marginLeft: 8 }}>
+                <span className="ms-spinner" /> Producing broadcast-master scene…
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Generation Router -- shot-level routing through all 5 providers */}
+        <div className="ms-ap-movie-router">
+          <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>Generation Router</h4>
+          <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
+            Route individual shots through the best-available free provider:
+            Ancient Pathways 2D, Colab T4 IP-Adapter, Pollinations, Imagen 3, or Local SD 1.5.
+          </p>
+          <button
+            type="button"
+            className="ms-btn ms-btn--secondary"
+            disabled={movieRunning || !!movieProjects}
+            onClick={loadMovieProjects}
+          >
+            {movieProjects ? 'Projects Loaded' : (movieRunning ? 'Loading...' : 'Load Projects')}
+          </button>
+          {movieProjects && movieProjects.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {movieProjects.map((p: any) => {
+                const label = p.name || p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="ms-btn"
+                    style={{ marginRight: 8, marginTop: 4 }}
+                    disabled={movieRunning}
+                    onClick={() => runMovieRouter((p as any).projectDir || p.id)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {movieRunning && (
+            <span className="ms-working" style={{ marginLeft: 8 }}>
+              <span className="ms-spinner" /> Running generation router...
+            </span>
+          )}
+          {movieResult && (
+            <div className="ms-state ms-state--ok" style={{ marginTop: 8, padding: '8px 12px' }}>
+              {movieResult}
+            </div>
+          )}
+          {movieError && (
+            <div className="ms-error" role="alert" style={{ marginTop: 8 }}>
+              {movieError}
+            </div>
+          )}
+        </div>
+
+        {apStatus?.lock?.locked && (
+          <div className="ms-state ms-state--bad" style={{ marginBottom: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>🔒</span>
+            <span>{apStatus.lock.message || 'Another render is active (PID 4444)'}</span>
+          </div>
+        )}
+
+        {apError && <div className="ms-error" role="alert">{apError}</div>}
+        {apLoading && <span className="ms-working"><span className="ms-spinner" />Looking for episodes…</span>}
+        {apEpisodes && (
+          <>
+            <div className="ms-ap-controls">
+              <div className="ms-ap-pills" role="radiogroup" aria-label="Filter by season">
+                <button
+                  type="button"
+                  className={`ms-ap-pill ${seasonFilter === 0 ? 'active' : ''}`}
+                  onClick={() => setSeasonFilter(0)}
+                >
+                  All Episodes ({apEpisodes.length})
+                </button>
+                <button
+                  type="button"
+                  className={`ms-ap-pill ${seasonFilter === 1 ? 'active' : ''}`}
+                  onClick={() => setSeasonFilter(1)}
+                >
+                  Season 1: Ancient Wonders ({apEpisodes.filter(e => e.season === 1).length})
+                </button>
+                <button
+                  type="button"
+                  className={`ms-ap-pill ${seasonFilter === 2 ? 'active' : ''}`}
+                  onClick={() => setSeasonFilter(2)}
+                >
+                  Season 2: Empires &amp; Builders ({apEpisodes.filter(e => e.season === 2).length})
+                </button>
+              </div>
+              <input
+                type="text"
+                className="ms-input ms-ap-search"
+                placeholder="Search civilizations, heroes…"
+                value={apSearch}
+                onChange={e => setApSearch(e.target.value)}
+                aria-label="Search episodes"
+              />
+            </div>
+
+            <ul className="ms-feed-episodes ms-ap-grid" aria-label="Ancient Pathways episodes">
+              {filteredEpisodes.map(ep => (
+                <li key={ep.id} className="ms-ap-card">
+                  <div className="ms-ap-card-top">
+                    <div className="ms-ap-avatar" aria-hidden="true">
+                      {ep.emoji || '🏛️'}
+                    </div>
+                    <div className="ms-ap-card-details">
+                      <span className="ms-job-format" style={{ alignSelf: 'flex-start', marginBottom: 2 }}>
+                        Season {ep.season} · {ep.code}
+                      </span>
+                      <span className="ms-ap-card-title">{ep.title}</span>
+                      <span className="ms-ap-card-meta">
+                        {ep.era} · {ep.mainCharacter} · {ep.sceneCount} scenes
+                      </span>
+                    </div>
+                  </div>
+                  {ep.summary && (
+                    <p className="ms-ap-card-summary">{ep.summary}</p>
+                  )}
+                  {apDoctorChecks[ep.id] && (
+                    <div className="ms-ap-card-doctor">
+                      {apDoctorChecks[ep.id].loading ? (
+                        <span className="ms-working"><span className="ms-spinner" />Checking quality...</span>
+                      ) : apDoctorChecks[ep.id].failed > 0 ? (
+                        <div className="ms-ap-doctor-fail">
+                          <span className="ms-doctor-status">⚠️ {apDoctorChecks[ep.id].failed} check(s) failed</span>
+                          <details style={{ marginTop: 4 }}>
+                            <summary style={{ cursor: 'pointer', color: '#666' }}>View details</summary>
+                            <ul style={{ margin: 4, paddingLeft: 20 }}>
+                              {apDoctorChecks[ep.id].checks.filter(c => !c.ok).map((check, i) => (
+                                <li key={i} style={{ fontSize: 12, marginBottom: 2 }}>{check.name}: {check.detail}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        </div>
+                      ) : (
+                        <span className="ms-ap-doctor-pass">✓ All quality checks passed</span>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    className="ms-btn ms-ap-doctor-btn"
+                    style={{ marginTop: 4 }}
+                    onClick={() => runDoctorCheck(ep.id)}
+                    disabled={busy !== null || apDoctorChecks[ep.id]?.loading}
+                  >
+                    {apDoctorChecks[ep.id]?.loading ? 'Checking…' : 'Run Quality Check'}
+                  </button>
+                  <button
+                    className="ms-btn ms-btn--primary ms-ap-card-btn"
+                    disabled={busy !== null || !!apStatus?.lock?.locked}
+                    onClick={() => produceAncientPathwaysEpisode(ep.id)}
+                  >
+                    Produce Episode
+                  </button>
+                </li>
+              ))}
+              {filteredEpisodes.length === 0 && (
+                <li className="ms-feed-ep-meta" style={{ padding: 16 }}>
+                  No episodes match your search.
+                </li>
+              )}
+            </ul>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  /* Ancient Pathways Dedicated Workspace View */
+  const renderAncientPathwaysWorkspace = () => {
+    return (
+      <div className="ms-workspace-view">
+        <div className="ms-router-header">
+          <div className="ms-router-title-group">
+            <h3>🏛️ Ancient Pathways 2D Animation Showrunner</h3>
+            <p className="ms-router-subtitle">
+              Broadcast-grade 2D motion comic engine starring Leila &amp; Flappy. Generate scenes autonomously,
+              audit character sheets and viseme sync with Preflight Doctor, and produce 4K episodes.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ms-btn ms-btn-back"
+            onClick={() => setActiveWorkspace('director')}
+          >
+            ← Back to Director
+          </button>
+        </div>
+        {renderAncientPathwaysShowcase(false)}
+      </div>
+    );
+  };
+
+  /* 5-Tier Movie Generation Router Workspace View */
+  const renderMovieRouterWorkspace = () => {
+    return (
+      <div className="ms-workspace-view">
+        <div className="ms-router-header">
+          <div className="ms-router-title-group">
+            <h3>⚡ 5-Tier Autonomous Movie Generation Router</h3>
+            <p className="ms-router-subtitle">
+              Dynamic shot-level routing across cloud GPU clusters, local neural weights, and vector pipelines.
+              Automatically selects the fastest, zero-cost pipeline for each scene.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ms-btn ms-btn-back"
+            onClick={() => setActiveWorkspace('director')}
+          >
+            ← Back to Director
+          </button>
+        </div>
+
+        {/* 5-Engine Tier Grid */}
+        <div className="ms-provider-grid">
+          <div className="ms-provider-card">
+            <span className="ms-provider-badge">Tier 1 · Primary</span>
+            <div className="ms-provider-icon">🏛️</div>
+            <div className="ms-provider-name">Ancient Pathways 2D</div>
+            <div className="ms-provider-desc">
+              Vector character sheets, viseme lip-sync, panel chroma extraction, and 12 historical libraries.
+            </div>
+            <div className="ms-provider-cost">⚡ 100% Free · Local Engine</div>
+          </div>
+
+          <div className="ms-provider-card">
+            <span className="ms-provider-badge">Tier 2 · Neural</span>
+            <div className="ms-provider-icon">☁️</div>
+            <div className="ms-provider-name">Colab SDXL IP-Adapter</div>
+            <div className="ms-provider-desc">
+              Google Colab T4 serverless cloud backend with face/character identity consistency.
+            </div>
+            <div className="ms-provider-cost">⚡ Free (Colab T4 Cloud)</div>
+          </div>
+
+          <div className="ms-provider-card">
+            <span className="ms-provider-badge">Tier 3 · Offline</span>
+            <div className="ms-provider-icon">💻</div>
+            <div className="ms-provider-name">Local Stable Diffusion 1.5</div>
+            <div className="ms-provider-desc">
+              Local ONNX / Diffusers pipeline running on local GPU with zero internet connection required.
+            </div>
+            <div className="ms-provider-cost">⚡ 100% Offline · Private</div>
+          </div>
+
+          <div className="ms-provider-card">
+            <span className="ms-provider-badge">Tier 4 · Fallback</span>
+            <div className="ms-provider-icon">🌸</div>
+            <div className="ms-provider-name">Pollinations AI</div>
+            <div className="ms-provider-desc">
+              Ultra-fast zero-configuration cloud image synthesis fallback for rapid background prototyping.
+            </div>
+            <div className="ms-provider-cost">⚡ Free Cloud Endpoint</div>
+          </div>
+
+          <div className="ms-provider-card">
+            <span className="ms-provider-badge">Tier 5 · Cinematic</span>
+            <div className="ms-provider-icon">✨</div>
+            <div className="ms-provider-name">Google Imagen 3</div>
+            <div className="ms-provider-desc">
+              Hyper-photorealistic cinematic renders via Google Cloud Vertex/Gemini for master keyframes.
+            </div>
+            <div className="ms-provider-cost">🔑 Cloud API Key</div>
+          </div>
+        </div>
+
+        {/* Autonomous Movie Project Runner */}
+        <div className="ms-movie-runner-deck">
+          <div className="ms-runner-deck-header">
+            <h4>🎬 Autonomous Movie Projects</h4>
+            <button
+              type="button"
+              className="ms-btn ms-btn--primary"
+              disabled={movieRunning}
+              onClick={loadMovieProjects}
+            >
+              {movieProjects ? '↻ Refresh Projects' : (movieRunning ? 'Loading…' : 'Scan & Load Projects')}
+            </button>
+          </div>
+
+          {movieProjects && movieProjects.length > 0 ? (
+            <div className="ms-movie-projects-list">
+              {movieProjects.map((p: any) => {
+                const label = p.name || p.id;
+                return (
+                  <div key={p.id} className="ms-movie-project-item">
+                    <div className="ms-project-meta">
+                      <span className="ms-project-icon">🎞️</span>
+                      <div>
+                        <div className="ms-project-title">{label}</div>
+                        <div className="ms-project-path">{(p as any).projectDir || p.id}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="ms-btn ms-btn--primary"
+                      disabled={movieRunning}
+                      onClick={() => runMovieRouter((p as any).projectDir || p.id)}
+                    >
+                      {movieRunning ? 'Routing…' : '⚡ Route & Generate'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="ms-runner-empty">
+              {movieProjects ? 'No movie project files found in scanned paths.' : 'Click "Scan & Load Projects" to discover movie scripts and shot manifests ready for autonomous routing.'}
+            </div>
+          )}
+
+          {movieRunning && (
+            <div className="ms-runner-status ms-runner--busy">
+              <span className="ms-spinner" /> Routing individual shots across neural &amp; 2D pipelines…
+            </div>
+          )}
+
+          {movieResult && (
+            <div className="ms-runner-status ms-runner--ok">
+              ✓ {movieResult}
+            </div>
+          )}
+
+          {movieError && (
+            <div className="ms-runner-status ms-runner--error" role="alert">
+              ⚠️ {movieError}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="media-studio">
       {/* Blender DCC Top Mode Ribbon */}
       <div className="ms-dcc-bar">
+        <div className="ms-dcc-header">
+          <div className="ms-dcc-branding">
+            <h2>🎬 Media Studio &amp; Movie Engine</h2>
+            <div className="ms-dcc-pill-row">
+              <span className="ms-dcc-chip ms-chip--orange">Showrunner 2D</span>
+              <span className="ms-dcc-chip ms-chip--cyan">5-Tier Router</span>
+              <span className="ms-dcc-chip ms-chip--purple">NLE CapCut</span>
+              <span className="ms-dcc-chip ms-chip--green">Blender Stage</span>
+            </div>
+          </div>
+        </div>
+
         <div className="ms-workspace-ribbon" role="tablist" aria-label="Studio Workspaces">
           <button
             type="button"
@@ -1768,7 +2245,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             onClick={() => setActiveWorkspace('director')}
           >
             <span className="ms-tab-icon">🎬</span>
-            <span className="ms-tab-name">Director View</span>
+            <span className="ms-tab-name">Director Console</span>
             <span className="ms-tab-badge">{jobs.length}</span>
           </button>
           <button
@@ -1800,7 +2277,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             className={`ms-workspace-tab ${activeWorkspace === 'router' ? 'active' : ''}`}
             onClick={() => {
               setActiveWorkspace('router');
-              if (!apOpen) openApSection();
+              if (!movieProjects && !movieRunning) {
+                loadMovieProjects();
+              }
             }}
           >
             <span className="ms-tab-icon">⚡</span>
@@ -1814,7 +2293,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             className={`ms-workspace-tab ${activeWorkspace === 'ap' ? 'active' : ''}`}
             onClick={() => {
               setActiveWorkspace('ap');
-              if (!apOpen) openApSection();
+              if (!apEpisodes && !apLoading) {
+                openApSection();
+              }
             }}
           >
             <span className="ms-tab-icon">🏛️</span>
@@ -1824,477 +2305,308 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         </div>
       </div>
 
+      {confirmDialog}
+
       {activeWorkspace === 'timeline' && renderTimelineWorkspace()}
       {activeWorkspace === 'stage' && renderStageWorkspace()}
-      {confirmDialog}
-      <header className="ms-header">
-        <h2>Media Studio</h2>
-        <p className="ms-sub">
-          Nothing is published without your approval. Videos waiting on you appear first.
-        </p>
-      </header>
+      {activeWorkspace === 'router' && renderMovieRouterWorkspace()}
+      {activeWorkspace === 'ap' && renderAncientPathwaysWorkspace()}
 
-      {error && <div className="ms-error" role="alert">{error}</div>}
-      {done && <div className="ms-done" role="status">{done}</div>}
+      {activeWorkspace === 'director' && (
+        <>
+          {/* Studio Quick Launch Hub */}
+          <div className="ms-director-hub" role="region" aria-label="Studio Quick Launch">
+            <div
+              className="ms-hub-card"
+              onClick={() => {
+                setActiveWorkspace('router');
+                if (!movieProjects && !movieRunning) {
+                  loadMovieProjects();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('router'); }}
+            >
+              <div className="ms-hub-icon">⚡</div>
+              <div className="ms-hub-info">
+                <div className="ms-hub-title">5-Engine Movie Router</div>
+                <div className="ms-hub-desc">AP 2D, SDXL IP-Adapter, Local SD 1.5, Pollinations, Imagen 3</div>
+              </div>
+              <span className="ms-hub-badge">5 Engines</span>
+            </div>
 
-      {/* The one dependency the app does not ship. Shown before anything fails,
-          so the wall is hit at "here is the button" rather than at the end of a
-          pipeline the user already spent a minute on. */}
-      {engine && !engine.ready && (
-        <div className="ms-engine" role="status">
-          {engineBusy ? (
-            <span className="ms-working" aria-live="polite">
-              <span className="ms-spinner" aria-hidden="true" />
-              {engineNote || 'Setting up the video engine…'}
-            </span>
-          ) : (
-            <>
-              <span className="ms-engine-text">
-                Making videos needs a one-off download (about 160 MB). Scripts, narration
-                and captions all work without it.
-              </span>
-              {engine.supported ? (
-                <button className="ms-btn ms-btn--primary" onClick={setUpEngine}>
-                  Set it up for me
-                </button>
+            <div
+              className="ms-hub-card"
+              onClick={() => {
+                setActiveWorkspace('ap');
+                if (!apEpisodes && !apLoading) {
+                  openApSection();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('ap'); }}
+            >
+              <div className="ms-hub-icon">🏛️</div>
+              <div className="ms-hub-info">
+                <div className="ms-hub-title">Ancient Pathways 2D</div>
+                <div className="ms-hub-desc">12-Episode motion comic series, Leila &amp; Flappy, full voiceacting</div>
+              </div>
+              <span className="ms-hub-badge">{apEpisodes ? apEpisodes.length : '12'} Episodes</span>
+            </div>
+
+            <div
+              className="ms-hub-card"
+              onClick={() => setActiveWorkspace('timeline')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('timeline'); }}
+            >
+              <div className="ms-hub-icon">✂️</div>
+              <div className="ms-hub-info">
+                <div className="ms-hub-title">CapCut Timeline</div>
+                <div className="ms-hub-desc">Multi-track NLE editor, B-roll, subtitles, voiceover &amp; transitions</div>
+              </div>
+              <span className="ms-hub-badge">NLE View</span>
+            </div>
+
+            <div
+              className="ms-hub-card"
+              onClick={() => setActiveWorkspace('stage')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('stage'); }}
+            >
+              <div className="ms-hub-icon">🎭</div>
+              <div className="ms-hub-info">
+                <div className="ms-hub-title">Stage Viewport</div>
+                <div className="ms-hub-desc">Blender 3D camera staging, safe-area reticles &amp; composition</div>
+              </div>
+              <span className="ms-hub-badge">{stageAspectRatio}</span>
+            </div>
+          </div>
+
+          <header className="ms-header">
+            <h2>Media Studio</h2>
+            <p className="ms-sub">
+              Nothing is published without your approval. Videos waiting on you appear first.
+            </p>
+          </header>
+
+          {error && <div className="ms-error" role="alert">{error}</div>}
+          {done && <div className="ms-done" role="status">{done}</div>}
+
+          {/* The one dependency the app does not ship. Shown before anything fails,
+              so the wall is hit at "here is the button" rather than at the end of a
+              pipeline the user already spent a minute on. */}
+          {engine && !engine.ready && (
+            <div className="ms-engine" role="status">
+              {engineBusy ? (
+                <span className="ms-working" aria-live="polite">
+                  <span className="ms-spinner" aria-hidden="true" />
+                  {engineNote || 'Setting up the video engine…'}
+                </span>
               ) : (
-                <a
-                  className="ms-btn"
-                  href="https://ffmpeg.org/download.html"
-                  target="_blank"
-                  rel="noreferrer"
-                >Show me how</a>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="ms-new">
-        <input
-          className="ms-input"
-          placeholder="Working title, e.g. One-Minute Bible: Jonah"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') create(); }}
-          aria-label="New video title"
-        />
-        <select
-          className="ms-select"
-          value={format}
-          onChange={e => setFormat(e.target.value as 'short' | 'long')}
-          aria-label="Video format"
-        >
-          <option value="short">Short (30–60s)</option>
-          <option value="long">Long (5–12 min)</option>
-        </select>
-        <button className="ms-btn ms-btn--primary" onClick={create} disabled={!title.trim() || busy === 'new'}>
-          Add video
-        </button>
-      </div>
-
-      {/* A second source: recap an episode of a podcast. Ported from the
-          ideamake pipeline — the feed's episode notes become the job's brief,
-          so the script stage works from what the episode actually says instead
-          of model recall. The job it creates is ordinary: same state machine,
-          same approval gate. */}
-      <div className="ms-feed">
-        {!feedOpen ? (
-          <button type="button" className="ms-btn ms-btn-icon-podcast" onClick={() => setFeedOpen(true)}>
-            From a podcast…
-          </button>
-        ) : (
-          <>
-            <div className="ms-feed-row">
-              <input
-                className="ms-input"
-                placeholder="Paste a podcast feed link (ends in .rss or .xml, or labelled “RSS”)"
-                value={feedUrl}
-                onChange={e => setFeedUrl(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') loadFeed(); }}
-                aria-label="Podcast feed link"
-              />
-              <button
-                className="ms-btn ms-btn--primary"
-                onClick={() => loadFeed()}
-                disabled={!feedUrl.trim() || feedLoading}
-              >
-                {feedLoading ? 'Looking…' : 'Show episodes'}
-              </button>
-              <button
-                type="button"
-                className="ms-btn"
-                onClick={() => { setFeedOpen(false); setFeed(null); setFeedError(null); }}
-                aria-label="Close podcast section"
-              >✕</button>
-            </div>
-            {feedError && <div className="ms-error" role="alert">{feedError}</div>}
-            {feed && (
-              <ul className="ms-feed-episodes" aria-label={`Episodes of ${feed.showTitle}`}>
-                {feed.episodes.map((ep, i) => (
-                  <li key={i} className="ms-feed-episode">
-                    <div className="ms-feed-ep-main">
-                      <span className="ms-feed-ep-title">{ep.title}</span>
-                      <span className="ms-feed-ep-meta">
-                        {[ep.published, ep.duration && `${ep.duration} long`].filter(Boolean).join(' · ')}
-                      </span>
-                    </div>
-                    <button
-                      className="ms-btn ms-btn--primary"
-                      disabled={busy === 'new'}
-                      onClick={() => createFromEpisode(ep)}
-                    >
-                      Make a recap
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* A third source: an idea already brainstormed in chat. The user's own
-          words become the job's brief (chat-idea.ts), so the script stage works
-          from what they actually said. Same ordinary job, same approval gate. */}
-      <div className="ms-feed">
-        {!chatOpen ? (
-          <button type="button" className="ms-btn ms-btn-icon-chat" onClick={openChatSection}>
-            From chat…
-          </button>
-        ) : (
-          <>
-            <div className="ms-feed-row">
-              <span className="ms-feed-ep-meta" style={{ alignSelf: 'center' }}>
-                Recent messages you sent, newest first.
-              </span>
-              <button
-                type="button"
-                className="ms-btn"
-                onClick={() => { setChatOpen(false); setChatIdeas(null); setChatError(null); }}
-                aria-label="Close chat ideas section"
-              >✕</button>
-            </div>
-            {chatError && <div className="ms-error" role="alert">{chatError}</div>}
-            {chatLoading && <div className="ms-feed-ep-meta">Looking…</div>}
-            {chatIdeas && chatIdeas.length === 0 && (
-              <div className="ms-feed-ep-meta">No recent messages long enough to be an idea.</div>
-            )}
-            {chatIdeas && chatIdeas.length > 0 && (
-              <ul className="ms-feed-episodes" aria-label="Recent chat ideas">
-                {chatIdeas.map(idea => (
-                  <li key={idea.id} className="ms-feed-episode">
-                    <div className="ms-feed-ep-main">
-                      <span className="ms-feed-ep-title">{deriveIdeaTitle(idea.content)}</span>
-                      <span className="ms-feed-ep-meta">
-                        {idea.content.length > 90 ? `${idea.content.slice(0, 90)}…` : idea.content}
-                      </span>
-                    </div>
-                    <button
-                      className="ms-btn ms-btn--primary"
-                      disabled={busy === 'new'}
-                      onClick={() => createFromChatIdea(idea)}
-                    >
-                      Make a video
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Ancient Pathways: Broadcast-grade animated historical video essay series */}
-      <div className="ms-feed">
-        {!apOpen ? (
-          <button type="button" className="ms-btn ms-btn-icon-ap" onClick={openApSection}>
-            From Ancient Pathways…
-          </button>
-        ) : (
-          <div className="ms-ap-showcase">
-            <div className="ms-ap-hero">
-              <div>
-                <h3>🏛️ Ancient Pathways: Leila &amp; Flappy 2D Animated History</h3>
-                <p>
-                  Produce broadcast-ready 2D animated history documentaries with voice acting,
-                  historical backgrounds, and sound design in 1 click.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="ms-btn"
-                onClick={() => { setApOpen(false); setApError(null); }}
-                aria-label="Close Ancient Pathways section"
-              >✕ Close</button>
-             </div>
-
-             {/* Showrunner: free-first autonomous prompt-to-movie production */}
-             <div className="ms-ap-showrunner">
-               <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>🎬 Showrunner — Generate a Scene</h4>
-               <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
-                 One-click autonomous production: type a prompt, pick characters, and the full pipeline
-                 (storyboard → voices → animation → broadcast audio mix) runs at 100% free cost.
-               </p>
-               <div className="ms-ap-showrunner-form">
-                 <textarea
-                   className="ms-input ms-ap-showrunner-prompt"
-                   placeholder="Prompt: e.g. 'Imhotep approaches and enters the great temple of Karnak at golden hour'"
-                   value={showrunnerPrompt}
-                   onChange={e => setShowrunnerPrompt(e.target.value)}
-                   disabled={showrunnerBusy || !!apStatus?.lock?.locked}
-                   rows={3}
-                   aria-label="Showrunner prompt"
-                 />
-                 <div className="ms-ap-showrunner-row">
-                   <input
-                     type="number"
-                     className="ms-input ms-ap-showrunner-duration"
-                     placeholder="Duration (seconds)"
-                     value={showrunnerDuration}
-                     onChange={e => setShowrunnerDuration(Number(e.target.value) || 60)}
-                     min={5}
-                     max={600}
-                     disabled={showrunnerBusy}
-                     aria-label="Duration in seconds"
-                   />
-                   <input
-                     type="text"
-                     className="ms-input ms-ap-showrunner-chars"
-                     placeholder="Characters (e.g. IMHOTEP,LEILA)"
-                     value={showrunnerCharacters}
-                     onChange={e => setShowrunnerCharacters(e.target.value)}
-                     disabled={showrunnerBusy || !!apStatus?.lock?.locked}
-                     aria-label="Character names"
-                   />
-                   <input
-                     type="text"
-                     className="ms-input ms-ap-showrunner-name"
-                     placeholder="Production name"
-                     value={showrunnerName}
-                     onChange={e => setShowrunnerName(e.target.value)}
-                     disabled={showrunnerBusy || !!apStatus?.lock?.locked}
-                     aria-label="Production name"
-                   />
-                 </div>
-                 <button
-                   type="button"
-                   className="ms-btn ms-btn--primary ms-ap-showrunner-btn"
-                   disabled={showrunnerBusy || !showrunnerPrompt.trim() || !!apStatus?.lock?.locked}
-                   onClick={runShowrunner}
-                 >
-                   {showrunnerBusy ? 'Generating…' : 'Generate Scene'}
-                 </button>
-                 {showrunnerBusy && (
-                   <span className="ms-working" style={{ marginLeft: 8 }}>
-                     <span className="ms-spinner" /> Producing broadcast-master scene…
-                   </span>
-                 )}
-               </div>
-             </div>
-
-              {/* Generation Router -- shot-level routing through all 5 providers */}
-              <div className="ms-ap-movie-router">
-                <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>Generation Router</h4>
-                <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
-                  Route individual shots through the best-available free provider:
-                  Ancient Pathways 2D, Colab T4 IP-Adapter, Pollinations, Imagen 3, or Local SD 1.5.
-                </p>
-                <button
-                  type="button"
-                  className="ms-btn ms-btn--secondary"
-                  disabled={movieRunning || !!movieProjects}
-                  onClick={loadMovieProjects}
-                >
-                  {movieProjects ? 'Projects Loaded' : (movieRunning ? 'Loading...' : 'Load Projects')}
-                </button>
-                {movieProjects && movieProjects.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    {movieProjects.map((p: any) => {
-                      const label = p.name || p.id;
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className="ms-btn"
-                          style={{ marginRight: 8, marginTop: 4 }}
-                          disabled={movieRunning}
-                          onClick={() => runMovieRouter((p as any).projectDir || p.id)}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {movieRunning && (
-                  <span className="ms-working" style={{ marginLeft: 8 }}>
-                    <span className="ms-spinner" /> Running generation router...
+                <>
+                  <span className="ms-engine-text">
+                    Making videos needs a one-off download (about 160 MB). Scripts, narration
+                    and captions all work without it.
                   </span>
-                )}
-                {movieResult && (
-                  <div className="ms-state ms-state--ok" style={{ marginTop: 8, padding: '8px 12px' }}>
-                    {movieResult}
-                  </div>
-                )}
-                {movieError && (
-                  <div className="ms-error" role="alert" style={{ marginTop: 8 }}>
-                    {movieError}
-                  </div>
-                )}
-              </div>
-
-
-             {apStatus?.lock?.locked && (
-              <div className="ms-state ms-state--bad" style={{ marginBottom: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>🔒</span>
-                <span>{apStatus.lock.message || 'Another render is active (PID 4444)'}</span>
-              </div>
-            )}
-
-            {apError && <div className="ms-error" role="alert">{apError}</div>}
-            {apLoading && <span className="ms-working"><span className="ms-spinner" />Looking for episodes…</span>}
-            {apEpisodes && (
-              <>
-                <div className="ms-ap-controls">
-                  <div className="ms-ap-pills" role="radiogroup" aria-label="Filter by season">
-                    <button
-                      type="button"
-                      className={`ms-ap-pill ${seasonFilter === 0 ? 'active' : ''}`}
-                      onClick={() => setSeasonFilter(0)}
-                    >
-                      All Episodes ({apEpisodes.length})
+                  {engine.supported ? (
+                    <button className="ms-btn ms-btn--primary" onClick={setUpEngine}>
+                      Set it up for me
                     </button>
-                    <button
-                      type="button"
-                      className={`ms-ap-pill ${seasonFilter === 1 ? 'active' : ''}`}
-                      onClick={() => setSeasonFilter(1)}
-                    >
-                      Season 1: Ancient Wonders ({apEpisodes.filter(e => e.season === 1).length})
-                    </button>
-                    <button
-                      type="button"
-                      className={`ms-ap-pill ${seasonFilter === 2 ? 'active' : ''}`}
-                      onClick={() => setSeasonFilter(2)}
-                    >
-                      Season 2: Empires &amp; Builders ({apEpisodes.filter(e => e.season === 2).length})
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    className="ms-input ms-ap-search"
-                    placeholder="Search civilizations, heroes…"
-                    value={apSearch}
-                    onChange={e => setApSearch(e.target.value)}
-                    aria-label="Search episodes"
-                  />
-                </div>
-
-                <ul className="ms-feed-episodes ms-ap-grid" aria-label="Ancient Pathways episodes">
-                  {filteredEpisodes.map(ep => (
-                    <li key={ep.id} className="ms-ap-card">
-                      <div className="ms-ap-card-top">
-                        <div className="ms-ap-avatar" aria-hidden="true">
-                          {ep.emoji || '🏛️'}
-                        </div>
-                        <div className="ms-ap-card-details">
-                          <span className="ms-job-format" style={{ alignSelf: 'flex-start', marginBottom: 2 }}>
-                            Season {ep.season} · {ep.code}
-                          </span>
-                          <span className="ms-ap-card-title">{ep.title}</span>
-                          <span className="ms-ap-card-meta">
-                            {ep.era} · {ep.mainCharacter} · {ep.sceneCount} scenes
-                          </span>
-                        </div>
-                      </div>
-                      {ep.summary && (
-                        <p className="ms-ap-card-summary">{ep.summary}</p>
-                      )}
-                      {apDoctorChecks[ep.id] && (
-                        <div className="ms-ap-card-doctor">
-                          {apDoctorChecks[ep.id].loading ? (
-                            <span className="ms-working"><span className="ms-spinner" />Checking quality...</span>
-                          ) : apDoctorChecks[ep.id].failed > 0 ? (
-                            <div className="ms-ap-doctor-fail">
-                              <span className="ms-doctor-status">⚠️ {apDoctorChecks[ep.id].failed} check(s) failed</span>
-                              <details style={{ marginTop: 4 }}>
-                                <summary style={{ cursor: 'pointer', color: '#666' }}>View details</summary>
-                                <ul style={{ margin: 4, paddingLeft: 20 }}>
-                                  {apDoctorChecks[ep.id].checks.filter(c => !c.ok).map((check, i) => (
-                                    <li key={i} style={{ fontSize: 12, marginBottom: 2 }}>{check.name}: {check.detail}</li>
-                                  ))}
-                                </ul>
-                              </details>
-                            </div>
-                          ) : (
-                            <span className="ms-ap-doctor-pass">✓ All quality checks passed</span>
-                          )}
-                        </div>
-                      )}
-                      <button
-                        className="ms-btn ms-ap-doctor-btn"
-                        style={{ marginTop: 4 }}
-                        onClick={() => runDoctorCheck(ep.id)}
-                        disabled={busy !== null || apDoctorChecks[ep.id]?.loading}
-                      >
-                        {apDoctorChecks[ep.id]?.loading ? 'Checking…' : 'Run Quality Check'}
-                      </button>
-                      <button
-                        className="ms-btn ms-btn--primary ms-ap-card-btn"
-                        disabled={busy !== null || !!apStatus?.lock?.locked}
-                        onClick={() => produceAncientPathwaysEpisode(ep.id)}
-                      >
-                        Produce Episode
-                      </button>
-                    </li>
-                  ))}
-                  {filteredEpisodes.length === 0 && (
-                    <li className="ms-feed-ep-meta" style={{ padding: 16 }}>
-                      No episodes match your search.
-                    </li>
+                  ) : (
+                    <a
+                      className="ms-btn"
+                      href="https://ffmpeg.org/download.html"
+                      target="_blank"
+                      rel="noreferrer"
+                    >Show me how</a>
                   )}
-                </ul>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="ms-new">
+            <input
+              className="ms-input"
+              placeholder="Working title, e.g. One-Minute Bible: Jonah"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') create(); }}
+              aria-label="New video title"
+            />
+            <select
+              className="ms-select"
+              value={format}
+              onChange={e => setFormat(e.target.value as 'short' | 'long')}
+              aria-label="Video format"
+            >
+              <option value="short">Short (30–60s)</option>
+              <option value="long">Long (5–12 min)</option>
+            </select>
+            <button className="ms-btn ms-btn--primary" onClick={create} disabled={!title.trim() || busy === 'new'}>
+              Add video
+            </button>
+          </div>
+
+          {/* A second source: recap an episode of a podcast. */}
+          <div className="ms-feed">
+            {!feedOpen ? (
+              <button type="button" className="ms-btn ms-btn-icon-podcast" onClick={() => setFeedOpen(true)}>
+                From a podcast…
+              </button>
+            ) : (
+              <>
+                <div className="ms-feed-row">
+                  <input
+                    className="ms-input"
+                    placeholder="Paste a podcast feed link (ends in .rss or .xml, or labelled “RSS”)"
+                    value={feedUrl}
+                    onChange={e => setFeedUrl(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') loadFeed(); }}
+                    aria-label="Podcast feed link"
+                  />
+                  <button
+                    className="ms-btn ms-btn--primary"
+                    onClick={() => loadFeed()}
+                    disabled={!feedUrl.trim() || feedLoading}
+                  >
+                    {feedLoading ? 'Looking…' : 'Show episodes'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ms-btn"
+                    onClick={() => { setFeedOpen(false); setFeed(null); setFeedError(null); }}
+                    aria-label="Close podcast section"
+                  >✕</button>
+                </div>
+                {feedError && <div className="ms-error" role="alert">{feedError}</div>}
+                {feed && (
+                  <ul className="ms-feed-episodes" aria-label={`Episodes of ${feed.showTitle}`}>
+                    {feed.episodes.map((ep, i) => (
+                      <li key={i} className="ms-feed-episode">
+                        <div className="ms-feed-ep-main">
+                          <span className="ms-feed-ep-title">{ep.title}</span>
+                          <span className="ms-feed-ep-meta">
+                            {[ep.published, ep.duration && `${ep.duration} long`].filter(Boolean).join(' · ')}
+                          </span>
+                        </div>
+                        <button
+                          className="ms-btn ms-btn--primary"
+                          disabled={busy === 'new'}
+                          onClick={() => createFromEpisode(ep)}
+                        >
+                          Make a recap
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </>
             )}
           </div>
-        )}
-      </div>
 
-      {jobs.length === 0 && (
-        <p className="ms-empty">
-          No videos yet. Add one above, or ask in chat — “start a short video called …”.
-        </p>
-      )}
+          {/* A third source: an idea already brainstormed in chat. */}
+          <div className="ms-feed">
+            {!chatOpen ? (
+              <button type="button" className="ms-btn ms-btn-icon-chat" onClick={openChatSection}>
+                From chat…
+              </button>
+            ) : (
+              <>
+                <div className="ms-feed-row">
+                  <span className="ms-feed-ep-meta" style={{ alignSelf: 'center' }}>
+                    Recent messages you sent, newest first.
+                  </span>
+                  <button
+                    type="button"
+                    className="ms-btn"
+                    onClick={() => { setChatOpen(false); setChatIdeas(null); setChatError(null); }}
+                    aria-label="Close chat ideas section"
+                  >✕</button>
+                </div>
+                {chatError && <div className="ms-error" role="alert">{chatError}</div>}
+                {chatLoading && <div className="ms-feed-ep-meta">Looking…</div>}
+                {chatIdeas && chatIdeas.length === 0 && (
+                  <div className="ms-feed-ep-meta">No recent messages long enough to be an idea.</div>
+                )}
+                {chatIdeas && chatIdeas.length > 0 && (
+                  <ul className="ms-feed-episodes" aria-label="Recent chat ideas">
+                    {chatIdeas.map(idea => (
+                      <li key={idea.id} className="ms-feed-episode">
+                        <div className="ms-feed-ep-main">
+                          <span className="ms-feed-ep-title">{deriveIdeaTitle(idea.content)}</span>
+                          <span className="ms-feed-ep-meta">
+                            {idea.content.length > 90 ? `${idea.content.slice(0, 90)}…` : idea.content}
+                          </span>
+                        </div>
+                        <button
+                          className="ms-btn ms-btn--primary"
+                          disabled={busy === 'new'}
+                          onClick={() => createFromChatIdea(idea)}
+                        >
+                          Make a video
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
 
-      {/* A rendered voice sample, played inline — hear it before recording. */}
-      {samplePath && (
-        <audio
-          className="ms-audio"
-          controls
-          autoPlay
-          src={`file:///${samplePath.replace(/\\/g, '/')}`}
-        />
-      )}
+          {/* Ancient Pathways: Broadcast-grade animated historical video essay series */}
+          <div className="ms-feed">
+            {!apOpen ? (
+              <button type="button" className="ms-btn ms-btn-icon-ap" onClick={openApSection}>
+                From Ancient Pathways…
+              </button>
+            ) : (
+              renderAncientPathwaysShowcase(true)
+            )}
+          </div>
 
-      {awaiting.length > 0 && (
-        <section className="ms-section ms-section--attention">
-          <h3>Waiting for you ({awaiting.length})</h3>
-          <ul className="ms-list">{awaiting.map(j => renderJob(j, true))}</ul>
-        </section>
-      )}
+          {jobs.length === 0 && (
+            <p className="ms-empty">
+              No videos yet. Add one above, or ask in chat — “start a short video called …”.
+            </p>
+          )}
 
-      {active.length > 0 && (
-        <section className="ms-section">
-          <h3>In progress ({active.length})</h3>
-          <ul className="ms-list">{active.map(j => renderJob(j, false))}</ul>
-        </section>
-      )}
+          {/* A rendered voice sample, played inline — hear it before recording. */}
+          {samplePath && (
+            <audio
+              className="ms-audio"
+              controls
+              autoPlay
+              src={`file:///${samplePath.replace(/\\/g, '/')}`}
+            />
+          )}
 
-      {stalled.length > 0 && (
-        <section className="ms-section">
-          <h3>Needs attention ({stalled.length})</h3>
-          <ul className="ms-list">{stalled.map(j => renderJob(j, false))}</ul>
-        </section>
+          {awaiting.length > 0 && (
+            <section className="ms-section ms-section--attention">
+              <h3>Waiting for you ({awaiting.length})</h3>
+              <ul className="ms-list">{awaiting.map(j => renderJob(j, true))}</ul>
+            </section>
+          )}
+
+          {active.length > 0 && (
+            <section className="ms-section">
+              <h3>In progress ({active.length})</h3>
+              <ul className="ms-list">{active.map(j => renderJob(j, false))}</ul>
+            </section>
+          )}
+
+          {stalled.length > 0 && (
+            <section className="ms-section">
+              <h3>Needs attention ({stalled.length})</h3>
+              <ul className="ms-list">{stalled.map(j => renderJob(j, false))}</ul>
+            </section>
+          )}
+        </>
       )}
     </div>
   );

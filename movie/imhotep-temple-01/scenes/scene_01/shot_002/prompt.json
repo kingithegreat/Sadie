@@ -1,0 +1,15 @@
+{
+  "kind": "video",
+  "prompt": "Medium tracking shot of Imhotep in white linen robes walking between massive hypostyle hall columns carved with hieroglyphs",
+  "width": 1024,
+  "height": 576,
+  "durationSec": 8,
+  "characterRefs": [
+    "../../Ancient Pathways/workspace/branding/characters/imhotep/turnaround/front.png"
+  ],
+  "shotId": "shot_002",
+  "shotDir": "C:\\Users\\adenk\\Desktop\\homebot\\movie\\imhotep-temple-01\\scenes\\scene_01\\shot_002",
+  "freeOnly": true,
+  "allowWatermark": false,
+  "allowDeferred": false
+}

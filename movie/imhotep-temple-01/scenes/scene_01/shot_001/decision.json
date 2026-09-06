@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-09-05T12:19:45.226Z",
+  "shotId": "shot_001",
+  "sceneId": "scene_01",
+  "chosen": "ancient-pathways",
+  "freeOnly": true,
+  "summary": "ancient-pathways (ready, $0.00) \u2014 1 fallback(s), 3 rejected",
+  "rejected": [
+    {
+      "providerId": "pollinations",
+      "reason": "1 character reference(s) supplied, provider accepts none"
+    },
+    {
+      "providerId": "imagen-3",
+      "reason": "GEMINI_API_KEY not set"
+    },
+    {
+      "providerId": "local-sd15",
+      "reason": "local SD WebUI not reachable at http://127.0.0.1:7860"
+    }
+  ]
+}

@@ -64,6 +64,7 @@ import { narrateClipToolDefs, narrateClipToolHandlers } from './narrate-clip';
 import { browserControlToolDefs, browserControlToolHandlers } from './browser-control';
 import { characterSpriteToolDefs, characterSpriteToolHandlers } from './character-sprites';
 import { movieToolDefs, movieToolHandlers } from './media-movie';
+import { videoToolDefs, videoToolHandlers } from './media-video';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -1151,6 +1152,12 @@ export function initializeTools(force = false): void {
   // Register autonomous movie engine production orchestrator
   for (const def of movieToolDefs) {
     const handler = movieToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register video editing tools (FFmpeg-based trimming/splicing)
+  for (const def of videoToolDefs) {
+    const handler = videoToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

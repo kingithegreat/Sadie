@@ -910,6 +910,28 @@ export interface ElectronAPI {
   }>;
   runAutomation?: (data: { id: string }) => Promise<{ success: boolean; result?: string; error?: string }>;
   testN8nConnection?: (data: { baseUrl?: string; apiKey?: string }) => Promise<{ reachable: boolean; authenticated: boolean | null; error?: string }>;
+
+  // Video Editing (FFmpeg-based trim & splice)
+  mediaTrimClip?: (args: { videoPath: string; startSec: number; durationSec: number }) => Promise<{
+    success: boolean;
+    result?: {
+      path: string;
+      originalPath: string;
+      originalSize: number;
+      trimmedSize: number;
+    };
+    error?: string;
+  }>;
+  mediaSpliceVideo?: (args: { clips: string[]; outputPath: string }) => Promise<{
+    success: boolean;
+    result?: {
+      path: string;
+      clipCount: number;
+      originalTotalSize: number;
+      outputSize: number;
+    };
+    error?: string;
+  }>;
 }
 
 // ── Quiz Types ──────────────────────────────────────────────────────────────

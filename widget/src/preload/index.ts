@@ -91,7 +91,9 @@ const ALLOWED_CHANNELS = {
   PERMISSION_RESPONSE: 'homebot:permission-response',
   GET_ENV: 'homebot:get-env',
   GET_CONFIG_PATH: 'homebot:get-config-path',
-  GET_GENERATED_IMAGE: 'homebot:get-generated-image'
+  GET_GENERATED_IMAGE: 'homebot:get-generated-image',
+  MEDIA_TRIM_CLIP: 'homebot:media:trim-clip',
+  MEDIA_SPLICE_VIDEO: 'homebot:media:splice-video'
 };
 
 // Listen for router logs forwarded from main so tests and Playwright traces
@@ -929,6 +931,12 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:save-quiz-progress', progress),
   loadQuizProgress: async () =>
     ipcRenderer.invoke('homebot:load-quiz-progress'),
+
+  // Video Editing (FFmpeg-based trim & splice)
+  mediaTrimClip: async (args: { videoPath: string; startSec: number; durationSec: number }) =>
+    ipcRenderer.invoke(ALLOWED_CHANNELS.MEDIA_TRIM_CLIP, args),
+  mediaSpliceVideo: async (args: { clips: string[]; outputPath: string }) =>
+    ipcRenderer.invoke(ALLOWED_CHANNELS.MEDIA_SPLICE_VIDEO, args),
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.
