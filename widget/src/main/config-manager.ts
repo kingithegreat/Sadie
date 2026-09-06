@@ -353,6 +353,8 @@ export const DEFAULT_SETTINGS: Settings = {
     media_measure_mouth_anchors: true,
     media_render: true,
     media_produce_movie: true,
+    media_trim_clip: true,
+    media_splice_video: true,
     // Destructive and irreversible, so it also carries requiresConfirmation.
     media_delete_job: false,
     media_setup_research: false,

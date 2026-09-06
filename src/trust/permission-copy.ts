@@ -146,6 +146,8 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   media_write_script: { label: 'Write a video script', detail: 'Research a video and write its narration using your configured model.' },
   media_render: { label: 'Render a video', detail: 'Combine the narration, captions and a background into a video file on your machine. Nothing is uploaded.' },
   media_produce_movie: { label: 'Produce a movie project', detail: 'Run the Generation Router to generate character-consistent shots using free providers (Ancient Pathways 2D, Colab T4, Pollinations, Imagen 3, Local SD 1.5). Writes output inside the project directory.' },
+  media_trim_clip: { label: 'Trim a video clip', detail: 'Extract a time range from a video file inside your user folder. Writes the trimmed copy beside the source without re-encoding.' },
+  media_splice_video: { label: 'Splice video clips', detail: 'Join multiple video files in sequence into a single file inside your user folder using stream copy.' },
   media_delete_job: { label: 'Delete a video and its files', detail: 'Permanently removes a Media Studio job and everything it produced — narration, captions, images and the rendered video. Cannot be undone.' },
   media_create_job: { label: 'Start a video', detail: 'Add a new video to the Media Studio. Nothing is published.' },
   media_list_jobs: { label: 'List your videos', detail: 'See videos in progress and the stage each has reached.' },
