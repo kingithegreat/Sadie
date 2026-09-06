@@ -12962,3 +12962,240 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-size: 0.84rem;
   color: var(--text-secondary);
 }
+
+/* ==========================================================================
+   PRO NLE MANUAL TIMELINE EDITING STYLES
+   ========================================================================== */
+.ms-track-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.ms-track-ctrl-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.12s ease;
+}
+
+.ms-track-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.ms-track-ctrl-btn.muted {
+  background: rgba(255, 133, 27, 0.2);
+  border-color: #ff9800;
+  color: #ff9800;
+}
+
+.ms-track-ctrl-btn.locked {
+  background: rgba(255, 59, 48, 0.2);
+  border-color: #ff3b30;
+  color: #ff3b30;
+}
+
+.ms-track-ctrl-btn.hidden-layer {
+  background: rgba(120, 120, 120, 0.25);
+  border-color: #888;
+  color: #888;
+}
+
+.ms-track-lane.is-hidden .ms-track-content {
+  opacity: 0.3;
+  filter: grayscale(1);
+  pointer-events: none;
+}
+
+.ms-track-lane.is-locked .ms-track-content {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.01),
+    rgba(255, 255, 255, 0.01) 8px,
+    rgba(0, 0, 0, 0.15) 8px,
+    rgba(0, 0, 0, 0.15) 16px
+  );
+}
+
+/* In / Out Selection Shading on Ruler */
+.ms-in-out-shading {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 240, 255, 0.15);
+  border-left: 2px solid #00f0ff;
+  border-right: 2px solid #00f0ff;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ms-in-marker-flag,
+.ms-out-marker-flag {
+  position: absolute;
+  top: 2px;
+  font-size: 0.6rem;
+  font-weight: bold;
+  background: #00f0ff;
+  color: #000;
+  padding: 0 3px;
+  border-radius: 2px;
+  font-family: monospace;
+}
+
+.ms-in-marker-flag {
+  left: 0;
+}
+
+.ms-out-marker-flag {
+  right: 0;
+}
+
+/* Razor Cut Marker */
+.ms-clip-cut-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ffcc00;
+  box-shadow: 0 0 6px #ffcc00;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* Inspector Tabs */
+.ms-nle-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.ms-nle-tab {
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-nle-tab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ms-nle-tab.active {
+  color: #00e5ff;
+  background: rgba(0, 240, 255, 0.1);
+  border-color: rgba(0, 240, 255, 0.3);
+}
+
+.ms-nle-tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-nle-field-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-nle-field-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ms-nle-field-val {
+  font-size: 0.76rem;
+  font-family: monospace;
+  color: #fff;
+}
+
+.ms-nle-btn-group {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.ms-nle-pill-btn {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.ms-nle-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.ms-nle-pill-btn.active {
+  background: rgba(0, 240, 255, 0.18);
+  border-color: #00f0ff;
+  color: #00f0ff;
+}
+
+.ms-nle-slider {
+  flex: 1;
+  accent-color: #00e5ff;
+}
+
+/* Hotkey Footer Bar */
+.ms-nle-hotkey-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.ms-hotkey-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ms-hotkey-item kbd {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: monospace;
+  font-size: 0.65rem;
+  color: #fff;
+  margin-right: 3px;
+}
+

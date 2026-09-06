@@ -122,6 +122,21 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineLoop, setTimelineLoop] = useState<boolean>(true);
   const [timelineZoom, setTimelineZoom] = useState<number>(1);
+  const [clipCuts, setClipCuts] = useState<number[]>([]);
+  const [selectedClipIndex, setSelectedClipIndex] = useState<number | null>(0);
+  const [inPoint, setInPoint] = useState<number | null>(null);
+  const [outPoint, setOutPoint] = useState<number | null>(null);
+  const [snappingEnabled, setSnappingEnabled] = useState<boolean>(true);
+  const [trackMuted, setTrackMuted] = useState<Record<string, boolean>>({ V1: false, A1: false, A2: false, A3: false, T1: false });
+  const [trackLocked, setTrackLocked] = useState<Record<string, boolean>>({ V1: false, A1: false, A2: false, A3: false, T1: false });
+  const [trackHidden, setTrackHidden] = useState<Record<string, boolean>>({ V1: false, A1: false, A2: false, A3: false, T1: false });
+  const [inspectorTab, setInspectorTab] = useState<'properties' | 'transitions' | 'audio' | 'export'>('properties');
+  const [clipSpeed, setClipSpeed] = useState<number>(1.0);
+  const [clipFraming, setClipFraming] = useState<'WIDE' | 'MED' | 'CU' | 'EXTREME CU'>('WIDE');
+  const [selectedTransition, setSelectedTransition] = useState<'none' | 'cross_dissolve' | 'fade_black' | 'whip_pan' | 'glitch'>('none');
+  const [colorGradeLut, setColorGradeLut] = useState<'rec709' | 'warm_nile' | 'teal_orange' | 'nocturne'>('rec709');
+  const [bgmDuckingLevel, setBgmDuckingLevel] = useState<number>(-18);
+  const [voiceGain, setVoiceGain] = useState<number>(100);
 
   // Blender Viewport & Camera Stage State
   const [stageAspectRatio, setStageAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
@@ -724,22 +739,6 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     currentSelectedJob?.scenePaths?.length ? currentSelectedJob.scenePaths.length * 5 : 30
   );
 
-  useEffect(() => {
-    if (!timelinePlaying) return;
-    const interval = setInterval(() => {
-      setTimelineTime(t => {
-        const next = t + 0.1;
-        if (next >= activeDuration) {
-          if (timelineLoop) return 0;
-          setTimelinePlaying(false);
-          return activeDuration;
-        }
-        return next;
-      });
-    }, 100);
-    return () => clearInterval(interval);
-  }, [timelinePlaying, timelineLoop, activeDuration]);
-
   const formatTimecode = (sec: number) => {
     const safeSec = Math.max(0, sec || 0);
     const m = Math.floor(safeSec / 60);
@@ -747,6 +746,90 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     const f = Math.floor((safeSec % 1) * 30);
     return `00:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`;
   };
+
+  useEffect(() => {
+    if (!timelinePlaying) return;
+    const interval = setInterval(() => {
+      setTimelineTime(t => {
+        const next = t + 0.1;
+        const maxBound = outPoint !== null && outPoint > (inPoint ?? 0) ? outPoint : activeDuration;
+        const minBound = inPoint !== null && inPoint < maxBound ? inPoint : 0;
+        if (next >= maxBound) {
+          if (timelineLoop) return minBound;
+          setTimelinePlaying(false);
+          return maxBound;
+        }
+        return next;
+      });
+    }, 100);
+    return () => clearInterval(interval);
+  }, [timelinePlaying, timelineLoop, activeDuration, inPoint, outPoint]);
+
+  // Pro NLE Keyboard Shortcuts
+  useEffect(() => {
+    if (activeWorkspace !== 'timeline') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setTimelinePlaying(p => !p);
+      } else if (e.key === 'i' || e.key === 'I') {
+        setInPoint(timelineTime);
+        setDone(`In-point marked at ${formatTimecode(timelineTime)}`);
+      } else if (e.key === 'o' || e.key === 'O') {
+        setOutPoint(timelineTime);
+        setDone(`Out-point marked at ${formatTimecode(timelineTime)}`);
+      } else if (e.key === 'x' || e.key === 'X') {
+        setInPoint(null);
+        setOutPoint(null);
+        setDone('In/Out selection cleared');
+      } else if (e.key === 's' || e.key === 'S') {
+        if (trackLocked.V1) {
+          setError('Track V1 is locked. Unlock to split.');
+        } else {
+          setClipCuts(cuts => {
+            const t = Math.round(timelineTime * 10) / 10;
+            if (!cuts.includes(t) && t > 0.1 && t < activeDuration - 0.1) {
+              return [...cuts, t].sort((a, b) => a - b);
+            }
+            return cuts;
+          });
+          setDone(`Split cut marker added at ${formatTimecode(timelineTime)}`);
+        }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (trackLocked.V1) {
+          setError('Track V1 is locked.');
+        } else {
+          setClipCuts(cuts => {
+            if (cuts.length === 0) return cuts;
+            let closestIdx = 0;
+            let minDiff = Math.abs(cuts[0] - timelineTime);
+            for (let i = 1; i < cuts.length; i++) {
+              const diff = Math.abs(cuts[i] - timelineTime);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIdx = i;
+              }
+            }
+            const removed = cuts[closestIdx];
+            const next = cuts.filter((_, i) => i !== closestIdx);
+            setDone(`Ripple deleted split at ${formatTimecode(removed)}`);
+            return next;
+          });
+        }
+      } else if (e.key === 'ArrowLeft') {
+        setTimelineTime(t => Math.max(0, t - 1));
+      } else if (e.key === 'ArrowRight') {
+        setTimelineTime(t => Math.min(activeDuration, t + 1));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeWorkspace, timelineTime, activeDuration, trackLocked.V1]);
 
   const renderJob = (j: MediaJob, showApproval: boolean) => (
     <li
@@ -1117,9 +1200,22 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     const duration = activeDuration;
     const playheadPercent = duration > 0 ? (timelineTime / duration) * 100 : 0;
 
+    const validCuts = clipCuts.filter(c => c > 0.1 && c < duration - 0.1);
+    const cutBoundaries = [0, ...validCuts, duration];
+
     const handleTrim = async () => {
+      setError(null);
+      if (trackLocked.V1) {
+        setError('Track V1 is locked. Unlock to split.');
+        return;
+      }
+      const cutTime = Math.round(timelineTime * 10) / 10;
+      if (cutTime > 0.1 && cutTime < duration - 0.1) {
+        setClipCuts(cuts => cuts.includes(cutTime) ? cuts : [...cuts, cutTime].sort((a, b) => a - b));
+      }
+
       if (!job?.renderPath) {
-        setError('No rendered video available for trimming.');
+        setDone(`Split marker added at ${formatTimecode(timelineTime)}. Segment ready for grading.`);
         return;
       }
       setBusy('trim');
@@ -1144,8 +1240,95 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     };
 
     const handleRippleDelete = async () => {
+      setError(null);
+      if (trackLocked.V1) {
+        setError('Track V1 is locked.');
+        return;
+      }
+      if (clipCuts.length > 0) {
+        let closestIdx = 0;
+        let minDiff = Math.abs(clipCuts[0] - timelineTime);
+        for (let i = 1; i < clipCuts.length; i++) {
+          const diff = Math.abs(clipCuts[i] - timelineTime);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestIdx = i;
+          }
+        }
+        const removed = clipCuts[closestIdx];
+        setClipCuts(cuts => cuts.filter((_, i) => i !== closestIdx));
+        setDone(`Ripple removed clip cut at ${formatTimecode(removed)}`);
+        return;
+      }
       setDone('Ripple delete simulation — would remove clip at ' + formatTimecode(timelineTime));
     };
+
+    const handleExportSelection = async () => {
+      setError(null);
+      const startSec = inPoint !== null ? inPoint : 0;
+      const endSec = outPoint !== null ? outPoint : duration;
+      const rangeSec = Math.max(0.5, Math.abs(endSec - startSec));
+      const minSec = Math.min(startSec, endSec);
+
+      if (!job?.renderPath) {
+        setDone(`Selection [${formatTimecode(minSec)} - ${formatTimecode(minSec + rangeSec)}] (${rangeSec.toFixed(1)}s) queued for export.`);
+        return;
+      }
+
+      setBusy('export-selection');
+      setBusyLabel(`Exporting selection [${formatTimecode(minSec)} - ${formatTimecode(minSec + rangeSec)}]...`);
+      try {
+        const res = await api()?.mediaTrimClip?.({
+          videoPath: job.renderPath,
+          startSec: minSec,
+          durationSec: rangeSec,
+        });
+        if (res?.ok) {
+          setDone(`Exported selection saved to: ${path.basename((res.result as any)?.path || 'selection.mp4')}`);
+        } else {
+          setError(res?.error || 'Selection export failed.');
+        }
+      } catch (e: any) {
+        setError(e?.message || 'Selection export failed.');
+      } finally {
+        setBusy(null);
+        setBusyLabel('');
+      }
+    };
+
+    const renderTrackControls = (trackId: string, isAudio: boolean) => (
+      <div className="ms-track-controls" aria-label={`Track ${trackId} controls`}>
+        <button
+          type="button"
+          className={`ms-track-ctrl-btn ${trackHidden[trackId] ? 'hidden-layer' : ''}`}
+          title={trackHidden[trackId] ? `Show track ${trackId}` : `Hide track ${trackId}`}
+          aria-label={trackHidden[trackId] ? `Show track ${trackId}` : `Hide track ${trackId}`}
+          onClick={() => setTrackHidden(prev => ({ ...prev, [trackId]: !prev[trackId] }))}
+        >
+          {trackHidden[trackId] ? '🚫' : '👁️'}
+        </button>
+        {isAudio && (
+          <button
+            type="button"
+            className={`ms-track-ctrl-btn ${trackMuted[trackId] ? 'muted' : ''}`}
+            title={trackMuted[trackId] ? `Unmute track ${trackId}` : `Mute track ${trackId}`}
+            aria-label={trackMuted[trackId] ? `Unmute track ${trackId}` : `Mute track ${trackId}`}
+            onClick={() => setTrackMuted(prev => ({ ...prev, [trackId]: !prev[trackId] }))}
+          >
+            {trackMuted[trackId] ? '🔇' : '🔊'}
+          </button>
+        )}
+        <button
+          type="button"
+          className={`ms-track-ctrl-btn ${trackLocked[trackId] ? 'locked' : ''}`}
+          title={trackLocked[trackId] ? `Unlock track ${trackId}` : `Lock track ${trackId}`}
+          aria-label={trackLocked[trackId] ? `Unlock track ${trackId}` : `Lock track ${trackId}`}
+          onClick={() => setTrackLocked(prev => ({ ...prev, [trackId]: !prev[trackId] }))}
+        >
+          {trackLocked[trackId] ? '🔒' : '🔓'}
+        </button>
+      </div>
+    );
 
     return (
       <div className="ms-timeline-workspace">
@@ -1168,6 +1351,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
               onChange={e => {
                 setSelectedJobId(e.target.value);
                 setTimelineTime(0);
+                setClipCuts([]);
+                setInPoint(null);
+                setOutPoint(null);
               }}
             >
               {jobs.map(j => (
@@ -1181,7 +1367,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             <button
               type="button"
               className="ms-dcc-tool-btn"
-              title="Split clip at playhead"
+              title="Split clip at playhead (S)"
               onClick={handleTrim}
             >
               ✂️ Split
@@ -1189,10 +1375,54 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             <button
               type="button"
               className="ms-dcc-tool-btn"
-              title="Ripple delete clip at playhead"
+              title="Ripple delete clip at playhead (Del)"
               onClick={handleRippleDelete}
             >
               🗑️ Ripple
+            </button>
+            <button
+              type="button"
+              className={`ms-dcc-tool-btn ${inPoint !== null ? 'active' : ''}`}
+              title="Mark In-point (I)"
+              onClick={() => {
+                setInPoint(timelineTime);
+                setDone(`In-point marked at ${formatTimecode(timelineTime)}`);
+              }}
+            >
+              [I] In
+            </button>
+            <button
+              type="button"
+              className={`ms-dcc-tool-btn ${outPoint !== null ? 'active' : ''}`}
+              title="Mark Out-point (O)"
+              onClick={() => {
+                setOutPoint(timelineTime);
+                setDone(`Out-point marked at ${formatTimecode(timelineTime)}`);
+              }}
+            >
+              [O] Out
+            </button>
+            {(inPoint !== null || outPoint !== null) && (
+              <button
+                type="button"
+                className="ms-dcc-tool-btn"
+                title="Clear In/Out Selection (X)"
+                onClick={() => {
+                  setInPoint(null);
+                  setOutPoint(null);
+                  setDone('In/Out selection cleared');
+                }}
+              >
+                ✕ Range
+              </button>
+            )}
+            <button
+              type="button"
+              className="ms-dcc-tool-btn"
+              title="Export selected In-Out range"
+              onClick={handleExportSelection}
+            >
+              ⚡ Export Range
             </button>
             <div className="ms-timeline-zoom-group">
               <span className="ms-zoom-icon">🔍</span>
@@ -1208,12 +1438,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
                 onClick={() => setTimelineZoom(z => Math.min(3, z + 0.5))}
               >+</button>
             </div>
-            <div className="ms-timeline-vu-meter" title="Master Audio Output (-18dB Ducking Active)">
+            <div className="ms-timeline-vu-meter" title={`Master Audio Output (${bgmDuckingLevel}dB Ducking Active)`}>
               <div className="ms-vu-channel">
-                <div className={`ms-vu-bar ${timelinePlaying ? 'playing' : ''}`} />
+                <div className={`ms-vu-bar ${timelinePlaying && !trackMuted.A1 && !trackMuted.A2 ? 'playing' : ''}`} />
               </div>
               <div className="ms-vu-channel">
-                <div className={`ms-vu-bar ${timelinePlaying ? 'playing' : ''}`} />
+                <div className={`ms-vu-bar ${timelinePlaying && !trackMuted.A1 && !trackMuted.A2 ? 'playing' : ''}`} />
               </div>
               <span className="ms-vu-label">VU</span>
             </div>
@@ -1265,41 +1495,235 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
           <div className="ms-timeline-inspector">
             <h4>Inspector · {job ? job.title : 'No Project Selected'}</h4>
-            <div className="ms-inspector-meta">
-              <span className="ms-inspector-tag">Format: {job?.format ?? 'short'}</span>
-              <span className="ms-inspector-tag">State: {job ? label(job.state) : 'none'}</span>
-              <span className="ms-inspector-tag">Engine: {job?.narratedWith || 'Edge / Kokoro'}</span>
-              <span className="ms-inspector-tag">Cost: $0.00 Free Tier</span>
+            <div className="ms-nle-tabs" role="tablist" aria-label="Inspector Tabs">
+              <button
+                type="button"
+                className={`ms-nle-tab ${inspectorTab === 'properties' ? 'active' : ''}`}
+                onClick={() => setInspectorTab('properties')}
+                role="tab"
+                aria-selected={inspectorTab === 'properties'}
+              >
+                📋 Properties
+              </button>
+              <button
+                type="button"
+                className={`ms-nle-tab ${inspectorTab === 'transitions' ? 'active' : ''}`}
+                onClick={() => setInspectorTab('transitions')}
+                role="tab"
+                aria-selected={inspectorTab === 'transitions'}
+              >
+                🎨 Transitions &amp; FX
+              </button>
+              <button
+                type="button"
+                className={`ms-nle-tab ${inspectorTab === 'audio' ? 'active' : ''}`}
+                onClick={() => setInspectorTab('audio')}
+                role="tab"
+                aria-selected={inspectorTab === 'audio'}
+              >
+                🎙️ Audio &amp; Ducking
+              </button>
+              <button
+                type="button"
+                className={`ms-nle-tab ${inspectorTab === 'export' ? 'active' : ''}`}
+                onClick={() => setInspectorTab('export')}
+                role="tab"
+                aria-selected={inspectorTab === 'export'}
+              >
+                ⚡ Export Master
+              </button>
             </div>
-            {job && (
-              <div className="ms-inspector-actions">
-                {stageAction(job) && (
-                  <button
-                    className="ms-btn ms-btn--primary"
-                    style={{ width: '100%', marginBottom: 6 }}
-                    onClick={() => {
-                      const a = stageAction(job)!;
-                      run(job.id, () => api()?.mediaRun?.(job.id, a.action), a.label);
-                    }}
-                  >
-                    ⚡ {stageAction(job)!.label}
-                  </button>
-                )}
-                {job.state === 'awaiting_approval' && (
-                  <button
-                    className="ms-btn ms-btn--primary"
-                    style={{ width: '100%', marginBottom: 6 }}
-                    onClick={() => run(job.id, () => api()?.mediaAdvance?.(job.id, 'approved'), 'Approving')}
-                  >
-                    ✓ Approve Master Video
-                  </button>
+
+            {inspectorTab === 'properties' && (
+              <div className="ms-nle-tab-pane">
+                <div className="ms-inspector-meta">
+                  <span className="ms-inspector-tag">Format: {job?.format ?? 'short'}</span>
+                  <span className="ms-inspector-tag">State: {job ? label(job.state) : 'none'}</span>
+                  <span className="ms-inspector-tag">Engine: {job?.narratedWith || 'Edge / Kokoro'}</span>
+                  <span className="ms-inspector-tag">Cost: $0.00 Free Tier</span>
+                </div>
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Shot Framing:</span>
+                  <div className="ms-nle-btn-group">
+                    {(['WIDE', 'MED', 'CU', 'EXTREME CU'] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        className={`ms-nle-pill-btn ${clipFraming === f ? 'active' : ''}`}
+                        onClick={() => setClipFraming(f)}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Clip Speed:</span>
+                  <div className="ms-nle-btn-group">
+                    {[0.5, 1.0, 1.5, 2.0].map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`ms-nle-pill-btn ${clipSpeed === s ? 'active' : ''}`}
+                        onClick={() => setClipSpeed(s)}
+                      >
+                        {s.toFixed(1)}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Active In/Out:</span>
+                  <span className="ms-nle-field-val">
+                    {inPoint !== null ? formatTimecode(inPoint).slice(3) : '--:--:--'} → {outPoint !== null ? formatTimecode(outPoint).slice(3) : '--:--:--'}
+                  </span>
+                </div>
+                {job?.script && (
+                  <div className="ms-inspector-script">
+                    <span className="ms-inspector-script-header">Narrator Script:</span>
+                    <p>{job.script}</p>
+                  </div>
                 )}
               </div>
             )}
-            {job?.script && (
-              <div className="ms-inspector-script">
-                <span className="ms-inspector-script-header">Narrator Script:</span>
-                <p>{job.script}</p>
+
+            {inspectorTab === 'transitions' && (
+              <div className="ms-nle-tab-pane">
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Transition:</span>
+                  <div className="ms-nle-btn-group">
+                    {[
+                      { id: 'none', label: 'Cut (Hard)' },
+                      { id: 'cross_dissolve', label: 'Cross Dissolve' },
+                      { id: 'fade_black', label: 'Dip to Black' },
+                      { id: 'whip_pan', label: 'Whip Pan' },
+                      { id: 'glitch', label: 'Glitch FX' },
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className={`ms-nle-pill-btn ${selectedTransition === t.id ? 'active' : ''}`}
+                        onClick={() => setSelectedTransition(t.id as any)}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Color Grade LUT:</span>
+                  <div className="ms-nle-btn-group">
+                    {[
+                      { id: 'rec709', label: 'Rec.709 Natural' },
+                      { id: 'warm_nile', label: 'Warm Nile' },
+                      { id: 'teal_orange', label: 'Teal & Orange' },
+                      { id: 'nocturne', label: 'Nocturne' },
+                    ].map(l => (
+                      <button
+                        key={l.id}
+                        type="button"
+                        className={`ms-nle-pill-btn ${colorGradeLut === l.id ? 'active' : ''}`}
+                        onClick={() => setColorGradeLut(l.id as any)}
+                      >
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Viewport Canvas:</span>
+                  <div className="ms-nle-btn-group">
+                    {(['16:9', '9:16', '1:1'] as const).map(asp => (
+                      <button
+                        key={asp}
+                        type="button"
+                        className={`ms-nle-pill-btn ${stageAspectRatio === asp ? 'active' : ''}`}
+                        onClick={() => setStageAspectRatio(asp)}
+                      >
+                        {asp}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {inspectorTab === 'audio' && (
+              <div className="ms-nle-tab-pane">
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Voice Gain:</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    value={voiceGain}
+                    onChange={e => setVoiceGain(Number(e.target.value))}
+                    className="ms-nle-slider"
+                  />
+                  <span className="ms-nle-field-val">{voiceGain}%</span>
+                </div>
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">BGM Ducking:</span>
+                  <input
+                    type="range"
+                    min="-30"
+                    max="-6"
+                    value={bgmDuckingLevel}
+                    onChange={e => setBgmDuckingLevel(Number(e.target.value))}
+                    className="ms-nle-slider"
+                  />
+                  <span className="ms-nle-field-val">{bgmDuckingLevel}dB</span>
+                </div>
+                <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '4px 0' }}>
+                  Auto-attenuates BGM bed volume by {Math.abs(bgmDuckingLevel)}dB whenever narration or dialogue is detected.
+                </p>
+                <div className="ms-nle-field-row">
+                  <span className="ms-nle-field-label">Foley Ambience:</span>
+                  <span className="ms-nle-field-val" style={{ color: '#00e5ff' }}>Desert Wind + Papyrus + Steps</span>
+                </div>
+              </div>
+            )}
+
+            {inspectorTab === 'export' && (
+              <div className="ms-nle-tab-pane">
+                <div className="ms-inspector-meta">
+                  <span className="ms-inspector-tag">Codec: H.264 / AAC</span>
+                  <span className="ms-inspector-tag">Res: 1080p FHD (1920x1080)</span>
+                  <span className="ms-inspector-tag">FPS: 30.00 SMPTE</span>
+                </div>
+                <button
+                  type="button"
+                  className="ms-btn ms-btn--primary"
+                  style={{ width: '100%', marginBottom: 6 }}
+                  onClick={handleExportSelection}
+                >
+                  ⚡ Export Selection ({inPoint !== null && outPoint !== null ? `${Math.abs(outPoint - inPoint).toFixed(1)}s` : 'Full Range'})
+                </button>
+                {job && (
+                  <div className="ms-inspector-actions">
+                    {stageAction(job) && (
+                      <button
+                        className="ms-btn ms-btn--primary"
+                        style={{ width: '100%', marginBottom: 6 }}
+                        onClick={() => {
+                          const a = stageAction(job)!;
+                          run(job.id, () => api()?.mediaRun?.(job.id, a.action), a.label);
+                        }}
+                      >
+                        ⚡ {stageAction(job)!.label}
+                      </button>
+                    )}
+                    {job.state === 'awaiting_approval' && (
+                      <button
+                        className="ms-btn ms-btn--primary"
+                        style={{ width: '100%', marginBottom: 6 }}
+                        onClick={() => run(job.id, () => api()?.mediaAdvance?.(job.id, 'approved'), 'Approving')}
+                      >
+                        ✓ Approve Master Video
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1318,7 +1742,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
               type="button"
               className="ms-transport-btn"
               title="Jump to Start (⏮)"
-              onClick={() => setTimelineTime(0)}
+              onClick={() => setTimelineTime(inPoint !== null ? inPoint : 0)}
             >⏮</button>
             <button
               type="button"
@@ -1377,6 +1801,19 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
                 );
               })}
             </div>
+            {/* In / Out Selection Range Overlay */}
+            {inPoint !== null && outPoint !== null && (
+              <div
+                className="ms-in-out-shading"
+                style={{
+                  left: `${(Math.min(inPoint, outPoint) / duration) * 100}%`,
+                  width: `${(Math.abs(outPoint - inPoint) / duration) * 100}%`,
+                }}
+              >
+                <span className="ms-in-marker-flag">IN {formatTimecode(Math.min(inPoint, outPoint)).slice(3)}</span>
+                <span className="ms-out-marker-flag">OUT {formatTimecode(Math.max(inPoint, outPoint)).slice(3)}</span>
+              </div>
+            )}
             {/* Playhead Needle */}
             <div className="ms-playhead" style={{ left: `${playheadPercent}%` }}>
               <div className="ms-playhead-head" />
@@ -1387,14 +1824,47 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           {/* Multi-Track Stack */}
           <div className="ms-tracks-stack">
             {/* Track 1: 🎥 Video / Scene Shots Track */}
-            <div className="ms-track-lane ms-track--video">
+            <div className={`ms-track-lane ms-track--video ${trackHidden.V1 ? 'is-hidden' : ''} ${trackLocked.V1 ? 'is-locked' : ''}`}>
               <div className="ms-track-header">
                 <span className="ms-track-id">V1</span>
                 <span className="ms-track-icon">🎥</span>
                 <span className="ms-track-title">Shots</span>
+                {renderTrackControls('V1', false)}
               </div>
               <div className="ms-track-content">
-                {job?.scenePaths?.length ? (
+                {validCuts.length > 0 ? (
+                  <>
+                    {cutBoundaries.slice(0, -1).map((start, i) => {
+                      const end = cutBoundaries[i + 1];
+                      const segDuration = end - start;
+                      const widthPct = (segDuration / duration) * 100;
+                      const isFocus = timelineTime >= start && timelineTime < end;
+                      return (
+                        <div
+                          key={`cut-seg-${i}`}
+                          className={`ms-track-clip ms-clip--shot ${isFocus ? 'active' : ''} ${selectedClipIndex === i ? 'selected' : ''}`}
+                          style={{ width: `${widthPct}%` }}
+                          onClick={() => {
+                            setSelectedClipIndex(i);
+                            setTimelineTime(start);
+                          }}
+                          title={`Segment ${i + 1}: ${formatTimecode(start)} to ${formatTimecode(end)} (${segDuration.toFixed(1)}s)`}
+                        >
+                          <span className="ms-clip-label">Clip {i + 1} ({segDuration.toFixed(1)}s)</span>
+                          <span className="ms-clip-framing">[{clipFraming}]</span>
+                        </div>
+                      );
+                    })}
+                    {validCuts.map((c, i) => (
+                      <div
+                        key={`cut-marker-${i}`}
+                        className="ms-clip-cut-marker"
+                        style={{ left: `${(c / duration) * 100}%` }}
+                        title={`Cut at ${formatTimecode(c)}`}
+                      />
+                    ))}
+                  </>
+                ) : job?.scenePaths?.length ? (
                   job.scenePaths.map((p, i) => {
                     const shotWidth = (100 / job.scenePaths!.length);
                     const isFocus = Math.floor((timelineTime / duration) * job.scenePaths!.length) === i;
@@ -1430,11 +1900,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             </div>
 
             {/* Track 2: 🎙️ Dialogue Track */}
-            <div className="ms-track-lane ms-track--dialogue">
+            <div className={`ms-track-lane ms-track--dialogue ${trackHidden.A1 ? 'is-hidden' : ''} ${trackLocked.A1 ? 'is-locked' : ''}`}>
               <div className="ms-track-header">
                 <span className="ms-track-id">A1</span>
                 <span className="ms-track-icon">🎙️</span>
                 <span className="ms-track-title">Voice</span>
+                {renderTrackControls('A1', true)}
               </div>
               <div className="ms-track-content">
                 <div className="ms-track-clip ms-clip--audio" style={{ width: '92%' }}>
@@ -1461,26 +1932,28 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             </div>
 
             {/* Track 3: 🎵 BGM Music Ducking Track */}
-            <div className="ms-track-lane ms-track--music">
+            <div className={`ms-track-lane ms-track--music ${trackHidden.A2 ? 'is-hidden' : ''} ${trackLocked.A2 ? 'is-locked' : ''}`}>
               <div className="ms-track-header">
                 <span className="ms-track-id">A2</span>
                 <span className="ms-track-icon">🎵</span>
                 <span className="ms-track-title">BGM</span>
+                {renderTrackControls('A2', true)}
               </div>
               <div className="ms-track-content">
                 <div className="ms-track-clip ms-clip--music" style={{ width: '100%' }}>
-                  <span className="ms-clip-label">Ancient Temple Ambience (Auto-Ducked -18dB)</span>
-                  <div className="ms-ducking-curve" title="Ducking curve drops volume during narration" />
+                  <span className="ms-clip-label">Ancient Temple Ambience (Auto-Ducked {bgmDuckingLevel}dB)</span>
+                  <div className="ms-ducking-curve" title={`Ducking curve drops volume during narration by ${Math.abs(bgmDuckingLevel)}dB`} />
                 </div>
               </div>
             </div>
 
             {/* Track 4: 🔊 Foley / SFX Track */}
-            <div className="ms-track-lane ms-track--sfx">
+            <div className={`ms-track-lane ms-track--sfx ${trackHidden.A3 ? 'is-hidden' : ''} ${trackLocked.A3 ? 'is-locked' : ''}`}>
               <div className="ms-track-header">
                 <span className="ms-track-id">A3</span>
                 <span className="ms-track-icon">🔊</span>
                 <span className="ms-track-title">Foley</span>
+                {renderTrackControls('A3', true)}
               </div>
               <div className="ms-track-content">
                 <div className="ms-cue-pin" style={{ left: '12%' }} title="Cue: Desert Wind Ambience">
@@ -1496,11 +1969,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             </div>
 
             {/* Track 5: 💬 Kinetic Subtitles Track */}
-            <div className="ms-track-lane ms-track--subs">
+            <div className={`ms-track-lane ms-track--subs ${trackHidden.T1 ? 'is-hidden' : ''} ${trackLocked.T1 ? 'is-locked' : ''}`}>
               <div className="ms-track-header">
                 <span className="ms-track-id">T1</span>
                 <span className="ms-track-icon">💬</span>
                 <span className="ms-track-title">Subtitles</span>
+                {renderTrackControls('T1', false)}
               </div>
               <div className="ms-track-content">
                 <div className="ms-track-clip ms-clip--sub" style={{ left: '5%', width: '40%' }}>
@@ -1511,6 +1985,29 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Pro NLE Hotkey Bar Footer */}
+        <div className="ms-nle-hotkey-bar">
+          <div className="ms-hotkey-group">
+            <span className="ms-hotkey-item"><kbd>Space</kbd> Play/Pause</span>
+            <span className="ms-hotkey-item"><kbd>S</kbd> Split Razor</span>
+            <span className="ms-hotkey-item"><kbd>I</kbd> Mark In</span>
+            <span className="ms-hotkey-item"><kbd>O</kbd> Mark Out</span>
+            <span className="ms-hotkey-item"><kbd>X</kbd> Clear In/Out</span>
+            <span className="ms-hotkey-item"><kbd>Del</kbd> Ripple Delete</span>
+            <span className="ms-hotkey-item"><kbd>←</kbd> <kbd>→</kbd> Step 1s</span>
+          </div>
+          <div className="ms-hotkey-group">
+            <button
+              type="button"
+              className={`ms-nle-pill-btn ${snappingEnabled ? 'active' : ''}`}
+              onClick={() => setSnappingEnabled(s => !s)}
+            >
+              {snappingEnabled ? '🧲 Snap: ON' : '🧲 Snap: OFF'}
+            </button>
+            <span style={{ color: 'var(--text-muted)' }}>SMPTE 30fps NLE</span>
           </div>
         </div>
       </div>
@@ -2307,6 +2804,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
       {confirmDialog}
 
+      {error && <div className="ms-error" role="alert">{error}</div>}
+      {done && <div className="ms-done" role="status">{done}</div>}
+
       {activeWorkspace === 'timeline' && renderTimelineWorkspace()}
       {activeWorkspace === 'stage' && renderStageWorkspace()}
       {activeWorkspace === 'router' && renderMovieRouterWorkspace()}
@@ -2393,9 +2893,6 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
               Nothing is published without your approval. Videos waiting on you appear first.
             </p>
           </header>
-
-          {error && <div className="ms-error" role="alert">{error}</div>}
-          {done && <div className="ms-done" role="status">{done}</div>}
 
           {/* The one dependency the app does not ship. Shown before anything fails,
               so the wall is hit at "here is the button" rather than at the end of a
