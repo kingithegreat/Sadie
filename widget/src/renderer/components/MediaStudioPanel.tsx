@@ -333,6 +333,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         openApSection();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navContext]);
 
   /**
