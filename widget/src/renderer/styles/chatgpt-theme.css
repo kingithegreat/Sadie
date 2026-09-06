@@ -11479,3 +11479,1282 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 
 
+
+
+/* ==========================================================================
+   BLENDER DCC + CAPCUT NLE HYBRID STUDIO SUITE
+   Obsidian graphite aesthetic, multi-track magnetic timeline, time ruler,
+   draggable playhead, audio waveforms, safe margins & camera viewport overlays
+   ========================================================================== */
+
+/* DCC Bar & Branding */
+.ms-dcc-bar {
+  background: linear-gradient(180deg, #181b22 0%, #12141a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  margin-bottom: 8px;
+}
+
+.ms-dcc-header {
+  margin-bottom: 8px;
+}
+
+.ms-dcc-branding {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ms-dcc-branding h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 0%, #a0a6b5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ms-dcc-pill-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ms-dcc-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ms-chip--orange {
+  background: rgba(255, 133, 27, 0.15);
+  color: #ff9800;
+  border: 1px solid rgba(255, 133, 27, 0.35);
+  box-shadow: 0 0 8px rgba(255, 133, 27, 0.2);
+}
+
+.ms-chip--cyan {
+  background: rgba(0, 240, 255, 0.12);
+  color: #00e5ff;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
+}
+
+.ms-chip--green {
+  background: rgba(0, 230, 118, 0.12);
+  color: #00e676;
+  border: 1px solid rgba(0, 230, 118, 0.3);
+}
+
+.ms-chip--purple {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+/* Studio Workspace Top Ribbon */
+.ms-workspace-ribbon {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ms-workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary, #9aa0a6);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  position: relative;
+  user-select: none;
+}
+
+.ms-workspace-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.ms-workspace-tab.active {
+  background: linear-gradient(135deg, rgba(255, 133, 27, 0.16) 0%, rgba(0, 240, 255, 0.14) 100%);
+  color: #fff;
+  border-color: rgba(0, 240, 255, 0.55);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.22), inset 0 0 8px rgba(255, 133, 27, 0.1);
+}
+
+.ms-tab-icon {
+  font-size: 1rem;
+}
+
+.ms-tab-name {
+  letter-spacing: -0.01em;
+}
+
+.ms-tab-badge,
+.ms-tab-pill {
+  padding: 2px 7px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1d5db;
+  letter-spacing: 0.02em;
+}
+
+.ms-workspace-tab.active .ms-tab-pill {
+  background: rgba(0, 240, 255, 0.25);
+  color: #00f0ff;
+}
+
+/* Job Card Quick DCC Buttons */
+.ms-job-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ms-job-quick-dcc {
+  display: flex;
+  gap: 6px;
+}
+
+.ms-btn--dcc-pill {
+  padding: 3px 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  color: #00e5ff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-btn--dcc-pill:hover {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   CAPCUT MULTI-TRACK SEQUENCER WORKSPACE
+   ========================================================================== */
+.ms-timeline-workspace {
+  background: #0d0f15;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.ms-timeline-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ms-timeline-project-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-timeline-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.ms-timeline-select {
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  border-radius: 6px;
+  background: #141720;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.ms-timeline-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ms-dcc-tool-btn {
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-dcc-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.ms-timeline-zoom-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #141720;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.ms-zoom-icon {
+  font-size: 0.75rem;
+}
+
+.ms-zoom-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.ms-zoom-val {
+  font-size: 0.74rem;
+  font-family: monospace;
+  color: #00f0ff;
+  min-width: 32px;
+  text-align: center;
+}
+
+/* Master VU Meter */
+.ms-timeline-vu-meter {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #08090d;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.ms-vu-channel {
+  width: 4px;
+  height: 18px;
+  background: #1a1e27;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.ms-vu-bar {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 20%;
+  background: linear-gradient(180deg, #ff3b30 0%, #ffcc00 40%, #00e676 100%);
+  transition: height 0.1s ease;
+}
+
+.ms-vu-bar.playing {
+  animation: msVuBounce 0.4s infinite alternate;
+}
+
+@keyframes msVuBounce {
+  0% { height: 25%; }
+  50% { height: 75%; }
+  100% { height: 90%; }
+}
+
+.ms-vu-label {
+  font-size: 0.62rem;
+  font-weight: bold;
+  color: var(--text-secondary);
+  margin-left: 2px;
+}
+
+/* Mini Stage & Inspector Grid */
+.ms-timeline-stage-row {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.4fr) 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 860px) {
+  .ms-timeline-stage-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ms-timeline-monitor {
+  background: #050608;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.9);
+}
+
+.ms-monitor-screen {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #0a0c12;
+}
+
+.ms-monitor-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ms-monitor-slides {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ms-monitor-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.ms-monitor-placeholder {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.ms-monitor-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 20px;
+}
+
+.ms-monitor-empty-icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.ms-monitor-timecode-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #00f0ff;
+  letter-spacing: 0.05em;
+}
+
+/* Timeline Inspector Box */
+.ms-timeline-inspector {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-timeline-inspector h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.ms-inspector-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ms-inspector-tag {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #d1d5db;
+}
+
+.ms-inspector-script {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.ms-inspector-script-header {
+  font-weight: 600;
+  color: #e0e0e0;
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* Transport Ribbon */
+.ms-timeline-transport {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #141720;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ms-transport-cluster {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ms-transport-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-transport-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.ms-transport-btn.active {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: #00f0ff;
+  color: #00f0ff;
+}
+
+.ms-transport-play {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00e5ff 0%, #0077ff 100%);
+  color: #000;
+  font-size: 1.05rem;
+  font-weight: bold;
+  border: none;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
+}
+
+.ms-transport-play:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.7);
+}
+
+.ms-transport-timecode {
+  font-family: monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.06em;
+}
+
+.ms-timecode-curr {
+  color: #00f0ff;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+}
+
+.ms-timecode-div {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.ms-timecode-tot {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ms-transport-volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.ms-transport-vol-bar {
+  width: 50px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ms-vol-fill {
+  width: 100%;
+  height: 100%;
+  background: #00e676;
+}
+
+.ms-transport-vol-pct {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--text-secondary);
+}
+
+/* Sequencer Tracks Container */
+.ms-sequencer-container {
+  background: #080a0f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow-x: auto;
+  position: relative;
+  padding: 8px 0;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.6);
+}
+
+/* Calibrated SMPTE Ruler */
+.ms-timeline-ruler {
+  height: 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  position: relative;
+  cursor: pointer;
+  margin-left: 90px;
+  margin-right: 16px;
+}
+
+.ms-ruler-ticks {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.ms-ruler-tick {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.ms-tick-label {
+  font-family: monospace;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.45);
+  position: absolute;
+  top: 1px;
+  left: 2px;
+}
+
+.ms-tick-line {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Scrubber Playhead */
+.ms-playhead {
+  position: absolute;
+  top: -2px;
+  height: 320px;
+  width: 2px;
+  background: #ff3b30;
+  z-index: 20;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(255, 59, 48, 0.8);
+  transition: left 0.05s linear;
+}
+
+.ms-playhead-head {
+  position: absolute;
+  top: 0;
+  left: -6px;
+  width: 14px;
+  height: 14px;
+  background: #ff3b30;
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+}
+
+.ms-playhead-line {
+  width: 100%;
+  height: 100%;
+  background: #ff3b30;
+}
+
+/* Tracks Stack */
+.ms-tracks-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+}
+
+.ms-track-lane {
+  display: flex;
+  height: 52px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.015);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.ms-track-header {
+  width: 90px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.ms-track-id {
+  font-family: monospace;
+  font-size: 0.68rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.ms-track-icon {
+  font-size: 0.85rem;
+}
+
+.ms-track-title {
+  letter-spacing: -0.01em;
+}
+
+.ms-track-content {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+}
+
+/* Track Clips */
+.ms-track-clip {
+  height: 42px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-track-clip:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.ms-clip--shot {
+  background: linear-gradient(135deg, rgba(255, 133, 27, 0.25) 0%, rgba(200, 90, 10, 0.35) 100%);
+  border: 1px solid rgba(255, 133, 27, 0.45);
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.ms-clip--shot.active {
+  border-color: #00f0ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+}
+
+.ms-clip-thumb {
+  width: 36px;
+  height: 28px;
+  border-radius: 3px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.ms-clip-thumb-empty {
+  width: 36px;
+  height: 28px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+}
+
+.ms-clip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-clip-framing {
+  font-size: 0.65rem;
+  color: #ff9800;
+  font-family: monospace;
+}
+
+/* Audio Track Waveform */
+.ms-clip--audio {
+  background: linear-gradient(135deg, rgba(0, 230, 118, 0.18) 0%, rgba(0, 180, 216, 0.22) 100%);
+  border: 1px solid rgba(0, 230, 118, 0.4);
+  color: #fff;
+}
+
+.ms-clip-avatar {
+  font-size: 0.85rem;
+}
+
+.ms-clip-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  flex: 1;
+}
+
+.ms-wave-bar {
+  width: 2px;
+  background: #00e676;
+  border-radius: 1px;
+}
+
+/* Music Ducking Curve */
+.ms-clip--music {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.18) 0%, rgba(99, 102, 241, 0.22) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #e0e0e0;
+  font-size: 0.74rem;
+  position: relative;
+}
+
+.ms-ducking-curve {
+  position: absolute;
+  bottom: 4px;
+  left: 10%;
+  right: 10%;
+  height: 6px;
+  border-bottom: 2px dashed #ff9800;
+  border-radius: 4px;
+}
+
+/* SFX Cue Pin */
+.ms-cue-pin {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.68rem;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-cue-pin:hover {
+  background: rgba(255, 133, 27, 0.25);
+  border-color: #ff851b;
+  transform: translateY(-2px);
+}
+
+/* Subtitle Track Clip */
+.ms-clip--sub {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #00f0ff;
+  font-size: 0.72rem;
+  font-style: italic;
+}
+
+/* ==========================================================================
+   BLENDER CAMERA VIEWPORT & STAGE FRAMING WORKSPACE
+   ========================================================================== */
+.ms-stage-workspace {
+  background: #0b0d12;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ms-stage-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ms-stage-aspect-selector,
+.ms-stage-overlay-toggles {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ms-dcc-aspect-btn,
+.ms-dcc-toggle-btn {
+  padding: 5px 11px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-dcc-aspect-btn:hover,
+.ms-dcc-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ms-dcc-aspect-btn.active {
+  background: rgba(255, 133, 27, 0.18);
+  border-color: #ff851b;
+  color: #ff9800;
+  box-shadow: 0 0 10px rgba(255, 133, 27, 0.25);
+}
+
+.ms-dcc-toggle-btn.active {
+  background: rgba(0, 240, 255, 0.16);
+  border-color: #00f0ff;
+  color: #00f0ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+}
+
+/* Viewport Grid */
+.ms-stage-viewport-grid {
+  display: grid;
+  grid-template-columns: minmax(340px, 1.6fr) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 920px) {
+  .ms-stage-viewport-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ms-viewport-container {
+  background: #040507;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.9);
+  min-height: 340px;
+}
+
+.ms-viewport-screen {
+  position: relative;
+  background: #11141c;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ms-viewport-screen--landscape {
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+}
+
+.ms-viewport-screen--portrait {
+  width: 280px;
+  aspect-ratio: 9 / 16;
+}
+
+.ms-viewport-screen--square {
+  width: 380px;
+  aspect-ratio: 1 / 1;
+}
+
+.ms-viewport-content-video,
+.ms-viewport-content-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ms-viewport-fallback {
+  text-align: center;
+  padding: 30px;
+}
+
+.ms-viewport-rig-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.ms-rig-character {
+  font-size: 2.8rem;
+}
+
+.ms-rig-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ms-rig-sub {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+/* Guides Layer */
+.ms-viewport-guides-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ms-guide-action-safe {
+  position: absolute;
+  inset: 5%;
+  border: 1px dashed rgba(0, 240, 255, 0.45);
+}
+
+.ms-guide-title-safe {
+  position: absolute;
+  inset: 10%;
+  border: 1px dashed rgba(255, 152, 0, 0.5);
+}
+
+.ms-guide-tag {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.ms-tag--cyan { color: #00f0ff; }
+.ms-tag--amber { color: #ff9800; }
+
+.ms-guide-rule-thirds {
+  position: absolute;
+  inset: 0;
+}
+
+.ms-grid-line {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ms-line--v1 { left: 33.33%; top: 0; bottom: 0; width: 1px; }
+.ms-line--v2 { left: 66.66%; top: 0; bottom: 0; width: 1px; }
+.ms-line--h1 { top: 33.33%; left: 0; right: 0; height: 1px; }
+.ms-line--h2 { top: 66.66%; left: 0; right: 0; height: 1px; }
+
+.ms-power-point {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00f0ff;
+  box-shadow: 0 0 6px #00f0ff;
+  transform: translate(-50%, -50%);
+}
+
+.ms-pp1 { top: 33.33%; left: 33.33%; }
+.ms-pp2 { top: 33.33%; left: 66.66%; }
+.ms-pp3 { top: 66.66%; left: 33.33%; }
+.ms-pp4 { top: 66.66%; left: 66.66%; }
+
+.ms-guide-reticle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ms-reticle-cross-v {
+  position: absolute;
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.ms-reticle-cross-h {
+  position: absolute;
+  height: 1px;
+  width: 24px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.ms-reticle-circle {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.ms-viewport-hud {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 0.65rem;
+  font-family: monospace;
+  color: #fff;
+}
+
+.ms-hud--rec {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #00f0ff;
+}
+
+.ms-rec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff3b30;
+  box-shadow: 0 0 6px #ff3b30;
+  animation: msPulse 1.5s infinite;
+}
+
+@keyframes msPulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
+.ms-hud--cost {
+  color: #00e676;
+}
+
+/* Blender N-Panel Inspector */
+.ms-stage-inspector {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ms-stage-inspector-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ms-stage-param-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-param-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.ms-param-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ms-param-btn {
+  padding: 4px 9px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d1d5db;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-param-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.ms-param-btn.active {
+  background: rgba(255, 133, 27, 0.2);
+  border-color: #ff851b;
+  color: #ff9800;
+  box-shadow: 0 0 8px rgba(255, 133, 27, 0.25);
+}
+
+.ms-rig-telemetry-box {
+  background: #08090e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ms-telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.ms-telemetry-val {
+  font-family: monospace;
+  color: #00f0ff;
+}
+
+.ms-telemetry-pass {
+  font-family: monospace;
+  color: #00e676;
+  font-weight: bold;
+}
+
+/* ==========================================================================
+   MOVIE ROUTER WORKSPACE STYLES
+   ========================================================================== */
+.ms-router-workspace {
+  margin-top: 4px;
+}
+
+.ms-router-card {
+  background: #0e1118;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.ms-router-card h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ms-router-providers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ms-provider-badge {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.ms-provider-badge.active {
+  background: rgba(0, 240, 255, 0.05);
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.1);
+}
+
+.ms-badge-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ms-badge-meta {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
