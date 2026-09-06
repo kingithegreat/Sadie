@@ -583,12 +583,54 @@ export interface ElectronAPI {
     failed: number;
     error?: string;
   }>;
+  mediaAncientPathwaysShowrunner?: (options: {
+    prompt: string;
+    duration: number;
+    characters: string;
+    name: string;
+  }) => Promise<{
+    ok: boolean;
+    renderPath?: string;
+    error?: string;
+  }>;
   onMediaAncientPathwaysProgress?: (cb: (p: {
     jobId: string;
     episodeId: string;
     stage: string;
     note: string;
   }) => void) => () => void;
+
+  mediaMovieRun?: (options: {
+    projectDir: string;
+    freeOnly?: boolean;
+    allowDeferred?: boolean;
+    allowWatermark?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    report?: {
+      projectId: string;
+      totalShots: number;
+      completedShots: number;
+      deferredShots: number;
+      failedShots: number;
+      skippedShots: number;
+      results: Array<{
+        shotId: string;
+        sceneId: string;
+        status: string;
+        provider: string;
+        files?: string[];
+        ticket?: string;
+        error?: string;
+      }>;
+    };
+    error?: string;
+  }>;
+  mediaMovieListProjects?: () => Promise<{
+    ok: boolean;
+    projects?: Array<Record<string, unknown>>;
+    error?: string;
+  }>;
 
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;

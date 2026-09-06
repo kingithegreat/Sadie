@@ -777,11 +777,27 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:ancient-pathways-run', episodeId),
   mediaAncientPathwaysDoctor: async (episodeId: string) =>
     ipcRenderer.invoke('homebot:media:ancient-pathways-doctor', episodeId),
+  mediaAncientPathwaysShowrunner: async (options: {
+    prompt: string;
+    duration: number;
+    characters: string;
+    name: string;
+  }) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-showrunner', options),
   onMediaAncientPathwaysProgress: (cb: (p: any) => void) => {
     const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
     ipcRenderer.on('homebot:media:ancient-pathways-progress', listener);
     return () => ipcRenderer.removeListener('homebot:media:ancient-pathways-progress', listener);
   },
+  mediaMovieRun: async (options: {
+    projectDir: string;
+    freeOnly?: boolean;
+    allowDeferred?: boolean;
+    allowWatermark?: boolean;
+  }) =>
+    ipcRenderer.invoke('homebot:media:movie:run', options),
+  mediaMovieListProjects: async () =>
+    ipcRenderer.invoke('homebot:media:movie:list-projects'),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),

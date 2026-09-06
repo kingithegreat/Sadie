@@ -291,6 +291,69 @@ export interface DoctorCheckResult {
   failed: number;
 }
 
+export interface ReachabilityFinding {
+  symbol: string;
+  definedIn: string;
+  callers: number;
+  issue: string;
+}
+
+function scanReachability(apDir: string): ReachabilityFinding[] {
+  const findings: ReachabilityFinding[] = [];
+  const pyFiles: string[] = [];
+  const collect = (dir: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) {
+        if (entry !== 'node_modules' && entry !== '__pycache__' && entry !== '.git') {
+          collect(full);
+        }
+      } else if (entry.endsWith('.py')) {
+        pyFiles.push(full);
+      }
+    }
+  };
+
+  for (const sub of ['pipeline', 'scripts', 'src']) {
+    collect(path.join(apDir, sub));
+  }
+
+  if (pyFiles.length === 0) return findings;
+
+  for (const file of pyFiles) {
+    const content = fs.readFileSync(file, 'utf8');
+    for (const line of content.split('\n')) {
+      const defMatch = line.match(/^\s*def\s+(\w+)\s*\(/);
+      if (!defMatch) continue;
+      const fnName = defMatch[1];
+      if (fnName.startsWith('_')) continue;
+
+      let callers = 0;
+      for (const other of pyFiles) {
+        if (other === file) continue;
+        const otherContent = fs.readFileSync(other, 'utf8');
+        if (new RegExp(`\\b${fnName}\\s*\\(`).test(otherContent)) {
+          callers++;
+        }
+      }
+
+      if (callers === 0) {
+        findings.push({
+          symbol: fnName,
+          definedIn: path.relative(apDir, file),
+          callers: 0,
+          issue: `def ${fnName}() defined but called from no other module in pipeline/`,
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+export { scanReachability };
 export async function runDoctorChecks(episodeId: string, dir?: string): Promise<DoctorCheckResult> {
   const apDir = dir || resolveAncientPathwaysDir();
   if (!apDir || !fs.existsSync(apDir)) {
@@ -334,6 +397,17 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
           const name = match[3];
           const detail = match[4].trim();
           checks.push({ name, ok: isOk, detail, id: idNum } as any);
+        }
+      }
+
+      const reachability = scanReachability(apDir);
+      if (reachability.length > 0) {
+        for (const f of reachability) {
+          checks.push({
+            name: `reachability:${f.symbol}`,
+            ok: false,
+            detail: `${f.issue} (defined in ${f.definedIn}, ${f.callers} cross-module callers found)`,
+          });
         }
       }
 
@@ -474,6 +548,146 @@ export function runEpisodePipeline(options: RunEpisodeOptions): Promise<RunEpiso
       resolve({
         ok: true,
         renderPath: deliverable,
+        log: stdout,
+      });
+    });
+  });
+}
+
+export interface ShowrunnerOptions {
+  prompt: string;
+  duration: number;
+  characters: string;
+  name: string;
+  dir?: string;
+  onProgress?: (progress: { stage: string; note: string }) => void;
+}
+
+export interface ShowrunnerResult {
+  ok: boolean;
+  outputPath?: string;
+  durationSeconds?: number;
+  error?: string;
+  log?: string;
+}
+
+export function runShowrunner(options: ShowrunnerOptions): Promise<ShowrunnerResult> {
+  return new Promise((resolve) => {
+    const dir = options.dir || resolveAncientPathwaysDir();
+    if (!dir || !fs.existsSync(dir)) {
+      resolve({
+        ok: false,
+        error: 'Ancient Pathways directory not found. Please ensure it is installed at Desktop/Ancient Pathways.',
+      });
+      return;
+    }
+
+    const lock = checkRenderLock(dir);
+    if (lock.locked) {
+      resolve({
+        ok: false,
+        error: `Render in progress: ${lock.message}. Please wait for it to complete.`,
+      });
+      return;
+    }
+
+    const showrunner = path.join(dir, 'scripts', 'run_showrunner.py');
+    if (!fs.existsSync(showrunner)) {
+      resolve({
+        ok: false,
+        error: 'Showrunner script not found. Ensure your Ancient Pathways repo is up to date.',
+      });
+      return;
+    }
+
+    const args = [
+      showrunner,
+      '--prompt', options.prompt,
+      '--duration', String(options.duration),
+      '--characters', options.characters,
+      '--name', options.name,
+    ];
+
+    const child = spawn('python', args, {
+      cwd: dir,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUNBUFFERED: '1',
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      stdout += text;
+
+      const lines = text.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.length > 120) continue;
+
+        const stageMatch = trimmed.match(/\[(OK|--|\.\.|!!)\]\s+([a-z_]+)\s+([a-z]+)/i);
+        if (stageMatch) {
+          options.onProgress?.({
+            stage: stageMatch[2],
+            note: humanizeStage(stageMatch[2], stageMatch[3]),
+          });
+        } else {
+          options.onProgress?.({ stage: 'running', note: trimmed });
+        }
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      resolve({
+        ok: false,
+        error: `Failed to spawn Python: ${err.message}`,
+        log: stderr,
+      });
+    });
+
+    child.on('close', (code) => {
+      if (code === 2 || stdout.includes('REFUSING: another render holds workspace/render.lock')) {
+        resolve({
+          ok: false,
+          error: 'Render refused: Another process is currently rendering. Wait for it to finish and try again.',
+          log: stdout,
+        });
+        return;
+      }
+
+      if (code !== 0) {
+        const errExcerpt = stderr.trim().split('\n').slice(-4).join(' ') ||
+          stdout.trim().split('\n').slice(-4).join(' ');
+        resolve({
+          ok: false,
+          error: `Showrunner exited with code ${code}: ${errExcerpt || 'Check logs'}`,
+          log: `${stdout}\n${stderr}`,
+        });
+        return;
+      }
+
+      const outputPath = path.join(dir, 'workspace', 'productions', options.name, 'scene_01', 'scene_master_1080p.mp4');
+      if (!fs.existsSync(outputPath)) {
+        resolve({
+          ok: false,
+          error: `Showrunner succeeded, but no output was found at workspace/productions/${options.name}/scene_01/scene_master_1080p.mp4.`,
+          log: stdout,
+        });
+        return;
+      }
+
+      resolve({
+        ok: true,
+        outputPath,
         log: stdout,
       });
     });

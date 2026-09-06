@@ -15,6 +15,8 @@ This document describes the high-level architecture of HomeBot: how the major co
 7. [Theming and UI Architecture](#theming-and-ui-architecture)
 8. [Build and Packaging](#build-and-packaging)
 9. [Testing Architecture](#testing-architecture)
+10. [Media Studio & Movie Production Engine](#media-studio--movie-production-engine)
+11. [Telemetry and Consent](#telemetry-and-consent)
 
 ---
 
@@ -84,16 +86,21 @@ The renderer communicates with the main process exclusively through the preload 
 
 ### Application Modes
 
-The renderer supports six modes, switchable via the sidebar or keyboard shortcuts:
+The renderer supports eleven modes (`APP_MODES`), switchable via the sidebar, keyboard shortcuts, or programmatic assistant navigation (`navigate_to_mode`):
 
 | Mode | Shortcut | Component | Purpose |
 |---|---|---|---|
 | `chat` | Ctrl+1 | `App.tsx` (inline) | Main conversational interface |
-| `automation` | Ctrl+2 | `AutomationCenter.tsx` | Create and run reusable automations |
+| `automation` | Ctrl+2 | `AutomationCenter.tsx` | Create, schedule, and run reusable automations |
 | `image` | Ctrl+3 | `ImagePanel` | AI image generation via SD WebUI / ComfyUI / DALL-E 3 / Pollinations / Stable Horde |
 | `documents` | Ctrl+4 | `DocumentViewer.tsx` | Document viewer/editor with Add to RAG and Send to Chat |
-| `web` | — | `WebPanel` | Embedded web browser |
 | `quiz` | Ctrl+5 | `QuizPanel.tsx` | Interactive coding quiz |
+| `media` | — | `MediaStudioPanel.tsx` | Content Command Center: automated video rendering, podcast recaps, Ancient Pathways animation, and autonomous movie production |
+| `code` | — | `WorkspaceShell.tsx` | VS Code-style workspace: file explorer, editor, terminal, and changes viewer |
+| `browser` | — | `BrowserPanel.tsx` | Sandboxed web browser with assistant control tools |
+| `dashboard` | — | `DashboardPanel.tsx` | System overview, usage analytics, and quick status |
+| `feeds` | — | `FeedsPanel.tsx` | News and RSS feed aggregator and reader |
+| `connections` | — | `ConnectionsPanel.tsx` | External service integration hub (Notion, GitHub, Slack, etc.) |
 
 ### Preload Bridge (`widget/src/preload/index.ts`)
 
@@ -151,18 +158,26 @@ All tool modules are imported and merged in `widget/src/main/tools/index.ts`.
 
 ### Tool Categories
 
+HomeBot categorises its 137 tool handlers across domain-specific functional categories:
+
 | Category | Tools |
 |---|---|
-| `filesystem` | `read_file`, `write_file`, `list_directory`, `delete_file`, `move_file`, `search_files`, `create_directory`, `create_docx`, `create_spreadsheet`, `create_pdf` |
-| `system` | `get_system_info`, `list_processes`, `get_process_info`, `kill_process`, `get_clipboard`, `set_clipboard`, `open_url`, `launch_app`, `screenshot`, `get_current_time` |
+| `media` | `media_create_job`, `media_list_jobs`, `media_advance_job`, `media_approve_job`, `media_reject_job`, `media_write_script`, `media_narrate`, `media_setup_research`, `media_render`, `media_list_music`, `media_delete_job`, `media_narrate_clip`, `media_generate_sprites`, `media_measure_mouth_anchors`, `media_produce_movie` |
+| `crm` | `crm_create_company`, `crm_update_company`, `crm_search_companies`, `crm_create_contact`, `crm_update_contact`, `crm_search_contacts`, `crm_create_deal`, `crm_update_deal`, `crm_advance_deal`, `crm_search_deals`, `crm_log_activity`, `crm_add_note`, `crm_create_task`, `crm_complete_task`, `crm_find_stale_deals`, `crm_daily_brief`, `crm_match_email`, `crm_get_stages`, `crm_rename_stage`, `crm_audit_log`, `crm_export` |
+| `filesystem` | `read_file`, `write_file`, `edit_file`, `list_directory`, `delete_file`, `move_file`, `copy_file`, `search_files`, `create_directory`, `create_docx`, `create_spreadsheet`, `create_pdf` |
+| `system` | `get_system_info`, `list_processes`, `get_process_info`, `kill_process`, `get_clipboard`, `set_clipboard`, `open_url`, `launch_app`, `screenshot`, `get_current_time`, `navigate_to_mode` |
 | `web` | `web_search`, `fetch_url`, `get_weather`, `get_news`, `list_news_feeds`, `browser_action`, `image_generate` |
-| `vision` | `vision_describe`, `vision_query` |
+| `browser` | `navigate_browser`, `read_browser_page`, `list_browser_targets`, `click_browser_target`, `type_in_browser` |
+| `vision` | `vision_describe`, `vision_query`, `look_at_browser` |
 | `rag` | `rag_index`, `rag_query`, `rag_list`, `rag_clear` |
 | `memory` | `remember`, `recall`, `forget`, `list_memories` |
 | `planning` | `plan_task`, `get_plans` |
 | `communication` | `email_send`, `email_draft`, `email_list`, `calendar_events` |
 | `clipboard` | `clipboard_read`, `clipboard_write` |
 | `voice` | `tts_speak`, `tts_stop`, `transcribe_audio` |
+| `automation` | `create_automation`, `list_automations`, `update_automation`, `delete_automation`, `run_automation`, `import_n8n_workflow` |
+| `skills` | `list_skills`, `use_skill` |
+| `document` | `parse_document`, `get_document_content`, `list_documents`, `search_document` |
 | `utility` | `run_terminal_command`, `get_terminal_history`, `grep_code`, `project_tree`, `analyze_file`, `run_code`, `git_status`, `git_log`, `git_diff`, `git_branches`, `git_commit`, `api_request`, `generate_sports_report`, `nba_query` |
 
 ### Execution Flow
@@ -488,6 +503,91 @@ Run E2E tests:
 cd widget
 npm run e2e
 ```
+
+---
+
+## Media Studio & Movie Production Engine
+
+HomeBot features a comprehensive, multi-modal content generation and video production pipeline designed for automated storytelling, character-consistent animation, and cinematic movie production.
+
+### 1. Media Studio Job State Machine (`widget/src/main/media-studio.ts`)
+
+The Media Studio operates on a deterministic, pure state machine managing content projects through a 6-stage lifecycle:
+
+```
+[draft] ──> [scripting] ──> [narrating] ──> [rendering] ──> [review] ──> [published]
+   │             │               │              │               │
+   └─────────────┴───────────────┴──────────────┴───────────────┴──> [failed]
+                                                                │
+                                            (reject with note) ─┘
+```
+
+- **States**:
+  - `draft`: Initial idea or topic seeded from chat, RSS feeds, or manual user input.
+  - `scripting`: LLM synthesises structured narrative segments, visual cues, and presenter narration.
+  - `narrating`: TTS engine renders spoken audio segments per scene or bullet point.
+  - `rendering`: Video composition, image framing, pan/zoom motion, and audio mixing.
+  - `review`: **Human-in-the-loop approval gate**. Renders cannot publish autonomously. Users must approve (`media_approve_job`) or reject with revision notes (`media_reject_job`).
+  - `published`: Final video delivered to disk with export metadata.
+- **Store & Persistence (`media.ts`)**: Atomic disk persistence in `userData/media-jobs.json` with corrupt-file automatic backups.
+- **Chat Reachability**: All jobs can be created, progressed, reviewed, and published directly through chat tools (`media_create_job`, `media_list_jobs`, `media_advance_job`, `media_approve_job`, `media_reject_job`, `media_delete_job`).
+
+### 2. Automated Video Rendering & Audio Ducking (`widget/src/main/media-render.ts`)
+
+For slideshows, summaries, and podcast recaps, the render engine automates:
+- **Motion Graphics**: Ken Burns pan/zoom camera motion applied dynamically to static scene imagery.
+- **Audio Ducking**: Automatically mixes royalty-free background music tracks with spoken voiceover, ducking the music volume down during active speech intervals and restoring it between phrases.
+- **Subtitle Generation**: Burns synchronized captions directly into output MP4 files.
+
+### 3. Bring-Your-Own Video Narration (`widget/src/main/tools/narrate-clip.ts`)
+
+Enables users to provide an existing video clip and generate AI-driven sports, gaming, or instructional commentary:
+- **Tool**: `media_narrate_clip`.
+- **Vision Analysis**: Inspects keyframes via Gemini 1.5 Flash / Pro (`scripts/analyze_clip.py`) to extract context, actions, and timestamps.
+- **Voice Synthesis**: Generates voiceover via Edge TTS or Kokoro TTS.
+- **Fast Lossless Muxing**: Combines new narration with original video using ffmpeg stream copy (`-c:v copy`), preserving full video fidelity without re-encoding delays.
+
+### 4. Local 2D Animation & Ancient Pathways Showrunner (`widget/src/main/ancient-pathways.ts`)
+
+HomeBot integrates natively with the local **Ancient Pathways** episodic animation showrunner:
+- **Production Stepper**: 4-step UI pipeline: `Story` → `Voices` → `Animation` → `1080p Video` with celebratory video playback.
+- **Autonomous Sprite Sheet Pipeline (`media_generate_sprites`)**:
+  - Prompts Imagen 3 or Pollinations for 8-panel character model sheets (angles, idle poses, expressions).
+  - Isolates backgrounds via Python image processing and transparent alpha masking.
+  - Slices panels into structured sprite atlases with `manifest.json`.
+- **Mouth Anchor Viseme Calibration (`media_measure_mouth_anchors`)**: Bridges to `learn_from_anchors.py` to calculate precise mouth anchor offsets for character lip-sync.
+- **Quality Check Doctor**: IPC channel `homebot:media:ancient-pathways-doctor` audits pipeline health (shot scale gates, background isolation, script syntax).
+
+### 5. Free-First Movie Production Engine (`widget/src/main/movie/`)
+
+For multi-scene cinematic storytelling, HomeBot implements a free-first screenplay production router:
+
+```
+Screenplay / Project
+       │
+       ▼
+MovieProjectRunner
+       │
+       ▼
+GenerationRouter (Free-First Provider Cascade)
+       │
+       ├─► [1] Local Parallax Animation (Ancient Pathways Showrunner)  [$0.00, offline]
+       ├─► [2] Colab SDXL IP-Adapter Worker (T4 GPU notebook)         [$0.00, cloud GPU]
+       ├─► [3] Local SD 1.5 (Direct GPU on-device)                    [$0.00, local GPU]
+       ├─► [4] Pollinations.ai (Free zero-auth fallback)              [$0.00, cloud API]
+       └─► [5] Imagen 3 (Google AI Studio fallback)                   [Paid/quota API]
+```
+
+- **`GenerationRouter` (`widget/src/main/movie/router.ts`)**:
+  - Evaluates per-shot screenplay requirements: character continuity, scene motion, visual style, and available compute.
+  - Implements **Free-First Principle**: Prioritizes local GPU compute and zero-cost cloud workers before ever falling back to metered cloud APIs.
+  - Provides dual character-consistent generation at $0.00 cost:
+    1. **Immediate offline 1080p 2D animation** via Ancient Pathways Showrunner.
+    2. **Deferred cloud GPU character stills** via Colab T4 SDXL IP-Adapter worker (`notebooks/colab_sdxl_ipadapter.ipynb`).
+- **`MovieProjectRunner` (`widget/src/main/movie/project-runner.ts`)**:
+  - Manages project execution, crash resumption, and shot state tracking (`project.json`).
+  - Records per-shot routing decisions in `decision.json` and project audit logs in `logs/router-decisions.jsonl`.
+- **UI & Tool Surface**: Drivable in chat via `media_produce_movie` or via the interactive movie runner UI in `MediaStudioPanel.tsx`.
 
 ---
 
