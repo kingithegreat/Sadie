@@ -42,6 +42,7 @@ desktop.ini
 # IDE files
 .vscode/
 .idea/
+.kilo/
 *.swp
 *.swo
 *~

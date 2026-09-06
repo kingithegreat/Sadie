@@ -1,0 +1,15 @@
+{
+  "kind": "image",
+  "prompt": "Establishing wide shot of Karnak sandstone temple pylons at golden hour with long shadows across the desert courtyard",
+  "width": 1024,
+  "height": 576,
+  "durationSec": 8,
+  "characterRefs": [
+    "../../Ancient Pathways/workspace/branding/characters/imhotep/turnaround/front.png"
+  ],
+  "shotId": "shot_001",
+  "shotDir": "C:\\Users\\adenk\\Desktop\\homebot\\movie\\imhotep-temple-01\\scenes\\scene_01\\shot_001",
+  "freeOnly": true,
+  "allowWatermark": false,
+  "allowDeferred": false
+}

@@ -8,7 +8,7 @@
  */
 
 import { fetchFeedXml, parsePodcastFeed } from './podcast-feed';
-import { FEED_CATALOGUE } from './tools/news';
+import { findFeed, listFeeds } from './feed-library';
 import { dedupeFeedItems, parseFeedDate, sortByRecency, type FeedItem } from '../shared/feed-search';
 
 export interface FeedSource {
@@ -36,8 +36,11 @@ export function resolveSource(idOrUrl: string): { name: string; url: string } | 
   const raw = (idOrUrl || '').trim();
   if (!raw) return null;
 
-  const known = FEED_CATALOGUE[raw.toLowerCase()];
-  if (known) return { name: raw.toLowerCase(), url: known.url };
+  // Through the library, so a key the user added resolves here too. Hidden
+  // built-ins resolve as well: hiding one takes it out of the picker, it does
+  // not make a saved reading list that names it silently stop working.
+  const known = findFeed(raw);
+  if (known) return { name: known.key, url: known.url };
 
   // Only http(s). A file:// or similar here would be a way to read local files
   // through a text box that looks like it only takes web addresses.
@@ -50,9 +53,13 @@ export function resolveSource(idOrUrl: string): { name: string; url: string } | 
   }
 }
 
-/** Every source the catalogue offers, for the panel's default view. */
-export function catalogueSources(): Array<{ id: string; description: string }> {
-  return Object.entries(FEED_CATALOGUE).map(([id, v]) => ({ id, description: v.description }));
+/** Every source the panel should offer: built-ins not hidden, plus the user's. */
+export function catalogueSources(): Array<{ id: string; description: string; builtin: boolean }> {
+  return listFeeds().map((f) => ({
+    id: f.key,
+    description: f.description,
+    builtin: f.builtin
+  }));
 }
 
 /**

@@ -1,4 +1,4 @@
-﻿/* HomeBot â€” Premium Dark Desktop AI Theme */
+/* HomeBot â€” Premium Dark Desktop AI Theme */
 /* stylelint-disable property-no-unknown, property-no-vendor-prefix -- Electron (Chromium 130) target; oklch/color-mix/anchor/scroll-timeline are all supported */
 
 :root {
@@ -11560,6 +11560,20 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   border: 1px solid rgba(168, 85, 247, 0.35);
 }
 
+.ms-chip--amber {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+}
+
+.ms-chip--teal {
+  background: rgba(20, 184, 166, 0.14);
+  color: #2dd4bf;
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  box-shadow: 0 0 8px rgba(20, 184, 166, 0.2);
+}
+
 /* Studio Workspace Top Ribbon */
 .ms-workspace-ribbon {
   display: flex;
@@ -12703,58 +12717,1257 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 }
 
 /* ==========================================================================
-   MOVIE ROUTER WORKSPACE STYLES
+   DIRECTOR STUDIO HUB & WORKSPACE STYLES
    ========================================================================== */
-.ms-router-workspace {
-  margin-top: 4px;
+.ms-director-hub {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.ms-router-card {
+.ms-hub-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.ms-hub-card:hover {
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.08) 0%, rgba(255, 133, 27, 0.06) 100%);
+  border-color: rgba(0, 240, 255, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 16px rgba(0, 240, 255, 0.15);
+}
+
+.ms-hub-icon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+
+.ms-hub-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ms-hub-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.01em;
+  margin-bottom: 2px;
+}
+
+.ms-hub-desc {
+  font-size: 0.74rem;
+  color: var(--text-secondary, #9aa0a6);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-hub-badge {
+  padding: 3px 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 8px;
+  background: rgba(0, 240, 255, 0.12);
+  color: #00e5ff;
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   MOVIE ROUTER & ANCIENT PATHWAYS WORKSPACE STYLES
+   ========================================================================== */
+.ms-workspace-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ms-router-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ms-router-title-group h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #ffffff 0%, #a0a6b5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ms-router-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.84rem;
+  color: var(--text-secondary, #9aa0a6);
+  max-width: 720px;
+  line-height: 1.4;
+}
+
+.ms-btn-back {
+  font-size: 0.82rem;
+  padding: 6px 14px;
+  border-radius: 8px;
+}
+
+.ms-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.ms-provider-card {
+  background: #0e1118;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.ms-provider-card:hover {
+  border-color: rgba(0, 240, 255, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 12px rgba(0, 240, 255, 0.1);
+}
+
+.ms-provider-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #ff9800;
+  letter-spacing: 0.04em;
+}
+
+.ms-provider-icon {
+  font-size: 1.5rem;
+}
+
+.ms-provider-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ms-provider-desc {
+  font-size: 0.76rem;
+  color: var(--text-secondary, #9aa0a6);
+  line-height: 1.35;
+  flex: 1;
+}
+
+.ms-provider-cost {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #00e676;
+  font-family: monospace;
+}
+
+.ms-movie-runner-deck {
   background: #0e1118;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 18px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.ms-router-card h3 {
+.ms-runner-deck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ms-runner-deck-header h4 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 700;
   color: #fff;
 }
 
-.ms-router-providers-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-  margin-top: 14px;
+.ms-movie-projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.ms-provider-badge {
+.ms-movie-project-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 10px 14px;
+}
+
+.ms-project-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ms-project-icon {
+  font-size: 1.2rem;
+}
+
+.ms-project-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.ms-project-path {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.ms-runner-status {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+}
+
+.ms-runner--busy {
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  color: #00e5ff;
+}
+
+.ms-runner--ok {
+  background: rgba(0, 230, 118, 0.08);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+  color: #00e676;
+}
+
+.ms-runner--error {
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  color: #ff5252;
+}
+
+.ms-runner-empty {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   PRO NLE MANUAL TIMELINE EDITING STYLES
+   ========================================================================== */
+.ms-track-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.ms-track-ctrl-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.12s ease;
+}
+
+.ms-track-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.ms-track-ctrl-btn.muted {
+  background: rgba(255, 133, 27, 0.2);
+  border-color: #ff9800;
+  color: #ff9800;
+}
+
+.ms-track-ctrl-btn.locked {
+  background: rgba(255, 59, 48, 0.2);
+  border-color: #ff3b30;
+  color: #ff3b30;
+}
+
+.ms-track-ctrl-btn.hidden-layer {
+  background: rgba(120, 120, 120, 0.25);
+  border-color: #888;
+  color: #888;
+}
+
+.ms-track-lane.is-hidden .ms-track-content {
+  opacity: 0.3;
+  filter: grayscale(1);
+  pointer-events: none;
+}
+
+.ms-track-lane.is-locked .ms-track-content {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.01),
+    rgba(255, 255, 255, 0.01) 8px,
+    rgba(0, 0, 0, 0.15) 8px,
+    rgba(0, 0, 0, 0.15) 16px
+  );
+}
+
+/* In / Out Selection Shading on Ruler */
+.ms-in-out-shading {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 240, 255, 0.15);
+  border-left: 2px solid #00f0ff;
+  border-right: 2px solid #00f0ff;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ms-in-marker-flag,
+.ms-out-marker-flag {
+  position: absolute;
+  top: 2px;
+  font-size: 0.6rem;
+  font-weight: bold;
+  background: #00f0ff;
+  color: #000;
+  padding: 0 3px;
+  border-radius: 2px;
+  font-family: monospace;
+}
+
+.ms-in-marker-flag {
+  left: 0;
+}
+
+.ms-out-marker-flag {
+  right: 0;
+}
+
+/* Razor Cut Marker */
+.ms-clip-cut-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ffcc00;
+  box-shadow: 0 0 6px #ffcc00;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* Inspector Tabs */
+.ms-nle-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.ms-nle-tab {
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-nle-tab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ms-nle-tab.active {
+  color: #00e5ff;
+  background: rgba(0, 240, 255, 0.1);
+  border-color: rgba(0, 240, 255, 0.3);
+}
+
+.ms-nle-tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-nle-field-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-nle-field-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ms-nle-field-val {
+  font-size: 0.76rem;
+  font-family: monospace;
+  color: #fff;
+}
+
+.ms-nle-btn-group {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.ms-nle-pill-btn {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.ms-nle-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.ms-nle-pill-btn.active {
+  background: rgba(0, 240, 255, 0.18);
+  border-color: #00f0ff;
+  color: #00f0ff;
+}
+
+.ms-nle-slider {
+  flex: 1;
+  accent-color: #00e5ff;
+}
+
+/* Hotkey Footer Bar */
+.ms-nle-hotkey-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.ms-hotkey-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ms-hotkey-item kbd {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: monospace;
+  font-size: 0.65rem;
+  color: #fff;
+  margin-right: 3px;
+}
+
+/* ==========================================================================
+   Visual Storyboard Deck Workspace
+   ========================================================================== */
+
+.ms-chip--amber {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.ms-storyboard-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px 40px;
+  min-height: 700px;
+}
+
+.ms-storyboard-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: rgba(20, 24, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  padding: 14px 18px;
+  backdrop-filter: blur(10px);
+}
+
+.ms-storyboard-titles h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-storyboard-titles p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.ms-storyboard-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ms-storyboard-select {
+  background: rgba(10, 14, 22, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  min-width: 200px;
+}
+
+.ms-storyboard-create-box {
+  background: rgba(18, 23, 34, 0.95);
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ms-storyboard-create-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ms-storyboard-create-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ms-storyboard-meta-card {
+  background: rgba(15, 19, 28, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 12px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ms-storyboard-meta-left {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.ms-storyboard-meta-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-storyboard-meta-path {
+  font-size: 0.72rem;
+  color: var(--text-muted, #94a3b8);
+  font-family: monospace;
+}
+
+.ms-storyboard-meta-badges {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ms-storyboard-badge {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+}
+
+.ms-storyboard-badge--free {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.ms-storyboard-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 20px;
+}
+
+.ms-shot-card {
+  background: rgba(22, 27, 39, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   transition: all 0.2s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
-.ms-provider-badge.active {
-  background: rgba(0, 240, 255, 0.05);
-  border-color: rgba(0, 240, 255, 0.3);
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.1);
+.ms-shot-card:hover {
+  border-color: rgba(0, 240, 255, 0.35);
+  box-shadow: 0 6px 20px rgba(0, 240, 255, 0.07);
 }
 
-.ms-badge-title {
-  font-size: 0.85rem;
-  font-weight: 700;
+.ms-shot-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(10, 13, 20, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ms-shot-number-badge {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-shot-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ms-shot-duration-input {
+  width: 50px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  text-align: center;
+}
+
+.ms-shot-icon-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.12s;
+}
+
+.ms-shot-icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.ms-shot-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.ms-shot-icon-btn--del:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #f87171;
+}
+
+.ms-shot-viewport {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #090c13;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ms-shot-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.ms-shot-viewport:hover .ms-shot-thumb-img {
+  transform: scale(1.02);
+}
+
+.ms-shot-thumb-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity 0.2s ease;
+}
+
+.ms-shot-viewport:hover .ms-shot-thumb-overlay {
+  opacity: 1;
+}
+
+.ms-shot-thumb-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  width: 100%;
+  height: 100%;
+}
+
+.ms-shot-frame-guide {
+  position: absolute;
+  inset: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.ms-shot-card-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.ms-shot-pills-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ms-shot-pill-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 600;
+}
+
+.ms-shot-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ms-shot-pill {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.ms-shot-pill:hover {
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
 
-.ms-badge-meta {
-  font-size: 0.72rem;
-  color: var(--text-secondary);
+.ms-shot-pill.active {
+  background: rgba(0, 240, 255, 0.18);
+  border-color: #00f0ff;
+  color: #00f0ff;
+  font-weight: 600;
 }
+
+.ms-shot-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ms-shot-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted, #cbd5e1);
+}
+
+.ms-shot-textarea {
+  background: rgba(10, 14, 22, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.78rem;
+  padding: 8px 10px;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.ms-shot-textarea:focus,
+.ms-shot-duration-input:focus {
+  outline: none;
+  border-color: #00f0ff;
+  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.4);
+}
+
+.ms-shot-add-card {
+  min-height: 420px;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.015);
+  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ms-shot-add-card:hover {
+  border-color: #00f0ff;
+  background: rgba(0, 240, 255, 0.04);
+  color: #00f0ff;
+}
+
+.ms-shot-add-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.ms-shot-add-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ms-storyboard-pacing-deck {
+  background: rgba(18, 22, 32, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-storyboard-pacing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.ms-storyboard-pacing-bar {
+  display: flex;
+  height: 18px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ms-pacing-segment {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  border-right: 1px solid rgba(0, 0, 0, 0.3);
+  transition: opacity 0.15s ease;
+}
+
+.ms-pacing-segment:hover {
+  opacity: 0.85;
+}
+
+/* ── Visual Storyboard Animatic Player & Prompt Enhancer ── */
+.ms-shot-field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ms-shot-enhance-btn {
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #c084fc;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.ms-shot-enhance-btn:hover {
+  background: rgba(168, 85, 247, 0.28);
+  border-color: #a855f7;
+  color: #f3e8ff;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.3);
+}
+
+.ms-animatic-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 13, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ms-animatic-modal {
+  width: 100%;
+  max-width: 960px;
+  background: #0d121c;
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85), 0 0 32px rgba(0, 240, 255, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ms-animatic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: rgba(16, 22, 34, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ms-animatic-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-animatic-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ms-animatic-badge {
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ms-animatic-screen {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #05070c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ms-animatic-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.ms-animatic-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  gap: 8px;
+  color: #94a3b8;
+  max-width: 600px;
+}
+
+.ms-animatic-placeholder h4 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+.ms-animatic-placeholder p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: #cbd5e1;
+}
+
+.ms-animatic-hud {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 2;
+}
+
+.ms-animatic-pill {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+  background: rgba(10, 15, 26, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  backdrop-filter: blur(4px);
+  text-transform: capitalize;
+}
+
+.ms-animatic-pill--accent {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: #00f0ff;
+  color: #00f0ff;
+  font-weight: 600;
+}
+
+.ms-animatic-subtitles {
+  position: absolute;
+  bottom: 16px;
+  left: 32px;
+  right: 32px;
+  text-align: center;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.ms-animatic-sub-dialogue {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fef08a;
+  border: 1px solid rgba(254, 240, 138, 0.3);
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-style: italic;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.ms-animatic-sub-action {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.75);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  backdrop-filter: blur(4px);
+}
+
+.ms-animatic-progress-bar {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.ms-animatic-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00f0ff, #a855f7);
+  transition: width 0.1s linear;
+}
+
+.ms-animatic-controls {
+  padding: 12px 18px;
+  background: rgba(16, 22, 34, 0.9);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ms-animatic-controls-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ms-animatic-timecode {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+/* ── Script-to-Storyboard Director Engine Drawer & Controls ── */
+.ms-storyboard-director-box {
+  border-color: rgba(0, 240, 255, 0.35);
+  background: linear-gradient(180deg, rgba(14, 20, 32, 0.95), rgba(8, 12, 20, 0.98));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 240, 255, 0.08);
+}
+
+.ms-director-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ms-preset-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-preset-chip:hover {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: #00f0ff;
+  color: #00f0ff;
+  transform: translateY(-1px);
+}
+
+.ms-director-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 75px;
+  margin-bottom: 10px;
+}
+
+.ms-director-controls-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.ms-director-select {
+  font-size: 0.78rem;
+  padding: 6px 10px;
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+}
+
+.ms-director-select:focus {
+  outline: none;
+  border-color: #00f0ff;
+}
+
+.ms-director-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: #94a3b8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ms-director-checkbox-label input {
+  cursor: pointer;
+  accent-color: #00f0ff;
+}
+
+
+

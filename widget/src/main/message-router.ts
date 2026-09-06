@@ -1806,8 +1806,9 @@ export function detectToolCategories(message: string): string[] {
   // every mention of social media. Naming the panel is the most direct way a
   // user can ask for it, and it routed to 'web' — on the word "research" —
   // which offered no media tool at all.
-  if (/\b(video|videos|youtube|shorts?|script|scripts|channel|episode|thumbnail|narration|captions?|voice-?over|render|publish|upload)\b/.test(m)
-    || /media\s*studio/.test(m)) cats.add('media');
+  if (/\b(video|videos|youtube|shorts?|script|scripts|channel|episode|thumbnail|narration|captions?|voice-?over|render|publish|upload|story-?boards?|animatics?|shots?|scenes?|framing)\b/.test(m)
+    || /media\s*studio/.test(m)
+    || /story\s*board/.test(m)) cats.add('media');
   if (/\b(process|task\s*manager|kill|cpu|ram|memory\s*usage)\b/.test(m)) cats.add('system');
   // Arithmetic produced NO category at all, so a turn asking one went out with
   // no tools and the model did the sum in its head — which is exactly where a

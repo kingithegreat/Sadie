@@ -91,7 +91,9 @@ const ALLOWED_CHANNELS = {
   PERMISSION_RESPONSE: 'homebot:permission-response',
   GET_ENV: 'homebot:get-env',
   GET_CONFIG_PATH: 'homebot:get-config-path',
-  GET_GENERATED_IMAGE: 'homebot:get-generated-image'
+  GET_GENERATED_IMAGE: 'homebot:get-generated-image',
+  MEDIA_TRIM_CLIP: 'homebot:media:trim-clip',
+  MEDIA_SPLICE_VIDEO: 'homebot:media:splice-video'
 };
 
 // Listen for router logs forwarded from main so tests and Playwright traces
@@ -798,6 +800,20 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:movie:run', options),
   mediaMovieListProjects: async () =>
     ipcRenderer.invoke('homebot:media:movie:list-projects'),
+  mediaStoryboardCreate: async (data: any) =>
+    ipcRenderer.invoke('homebot:media:storyboard:create', data),
+  mediaStoryboardList: async () =>
+    ipcRenderer.invoke('homebot:media:storyboard:list'),
+  mediaStoryboardGet: async (projectId: string) =>
+    ipcRenderer.invoke('homebot:media:storyboard:get', projectId),
+  mediaStoryboardGenerateFrame: async (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
+  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[] }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:save', args),
+  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:render', args),
+  mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),
@@ -897,6 +913,16 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:fetch-feeds', { sources }),
   listFeedSources: async () =>
     ipcRenderer.invoke('homebot:list-feed-sources'),
+  // Feed library — the user's own sources, merged with the built-ins.
+  // Same list the news tool reads, so a feed added here is one chat can fetch.
+  addFeed: async (input: { url: string; key?: string; description?: string; kind?: 'news' | 'podcast' }) =>
+    ipcRenderer.invoke('homebot:add-feed', input),
+  removeFeed: async (key: string) =>
+    ipcRenderer.invoke('homebot:remove-feed', { key }),
+  unhideFeed: async (key: string) =>
+    ipcRenderer.invoke('homebot:unhide-feed', { key }),
+  listAllFeeds: async () =>
+    ipcRenderer.invoke('homebot:list-all-feeds'),
   // Home screen — what works right now and how to fix what does not
   getCapabilityReport: async () =>
     ipcRenderer.invoke('homebot:capability-report'),
@@ -929,6 +955,12 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:save-quiz-progress', progress),
   loadQuizProgress: async () =>
     ipcRenderer.invoke('homebot:load-quiz-progress'),
+
+  // Video Editing (FFmpeg-based trim & splice)
+  mediaTrimClip: async (args: { videoPath: string; startSec: number; durationSec: number }) =>
+    ipcRenderer.invoke(ALLOWED_CHANNELS.MEDIA_TRIM_CLIP, args),
+  mediaSpliceVideo: async (args: { clips: string[]; outputPath: string }) =>
+    ipcRenderer.invoke(ALLOWED_CHANNELS.MEDIA_SPLICE_VIDEO, args),
 };
 
 // Expose the API to the renderer process. Cast to the canonical ElectronAPI to ensure type alignment.

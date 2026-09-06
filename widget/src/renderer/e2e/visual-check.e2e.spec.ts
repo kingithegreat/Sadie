@@ -60,7 +60,7 @@ test.describe('visual check', () => {
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     await page.waitForTimeout(1200);
     await page.screenshot({ path: path.join(OUT, '2-studio.png') });
-    await expect(page.getByText('Media Studio')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Media Studio/ }).first()).toBeVisible();
     // The line that states the guardrail — if this is missing the panel
     // rendered something else.
     await expect(page.getByText(/without your approval/i)).toBeVisible();
