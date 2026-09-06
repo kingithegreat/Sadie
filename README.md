@@ -22,10 +22,11 @@ It combines:
 
 - **Electron 28 + React 18** for a modern, themeable desktop UI with futuristic glass-morphism accents
 - **Ollama** for fully offline LLM inference — no API keys or internet connection required
-- **85+ TypeScript tool handlers** executed locally with structured JSON tool-calling
+- **137 TypeScript tool handlers** across 35 modules executed locally with structured JSON tool-calling
 - **Agentic tool loop** — the LLM autonomously chains tools for multi-step requests ("search for X, save it, then email me")
 - **Optional cloud LLM routing** to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or any OpenAI-compatible endpoint
 - **n8n integration** — deploy n8n workflows directly from HomeBot's Automation Center (no n8n UI required); automations run via webhook triggers with Ollama-powered AI
+- **Media Studio & Movie Engine** — automated video generation, podcast recaps, BYO clip narration, 2D animation, and free-first screenplay movie production
 
 ---
 
@@ -35,6 +36,10 @@ It combines:
 
 | Capability | Description |
 |---|---|
+| **Media Studio** | Automated video production pipeline with human-in-the-loop review, pan/zoom motion graphics, audio ducking, and podcast recap generation |
+| **Movie Production Engine** | Free-first screenplay-to-video orchestrator routing shots across 5 providers (Ancient Pathways Showrunner, Colab SDXL IP-Adapter, Local SD 1.5, Pollinations, Imagen 3) |
+| **Clip Narration** | BYO video narration (`media_narrate_clip`) using Gemini vision analysis, native TTS, and lossless ffmpeg stream muxing |
+| **Ancient Pathways** | 4-stage 1080p 2D episodic animation showcase with autonomous 8-panel sprite generation (`media_generate_sprites`) and mouth anchor calibration |
 | **Web Search** | Multi-engine cascade (Tavily, Serper, DuckDuckGo, Google, Brave) with automatic content fetching and SSRF protection |
 | **File Manager** | Safe read, write, list, move, delete, and search with path validation and directory whitelisting |
 | **System Info** | Disk usage, memory, running processes, and network adapter inspection |

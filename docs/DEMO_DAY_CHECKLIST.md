@@ -66,6 +66,7 @@ Run through each tab quickly:
 - [ ] **Image**: Check the tab loads (don't generate yet — save for demo)
 - [ ] **Documents**: Check the tab loads, drag a test file
 - [ ] **Quiz**: Check the tab loads
+- [ ] **Media Studio**: Check the tab loads, verify episode showcase, and check movie engine project discovery
 - [ ] **Voice**: Check microphone icon appears
 - [ ] **Settings**: Verify qwen2.5:7b is selected as chat model
 
@@ -94,9 +95,11 @@ Product facts verified from the codebase — useful when a prospect asks:
 
 | Metric | Value |
 |--------|-------|
-| Tool handlers | 85+ across 27 modules |
+| Tool handlers | 137 across 35 modules |
 | Security layers | 11 |
 | Cloud providers | 10 |
 | Image gen backends | 5 |
-| Automated tests | 1,932 across 122 suites |
+| Movie gen providers | 5 (Local Parallax, Colab SDXL IP-Adapter, Local SD 1.5, Pollinations, Imagen 3) |
+| Application modes | 11 |
+| Automated tests | ~3,700+ across 250+ suites |
 | Ollama models used | qwen2.5:7b, qwen2.5-coder:7b, nomic-embed-text |
