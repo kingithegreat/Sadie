@@ -196,7 +196,6 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [seasonFilter, setSeasonFilter] = useState<number>(0);
   const [apSearch, setApSearch] = useState<string>('');
   const [apDoctorChecks, setApDoctorChecks] = useState<Record<string, { checks: Array<{ name: string; ok: boolean; detail: string }>; failed: number; loading: boolean }>>({});
-
   // Showrunner: free-first autonomous prompt-to-movie production
   const [showrunnerPrompt, setShowrunnerPrompt] = useState('');
   const [showrunnerDuration, setShowrunnerDuration] = useState(60);
@@ -523,7 +522,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
-    const runMovieRouter = async (projectDir: string) => {
+  const runMovieRouter = async (projectDir: string) => {
     setMovieRunning(true);
     setMovieError(null);
     setMovieResult(null);
@@ -562,7 +561,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
-const runDoctorCheck = async (episodeId: string) => {
+  const runDoctorCheck = async (episodeId: string) => {
     setApDoctorChecks(prev => ({
       ...prev,
       [episodeId]: { ...(prev[episodeId] || { checks: [], failed: 0 }), loading: true }

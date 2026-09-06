@@ -210,7 +210,6 @@ describe('ancient-pathways main module', () => {
       expect(res.failed).toBe(0);
     });
   });
-
   describe('scanReachability', () => {
     it('flags functions defined but with zero cross-module callers', () => {
       const pipelineDir = path.join(tmpDir, 'pipeline', 'anim');

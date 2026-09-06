@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (187)** — `window.electron`
+**Preload methods (188)** — `window.electron`
 
 ```
 addMessage                      browserAttach                   browserBack                     browserBounds
@@ -1031,34 +1031,34 @@ licenseDeactivate               licenseStatus                   licenseValidate 
 listFeedSources                 listOllamaModels                listTools                       loadAutomations
 loadConversations               loadQuizProgress                maximizeWindow                  mcpAddServer
 mcpGetStatus                    mcpListServers                  mcpRemoveServer                 mcpToggleServer
-mediaAdvance                    mediaAncientPathwaysEpisodes    mediaAncientPathwaysRun         mediaAncientPathwaysShowrunner
-mediaAncientPathwaysStatus      mediaApprove                    mediaCreate                     mediaDelete
-mediaFfmpegSetup                mediaFfmpegStatus               mediaList                       mediaMarkPublished
-mediaMovieListProjects          mediaMovieRun                   mediaParseFeed                  mediaReject
-mediaRun                        minimizeWindow                  onAssistantToolActivity         onBatchSummary
-onBrowserState                  onConfigRecovered               onConfirmationRequest           onConversationCompacted
-onHardwareProfileApplied        onHideWindow                    onMediaAncientPathwaysProgress  onMediaFfmpegProgress
-onMessage                       onModelFallback                 onNavigate                      onOllamaDownloadProgress
-onOllamaStatus                  onPermissionRequest             onProactiveBriefing             onPullModelProgress
-onReminderFired                 onSdCppSetupProgress            onShowWindow                    onStreamChunk
-onStreamEnd                     onStreamError                   onSupervisorStatus              onTerminalExit
-onTerminalOutput                onTitleUpdated                  onUpdateAvailable               onUpdateDownloaded
-onUpdateProgress                onWidgetModeChanged             openExternalUrl                 openFile
-parseDocument                   pullModel                       pullModelStream                 ragClear
-ragIndex                        ragList                         readConsentLog                  readDebugLogs
-readPermissionAudit             readTelemetryEvents             removeHideWindowListener        removeShowWindowListener
-resetPermissions                resolveActiveModel              restartApp                      runAutomation
-runDiagnostics                  saveConversation                saveQuizProgress                saveSettings
-schedulerAdd                    schedulerList                   schedulerRemove                 schedulerToggle
-sdCppAutoSetup                  sdCppSetup                      sdCppStatus                     searchConversations
-sendConfirmationResponse        sendMessage                     sendPermissionResponse          sendStreamMessage
-setActiveConversation           setAlwaysOnTop                  setUncensoredMode               showInFolder
-skillsList                      skillsOpenFolder                startOllama                     startSpeechRecognition
-subscribeToStream               terminalClose                   terminalCreate                  terminalKill
-terminalRun                     testN8nConnection               toggleWidgetMode                ttsListVoices
-ttsSampleVoice                  ttsSpeak                        ttsStop                         updateAutomation
-updateMessage                   workspaceList                   workspaceRead                   workspaceRoot
-workspaceSave                   writeClipboard                  writeDocument
+mediaAdvance                    mediaAncientPathwaysDoctor      mediaAncientPathwaysEpisodes    mediaAncientPathwaysRun
+mediaAncientPathwaysShowrunner  mediaAncientPathwaysStatus      mediaApprove                    mediaCreate
+mediaDelete                     mediaFfmpegSetup                mediaFfmpegStatus               mediaList
+mediaMarkPublished              mediaMovieListProjects          mediaMovieRun                   mediaParseFeed
+mediaReject                     mediaRun                        minimizeWindow                  onAssistantToolActivity
+onBatchSummary                  onBrowserState                  onConfigRecovered               onConfirmationRequest
+onConversationCompacted         onHardwareProfileApplied        onHideWindow                    onMediaAncientPathwaysProgress
+onMediaFfmpegProgress           onMessage                       onModelFallback                 onNavigate
+onOllamaDownloadProgress        onOllamaStatus                  onPermissionRequest             onProactiveBriefing
+onPullModelProgress             onReminderFired                 onSdCppSetupProgress            onShowWindow
+onStreamChunk                   onStreamEnd                     onStreamError                   onSupervisorStatus
+onTerminalExit                  onTerminalOutput                onTitleUpdated                  onUpdateAvailable
+onUpdateDownloaded              onUpdateProgress                onWidgetModeChanged             openExternalUrl
+openFile                        parseDocument                   pullModel                       pullModelStream
+ragClear                        ragIndex                        ragList                         readConsentLog
+readDebugLogs                   readPermissionAudit             readTelemetryEvents             removeHideWindowListener
+removeShowWindowListener        resetPermissions                resolveActiveModel              restartApp
+runAutomation                   runDiagnostics                  saveConversation                saveQuizProgress
+saveSettings                    schedulerAdd                    schedulerList                   schedulerRemove
+schedulerToggle                 sdCppAutoSetup                  sdCppSetup                      sdCppStatus
+searchConversations             sendConfirmationResponse        sendMessage                     sendPermissionResponse
+sendStreamMessage               setActiveConversation           setAlwaysOnTop                  setUncensoredMode
+showInFolder                    skillsList                      skillsOpenFolder                startOllama
+startSpeechRecognition          subscribeToStream               terminalClose                   terminalCreate
+terminalKill                    terminalRun                     testN8nConnection               toggleWidgetMode
+ttsListVoices                   ttsSampleVoice                  ttsSpeak                        ttsStop
+updateAutomation                updateMessage                   workspaceList                   workspaceRead
+workspaceRoot                   workspaceSave                   writeClipboard                  writeDocument
 ```
 
 **IPC channels, renderer → main (138)**

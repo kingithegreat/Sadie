@@ -354,7 +354,6 @@ function scanReachability(apDir: string): ReachabilityFinding[] {
 }
 
 export { scanReachability };
-
 export async function runDoctorChecks(episodeId: string, dir?: string): Promise<DoctorCheckResult> {
   const apDir = dir || resolveAncientPathwaysDir();
   if (!apDir || !fs.existsSync(apDir)) {
