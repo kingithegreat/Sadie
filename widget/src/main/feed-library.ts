@@ -30,7 +30,29 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { FEED_CATALOGUE } from './tools/news';
+/**
+ * The built-in feeds.
+ *
+ * This lives HERE rather than in tools/news.ts, where it used to, so the
+ * dependency runs one way: everything that needs to know what feeds exist reads
+ * this module, and this module reads nobody. news.ts re-exports it, so existing
+ * imports still resolve.
+ *
+ * The alternative was news.ts and feed-library.ts importing each other. That
+ * cycle happens to resolve at runtime here, because every use is inside a
+ * function rather than at module load — which is exactly the kind of "works
+ * until it doesn't" that bites under a different bundler.
+ */
+export const FEED_CATALOGUE: Record<string, { url: string; description: string }> = {
+  bbc: { url: 'https://feeds.bbci.co.uk/news/rss.xml', description: 'BBC News top stories' },
+  reuters: { url: 'https://feeds.reuters.com/reuters/topNews', description: 'Reuters top news' },
+  techcrunch: { url: 'https://techcrunch.com/feed/', description: 'TechCrunch tech news' },
+  hacker_news: { url: 'https://hnrss.org/frontpage', description: 'Hacker News front page' },
+  ars_technica: { url: 'https://feeds.arstechnica.com/arstechnica/index', description: 'Ars Technica' },
+  npr: { url: 'https://feeds.npr.org/1001/rss.xml', description: 'NPR News' },
+  guardian: { url: 'https://www.theguardian.com/world/rss', description: 'The Guardian world news' },
+  espn: { url: 'https://www.espn.com/espn/rss/news', description: 'ESPN sports news' }
+};
 
 export type FeedKind = 'news' | 'podcast';
 

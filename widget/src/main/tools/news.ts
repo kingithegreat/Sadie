@@ -9,20 +9,15 @@ import * as https from 'https';
 import * as http from 'http';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
-// ---- Built-in feed catalogue ----
-// Exported so the Feeds panel offers exactly the sources the news tool knows —
-// two catalogues would drift, and the panel would advertise a source chat could
-// not read, or vice versa.
-export const FEED_CATALOGUE: Record<string, { url: string; description: string }> = {
-  bbc: { url: 'https://feeds.bbci.co.uk/news/rss.xml', description: 'BBC News top stories' },
-  reuters: { url: 'https://feeds.reuters.com/reuters/topNews', description: 'Reuters top news' },
-  techcrunch: { url: 'https://techcrunch.com/feed/', description: 'TechCrunch tech news' },
-  hacker_news: { url: 'https://hnrss.org/frontpage', description: 'Hacker News front page' },
-  ars_technica: { url: 'https://feeds.arstechnica.com/arstechnica/index', description: 'Ars Technica' },
-  npr: { url: 'https://feeds.npr.org/1001/rss.xml', description: 'NPR News' },
-  guardian: { url: 'https://www.theguardian.com/world/rss', description: 'The Guardian world news' },
-  espn: { url: 'https://www.espn.com/espn/rss/news', description: 'ESPN sports news' }
-};
+// ---- Feeds ----
+// The built-in catalogue moved to feed-library.ts, which merges it with the
+// feeds the user has added. Re-exported here so existing imports still resolve,
+// but nothing in this file should read it directly any more: the whole point of
+// the library is that a feed the panel shows is a feed chat can fetch, and
+// reading the raw constant is how that stops being true.
+import { FEED_CATALOGUE, findFeed, listFeeds, noteFetched } from '../feed-library';
+
+export { FEED_CATALOGUE };
 
 // ============= TOOL DEFINITIONS =============
 
@@ -143,11 +138,19 @@ export const getNewsHandler: ToolHandler = async (args): Promise<ToolResult> => 
     const limit = Math.min(Math.max(1, Number(args.limit) || 10), 30);
     const filter = String(args.topic_filter || '').toLowerCase();
 
-    const feedEntry = FEED_CATALOGUE[source.toLowerCase()];
+    // Through the library, so a feed the user added is a feed chat can read.
+    // Looking the key up in the raw catalogue is what made "my feeds" and "the
+    // feeds chat knows about" two different lists.
+    const feedEntry = findFeed(source);
     const feedUrl = feedEntry ? feedEntry.url : source;
 
     if (!feedUrl.startsWith('http')) {
-      return { success: false, error: `Unknown source "${source}". Use a key or full RSS URL.` };
+      return {
+        success: false,
+        error:
+          `Unknown source "${source}". Use a full RSS URL, or one of: ` +
+          `${listFeeds().map((f) => f.key).join(', ')}.`
+      };
     }
 
     const xml = await httpGet(feedUrl);
@@ -158,6 +161,11 @@ export const getNewsHandler: ToolHandler = async (args): Promise<ToolResult> => 
         (i) => i.title.toLowerCase().includes(filter) || i.description.toLowerCase().includes(filter)
       );
     }
+
+    // Record the fetch before slicing, so the count reflects what the feed
+    // actually carried rather than what this call asked for. Best-effort: it
+    // never throws, and a failed note must not fail the fetch.
+    if (feedEntry) noteFetched(feedEntry.key, items.length);
 
     items = items.slice(0, limit);
 
@@ -183,7 +191,11 @@ export const getNewsHandler: ToolHandler = async (args): Promise<ToolResult> => 
 export const listNewsFeedsHandler: ToolHandler = async (): Promise<ToolResult> => {
   return {
     success: true,
-    result: Object.entries(FEED_CATALOGUE).map(([key, val]) => ({ key, description: val.description }))
+    result: listFeeds().map((f) => ({
+      key: f.key,
+      description: f.description,
+      builtin: f.builtin
+    }))
   };
 };
 

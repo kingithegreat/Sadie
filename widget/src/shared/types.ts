@@ -631,6 +631,39 @@ export interface ElectronAPI {
     projects?: Array<Record<string, unknown>>;
     error?: string;
   }>;
+  mediaStoryboardCreate?: (data: any) => Promise<{
+    ok: boolean;
+    result?: any;
+    error?: string;
+  }>;
+  mediaStoryboardList?: () => Promise<{
+    ok: boolean;
+    storyboards?: Array<Record<string, any>>;
+    error?: string;
+  }>;
+  mediaStoryboardGet?: (projectId: string) => Promise<{
+    ok: boolean;
+    result?: any;
+    error?: string;
+  }>;
+  mediaStoryboardGenerateFrame?: (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) => Promise<{
+    ok: boolean;
+    result?: any;
+    error?: string;
+  }>;
+  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[] }) => Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+  }>;
+  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) => Promise<{
+    ok: boolean;
+    moviePath?: string;
+    durationSec?: number;
+    totalShots?: number;
+    error?: string;
+  }>;
+
 
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
@@ -709,8 +742,44 @@ export interface ElectronAPI {
     failures: Array<{ source: string; reason: string }>;
     error?: string;
   }>;
-  /** The named feed sources HomeBot knows about. */
-  listFeedSources?: () => Promise<{ sources: Array<{ id: string; description: string }> }>;
+  /**
+   * The named feed sources HomeBot knows about — built-ins the user has not
+   * hidden, plus their own. This is the same list the news tool reads, so a
+   * source shown here is a source chat can fetch.
+   */
+  listFeedSources?: () => Promise<{
+    sources: Array<{ id: string; description: string; builtin: boolean }>;
+  }>;
+  /** Add a feed by URL. The key is derived from the host when not given. */
+  addFeed?: (input: {
+    url: string; key?: string; description?: string; kind?: 'news' | 'podcast';
+  }) => Promise<{
+    success: boolean;
+    feed?: { key: string; url: string; description: string; builtin: boolean };
+    error?: string;
+  }>;
+  /**
+   * Remove a user feed, or hide a built-in.
+   *
+   * `hidden: true` means it was a built-in and is still there — built-ins are
+   * never deleted, because deleting a constant cannot be undone from the UI.
+   * Say "hidden" and offer to restore it; do not report it as deleted.
+   */
+  removeFeed?: (key: string) => Promise<{
+    success: boolean; removed?: boolean; hidden?: boolean; error?: string;
+  }>;
+  /** Restore a hidden built-in. */
+  unhideFeed?: (key: string) => Promise<{ success: boolean; restored?: boolean; error?: string }>;
+  /** Everything including hidden built-ins, for a manage-feeds view. */
+  listAllFeeds?: () => Promise<{
+    success: boolean;
+    feeds: Array<{
+      key: string; url: string; description: string; kind: 'news' | 'podcast';
+      builtin: boolean; hidden: boolean;
+      addedAt?: string; lastFetchedAt?: string; lastItemCount?: number;
+    }>;
+    error?: string;
+  }>;
   /** What HomeBot can do right now, with a fix for anything that is not working. */
   getCapabilityReport?: () => Promise<{
     success: boolean;
