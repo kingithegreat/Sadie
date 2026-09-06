@@ -21,7 +21,7 @@ import type {
   GenerationRequest,
   GenerationResult,
   ProviderScore,
-  RoutingDecision,
+  MovieRoutingDecision,
 } from './types';
 
 /** Availability → base score. Ordered by how soon a frame actually exists. */
@@ -58,7 +58,7 @@ export class GenerationRouter {
    * throwing probe is recorded as a rejection so one broken adapter cannot
    * take down routing for the rest.
    */
-  async route(req: GenerationRequest, opts: RouteOptions = {}): Promise<RoutingDecision> {
+  async route(req: GenerationRequest, opts: RouteOptions = {}): Promise<MovieRoutingDecision> {
     const freeOnly = opts.freeOnly ?? req.freeOnly;
 
     if (this.providers.size === 0) {
@@ -115,7 +115,7 @@ export class GenerationRouter {
    * free services (a quota that was fine a second ago).
    */
   async generate(req: GenerationRequest, opts: RouteOptions = {}): Promise<{
-    decision: RoutingDecision;
+    decision: MovieRoutingDecision;
     result: GenerationResult;
   }> {
     const decision = await this.route(req, opts);

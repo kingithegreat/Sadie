@@ -195,7 +195,7 @@ export interface ProviderScore {
   capability: GenerationCapability;
 }
 
-export interface RoutingDecision {
+export interface MovieRoutingDecision {
   /** null when nothing is eligible — the caller must handle it, not assume. */
   chosen: ProviderScore | null;
   /** Eligible runners-up, best first. The queue retries down this list. */
@@ -205,3 +205,4 @@ export interface RoutingDecision {
   /** One line fit for a log row or the Media Studio UI. */
   summary: string;
 }
+

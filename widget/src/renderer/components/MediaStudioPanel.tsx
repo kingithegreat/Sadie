@@ -1143,16 +1143,16 @@ const runDoctorCheck = async (episodeId: string) => {
             <button
               type="button"
               className="ms-dcc-tool-btn"
-              title="Split clip at playhead (S)"
-              onClick={() => setDone(`Clip split at ${formatTimecode(timelineTime)}`)}
+              title="Split clip at playhead (Timeline editing in development)"
+              onClick={() => setDone(`Timeline split preview at ${formatTimecode(timelineTime)} (NLE editing in development)`)}
             >
               ✂️ Split
             </button>
             <button
               type="button"
               className="ms-dcc-tool-btn"
-              title="Ripple delete (Del)"
-              onClick={() => setDone('Ripple delete applied')}
+              title="Ripple delete (Timeline editing in development)"
+              onClick={() => setDone('Ripple delete is in development — non-destructive preview mode active')}
             >
               🗑️ Ripple
             </button>

@@ -15,12 +15,20 @@ import type { GenerationRequest } from '../movie/types';
 
 describe('Ancient Pathways Local Movie Adapter', () => {
   let tmpDir: string;
+  const origEnv = process.env.ANCIENT_PATHWAYS_DIR;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-adapter-test-'));
+    fs.writeFileSync(path.join(tmpDir, 'run_pipeline.py'), '# mock pipeline runner\n');
+    process.env.ANCIENT_PATHWAYS_DIR = tmpDir;
   });
 
   afterEach(() => {
+    if (origEnv !== undefined) {
+      process.env.ANCIENT_PATHWAYS_DIR = origEnv;
+    } else {
+      delete process.env.ANCIENT_PATHWAYS_DIR;
+    }
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {
