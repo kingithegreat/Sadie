@@ -2984,12 +2984,12 @@ ${shots.map((s, idx) => `
           </div>
         </div>
 
-        {/* Generation Router -- shot-level routing through all 5 providers */}
+        {/* Generation Router -- shot-level routing through all 6 providers */}
         <div className="ms-ap-movie-router">
           <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>Generation Router</h4>
           <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
             Route individual shots through the best-available free provider:
-            Ancient Pathways 2D, Colab T4 IP-Adapter, Pollinations, Imagen 3, or Local SD 1.5.
+            Ancient Pathways 2D, Colab T4 IP-Adapter, ComfyUI, Pollinations, Imagen 3, or Local SD 1.5.
           </p>
           <button
             type="button"
@@ -3175,15 +3175,15 @@ ${shots.map((s, idx) => `
     );
   };
 
-  /* 5-Tier Movie Generation Router Workspace View */
+  /* 6-Tier Movie Generation Router Workspace View */
   const renderMovieRouterWorkspace = () => {
     return (
       <div className="ms-workspace-view">
         <div className="ms-router-header">
           <div className="ms-router-title-group">
-            <h3>⚡ 5-Tier Autonomous Movie Generation Router</h3>
+            <h3>⚡ 6-Tier Autonomous Movie Generation Router</h3>
             <p className="ms-router-subtitle">
-              Dynamic shot-level routing across cloud GPU clusters, local neural weights, and vector pipelines.
+              Dynamic shot-level routing across cloud GPU clusters, local neural weights, node-based ComfyUI, and vector pipelines.
               Automatically selects the fastest, zero-cost pipeline for each scene.
             </p>
           </div>
@@ -3196,7 +3196,7 @@ ${shots.map((s, idx) => `
           </button>
         </div>
 
-        {/* 5-Engine Tier Grid */}
+        {/* 6-Engine Tier Grid */}
         <div className="ms-provider-grid">
           <div className="ms-provider-card">
             <span className="ms-provider-badge">Tier 1 · Primary</span>
@@ -3219,7 +3219,17 @@ ${shots.map((s, idx) => `
           </div>
 
           <div className="ms-provider-card">
-            <span className="ms-provider-badge">Tier 3 · Offline</span>
+            <span className="ms-provider-badge">Tier 3 · Local Nodes</span>
+            <div className="ms-provider-icon">🧩</div>
+            <div className="ms-provider-name">ComfyUI (Local Port 8188)</div>
+            <div className="ms-provider-desc">
+              Local node-based graph workflow execution, checkpoint auto-discovery, high-resolution upscaling (up to 1536x1536).
+            </div>
+            <div className="ms-provider-cost">⚡ 100% Free · Local GPU</div>
+          </div>
+
+          <div className="ms-provider-card">
+            <span className="ms-provider-badge">Tier 4 · Offline</span>
             <div className="ms-provider-icon">💻</div>
             <div className="ms-provider-name">Local Stable Diffusion 1.5</div>
             <div className="ms-provider-desc">
@@ -3229,7 +3239,7 @@ ${shots.map((s, idx) => `
           </div>
 
           <div className="ms-provider-card">
-            <span className="ms-provider-badge">Tier 4 · Fallback</span>
+            <span className="ms-provider-badge">Tier 5 · Fallback</span>
             <div className="ms-provider-icon">🌸</div>
             <div className="ms-provider-name">Pollinations AI</div>
             <div className="ms-provider-desc">
@@ -3239,7 +3249,7 @@ ${shots.map((s, idx) => `
           </div>
 
           <div className="ms-provider-card">
-            <span className="ms-provider-badge">Tier 5 · Cinematic</span>
+            <span className="ms-provider-badge">Tier 6 · Cinematic</span>
             <div className="ms-provider-icon">✨</div>
             <div className="ms-provider-name">Google Imagen 3</div>
             <div className="ms-provider-desc">
@@ -4105,10 +4115,11 @@ ${shots.map((s, idx) => `
             <h2>🎬 Media Studio &amp; Movie Engine</h2>
             <div className="ms-dcc-pill-row">
               <span className="ms-dcc-chip ms-chip--orange">Showrunner 2D</span>
-              <span className="ms-dcc-chip ms-chip--cyan">5-Tier Router</span>
+              <span className="ms-dcc-chip ms-chip--cyan">6-Tier Router</span>
               <span className="ms-dcc-chip ms-chip--purple">NLE CapCut</span>
               <span className="ms-dcc-chip ms-chip--green">Blender Stage</span>
               <span className="ms-dcc-chip ms-chip--amber">Storyboard Deck</span>
+              <span className="ms-dcc-chip ms-chip--teal">ComfyUI Nodes</span>
             </div>
           </div>
         </div>
@@ -4247,10 +4258,10 @@ ${shots.map((s, idx) => `
             >
               <div className="ms-hub-icon">⚡</div>
               <div className="ms-hub-info">
-                <div className="ms-hub-title">5-Engine Movie Router</div>
-                <div className="ms-hub-desc">AP 2D, SDXL IP-Adapter, Local SD 1.5, Pollinations, Imagen 3</div>
+                <div className="ms-hub-title">6-Engine Movie Router</div>
+                <div className="ms-hub-desc">AP 2D, SDXL IP-Adapter, ComfyUI, Local SD 1.5, Pollinations, Imagen 3</div>
               </div>
-              <span className="ms-hub-badge">5 Engines</span>
+              <span className="ms-hub-badge">6 Engines</span>
             </div>
 
             <div

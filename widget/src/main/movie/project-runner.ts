@@ -28,6 +28,7 @@ import { colabProvider } from './colab-adapter';
 import { pollinationsProvider } from './pollinations-adapter';
 import { imagen3Provider } from './imagen3-adapter';
 import { localSD15Provider } from './local-sd15-adapter';
+import { comfyUIProvider } from './comfyui-adapter';
 
 export interface MovieProject {
   projectId: string;
@@ -82,6 +83,7 @@ export function createStandardRouter(): GenerationRouter {
   return new GenerationRouter()
     .register(ancientPathwaysProvider)
     .register(colabProvider)
+    .register(comfyUIProvider)
     .register(pollinationsProvider)
     .register(imagen3Provider)
     .register(localSD15Provider);

@@ -11560,6 +11560,20 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   border: 1px solid rgba(168, 85, 247, 0.35);
 }
 
+.ms-chip--amber {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+}
+
+.ms-chip--teal {
+  background: rgba(20, 184, 166, 0.14);
+  color: #2dd4bf;
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  box-shadow: 0 0 8px rgba(20, 184, 166, 0.2);
+}
+
 /* Studio Workspace Top Ribbon */
 .ms-workspace-ribbon {
   display: flex;

@@ -65,7 +65,7 @@ afterEach(() => {
 });
 
 describe('Media Studio Workspaces & DCC Navigation', () => {
-  test('renders top DCC branding ribbon and 4 status chips', async () => {
+  test('renders top DCC branding ribbon and status chips', async () => {
     setup();
     await act(async () => {
       render(<MediaStudioPanel />);
@@ -73,12 +73,13 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
 
     expect(screen.getByText('🎬 Media Studio & Movie Engine')).toBeInTheDocument();
     expect(screen.getByText('Showrunner 2D')).toBeInTheDocument();
-    expect(screen.getByText('5-Tier Router')).toBeInTheDocument();
+    expect(screen.getByText('6-Tier Router')).toBeInTheDocument();
     expect(screen.getByText('NLE CapCut')).toBeInTheDocument();
     expect(screen.getByText('Blender Stage')).toBeInTheDocument();
+    expect(screen.getByText('ComfyUI Nodes')).toBeInTheDocument();
   });
 
-  test('renders Director Quick Launch Hub with 4 interactive cards in default view', async () => {
+  test('renders Director Quick Launch Hub with interactive cards in default view', async () => {
     setup();
     await act(async () => {
       render(<MediaStudioPanel />);
@@ -86,25 +87,27 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
 
     const hub = screen.getByLabelText('Studio Quick Launch');
     expect(hub).toBeInTheDocument();
-    expect(within(hub).getByText('5-Engine Movie Router')).toBeInTheDocument();
+    expect(within(hub).getByText('6-Engine Movie Router')).toBeInTheDocument();
     expect(within(hub).getByText('Ancient Pathways 2D')).toBeInTheDocument();
     expect(within(hub).getByText('CapCut Timeline')).toBeInTheDocument();
     expect(within(hub).getByText('Stage Viewport')).toBeInTheDocument();
   });
 
-  test('clicking Movie Router hub card switches to 5-tier Movie Router view and loads projects', async () => {
+  test('clicking Movie Router hub card switches to 6-tier Movie Router view and loads projects', async () => {
     const { mediaMovieListProjects } = setup();
     await act(async () => {
       render(<MediaStudioPanel />);
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('5-Engine Movie Router'));
+      fireEvent.click(screen.getByText('6-Engine Movie Router'));
     });
 
-    // 5 Tier provider cards should be visible
-    expect(screen.getByText('⚡ 5-Tier Autonomous Movie Generation Router')).toBeInTheDocument();
+    // 6 Tier provider cards should be visible
+    expect(screen.getByText('⚡ 6-Tier Autonomous Movie Generation Router')).toBeInTheDocument();
+    expect(screen.getByText('Ancient Pathways 2D')).toBeInTheDocument();
     expect(screen.getByText('Colab SDXL IP-Adapter')).toBeInTheDocument();
+    expect(screen.getByText('ComfyUI (Local Port 8188)')).toBeInTheDocument();
     expect(screen.getByText('Local Stable Diffusion 1.5')).toBeInTheDocument();
     expect(screen.getByText('Pollinations AI')).toBeInTheDocument();
     expect(screen.getByText('Google Imagen 3')).toBeInTheDocument();
