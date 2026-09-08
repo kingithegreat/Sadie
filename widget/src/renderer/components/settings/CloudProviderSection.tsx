@@ -80,6 +80,7 @@ export default function CloudProviderSection() {
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="claude-code">Claude subscription — no API key (via Claude Code)</option>
+              <option value="codex">Codex ChatGPT subscription — no API key (via Codex CLI)</option>
               <option value="openrouter">OpenRouter (all models, one key)</option>
               <option value="tokenrouter">TokenRouter (all models, one key)</option>
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>

@@ -49,12 +49,31 @@ async function ollamaModelCount(base: string): Promise<number | null> {
  * the hard way with ffprobe: a binary that is present but not executable, or
  * present for a different architecture, looks identical to a working one until
  * a render fails.
+ *
+ * Two locations are checked: PATH first (a system install), then the managed
+ * copy HomeBot installs into userData. Media Studio prefers the managed one,
+ * so a probe that only looks at PATH reports "not installed" on a machine
+ * where setup completed successfully — the capability exists, nothing calls
+ * it, which is the failure mode this whole file exists to catch.
  */
 async function ffmpegRunnable(): Promise<boolean> {
+  // PATH first — the common case, and the cheap one.
   try {
     const { execFile } = await import('child_process');
     const { promisify } = await import('util');
     await promisify(execFile)('ffmpeg', ['-version'], { timeout: PROBE_TIMEOUT_MS });
+    return true;
+  } catch { /* not on PATH, try managed */ }
+
+  // Managed copy: HomeBot's one-click install lands in userData, not PATH.
+  // Same search ffmpeg-setup.ts uses rather than assuming a layout.
+  try {
+    const { findManagedFfmpeg } = await import('./ffmpeg-setup');
+    const bin = findManagedFfmpeg();
+    if (!bin) return false;
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    await promisify(execFile)(bin, ['-version'], { timeout: PROBE_TIMEOUT_MS });
     return true;
   } catch {
     return false;
