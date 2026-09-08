@@ -6,10 +6,7 @@ import type { AddressInfo } from 'net';
 
 // Node contract tests use a decoder double that accepts only the known fixture.
 // The Electron regression exercises the real native decoder and saved pixels.
-jest.mock('electron', () => ({ nativeImage: { createFromBuffer: (bytes: Buffer) => ({
-  isEmpty: () => !bytes.equals(require('fs').readFileSync(require('path').join(__dirname, '../../../resources/icon.png'))),
-  getSize: () => ({ width: 256, height: 256 }),
-}) } }));
+jest.mock('electron', () => ({ nativeImage: require('./helpers/movie-image').movieNativeImageStub }));
 jest.mock('../config-manager', () => ({ getSettings: () => ({ useCustomLLM: true, allowCloud: true }) }));
 jest.mock('../../shared/cloud-llm', () => ({ ...jest.requireActual('../../shared/cloud-llm'), apiKeyForProvider: () => 'test-fixture-key' }));
 
@@ -18,6 +15,7 @@ import { generateImagen3Shot } from '../movie/imagen3-adapter';
 import { generateLocalSD15Shot } from '../movie/local-sd15-adapter';
 import { GenerationRouter } from '../movie/router';
 import { MovieProjectRunner } from '../movie/project-runner';
+import { saveMovieShotImage } from '../movie/image-output';
 import type { GenerationProvider, GenerationRequest } from '../movie/types';
 
 const bytes = fs.readFileSync(path.join(__dirname, '../../../resources/icon.png'));
@@ -78,7 +76,12 @@ function provider(files: string[]): GenerationProvider {
 }
 
 test.each(['empty list', 'missing', 'empty file', 'corrupt', 'directory', 'outside'])('router refuses success with %s output', async kind => {
-  const file = kind === 'outside' ? path.join(dir, '..', 'outside.png') : path.join(dir, 'image.png');
+  const file = path.join(dir, 'image.png');
+  if (kind === 'outside') {
+    req.shotDir = path.join(dir, 'shot');
+    fs.mkdirSync(req.shotDir);
+    fs.writeFileSync(file, bytes); // A real valid image, outside this shot only.
+  }
   if (kind === 'empty file' || kind === 'corrupt') fs.writeFileSync(file, kind === 'corrupt' ? 'bad image' : '');
   if (kind === 'directory') fs.mkdirSync(file);
   const result = await new GenerationRouter().register(provider(kind === 'empty list' ? [] : [file])).generate(req);
@@ -91,6 +94,35 @@ test('router falls back from unusable output to a saved image', async () => {
   const fallback = { ...provider([file]), id: 'fallback' };
   const { result } = await new GenerationRouter().register(provider([])).register(fallback).generate(req);
   expect(result).toMatchObject({ status: 'done', files: [file] });
+});
+
+test('router accepts a readable image with its saved path', async () => {
+  const file = path.join(dir, 'good.png');
+  fs.writeFileSync(file, bytes);
+  const { result } = await new GenerationRouter().register(provider([file])).generate(req);
+  expect(result).toMatchObject({ status: 'done', files: [file] });
+});
+
+test('invalid replacement keeps the previous image bytes intact', () => {
+  const file = saveMovieShotImage(req, `data:image/png;base64,${bytes.toString('base64')}`);
+  expect(() => saveMovieShotImage(req, 'corrupt!base64')).toThrow();
+  expect(fs.readFileSync(file)).toEqual(bytes);
+  expect(fs.readdirSync(path.dirname(file))).toEqual(['shot_01.png']);
+});
+
+test('rejects an image-folder junction outside the shot without writing there', () => {
+  const outside = path.join(dir, 'outside');
+  const shot = path.join(dir, 'shot');
+  fs.mkdirSync(outside);
+  fs.mkdirSync(shot);
+  fs.symlinkSync(outside, path.join(shot, 'image'), 'junction');
+  expect(() => saveMovieShotImage({ ...req, shotDir: shot }, bytes.toString('base64'))).toThrow(/link/);
+  expect(fs.readdirSync(outside)).toEqual([]);
+});
+
+test.each(['../escape', 'bad/name', 'bad\\name', 'C:escape', ''])('rejects unsafe shot ID %s', shotId => {
+  expect(() => saveMovieShotImage({ ...req, shotId }, bytes.toString('base64'))).toThrow(/shot ID/);
+  expect(fs.readdirSync(dir)).toEqual([]);
 });
 
 test.each(['IMAGE_GENERATED', 'APPROVED', 'AWAITING_WORKER'])('runner does not count a corrupt %s image as completed', async status => {

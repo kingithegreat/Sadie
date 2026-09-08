@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
+import { movieImageFixture } from './helpers/movie-image';
+jest.mock('electron', () => ({ nativeImage: require('./helpers/movie-image').movieNativeImageStub }));
 
 jest.mock('../config-manager', () => ({ getSettings: () => ({ useCustomLLM: false }) }));
 import { generateComfyUIShot, probeComfyUI } from '../movie/comfyui-adapter';
@@ -12,7 +14,7 @@ import type { GenerationRequest } from '../movie/types';
 
 test('Online-off generation still reaches loopback servers and saves the returned bytes', async () => {
   const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-provider-loopback-'));
-  const bytes = Buffer.from('controlled-local-provider-output'.repeat(8));
+  const bytes = movieImageFixture;
   const requests: Array<{ path: string; body: any }> = [];
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
