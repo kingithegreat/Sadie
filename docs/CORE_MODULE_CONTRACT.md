@@ -125,5 +125,37 @@ registration. The fresh-profile Electron test clicks Studio and creates a real
 storyboard, verifying files and Core tool-executor telemetry. Provider requests
 are outside this evidence; a created storyboard is not a rendered video.
 
-Final local/remote verification and measured comparison are recorded in the PR
-and Notion only after the relevant checks complete.
+## Verified local checkpoint — 2026-09-09
+
+On Windows, commit `2bfdade` passed root/widget typechecks, build, docs check and
+lint (zero errors, eight existing warnings). Root Jest: 18 suites / 226 tests.
+Widget Jest: 267 suites / 3,782 tests, 15 skipped, exit 0 with the existing CI
+`--forceExit` command. Two earlier unforced runs passed all assertions but
+failed after an existing IPC-registration test launched background Docker work;
+that unrelated adapter is now isolated and its scheduling is still asserted.
+
+The full actual Electron suite passed **48 tests in 6.3 minutes, no retries**,
+including both overlay entrance regressions and the new visible Studio-to-disk
+storyboard case. The generation guard was deliberately weakened locally:
+both captured-confirmation tests failed, then passed after the guard was restored.
+No injected defect remains in the committed code.
+
+Three fresh profiles were measured after the test/build workloads finished,
+using the unchanged HB-M0 measurement script on the same Windows/Electron
+versions. Full data: [studio-m1-host.json](evidence/studio-m1-host.json).
+
+| Run | Renderer ready | Open Studio | Studio summed working set |
+|---|---|---|---|
+| 1 | 1,454 ms | 471 ms | 706,080 KB |
+| 2 | 1,414 ms | 583 ms | 716,908 KB |
+| 3 | 1,302 ms | 218 ms | 704,480 KB |
+
+Every run stayed below M0's investigation limits of 4,750 ms / 2,050 ms /
+899,000 KB. This establishes no observed regression in this sample; differences
+in timing are not a controlled performance improvement claim. Summed working
+sets can double-count shared pages. Build output is 28,224,548 bytes, up 23,516
+bytes from M0; the lazy Studio chunk remains 216,687 bytes. Optional package
+size and expensive-media peak memory remain unmeasured.
+
+Remote checks and merged-content verification are still required before M1 is
+complete. Local logs remain under the ignored `.kilo/evidence/m1/` directory.
