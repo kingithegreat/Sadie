@@ -2,8 +2,11 @@
 
 Approved by Aden on 2026-09-08 after a read-only repository and runtime audit.
 This is the current media execution order. Historical plans remain history;
-`CLAUDE.md` and `CLAIMS.md` govern how work is performed. Each task needs Aden's
-confirmation before the next begins. Task 1 is authorized and in progress.
+`CLAUDE.md` and `CLAIMS.md` govern how work is performed. Aden subsequently
+authorized continuous work through the Notion plan on 2026-09-08: re-fetch it
+before each task and record every verified success there. Follow the existing
+[Notion build loop](https://app.notion.com/p/3d5829ebf7be81308c58c474f6aed6c7).
+Task 1 is in progress. Publication and credential decisions keep their gates.
 
 ## Baseline and boundaries
 
@@ -73,13 +76,13 @@ verification separately.
 | Task | Scope | Required evidence before moving on |
 |---|---|---|
 | **1. Verified baseline** — in progress | Isolate work, reconcile claims/docs, reproduce and fix the overlay failure blocking #259, run local and required CI checks, then integrate without overwriting other agents. | Failure reproduced before fix; real Electron regression passes after fix; app/root checks pass; all required remote contexts present and green; actual merged content verified. |
-| **2. Provider correctness** — awaiting confirmation | Repair privacy, availability/free-tier routing, provider output and reference-image contracts; replace obsolete model assumptions. | With online access off, zero outbound calls; unusable/empty assets never report success; each enabled provider passes a real request and output validation with configured access. Credentials remain Aden's. |
-| **3. One reliable faceless video** — awaiting confirmation | Unify manifests and orchestration; fix Python argv, narration, frame handling, render and QA. | From a real HomeBot control through IPC/Python or n8n to a playable MP4: correct duration, visible content, audible narration and captions. Inspect sampled frames/audio; test failure propagation too. |
-| **4. Colab round trip** — awaiting confirmation | Portable unique jobs, asset upload, Drive discovery, worker result import, retry/resume/cancel. | Submit from HomeBot, run in Colab, ingest validated assets and continue the same project; survive runtime restart and duplicate/partial results. |
-| **5. Consistent characters** — awaiting confirmation | Complete one character's art enrollment and actual compositor path under the existing Ancient Pathways rig plan. | Render multiple shots of one recognizable character with intended poses/lip movement; validate real output and reject placeholder clips. |
-| **6. Editing affects exports** — awaiting confirmation | Persist storyboard/timeline edits, invalidate changed assets, replace simulated progress/completion. | Change shot order, timing, text and voice through the UI; reopen the project and export; compare the resulting frames/audio to those edits. |
-| **7. YouTube operations** — awaiting confirmation | Channel profiles, metadata, thumbnails, OAuth, scheduling and approved idempotent upload. | Profile isolation, an explicitly approved test upload, verified visibility/metadata and retries without duplicate publication; never publish merely to test without approval. |
-| **8. Release verification** — awaiting confirmation | Installer/runtime dependencies, configuration, startup guidance and fresh Windows acceptance. | Install the actual artifact on a fresh profile/machine; complete the agreed video flow, verify privacy modes and document every required external setup step. |
+| **2. Provider correctness** — queued | Repair privacy, availability/free-tier routing, provider output and reference-image contracts; replace obsolete model assumptions. | With online access off, zero outbound calls; unusable/empty assets never report success; each enabled provider passes a real request and output validation with configured access. Credentials remain Aden's. |
+| **3. One reliable faceless video** — queued | Unify manifests and orchestration; fix Python argv, narration, frame handling, render and QA. | From a real HomeBot control through IPC/Python or n8n to a playable MP4: correct duration, visible content, audible narration and captions. Inspect sampled frames/audio; test failure propagation too. |
+| **4. Colab round trip** — queued | Portable unique jobs, asset upload, Drive discovery, worker result import, retry/resume/cancel. | Submit from HomeBot, run in Colab, ingest validated assets and continue the same project; survive runtime restart and duplicate/partial results. |
+| **5. Consistent characters** — queued | Complete one character's art enrollment and actual compositor path under the existing Ancient Pathways rig plan. | Render multiple shots of one recognizable character with intended poses/lip movement; validate real output and reject placeholder clips. |
+| **6. Editing affects exports** — queued | Persist storyboard/timeline edits, invalidate changed assets, replace simulated progress/completion. | Change shot order, timing, text and voice through the UI; reopen the project and export; compare the resulting frames/audio to those edits. |
+| **7. YouTube operations** — queued | Channel profiles, metadata, thumbnails, OAuth, scheduling and approved idempotent upload. | Profile isolation, an explicitly approved test upload, verified visibility/metadata and retries without duplicate publication; never publish merely to test without approval. |
+| **8. Release verification** — queued | Installer/runtime dependencies, configuration, startup guidance and fresh Windows acceptance. | Install the actual artifact on a fresh profile/machine; complete the agreed video flow, verify privacy modes and document every required external setup step. |
 
 Prioritize media generation, editing and orchestration. Existing knowledge,
 automation and reliability work supports those tasks; additional coding-assistant
@@ -91,7 +94,8 @@ SADIE/HomeBot pipelines or copy the private notes vault into this repository.
 
 For every task: explain the concrete change, implement it, run relevant checks,
 exercise the real React/Electron and n8n boundary where applicable, record the
-verification limits, and ask Aden before starting the next task.
+verification limits, update Notion, recheck its current plan and continue to the
+next authorized task. Ask only when a decision or approval is actually needed.
 
 ## Task 1 verification — 2026-09-08
 
@@ -110,6 +114,15 @@ Local Windows checks on the isolated `claude/studio-baseline` worktree:
   Docs contract check: 188 preload methods, 138 renderer-to-main and 32
   main-to-renderer channels in sync.
 
-Remote CI, merged-content verification and #259 integration are still pending.
+PR #260 merged at `9ec3ebd`; its content was verified against main. The macOS
+shard ran 16 tests (including both new regressions) and passed on its first
+attempt. Inspecting the Windows logs exposed another baseline defect: npm
+failed to launch, returned `status: null`, and the wrapper exited successfully
+without running tests. The repair on `claude/studio-baseline-ci` launches the
+Windows command shim and maps a missing exit status to failure. Six regression
+tests exercise the actual workflow wrapper; all 219 root tests pass. Running
+the exact repaired Windows shard locally executed 16 Electron tests and passed
+on attempt 1 in 175 seconds. Remote verification of that repair and #259
+integration remain pending.
 This UI/documentation change does not modify the n8n contract; its unit coverage
 passed within the widget suite. Live n8n/cloud/media runs remain unverified.

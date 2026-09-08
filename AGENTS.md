@@ -18,6 +18,14 @@ Useful paths: `01_Projects/HomeBot/` (Plan, Bugs, Decisions, Testing_Log),
 
 ## Before you build
 
+**Notion cadence (Aden, 2026-09-08):** fetch the current HomeBot plan before each
+task and check for changed requirements/priorities. After every meaningful
+verified success, update the corresponding Notion record with evidence and
+the next step; re-fetch before writing to preserve concurrent edits. Follow the
+[Codex Autonomous Build Loop](https://app.notion.com/p/3d5829ebf7be81308c58c474f6aed6c7).
+Codex's reusable local skill is `~/.codex/skills/homebot-notion-progress/SKILL.md`.
+Continue already-authorized work; keep existing publication/credential boundaries.
+
 1. `git worktree list` and `git status` — **three trees are live at once.** `reset --hard`,
    `checkout --` and `stash` will destroy another agent's uncommitted work.
 2. Read the tail of `CLAIMS.md`. If your feature is claimed, pick something else.
