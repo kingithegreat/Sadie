@@ -1010,6 +1010,31 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  // ---- Video Editing (FFmpeg-based trim & splice) ----
+  ipcMain.handle('homebot:media:trim-clip', async (_e, args: { videoPath: string; startSec: number; durationSec: number }) => {
+    const { videoToolHandlers } = await import('./tools/media-video');
+    try {
+      const res: any = await videoToolHandlers.media_trim_clip(args, { executionId: 'panel-trim' } as any);
+      return res?.success
+        ? { ok: true, result: res.result }
+        : { ok: false, error: String(res?.error ?? 'Could not trim the video.') };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:splice-video', async (_e, args: { clips: string[]; outputPath: string }) => {
+    const { videoToolHandlers } = await import('./tools/media-video');
+    try {
+      const res: any = await videoToolHandlers.media_splice_video(args, { executionId: 'panel-splice' } as any);
+      return res?.success
+        ? { ok: true, result: res.result }
+        : { ok: false, error: String(res?.error ?? 'Could not splice the videos.') };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
   // ---- Ancient Pathways (Animated Documentary Pipeline) ----
   ipcMain.handle('homebot:media:ancient-pathways-episodes', async () => {
     const { ANCIENT_PATHWAYS_EPISODES, resolveAncientPathwaysDir } = await import('./ancient-pathways');
@@ -1249,6 +1274,110 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       return { ok: false, error: err?.message || String(err) };
     }
   });
+
+  // ── Storyboard & Visual Deck IPC Handlers ────────────────────────────────────
+  ipcMain.handle('homebot:media:storyboard:create', async (_ev, args: any) => {
+    const { mediaCreateStoryboardHandler } = await import('./tools/media-storyboard');
+    const res = await mediaCreateStoryboardHandler(args || {}, { executionId: 'ipc-storyboard-create' });
+    return { ok: res.success, result: res.result, error: res.error };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:list', async () => {
+    const { mediaListStoryboardsHandler } = await import('./tools/media-storyboard');
+    const res = await mediaListStoryboardsHandler({}, { executionId: 'ipc-storyboard-list' });
+    return { ok: res.success, storyboards: (res.result as any)?.storyboards || [], error: res.error };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:get', async (_ev, projectId: string) => {
+    const { mediaGetStoryboardHandler } = await import('./tools/media-storyboard');
+    const res = await mediaGetStoryboardHandler({ projectId }, { executionId: 'ipc-storyboard-get' });
+    return { ok: res.success, result: res.result, error: res.error };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:generate-frame', async (_ev, args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) => {
+    const { mediaGenerateStoryboardFrameHandler } = await import('./tools/media-storyboard');
+    const res = await mediaGenerateStoryboardFrameHandler(args || {}, { executionId: 'ipc-storyboard-frame' });
+    return { ok: res.success, result: res.result, error: res.error };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[] }) => {
+    try {
+      const { getStoryboardsRootDir } = await import('./tools/media-storyboard');
+      const rootDir = getStoryboardsRootDir();
+      const projectDir = path.join(rootDir, args.projectId);
+      const sceneId = args.sceneId || 'scene_01';
+      const sceneDir = path.join(projectDir, 'scenes', sceneId);
+
+      if (!fs.existsSync(sceneDir)) {
+        return { ok: false, error: `Scene directory not found: ${sceneDir}` };
+      }
+
+      const shotIds = (args.shots || []).map((s: any) => s.shotId);
+      const sceneJsonPath = path.join(sceneDir, 'scene.json');
+      if (fs.existsSync(sceneJsonPath)) {
+        try {
+          const sceneMeta = JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8'));
+          sceneMeta.shots = shotIds;
+          fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
+        } catch { /* ignore */ }
+      }
+
+      for (const shot of (args.shots || [])) {
+        const shotDir = path.join(sceneDir, shot.shotId);
+        if (!fs.existsSync(shotDir)) {
+          fs.mkdirSync(shotDir, { recursive: true });
+          fs.mkdirSync(path.join(shotDir, 'image'), { recursive: true });
+          fs.mkdirSync(path.join(shotDir, 'video'), { recursive: true });
+        }
+
+        const promptPath = path.join(shotDir, 'prompt.json');
+        let promptData: any = {};
+        if (fs.existsSync(promptPath)) {
+          try { promptData = JSON.parse(fs.readFileSync(promptPath, 'utf-8')); } catch { /* ignore */ }
+        }
+        promptData.prompt = shot.prompt ?? promptData.prompt ?? '';
+        promptData.framing = shot.framing ?? promptData.framing ?? 'wide';
+        promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
+        promptData.movement = shot.movement ?? promptData.movement ?? 'static';
+        promptData.durationSec = Number(shot.durationSec) || promptData.durationSec || 5;
+        fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
+
+        if (shot.narration !== undefined) {
+          fs.writeFileSync(path.join(shotDir, 'script.txt'), String(shot.narration), 'utf-8');
+        }
+      }
+
+      return { ok: true, message: 'Storyboard updated successfully.' };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) => {
+    try {
+      const { renderStoryboardMovie } = await import('./movie/storyboard-renderer');
+      const res = await renderStoryboardMovie({
+        projectId: args.projectId,
+        sceneId: args.sceneId,
+        motion: args.motion !== false,
+        burnSubtitles: args.burnSubtitles !== false,
+      });
+      return res;
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:storyboard:breakdown', async (_ev, args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) => {
+    try {
+      const { directScriptToStoryboard } = await import('./movie/script-director');
+      const res = await directScriptToStoryboard(args || ({} as any));
+      return res;
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
 
   // ── Comprehensive first-run diagnostics
   // Runs disk-space, service-reachability, write-permissions, and GPU checks
@@ -2558,6 +2687,71 @@ ${buildImproveUserPrompt(draft)}`,
   ipcMain.handle('homebot:list-feed-sources', async () => {
     const { catalogueSources } = await import('./feed-reader');
     return { sources: catalogueSources() };
+  });
+
+  /**
+   * Add a feed the user has pasted.
+   *
+   * The URL is validated in feed-library rather than here, so the tool path and
+   * this path cannot disagree about what a usable feed is. The error text comes
+   * back verbatim because it already says what is wrong ("must start with
+   * http://") and a rewritten version would only be vaguer.
+   */
+  ipcMain.handle('homebot:add-feed', async (_ev, payload: {
+    url?: string; key?: string; description?: string; kind?: string;
+  }) => {
+    try {
+      const { addFeed } = await import('./feed-library');
+      const entry = addFeed({
+        url: String(payload?.url ?? ''),
+        key: payload?.key ? String(payload.key) : undefined,
+        description: payload?.description ? String(payload.description) : undefined,
+        kind: payload?.kind === 'news' ? 'news' : 'podcast',
+      });
+      return { success: true, feed: entry };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not add that feed.' };
+    }
+  });
+
+  /**
+   * Remove a user feed, or hide a built-in.
+   *
+   * The distinction is reported rather than flattened: the UI needs to say
+   * "hidden" and offer to restore it, because a built-in is never deleted and
+   * telling the user it was would be a lie they cannot act on.
+   */
+  ipcMain.handle('homebot:remove-feed', async (_ev, payload: { key?: string }) => {
+    try {
+      const { removeFeed } = await import('./feed-library');
+      const res = removeFeed(String(payload?.key ?? ''));
+      return { success: true, ...res };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not remove that feed.' };
+    }
+  });
+
+  ipcMain.handle('homebot:unhide-feed', async (_ev, payload: { key?: string }) => {
+    try {
+      const { unhideFeed } = await import('./feed-library');
+      return { success: true, restored: unhideFeed(String(payload?.key ?? '')) };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not restore that feed.' };
+    }
+  });
+
+  /** Everything including hidden built-ins — for a manage-feeds view. */
+  ipcMain.handle('homebot:list-all-feeds', async () => {
+    try {
+      const { listFeeds } = await import('./feed-library');
+      const shown = new Set(listFeeds().map((f) => f.key));
+      return {
+        success: true,
+        feeds: listFeeds(true).map((f) => ({ ...f, hidden: !shown.has(f.key) })),
+      };
+    } catch (err: any) {
+      return { success: false, feeds: [], error: err?.message || 'Could not list feeds.' };
+    }
   });
 
   ipcMain.handle('homebot:create-automation', gatedAutomationHandler('homebot:create-automation', getCurrentTier, async (_event, data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string; deployToN8n?: boolean }) => {

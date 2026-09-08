@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-09-08T10:23:30.728Z",
+  "scope": "Fresh-profile Electron E2E shell and Studio UI; service stubs; no production/media/provider acceptance",
+  "gitHead": "85203a5f52a273a7db0c59eb046f98538d9053da",
+  "worktreeHasChanges": true,
+  "host": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "node": "v24.13.0",
+    "totalMemoryBytes": 16866664448
+  },
+  "build": {
+    "totalBytes": 28201032,
+    "studioChunks": [
+      {
+        "path": "out\\renderer\\assets\\MediaStudioPanel-ln0RUCb2.js",
+        "bytes": 216687
+      }
+    ]
+  },
+  "optionalPackageBytes": null,
+  "expensiveMediaJobPeakMemoryBytes": null,
+  "runs": [
+    {
+      "run": 1,
+      "rendererReadyMs": 1922,
+      "studioOpenMs": 1433,
+      "shell": {
+        "processes": [
+          {
+            "type": "Browser",
+            "workingSetKB": 174396,
+            "privateKB": 141884
+          },
+          {
+            "type": "GPU",
+            "workingSetKB": 259792,
+            "privateKB": 246092
+          },
+          {
+            "type": "Utility",
+            "workingSetKB": 51800,
+            "privateKB": 13500
+          },
+          {
+            "type": "Tab",
+            "workingSetKB": 118628,
+            "privateKB": 57216
+          }
+        ],
+        "summedWorkingSetKB": 604616
+      },
+      "studio": {
+        "processes": [
+          {
+            "type": "Browser",
+            "workingSetKB": 175284,
+            "privateKB": 142600
+          },
+          {
+            "type": "GPU",
+            "workingSetKB": 366304,
+            "privateKB": 350096
+          },
+          {
+            "type": "Utility",
+            "workingSetKB": 51800,
+            "privateKB": 13500
+          },
+          {
+            "type": "Tab",
+            "workingSetKB": 125756,
+            "privateKB": 63516
+          }
+        ],
+        "summedWorkingSetKB": 719144
+      },
+      "versions": {
+        "node": "24.18.1",
+        "acorn": "8.16.0",
+        "ada": "3.4.4",
+        "amaro": "1.1.9",
+        "ares": "1.34.6",
+        "brotli": "1.2.0",
+        "cldr": "48.0",
+        "icu": "78.2",
+        "llhttp": "9.4.3",
+        "merve": "1.2.2",
+        "modules": "146",
+        "napi": "10",
+        "nbytes": "0.1.4",
+        "ncrypto": "0.0.1",
+        "nghttp2": "1.69.0",
+        "nghttp3": "",
+        "ngtcp2": "",
+        "openssl": "0.0.0",
+        "simdjson": "4.6.4",
+        "simdutf": "7.7.0",
+        "sqlite": "3.53.1",
+        "tz": "2025c",
+        "undici": "7.29.0",
+        "unicode": "17.0",
+        "uv": "1.52.1",
+        "uvwasi": "0.0.23",
+        "v8": "14.8.178.38-electron.0",
+        "zlib": "1.3.2.1-motley",
+        "zstd": "1.6.0",
+        "electron": "42.8.1",
+        "chrome": "148.0.7778.280"
+      }
+    },
+    {
+      "run": 2,
+      "rendererReadyMs": 3798,
+      "studioOpenMs": 1638,
+      "shell": {
+        "processes": [
+          {
+            "type": "Browser",
+            "workingSetKB": 172108,
+            "privateKB": 138336
+          },
+          {
+            "type": "GPU",
+            "workingSetKB": 260708,
+            "privateKB": 222360
+          },
+          {
+            "type": "Utility",
+            "workingSetKB": 49376,
+            "privateKB": 13100
+          },
+          {
+            "type": "Tab",
+            "workingSetKB": 123504,
+            "privateKB": 61896
+          }
+        ],
+        "summedWorkingSetKB": 605696
+      },
+      "studio": {
+        "processes": [
+          {
+            "type": "Browser",
+            "workingSetKB": 172868,
+            "privateKB": 138780
+          },
+          {
+            "type": "GPU",
+            "workingSetKB": 359412,
+            "privateKB": 322100
+          },
+          {
+            "type": "Utility",
+            "workingSetKB": 51780,
+            "privateKB": 13436
+          },
+          {
+            "type": "Tab",
+            "workingSetKB": 130988,
+            "privateKB": 68464
+          }
+        ],
+        "summedWorkingSetKB": 715048
+      },
+      "versions": {
+        "node": "24.18.1",
+        "acorn": "8.16.0",
+        "ada": "3.4.4",
+        "amaro": "1.1.9",
+        "ares": "1.34.6",
+        "brotli": "1.2.0",
+        "cldr": "48.0",
+        "icu": "78.2",
+        "llhttp": "9.4.3",
+        "merve": "1.2.2",
+        "modules": "146",
+        "napi": "10",
+        "nbytes": "0.1.4",
+        "ncrypto": "0.0.1",
+        "nghttp2": "1.69.0",
+        "nghttp3": "",
+        "ngtcp2": "",
+        "openssl": "0.0.0",
+        "simdjson": "4.6.4",
+        "simdutf": "7.7.0",
+        "sqlite": "3.53.1",
+        "tz": "2025c",
+        "undici": "7.29.0",
+        "unicode": "17.0",
+        "uv": "1.52.1",
+        "uvwasi": "0.0.23",
+        "v8": "14.8.178.38-electron.0",
+        "zlib": "1.3.2.1-motley",
+        "zstd": "1.6.0",
+        "electron": "42.8.1",
+        "chrome": "148.0.7778.280"
+      }
+    },
+    {
+      "run": 3,
+      "rendererReadyMs": 3656,
+      "studioOpenMs": 860,
+      "shell": {
+        "processes": [
+          {
+            "type": "Browser",
+            "workingSetKB": 171868,
+            "privateKB": 138032
+          },
+          {
+            "type": "GPU",
+            "workingSetKB": 350096,
+            "privateKB": 312236
+          },
+          {
+            "type": "Utility",
+            "workingSetKB": 49856,
+            "privateKB": 13532
+          },
+          {
+            "type": "Tab",
+            "workingSetKB": 117956,
+            "privateKB": 56560
+          }
+        ],
+        "summedWorkingSetKB": 689776
+      },
+      "studio": {
+        "processes": [
+          {
+            "type": "Browser",
+            "workingSetKB": 172584,
+            "privateKB": 138684
+          },
+          {
+            "type": "GPU",
+            "workingSetKB": 358732,
+            "privateKB": 319856
+          },
+          {
+            "type": "Utility",
+            "workingSetKB": 49864,
+            "privateKB": 13536
+          },
+          {
+            "type": "Tab",
+            "workingSetKB": 125784,
+            "privateKB": 62900
+          }
+        ],
+        "summedWorkingSetKB": 706964
+      },
+      "versions": {
+        "node": "24.18.1",
+        "acorn": "8.16.0",
+        "ada": "3.4.4",
+        "amaro": "1.1.9",
+        "ares": "1.34.6",
+        "brotli": "1.2.0",
+        "cldr": "48.0",
+        "icu": "78.2",
+        "llhttp": "9.4.3",
+        "merve": "1.2.2",
+        "modules": "146",
+        "napi": "10",
+        "nbytes": "0.1.4",
+        "ncrypto": "0.0.1",
+        "nghttp2": "1.69.0",
+        "nghttp3": "",
+        "ngtcp2": "",
+        "openssl": "0.0.0",
+        "simdjson": "4.6.4",
+        "simdutf": "7.7.0",
+        "sqlite": "3.53.1",
+        "tz": "2025c",
+        "undici": "7.29.0",
+        "unicode": "17.0",
+        "uv": "1.52.1",
+        "uvwasi": "0.0.23",
+        "v8": "14.8.178.38-electron.0",
+        "zlib": "1.3.2.1-motley",
+        "zstd": "1.6.0",
+        "electron": "42.8.1",
+        "chrome": "148.0.7778.280"
+      }
+    }
+  ]
+}

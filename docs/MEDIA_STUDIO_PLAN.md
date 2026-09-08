@@ -8,6 +8,12 @@ before each task and record every verified success there. Follow the existing
 [Notion build loop](https://app.notion.com/p/3d5829ebf7be81308c58c474f6aed6c7).
 Task 1 is in progress. Publication and credential decisions keep their gates.
 
+The later [locked Core + Modules / Media Studio M2 plan](https://app.notion.com/p/3d5829ebf7be8150abd0f56e4d00083d)
+owns current product direction. Aden started that build on 2026-09-08. Complete
+this baseline checkpoint, then apply HB-M0–M2 around the existing Studio seams
+before expanding the pipeline. The media acceptance gates below remain required.
+See [the measured HB-M0 architecture baseline](CORE_MODULE_BASELINE.md).
+
 ## Baseline and boundaries
 
 The audit inspected main at `6b95e5e` and the media integration branch at

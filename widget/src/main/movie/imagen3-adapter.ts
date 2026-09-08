@@ -2,7 +2,7 @@
  * Imagen3Adapter
  *
  * Provider that wraps Google AI Studio's Imagen 3 text-to-image model.
- * Requires a GEMINI_API_KEY environment variable; without it, reports offline.
+ * Uses the Gemini API key from settings (google-ai-studio provider vault).
  *
  * Adapted from `generateSpriteSheetImage` in character-sprites.ts but returns a
  * single image (not a sprite sheet). The model is Imagen 3.0 Generate 002.
@@ -12,6 +12,8 @@
  */
 
 import type { GenerationCapability, GenerationProvider, GenerationRequest, GenerationResult } from './types';
+import { getSettings } from '../config-manager';
+import { apiKeyForProvider } from '../../shared/cloud-llm';
 
 const IMAGEN_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict';
 
@@ -22,7 +24,8 @@ const IMAGEN_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
 export async function probeImagen3(
   _req: GenerationRequest
 ): Promise<GenerationCapability> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const settings = getSettings();
+  const apiKey = apiKeyForProvider(settings as any, 'google-ai-studio');
 
   // If no key is present, we cannot generate.
   if (!apiKey) {
@@ -69,9 +72,10 @@ export async function generateImagen3(
   _height: number,
   _seed?: number
 ): Promise<{ base64: string; mimeType: 'png' }> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const settings = getSettings();
+  const apiKey = apiKeyForProvider(settings as any, 'google-ai-studio');
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY not set');
+    throw new Error('Gemini API key not configured. Add it in Settings → Custom LLM → Google AI Studio.');
   }
 
   // Imagen 3 expects a specific JSON payload.
@@ -154,7 +158,11 @@ export async function generateImagen3Shot(req: GenerationRequest): Promise<Gener
     await generateImagen3(req.prompt, req.width, req.height);
     return { status: 'done', provider: 'imagen-3', files: [], costMicroUsd: 0 };
   } catch (err) {
-    return { status: 'failed', provider: 'imagen-3', error: (err as Error).message };
+    const msg = (err as Error).message || String(err);
+    if (msg.includes('not configured') || msg.includes('API key')) {
+      return { status: 'failed', provider: 'imagen-3', error: `Imagen 3 unavailable: ${msg}` };
+    }
+    return { status: 'failed', provider: 'imagen-3', error: msg };
   }
 }
 

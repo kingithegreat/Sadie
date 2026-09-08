@@ -13,6 +13,17 @@ import { localSD15Provider } from '../movie/local-sd15-adapter';
 import { colabProvider } from '../movie/colab-adapter';
 import type { GenerationRequest } from '../movie/types';
 
+// Mock resolveAncientPathwaysDir so the adapter does not depend on the
+// `~/Desktop/Ancient Pathways` folder existing on the host running the tests.
+// On CI runners this path does not exist; mocking makes the suite hermetic.
+const mockResolveAncientPathwaysDir = jest.fn();
+const mockCheckRenderLock = jest.fn();
+jest.mock('../ancient-pathways', () => ({
+  resolveAncientPathwaysDir: () => mockResolveAncientPathwaysDir(),
+  checkRenderLock: (dir: string) => mockCheckRenderLock(dir),
+  runShowrunner: jest.fn(),
+}));
+
 describe('Ancient Pathways Local Movie Adapter', () => {
   let tmpDir: string;
   const origEnv = process.env.ANCIENT_PATHWAYS_DIR;
@@ -21,9 +32,14 @@ describe('Ancient Pathways Local Movie Adapter', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-adapter-test-'));
     fs.writeFileSync(path.join(tmpDir, 'run_pipeline.py'), '# mock pipeline runner\n');
     process.env.ANCIENT_PATHWAYS_DIR = tmpDir;
+    // Default: AP is available at tmpDir and the render lock is clear.
+    mockResolveAncientPathwaysDir.mockReturnValue(tmpDir);
+    mockCheckRenderLock.mockReturnValue({ locked: false });
   });
 
   afterEach(() => {
+    mockResolveAncientPathwaysDir.mockReset();
+    mockCheckRenderLock.mockReset();
     if (origEnv !== undefined) {
       process.env.ANCIENT_PATHWAYS_DIR = origEnv;
     } else {

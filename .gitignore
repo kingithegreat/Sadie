@@ -42,6 +42,7 @@ desktop.ini
 # IDE files
 .vscode/
 .idea/
+.kilo/
 *.swp
 *.swo
 *~
@@ -148,3 +149,6 @@ license-signing.private.pem
 
 # Agent scratch space (checkpoint workspaces, generated asset probes)
 workspace/
+
+# Local movie projects and generated run state are user data, not Core source.
+/movie/
