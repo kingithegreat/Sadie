@@ -1,0 +1,15 @@
+{
+  "kind": "image",
+  "prompt": "Close-up on Imhotep unrolling an architectural papyrus blueprint showing pyramid geometry and astronomy calculations",
+  "width": 1024,
+  "height": 576,
+  "durationSec": 6,
+  "characterRefs": [
+    "../../Ancient Pathways/workspace/branding/characters/imhotep/turnaround/front.png"
+  ],
+  "shotId": "shot_003",
+  "shotDir": "C:\\Users\\adenk\\Desktop\\homebot\\movie\\imhotep-temple-01\\scenes\\scene_01\\shot_003",
+  "freeOnly": true,
+  "allowWatermark": false,
+  "allowDeferred": false
+}

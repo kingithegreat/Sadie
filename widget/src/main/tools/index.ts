@@ -64,6 +64,8 @@ import { narrateClipToolDefs, narrateClipToolHandlers } from './narrate-clip';
 import { browserControlToolDefs, browserControlToolHandlers } from './browser-control';
 import { characterSpriteToolDefs, characterSpriteToolHandlers } from './character-sprites';
 import { movieToolDefs, movieToolHandlers } from './media-movie';
+import { videoToolDefs, videoToolHandlers } from './media-video';
+import { storyboardToolDefs, storyboardToolHandlers } from './media-storyboard';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
 
@@ -270,6 +272,11 @@ const QUERY_SYNONYMS: Record<string, string[]> = {
   company: ['crm'],
   client: ['crm', 'contact'],
   customer: ['crm', 'contact'],
+  storyboard: ['storyboard', 'create'],
+  board: ['storyboard', 'create'],
+  animatic: ['storyboard', 'media'],
+  scene: ['storyboard', 'media'],
+  shot: ['storyboard', 'media'],
 
   // Verbs for starting something. Every entry above maps a noun to a domain;
   // none mapped the words people actually use to BEGIN a thing, and tool names
@@ -1151,6 +1158,18 @@ export function initializeTools(force = false): void {
   // Register autonomous movie engine production orchestrator
   for (const def of movieToolDefs) {
     const handler = movieToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register video editing tools (FFmpeg-based trimming/splicing)
+  for (const def of videoToolDefs) {
+    const handler = videoToolHandlers[def.name];
+    if (handler) registerTool(def.name, def, handler);
+  }
+
+  // Register storyboard planning and frame generation tools
+  for (const def of storyboardToolDefs) {
+    const handler = storyboardToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 

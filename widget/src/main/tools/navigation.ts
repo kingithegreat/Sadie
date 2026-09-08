@@ -56,6 +56,7 @@ export const navigateToModeDef: ToolDefinition = {
         description:
           'Context for the destination to open with — the idea for a video, draft instructions ' +
           'for an automation, the topic for a quiz. For Media Studio (mode="media"), supports ' +
+          '`workspace` ("storyboard"|"timeline"|"stage"|"router"|"ap"), `projectId` (storyboard slug), ' +
           '`title`, `format` ("short"|"long"), `source` ("ancient-pathways"|"podcast"|"chat"), ' +
           '`episodeId`, `feedUrl`, and `jobId`. Omit only if there is genuinely nothing to carry over.',
       },

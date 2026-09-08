@@ -1,0 +1,20 @@
+{
+  "id": "imhotep",
+  "name": "Imhotep",
+  "age": "40s",
+  "face": "angular jaw, high cheekbones, olive skin, dark eyes",
+  "hair": "shoulder-length black hair, slightly wavy, tied back with leather cord",
+  "clothing": "white linen priestly robes with gold trim, leather sandals",
+  "body": "lean, athletic build, 180cm",
+  "voice": "deep, measured, calm authority",
+  "personality": "wise, architect of the step pyramid, visionary builder",
+  "visualReferences": [
+    "../../Ancient Pathways/workspace/branding/characters/imhotep/turnaround/front.png"
+  ],
+  "consistencyNotes": [
+    "eyes are dark brown, never blue",
+    "robes are pristine white linen with thin gold border"
+  ],
+  "revision": 1,
+  "updatedAt": "2026-09-05T12:09:36.106179Z"
+}

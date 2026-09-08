@@ -1,0 +1,12 @@
+{
+  "sceneId": "scene_01",
+  "title": "Approach at Golden Hour",
+  "description": "Imhotep walks toward the temple entrance as the sun sets",
+  "order": 1,
+  "shots": [
+    "shot_001",
+    "shot_002",
+    "shot_003",
+    "shot_004"
+  ]
+}

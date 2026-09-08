@@ -1,0 +1,15 @@
+{
+  "kind": "video",
+  "prompt": "Hero wide shot of Imhotep ascending the grand temple sanctuary steps as evening torches are lit",
+  "width": 1024,
+  "height": 576,
+  "durationSec": 10,
+  "characterRefs": [
+    "../../Ancient Pathways/workspace/branding/characters/imhotep/turnaround/front.png"
+  ],
+  "shotId": "shot_004",
+  "shotDir": "C:\\Users\\adenk\\Desktop\\homebot\\movie\\imhotep-temple-01\\scenes\\scene_01\\shot_004",
+  "freeOnly": true,
+  "allowWatermark": false,
+  "allowDeferred": false
+}

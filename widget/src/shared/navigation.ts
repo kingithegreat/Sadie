@@ -30,7 +30,7 @@ export const MODE_INFO: Record<AppMode, { label: string; purpose: string }> = {
   documents: { label: 'Documents', purpose: 'read, search and ask questions about files' },
   quiz: { label: 'Quiz', purpose: 'generate practice questions from material' },
   dashboard: { label: 'Home', purpose: 'the overview screen' },
-  media: { label: 'Media Studio', purpose: 'turn an idea into a narrated video, animate Ancient Pathways episodes, or recap podcasts' },
+  media: { label: 'Media Studio', purpose: 'turn an idea into a visual storyboard, narrated video, animate Ancient Pathways episodes, or recap podcasts' },
   browser: { label: 'Browser', purpose: 'browse the web inside the app' },
   code: { label: 'Code', purpose: 'explore, edit and run code in the workspace' },
   feeds: { label: 'Feeds', purpose: 'read and search news and RSS feeds' },

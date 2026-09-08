@@ -1,0 +1,13 @@
+{
+  "projectId": "imhotep-temple-01",
+  "name": "Imhotep Approaches the Temple",
+  "createdAt": "2026-09-05T12:09:36.106179Z",
+  "updatedAt": "2026-09-05T12:09:36.106179Z",
+  "freeOnly": true,
+  "defaultResolution": [
+    1024,
+    576
+  ],
+  "defaultDurationSec": 8,
+  "notes": "Golden hour Karnak temple sequence with Imhotep"
+}

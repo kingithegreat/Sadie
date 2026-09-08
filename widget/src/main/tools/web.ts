@@ -1668,50 +1668,12 @@ async function tryAutomatic1111(prompt: string, width: number, height: number, s
   }
 }
 
-// ── Backend 2: ComfyUI simple prompt ─────────────────────────────────────────
+// ── Backend 2: ComfyUI local node graph ──────────────────────────────────────
 async function tryComfyUI(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
   try {
-    // ComfyUI requires a workflow JSON — use the minimal KSampler workflow
-    const workflow = {
-      "3": { class_type: 'KSampler', inputs: { seed: Math.floor(Math.random() * 1e9), steps, cfg: 7, sampler_name: 'euler', scheduler: 'normal', denoise: 1, model: ["4", 0], positive: ["6", 0], negative: ["7", 0], latent_image: ["5", 0] } },
-      "4": { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'v1-5-pruned-emaonly.ckpt' } },
-      "5": { class_type: 'EmptyLatentImage', inputs: { batch_size: 1, height, width } },
-      "6": { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ["4", 1] } },
-      "7": { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ["4", 1] } },
-      "8": { class_type: 'VAEDecode', inputs: { samples: ["3", 0], vae: ["4", 2] } },
-      "9": { class_type: 'SaveImage', inputs: { filename_prefix: 'homebot', images: ["8", 0] } }
-    };
-    const promptRes = await httpPost('http://127.0.0.1:8188/prompt', JSON.stringify({ prompt: workflow }), {}, 30000);
-    if (!promptRes?.prompt_id) return null;
-
-    // Poll for result
-    const promptId = promptRes.prompt_id as string;
-    for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 2000));
-      const history = await new Promise<any>((res2, rej2) => {
-        const req = http.get(`http://127.0.0.1:8188/history/${promptId}`, (r) => {
-          let d = ''; r.on('data', (c: Buffer) => d += c); r.on('end', () => { try { res2(JSON.parse(d)); } catch { res2({}); } });
-        }); req.on('error', rej2);
-      });
-      const outputs = history?.[promptId]?.outputs;
-      if (outputs) {
-        for (const node of Object.values(outputs) as any[]) {
-          if (node?.images?.[0]) {
-            const img = node.images[0];
-            const imgData = await new Promise<Buffer>((r3, e3) => {
-              const url = `http://127.0.0.1:8188/view?filename=${img.filename}&subfolder=${img.subfolder || ''}&type=${img.type || 'output'}`;
-              http.get(url, (response) => {
-                const chunks: Buffer[] = [];
-                response.on('data', (c: Buffer) => chunks.push(c));
-                response.on('end', () => r3(Buffer.concat(chunks)));
-              }).on('error', e3);
-            });
-            return imgData.toString('base64');
-          }
-        }
-      }
-    }
-    return null;
+    const { generateComfyUI } = await import('../movie/comfyui-adapter');
+    const res = await generateComfyUI(prompt, width, height, { steps, timeoutMs: 60000 });
+    return res.base64 || null;
   } catch {
     return null;
   }
