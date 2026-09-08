@@ -166,5 +166,10 @@ docs, import boundaries and duplicate-export checks passed on the combined code.
 The rebuilt combined app also passed 12 real Electron Studio/overlay regressions
 without retries, including both entrance-animation cases and Studio file creation.
 
-Remote checks and merged-content verification are still required before M1 is
-complete. Local logs remain under the ignored `.kilo/evidence/m1/` directory.
+M1 subsequently merged as [PR #265](https://github.com/kingithegreat/Sadie/pull/265),
+main `1e3b064`, with all six required contexts successful and the complete main
+tree matching tested head `3e08059`. Windows application CI ran 3,785 widget,
+226 root and 13 overlay tests; all nine Electron shards passed, including 16 +
+16 + 16 actual tests on Windows. Local logs remain under the ignored
+`.kilo/evidence/m1/` directory. The later bounded M2 controls checkpoint is
+documented in [Studio module controls](STUDIO_MODULE_CONTROLS.md).

@@ -56,7 +56,8 @@ The regression paths are:
   the enabled control passed before the fix. Both pass afterwards.
 - `widget/src/main/__tests__/module-controls.test.ts`: real temporary storage and
   registry, restart, stale handlers, one-copy restoration, drain, save failure,
-  grant rejection, corrupt preferences and unknown module identity.
+  grant rejection, corrupt preferences, unknown module identity and startup
+  dependency ordering without overriding a saved disabled dependency.
 - `widget/src/main/__tests__/module-control-ipc.test.ts`: sender/frame and payload
   validation before controller dispatch.
 - `src/__tests__/module-boundaries.test.ts`: real-tree import scanning plus an
@@ -66,7 +67,15 @@ The regression paths are:
   verifies the saved choice and retained files, enables Studio, and creates an
   actual storyboard through Open Studio. No media provider success is mocked.
 
-Initial local Windows checks passed 44 focused module tests and two real Electron
-tests without retries, including the existing Studio-to-disk regression. The
-complete unit/static/CI checkpoint is recorded in the claims ledger and Notion.
+The combined Windows checkpoint includes movie privacy #266/main `19535cb`.
+It passes 274 widget suites / 3,844 tests (15 skipped) and 18 root suites / 227
+tests. Both typechecks, build, docs, AST import boundaries and the duplicate-export
+guard pass; lint reports zero errors and eight existing warnings.
+
+The final combined full Electron suite passed **50 tests in 10.5 minutes without
+retries**, including the new module controls test (34.5 seconds), movie privacy
+(17.5 seconds), existing Studio-to-disk regression (16.9 seconds), navigation,
+overlays and streaming. Initial focused verification passed 44 module tests and
+two real Electron tests without retries. Remote integration is tracked in the
+[claims ledger](https://app.notion.com/p/3d5829ebf7be814eaccceeaaa9b1e565).
 Creating a storyboard proves reachability and file persistence, not playable video.
