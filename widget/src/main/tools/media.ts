@@ -894,15 +894,29 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         hasMusic: !!music.path,
       });
     } catch (qaErr: any) {
-      // Being unable to MEASURE is not the same as measuring a fault. Say so
-      // and let the human look, rather than blocking a video over a broken
-      // probe.
-      qa = { ok: true, failures: [], warnings: [`could not check the file automatically: ${errText(qaErr)}`] };
+      // No measurements means there is no evidence that the render is usable.
+      // Fail closed through the same needs_revision path as a measured fault;
+      // that path keeps the rendered file available for manual inspection.
+      qa = {
+        ok: false,
+        failures: [`automatic render QA could not verify the file: ${errText(qaErr)}`],
+        warnings: [],
+      };
     }
+
+    // Record that rendering completed before applying the QA verdict. The
+    // state machine requires QA failures to leave render_qa, while persistence
+    // happens only after the verdict so a rejected render is never stored as
+    // ready for review.
+    const renderedForQa = transition(
+      { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
+      'render_qa',
+      { by: 'render stage' },
+    );
 
     if (!qa.ok) {
       const blocked = transition(
-        { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
+        renderedForQa,
         'needs_revision',
         { by: 'render QA', note: describeQa(qa) },
       );
@@ -914,13 +928,9 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       ].join('\n'));
     }
 
-    // Record the file before transitioning, so a failed transition cannot
-    // discard a render that took real minutes.
-    const updated = transition(
-      { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
-      'render_qa',
-      { by: 'render stage' },
-    );
+    // Successful QA keeps the existing render_qa checkpoint, including the
+    // render path recorded above.
+    const updated = renderedForQa;
     upsert(updated);
 
     const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
