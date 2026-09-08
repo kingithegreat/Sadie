@@ -15,7 +15,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| HB-M2 prerequisite — movie/image provider online consent | claude/studio-movie-privacy | Claimed — Codex 2026-09-09 | Isolated `.kilo/worktrees/codex-movie-privacy` from merged main `1e3b064`. Guard online movie/image adapters before probes, generation and fallback; preserve permitted local providers. Prove zero outbound calls when Online is off, including direct adapter entry points and the Studio movie path. Speech privacy is independently claimed on `claude/studio-speech-privacy`; this task does not edit speech. Provider output/free-tier claims, optional UI and real-video acceptance remain open. |
+| ~~HB-M2 prerequisite — movie/image provider online consent~~ | claude/studio-movie-privacy | Implementation verified; claim released — Codex 2026-09-09 | Local Windows: 3,827 widget + 226 root tests, typechecks/lint/build/docs and real Electron movie denial pass. No provider requests when Online is off; controlled loopback generation remains usable. Evidence and integration tracking: `tasks/movie-provider-privacy.md`. Remote CI/merge remain pending at this committed checkpoint; no live-provider quality claim. Separate speech session remains active. |
 | HB-M2 prerequisite — narration online consent | claude/studio-speech-privacy | Claimed in another active session — Codex 2026-09-09 | Existing `.kilo/worktrees/codex-speech-privacy` owns shared speech/Edge/Kokoro privacy; observed active claim and uncommitted speech tests. Preserve this work. |
 | ~~Ancient Pathways Integration — run video workflow from Media Studio UI & chat sprite generation~~ | claude/ancient-pathways-integration | ~~Ready for integration~~ → **MERGED as #248 (2026-09-05)** | Media Studio episode showcase with 9 episodes, season filter, real-time search, 4-step progress stepper (Story -> Voices -> Animation -> 1080p Video), celebratory 1080p MP4 preview player. Autonomous Sprite Pipeline (`media_generate_sprites`) generates 8-panel model sheets via Imagen 3/Pollinations, auto-isolates background, slices via Python, outputs `manifest.json`. Verified: widget tsc 0 errors; eslint 0 errors; 76/76 tests green; docs:check in sync. |
 | ~~duplicate-export-guard runs on push, not just pull_request~~ | claude/review-o-x-alpha-commits-1qrn25 | ~~Ready for integration~~ → **MERGED as #244 (2026-09-04)** | One line in `ci.yml`. `auto-merge.yml` opens PRs as github-actions[bot]; GitHub attributes that pull_request event to the bot and holds EVERY workflow on it at action_required - six held runs on one commit of #215, measured. Push-triggered runs are attributed to the pusher and run fine, but this job was gated `if: github.event_name == 'pull_request'`, so on those it reported "skipped" and never "success". A one-commit PR nobody touches again waits forever on an approval nobody knows to give - the "ten runs held, five for three days" note. Gate removed; base ref is now `github.base_ref \|\| 'main'`. All five required checks are now satisfiable from push runs alone, so a `claude/**` branch can auto-merge unattended. Verified BOTH directions with an empty base ref (a zero from this check is otherwise indistinguishable from a broken one): a deliberate colliding export exits 1 and names the file, a clean tree exits 0. Also records the live `WorkspaceShell.tsx:83` instance of the whole-effect handoff guard in `renderer-ui.instructions.md` - unfixed, track F, nobody's claim. Does NOT touch product code. |
@@ -111,3 +111,14 @@ The next host work must preserve existing jobs, assets, privacy and approval
 authority. No new framework, paid provider, production publication or sales
 is part of this baseline. `/movie/` is ignored as local project/run data;
 the pending sample was removed from Git only and retained on disk.
+
+## 2026-09-09 — movie provider dispatch consent
+
+Movie/image adapters check the existing Online choice at their main-process
+entry points, including direct helpers and every remote ComfyUI request.
+Configured local-provider URLs can be remote: only loopback bypasses consent,
+not private LAN addresses. Reuse `utils/provider-network-policy.ts` for this
+HTTP boundary; request arguments cannot grant Online access. A movie report
+with failed shots now returns an IPC failure and leaves full reasons in the
+report/log. Before/after, local transport and real Studio UI evidence is in
+`tasks/movie-provider-privacy.md`; remaining M2 acceptance is still open.

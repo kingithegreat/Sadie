@@ -108,6 +108,88 @@ test('unreadable settings fail closed without exposing the underlying exception'
   noRequests();
 });
 
+test.each([
+  'http://localhost.example.invalid:8188', 'http://127.0.0.1.example.invalid:8188',
+  'http://192.168.1.9:8188', 'http://10.0.0.2:8188', 'http://0.0.0.0:8188',
+  'http://[::]:8188', 'http://[fc00::1]:8188',
+])('a local-looking remote endpoint cannot bypass consent: %s', async endpoint => {
+  await expect(isComfyUIReachable(endpoint)).rejects.toThrow(/Online/);
+  noRequests();
+});
+
+function respondWith(data: unknown, statusCode = 200): any {
+  const response: any = {
+    statusCode, resume: jest.fn(),
+    on: jest.fn((event, callback) => {
+      if (event === 'data') callback(Buffer.from(JSON.stringify(data)));
+      if (event === 'end') callback();
+      return response;
+    }),
+  };
+  return response;
+}
+
+test.each([
+  ['http://127.0.0.1:8188', '127.0.0.1'], ['http://127.0.0.2:8188', '127.0.0.2'],
+  ['http://localhost:8188', '127.0.0.1'], ['http://[::1]:8188', '::1'],
+])('an actual loopback destination remains usable with Online off: %s', async (endpoint, hostname) => {
+  (http.request as jest.Mock).mockImplementation((_options, callback) => {
+    callback(respondWith({}));
+    return { on: jest.fn(), end: jest.fn() };
+  });
+  expect(await isComfyUIReachable(endpoint)).toBe(true);
+  expect(http.request).toHaveBeenCalledWith(expect.objectContaining({ hostname, path: '/system_stats' }), expect.any(Function));
+  expect(mockGetSettings).not.toHaveBeenCalled();
+});
+
+test('an approved HTTPS endpoint uses TLS and the HTTPS port', async () => {
+  settings = { useCustomLLM: true };
+  (https.request as jest.Mock).mockImplementation((_options, callback) => {
+    callback(respondWith({}));
+    return { on: jest.fn(), end: jest.fn() };
+  });
+  expect(await isComfyUIReachable('https://render.example.invalid')).toBe(true);
+  expect(https.request).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'https:', port: 443, hostname: 'render.example.invalid' }), expect.any(Function));
+  expect(http.request).not.toHaveBeenCalled();
+});
+
+test.each(['file:///private', 'http://user:secret@127.0.0.1:8188', 'not-a-url'])(
+  'an unsupported endpoint is rejected without dispatch: %s', async endpoint => {
+    await expect(isComfyUIReachable(endpoint)).rejects.toThrow('valid HTTP or HTTPS endpoint');
+    noRequests();
+  },
+);
+
+test.each(['/object_info', '/prompt', '/history'])(
+  'ComfyUI rechecks consent after %s before the next request', async revokeAfter => {
+    settings = { useCustomLLM: true };
+    const paths: string[] = [];
+    (http.request as jest.Mock).mockImplementation((options, callback) => {
+      paths.push(options.path);
+      if (options.path.startsWith(revokeAfter)) settings = { useCustomLLM: false };
+      const response = options.path.startsWith('/object_info')
+        ? { CheckpointLoaderSimple: { input: { required: { ckpt_name: [['fixture']] } } } }
+        : options.path === '/prompt'
+          ? { prompt_id: 'job' }
+          : { job: { outputs: { '9': { images: [{ filename: 'fixture.png' }] } } } };
+      callback(respondWith(response));
+      return { on: jest.fn(), end: jest.fn(), write: jest.fn() };
+    });
+    jest.useFakeTimers();
+    try {
+      const result = generateComfyUI('private fixture', 512, 512);
+      const rejected = expect(result).rejects.toThrow(/Online/);
+      await jest.advanceTimersByTimeAsync(1500);
+      await rejected;
+      const expectedCount = revokeAfter === '/object_info' ? 1 : revokeAfter === '/prompt' ? 2 : 3;
+      expect(paths).toHaveLength(expectedCount);
+      expect(paths.at(-1)).toContain(revokeAfter);
+    } finally {
+      jest.useRealTimers();
+    }
+  },
+);
+
 test.each([{ useCustomLLM: true }, { customLLM: { enabled: true } }])('allowed current and legacy choices reach the existing cloud adapter: %j', async choice => {
   settings = choice;
   mockFetch.mockResolvedValue({ ok: true, json: async () => ({ image: 'a'.repeat(128), mimeType: 'png' }) });
@@ -146,7 +228,7 @@ test('the actual movie tool and standard router persist failure without dispatch
     camera: { framing: 'wide', lens: '24mm', movement: 'static' }, lighting: 'day', durationSec: 4,
     visualReferences: [], generationMethod: 'still', status: ShotStatus.PLANNED,
   }]);
-  const result = await mediaProduceMovieHandler({ projectDir, allowDeferred: true, allowWatermark: true, allowCloud: true, useCustomLLM: true });
+  const result = await mediaProduceMovieHandler({ projectDir, allowDeferred: true, allowWatermark: true, allowCloud: true, useCustomLLM: true }, { executionId: 'privacy-test' });
   expect(result.success).toBe(false);
   expect(result.result.report).toMatchObject({ completedShots: 0, deferredShots: 0, failedShots: 1 });
   const shotDir = path.join(projectDir, 'scenes', 'scene_01', 'shot_01');
