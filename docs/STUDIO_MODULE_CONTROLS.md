@@ -91,5 +91,11 @@ case in shard two passed on an inner retry after a timeout.
 
 Image artifact PR #267 merged first as `4b9cdf2`, requiring a latest-main merge
 under strict branch protection. The only conflict was the claims table;
-application code combined automatically. Final combined verification and merge
-status remain in the linked ledger.
+application code combined automatically. The combined checkpoint `41ee7fb`
+passes all 3,867 Windows widget tests (15 existing skipped), app typecheck,
+build, lint (the same eight warnings), docs and import checks. Six affected real
+Electron cases passed in 1.0 minute without retries: module restart controls,
+Studio storyboard creation, movie Online denial, and PNG/JPEG/corrupt image
+output through the real local transport, decoder and saved-state paths. Root
+production code/tests are unchanged from the preceding 227-test checkpoint.
+Final CI and merge status remain in the linked ledger.
