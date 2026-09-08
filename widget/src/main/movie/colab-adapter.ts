@@ -29,6 +29,7 @@ import type {
   ShotJobState,
 } from './types';
 import { ShotStatus } from './types';
+import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 
 export const COLAB_WORKER_ID = 'colab-worker';
 
@@ -52,6 +53,7 @@ export interface ColabWorkerTicket {
 export async function probeColabWorker(
   _req: GenerationRequest,
 ): Promise<GenerationCapability> {
+  assertProviderOnlineAccess('Colab');
   return {
     canGenerate: true,
     costMicroUsd: 0, // genuinely free on Colab T4
@@ -82,6 +84,9 @@ export async function generateColabShot(req: GenerationRequest): Promise<Generat
   }
 
   try {
+    // A deferred remote job is still an online choice, even before its ticket
+    // is handed to the operator or picked up by a synced-folder worker.
+    assertProviderOnlineAccess('Colab');
     const timestamp = Date.now();
     const ticketId = `colab_ticket_${req.shotId}_${timestamp}`;
 

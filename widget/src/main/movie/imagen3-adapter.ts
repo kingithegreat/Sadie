@@ -14,6 +14,7 @@
 import type { GenerationCapability, GenerationProvider, GenerationRequest, GenerationResult } from './types';
 import { getSettings } from '../config-manager';
 import { apiKeyForProvider } from '../../shared/cloud-llm';
+import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 
 const IMAGEN_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict';
 
@@ -24,6 +25,7 @@ const IMAGEN_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
 export async function probeImagen3(
   _req: GenerationRequest
 ): Promise<GenerationCapability> {
+  assertProviderOnlineAccess('Imagen');
   const settings = getSettings();
   const apiKey = apiKeyForProvider(settings as any, 'google-ai-studio');
 
@@ -72,6 +74,7 @@ export async function generateImagen3(
   _height: number,
   _seed?: number
 ): Promise<{ base64: string; mimeType: 'png' }> {
+  assertProviderOnlineAccess('Imagen');
   const settings = getSettings();
   const apiKey = apiKeyForProvider(settings as any, 'google-ai-studio');
   if (!apiKey) {
@@ -99,6 +102,7 @@ export async function generateImagen3(
 
   let resp: Response;
   try {
+    assertProviderOnlineAccess('Imagen');
     resp = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

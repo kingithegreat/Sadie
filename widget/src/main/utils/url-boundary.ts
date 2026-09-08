@@ -9,6 +9,14 @@
  * next range that needs blocking lands in exactly one place.
  */
 
+/** Only this machine, not private LAN addresses or names which need DNS. */
+export function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host === '::1') return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+    && host.split('.').every(part => Number(part) <= 255);
+}
+
 /** True for RFC1918, loopback, link-local (169.254/16) and 0.0.0.0/8. */
 export function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.').map(s => parseInt(s, 10));

@@ -14,6 +14,7 @@ jest.mock('../config-manager', () => ({
 
 let mockGoogleKey = '';
 jest.mock('../../shared/cloud-llm', () => ({
+  ...jest.requireActual('../../shared/cloud-llm'),
   apiKeyForProvider: (_settings: any, provider: string) =>
     provider === 'google-ai-studio' ? mockGoogleKey : '',
 }));
@@ -43,7 +44,7 @@ const fakeRequest: GenerationRequest = {
 
 describe('imagen3-adapter', () => {
   beforeEach(() => {
-    mockGetSettings.mockReturnValue({});
+    mockGetSettings.mockReturnValue({ useCustomLLM: true });
     mockFetch.mockReset();
     mockGoogleKey = '';
   });
