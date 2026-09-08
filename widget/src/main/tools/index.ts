@@ -19,10 +19,8 @@ import {
 } from '../../../../src/trust/batch';
 import { 
   ToolDefinition, 
-  ToolHandler, 
   ToolResult, 
   ToolContext, 
-  RegisteredTool,
   OllamaTool,
   toOllamaTool,
   toCompactOllamaTool,
@@ -59,15 +57,12 @@ import { codebaseToolDefs, codebaseToolHandlers } from './codebase';
 import { automationToolDefs, automationToolHandlers } from './automation';
 import { skillToolDefs, skillToolHandlers } from './skills';
 import { crmToolDefs, crmToolHandlers } from './crm';
-import { mediaToolDefs, mediaToolHandlers } from './media';
-import { narrateClipToolDefs, narrateClipToolHandlers } from './narrate-clip';
 import { browserControlToolDefs, browserControlToolHandlers } from './browser-control';
-import { characterSpriteToolDefs, characterSpriteToolHandlers } from './character-sprites';
-import { movieToolDefs, movieToolHandlers } from './media-movie';
-import { videoToolDefs, videoToolHandlers } from './media-video';
-import { storyboardToolDefs, storyboardToolHandlers } from './media-storyboard';
+import { initializeBundledModules } from '../modules/bundled';
 import { initializeMcpServers, seedMcpDefaults, discoverExternalMcpServers } from '../mcp-client';
 import { logTelemetryEvent } from '../utils/logger';
+import { getAllToolDefinitions, getTool, registerTool } from './registry';
+export { getAllToolDefinitions, getTool, hasTool, registerTool } from './registry';
 
 /** Classify a tool error into a coarse category for metrics aggregation */
 function classifyToolError(err: unknown): string {
@@ -80,9 +75,6 @@ function classifyToolError(err: unknown): string {
   if (msg.includes('cancel')) return 'cancelled';
   return 'other';
 }
-
-// Global tool registry
-const toolRegistry = new Map<string, RegisteredTool>();
 
 // Aliases for tool names coming from models that may use different names
 const TOOL_ALIASES: Record<string, string> = {
@@ -102,21 +94,6 @@ const pendingConfirmations = new Map<string, {
   context: ToolContext;
   resolve: (confirmed: boolean) => void;
 }>();
-
-/**
- * Register a tool with the system
- */
-export function registerTool(name: string, definition: ToolDefinition, handler: ToolHandler): void {
-  toolRegistry.set(name, { definition, handler });
-  console.log(`[HomeBot Tools] Registered tool: ${name}`);
-}
-
-/**
- * Get all registered tool definitions
- */
-export function getAllToolDefinitions(): ToolDefinition[] {
-  return Array.from(toolRegistry.values()).map(t => t.definition);
-}
 
 /**
  * Document-related tool names that should only be available when documents are attached
@@ -490,20 +467,6 @@ export function getSmallModelTools(options?: { excludeDocumentTools?: boolean; c
 }
 
 /**
- * Check if a tool exists
- */
-export function hasTool(name: string): boolean {
-  return toolRegistry.has(name);
-}
-
-/**
- * Get a specific tool
- */
-export function getTool(name: string): RegisteredTool | undefined {
-  return toolRegistry.get(name);
-}
-
-/**
  * Execute a tool call
  */
 export async function executeTool(
@@ -513,7 +476,7 @@ export async function executeTool(
   // Normalize aliases (e.g., models may emit `nba_scores` but our registered tool is `nba_query`)
   const normalized = TOOL_ALIASES[call.name] || call.name;
   call.name = normalized;
-  const tool = toolRegistry.get(call.name);
+  const tool = getTool(call.name);
   
   if (!tool) {
     return {
@@ -1131,49 +1094,16 @@ export function initializeTools(force = false): void {
     if (handler) registerTool(def.name, def, handler);
   }
 
-  // Register Media Studio tools (video pipeline + the human approval gate)
-  for (const def of mediaToolDefs) {
-    const handler = mediaToolHandlers[def.name];
-    if (handler) registerTool(def.name, def, handler);
-  }
-
-  // Register bring-your-own clip narration (Gemini script → engine → mux)
-  for (const def of narrateClipToolDefs) {
-    const handler = narrateClipToolHandlers[def.name];
-    if (handler) registerTool(def.name, def, handler);
-  }
-
   // Register CRM tools (companies, contacts, deals, activities, tasks, brief)
   for (const def of crmToolDefs) {
     const handler = crmToolHandlers[def.name];
     if (handler) registerTool(def.name, def, handler);
   }
 
-  // Register character sprite generation & auto-slicing (Imagen 3 / Remotion)
-  for (const def of characterSpriteToolDefs) {
-    const handler = characterSpriteToolHandlers[def.name];
-    if (handler) registerTool(def.name, def, handler);
-  }
+  // Reviewed modules register through the same Map with lifecycle ownership.
+  initializeBundledModules();
 
-  // Register autonomous movie engine production orchestrator
-  for (const def of movieToolDefs) {
-    const handler = movieToolHandlers[def.name];
-    if (handler) registerTool(def.name, def, handler);
-  }
-
-  // Register video editing tools (FFmpeg-based trimming/splicing)
-  for (const def of videoToolDefs) {
-    const handler = videoToolHandlers[def.name];
-    if (handler) registerTool(def.name, def, handler);
-  }
-
-  // Register storyboard planning and frame generation tools
-  for (const def of storyboardToolDefs) {
-    const handler = storyboardToolHandlers[def.name];
-    if (handler) registerTool(def.name, def, handler);
-  }
-
-  console.log(`[HomeBot Tools] Initialized ${toolRegistry.size} tools`);
+  console.log(`[HomeBot Tools] Initialized ${getAllToolDefinitions().length} tools`);
 
   // Auto-discover servers from Cursor / Claude Desktop / VS Code, then seed defaults
   discoverExternalMcpServers();

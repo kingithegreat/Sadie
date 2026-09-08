@@ -8,6 +8,17 @@ required; source presence and mocked tests do not establish real-media success.
 
 ## Reconciled checkpoint
 
+HB-M0 completed on 2026-09-08: #259 merged as `8327342`, including #260 and #262.
+The entire merged tree matches the tested `4c4e6ee` tree. All six required
+contexts were present and green; the nine-shard Electron matrix passed, with
+Windows running 16 + 16 + 15 actual tests. Root CI ran 219 tests and Windows
+application CI ran 3,682 unit tests plus 13 overlay tests. Local full Electron
+baseline: 47 passed without retries. See the
+[matrix run](https://github.com/kingithegreat/Sadie/actions/runs/34217979784) and
+[application/root run](https://github.com/kingithegreat/Sadie/actions/runs/34217979661).
+The historical reconciliation and measurements below remain pinned to that
+baseline; the successor host contract is [CORE_MODULE_CONTRACT.md](CORE_MODULE_CONTRACT.md).
+
 Main `0c85650` contains the #260 overlay repair and #262 Windows E2E launcher
 repair. Both PRs are merged. #259 at `cede545` contains the pending storyboard,
 script director, FFmpeg storyboard renderer, ComfyUI adapter, DCC/timeline and

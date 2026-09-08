@@ -40,6 +40,8 @@ export interface ToolResult {
   success: boolean;
   result?: any;
   error?: string;
+  // Stable main-process denial reason; renderer input cannot supply authority.
+  code?: string;
   // For confirmable tools, this indicates the operation is pending user approval
   pendingConfirmation?: boolean;
   confirmationId?: string;

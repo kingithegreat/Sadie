@@ -674,15 +674,8 @@ export const mediaBreakdownScriptHandler: ToolHandler = async (args, _context) =
       totalShots: res.shots?.length || 0,
       totalDurationSec: res.totalDurationSec,
       projectDir: res.projectDir,
-      shots: res.shots?.map(s => ({
-        shotId: s.shotId,
-        framing: s.framing,
-        lens: s.lens,
-        movement: s.movement,
-        durationSec: s.durationSec,
-        prompt: s.prompt,
-        narration: s.narration,
-      })),
+      // Preserve the director's complete shot contract for the legacy Studio IPC facade.
+      shots: res.shots,
       message: `Directed script into storyboard "${res.title}" (${res.genre}) with ${res.shots?.length || 0} shots! Total duration: ${res.totalDurationSec}s.`,
       handoff: {
         mode: 'media',
