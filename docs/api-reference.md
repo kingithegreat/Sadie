@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (201)** — `window.electron`
+**Preload methods (204)** — `window.electron`
 
 ```
 addFeed                         addMessage                      browserAttach                   browserBack
@@ -1038,34 +1038,34 @@ mediaFfmpegStatus               mediaList                       mediaMarkPublish
 mediaMovieRun                   mediaParseFeed                  mediaReject                     mediaRun
 mediaSpliceVideo                mediaStoryboardBreakdown        mediaStoryboardCreate           mediaStoryboardGenerateFrame
 mediaStoryboardGet              mediaStoryboardList             mediaStoryboardRender           mediaStoryboardSave
-mediaTrimClip                   minimizeWindow                  onAssistantToolActivity         onBatchSummary
-onBrowserState                  onConfigRecovered               onConfirmationRequest           onConversationCompacted
-onHardwareProfileApplied        onHideWindow                    onMediaAncientPathwaysProgress  onMediaFfmpegProgress
-onMessage                       onModelFallback                 onNavigate                      onOllamaDownloadProgress
-onOllamaStatus                  onPermissionRequest             onProactiveBriefing             onPullModelProgress
-onReminderFired                 onSdCppSetupProgress            onShowWindow                    onStreamChunk
-onStreamEnd                     onStreamError                   onSupervisorStatus              onTerminalExit
-onTerminalOutput                onTitleUpdated                  onUpdateAvailable               onUpdateDownloaded
-onUpdateProgress                onWidgetModeChanged             openExternalUrl                 openFile
-parseDocument                   pullModel                       pullModelStream                 ragClear
-ragIndex                        ragList                         readConsentLog                  readDebugLogs
-readPermissionAudit             readTelemetryEvents             removeFeed                      removeHideWindowListener
-removeShowWindowListener        resetPermissions                resolveActiveModel              restartApp
-runAutomation                   runDiagnostics                  saveConversation                saveQuizProgress
-saveSettings                    schedulerAdd                    schedulerList                   schedulerRemove
-schedulerToggle                 sdCppAutoSetup                  sdCppSetup                      sdCppStatus
-searchConversations             sendConfirmationResponse        sendMessage                     sendPermissionResponse
-sendStreamMessage               setActiveConversation           setAlwaysOnTop                  setUncensoredMode
-showInFolder                    skillsList                      skillsOpenFolder                startOllama
-startSpeechRecognition          subscribeToStream               terminalClose                   terminalCreate
-terminalKill                    terminalRun                     testN8nConnection               toggleWidgetMode
-ttsListVoices                   ttsSampleVoice                  ttsSpeak                        ttsStop
-unhideFeed                      updateAutomation                updateMessage                   workspaceList
-workspaceRead                   workspaceRoot                   workspaceSave                   writeClipboard
-writeDocument
+mediaTrimClip                   minimizeWindow                  moduleList                      moduleSetEnabled
+onAssistantToolActivity         onBatchSummary                  onBrowserState                  onConfigRecovered
+onConfirmationRequest           onConversationCompacted         onHardwareProfileApplied        onHideWindow
+onMediaAncientPathwaysProgress  onMediaFfmpegProgress           onMessage                       onModelFallback
+onModulesChanged                onNavigate                      onOllamaDownloadProgress        onOllamaStatus
+onPermissionRequest             onProactiveBriefing             onPullModelProgress             onReminderFired
+onSdCppSetupProgress            onShowWindow                    onStreamChunk                   onStreamEnd
+onStreamError                   onSupervisorStatus              onTerminalExit                  onTerminalOutput
+onTitleUpdated                  onUpdateAvailable               onUpdateDownloaded              onUpdateProgress
+onWidgetModeChanged             openExternalUrl                 openFile                        parseDocument
+pullModel                       pullModelStream                 ragClear                        ragIndex
+ragList                         readConsentLog                  readDebugLogs                   readPermissionAudit
+readTelemetryEvents             removeFeed                      removeHideWindowListener        removeShowWindowListener
+resetPermissions                resolveActiveModel              restartApp                      runAutomation
+runDiagnostics                  saveConversation                saveQuizProgress                saveSettings
+schedulerAdd                    schedulerList                   schedulerRemove                 schedulerToggle
+sdCppAutoSetup                  sdCppSetup                      sdCppStatus                     searchConversations
+sendConfirmationResponse        sendMessage                     sendPermissionResponse          sendStreamMessage
+setActiveConversation           setAlwaysOnTop                  setUncensoredMode               showInFolder
+skillsList                      skillsOpenFolder                startOllama                     startSpeechRecognition
+subscribeToStream               terminalClose                   terminalCreate                  terminalKill
+terminalRun                     testN8nConnection               toggleWidgetMode                ttsListVoices
+ttsSampleVoice                  ttsSpeak                        ttsStop                         unhideFeed
+updateAutomation                updateMessage                   workspaceList                   workspaceRead
+workspaceRoot                   workspaceSave                   writeClipboard                  writeDocument
 ```
 
-**IPC channels, renderer → main (151)**
+**IPC channels, renderer → main (153)**
 
 ```
 homebot:__e2e_get_router_logs              homebot:__e2e_invoke_tool_batch
@@ -1117,6 +1117,7 @@ homebot:media:storyboard:create            homebot:media:storyboard:generate-fra
 homebot:media:storyboard:get               homebot:media:storyboard:list
 homebot:media:storyboard:render            homebot:media:storyboard:save
 homebot:media:trim-clip                    homebot:message
+homebot:modules:list                       homebot:modules:set-enabled
 homebot:n8n-test-connection                homebot:open-browse
 homebot:open-external-url                  homebot:open-file
 homebot:open-web-service                   homebot:parse-document
@@ -1146,25 +1147,26 @@ homebot:update-message                     homebot:web-service-status
 homebot:write-document
 ```
 
-**IPC channels, main → renderer (32)**
+**IPC channels, main → renderer (33)**
 
 ```
 homebot:assistant-tool-activity          homebot:batch-summary
 homebot:config-recovered                 homebot:confirmation-request
 homebot:conversation-compacted           homebot:hardware-profile-applied
 homebot:media:ancient-pathways-progress  homebot:media:ffmpeg-progress
-homebot:model-fallback                   homebot:n8n-status
-homebot:ollama-download-progress         homebot:ollama-status
-homebot:permission-request               homebot:proactive-briefing
-homebot:pull-model-progress              homebot:reminder-fired
-homebot:reply                            homebot:router-log
-homebot:sd-cpp:setup-progress            homebot:stream-chunk
-homebot:stream-end                       homebot:stream-error
-homebot:stream-start                     homebot:stream-ttfb
-homebot:supervisor-status                homebot:title-updated
-homebot:tool-call                        homebot:tool-result
-homebot:update-available                 homebot:update-downloaded
-homebot:update-progress                  homebot:widget-mode-changed
+homebot:model-fallback                   homebot:modules:changed
+homebot:n8n-status                       homebot:ollama-download-progress
+homebot:ollama-status                    homebot:permission-request
+homebot:proactive-briefing               homebot:pull-model-progress
+homebot:reminder-fired                   homebot:reply
+homebot:router-log                       homebot:sd-cpp:setup-progress
+homebot:stream-chunk                     homebot:stream-end
+homebot:stream-error                     homebot:stream-start
+homebot:stream-ttfb                      homebot:supervisor-status
+homebot:title-updated                    homebot:tool-call
+homebot:tool-result                      homebot:update-available
+homebot:update-downloaded                homebot:update-progress
+homebot:widget-mode-changed
 ```
 
 <!-- END GENERATED: surface-index -->

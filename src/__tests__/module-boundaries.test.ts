@@ -76,7 +76,7 @@ describe('module import boundaries', () => {
     write('widget/src/main/media-studio.ts', "import './media-render';\n");
     write('widget/src/main/media-render.ts');
     write('widget/src/main/modules/bundled/studio.ts', "import '../../media-studio';\n");
-    write('widget/src/renderer/App.tsx', "void import('./components/MediaStudioPanel');\n");
+    write('widget/src/renderer/modules/bundled/index.tsx', "void import('../../components/MediaStudioPanel');\n");
     write('widget/src/renderer/components/MediaStudioPanel.tsx');
     write('src/core.ts');
     write('src/service.ts', "export { value } from './core';\n");
@@ -100,6 +100,14 @@ describe('module import boundaries', () => {
       kind: 'import',
       reason: 'Root Core cannot import the Electron widget runtime.',
     });
+  });
+
+  test('App cannot bypass the registered module UI boundary', () => {
+    write('widget/src/renderer/App.tsx', "void import('./components/MediaStudioPanel');\n");
+    write('widget/src/renderer/components/MediaStudioPanel.tsx');
+    expect(checkFixture().violations).toEqual([expect.objectContaining({
+      from: 'widget/src/renderer/App.tsx', to: 'widget/src/renderer/components/MediaStudioPanel.tsx',
+    })]);
   });
 
   test('keeps the existing generic provider exception to its exact path pair', () => {

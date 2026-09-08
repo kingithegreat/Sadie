@@ -3,8 +3,8 @@
  * Core / Production Studio import-boundary guard.
  *
  * Core may compose Studio only through widget/src/main/modules/bundled/**.
- * The renderer still mounts MediaStudioPanel from App.tsx until HB-M2 moves
- * that UI composition. Studio may import Core services and other Studio files.
+ * The renderer composes compiled module views under renderer/modules/bundled/.
+ * Studio may import Core services and other Studio files.
  * Root src/ is platform-neutral Core and must never import widget/src runtime.
  *
  * This scanner uses the TypeScript AST so comments and string contents cannot
@@ -22,13 +22,8 @@ const IGNORED_DIRECTORIES = new Set([
   '.git', '.kilo', 'node_modules', 'out', 'dist', 'coverage', 'test-results', 'playwright-report',
 ]);
 
-// Temporary UI composition exception. Keep this an exact pair so App cannot
-// become an unrestricted path from Core into Studio implementation.
+// Temporary provider reuse exception; UI composition is owned by bundled modules.
 const EXACT_EXCEPTIONS = new Map([
-  [
-    'widget/src/renderer/App.tsx\0widget/src/renderer/components/MediaStudioPanel.tsx',
-    'Existing renderer composition; HB-M2 moves this mount behind the module UI boundary.',
-  ],
   [
     'widget/src/main/tools/web.ts\0widget/src/main/movie/comfyui-adapter.ts',
     'Existing generic image tool reuses the local ComfyUI implementation; migrate behind a Core provider contract.',
@@ -142,7 +137,7 @@ function isStudioImplementation(relativePath) {
 }
 
 function isBundledComposition(relativePath) {
-  return slash(relativePath).startsWith('widget/src/main/modules/bundled/');
+  return /^widget\/src\/(?:main|renderer)\/modules\/bundled\//.test(slash(relativePath));
 }
 
 function exceptionReason(from, to) {

@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, app, shell, dialog } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 import { registerBundledStudioIpc } from './modules/bundled/studio-gateway';
+import { registerModuleControlIpc } from './modules/module-ipc';
 import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
@@ -817,6 +818,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   // The renderer drives the pipeline through the same state machine the chat
   // tools use, so the approval gate cannot be bypassed by going via the UI.
   registerBundledStudioIpc();
+  registerModuleControlIpc();
 
   // ── Comprehensive first-run diagnostics
   // Runs disk-space, service-reachability, write-permissions, and GPU checks

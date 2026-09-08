@@ -42,7 +42,7 @@ produces a detached, recursively frozen manifest.
 | `display`, `platforms` | Name/description and supported operating systems. |
 | `dependencies` | Required module IDs and the same explicit version-range format; missing, incompatible and cyclic dependencies fail preflight. |
 | `optionalIntegrations` | Informational availability hints, not required services or permission grants. |
-| `contributions` | Namespaced command/view/settings/provider declarations. M1 supports commands; other nonempty contribution types are rejected until implemented in M2. |
+| `contributions` | Namespaced command/view/settings/provider declarations. Commands and reviewed bundled view IDs are supported; settings/provider contributions remain unsupported. See the M2 controls checkpoint. |
 | `permissions`, `grants` | Requested existing Core authorities. Every registered tool's name and required permissions must be declared. These fields cannot grant themselves access. |
 | `resources`, `dataSchemaVersion` | Hardware hints and a positive data-schema version. These are not an implemented lease scheduler or migration engine. |
 
@@ -81,7 +81,7 @@ state transitions, with no network telemetry or provider credential material.
 
 ## Reachable Studio facade
 
-The existing Studio button mounts the existing lazy renderer panel. Its preload
+The registered Studio button mounts the existing lazy renderer panel. Its preload
 calls reach the same 27 literal media IPC channels, now composed in
 `bundled/studio-ipc.ts`. `studio-gateway.ts` requires the actual HomeBot window's
 webContents and main frame, validates argument arity/basic types, derives module
@@ -96,8 +96,9 @@ tool names and channel identities remain compatible.
 The IPC channels themselves remain registered for compatibility. Their guards
 return `MODULE_UNAVAILABLE` while Studio is disabled; tool registrations are
 physically removed. This avoids the existing global IPC registration patch's
-duplicate-channel bookkeeping. The Modules screen and UI contribution removal
-belong to HB-M2, so M1 does not claim user-facing optional installation.
+duplicate-channel bookkeeping. The subsequent [M2 controls checkpoint](STUDIO_MODULE_CONTROLS.md)
+adds the Modules screen, persisted disable choice and UI contribution removal.
+Independent optional package installation remains M3.
 
 The facade does not complete the provider/security migration: direct domain
 state operations retain their existing policies, nested storyboard path fields
@@ -112,9 +113,10 @@ project data is retained throughout this change.
 re-exports, `require`, dynamic imports and import types. Required root Jest runs
 the real-tree guard plus deliberately forbidden and permitted fixtures; nonzero
 file/import counts prevent an empty scan from passing. Core cannot import Studio
-implementation outside reviewed bundled composition. Two exact existing seams
-are documented in the script: App mounts the lazy Studio panel, and the generic
-image tool reuses the ComfyUI adapter pending a shared provider contract. Bare
+implementation outside reviewed bundled composition. The generic image tool still
+reuses the ComfyUI adapter through an exact documented exception pending a shared
+provider contract. M2 moved the lazy Studio mount into the reviewed renderer
+composition boundary and removed App's exception. Bare
 package specifiers are external; no current internal alias targets Studio.
 
 Contract tests use a small reviewed module and the actual registry. They exercise

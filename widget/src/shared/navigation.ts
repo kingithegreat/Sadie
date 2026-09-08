@@ -35,6 +35,7 @@ export const MODE_INFO: Record<AppMode, { label: string; purpose: string }> = {
   code: { label: 'Code', purpose: 'explore, edit and run code in the workspace' },
   feeds: { label: 'Feeds', purpose: 'read and search news and RSS feeds' },
   connections: { label: 'Connections', purpose: 'connect HomeBot to outside services such as Notion, GitHub or Slack' },
+  modules: { label: 'Modules', purpose: 'enable or disable installed workspaces and tools, and review their status and permissions' },
 };
 
 /**

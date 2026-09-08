@@ -6,6 +6,7 @@ import Tooltip from './Tooltip';
 import { ConnectionStatus, CustomLLMConfig } from '../../shared/types';
 import { AppMode } from '../../shared/modes';
 import ModelSelector from './ModelSelector';
+import type { ModuleNavigationItem } from '../modules/bundled';
 
 interface StatusIndicatorProps {
   connectionStatus: ConnectionStatus;
@@ -25,6 +26,7 @@ interface StatusIndicatorProps {
   onDismissDiagnostic?: () => void;
   mode?: AppMode;
   onModeChange?: (mode: AppMode) => void;
+  moduleModes?: ModuleNavigationItem[];
   currentModel?: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
@@ -66,6 +68,7 @@ interface HeaderModelProps {
 interface ModeSwitcherProps {
   mode: AppMode;
   onModeChange?: (mode: AppMode) => void;
+  moduleModes?: ModuleNavigationItem[];
 }
 
 interface HeaderActionsProps {
@@ -333,21 +336,21 @@ const MODES: { id: AppMode; label: string; icon: IconName; tip: string }[] = [
   { id: 'image', label: 'Image', icon: 'image', tip: 'Generate pictures from a description' },
   { id: 'documents', label: 'Docs', icon: 'document', tip: 'Read your files and ask questions about them' },
   { id: 'quiz', label: 'Quiz', icon: 'quiz', tip: 'Practise coding with questions generated for you' },
-  { id: 'media', label: 'Studio', icon: 'video', tip: 'Turn a script into a narrated video' },
   { id: 'browser', label: 'Browser', icon: 'globe', tip: 'Browse the web inside HomeBot' },
   { id: 'code', label: 'Code', icon: 'terminal', tip: 'Explore, edit and run code in the workspace' },
   { id: 'feeds', label: 'Feeds', icon: 'globe', tip: 'Read and search your news feeds' },
   { id: 'connections', label: 'Connect', icon: 'plug', tip: 'Link Notion, GitHub and other services to HomeBot' },
+  { id: 'modules', label: 'Modules', icon: 'tools', tip: 'Enable or disable optional workspaces and tools' },
 ];
 
-const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange }) => {
+const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ mode, onModeChange, moduleModes = [] }) => {
   if (!onModeChange) {
     return null;
   }
 
   return (
     <div className="mode-switcher">
-      {MODES.map(({ id, label, icon, tip }) => (
+      {[...MODES, ...moduleModes].map(({ id, label, icon, tip }) => (
         <Tooltip key={id} content={tip} placement="bottom">
           <button
             className={`mode-btn ${mode === id ? 'active' : ''}`}
@@ -425,6 +428,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   onDismissDiagnostic,
   mode = 'chat',
   onModeChange,
+  moduleModes,
   currentModel = 'qwen2.5:7b',
   customLLM,
   useCustomLLM = false,
@@ -488,7 +492,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         <UncensoredToggle uncensoredMode={uncensoredMode} onToggle={handleUncensoredToggle} />
       </div>
 
-      <ModeSwitcher mode={mode} onModeChange={onModeChange} />
+      <ModeSwitcher mode={mode} onModeChange={onModeChange} moduleModes={moduleModes} />
 
       <HeaderActions
         notificationCount={notificationCount}

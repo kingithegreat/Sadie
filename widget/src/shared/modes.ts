@@ -16,6 +16,7 @@ export const APP_MODES = [
   'code',
   'feeds',
   'connections',
+  'modules',
 ] as const;
 
 export type AppMode = (typeof APP_MODES)[number];
