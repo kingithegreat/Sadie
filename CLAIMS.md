@@ -15,8 +15,8 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| HB-M2 — reachable Studio module controls | claude/studio-module-controls | Building — Codex 2026-09-09 | Isolated task worktree from main 1e3b064. Extend the existing module host with a reachable Modules screen, persisted enable/disable choice and registered Studio navigation. Prove disabled tool/IPC denial, one-copy restoration, drain feedback and restart persistence through real Electron. Speech/movie-provider claims stay separate. Notion claim: https://app.notion.com/p/3d5829ebf7be814eaccceeaaa9b1e565. |
-| HB-M1 — thin module contract and trusted Studio host | claude/studio-m1-host | Locally verified; remote integration pending — Codex 2026-09-09 | Isolated fresh-main worktree `.kilo/worktrees/codex-m1-host`, reconciled with merged QA repair #264. Strict descriptors, owned registrations, dependency/collision/rollback/unregister, async cleanup and generation guards around the actual registry and 27 Studio IPC channels. Combined root 226/widget 3,785 tests; host full Electron 48 without retries; typechecks/build/docs/lint pass. Deliberate generation defect caught; three fresh profiles below M0 performance limits. Existing engines/data/rights retained; provider/persistent-job/optional-package acceptance remains downstream. Contract/evidence: docs/CORE_MODULE_CONTRACT.md. |
+| HB-M2 — reachable Studio module controls | claude/studio-module-controls | Local checkpoint 450838e; combined integration underway — Codex 2026-09-09 | Reachable Modules screen, persisted enable/disable and registered lazy Studio navigation. Pre-integration Windows: 3,801 widget and 227 root tests; two real Electron tests passed without retries. Disabled tool/IPC denial, one-copy restoration, drain and restart persistence verified. Integrating merged movie privacy main 19535cb, then final combined checks and remote integration. Evidence: docs/STUDIO_MODULE_CONTROLS.md. Notion claim: https://app.notion.com/p/3d5829ebf7be814eaccceeaaa9b1e565. |
+| HB-M2 prerequisite — narration online consent | claude/studio-speech-privacy | Claimed in another active session — Codex 2026-09-09 | Existing `.kilo/worktrees/codex-speech-privacy` owns shared speech/Edge/Kokoro privacy; observed active claim and uncommitted speech tests. Preserve this work. |
 | ~~Ancient Pathways Integration — run video workflow from Media Studio UI & chat sprite generation~~ | claude/ancient-pathways-integration | ~~Ready for integration~~ → **MERGED as #248 (2026-09-05)** | Media Studio episode showcase with 9 episodes, season filter, real-time search, 4-step progress stepper (Story -> Voices -> Animation -> 1080p Video), celebratory 1080p MP4 preview player. Autonomous Sprite Pipeline (`media_generate_sprites`) generates 8-panel model sheets via Imagen 3/Pollinations, auto-isolates background, slices via Python, outputs `manifest.json`. Verified: widget tsc 0 errors; eslint 0 errors; 76/76 tests green; docs:check in sync. |
 | ~~duplicate-export-guard runs on push, not just pull_request~~ | claude/review-o-x-alpha-commits-1qrn25 | ~~Ready for integration~~ → **MERGED as #244 (2026-09-04)** | One line in `ci.yml`. `auto-merge.yml` opens PRs as github-actions[bot]; GitHub attributes that pull_request event to the bot and holds EVERY workflow on it at action_required - six held runs on one commit of #215, measured. Push-triggered runs are attributed to the pusher and run fine, but this job was gated `if: github.event_name == 'pull_request'`, so on those it reported "skipped" and never "success". A one-commit PR nobody touches again waits forever on an approval nobody knows to give - the "ten runs held, five for three days" note. Gate removed; base ref is now `github.base_ref \|\| 'main'`. All five required checks are now satisfiable from push runs alone, so a `claude/**` branch can auto-merge unattended. Verified BOTH directions with an empty base ref (a zero from this check is otherwise indistinguishable from a broken one): a deliberate colliding export exits 1 and names the file, a clean tree exits 0. Also records the live `WorkspaceShell.tsx:83` instance of the whole-effect handoff guard in `renderer-ui.instructions.md` - unfixed, track F, nobody's claim. Does NOT touch product code. |
 | Model picker sections  purpose-grouped catalog, GPU-picked float-up, type-to-filter | claude/model-picker-sections | Merged as #249 (2026-09-04) | Research basis: VS Code groups recommended-first, Raycast/Cursor group by task, all ship type-to-filter. Adds explicit category tags to the 17-model catalog (everyday / coding / reasoning / lightweight / uncensored), an On this PC section with a Best for your PC float-to-top subsection driven by detected VRAM, purpose sub-groups under the download section, a filter box with Escape-to-close, and no-match state. Arrows cycle the filtered subset. Tests 41/41. |
@@ -30,6 +30,20 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 ---
 
 ## Retired claims
+
+Movie/image provider online consent is **merged as #266**, confirmed on
+2026-09-09 local time as main `19535cb`. Local Windows: 3,827 widget and 226
+root tests, typechecks/lint/build/docs and real Electron movie denial pass.
+No provider requests occur when Online is off; controlled loopback generation
+remains usable. Evidence: `tasks/movie-provider-privacy.md`. This is privacy
+and saved-state evidence; live-provider quality remains unproven.
+
+HB-M1 is **merged as #265**, confirmed on 2026-09-09 local time. Main
+`1e3b064` exactly matches tested head `3e08059` (tree `d6f7483`). All six required
+contexts are green; Windows CI ran 3,785 widget tests, 226 root tests and 13
+overlay tests. The Electron matrix ran 16 + 16 + 16 tests on Windows; all nine
+shards passed. One macOS install network reset recovered on an isolated rerun
+that executed 16 tests. Evidence: `docs/CORE_MODULE_CONTRACT.md` and PR #265.
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
@@ -104,3 +118,14 @@ The next host work must preserve existing jobs, assets, privacy and approval
 authority. No new framework, paid provider, production publication or sales
 is part of this baseline. `/movie/` is ignored as local project/run data;
 the pending sample was removed from Git only and retained on disk.
+
+## 2026-09-09 — movie provider dispatch consent
+
+Movie/image adapters check the existing Online choice at their main-process
+entry points, including direct helpers and every remote ComfyUI request.
+Configured local-provider URLs can be remote: only loopback bypasses consent,
+not private LAN addresses. Reuse `utils/provider-network-policy.ts` for this
+HTTP boundary; request arguments cannot grant Online access. A movie report
+with failed shots now returns an IPC failure and leaves full reasons in the
+report/log. Before/after, local transport and real Studio UI evidence is in
+`tasks/movie-provider-privacy.md`; remaining M2 acceptance is still open.

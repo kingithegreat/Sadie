@@ -166,3 +166,4 @@ describe('Ancient Pathways Local Movie Adapter', () => {
     });
   });
 });
+jest.mock('../config-manager', () => ({ getSettings: () => ({ useCustomLLM: true }) }));

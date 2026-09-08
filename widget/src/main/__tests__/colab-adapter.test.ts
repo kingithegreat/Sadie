@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+jest.mock('../config-manager', () => ({ getSettings: () => ({ useCustomLLM: true }) }));
 import { GenerationRouter } from '../movie/router';
 import { colabProvider, COLAB_WORKER_ID, probeColabWorker } from '../movie/colab-adapter';
 import { pollinationsProvider } from '../movie/pollinations-adapter';

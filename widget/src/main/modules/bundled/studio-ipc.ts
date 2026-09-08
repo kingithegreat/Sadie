@@ -457,6 +457,19 @@ export function registerStudioIpc(
         allowWatermark: options.allowWatermark,
       });
 
+      if (report.failedShots > 0) {
+        const detail = report.results.find(result => result.error)?.error;
+        // Keep the full routing diagnostics in the report/log. The panel should
+        // lead with the action the person can take, not six probe explanations.
+        const guidance = detail?.includes('needs Online access.')
+          ? 'Online access is off. Turn on Online in Settings, or use a provider on this PC.'
+          : detail || 'Check the project log for details.';
+        return {
+          ok: false,
+          report,
+          error: `${report.failedShots} ${report.failedShots === 1 ? 'shot' : 'shots'} failed. ${guidance}`,
+        };
+      }
       return { ok: true, report };
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };
