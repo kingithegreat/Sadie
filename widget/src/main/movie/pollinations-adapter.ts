@@ -13,6 +13,7 @@
  */
 
 import type { GenerationCapability, GenerationProvider, GenerationRequest, GenerationResult } from './types';
+import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 
 const POLLINATIONS_ENDPOINT = 'https://api.pollinations.ai/v1/generate';
 
@@ -23,6 +24,7 @@ const POLLINATIONS_ENDPOINT = 'https://api.pollinations.ai/v1/generate';
 export async function probePollinations(
   _req: GenerationRequest
 ): Promise<GenerationCapability> {
+  assertProviderOnlineAccess('Pollinations');
   // Pollinations always supports image; duration depends on key/no-key
   // We probe with a minimal call; if it throws, the router records the rejection.
   // The real rate-limit / queued status is discovered on first generate().
@@ -64,6 +66,7 @@ export async function generatePollinations(
 
   let resp: Response;
   try {
+    assertProviderOnlineAccess('Pollinations');
     resp = await fetch(POLLINATIONS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

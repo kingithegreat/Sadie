@@ -14,10 +14,12 @@
  * Adapted from `tryAutomatic1111` in web.ts but returns a GenerationResult.
  */
 
-import * as http from 'http';
 import type { GenerationCapability, GenerationRequest, GenerationResult, GenerationProvider } from './types';
+import { requestProviderEndpoint } from '../utils/provider-network-policy';
 
-const LOCAL_SD_URL = process.env.LOCAL_SD_ENDPOINT ?? 'http://127.0.0.1:7860/sdapi/v1/txt2img';
+function localSdEndpoint(): string {
+  return process.env.LOCAL_SD_ENDPOINT ?? 'http://127.0.0.1:7860/sdapi/v1/txt2img';
+}
 // ---------------------------------------------------------------------------
 // Probe — what the provider can do right now
 // ---------------------------------------------------------------------------
@@ -66,12 +68,11 @@ export async function probeLocalSD15(
  */
 async function isReachable(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    const url = new URL(LOCAL_SD_URL);
-    const req = http.request(
+    const url = new URL(localSdEndpoint());
+    url.pathname = '/sdapi/v1/sd-models';
+    const req = requestProviderEndpoint(
+      url.toString(), 'Stable Diffusion',
       {
-        hostname: url.hostname,
-        port: url.port || 80,
-        path: '/sdapi/v1/sd-models',
         method: 'GET',
         timeout: 2000,
       },
@@ -113,12 +114,9 @@ export async function generateLocalSD15(
   });
 
   const base64Image = await new Promise<string>((resolve, reject) => {
-    const url = new URL(LOCAL_SD_URL);
-    const req = http.request(
+    const req = requestProviderEndpoint(
+      localSdEndpoint(), 'Stable Diffusion',
       {
-        hostname: url.hostname,
-        port: url.port || 80,
-        path: url.pathname,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

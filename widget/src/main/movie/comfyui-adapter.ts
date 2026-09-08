@@ -12,9 +12,9 @@
  * - Dynamic checkpoint detection and fallback.
  */
 
-import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { requestProviderEndpoint } from '../utils/provider-network-policy';
 import type {
   GenerationCapability,
   GenerationRequest,
@@ -119,30 +119,19 @@ export function buildComfyUIWorkflow(params: {
  */
 export async function isComfyUIReachable(endpoint = getComfyUIEndpoint(), timeoutMs = 2000): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    try {
-      const url = new URL(`${endpoint}/system_stats`);
-      const req = http.request(
-        {
-          hostname: url.hostname,
-          port: url.port || 8188,
-          path: url.pathname,
-          method: 'GET',
-          timeout: timeoutMs,
-        },
-        (res) => {
-          res.resume();
-          resolve(res.statusCode !== undefined && res.statusCode < 500);
-        },
-      );
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(false);
-      });
-      req.end();
-    } catch {
+    const req = requestProviderEndpoint(`${endpoint}/system_stats`, 'ComfyUI',
+      { method: 'GET', timeout: timeoutMs },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode !== undefined && res.statusCode < 500);
+      },
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => {
+      req.destroy();
       resolve(false);
-    }
+    });
+    req.end();
   });
 }
 
@@ -151,43 +140,32 @@ export async function isComfyUIReachable(endpoint = getComfyUIEndpoint(), timeou
  */
 export async function getAvailableCheckpoints(endpoint = getComfyUIEndpoint(), timeoutMs = 2000): Promise<string[]> {
   return new Promise<string[]>((resolve) => {
-    try {
-      const url = new URL(`${endpoint}/object_info/CheckpointLoaderSimple`);
-      const req = http.request(
-        {
-          hostname: url.hostname,
-          port: url.port || 8188,
-          path: url.pathname,
-          method: 'GET',
-          timeout: timeoutMs,
-        },
-        (res) => {
-          let data = '';
-          res.on('data', (c) => (data += c));
-          res.on('end', () => {
-            try {
-              const parsed = JSON.parse(data);
-              const list = parsed?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0];
-              if (Array.isArray(list) && list.length > 0) {
-                resolve(list);
-                return;
-              }
-            } catch {
-              /* ignore */
+    const req = requestProviderEndpoint(`${endpoint}/object_info/CheckpointLoaderSimple`, 'ComfyUI',
+      { method: 'GET', timeout: timeoutMs },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            const list = parsed?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0];
+            if (Array.isArray(list) && list.length > 0) {
+              resolve(list);
+              return;
             }
-            resolve([]);
-          });
-        },
-      );
-      req.on('error', () => resolve([]));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve([]);
-      });
-      req.end();
-    } catch {
+          } catch {
+            /* ignore */
+          }
+          resolve([]);
+        });
+      },
+    );
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => {
+      req.destroy();
       resolve([]);
-    }
+    });
+    req.end();
   });
 }
 
@@ -282,12 +260,8 @@ export async function generateComfyUI(
   // 1. Submit prompt to ComfyUI
   const payload = JSON.stringify({ prompt: workflow });
   const promptId = await new Promise<string>((resolve, reject) => {
-    const url = new URL(`${endpoint}/prompt`);
-    const req = http.request(
+    const req = requestProviderEndpoint(`${endpoint}/prompt`, 'ComfyUI',
       {
-        hostname: url.hostname,
-        port: url.port || 8188,
-        path: url.pathname,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -331,12 +305,8 @@ export async function generateComfyUI(
   while (Date.now() - startTime < maxWaitMs) {
     await new Promise((r) => setTimeout(r, 1500));
     const history = await new Promise<any>((resolve, reject) => {
-      const url = new URL(`${endpoint}/history/${promptId}`);
-      const req = http.request(
+      const req = requestProviderEndpoint(`${endpoint}/history/${encodeURIComponent(promptId)}`, 'ComfyUI',
         {
-          hostname: url.hostname,
-          port: url.port || 8188,
-          path: url.pathname,
           method: 'GET',
           timeout: 10000,
         },
@@ -384,12 +354,8 @@ export async function generateComfyUI(
   // 3. Fetch image buffer from ComfyUI /view
   const imageBuffer = await new Promise<Buffer>((resolve, reject) => {
     const query = `filename=${encodeURIComponent(imageMeta!.filename)}&subfolder=${encodeURIComponent(imageMeta!.subfolder)}&type=${encodeURIComponent(imageMeta!.type)}`;
-    const url = new URL(`${endpoint}/view?${query}`);
-    const req = http.request(
+    const req = requestProviderEndpoint(`${endpoint}/view?${query}`, 'ComfyUI',
       {
-        hostname: url.hostname,
-        port: url.port || 8188,
-        path: `${url.pathname}?${query}`,
         method: 'GET',
         timeout: 30000,
       },
