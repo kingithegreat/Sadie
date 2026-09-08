@@ -6,7 +6,11 @@ This is the current media execution order. Historical plans remain history;
 authorized continuous work through the Notion plan on 2026-09-08: re-fetch it
 before each task and record every verified success there. Follow the existing
 [Notion build loop](https://app.notion.com/p/3d5829ebf7be81308c58c474f6aed6c7).
-Task 1 is in progress. Publication and credential decisions keep their gates.
+Task 1 is complete. HB-M1 host integration is in progress under the live modular
+plan. The credential-free QA trust repair within task 2 is complete and merged
+as [#264](https://github.com/kingithegreat/Sadie/pull/264); see
+[the before/after and CI evidence](../tasks/provider-output-trust.md).
+Publication and credential decisions keep their gates.
 
 The later [locked Core + Modules / Media Studio M2 plan](https://app.notion.com/p/3d5829ebf7be8150abd0f56e4d00083d)
 owns current product direction. Aden started that build on 2026-09-08. Complete
@@ -81,8 +85,8 @@ verification separately.
 
 | Task | Scope | Required evidence before moving on |
 |---|---|---|
-| **1. Verified baseline** — in progress | Isolate work, reconcile claims/docs, reproduce and fix the overlay failure blocking #259, run local and required CI checks, then integrate without overwriting other agents. | Failure reproduced before fix; real Electron regression passes after fix; app/root checks pass; all required remote contexts present and green; actual merged content verified. |
-| **2. Provider correctness** — queued | Repair privacy, availability/free-tier routing, provider output and reference-image contracts; replace obsolete model assumptions. | With online access off, zero outbound calls; unusable/empty assets never report success; each enabled provider passes a real request and output validation with configured access. Credentials remain Aden's. |
+| **1. Verified baseline** — complete | Isolate work, reconcile claims/docs, reproduce and fix the overlay failure blocking #259, run local and required CI checks, then integrate without overwriting other agents. | Failure reproduced before fix; real Electron regression passes after fix; app/root checks pass; all required remote contexts present and green; actual merged content verified. |
+| **2. Provider correctness** — QA component complete; remaining work queued under HB-M2 | QA inspection failure now blocks approval (#264). Repair privacy, availability/free-tier routing, provider output and reference-image contracts; replace obsolete model assumptions. | With online access off, zero outbound calls; unusable/empty assets never report success; each enabled provider passes a real request and output validation with configured access. Credentials remain Aden's. |
 | **3. One reliable faceless video** — queued | Unify manifests and orchestration; fix Python argv, narration, frame handling, render and QA. | From a real HomeBot control through IPC/Python or n8n to a playable MP4: correct duration, visible content, audible narration and captions. Inspect sampled frames/audio; test failure propagation too. |
 | **4. Colab round trip** — queued | Portable unique jobs, asset upload, Drive discovery, worker result import, retry/resume/cancel. | Submit from HomeBot, run in Colab, ingest validated assets and continue the same project; survive runtime restart and duplicate/partial results. |
 | **5. Consistent characters** — queued | Complete one character's art enrollment and actual compositor path under the existing Ancient Pathways rig plan. | Render multiple shots of one recognizable character with intended poses/lip movement; validate real output and reject placeholder clips. |
@@ -130,5 +134,14 @@ tests exercise the actual workflow wrapper; all 219 root tests pass. Running
 the exact repaired Windows shard locally executed 16 Electron tests and passed
 on attempt 1 in 175 seconds. Remote verification of that repair and #259
 integration remain pending.
+
+Completion update: #262 merged as `0c85650` and #259 merged as `8327342` on
+2026-09-08. The tested #259 tree was verified byte-for-byte on main. All six
+required contexts were present and green. The complete nine-shard matrix passed;
+Windows executed 16 + 16 + 15 tests on first outer attempts. The one Linux
+dependency-download failure occurred before tests; its isolated rerun passed
+all 16 tests. Root CI passed 219 tests; Windows application CI passed 3,682 unit
+tests and 13 overlay tests. The complete local Electron run passed 47 tests,
+without retries. Evidence: [HB-M0 baseline](CORE_MODULE_BASELINE.md).
 This UI/documentation change does not modify the n8n contract; its unit coverage
 passed within the widget suite. Live n8n/cloud/media runs remain unverified.

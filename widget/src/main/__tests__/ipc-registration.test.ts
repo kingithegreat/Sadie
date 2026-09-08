@@ -1,4 +1,9 @@
-import { registerIpcHandlers } from '../ipc-handlers';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+const mockUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-ipc-registration-'));
+const mockEnsureWebFetchWorkflow = jest.fn<Promise<void>, []>(() => Promise.resolve());
 
 // Minimal mock of electron's ipcMain to capture registrations
 const handles: Record<string, Function> = {};
@@ -13,18 +18,30 @@ jest.mock('electron', () => {
     BrowserWindow: jest.fn(),
     app: {
       isPackaged: false,
-      getPath: (name: string) => `/mock/${name}`,
+      getPath: (name: string) => name === 'userData' ? mockUserData : path.join(mockUserData, name),
     },
   };
 });
 
+jest.mock('../n8n-api', () => ({
+  ...jest.requireActual('../n8n-api'),
+  ensureWebFetchWorkflow: () => mockEnsureWebFetchWorkflow(),
+}));
+
+const { registerIpcHandlers } = require('../ipc-handlers') as typeof import('../ipc-handlers');
+
 describe('IPC registration', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     // reset captured handles for each test
     for (const k of Object.keys(handles)) delete handles[k];
     // reset global idempotency flag used by registerIpcHandlers
     // @ts-ignore
     (global as any).__homebot_ipc_registered = false;
+  });
+
+  afterAll(() => {
+    fs.rmSync(mockUserData, { recursive: true, force: true });
   });
 
   it('registers homebot:check-connection and is idempotent', () => {
@@ -63,6 +80,7 @@ describe('IPC registration', () => {
     expect(res).toBeDefined();
     expect(res.n8n).toBe('online');
     expect(res.ollama).toBe('offline');
+    expect(mockEnsureWebFetchWorkflow).toHaveBeenCalledTimes(1);
 
     get.mockRestore();
   });

@@ -8,6 +8,17 @@ required; source presence and mocked tests do not establish real-media success.
 
 ## Reconciled checkpoint
 
+HB-M0 completed on 2026-09-08: #259 merged as `8327342`, including #260 and #262.
+The entire merged tree matches the tested `4c4e6ee` tree. All six required
+contexts were present and green; the nine-shard Electron matrix passed, with
+Windows running 16 + 16 + 15 actual tests. Root CI ran 219 tests and Windows
+application CI ran 3,682 unit tests plus 13 overlay tests. Local full Electron
+baseline: 47 passed without retries. See the
+[matrix run](https://github.com/kingithegreat/Sadie/actions/runs/34217979784) and
+[application/root run](https://github.com/kingithegreat/Sadie/actions/runs/34217979661).
+The historical reconciliation and measurements below remain pinned to that
+baseline; the successor host contract is [CORE_MODULE_CONTRACT.md](CORE_MODULE_CONTRACT.md).
+
 Main `0c85650` contains the #260 overlay repair and #262 Windows E2E launcher
 repair. Both PRs are merged. #259 at `cede545` contains the pending storyboard,
 script director, FFmpeg storyboard renderer, ComfyUI adapter, DCC/timeline and
@@ -111,11 +122,15 @@ new bypass. Trace the actual paths when adding host checks:
   need a shared authoritative online-consent decision, reusing/extending
   `resolveCloudLLM` / `useCustomLLM`. There is no current widget `allowCloud`
   symbol; preserve the plan's fail-closed intent. Edge narration is online too.
-- **Output trust:** `tools/media.ts:887–900` treats unavailable QA measurements as
-  warnings and can accept the result. Movie completion does not verify usable
+- **Output trust (M0 finding):** `tools/media.ts:887–900` treated unavailable QA
+  measurements as warnings and could accept the result. This bounded defect
+  is now fixed by [#264](https://github.com/kingithegreat/Sadie/pull/264), merged
+  as `eafd27f`: unavailable/failed measurements persist `needs_revision` with
+  render/source paths retained. Before/after tests and verified CI are recorded
+  in [the task evidence](../tasks/provider-output-trust.md). Movie completion still does not verify usable
   assets. `tools/narrate-clip.ts:196` passes the analyzer script to a two-argument
   helper without the required input video (source-level expected failure).
-  These remain media tasks 2/3, not fixed by M0.
+  These remaining gaps belong to media tasks 2/3; real video quality is unproven.
 - **Observability:** tool duration/outcome logs and per-shot routing JSONL exist.
   A shared causal trace, redacted errors, budgets, approvals and circuit-breaker
   events do not yet span these independent paths.

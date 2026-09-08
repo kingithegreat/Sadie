@@ -1,6 +1,7 @@
 # Provider output trust: render QA fail-closed repair
 
-Status: locally verified bounded repair on `claude/media-qa-trust-fix`.
+Status: complete; [PR #264](https://github.com/kingithegreat/Sadie/pull/264)
+merged as `eafd27f` on 2026-09-08 at 12:37:48 UTC.
 
 ## Scope
 
@@ -74,7 +75,13 @@ Full Windows verification on 2026-09-09 (local time): widget 265 suites /
 command. Root 17 suites / 219 tests passed. Root/widget typechecks, Electron
 build and docs check passed; full widget lint has zero errors and eight
 pre-existing warnings. Logs and JSON reports are in `.kilo/evidence/qa/`.
-Required remote checks and merged-content verification remain pending.
+All six live required contexts are present and green: build,
+duplicate-export-guard, ESLint (React Hooks), Permissions smoke test, widget
+and e2e-all. The [Electron matrix](https://github.com/kingithegreat/Sadie/actions/runs/34225142576)
+passed all nine shards. Windows ran 16 + 16 + 15 actual tests on first outer
+attempts (164 / 112 / 132 seconds); Windows application CI separately passed
+3,685 unit tests and 13 overlay tests. The entire merged main tree equals the
+tested/pushed `3c26e12` tree (`ac9e04e68f68a61fbcbf3ea4e0982bf7253e9695`).
 
 ## Remaining acceptance work
 

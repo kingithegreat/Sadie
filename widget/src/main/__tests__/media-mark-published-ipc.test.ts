@@ -20,8 +20,18 @@ import * as path from 'path';
 
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-mediapub-'));
 const JOBS = path.join(userData, 'media-jobs.json');
+const ASSETS_ROOT = path.join(userData, 'media-assets');
+const JOB_ASSETS = path.join(ASSETS_ROOT, 'j1');
+const ASSET = path.join(JOB_ASSETS, 'frame.png');
 
 const handlers: Record<string, Function> = {};
+const mockMainFrame = {};
+const mockMainSender = { mainFrame: mockMainFrame, send: jest.fn() };
+const mockMainWindow = {
+  isDestroyed: jest.fn(() => false),
+  webContents: mockMainSender,
+};
+const mockRequestConfirmationFrom = jest.fn<Promise<boolean>, any[]>();
 
 jest.mock('electron', () => ({
   ipcMain: {
@@ -37,6 +47,17 @@ jest.mock('electron', () => ({
   Notification: jest.fn().mockImplementation(() => ({ show: jest.fn() })),
 }));
 
+jest.mock('../window-manager', () => ({
+  getMainWindow: () => mockMainWindow,
+  toggleWidgetMode: jest.fn(),
+  getWidgetMode: jest.fn(() => false),
+}));
+
+jest.mock('../message-router', () => ({
+  ...jest.requireActual('../message-router'),
+  requestConfirmationFrom: (...args: any[]) => mockRequestConfirmationFrom(...args),
+}));
+
 /** The kill switch, driven per-test. Everything else stays real. */
 let publishingEnabled = false;
 jest.mock('../config-manager', () => ({
@@ -48,6 +69,9 @@ jest.mock('../config-manager', () => ({
 }));
 
 import { registerIpcHandlers } from '../ipc-handlers';
+import { bundledModuleHost } from '../modules/bundled';
+import { STUDIO_MODULE_ID } from '../modules/bundled/studio';
+import { getAllToolDefinitions, getToolOwner } from '../tools/registry';
 
 const APPROVED = {
   id: 'j1',
@@ -61,11 +85,32 @@ const APPROVED = {
 
 const seed = (jobs: any[]) => fs.writeFileSync(JOBS, JSON.stringify(jobs), 'utf8');
 const readBack = () => JSON.parse(fs.readFileSync(JOBS, 'utf8'));
+const diskSnapshot = () => fs.readFileSync(JOBS, 'utf8');
+const trustedEvent = () => ({ sender: mockMainSender, senderFrame: mockMainFrame });
 const markPublished = (id: string, videoId: string) =>
-  handlers['homebot:media:mark-published']({}, id, videoId);
+  handlers['homebot:media:mark-published'](trustedEvent(), id, videoId);
+const studioToolNames = () => getAllToolDefinitions()
+  .filter(definition => getToolOwner(definition.name)?.moduleId === STUDIO_MODULE_ID)
+  .map(definition => definition.name)
+  .sort();
+const seedAsset = () => {
+  fs.mkdirSync(JOB_ASSETS, { recursive: true });
+  fs.writeFileSync(ASSET, 'real image bytes', 'utf8');
+};
+const ensureStudioEnabled = () => {
+  const studio = bundledModuleHost.list().find(item => item.manifest.id === STUDIO_MODULE_ID);
+  if (studio?.state !== 'enabled') bundledModuleHost.enable(STUDIO_MODULE_ID);
+};
 
 beforeAll(() => { registerIpcHandlers(); });
-beforeEach(() => { publishingEnabled = false; seed([APPROVED]); });
+beforeEach(() => {
+  ensureStudioEnabled();
+  publishingEnabled = false;
+  mockRequestConfirmationFrom.mockReset();
+  fs.rmSync(ASSETS_ROOT, { recursive: true, force: true });
+  seed([APPROVED]);
+});
+afterEach(() => { ensureStudioEnabled(); });
 
 test('the channel exists — the panel has something to call', () => {
   expect(typeof handlers['homebot:media:mark-published']).toBe('function');
@@ -121,9 +166,127 @@ test('a job that has gone missing reports that, rather than throwing', async () 
   expect(res.error).toMatch(/no longer in the list/i);
 });
 
-test('deleting from the panel removes the job', async () => {
-  const res = await handlers['homebot:media:delete']({}, 'j1');
+test('a different renderer sender is denied before it can change the real store', async () => {
+  publishingEnabled = true;
+  const before = diskSnapshot();
+  const foreignFrame = {};
+  const foreignSender = { mainFrame: foreignFrame, send: jest.fn() };
+
+  const res = await handlers['homebot:media:mark-published'](
+    { sender: foreignSender, senderFrame: foreignFrame },
+    'j1',
+    'https://youtu.be/untrusted',
+  );
+
+  expect(res).toMatchObject({ ok: false, code: 'INVALID_SENDER' });
+  expect(diskSnapshot()).toBe(before);
+});
+
+test('a subframe in the real window is denied before it can change the real store', async () => {
+  publishingEnabled = true;
+  const before = diskSnapshot();
+
+  const res = await handlers['homebot:media:mark-published'](
+    { sender: mockMainSender, senderFrame: {} },
+    'j1',
+    'https://youtu.be/subframe',
+  );
+
+  expect(res).toMatchObject({ ok: false, code: 'INVALID_SENDER' });
+  expect(diskSnapshot()).toBe(before);
+});
+
+test('an invalid legacy IPC payload is denied before it can change the real store', async () => {
+  publishingEnabled = true;
+  const before = diskSnapshot();
+
+  const res = await handlers['homebot:media:mark-published'](
+    trustedEvent(),
+    'j1',
+    { unexpected: 'object' },
+  );
+
+  expect(res).toMatchObject({ ok: false, code: 'INVALID_ARGUMENT' });
+  expect(diskSnapshot()).toBe(before);
+});
+
+test('deleting from the panel removes the job and its files after one-use consent', async () => {
+  seedAsset();
+  mockRequestConfirmationFrom.mockResolvedValueOnce(true);
+
+  const res = await handlers['homebot:media:delete'](trustedEvent(), 'j1');
 
   expect(res.ok).toBe(true);
   expect(readBack()).toEqual([]);
+  expect(fs.existsSync(JOB_ASSETS)).toBe(false);
+  expect(mockRequestConfirmationFrom).toHaveBeenCalledWith(
+    mockMainSender,
+    expect.stringMatching(/allow this studio action once/i),
+  );
+});
+
+test('cancelling deletion leaves both the job and its files unchanged', async () => {
+  seedAsset();
+  const before = diskSnapshot();
+  mockRequestConfirmationFrom.mockResolvedValueOnce(false);
+
+  const res = await handlers['homebot:media:delete'](trustedEvent(), 'j1');
+
+  expect(res.ok).toBe(false);
+  expect(res.error).toMatch(/cancelled/i);
+  expect(diskSnapshot()).toBe(before);
+  expect(fs.readFileSync(ASSET, 'utf8')).toBe('real image bytes');
+  expect(mockRequestConfirmationFrom).toHaveBeenCalledTimes(1);
+});
+
+test('a captured legacy channel stays inert while Studio is disabled and re-enable restores one tool set', async () => {
+  publishingEnabled = true;
+  const legacyHandler = handlers['homebot:media:mark-published'];
+  const beforeDisk = diskSnapshot();
+  const beforeTools = studioToolNames();
+  const declaredCount = bundledModuleHost.list()
+    .find(item => item.manifest.id === STUDIO_MODULE_ID)!
+    .manifest.contributions.commands.length;
+  expect(beforeTools).toHaveLength(declaredCount);
+
+  await bundledModuleHost.disable(STUDIO_MODULE_ID);
+  try {
+    expect(studioToolNames()).toEqual([]);
+    const res = await legacyHandler(trustedEvent(), 'j1', 'https://youtu.be/disabled');
+    expect(res).toMatchObject({ ok: false, code: 'MODULE_UNAVAILABLE' });
+    expect(diskSnapshot()).toBe(beforeDisk);
+  } finally {
+    bundledModuleHost.enable(STUDIO_MODULE_ID);
+  }
+
+  const restoredTools = studioToolNames();
+  expect(restoredTools).toEqual(beforeTools);
+  expect(restoredTools).toHaveLength(declaredCount);
+  expect(new Set(restoredTools).size).toBe(restoredTools.length);
+});
+
+test('storyboard breakdown retains the complete legacy result through Core tool dispatch', async () => {
+  const previous = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
+  const projects = path.join(userData, 'storyboards');
+  fs.mkdirSync(projects, { recursive: true });
+  process.env.HOMEBOT_MOVIE_PROJECTS_DIR = projects;
+  try {
+    const result = await handlers['homebot:media:storyboard:breakdown'](trustedEvent(), {
+      script: 'An explorer opens the temple door. The carved map reveals a hidden passage. She follows it into the dawn.',
+      title: 'Legacy shot fields', projectId: 'legacy-shots', shotCount: 3, autoGenerateFrames: false,
+    });
+    expect(result.ok).toBe(true);
+    expect(Object.keys(result).sort()).toEqual(['ok', 'projectId', 'title', 'genre', 'shots', 'totalDurationSec', 'projectDir'].sort());
+    expect(result.shots).toHaveLength(3);
+    expect(result.shots[0]).toMatchObject({
+      order: expect.any(Number), title: expect.any(String), characters: expect.any(Array), beatType: 'establishing',
+      shotId: expect.any(String), prompt: expect.any(String), narration: expect.any(String),
+    });
+    expect(result.projectId).toMatch(/^legacy-shots-/);
+    expect(result.projectDir).toBe(path.join(projects, result.projectId));
+    expect(fs.existsSync(path.join(result.projectDir, 'project.json'))).toBe(true);
+  } finally {
+    if (previous === undefined) delete process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
+    else process.env.HOMEBOT_MOVIE_PROJECTS_DIR = previous;
+  }
 });
