@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
+import { movieImageFixture } from './helpers/movie-image';
+jest.mock('electron', () => ({ nativeImage: require('./helpers/movie-image').movieNativeImageStub }));
 
 jest.mock('http');
 
@@ -178,7 +180,7 @@ describe('ComfyUI Local Generation Adapter', () => {
     });
 
     test('generateComfyUIShot saves output image file and returns status done when successful', async () => {
-      const dummyPngBinary = Buffer.from('fake-png-binary-content');
+      const dummyPngBinary = movieImageFixture;
 
       const mockReq: any = {
         on: jest.fn().mockReturnThis(),
@@ -236,7 +238,7 @@ describe('ComfyUI Local Generation Adapter', () => {
       // Verify file was written
       const savedPath = path.join(shotDir, 'image', 'shot_001.png');
       expect(fs.existsSync(savedPath)).toBe(true);
-      expect(fs.readFileSync(savedPath).toString()).toBe('fake-png-binary-content');
+      expect(fs.readFileSync(savedPath)).toEqual(movieImageFixture);
     });
   });
 });

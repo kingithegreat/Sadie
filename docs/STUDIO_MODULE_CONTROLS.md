@@ -79,3 +79,17 @@ overlays and streaming. Initial focused verification passed 44 module tests and
 two real Electron tests without retries. Remote integration is tracked in the
 [claims ledger](https://app.notion.com/p/3d5829ebf7be814eaccceeaaa9b1e565).
 Creating a storyboard proves reachability and file persistence, not playable video.
+
+## Remote checkpoint and current-main integration
+
+[PR #269](https://github.com/kingithegreat/Sadie/pull/269), head `167c39b`, passed
+all six required contexts. Windows application CI ran 3,844 widget tests, 227
+root tests and 13 overlay tests. All nine Electron shards passed; the new controls
+case passed on Linux/macOS/Windows in 5.1 / 15.0 / 11.6 seconds. Windows ran
+17 + 17 + 16 tests on the first outer attempt; the existing Movie Router privacy
+case in shard two passed on an inner retry after a timeout.
+
+Image artifact PR #267 merged first as `4b9cdf2`, requiring a latest-main merge
+under strict branch protection. The only conflict was the claims table;
+application code combined automatically. Final combined verification and merge
+status remain in the linked ledger.

@@ -33,13 +33,15 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
 | ~~HB-M2 — reachable Studio module controls~~ | claude/studio-module-controls | Implementation verified; build claim released — Codex 2026-09-09 | Combined with movie privacy main 19535cb: 3,844 widget and 227 root tests; full real Electron 50 passed without retries. Typechecks/build/lint/docs/import checks pass. UI disable, tool/IPC denial, saved restart choice, retained files and one-copy restoration verified. Evidence: docs/STUDIO_MODULE_CONTROLS.md. Current PR/merge status and integration ownership: https://app.notion.com/p/3d5829ebf7be814eaccceeaaa9b1e565. Full M2/media acceptance remains open. |
+| ~~HB-M2 prerequisite — durable movie image outputs~~ | claude/studio-movie-artifacts | **MERGED as #267**, verified 2026-09-09 local | Main 4b9cdf2. Four image adapters save readable shot images; router and runner reject unusable results and corrupt cached/deferred images. Windows: 3,850 widget + 226 root tests, static/build/docs checks and four actual Electron image/privacy tests pass. All six required contexts are green. Evidence: `tasks/movie-image-output.md`. No live AI provider, video QC or full M2 claim. |
 
 Movie/image provider online consent is **merged as #266**, confirmed on
 2026-09-09 local time as main `19535cb`. Local Windows: 3,827 widget and 226
 root tests, typechecks/lint/build/docs and real Electron movie denial pass.
 No provider requests occur when Online is off; controlled loopback generation
 remains usable. Evidence: `tasks/movie-provider-privacy.md`. This is privacy
-and saved-state evidence; live-provider quality remains unproven.
+and saved-state evidence; live-provider quality remains unproven. Main exactly
+matches tested head `bbb5202`; remote evidence is also recorded in Notion.
 
 HB-M1 is **merged as #265**, confirmed on 2026-09-09 local time. Main
 `1e3b064` exactly matches tested head `3e08059` (tree `d6f7483`). All six required

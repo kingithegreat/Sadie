@@ -5,7 +5,12 @@
 
 jest.mock('electron', () => ({
   app: { getAppPath: () => 'fake-app-root' },
+  nativeImage: require('./helpers/movie-image').movieNativeImageStub,
 }));
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { movieImageFixture } from './helpers/movie-image';
 
 const mockGetSettings = jest.fn();
 jest.mock('../config-manager', () => ({
@@ -150,16 +155,20 @@ describe('imagen3-adapter', () => {
         ok: true,
         json: () => Promise.resolve({
           predictions: [{
-            bytesBase64Encoded: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            bytesBase64Encoded: movieImageFixture.toString('base64'),
             mimeType: 'image/png',
           }],
         }),
       });
 
-      const result = await generateImagen3Shot(fakeRequest);
-      expect(result.status).toBe('done');
-      expect(result.provider).toBe('imagen-3');
-      expect((result as { costMicroUsd: number }).costMicroUsd).toBe(0);
+      const shotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'imagen-shot-'));
+      try {
+        const result = await generateImagen3Shot({ ...fakeRequest, shotDir });
+        expect(result.status).toBe('done');
+        expect(result.provider).toBe('imagen-3');
+        expect((result as { costMicroUsd: number }).costMicroUsd).toBe(0);
+        if (result.status === 'done') expect(fs.readFileSync(result.files[0])).toEqual(movieImageFixture);
+      } finally { fs.rmSync(shotDir, { recursive: true, force: true }); }
     });
 
     it('returns failed status on error', async () => {

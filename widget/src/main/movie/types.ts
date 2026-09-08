@@ -181,6 +181,8 @@ export interface ShotJobState {
   /** Set while status is AWAITING_WORKER. */
   deferredTicket?: string;
   deferredProvider?: string;
+  /** Validated output paths, relative to the shot folder for portable projects. */
+  outputFiles?: string[];
   updatedAt: string;
 }
 
