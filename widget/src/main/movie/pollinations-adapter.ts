@@ -14,6 +14,7 @@
 
 import type { GenerationCapability, GenerationProvider, GenerationRequest, GenerationResult } from './types';
 import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
+import { saveMovieShotImage } from './image-output';
 
 const POLLINATIONS_ENDPOINT = 'https://api.pollinations.ai/v1/generate';
 
@@ -113,12 +114,13 @@ export interface PollinationsProvider extends GenerationProvider {
 
 /**
  * Wrap generatePollinations in a GenerationResult so it can be registered with the router.
- * The caller reads base64 and writes to disk.
+ * Save the decoded image inside the shot before reporting completion.
  */
 export async function generatePollinationsShot(req: GenerationRequest): Promise<GenerationResult> {
   try {
-    await generatePollinations(req.prompt, req.width, req.height);
-    return { status: 'done', provider: 'pollinations', files: [], costMicroUsd: 0 };
+    const { base64 } = await generatePollinations(req.prompt, req.width, req.height);
+    const file = saveMovieShotImage(req, base64);
+    return { status: 'done', provider: 'pollinations', files: [file], costMicroUsd: 0 };
   } catch (err) {
     return { status: 'failed', provider: 'pollinations', error: (err as Error).message };
   }

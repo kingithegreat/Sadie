@@ -12,8 +12,7 @@
  * - Dynamic checkpoint detection and fallback.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import { saveMovieShotImage } from './image-output';
 import { requestProviderEndpoint } from '../utils/provider-network-policy';
 import type {
   GenerationCapability,
@@ -401,16 +400,7 @@ export async function generateComfyUIShot(req: GenerationRequest): Promise<Gener
 
   try {
     const { base64 } = await generateComfyUI(req.prompt, req.width, req.height);
-    const files: string[] = [];
-
-    // Save image to shot directory if provided
-    if (req.shotDir) {
-      const imgDir = path.join(req.shotDir, 'image');
-      fs.mkdirSync(imgDir, { recursive: true });
-      const outPath = path.join(imgDir, `${req.shotId}.png`);
-      fs.writeFileSync(outPath, Buffer.from(base64, 'base64'));
-      files.push(outPath);
-    }
+    const files = [saveMovieShotImage(req, base64)];
 
     return {
       status: 'done',

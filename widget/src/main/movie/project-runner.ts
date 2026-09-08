@@ -29,6 +29,7 @@ import { pollinationsProvider } from './pollinations-adapter';
 import { imagen3Provider } from './imagen3-adapter';
 import { localSD15Provider } from './local-sd15-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
+import { validateMovieImageFiles } from './image-output';
 
 export interface MovieProject {
   projectId: string;
@@ -291,12 +292,44 @@ export class MovieProjectRunner {
           }
         }
 
-        // Check if already completed
+        const failShot = (error: string, provider: string) => {
+          state.status = ShotStatus.FAILED;
+          state.lastError = error;
+          state.updatedAt = new Date().toISOString();
+          fs.writeFileSync(statusPath, JSON.stringify(state, null, 2), 'utf-8');
+          report.failedShots++;
+          report.results.push({ shotId, sceneId, status: state.status, provider, error });
+        };
+        let req: GenerationRequest;
+        try {
+          req = JSON.parse(fs.readFileSync(promptPath, 'utf-8'));
+        } catch {
+          failShot('The shot prompt is missing or unreadable.', 'none');
+          continue;
+        }
+        req.freeOnly = freeOnly;
+        req.allowDeferred = allowDeferred;
+        req.allowWatermark = allowWatermark;
+        req.shotDir = shotDir;
+        req.shotId = shotId;
+        const imageFiles = () => state.outputFiles
+          ? state.outputFiles.map(file => path.resolve(shotDir, file))
+          : ['png', 'jpg', 'jpeg'].map(ext => path.join(shotDir, 'image', `${shotId}.${ext}`)).filter(file => fs.existsSync(file));
+
+        // A persisted success is only reusable while its image is still usable.
         if (
           state.status === ShotStatus.IMAGE_GENERATED ||
           state.status === ShotStatus.VIDEO_GENERATED ||
           state.status === ShotStatus.APPROVED
         ) {
+          const files = req.kind === 'image' ? imageFiles() : undefined;
+          if (files) {
+            try { validateMovieImageFiles(shotDir, files); }
+            catch {
+              failShot('The saved image is missing or unreadable. Run the shot again to replace it.', 'cached');
+              continue;
+            }
+          }
           report.completedShots++;
           report.skippedShots++;
           report.results.push({
@@ -304,16 +337,27 @@ export class MovieProjectRunner {
             sceneId,
             status: state.status,
             provider: 'cached',
+            files,
           });
           continue;
         }
 
         // Check if already awaiting worker and worker output arrived
         if (state.status === ShotStatus.AWAITING_WORKER) {
-          const imgOut = path.join(shotDir, 'image', `${shotId}.png`);
+          const imgOut = imageFiles()[0];
           const vidOut = path.join(shotDir, 'video', `${shotId}.mp4`);
-          if (fs.existsSync(imgOut) || fs.existsSync(vidOut)) {
-            state.status = fs.existsSync(vidOut) ? ShotStatus.VIDEO_GENERATED : ShotStatus.IMAGE_GENERATED;
+          const output = req.kind === 'image' ? imgOut : (fs.existsSync(vidOut) ? vidOut : undefined);
+          if (output) {
+            if (req.kind === 'image') {
+              try { validateMovieImageFiles(shotDir, [output]); }
+              catch {
+                failShot('The worker image is unreadable. Replace it with a complete image and run the shot again.', state.deferredProvider ?? 'colab-worker');
+                continue;
+              }
+            }
+            state.status = req.kind === 'video' ? ShotStatus.VIDEO_GENERATED : ShotStatus.IMAGE_GENERATED;
+            state.outputFiles = [path.relative(shotDir, output)];
+            state.lastError = undefined;
             state.updatedAt = new Date().toISOString();
             fs.writeFileSync(statusPath, JSON.stringify(state, null, 2), 'utf-8');
             report.completedShots++;
@@ -322,7 +366,7 @@ export class MovieProjectRunner {
               sceneId,
               status: state.status,
               provider: state.deferredProvider ?? 'colab-worker',
-              files: [fs.existsSync(vidOut) ? vidOut : imgOut],
+              files: [output],
             });
             continue;
           }
@@ -338,40 +382,6 @@ export class MovieProjectRunner {
           continue;
         }
 
-        // Must have prompt.json to generate
-        if (!fs.existsSync(promptPath)) {
-          report.failedShots++;
-          report.results.push({
-            shotId,
-            sceneId,
-            status: ShotStatus.FAILED,
-            provider: 'none',
-            error: 'prompt.json not found in shot directory',
-          });
-          continue;
-        }
-
-        let req: GenerationRequest;
-        try {
-          req = JSON.parse(fs.readFileSync(promptPath, 'utf-8'));
-        } catch (err) {
-          report.failedShots++;
-          report.results.push({
-            shotId,
-            sceneId,
-            status: ShotStatus.FAILED,
-            provider: 'none',
-            error: `Failed to parse prompt.json: ${(err as Error).message}`,
-          });
-          continue;
-        }
-
-        // Apply options
-        req.freeOnly = freeOnly;
-        req.allowDeferred = allowDeferred;
-        req.allowWatermark = allowWatermark;
-        req.shotDir = shotDir;
-
         // Advance to PROMPTED
         state.status = ShotStatus.PROMPTED;
         state.attempts = (state.attempts ?? 0) + 1;
@@ -379,7 +389,13 @@ export class MovieProjectRunner {
         fs.writeFileSync(statusPath, JSON.stringify(state, null, 2), 'utf-8');
 
         // Execute generation via router
-        const { decision, result } = await router.generate(req);
+        const generated = await router.generate(req);
+        const { decision } = generated;
+        let { result } = generated;
+        if (result.status === 'done' && req.kind === 'image') {
+          try { validateMovieImageFiles(shotDir, result.files); }
+          catch { result = { status: 'failed', provider: result.provider, error: 'No readable image was saved. Run the shot again or choose another provider.' }; }
+        }
 
         // Record per-shot decision in shotDir/decision.json
         const decisionRecord = {
@@ -408,6 +424,7 @@ export class MovieProjectRunner {
         // Handle result
         if (result.status === 'done') {
           state.status = req.kind === 'video' ? ShotStatus.VIDEO_GENERATED : ShotStatus.IMAGE_GENERATED;
+          state.outputFiles = result.files.map(file => path.relative(shotDir, file));
           state.lastError = undefined;
           state.updatedAt = new Date().toISOString();
           fs.writeFileSync(statusPath, JSON.stringify(state, null, 2), 'utf-8');
