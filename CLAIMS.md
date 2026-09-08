@@ -15,7 +15,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| HB-M0 / media Task 1 — reconcile Studio integration and map existing module seams | claude/studio-m0-baseline | Building — Codex 2026-09-08 | Isolated worktree `.kilo/worktrees/codex-m0-studio` from fresh main `0c85650`. Finish #259 integration with the merged #260/#262 fixes, run the Windows baseline, then document existing registration/policy/provider/job/UI seams and measured limits for the locked Notion M2 plan. No new runtime framework. |
+| HB-M0 / media Task 1 — reconcile Studio integration and map existing module seams | claude/studio-m0-baseline (handoff through #259) | Ready for integration — Codex 2026-09-08 | Isolated `.kilo/worktrees/codex-m0-studio` from main `0c85650`; preserves #259 plus #260/#262 fixes. Root 219 tests, widget 3,682 tests, real Electron 47 tests pass; tsc/build/docs and duplicate guard pass, lint 0 errors. Architecture/seam map and three measured fresh profiles in `docs/CORE_MODULE_BASELINE.md`; no new runtime framework. Remote gates/merge pending; real provider/media acceptance remains open. |
 | Media studio follow-up — movie/storyboard integration | claude/ancient-pathways-integration | PR #259 integration under HB-M0 — Codex 2026-09-08 | Preserving `cede545` storyboard/director/FFmpeg renderer, ComfyUI adapter, timeline/DCC workspace and feed-library work. #260 and #262 are merged on main; their fixes are retained in the isolated integration. Provider/privacy, real-media output and editing acceptance remain open in `docs/MEDIA_STUDIO_PLAN.md`. |
 | ~~Ancient Pathways Integration — run video workflow from Media Studio UI & chat sprite generation~~ | claude/ancient-pathways-integration | ~~Ready for integration~~ → **MERGED as #248 (2026-09-05)** | Media Studio episode showcase with 9 episodes, season filter, real-time search, 4-step progress stepper (Story -> Voices -> Animation -> 1080p Video), celebratory 1080p MP4 preview player. Autonomous Sprite Pipeline (`media_generate_sprites`) generates 8-panel model sheets via Imagen 3/Pollinations, auto-isolates background, slices via Python, outputs `manifest.json`. Verified: widget tsc 0 errors; eslint 0 errors; 76/76 tests green; docs:check in sync. |
 | ~~duplicate-export-guard runs on push, not just pull_request~~ | claude/review-o-x-alpha-commits-1qrn25 | ~~Ready for integration~~ → **MERGED as #244 (2026-09-04)** | One line in `ci.yml`. `auto-merge.yml` opens PRs as github-actions[bot]; GitHub attributes that pull_request event to the bot and holds EVERY workflow on it at action_required - six held runs on one commit of #215, measured. Push-triggered runs are attributed to the pusher and run fine, but this job was gated `if: github.event_name == 'pull_request'`, so on those it reported "skipped" and never "success". A one-commit PR nobody touches again waits forever on an approval nobody knows to give - the "ten runs held, five for three days" note. Gate removed; base ref is now `github.base_ref \|\| 'main'`. All five required checks are now satisfiable from push runs alone, so a `claude/**` branch can auto-merge unattended. Verified BOTH directions with an empty base ref (a zero from this check is otherwise indistinguishable from a broken one): a deliberate colliding export exits 1 and names the file, a clean tree exits 0. Also records the live `WorkspaceShell.tsx:83` instance of the whole-effect handoff guard in `renderer-ui.instructions.md` - unfixed, track F, nobody's claim. Does NOT touch product code. |
@@ -86,3 +86,15 @@ preserve concurrent edits and confirm asynchronous writes succeeded.
 These identifiers are exported by multiple files intentionally (same name, different domains). The duplicate-export guard is suppressed for these:
 
 - `MovieRoutingDecision` — exported by `widget/src/main/movie/types.ts`; distinct from `RoutingDecision` in `widget/src/main/message-router.ts`. Different domains: movie production routing vs. message/intent routing.
+
+## 2026-09-08 — locked M2 kickoff and HB-M0 integration
+
+Aden's instruction to follow the Notion plan starts HB-M0 under the locked
+Core + Modules / Media Studio M2 plan. Its current authority and concrete
+existing seams are in `docs/CORE_MODULE_BASELINE.md`; media acceptance gates
+remain in `docs/MEDIA_STUDIO_PLAN.md`. Wrap the widget's actual tool Map and
+the Studio IPC paths, not only the separately tested root ToolRegistry.
+The next host work must preserve existing jobs, assets, privacy and approval
+authority. No new framework, paid provider, production publication or sales
+is part of this baseline. `/movie/` is ignored as local project/run data;
+the pending sample was removed from Git only and retained on disk.
