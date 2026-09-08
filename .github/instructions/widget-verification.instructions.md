@@ -4,10 +4,13 @@ applyTo: "widget/**"
 
 # Verifying a change in `widget/`
 
-`widget/` is the actual Electron app. Root-level CI does not test it: `ci.yml`'s
-`build` job runs at the repo root, whose tsconfig covers only root `src/` and
-whose package has no lint or build script, so `--if-present` silently skips both.
-A green root job says nothing about whether the app compiles.
+`widget/` is the actual Electron app. `ci.yml`'s root `build` job alone does not
+verify it. The separate Windows `widget` job installs both packages, rebuilds
+native modules for Node, typechecks, runs the full widget Jest suite, builds,
+and tests overlays in Electron. The separate E2E matrix also gates through
+`e2e-all` (live branch protection verified 2026-09-08; re-read it each session).
+Check every required context, then exercise the changed feature through its
+real user entry point. Mocked unit tests cannot prove layout or provider output.
 
 ## The command
 

@@ -180,6 +180,72 @@ const PANELS = [
   { label: 'Notifications', sel: '.notification-history-overlay' },
 ];
 
+for (const overlay of [
+  { label: 'Analytics', selector: '.td-overlay', card: '.td-container' },
+  { label: 'Permission', selector: '.hb-modal-overlay', card: '.hb-modal-card' },
+]) {
+  test(`${overlay.label} backdrop covers and intercepts the window throughout its entrance`, async () => {
+    const { app, page } = await open('homebot-e2e-overlay-animation-');
+    try {
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      if (overlay.label === 'Analytics') {
+        await page.getByRole('button', { name: 'Analytics', exact: true }).click();
+      } else {
+        // Exercise the real main -> preload -> React permission prompt.
+        await app.evaluate(({ BrowserWindow }) => {
+          BrowserWindow.getAllWindows()[0].webContents.send('homebot:permission-request', {
+            requestId: 'e2e-animation',
+            missingPermissions: ['files.write'],
+            reason: 'Save a report to your Documents folder',
+          });
+        });
+      }
+      const backdrop = page.locator(overlay.selector);
+      await expect(backdrop).toBeVisible();
+
+      // Sample the actual CSS animations, including their first frame. Waiting
+      // longer only hides a backdrop that briefly shrinks and exposes the app.
+      for (const progress of [0, 0.5, 1]) {
+        const sample = await backdrop.evaluate(async (el, { card, progress }) => {
+          const panel = el.querySelector(card)!;
+          const animations = [...el.getAnimations(), ...panel.getAnimations()];
+          for (const animation of animations) {
+            animation.pause();
+            await animation.ready;
+            animation.currentTime = Number(animation.effect!.getTiming().duration) * progress;
+          }
+          const rect = el.getBoundingClientRect();
+          const corners = [
+            [1, 1], [innerWidth - 2, 1],
+            [1, innerHeight - 2], [innerWidth - 2, innerHeight - 2],
+          ];
+          return {
+            animations: animations.length,
+            portalled: el.parentElement === document.body,
+            bounds: [rect.left, rect.top, rect.right, rect.bottom].map(Math.round),
+            viewport: [0, 0, innerWidth, innerHeight],
+            interceptsEdges: corners.every(([x, y]) => el.contains(document.elementFromPoint(x, y))),
+          };
+        }, { card: overlay.card, progress });
+        expect(sample.animations, 'must sample real entrance animations').toBeGreaterThan(0);
+        expect(sample.portalled).toBe(true);
+        expect(sample.bounds, `viewport coverage at entrance progress ${progress}`).toEqual(sample.viewport);
+        expect(sample.interceptsEdges, `edge interception at entrance progress ${progress}`).toBe(true);
+      }
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await expect.poll(() => backdrop.evaluate((el, card) =>
+        el.getAnimations().length + el.querySelector(card)!.getAnimations().length,
+      overlay.card)).toBe(0);
+      await expect(backdrop).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(backdrop).toHaveCount(0);
+    } finally {
+      await app.close();
+    }
+  });
+}
+
 for (const p of PANELS) {
   test(`${p.label} opens as a real overlay and closes with Escape`, async () => {
     const { app, page } = await open(`homebot-e2e-${p.label.toLowerCase()}-`);

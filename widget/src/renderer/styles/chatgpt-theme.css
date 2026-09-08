@@ -3438,9 +3438,11 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 50;
-  animation: ambientPanelIn 0.2s ease-out both;
+  /* The backdrop must intercept the whole window even on its first frame. */
+  animation: fadeOverlay 0.2s ease-out both;
 }
 .hb-modal-card {
+  animation: ambientPanelIn 0.2s ease-out both;
   max-width: 95vw;
   border-radius: var(--radius-lg);
   background: var(--bg-dark);
@@ -3572,9 +3574,11 @@ body {
   justify-content: center;
   z-index: 50;
   padding: var(--spacing-lg);
-  animation: ambientPanelIn 0.25s ease-out both;
+  /* Animate the card's geometry, never the full-window click barrier. */
+  animation: fadeOverlay 0.25s ease-out both;
 }
 .td-container {
+  animation: ambientPanelIn 0.25s ease-out both;
   width: 100%;
   max-width: 56rem;
   background: var(--bg-dark);
@@ -8591,6 +8595,10 @@ body {
   .welcome-container::after,
   .code-block-wrapper::before,
   .mode-switcher,
+  .hb-modal-overlay,
+  .hb-modal-card,
+  .td-overlay,
+  .td-container,
   .settings-panel {
     animation: none !important;
   }
