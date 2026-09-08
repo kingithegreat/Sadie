@@ -1,7 +1,12 @@
 # Video Engine Decision — JSON API first, Remotion deferred
 
 **Decision date:** 2026-09-04
-**Status:** Decided (Aden picked the recommendation via the session question)
+**Status:** Superseded for the HomeBot media baseline on 2026-09-08 by the
+[approved media studio plan](MEDIA_STUDIO_PLAN.md). The historical rationale
+below is retained; vendor costs and licensing statements require fresh review
+before any procurement. CPU FFmpeg composition is the baseline, with assisted
+Colab GPU generation and optional consented online providers. A new paid JSON
+rendering dependency is deferred. Ancient Pathways keeps its own animation plan.
 **Decided by:** Aden + Claude session on claude/model-picker-sections
 **Supersedes:** nothing; this is the first written decision on the question
 **Revisit trigger:** the day HomeBot needs pixel-level custom 2D animation that a

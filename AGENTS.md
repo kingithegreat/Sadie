@@ -61,12 +61,16 @@ something a person can click, type or say. If you cannot, you have built another
   a grep, a `:not()` list, a "no results found" — feed it something it *should* match. A recent
   button-grep returned two hits from a 710-line panel that actually offered six actions.
 
-## CI does not test the app
+## CI tests the app; unit tests do not prove a reachable feature
 
-`ci.yml` runs at the **root**. The Electron app lives in `widget/`, and of its **248** test suites
-(~3,487 tests across 151 main, 79 renderer, 17 shared, 1 root) CI runs **one** smoke file. A green
-PR means: root typecheck, ~205 root tests, widget eslint, one smoke file. It does **not** mean
-the app compiles or its tests pass. Run these yourself:
+Verified 2026-09-08: `ci.yml` has a root `build` job AND a Windows `widget` job that
+typechecks the app, runs its full Jest suite, builds Electron, and tests overlays in the
+real renderer. Separate jobs check lint and permissions. `widget-e2e-ci.yaml` runs the
+three-OS E2E matrix; its `e2e-all` aggregate is required by main's branch protection.
+Re-read that live protection before relying on it. Every required context must be present
+and green. Neither unit tests nor a green PR prove that a media provider produced a real
+video or that a user can reach a capability. Trace and exercise that path too.
+Run the relevant local checks before publishing:
 
 ```bash
 cd widget && npx tsc --noEmit && npm run lint && npx jest --config=jest.config.ts --runInBand --no-coverage

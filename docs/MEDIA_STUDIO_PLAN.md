@@ -1,0 +1,115 @@
+# HomeBot media studio — approved execution plan
+
+Approved by Aden on 2026-09-08 after a read-only repository and runtime audit.
+This is the current media execution order. Historical plans remain history;
+`CLAUDE.md` and `CLAIMS.md` govern how work is performed. Each task needs Aden's
+confirmation before the next begins. Task 1 is authorized and in progress.
+
+## Baseline and boundaries
+
+The audit inspected main at `6b95e5e` and the media integration branch at
+`cede545` ([PR #259](https://github.com/kingithegreat/Sadie/pull/259)). At the
+audit cutoff, #259 was open and blocked by the required E2E aggregate. A failing
+macOS shard measured an Analytics backdrop narrower than the window during
+its entrance animation. Passing unit tests did not establish pipeline health.
+
+HomeBot and SADIE are the same product and repository. The GitHub repository
+still uses `Sadie`; legacy names are compatibility/history, not another backend.
+The app runs in `widget/` (Electron main, preload, React renderer). Root `src/`
+holds shared tools and services; it is not an alternative desktop frontend.
+Ancient Pathways is a separate local Python project reached through HomeBot's
+tools/IPC and its production server. Its existing episode outputs are evidence
+of that project's earlier work, not proof that every new router path renders.
+
+## What exists, and what remains unproven
+
+| Area | Audited state | Implementation / remaining gap |
+|---|---|---|
+| Desktop and automation surfaces | Implemented | React modes, preload/IPC, permissions, Automation Center and n8n workflow support exist. Reachability still needs checking for every new capability. |
+| Media Studio | Partial | [`media-studio.ts`](../widget/src/main/media-studio.ts) coordinates stages; review UI and render modules exist. A reliable real-media completion gate is still needed. |
+| Movie routing | Partial | [`movie/`](../widget/src/main/movie/) contains five adapters and a project runner. Completion can be reported without usable output; free/online/privacy and reference-image contracts need repair. |
+| Clip narration | Implemented, blocked path found | [`narrate-clip.ts`](../widget/src/main/tools/narrate-clip.ts) reaches Python analysis/TTS/muxing. The inspected invocation omits the analyzer's required video argument. Provider availability also needs verification. |
+| FFmpeg composition | Partial | [`media-render.ts`](../widget/src/main/media-render.ts) has assembly logic; narration selection, frame extraction and final QA need proof on real files. |
+| Colab | Partial | [`colab-adapter.ts`](../widget/src/main/movie/colab-adapter.ts) and [`colab_sdxl_ipadapter.ipynb`](../notebooks/colab_sdxl_ipadapter.ipynb) exist. Local ticket paths and Drive worker input/output do not yet form a verified portable round trip. |
+| Ancient Pathways characters | Partial, separate project | Showcase, doctor and production bridge exist. The newer router can report success for a placeholder solid-color clip. Per-character rigs/art enrollment remain unfinished. Preserve that project's approved rig/animation plan. |
+| Editing and export | Partial | Timeline/storyboard controls exist in the integration work; persisted edits must be demonstrated in exported frames and audio. |
+| YouTube channel management | Planned as an integrated flow | A complete channel-profile, approved upload, scheduling and retry path was not established by the audit. |
+| Distribution | Unverified | NSIS configuration exists; published release asset query returned no installer assets. Fresh-machine Python/FFmpeg setup and a complete media run remain acceptance work. |
+
+These findings describe the inspected snapshots. A mocked success, an existing
+MP4 from an older pipeline, or a status of `done` does not close an item.
+The audit ran TypeScript/docs checks, focused widget tests and the standalone
+Python checks; it did not establish a live n8n/Docker or cloud-provider baseline.
+Docker was unavailable during the audit. Task 1 must record its own broader
+verification separately.
+
+## Architecture for the 4 GB GPU
+
+- **On this PC:** Electron/React, job state, manifests, asset caching, previews,
+  FFmpeg CPU composition and lightweight offline speech. Run one compute job at
+  a time; small Ollama models are optional fallbacks, not a requirement to run
+  a large LLM alongside image generation. No SDXL or large video model baseline
+  on this GPU.
+- **Online, with consent:** configurable text/image/speech providers with real
+  availability, quota and pricing checks. No automatic paid fallback. A provider
+  name is not proof of a free tier. Preserve `useCustomLLM` / `allowCloud` and
+  fail closed before any request or upload.
+- **Colab:** an operator-assisted, interruptible GPU worker for expensive asset
+  generation, with portable job IDs, resumable outputs and a Drive handoff.
+  Free runtime availability is not an always-on service guarantee. Session loss
+  leaves a resumable job, not a failed or fabricated finished movie.
+- **Speech:** Edge speech is online; it follows online consent. Kokoro on CPU
+  is the intended offline path after setup. Verify the selected engine's actual
+  output and resource use instead of assuming every TTS path is local.
+- **n8n:** schedules, triggers, job/status handoff and approved publication.
+  One versioned job/asset contract joins n8n, Python, Electron and the renderer.
+  Large media stays in asset storage; workflow payloads carry references.
+- **Rendering:** CPU FFmpeg is the initial composition path. Retain Ancient
+  Pathways' separate animation decisions. Defer a new paid JSON render service;
+  select providers at implementation time after checking current terms.
+
+## Tasks and acceptance gates
+
+| Task | Scope | Required evidence before moving on |
+|---|---|---|
+| **1. Verified baseline** — in progress | Isolate work, reconcile claims/docs, reproduce and fix the overlay failure blocking #259, run local and required CI checks, then integrate without overwriting other agents. | Failure reproduced before fix; real Electron regression passes after fix; app/root checks pass; all required remote contexts present and green; actual merged content verified. |
+| **2. Provider correctness** — awaiting confirmation | Repair privacy, availability/free-tier routing, provider output and reference-image contracts; replace obsolete model assumptions. | With online access off, zero outbound calls; unusable/empty assets never report success; each enabled provider passes a real request and output validation with configured access. Credentials remain Aden's. |
+| **3. One reliable faceless video** — awaiting confirmation | Unify manifests and orchestration; fix Python argv, narration, frame handling, render and QA. | From a real HomeBot control through IPC/Python or n8n to a playable MP4: correct duration, visible content, audible narration and captions. Inspect sampled frames/audio; test failure propagation too. |
+| **4. Colab round trip** — awaiting confirmation | Portable unique jobs, asset upload, Drive discovery, worker result import, retry/resume/cancel. | Submit from HomeBot, run in Colab, ingest validated assets and continue the same project; survive runtime restart and duplicate/partial results. |
+| **5. Consistent characters** — awaiting confirmation | Complete one character's art enrollment and actual compositor path under the existing Ancient Pathways rig plan. | Render multiple shots of one recognizable character with intended poses/lip movement; validate real output and reject placeholder clips. |
+| **6. Editing affects exports** — awaiting confirmation | Persist storyboard/timeline edits, invalidate changed assets, replace simulated progress/completion. | Change shot order, timing, text and voice through the UI; reopen the project and export; compare the resulting frames/audio to those edits. |
+| **7. YouTube operations** — awaiting confirmation | Channel profiles, metadata, thumbnails, OAuth, scheduling and approved idempotent upload. | Profile isolation, an explicitly approved test upload, verified visibility/metadata and retries without duplicate publication; never publish merely to test without approval. |
+| **8. Release verification** — awaiting confirmation | Installer/runtime dependencies, configuration, startup guidance and fresh Windows acceptance. | Install the actual artifact on a fresh profile/machine; complete the agreed video flow, verify privacy modes and document every required external setup step. |
+
+Prioritize media generation, editing and orchestration. Existing knowledge,
+automation and reliability work supports those tasks; additional coding-assistant
+expansion is deferred. Organize modules around the existing boundaries before
+considering file moves: desktop UI/IPC in `widget/`, pure shared logic in `src/`,
+workers in `scripts/` and `notebooks/`, orchestration in `n8n-workflows/`, and
+versioned contracts and operational guidance in `docs/`. Do not create parallel
+SADIE/HomeBot pipelines or copy the private notes vault into this repository.
+
+For every task: explain the concrete change, implement it, run relevant checks,
+exercise the real React/Electron and n8n boundary where applicable, record the
+verification limits, and ask Aden before starting the next task.
+
+## Task 1 verification — 2026-09-08
+
+Local Windows checks on the isolated `claude/studio-baseline` worktree:
+
+- Both new real-Electron animation tests failed on the original CSS: backdrop
+  bounds began at x=12, y=16 in a 1202-pixel-wide viewport. After moving the
+  scale/translation to the inner cards, both passed at all sampled frames,
+  including edge interception, reduced-motion handling and Escape dismissal.
+- Complete overlay/tooltip run: 13 passed, no retries.
+- Full widget Jest: 253 suites / 3571 tests passed, 5 suites / 15 tests skipped.
+  The first sandboxed run could not create profile fixtures; the normal Windows
+  rerun passed. The existing CI `--forceExit` setting was used.
+- Root Jest: 16 suites / 213 tests passed. Root and widget typechecks passed.
+  Widget lint: zero errors, eight existing hook warnings. Electron build passed.
+  Docs contract check: 188 preload methods, 138 renderer-to-main and 32
+  main-to-renderer channels in sync.
+
+Remote CI, merged-content verification and #259 integration are still pending.
+This UI/documentation change does not modify the n8n contract; its unit coverage
+passed within the widget suite. Live n8n/cloud/media runs remain unverified.

@@ -5,7 +5,7 @@
 > *HomeBot began as **SADIE**, my Toi Ohomai Bachelor of Applied IT capstone (graded A+, 93). Same codebase, one name going forward — legacy "SADIE" strings you find in old issues or the git history refer to this project.*
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
-![Electron](https://img.shields.io/badge/Electron-28-9feaf9)
+![Electron](https://img.shields.io/badge/Electron-42.8.1-9feaf9)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-3178c6)
 ![React](https://img.shields.io/badge/React-18-61dafb)
 ![AI](https://img.shields.io/badge/AI-Ollama%20(local)-green)
@@ -16,17 +16,17 @@
 
 ## What is HomeBot?
 
-HomeBot is a **privacy-first desktop AI assistant** that can search the web, read and write files, inspect your system, understand images, generate images, automate browser tasks, index documents for semantic search, track NBA scores, chain multi-step tool workflows autonomously, and greet you each morning with a personalized briefing — all without sending your data to a third party.
+HomeBot is a **desktop AI assistant evolving into an AI media studio**. It supports local chat and file tools, document search, browser automation and optional online services. Web searches, cloud models and online media providers contact external services. The media pipeline is still being completed; see the [approved plan and audited feature status](docs/MEDIA_STUDIO_PLAN.md).
 
 It combines:
 
-- **Electron 28 + React 18** for a modern, themeable desktop UI with futuristic glass-morphism accents
+- **Electron 42.8.1 + React 18** for the desktop UI (versions pinned in `widget/package.json`)
 - **Ollama** for fully offline LLM inference — no API keys or internet connection required
 - **137 TypeScript tool handlers** across 35 modules executed locally with structured JSON tool-calling
 - **Agentic tool loop** — the LLM autonomously chains tools for multi-step requests ("search for X, save it, then email me")
 - **Optional cloud LLM routing** to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or any OpenAI-compatible endpoint
 - **n8n integration** — deploy n8n workflows directly from HomeBot's Automation Center (no n8n UI required); automations run via webhook triggers with Ollama-powered AI
-- **Media Studio & Movie Engine** — automated video generation, podcast recaps, BYO clip narration, 2D animation, and free-first screenplay movie production
+- **Media Studio & Movie Engine (in development)** — review UI, render orchestration, clip narration and Ancient Pathways integration; provider, export and Colab completion gates remain in the approved plan
 
 ---
 
@@ -36,10 +36,10 @@ It combines:
 
 | Capability | Description |
 |---|---|
-| **Media Studio** | Automated video production pipeline with human-in-the-loop review, pan/zoom motion graphics, audio ducking, and podcast recap generation |
-| **Movie Production Engine** | Free-first screenplay-to-video orchestrator routing shots across 5 providers (Ancient Pathways Showrunner, Colab SDXL IP-Adapter, Local SD 1.5, Pollinations, Imagen 3) |
-| **Clip Narration** | BYO video narration (`media_narrate_clip`) using Gemini vision analysis, native TTS, and lossless ffmpeg stream muxing |
-| **Ancient Pathways** | 4-stage 1080p 2D episodic animation showcase with autonomous 8-panel sprite generation (`media_generate_sprites`) and mouth anchor calibration |
+| **Media Studio — partial** | Review UI and FFmpeg composition modules exist; reliable rendered-media completion and QA remain in Task 3 |
+| **Movie Production Engine — partial** | Five adapter modules and a project runner exist; provider availability, privacy, output and reference-image contracts require Task 2 verification |
+| **Clip Narration — blocked path identified** | `media_narrate_clip` reaches Python/TTS/FFmpeg; the audited analyzer invocation omits its required video argument (Task 3) |
+| **Ancient Pathways — partial integration** | Episode showcase, doctor and production bridge to the separate Python project; consistent-character rendering and art enrollment remain Task 5 |
 | **Web Search** | Multi-engine cascade (Tavily, Serper, DuckDuckGo, Google, Brave) with automatic content fetching and SSRF protection |
 | **File Manager** | Safe read, write, list, move, delete, and search with path validation and directory whitelisting |
 | **System Info** | Disk usage, memory, running processes, and network adapter inspection |
@@ -104,7 +104,7 @@ All tools execute locally as TypeScript handlers. HomeBot calls whichever tool t
 
 ```
 ┌──────────────────────────────────────────────────┐
-│              Electron 28 Shell                    │
+│              Electron 42 Shell                    │
 │   React 18 UI  <-->  IPC Bridge  <-->  Main Proc  │
 │   (Themes, Glass UI, Animations)                  │
 ├──────────────────────────────────────────────────┤
@@ -280,7 +280,7 @@ Detailed documentation is available in the `docs/` folder:
 
 ## Tech Stack
 
-Electron 28, React 18, TypeScript 5.9.3, Ollama, n8n, PowerShell.
+Electron 42.8.1, React 18, TypeScript 5.9.3, Ollama, n8n, PowerShell.
 
 ---
 

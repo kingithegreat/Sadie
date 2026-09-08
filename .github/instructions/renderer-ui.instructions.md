@@ -54,25 +54,11 @@ effect. A guard on the whole effect means a second handoff into a panel the user
 is already looking at is silently dropped, which is the dead end the handoff
 exists to remove.
 
-### One live instance of exactly that, unfixed
+### Workspace handoff example — fixed in #252
 
-`WorkspaceShell.tsx:83` — `if (!open || root) return;` is the whole-effect form.
-
-Leaving Code mode unmounts the component, so `root` resets and the next arrival
-works. But when the user is **already in Code mode** and asks the assistant to
-open a different project, `setMode('code')` is a no-op, the component stays
-mounted, `root` is already set, and `navContext.path` is discarded with no
-feedback. "Help me with this repo" silently does nothing in precisely the case
-where someone is already looking at code.
-
-The comment there cites "the AutomationCenter principle", but AutomationCenter
-applies it per field and re-runs on every `navContext` change, so a second
-arrival still fills anything blank. The stated justification is weaker than it
-looks too: `setRoot` never clears `files`, so open tabs and unsaved edits survive
-a root change — nothing is at risk of being yanked away.
-
-Suggested shape when someone picks this up: honour the handoff when the incoming
-path differs from the current root, and either repoint the tree or open the file
-in place. Note there is **no test** — `navContext` appears in zero tests
-repo-wide, so the `AutomationCenter` and `FeedsPanel` handoffs are untested too.
-A test asserting what `navContext` does to `root` would be the first.
+Verified on main on 2026-09-08: `components/workspace/WorkspaceShell.tsx`
+separates initial root setup from subsequent `navContext` application. It keeps
+an existing root while opening a newly targeted file. Regression coverage is
+in `__tests__/workspace-shell-handoff.test.tsx`. The former note that this was
+unfixed and had no tests is retired; inspect the second effect before judging
+the bootstrap guard in isolation.
