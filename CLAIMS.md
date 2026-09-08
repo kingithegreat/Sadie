@@ -15,8 +15,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| HB-M0 / media Task 1 — reconcile Studio integration and map existing module seams | claude/studio-m0-baseline (handoff through #259) | Ready for integration — Codex 2026-09-08 | Isolated `.kilo/worktrees/codex-m0-studio` from main `0c85650`; preserves #259 plus #260/#262 fixes. Root 219 tests, widget 3,682 tests, real Electron 47 tests pass; tsc/build/docs and duplicate guard pass, lint 0 errors. Architecture/seam map and three measured fresh profiles in `docs/CORE_MODULE_BASELINE.md`; no new runtime framework. Remote gates/merge pending; real provider/media acceptance remains open. |
-| Media studio follow-up — movie/storyboard integration | claude/ancient-pathways-integration | PR #259 integration under HB-M0 — Codex 2026-09-08 | Preserving `cede545` storyboard/director/FFmpeg renderer, ComfyUI adapter, timeline/DCC workspace and feed-library work. #260 and #262 are merged on main; their fixes are retained in the isolated integration. Provider/privacy, real-media output and editing acceptance remain open in `docs/MEDIA_STUDIO_PLAN.md`. |
+| HB-M1 — thin module contract and trusted Studio host | claude/studio-m1-host | In progress — Codex 2026-09-08 | Isolated `.kilo/worktrees/codex-m1-host` from fresh main `8327342`, after HB-M0 merged. Wrap the actual widget registry and Studio IPC with owned registrations, compatibility/dependency validation, rollback/unregister and boundary tests. Keep current tools/channels, policy, jobs, assets and grants. No new scheduler, engine replacement or publication. |
 | ~~Ancient Pathways Integration — run video workflow from Media Studio UI & chat sprite generation~~ | claude/ancient-pathways-integration | ~~Ready for integration~~ → **MERGED as #248 (2026-09-05)** | Media Studio episode showcase with 9 episodes, season filter, real-time search, 4-step progress stepper (Story -> Voices -> Animation -> 1080p Video), celebratory 1080p MP4 preview player. Autonomous Sprite Pipeline (`media_generate_sprites`) generates 8-panel model sheets via Imagen 3/Pollinations, auto-isolates background, slices via Python, outputs `manifest.json`. Verified: widget tsc 0 errors; eslint 0 errors; 76/76 tests green; docs:check in sync. |
 | ~~duplicate-export-guard runs on push, not just pull_request~~ | claude/review-o-x-alpha-commits-1qrn25 | ~~Ready for integration~~ → **MERGED as #244 (2026-09-04)** | One line in `ci.yml`. `auto-merge.yml` opens PRs as github-actions[bot]; GitHub attributes that pull_request event to the bot and holds EVERY workflow on it at action_required - six held runs on one commit of #215, measured. Push-triggered runs are attributed to the pusher and run fine, but this job was gated `if: github.event_name == 'pull_request'`, so on those it reported "skipped" and never "success". A one-commit PR nobody touches again waits forever on an approval nobody knows to give - the "ten runs held, five for three days" note. Gate removed; base ref is now `github.base_ref \|\| 'main'`. All five required checks are now satisfiable from push runs alone, so a `claude/**` branch can auto-merge unattended. Verified BOTH directions with an empty base ref (a zero from this check is otherwise indistinguishable from a broken one): a deliberate colliding export exits 1 and names the file, a clean tree exits 0. Also records the live `WorkspaceShell.tsx:83` instance of the whole-effect handoff guard in `renderer-ui.instructions.md` - unfixed, track F, nobody's claim. Does NOT touch product code. |
 | Model picker sections  purpose-grouped catalog, GPU-picked float-up, type-to-filter | claude/model-picker-sections | Merged as #249 (2026-09-04) | Research basis: VS Code groups recommended-first, Raycast/Cursor group by task, all ship type-to-filter. Adds explicit category tags to the 17-model catalog (everyday / coding / reasoning / lightweight / uncensored), an On this PC section with a Best for your PC float-to-top subsection driven by detected VRAM, purpose sub-groups under the download section, a filter box with Escape-to-close, and no-match state. Arrows cycle the filtered subset. Tests 41/41. |
@@ -31,16 +30,21 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 ## Retired claims
 
+| Feature | Branch | Status | Notes |
+|---|---|---|---|
+| ~~HB-M0 / media Task 1 — baseline reconciliation and module map~~ | claude/studio-m0-baseline (via #259) | **MERGED as #259 (2026-09-08), complete** | Main `8327342` has the exact tested tree `5b45be1`; all six required checks present and green. Root 219, widget 3,682 and Windows matrix 47 actual tests passed; local full Electron 47 passed without retries. Three fresh-profile measurements and source-path map in `docs/CORE_MODULE_BASELINE.md`. One Linux dependency-download failure recovered with an isolated rerun that executed 16 tests. |
+| ~~Media studio follow-up — movie/storyboard integration~~ | claude/ancient-pathways-integration | **MERGED as #259 (2026-09-08)** | Storyboard/director/FFmpeg renderer, ComfyUI adapter, timeline/DCC workspace and feed-library work landed with #260/#262 retained. Generated root movie data is excluded from Git and retained locally. Provider/privacy, real-media output, editing and packaging acceptance remain open. |
+
 Windows E2E repair: `claude/studio-baseline-ci` is **merged as #262**, confirmed
 2026-09-08 at `0c85650`. All six required contexts were present and successful;
 the Windows matrix ran 16 + 16 + 15 actual Electron tests. The launcher defect
-is closed; remaining Studio integration is tracked in HB-M0 above.
+is closed; Studio integration subsequently merged in HB-M0 above.
 
 Movie baseline audit (2026-09-08): the three former active rows naming #258
 for router wiring, five adapters and the project runner are retired. Those
 modules exist on main at `6b95e5e`, and #258 is merged. Their earlier claims of
 working zero-cost, character-consistent production were not established by
-the audit. #259 remains the active follow-up; code presence is not video proof.
+the audit. #259 subsequently merged under HB-M0; code presence is not video proof.
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
