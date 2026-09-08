@@ -157,5 +157,12 @@ sets can double-count shared pages. Build output is 28,224,548 bytes, up 23,516
 bytes from M0; the lazy Studio chunk remains 216,687 bytes. Optional package
 size and expensive-media peak memory remain unmeasured.
 
+Integration with merged QA repair #264 (`eafd27f`) passed the full Windows
+widget suite: 268 suites / 3,785 tests, 15 skipped, exit 0. Root remains
+18 suites / 226 tests. Both typechecks, lint (eight existing warnings), build,
+docs, import boundaries and duplicate-export checks passed on the combined code.
+The rebuilt combined app also passed 12 real Electron Studio/overlay regressions
+without retries, including both entrance-animation cases and Studio file creation.
+
 Remote checks and merged-content verification are still required before M1 is
 complete. Local logs remain under the ignored `.kilo/evidence/m1/` directory.
