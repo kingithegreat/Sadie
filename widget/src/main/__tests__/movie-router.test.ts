@@ -5,6 +5,11 @@
  * tested with a losing input has never actually been tested.
  */
 import { GenerationRouter, evaluate } from '../movie/router';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { movieImageFixture } from './helpers/movie-image';
+jest.mock('electron', () => ({ nativeImage: require('./helpers/movie-image').movieNativeImageStub }));
 import type {
   GenerationCapability,
   GenerationProvider,
@@ -149,10 +154,17 @@ describe('failure modes stay legible', () => {
     // The common free-tier failure: probe was fine, the quota died a second later.
     const flaky = stub('flaky', baseCap({ throughputPerMin: 60 }), 'both',
       async () => ({ status: 'failed', provider: 'flaky', error: '429 quota' }));
-    const r = new GenerationRouter().register(flaky).register(stub('steady', baseCap({ throughputPerMin: 1 })));
-    const { result, decision } = await r.generate(req());
-    expect(decision.chosen?.providerId).toBe('flaky');
-    expect(result).toMatchObject({ status: 'done', provider: 'steady' });
+    const r = new GenerationRouter().register(flaky);
+    const shotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'movie-router-fallback-'));
+    try {
+      const file = path.join(shotDir, 'steady.png');
+      fs.writeFileSync(file, movieImageFixture);
+      r.register(stub('steady', baseCap({ throughputPerMin: 1 }), 'image',
+        async () => ({ status: 'done', provider: 'steady', files: [file], costMicroUsd: 0 })));
+      const { result, decision } = await r.generate(req({ shotDir }));
+      expect(decision.chosen?.providerId).toBe('flaky');
+      expect(result).toMatchObject({ status: 'done', provider: 'steady' });
+    } finally { fs.rmSync(shotDir, { recursive: true, force: true }); }
   });
 
   it('reports every rejection reason when nothing is eligible', async () => {

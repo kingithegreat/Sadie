@@ -16,6 +16,7 @@
 
 import type { GenerationCapability, GenerationRequest, GenerationResult, GenerationProvider } from './types';
 import { requestProviderEndpoint } from '../utils/provider-network-policy';
+import { saveMovieShotImage } from './image-output';
 
 function localSdEndpoint(): string {
   return process.env.LOCAL_SD_ENDPOINT ?? 'http://127.0.0.1:7860/sdapi/v1/txt2img';
@@ -168,7 +169,7 @@ export async function generateLocalSD15(
 
 /**
  * Wrap generateLocalSD15 in a GenerationResult so it can be registered with the router.
- * The caller reads base64 and writes to disk.
+ * Save the decoded image inside the shot before reporting completion.
  */
 export async function generateLocalSD15Shot(req: GenerationRequest): Promise<GenerationResult> {
   if (req.width > 512 || req.height > 512) {
@@ -180,8 +181,9 @@ export async function generateLocalSD15Shot(req: GenerationRequest): Promise<Gen
   }
 
   try {
-    await generateLocalSD15(req.prompt, req.width, req.height);
-    return { status: 'done', provider: 'local-sd15', files: [], costMicroUsd: 0 };
+    const { base64 } = await generateLocalSD15(req.prompt, req.width, req.height);
+    const file = saveMovieShotImage(req, base64);
+    return { status: 'done', provider: 'local-sd15', files: [file], costMicroUsd: 0 };
   } catch (err) {
     return { status: 'failed', provider: 'local-sd15', error: (err as Error).message };
   }

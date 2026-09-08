@@ -23,6 +23,7 @@ import type {
   ProviderScore,
   MovieRoutingDecision,
 } from './types';
+import { validateMovieImageFiles } from './image-output';
 
 /** Availability → base score. Ordered by how soon a frame actually exists. */
 const AVAILABILITY_SCORE: Record<GenerationCapability['availability'], number> = {
@@ -133,6 +134,7 @@ export class GenerationRouter {
       if (!provider) continue;
       try {
         const result = await provider.generate(req);
+        if (result.status === 'done' && req.kind === 'image') validateMovieImageFiles(req.shotDir, result.files);
         if (result.status !== 'failed') return { decision, result };
         errors.push(`${candidate.providerId}: ${result.error}`);
       } catch (err) {

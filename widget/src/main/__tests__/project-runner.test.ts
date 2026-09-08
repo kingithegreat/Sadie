@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { movieImageFixture } from './helpers/movie-image';
+jest.mock('electron', () => ({ nativeImage: require('./helpers/movie-image').movieNativeImageStub }));
 import {
   MovieProjectRunner,
   createStandardRouter,
@@ -39,7 +41,7 @@ const mockProvider = (
     const ext = req.kind === 'video' ? 'mp4' : 'png';
     const outFile = path.join(req.shotDir, `${req.shotId}_out.${ext}`);
     fs.mkdirSync(req.shotDir, { recursive: true });
-    fs.writeFileSync(outFile, 'fake-media-content', 'utf-8');
+    fs.writeFileSync(outFile, req.kind === 'image' ? movieImageFixture : Buffer.from('fake-video-content'));
     return {
       status: 'done',
       provider: id,
@@ -203,7 +205,7 @@ describe('MovieProjectRunner', () => {
         generate: async (req) => {
           generateCalls++;
           const outFile = path.join(req.shotDir, `${req.shotId}.png`);
-          fs.writeFileSync(outFile, 'x');
+          fs.writeFileSync(outFile, movieImageFixture);
           return { status: 'done', provider: 'mock-engine', files: [outFile], costMicroUsd: 0 };
         },
       };

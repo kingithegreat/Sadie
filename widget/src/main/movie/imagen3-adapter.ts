@@ -15,6 +15,7 @@ import type { GenerationCapability, GenerationProvider, GenerationRequest, Gener
 import { getSettings } from '../config-manager';
 import { apiKeyForProvider } from '../../shared/cloud-llm';
 import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
+import { saveMovieShotImage } from './image-output';
 
 const IMAGEN_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict';
 
@@ -155,12 +156,13 @@ export interface Imagen3Provider extends GenerationProvider {
 
 /**
  * Wrap generateImagen3 in a GenerationResult so it can be registered with the router.
- * The caller reads base64 and writes to disk.
+ * Save the decoded image inside the shot before reporting completion.
  */
 export async function generateImagen3Shot(req: GenerationRequest): Promise<GenerationResult> {
   try {
-    await generateImagen3(req.prompt, req.width, req.height);
-    return { status: 'done', provider: 'imagen-3', files: [], costMicroUsd: 0 };
+    const { base64 } = await generateImagen3(req.prompt, req.width, req.height);
+    const file = saveMovieShotImage(req, base64);
+    return { status: 'done', provider: 'imagen-3', files: [file], costMicroUsd: 0 };
   } catch (err) {
     const msg = (err as Error).message || String(err);
     if (msg.includes('not configured') || msg.includes('API key')) {
