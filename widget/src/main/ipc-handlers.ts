@@ -35,6 +35,7 @@ import {
   getDefaultSettings
 } from './config-manager';
 import { fetchAvailableCustomModels, generateFromCustomLLM } from './custom-llm-client';
+import { apiKeyForProvider } from '../shared/cloud-llm';
 import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -533,7 +534,22 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         }
       }
 
-      const models = await fetchAvailableCustomModels(payload || {});
+      // Google providers store their key in the per-provider vault
+      // (geminiApiKey / providerApiKeys), not customLLM.apiKey — so the
+      // Settings "fetch models" button passes no key for them. Resolve it here
+      // so dynamic discovery can run against the account's actual key.
+      let resolvedPayload = payload || {};
+      if (
+        (resolvedPayload.provider === 'google-ai-studio' || resolvedPayload.provider === 'google-gemini') &&
+        !(resolvedPayload.apiKey || '').trim()
+      ) {
+        resolvedPayload = {
+          ...resolvedPayload,
+          apiKey: apiKeyForProvider(getSettings() as any, resolvedPayload.provider) || '',
+        };
+      }
+
+      const models = await fetchAvailableCustomModels(resolvedPayload);
       console.log('[IPC] Successfully fetched', models.length, 'models');
       return { success: true, models };
     } catch (err: any) {

@@ -1337,6 +1337,100 @@ export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig
   return validated;
 }
 
+// ── Gemini dynamic model discovery ──────────────────────────────────────────
+//
+// Google's `models.list` endpoint is the only truthful source of "which Gemini
+// models can this API key actually call". The static lists above are a small
+// safe FALLBACK for when discovery is unreachable — they are not, and must not
+// be read as, a claim about the account's entitlement or tier. An API project's
+// tier cannot be inferred from any model list; the API rejects an ineligible
+// model at call time and HomeBot surfaces that error instead of guessing.
+
+const GEMINI_MODELS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_DISCOVERY_TTL_MS = 5 * 60 * 1000;
+
+// Fingerprint of an API key so a key change invalidates the cache, without ever
+// storing the key itself (djb2 — good enough for cache-keying, not security).
+function geminiKeyFingerprint(apiKey: string): string {
+  let h = 5381;
+  for (let i = 0; i < apiKey.length; i++) h = ((h << 5) + h + apiKey.charCodeAt(i)) | 0;
+  return String(h >>> 0);
+}
+
+const geminiDiscoveryCache = new Map<string, { at: number; models: CustomModelInfo[] }>();
+
+/**
+ * Discover the Gemini models the given key can call, straight from Google.
+ *
+ * Filters to models whose `supportedGenerationMethods` include `generateContent`
+ * — the method HomeBot's Gemini clients actually use — which is the practical
+ * answer to "can HomeBot call this?". `supportedGenerationMethods` is kept as
+ * `capabilities`, separate from the marketing `name`.
+ *
+ * Throws when discovery cannot produce a list (offline, bad key, empty result);
+ * the caller decides whether to fall back.
+ */
+export async function discoverGeminiModels(
+  apiKey: string,
+  provider: 'google-ai-studio' | 'google-gemini'
+): Promise<CustomModelInfo[]> {
+  const url = `${GEMINI_MODELS_ENDPOINT}?key=${encodeURIComponent(apiKey)}&pageSize=1000`;
+  const response = await axios.get(url, { timeout: 10000 });
+
+  const raw = Array.isArray(response?.data?.models) ? response.data.models : [];
+  const seen = new Set<string>();
+  const models: CustomModelInfo[] = [];
+
+  for (const item of raw as any[]) {
+    const methods: string[] = Array.isArray(item?.supportedGenerationMethods)
+      ? item.supportedGenerationMethods
+      : [];
+    if (!methods.includes('generateContent')) continue;
+
+    const id = String(item?.name || '').replace(/^models\//, '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    models.push({
+      id,
+      name: item?.displayName || id,
+      description: item?.description || '',
+      provider,
+      contextWindow: typeof item?.inputTokenLimit === 'number' ? item.inputTokenLimit : undefined,
+      capabilities: methods,
+    });
+  }
+
+  if (models.length === 0) throw new Error('No callable Gemini models were returned.');
+  return models;
+}
+
+/**
+ * Discovery with a short in-memory cache and a safe fallback. No key means no
+ * network call — return the static list unchanged, exactly as before.
+ */
+async function resolveGoogleModels(
+  provider: 'google-ai-studio' | 'google-gemini',
+  apiKey?: string
+): Promise<CustomModelInfo[]> {
+  const fallback = provider === 'google-ai-studio' ? GOOGLE_AI_MODELS : GOOGLE_GEMINI_NATIVE_MODELS;
+  const key = (apiKey || '').trim();
+  if (!key) return fallback;
+
+  const cacheKey = `${provider}:${geminiKeyFingerprint(key)}`;
+  const cached = geminiDiscoveryCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < GEMINI_DISCOVERY_TTL_MS) return cached.models;
+
+  try {
+    const models = await discoverGeminiModels(key, provider);
+    geminiDiscoveryCache.set(cacheKey, { at: Date.now(), models });
+    return models;
+  } catch (err) {
+    console.warn('[Gemini] model discovery failed, using fallback list:', (err as any)?.message || err);
+    return fallback;
+  }
+}
+
 export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig>): Promise<CustomModelInfo[]> {
   // Claude Code is a local CLI — it has no /models endpoint and needs no apiUrl,
   // so answer before the apiUrl guard below.
@@ -1354,8 +1448,8 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'openai') return OPENAI_MODELS;
   if (provider === 'groq') return GROQ_MODELS;
   if (provider === 'deepseek') return DEEPSEEK_MODELS;
-  if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
-  if (provider === 'google-gemini') return GOOGLE_GEMINI_NATIVE_MODELS;
+  if (provider === 'google-ai-studio') return resolveGoogleModels('google-ai-studio', config.apiKey);
+  if (provider === 'google-gemini') return resolveGoogleModels('google-gemini', config.apiKey);
   if (provider === 'huggingface') return HUGGINGFACE_MODELS;
   if (provider === 'cerebras') return CEREBRAS_MODELS;
   if (provider === 'sambanova') return SAMBANOVA_MODELS;
