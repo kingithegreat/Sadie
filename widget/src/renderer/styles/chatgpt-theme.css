@@ -2744,10 +2744,8 @@ body {
 
 /* â”€â”€ Toast Notifications â”€â”€ */
 .toast-container {
-  /* 44px, not 16px, so a toast clears the titlebar rather than covering the
-     window controls and the app name. Measured: titlebar bottom at 37px, toast
-     top now 44. #155 found this on the in-flow version; it applies just the
-     same once ToastContainer portals to document.body. */
+  /* ToastContainer measures the responsive header and places notices below
+     navigation. 44px is only the standalone fallback when no header exists. */
   position: fixed; top: 44px; right: 16px; z-index: 10000;
   display: flex; flex-direction: column; gap: 8px; pointer-events: none;
   max-width: 380px;

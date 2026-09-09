@@ -35,6 +35,7 @@ export interface ModuleHostServicesV1 {
   registerTool(owner: ModuleToolOwner, definition: ToolDefinition, handler: ToolHandler): RegistrationDispose;
   invokeTool(call: ToolCall, context: ToolContext): Promise<ToolResult>;
   canUseGrants?(grants: readonly string[]): boolean;
+  supportsView?(viewId: string): boolean;
   recordEvent?(event: ModuleLifecycleEventV1): void;
 }
 
@@ -64,7 +65,7 @@ export class TrustedModuleHost {
       if (typeof definition.activate !== 'function') throw new ModuleContractError('INVALID_MANIFEST', `Module ${manifest.id} has no trusted activation function.`);
       if (!moduleVersionFits(MODULE_HOST_API_VERSION, manifest.hostApi)) throw new ModuleContractError('INCOMPATIBLE_HOST', `${manifest.display.name} requires a different HomeBot module API.`);
       if (!manifest.platforms.includes(this.services.platform as ModuleManifestV1['platforms'][number])) throw new ModuleContractError('UNSUPPORTED_PLATFORM', `${manifest.display.name} is unavailable on this operating system.`);
-      if (manifest.contributions.views.length || manifest.contributions.settings.length || manifest.contributions.providers.length) throw new ModuleContractError('UNSUPPORTED_CONTRIBUTION', `${manifest.display.name} requires a contribution type this host does not yet support.`);
+      if (manifest.contributions.views.some(id => this.services.supportsView?.(id) !== true) || manifest.contributions.settings.length || manifest.contributions.providers.length) throw new ModuleContractError('UNSUPPORTED_CONTRIBUTION', `${manifest.display.name} requires a contribution type this host does not yet support.`);
       next.set(manifest.id, { manifest, activate: definition.activate, state: 'disabled', generation: 0, disposers: [], activeCalls: 0, idleWaiters: [] });
     }
     const visiting = new Set<string>();
@@ -88,7 +89,11 @@ export class TrustedModuleHost {
   }
 
   list(): ModuleSnapshotV1[] {
-    return [...this.modules.values()].map(record => ({ manifest: record.manifest, state: record.state, activeCalls: record.activeCalls, ...(record.failure ? { failure: { ...record.failure } } : {}) }));
+    return [...this.modules.values()].map(record => {
+      let access: ModuleSnapshotV1['access'] = 'available';
+      try { this.assertGrants(record); } catch { access = 'locked'; }
+      return { manifest: record.manifest, state: record.state, activeCalls: record.activeCalls, access, ...(record.failure ? { failure: { ...record.failure } } : {}) };
+    });
   }
 
   private record(id: string): ModuleRecord {

@@ -750,6 +750,13 @@ const electronAPI: ElectronAPI = {
 
   // Licensing (Pro entitlement)
   // ---- Media Studio (video pipeline) ----
+  moduleList: () => ipcRenderer.invoke('homebot:modules:list'),
+  moduleSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('homebot:modules:set-enabled', id, enabled),
+  onModulesChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('homebot:modules:changed', listener);
+    return () => ipcRenderer.removeListener('homebot:modules:changed', listener);
+  },
   mediaList: async () => ipcRenderer.invoke('homebot:media:list'),
   mediaParseFeed: async (url: string) => ipcRenderer.invoke('homebot:media:parse-feed', url),
   mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>

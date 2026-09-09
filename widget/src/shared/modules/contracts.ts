@@ -28,7 +28,7 @@ export type ModuleFailureCodeV1 =
   | 'DEPENDENCY_MISSING' | 'DEPENDENCY_INCOMPATIBLE' | 'DEPENDENCY_CYCLE' | 'DEPENDENCY_DISABLED'
   | 'ACTIVE_DEPENDENTS' | 'MODULE_UNAVAILABLE' | 'MODULE_BUSY' | 'DUPLICATE_CONTRIBUTION'
   | 'UNDECLARED_CONTRIBUTION' | 'UNSUPPORTED_CONTRIBUTION' | 'ENTITLEMENT_DENIED'
-  | 'ACTIVATION_FAILED' | 'DISPOSAL_FAILED';
+  | 'ACTIVATION_FAILED' | 'DISPOSAL_FAILED' | 'PREFERENCES_UNAVAILABLE';
 
 export class ModuleContractError extends Error {
   constructor(public readonly code: ModuleFailureCodeV1, message: string, public readonly field?: string) {
@@ -41,7 +41,16 @@ export interface ModuleSnapshotV1 {
   manifest: ModuleManifestV1;
   state: ModuleRuntimeStateV1;
   activeCalls: number;
+  access: 'available' | 'locked';
   failure?: { code: ModuleFailureCodeV1; message: string };
+}
+
+export interface ModuleControlResultV1 {
+  ok: boolean;
+  modules?: ModuleSnapshotV1[];
+  code?: string;
+  error?: string;
+  warning?: string;
 }
 
 export interface ModuleLifecycleEventV1 {

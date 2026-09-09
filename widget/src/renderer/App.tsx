@@ -22,7 +22,7 @@ const AutomationCenter = lazy(() => import("./components/AutomationCenter").then
 const ImageGenerator = lazy(() => import("./components/ImageGenerator"));
 const DocumentViewer = lazy(() => import("./components/DocumentViewer"));
 const QuizPanel = lazy(() => import("./components/QuizPanel"));
-const MediaStudioPanel = lazy(() => import("./components/MediaStudioPanel"));
+const ModulesPanel = lazy(() => import('./components/ModulesPanel'));
 const BrowserPanel = lazy(() => import("./components/workspace/BrowserPanel"));
 const TokenCounter = lazy(() => import("./components/TokenCounter"));
 const RagPanel = lazy(() => import("./components/RagPanel"));
@@ -56,6 +56,8 @@ type Status = ConnectionStatus;
 // one. It was written to be the single source of truth and this file had been
 // restating it, which is how the two could have drifted.
 import type { AppMode } from '../shared/modes';
+import { useModules } from './modules/useModules';
+import { isBundledModuleMode, registeredModuleViews } from './modules/bundled';
 import {
   detectLeakedToolCalls,
   stripLeakedToolCalls,
@@ -232,6 +234,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
+  const moduleState = useModules();
+  const moduleViews = registeredModuleViews(moduleState.modules);
+  const ActiveModuleView = moduleViews.find(view => view.id === mode)?.Component;
+  const studioAvailable = moduleViews.some(view => view.id === 'media');
+  useEffect(() => {
+    if (!moduleState.loading && isBundledModuleMode(mode) && !ActiveModuleView) setMode('modules');
+  }, [mode, moduleState.loading, ActiveModuleView]);
   // Context handed over when the assistant navigates somewhere — what the user
   // was talking about, so the destination opens ready rather than empty. Held
   // here rather than in each panel so a panel can start consuming it without
@@ -1451,6 +1460,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
         mode={mode}
         onModeChange={setMode}
+        moduleModes={moduleViews}
         currentModel={activeModel.model || settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
@@ -1521,7 +1531,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             onBookmark={handleBookmark}
             onReact={handleReact}
             onEdit={handleEdit}
-            onSendToMediaStudio={handleSendToMediaStudio}
+            onSendToMediaStudio={studioAvailable ? handleSendToMediaStudio : undefined}
             systemPrompt={conversationSystemPrompt}
             onUpdateSystemPrompt={updateConversationSystemPrompt}
           />
@@ -1559,9 +1569,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             }
           }} />
         </Suspense>
-      ) : mode === 'media' ? (
+      ) : ActiveModuleView ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <MediaStudioPanel navContext={navContext} />
+          <ActiveModuleView navContext={navContext} />
+        </Suspense>
+      ) : mode === 'modules' || isBundledModuleMode(mode) ? (
+        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
+          <ModulesPanel state={moduleState} onOpen={setMode} />
         </Suspense>
       ) : mode === 'code' ? (
         // WorkspaceShell is the VS Code–shaped IDE: Explorer, tabbed editor,

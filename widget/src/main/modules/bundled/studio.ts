@@ -1,6 +1,7 @@
 /** Approved composition adapter: Studio keeps its engines and existing file formats. */
 import type { TrustedModuleDefinitionV1 } from '../host';
 import type { ToolDefinition, ToolHandler } from '../../tools/types';
+import { STUDIO_WORKSPACE_VIEW_ID } from '../../../shared/modules/bundled-views';
 import { mediaToolDefs, mediaToolHandlers } from '../../tools/media';
 import { narrateClipToolDefs, narrateClipToolHandlers } from '../../tools/narrate-clip';
 import { characterSpriteToolDefs, characterSpriteToolHandlers } from '../../tools/character-sprites';
@@ -24,7 +25,7 @@ export const bundledStudioModule: TrustedModuleDefinitionV1 = {
     display: { name: 'Production Studio', description: 'Plan, create, edit and review your videos.' },
     platforms: ['win32', 'darwin', 'linux'], dependencies: [],
     optionalIntegrations: ['n8n', 'ancient-pathways', 'colab', 'comfyui'],
-    contributions: { commands: tools.map(({ definition }) => `${STUDIO_MODULE_ID}.${definition.name}`), views: [], settings: [], providers: [] },
+    contributions: { commands: tools.map(({ definition }) => `${STUDIO_MODULE_ID}.${definition.name}`), views: [STUDIO_WORKSPACE_VIEW_ID], settings: [], providers: [] },
     permissions: [...new Set(tools.flatMap(({ definition }) => [definition.name, ...(definition.requiredPermissions || [])]))],
     // No new paid gate: existing issued rights and media access are unchanged.
     grants: [], resources: { gpu: 'optional' }, dataSchemaVersion: 1,

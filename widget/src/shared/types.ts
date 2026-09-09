@@ -440,6 +440,9 @@ export interface ElectronAPI {
   /** Returns an unsubscribe function — call it on unmount or the listener leaks. */
   onBrowserState: (cb: (state: BrowserPanelState) => void) => () => void;
   saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
+  moduleList: () => Promise<import('./modules/contracts').ModuleControlResultV1>;
+  moduleSetEnabled: (id: string, enabled: boolean) => Promise<import('./modules/contracts').ModuleControlResultV1>;
+  onModulesChanged: (callback: () => void) => () => void;
   getMode?: () => Promise<{ demo: boolean }>;
   readConsentLog?: () => Promise<{ success: boolean; data?: string; error?: string }>;
   hasPermission?: (toolName: string) => Promise<{ success: boolean; allowed?: boolean; error?: string }>;
