@@ -193,7 +193,7 @@ export const narrateClipHandler: ToolHandler = async (args): Promise<ToolResult>
     try {
       analyze = await spawnHelper(
         python,
-        buildAnalyzerArgs(analyzerScript, analysisOut),
+        [analyzerScript, ...buildAnalyzerArgs(videoPath, analysisOut)],
         ANALYZE_TIMEOUT_MS,
         { GEMINI_API_KEY: geminiKey },
       );
