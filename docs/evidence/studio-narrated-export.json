@@ -1,7 +1,8 @@
 {
   "date": "2026-09-09",
   "platform": "Windows 11",
-  "base": "e408384393223368de4088e367a64dbcc49582a7",
+  "base": "84963bc",
+  "testedCommit": "f096a80",
   "test": "widget/src/renderer/e2e/storyboard-export.live.e2e.spec.ts",
   "localArtifact": ".kilo/artifacts/studio-narrated-export/demo.mp4",
   "fixture": "Two authored color cards with the repository HomeBot icon; real cached CPU Kokoro speech; real FFmpeg and Electron playback.",

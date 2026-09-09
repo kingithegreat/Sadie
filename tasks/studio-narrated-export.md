@@ -1,6 +1,7 @@
 # Narration privacy and saved storyboard export — HB-M2
 
 Branch: `claude/studio-narrated-export`, from main `e408384` (#269).
+Latest-main integration: `f096a80` includes `84963bc` (#270).
 
 ## Reachable behavior
 
@@ -55,10 +56,12 @@ failure restores the previous player and preserves the previous movie.
 
 ## Verification
 
-- Full Windows widget Jest: **278 suites / 3,907 tests passed**, with 5 suites /
+- Full combined Windows widget Jest: **282 suites / 3,943 tests passed**, with 5 suites /
   15 existing tests skipped and the existing CI force-exit setting. Root:
   **18 suites / 227 tests passed**. Both typechecks, build and docs pass; lint
-  has zero errors and eight existing warnings. The first sandboxed widget run
+  has zero errors and eight existing warnings. The module-import check and
+  duplicate-export guard pass; the latter inspected the new speech adapter.
+  The first sandboxed widget run
   was stopped after fixture permission errors; the normal-access run passed.
 - Both actual Electron speech/export cases pass without retries in 4.4 minutes.
   The final MP4 is 131,760 bytes, H.264/AAC, 1920×1080, 30 fps, 8.000 seconds.
@@ -66,6 +69,10 @@ failure restores the previous player and preserves the previous movie.
   Sampled speech/silence/speech RMS: 0.08743 / 0 / 0.08693. The two frames and
   restored player were visually inspected. Restart playback, failed replacement
   byte preservation and successful replacement with a loaded player all pass.
+- On combined current main `f096a80`, the complete Electron suite passes
+  **56 tests in 14.1 minutes, with retries disabled**, including the opt-in real
+  movie case (1.6 minutes), speech privacy, Studio module controls and YouTube
+  restart recovery. The final movie is byte-identical to the earlier sample.
 - Standalone cached Kokoro produces a 5.5-second 24 kHz mono WAV, RMS 0.06514,
   in 8,918 ms on Windows / Node 24.13.0. Cached and empty-cache runs observe zero
   requests after all five transport controls. This is one local measurement,
@@ -74,8 +81,9 @@ failure restores the previous player and preserves the previous movie.
   sample frames, WAV and `demo.mp4` are retained locally under
   `.kilo/artifacts/studio-narrated-export/` in the integration worktree.
 
-Latest-main integration, the complete Electron suite and remote checks remain
-pending at this implementation checkpoint.
+The implementation and complete local gates are verified. Required remote CI
+and merged-content verification remain pending at this committed checkpoint;
+the existing Notion speech/export records track integration.
 
 Committed regression paths:
 
