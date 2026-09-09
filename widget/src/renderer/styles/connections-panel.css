@@ -26,6 +26,10 @@
   gap: 10px;
 }
 
+.youtube-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.youtube-channels { padding-left: 20px; overflow-wrap: anywhere; }
+.youtube-channels a { color: var(--text-primary); }
+
 .cnx-card {
   background: var(--bg-medium);
   border-radius: 8px;

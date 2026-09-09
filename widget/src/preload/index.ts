@@ -758,6 +758,12 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:modules:changed', listener);
   },
   mediaList: async () => ipcRenderer.invoke('homebot:media:list'),
+  youtubeConnectionStatus: async () => ipcRenderer.invoke('homebot:media:youtube:status'),
+  youtubeImportCredentials: async () => ipcRenderer.invoke('homebot:media:youtube:import'),
+  youtubeConnect: async () => ipcRenderer.invoke('homebot:media:youtube:connect'),
+  youtubeRefresh: async () => ipcRenderer.invoke('homebot:media:youtube:refresh'),
+  youtubeCancel: async () => ipcRenderer.invoke('homebot:media:youtube:cancel'),
+  youtubeRemove: async () => ipcRenderer.invoke('homebot:media:youtube:remove'),
   mediaParseFeed: async (url: string) => ipcRenderer.invoke('homebot:media:parse-feed', url),
   mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
     ipcRenderer.invoke('homebot:media:create', input),

@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { ToolResult } from '../../tools/types';
+import type { YouTubeConnection } from '../../integrations/youtube-connection';
+import type { YouTubeConnectionReply } from '../../../shared/youtube-connection';
 
 export type StudioIpcInvokeHandler = (
   event: IpcMainInvokeEvent,
@@ -19,6 +21,7 @@ export type StudioIpcGuard = (
 export function registerStudioIpc(
   guard: StudioIpcGuard,
   invokeTool: (event: IpcMainInvokeEvent, name: string, args: Record<string, unknown>) => Promise<ToolResult>,
+  assertEnabled: () => void,
 ): void {
   // Keep literal ipcMain.handle calls below so the IPC/docs contract scanners see them.
   const ipcMain = {
@@ -26,6 +29,57 @@ export function registerStudioIpc(
       electronIpcMain.handle(channel, guard(channel, handler));
     },
   };
+
+  // Created only when the user opens this connection; no OAuth work at startup.
+  let youtube: Promise<YouTubeConnection> | undefined;
+  const getYouTube = () => {
+    if (!youtube) youtube = (async () => {
+      const { YouTubeConnection } = await import('../../integrations/youtube-connection');
+      const { loadIntegrationSecret, saveIntegrationSecret } = await import('../../config-manager');
+      const { assertProviderOnlineAccess } = await import('../../utils/provider-network-policy');
+      const { shell } = await import('electron');
+      return new YouTubeConnection({
+        load: () => loadIntegrationSecret('youtube.desktop'),
+        save: value => saveIntegrationSecret('youtube.desktop', value),
+        assertAccess: () => { assertEnabled(); assertProviderOnlineAccess('YouTube'); },
+        openBrowser: url => shell.openExternal(url),
+      });
+    })();
+    return youtube;
+  };
+  const youtubeAction = async (action: (service: YouTubeConnection) => Promise<YouTubeConnectionReply> | YouTubeConnectionReply): Promise<YouTubeConnectionReply> => {
+    try { return await action(await getYouTube()); }
+    catch (error) {
+      const { YouTubeConnectionError } = await import('../../integrations/youtube-connection');
+      return { ok: false, error: error instanceof YouTubeConnectionError ? error.message : 'HomeBot could not complete that Google connection request.' };
+    }
+  };
+
+  ipcMain.handle('homebot:media:youtube:status', () => youtubeAction(service => ({ ok: true, status: service.status() })));
+  ipcMain.handle('homebot:media:youtube:connect', () => youtubeAction(async service => ({ ok: true, status: await service.connect() })));
+  ipcMain.handle('homebot:media:youtube:refresh', () => youtubeAction(async service => ({ ok: true, status: await service.refresh() })));
+  ipcMain.handle('homebot:media:youtube:cancel', () => youtubeAction(service => ({ ok: true, status: service.cancel() })));
+  ipcMain.handle('homebot:media:youtube:remove', () => youtubeAction(service => ({ ok: true, status: service.remove() })));
+  ipcMain.handle('homebot:media:youtube:import', () => youtubeAction(async service => {
+    const { dialog } = await import('electron');
+    const { isWithinHomeDir } = await import('../../utils/home-boundary');
+    const { YouTubeConnectionError } = await import('../../integrations/youtube-connection');
+    const choice = await dialog.showOpenDialog({ title: 'Choose Google Desktop app credentials',
+      properties: ['openFile'], filters: [{ name: 'Google Desktop app JSON', extensions: ['json'] }] });
+    if (choice.canceled || !choice.filePaths[0]) return { ok: true, cancelled: true, status: service.status() };
+    assertEnabled();
+    // The path comes from the owner's file picker, never from renderer input.
+    const resolved = fs.realpathSync(choice.filePaths[0]);
+    if (!isWithinHomeDir(resolved, fs.realpathSync(os.homedir()))) throw new YouTubeConnectionError('Choose a credentials file inside your user folder, such as Downloads.');
+    const fd = fs.openSync(resolved, 'r');
+    try {
+      const info = fs.fstatSync(fd);
+      if (!info.isFile() || info.size > 65_536) throw new YouTubeConnectionError('Choose the small Desktop app JSON file downloaded from Google Cloud.');
+      const buffer = Buffer.alloc(65_537);
+      const count = fs.readSync(fd, buffer, 0, buffer.length, 0);
+      return { ok: true, status: service.importClient(buffer.subarray(0, count).toString('utf8')) };
+    } finally { fs.closeSync(fd); }
+  }));
 
   ipcMain.handle('homebot:media:list', async () => {
     const { readJobs } = await import('../../tools/media');

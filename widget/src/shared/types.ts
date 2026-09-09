@@ -507,6 +507,12 @@ export interface ElectronAPI {
   // Every mutation returns { ok, job } or { ok: false, error } so the panel can
   // show the state machine's own refusal text rather than inventing one.
   mediaList?: () => Promise<any[]>;
+  youtubeConnectionStatus?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeImportCredentials?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeConnect?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeRefresh?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeCancel?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeRemove?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   mediaParseFeed?: (url: string) => Promise<{
     ok: boolean;
     feed?: {
