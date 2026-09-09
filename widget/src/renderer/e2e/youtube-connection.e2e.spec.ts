@@ -8,6 +8,8 @@ import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
 
+test.use({ trace: 'retain-on-failure' });
+
 /** Only OS entry points and Google's transport are simulated; the shipped UI,
  * preload, module guard, OAuth callback, token handling and storage all run. */
 async function installGoogleFixture(app: ElectronApplication, file: string, port: number) {
@@ -79,7 +81,7 @@ test('YouTube is reachable, honors OS storage and privacy, and retains a synthet
     await waitForAppReady(running.page); expect(await dismissFirstRun(running.page)).toBe(true);
     const secure = await installGoogleFixture(running.app, file, port);
     if (process.platform === 'win32') expect(secure).toBe(true); // Real DPAPI required on the shipping platform.
-    await running.page.locator('button.mode-btn', { hasText: 'Connections' }).click();
+    await running.page.locator('button.mode-btn', { hasText: 'Connect' }).click();
     let card = running.page.getByRole('region', { name: 'YouTube connection' });
     await expect(card.getByRole('button', { name: 'Choose Google JSON' })).toBeEnabled();
     await card.getByRole('button', { name: 'Choose Google JSON' }).click();
@@ -132,7 +134,7 @@ test('YouTube is reachable, honors OS storage and privacy, and retains a synthet
 
     running = await launchElectronApp(env, profile);
     await waitForAppReady(running.page); expect(await installGoogleFixture(running.app, file, port)).toBe(true);
-    await running.page.locator('button.mode-btn', { hasText: 'Connections' }).click();
+    await running.page.locator('button.mode-btn', { hasText: 'Connect' }).click();
     card = running.page.getByRole('region', { name: 'YouTube connection' });
     await expect(card.getByRole('link', { name: 'HomeBot test channel' })).toBeVisible();
     await expect(card).toContainText('Last checked:');
@@ -154,6 +156,16 @@ test('YouTube is reachable, honors OS storage and privacy, and retains a synthet
     raw = fs.readFileSync(configPath, 'utf8'); expect(JSON.parse(raw)._integrationSecrets).toBeUndefined();
     expect(calls).toHaveLength(4);
     await running.page.screenshot({ path: testInfo.outputPath('youtube-removed.png') });
+    // A moved/corrupt OS-encrypted grant must offer a reachable way to recover.
+    fs.writeFileSync(configPath, JSON.stringify({ ...JSON.parse(raw), _integrationSecrets: { 'youtube.desktop': 'enc:v1:invalid-ciphertext' } }));
+    await running.page.locator('button.mode-btn', { hasText: 'Chat' }).click();
+    await running.page.locator('button.mode-btn', { hasText: 'Connect' }).click();
+    card = running.page.getByRole('region', { name: 'YouTube connection' });
+    await expect(card.getByRole('alert')).toContainText('cannot read');
+    await card.getByRole('button', { name: 'Remove saved connection' }).click();
+    await expect(card.getByRole('button', { name: 'Choose Google JSON' })).toBeEnabled();
+    expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))._integrationSecrets).toBeUndefined();
+    expect(calls).toHaveLength(4);
   } finally {
     if (running) await running.app.close();
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));

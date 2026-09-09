@@ -34,7 +34,7 @@ export default function YouTubeConnectionCard() {
   };
   const working = busy || !!status?.busy;
   return (
-    <section className="cnx-card" aria-label="YouTube connection">
+    <section className="cnx-card youtube-card" aria-label="YouTube connection">
       <div className="cnx-card-head">
         <span className="cnx-name">YouTube</span>
         <span className="cnx-cost cnx-cost-free-key">Google sign-in</span>
@@ -69,6 +69,7 @@ export default function YouTubeConnectionCard() {
         </>}
         {working && <button type="button" className="button cnx-connect-btn" onClick={() => void act(window.electron?.youtubeCancel)}>Cancel sign-in</button>}
         {!status && <button type="button" className="button cnx-connect-btn" disabled={busy} onClick={() => { setError(''); void load(); }}>Reload connection status</button>}
+        {!status && error && window.electron?.youtubeRemove && <button type="button" className="button cnx-connect-btn" disabled={busy} onClick={() => void act(window.electron?.youtubeRemove, 'Saved credentials and sign-in removed from this PC.')}>Remove saved connection</button>}
       </div>
     </section>
   );
