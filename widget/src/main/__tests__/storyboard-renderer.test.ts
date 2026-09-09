@@ -18,7 +18,19 @@ jest.mock('../media-render', () => ({
 
 // Mock renderNarrationToFile from tools/voice
 jest.mock('../tools/voice', () => ({
-  renderNarrationToFile: jest.fn().mockResolvedValue({ path: '/fake/audio.mp3', bytes: 100 }),
+  renderNarrationToFile: jest.fn(async (_text: string, requested: string) => {
+    const actual = path.join(path.dirname(requested), 'narration.wav');
+    fs.writeFileSync(actual, 'controlled speech fixture');
+    return { path: actual, bytes: fs.statSync(actual).size, engine: 'kokoro' };
+  }),
+}));
+jest.mock('../ffmpeg-setup', () => ({ findManagedFfmpeg: jest.fn(() => null) }));
+jest.mock('../media-qa', () => ({
+  ...jest.requireActual('../media-qa'),
+  inspectRender: jest.fn(async (_bin: string, file: string) => ({
+    hasVideo: file.endsWith('.mp4'), hasAudio: true, width: 1920, height: 1080,
+    durationSeconds: file.endsWith('.mp4') ? 9 : 1, meanVolumeDb: -21, maxVolumeDb: -3,
+  })),
 }));
 
 // Mock child_process execFile for ffmpeg calls
@@ -29,7 +41,7 @@ jest.mock('child_process', () => ({
     }
     // Simulate successful ffmpeg run and create dummy output file if specified
     const lastArg = args[args.length - 1];
-    if (typeof lastArg === 'string' && (lastArg.endsWith('.mp4') || lastArg.endsWith('.mp3'))) {
+    if (typeof lastArg === 'string' && /\.(mp4|mp3|wav)$/.test(lastArg)) {
       try {
         fs.writeFileSync(lastArg, 'dummy media content', 'utf-8');
       } catch {

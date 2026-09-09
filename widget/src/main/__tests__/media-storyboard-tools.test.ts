@@ -141,6 +141,22 @@ describe('Media Storyboard Native Tools', () => {
     expect(alpha.totalShots).toBe(2);
   });
 
+  it('recovers the saved movie when reopening a storyboard, without treating absent or empty files as exports', async () => {
+    await mediaCreateStoryboardHandler({ projectId: 'saved-export', title: 'Saved export', shots: [{ prompt: 'A scene' }] }, { executionId: 'saved-export' });
+    const movie = path.join(tmpRoot, 'saved-export', 'renders', 'saved-export-1080p.mp4');
+    const read = () => mediaGetStoryboardHandler({ projectId: 'saved-export' }, { executionId: 'read-export' });
+    expect((await read()).result.renderedMoviePath).toBeNull();
+    fs.mkdirSync(path.dirname(movie));
+    fs.writeFileSync(movie, '');
+    expect((await read()).result.renderedMoviePath).toBeNull();
+    fs.writeFileSync(movie, 'saved-file-reference fixture; playback validates content');
+    expect((await read()).result.renderedMoviePath).toBe(movie);
+  });
+
+  it('rejects a project traversal before discovering an exported movie', async () => {
+    expect((await mediaGetStoryboardHandler({ projectId: '../outside' }, { executionId: 'invalid-export' })).success).toBe(false);
+  });
+
   it('retrieves detailed shot breakdown from a storyboard', async () => {
     await mediaCreateStoryboardHandler(
       {
@@ -200,6 +216,42 @@ describe('Media Storyboard Native Tools', () => {
     const res = await mediaRenderStoryboardHandler({}, { executionId: 'test-exec-9' });
     expect(res.success).toBe(false);
     expect(res.error).toContain('projectId is required');
+  });
+
+  it('exports saved edits and scene order instead of the original manifest or retained deleted shots', async () => {
+    const projectId = 'saved-edits';
+    await mediaCreateStoryboardHandler({ projectId, shots: [
+      { shotId: 'shot_001', prompt: 'First', narration: 'First line', durationSec: 4 },
+      { shotId: 'shot_002', prompt: 'Second', narration: 'Second line', durationSec: 4 },
+      { shotId: 'shot_003', prompt: 'Removed', narration: 'Removed line', durationSec: 4 },
+    ] }, { executionId: 'saved-edits' });
+    const scene = path.join(tmpRoot, projectId, 'scenes', 'scene_01');
+    fs.writeFileSync(path.join(scene, 'scene.json'), JSON.stringify({ sceneId: 'scene_01', shots: ['shot_002', 'shot_001'] }));
+    fs.writeFileSync(path.join(scene, 'manifest.json'), JSON.stringify([{ narration: 'Stale manifest', durationSec: 99 }]));
+    fs.writeFileSync(path.join(scene, 'shot_002', 'prompt.json'), JSON.stringify({ prompt: 'Edited', durationSec: 1 }));
+    fs.writeFileSync(path.join(scene, 'shot_002', 'script.txt'), 'Edited narration');
+    fs.writeFileSync(path.join(scene, 'shot_002', 'image', 'frame.png'), 'saved image reference');
+    const renderer = await import('../movie/storyboard-renderer');
+    const render = jest.spyOn(renderer, 'renderStoryboardMovie').mockResolvedValue({ ok: true, moviePath: 'movie.mp4' });
+    try {
+      expect((await mediaRenderStoryboardHandler({ projectId, savedShots: [] }, { executionId: 'saved-edits' })).success).toBe(true);
+      const exported = render.mock.calls[0][0].savedShots!;
+      expect(exported.map(s => s.shotId)).toEqual(['shot_002', 'shot_001']);
+      expect(exported[0]).toMatchObject({ prompt: 'Edited', narration: 'Edited narration', durationSec: 1, order: 1,
+        frameImagePath: path.join(scene, 'shot_002', 'image', 'frame.png') });
+    } finally { render.mockRestore(); }
+  });
+
+  it('keeps an explicitly empty saved scene empty and supports older manifest-only scenes', async () => {
+    await mediaCreateStoryboardHandler({ projectId: 'empty-board', shots: [{ prompt: 'Retained asset' }] }, { executionId: 'empty-board' });
+    const scene = path.join(tmpRoot, 'empty-board', 'scenes', 'scene_01');
+    fs.writeFileSync(path.join(scene, 'scene.json'), JSON.stringify({ sceneId: 'scene_01', shots: [] }));
+    expect((await mediaGetStoryboardHandler({ projectId: 'empty-board' }, { executionId: 'empty-board' })).result.scenes[0].shots).toEqual([]);
+    const legacyScene = path.join(tmpRoot, 'legacy', 'scenes', 'scene_01');
+    fs.mkdirSync(legacyScene, { recursive: true });
+    const legacy = [{ shotId: 'shot_001', prompt: 'Legacy', durationSec: 3 }];
+    fs.writeFileSync(path.join(legacyScene, 'manifest.json'), JSON.stringify(legacy));
+    expect((await mediaGetStoryboardHandler({ projectId: 'legacy' }, { executionId: 'legacy-board' })).result.scenes[0].shots).toEqual(legacy);
   });
 
   it('auto-directs a raw script into a multi-shot visual storyboard via media_breakdown_script', async () => {

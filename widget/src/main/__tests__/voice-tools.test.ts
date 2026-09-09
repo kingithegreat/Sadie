@@ -6,6 +6,10 @@
  * Falls back to Web Speech API path when Edge TTS throws.
  */
 
+jest.mock('../config-manager', () => ({
+  getSettings: jest.fn(() => ({ useCustomLLM: true })),
+}));
+
 // Mock electron
 jest.mock('electron', () => ({
   app: {

@@ -312,6 +312,9 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
   if (!projectId) {
     return { success: false, error: 'projectId is required.' };
   }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) {
+    return { success: false, error: 'Choose a valid storyboard project.' };
+  }
 
   const rootDir = getStoryboardsRootDir();
   const projectDir = path.join(rootDir, projectId);
@@ -342,8 +345,14 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
           }
         }
 
-        const shotDirs = fs.readdirSync(scPath).filter((s) => s.startsWith('shot_') && fs.statSync(path.join(scPath, s)).isDirectory());
-        const shots = shotDirs.map((shotId, idx) => {
+        // Save Board persists order/removal in scene.json; old shot folders are
+        // retained assets, not instructions to add deleted shots back to the film.
+        const shotDirs: string[] = Array.isArray(sceneMeta.shots) ? sceneMeta.shots
+          : fs.readdirSync(scPath).filter((s) => s.startsWith('shot_') && fs.statSync(path.join(scPath, s)).isDirectory());
+        if (shotDirs.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) || new Set(shotDirs).size !== shotDirs.length) {
+          throw new Error('The saved storyboard contains invalid or duplicate shot IDs.');
+        }
+        let shots = shotDirs.map((shotId, idx) => {
           const shotPath = path.join(scPath, shotId);
           let promptData: any = {};
           let statusData: any = {};
@@ -379,12 +388,18 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
             framing: promptData.framing || (idx === 0 ? 'wide' : 'medium'),
             lens: promptData.lens || '35mm',
             movement: promptData.movement || 'static',
-            durationSec: Number(promptData.durationSec) || 5,
+            durationSec: promptData.durationSec === undefined ? 5 : Number(promptData.durationSec),
             narration,
             status: statusData.status || ShotStatus.PLANNED,
             frameImagePath,
           };
         });
+        // Older imported scenes may have only a manifest, with no shot files.
+        const legacyManifest = path.join(scPath, 'manifest.json');
+        if (!Array.isArray(sceneMeta.shots) && shotDirs.length === 0 && fs.existsSync(legacyManifest)) {
+          shots = JSON.parse(fs.readFileSync(legacyManifest, 'utf-8'));
+          if (!Array.isArray(shots)) throw new Error('The saved storyboard manifest is invalid.');
+        }
 
         scenes.push({
           ...sceneMeta,
@@ -393,12 +408,22 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
       }
     }
 
+    // Recover the existing local export when this project is reopened. This is
+    // a saved-file reference, not a new QA or publication approval.
+    const moviePath = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
+    let renderedMoviePath: string | null = null;
+    try {
+      const stat = fs.lstatSync(moviePath);
+      if (stat.isFile() && stat.size > 0) renderedMoviePath = moviePath;
+    } catch { /* No saved export yet. */ }
+
     return {
       success: true,
       result: {
         project: projectMeta,
         scenes,
         projectDir,
+        renderedMoviePath,
       },
     };
   } catch (err: any) {
@@ -564,10 +589,18 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     return { success: false, error: 'projectId is required to render a storyboard.' };
   }
 
+  // Export the same saved shot files Studio displays. The director's initial
+  // manifest can be stale after edits or frame generation, or absent entirely.
+  const saved = await mediaGetStoryboardHandler({ projectId }, _context);
+  if (!saved.success) return saved;
+  const sceneId = (args.sceneId as string)?.trim() || 'scene_01';
+  const scene = saved.result.scenes.find((item: any) => item.sceneId === sceneId);
+  if (!scene) return { success: false, error: 'The selected storyboard scene was not found.' };
   const { renderStoryboardMovie } = await import('../movie/storyboard-renderer');
   const res = await renderStoryboardMovie({
     projectId,
-    sceneId: (args.sceneId as string)?.trim(),
+    sceneId,
+    savedShots: scene.shots,
     motion: args.motion !== false,
     burnSubtitles: args.burnSubtitles !== false,
   });

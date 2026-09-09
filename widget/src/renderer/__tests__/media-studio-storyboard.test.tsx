@@ -4,7 +4,7 @@
  * shot cards, camera framing pills, AI frame generation, and Chat navContext handoff.
  */
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
 
 function setup(overrides: Record<string, any> = {}) {
@@ -390,17 +390,18 @@ describe('Media Studio Visual Storyboard Deck', () => {
       fireEvent.click(renderBtn);
     });
 
-    expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(
+    await waitFor(() => expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: 'pyramid-builders',
         motion: true,
         burnSubtitles: true,
       }),
-    );
+    ));
 
     // Should display completion banner
-    expect(screen.getByText(/1080p Broadcast Movie Ready!/i)).toBeInTheDocument();
+    expect(await screen.findByText('Saved movie')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /▶ Open Video/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('controls');
   });
 
   test('opens Auto-Director drawer, selects a preset, and auto-directs a multi-shot storyboard', async () => {
