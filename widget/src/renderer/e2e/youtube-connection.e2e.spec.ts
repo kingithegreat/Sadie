@@ -57,6 +57,7 @@ test('YouTube is reachable, honors OS storage and privacy, and retains a synthet
     token_uri: 'https://must-never-be-used.invalid/token',
   } }));
   const calls: Array<{ method?: string; path?: string; authorization?: string; form: Record<string, string> }> = [];
+  let rejectReplacement = false;
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
@@ -65,6 +66,7 @@ test('YouTube is reachable, honors OS storage and privacy, and retains a synthet
       calls.push({ method: req.method, path: req.url, authorization: req.headers.authorization, form });
       res.setHeader('Content-Type', 'application/json');
       if (req.url === '/token' && req.method === 'POST') {
+        if (rejectReplacement) { res.statusCode = 400; res.end(JSON.stringify({ error: 'invalid_grant' })); return; }
         res.end(JSON.stringify({ access_token: 'synthetic-access-token', token_type: 'Bearer', expires_in: 30,
           ...(form.grant_type === 'authorization_code' ? { refresh_token: 'synthetic-refresh-token' } : {}) }));
       } else if (req.url?.startsWith('/youtube/v3/channels?') && req.method === 'GET') {
@@ -146,15 +148,24 @@ test('YouTube is reachable, honors OS storage and privacy, and retains a synthet
     const publicStatus = await running.page.evaluate(() => (window as any).electron.youtubeConnectionStatus());
     expect(publicStatus).toMatchObject({ ok: true, status: { signedIn: true, busy: false } });
     expect(JSON.stringify(publicStatus)).not.toContain('synthetic-');
+    const previousCipher = JSON.parse(fs.readFileSync(configPath, 'utf8'))._integrationSecrets['youtube.desktop'];
+    rejectReplacement = true;
+    await card.getByRole('button', { name: 'Sign in with Google', exact: true }).click();
+    await expect(card.getByRole('alert')).toContainText('expired');
+    await expect(card.getByRole('button', { name: 'Check connection' })).toBeEnabled();
+    await expect(card.getByRole('link', { name: 'HomeBot test channel' })).toBeVisible();
+    expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))._integrationSecrets['youtube.desktop']).toBe(previousCipher);
+    expect(calls).toHaveLength(5);
+    rejectReplacement = false;
     await running.page.evaluate(() => (window as any).electron.moduleSetEnabled('homebot.production-studio', false));
     expect(await running.page.evaluate(() => (window as any).electron.youtubeRefresh())).toMatchObject({ ok: false, code: 'MODULE_UNAVAILABLE' });
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(5);
     await running.page.evaluate(() => (window as any).electron.moduleSetEnabled('homebot.production-studio', true));
     await card.getByRole('button', { name: 'Remove from HomeBot' }).click();
     await expect(card.getByRole('button', { name: 'Choose Google JSON' })).toBeEnabled();
     await expect(card.getByRole('link', { name: 'HomeBot test channel' })).toHaveCount(0);
     raw = fs.readFileSync(configPath, 'utf8'); expect(JSON.parse(raw)._integrationSecrets).toBeUndefined();
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(5);
     await running.page.screenshot({ path: testInfo.outputPath('youtube-removed.png') });
     // A moved/corrupt OS-encrypted grant must offer a reachable way to recover.
     fs.writeFileSync(configPath, JSON.stringify({ ...JSON.parse(raw), _integrationSecrets: { 'youtube.desktop': 'enc:v1:invalid-ciphertext' } }));
@@ -165,7 +176,7 @@ test('YouTube is reachable, honors OS storage and privacy, and retains a synthet
     await card.getByRole('button', { name: 'Remove saved connection' }).click();
     await expect(card.getByRole('button', { name: 'Choose Google JSON' })).toBeEnabled();
     expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))._integrationSecrets).toBeUndefined();
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(5);
   } finally {
     if (running) await running.app.close();
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));

@@ -200,7 +200,7 @@ export class YouTubeConnection {
     catch { throw new YouTubeConnectionError('YouTube needs Production Studio and Online access enabled. Check Modules and Settings, then try again.'); }
   }
 
-  private async run(action: (signal: AbortSignal) => Promise<void>): Promise<YouTubeConnectionStatus> {
+  private async run(kind: 'connect' | 'refresh', action: (signal: AbortSignal) => Promise<void>): Promise<YouTubeConnectionStatus> {
     if (this.operation) throw new YouTubeConnectionError('A YouTube connection attempt is already running.');
     const op = new AbortController();
     this.check(op.signal);
@@ -210,7 +210,8 @@ export class YouTubeConnection {
     timer.unref(); watch.unref();
     try { await action(op.signal); }
     catch (error) {
-      if (error instanceof YouTubeConnectionError && error.needsSignIn && !op.signal.aborted) {
+      // A rejected replacement authorization says nothing about the old grant.
+      if (kind === 'refresh' && error instanceof YouTubeConnectionError && error.needsSignIn && !op.signal.aborted) {
         const saved = this.load();
         if (saved) this.save({ version: 1, client: saved.client });
       }
@@ -251,7 +252,7 @@ export class YouTubeConnection {
   }
 
   connect(): Promise<YouTubeConnectionStatus> {
-    return this.run(async signal => {
+    return this.run('connect', async signal => {
       const saved = this.load();
       if (!saved) throw new YouTubeConnectionError('Import your Google Desktop app JSON first.');
       const verifier = randomBytes(32).toString('base64url');
@@ -275,7 +276,7 @@ export class YouTubeConnection {
   }
 
   refresh(): Promise<YouTubeConnectionStatus> {
-    return this.run(async signal => {
+    return this.run('refresh', async signal => {
       const saved = this.load();
       if (!saved?.tokens) throw new YouTubeConnectionError('Sign in to Google first.');
       let tokens = saved.tokens;

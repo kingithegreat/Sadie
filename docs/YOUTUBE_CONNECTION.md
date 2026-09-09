@@ -69,16 +69,17 @@ bodies do not cross the public connection IPC.
 
 ## Verification — Windows, 9 September 2026
 
-- Full widget Jest: **279 suites / 3,901 tests passed**, 15 existing skipped
+- Full widget Jest: **279 suites / 3,903 tests passed**, 15 existing skipped
   tests; existing CI `--forceExit` setting. Root: **18 suites / 227 tests passed**.
 - Both TypeScript checks, Electron build, docs synchronization, module import
   boundaries and duplicate-export checks passed. Lint: zero errors and eight
   existing warnings outside the changed files.
-- Rebuilt Electron: YouTube and module-controls tests **2 passed in 35.1 s**,
+- Rebuilt Electron: YouTube and module-controls tests **2 passed in 1.2 min**,
   retries disabled. The YouTube flow exercised actual Connect navigation,
   native-picker dispatch, real loopback callback and Windows DPAPI, channel
-  rendering, restart, refresh-token reuse, Online/module denial, removal and
-  recovery from corrupt ciphertext. The connected screen was visually reviewed.
+  rendering, restart, refresh-token reuse, Online/module denial, removal,
+  recovery from corrupt ciphertext and preservation of the exact encrypted grant
+  after a replacement sign-in fails. The connected screen was visually reviewed.
 - Google browser/HTTP responses are synthetic fixtures. These checks prove the
   shipped application path and storage behavior; live Google acceptance and
   the owner's channel remain unverified. On systems without a secure OS
@@ -101,3 +102,10 @@ an existing server-list mock leaking between tests; resetting the list in
 `beforeEach` restores independent tests. No application timeout or gate was
 relaxed. Remote CI and merged-content evidence are tracked in the PR and the
 [Notion claim](https://app.notion.com/p/3d6829ebf7be81f3a9f2c96656655dc9).
+
+Final state review reproduced two failures: a rejected replacement token or
+channel request could clear the previously saved account. Invalid-grant cleanup
+now applies only when checking the saved grant. Both cases pass, and the actual
+Electron test confirms Google's synthetic `invalid_grant` response leaves the
+previous ciphertext and visible channel unchanged. The full widget suite and
+the two Electron tests above were rerun after this correction.

@@ -111,6 +111,17 @@ describe('native desktop YouTube connection', () => {
     expect(f.openBrowser).not.toHaveBeenCalled(); expect(f.request).not.toHaveBeenCalled();
   });
 
+  test.each(['token', 'channels'])('a failed replacement %s request cannot clear the earlier account grant', async stage => {
+    const f = fixture(); await f.service.connect(); const previous = f.saved();
+    f.request.mockImplementation(async kind => {
+      if (kind === stage) throw new YouTubeConnectionError('Replacement sign-in expired.', true);
+      return tokens;
+    });
+    await expect(f.service.connect()).rejects.toThrow('Replacement sign-in expired.');
+    expect(f.saved()).toBe(previous);
+    expect(f.service.status().signedIn).toBe(true);
+  });
+
   test('rechecks Online after browser consent and after token exchange', async () => {
     const f = fixture();
     const open = f.openBrowser.getMockImplementation()!;
