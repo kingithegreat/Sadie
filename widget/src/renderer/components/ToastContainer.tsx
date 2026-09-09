@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 export interface Toast {
@@ -14,7 +14,21 @@ interface ToastContainerProps {
 }
 
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
-  if (toasts.length === 0) return null;
+  const hasToasts = toasts.length > 0;
+  const [top, setTop] = useState(44);
+  useLayoutEffect(() => {
+    if (!hasToasts) return;
+    // Navigation wraps as the window narrows or module views change. A fixed
+    // titlebar inset lets startup notices cover those buttons for ten seconds.
+    const header = document.querySelector('.app-header');
+    const measure = () => setTop(header ? Math.ceil(header.getBoundingClientRect().bottom) + 12 : 44);
+    measure();
+    const observer = header && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : undefined;
+    if (header) observer?.observe(header);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [hasToasts]);
+  if (!hasToasts) return null;
 
   // Portalled to document.body. As a direct child of .app-container it was
   // matched by the blanket rule in chatgpt-theme.css:
@@ -32,7 +46,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
   // Out of .app-container, the blocklist cannot match and `position: fixed`
   // applies as written.
   return createPortal(
-    <div className="toast-container" data-testid="toast-container" aria-live="polite">
+    <div className="toast-container" data-testid="toast-container" aria-live="polite" style={{ top }}>
       {toasts.map(t => (
         <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
       ))}

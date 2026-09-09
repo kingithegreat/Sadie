@@ -113,8 +113,9 @@ test('no open overlay is trapped inside a clipping container', async () => {
   await app.close();
 });
 
-test('a toast floats in the corner and does not push the page down', async () => {
+test('toasts leave navigation usable and do not push the page down', async () => {
   const { app, page } = await open('homebot-e2e-toast-');
+  try {
 
   const headerBefore = Math.round((await page.locator('.app-header').boundingBox())!.y);
 
@@ -138,6 +139,7 @@ test('a toast floats in the corner and does not push the page down', async () =>
     top: Math.round(el.getBoundingClientRect().top),
     viewportWidth: window.innerWidth,
     headerTop: Math.round(document.querySelector('.app-header')!.getBoundingClientRect().top),
+    headerBottom: document.querySelector('.app-header')!.getBoundingClientRect().bottom,
   }));
 
   // Out of .app-container, so the (0,10,0) blanket rule cannot force it back
@@ -157,11 +159,15 @@ test('a toast floats in the corner and does not push the page down', async () =>
   // The distinguishing fact vs. the page-row failure (left ≈ 0, full width):
   // a ≤380px toast hugging the right edge starts well past the midline.
   expect(info.left).toBeGreaterThan(info.viewportWidth * 0.5);
-  expect(info.top).toBeLessThan(120); // near the top
+  // A startup hardware toast used to cover the registered Studio button until
+  // its ten-second timeout. Clearing just the titlebar still blocks navigation.
+  expect(info.top).toBeGreaterThanOrEqual(info.headerBottom);
   // The point of the whole thing: the page must not move.
   expect(info.headerTop).toBe(headerBefore);
 
-  await app.close();
+  await page.locator('button.mode-btn', { hasText: 'Studio' }).click({ timeout: 3000 });
+  await expect(page.getByRole('heading', { name: /Media Studio/ }).first()).toBeVisible();
+  } finally { await app.close(); }
 });
 
 /**
