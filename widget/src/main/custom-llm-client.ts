@@ -1393,6 +1393,7 @@ export async function discoverDeepseekModels(apiKey: string): Promise<CustomMode
     response = await axios.get(DEEPSEEK_MODELS_ENDPOINT, {
       headers: { Authorization: `Bearer ${apiKey}` },
       timeout: 10000,
+      maxRedirects: 0,
     });
   } catch (err: any) {
     const status = err?.response?.status;
@@ -1458,6 +1459,103 @@ export async function resolveDeepseekModels(
   }
 }
 
+// ── Gemini dynamic model discovery ──────────────────────────────────────────
+//
+// Google's `models.list` endpoint is the only truthful source of "which Gemini
+// models can this API key actually call". The static lists above are a small
+// safe FALLBACK for when discovery is unreachable — they are not, and must not
+// be read as, a claim about the account's entitlement or tier.
+
+const GEMINI_MODELS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_DISCOVERY_TTL_MS = 5 * 60 * 1000;
+
+const geminiDiscoveryCache = new Map<string, { at: number; models: CustomModelInfo[] }>();
+
+/**
+ * Discover the Gemini models the given key can call, straight from Google.
+ * Filters to models whose `supportedGenerationMethods` include `generateContent`.
+ * `supportedGenerationMethods` is kept as `capabilities`, separate from the
+ * marketing `name`. Throws ModelDiscoveryError (AUTH_FAILED) on 401/403.
+ */
+export async function discoverGeminiModels(
+  apiKey: string,
+  provider: 'google-ai-studio' | 'google-gemini'
+): Promise<CustomModelInfo[]> {
+  const url = `${GEMINI_MODELS_ENDPOINT}?key=${encodeURIComponent(apiKey)}&pageSize=1000`;
+  let response: any;
+  try {
+    response = await axios.get(url, { timeout: 10000, maxRedirects: 0 });
+  } catch (err: any) {
+    const status = err?.response?.status;
+    if (status === 401 || status === 403) {
+      throw new ModelDiscoveryError('AUTH_FAILED', 'Your Google AI Studio key was rejected. Check the key in Settings.');
+    }
+    throw err;
+  }
+
+  const raw = Array.isArray(response?.data?.models) ? response.data.models : [];
+  const seen = new Set<string>();
+  const models: CustomModelInfo[] = [];
+
+  for (const item of raw as any[]) {
+    if (!item || typeof item !== 'object') continue;
+    const methods: string[] = Array.isArray(item?.supportedGenerationMethods)
+      ? item.supportedGenerationMethods
+      : [];
+    if (!methods.includes('generateContent')) continue;
+
+    const id = String(item?.name || '').replace(/^models\//, '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    models.push({
+      id,
+      name: item?.displayName || id,
+      description: item?.description || '',
+      provider,
+      contextWindow: typeof item?.inputTokenLimit === 'number' ? item.inputTokenLimit : undefined,
+      capabilities: methods,
+    });
+  }
+
+  if (models.length === 0) throw new Error('No callable Gemini models were returned.');
+  return models;
+}
+
+/**
+ * Gemini discovery with a short cache, a safe fallback, an explicit refresh and
+ * an Online-consent gate — the same contract as DeepSeek discovery.
+ */
+export async function resolveGeminiModels(
+  provider: 'google-ai-studio' | 'google-gemini',
+  apiKey?: string,
+  opts: { onlineAccess?: () => void; forceRefresh?: boolean } = {},
+): Promise<ModelDiscoveryResult> {
+  const fallback = provider === 'google-ai-studio' ? GOOGLE_AI_MODELS : GOOGLE_GEMINI_NATIVE_MODELS;
+  const key = (apiKey || '').trim();
+  if (!key) return { models: fallback, source: 'fallback' };
+
+  if (opts.onlineAccess) opts.onlineAccess();
+
+  const cacheKey = `${provider}:${GEMINI_MODELS_ENDPOINT}:${keyFingerprint(key)}`;
+  if (!opts.forceRefresh) {
+    const cached = geminiDiscoveryCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < GEMINI_DISCOVERY_TTL_MS) {
+      return { models: cached.models, source: 'cached' };
+    }
+  }
+
+  try {
+    const models = await discoverGeminiModels(key, provider);
+    geminiDiscoveryCache.set(cacheKey, { at: Date.now(), models });
+    return { models, source: 'live' };
+  } catch (err) {
+    if (err instanceof ModelDiscoveryError && err.code === 'AUTH_FAILED') throw err;
+    console.warn('[Gemini] model discovery failed, using fallback list:', (err as any)?.message || err);
+    return { models: fallback, source: 'fallback' };
+  }
+}
+
 export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig>): Promise<CustomModelInfo[]> {
   // Claude Code is a local CLI — it has no /models endpoint and needs no apiUrl,
   // so answer before the apiUrl guard below.
@@ -1475,8 +1573,8 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'openai') return OPENAI_MODELS;
   if (provider === 'groq') return GROQ_MODELS;
   if (provider === 'deepseek') return (await resolveDeepseekModels(config.apiKey)).models;
-  if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
-  if (provider === 'google-gemini') return GOOGLE_GEMINI_NATIVE_MODELS;
+  if (provider === 'google-ai-studio') return (await resolveGeminiModels('google-ai-studio', config.apiKey)).models;
+  if (provider === 'google-gemini') return (await resolveGeminiModels('google-gemini', config.apiKey)).models;
   if (provider === 'huggingface') return HUGGINGFACE_MODELS;
   if (provider === 'cerebras') return CEREBRAS_MODELS;
   if (provider === 'sambanova') return SAMBANOVA_MODELS;
@@ -1509,7 +1607,8 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   try {
     const response = await axios.get(endpoint, {
       headers,
-      timeout: 10000
+      timeout: 10000,
+      maxRedirects: 0
     });
 
     let list = normalizeModelsPayload(response.data);

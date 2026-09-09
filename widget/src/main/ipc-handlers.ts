@@ -34,9 +34,10 @@ import {
   exportTelemetryConsent,
   getDefaultSettings
 } from './config-manager';
-import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels } from './custom-llm-client';
+import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels, resolveGeminiModels } from './custom-llm-client';
 import { apiKeyForProvider } from '../shared/cloud-llm';
 import { assertProviderOnlineAccess } from './utils/provider-network-policy';
+import { PROVIDER_API_URLS } from '../shared/provider-urls';
 import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -535,24 +536,42 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         }
       }
 
-      // Every provider's key lives in the per-provider vault (providerApiKeys),
-      // not customLLM.apiKey — so the Settings "fetch models" button often
-      // passes no key. Resolve it here so dynamic discovery can run against the
-      // account's actual key.
-      let resolvedPayload = payload || {};
-      if (!(resolvedPayload.apiKey || '').trim() && resolvedPayload.provider) {
-        resolvedPayload = {
-          ...resolvedPayload,
-          apiKey: apiKeyForProvider(getSettings() as any, resolvedPayload.provider) || '',
-        };
+      // ── Credential boundary ──────────────────────────────────────────────
+      // A saved provider key may only be sent to that provider's trusted
+      // canonical endpoint. A caller-supplied URL for a known provider is
+      // ignored (we use the canonical one); a custom/local endpoint never
+      // receives another provider's saved key — only the caller's own
+      // endpoint-bound key (customLLM.apiKey).
+      const provider = payload?.provider;
+      const isCliProvider = provider === 'claude-code' || provider === 'codex';
+      const canonicalUrl =
+        typeof provider === 'string' && PROVIDER_API_URLS[provider] ? PROVIDER_API_URLS[provider] : '';
+
+      let resolvedPayload: any = { ...(payload || {}) };
+
+      if (canonicalUrl) {
+        // Trusted provider origin: pin the endpoint and attach the saved key.
+        resolvedPayload.apiUrl = canonicalUrl;
+        if (!(resolvedPayload.apiKey || '').trim()) {
+          resolvedPayload.apiKey = apiKeyForProvider(getSettings() as any, provider!) || '';
+        }
+      } else if (!isCliProvider) {
+        // Custom/local endpoint: never attach a saved provider credential.
+        resolvedPayload.apiKey = (resolvedPayload.apiKey || '').trim() || '';
       }
 
-      // DeepSeek discovers models over the network; enforce the Online consent
-      // gate and return the discovery source so the renderer can tell a fresh
-      // result from a cached or fallback one.
-      if (resolvedPayload.provider === 'deepseek') {
+      // Dynamic discovery providers enforce Online consent and return a
+      // truthful source so the renderer can tell fresh from cached/fallback.
+      if (provider === 'deepseek') {
         const result = await resolveDeepseekModels(resolvedPayload.apiKey, {
           onlineAccess: () => assertProviderOnlineAccess('DeepSeek'),
+          forceRefresh: !!(payload || {}).refresh,
+        });
+        return { success: true, models: result.models, source: result.source };
+      }
+      if (provider === 'google-ai-studio' || provider === 'google-gemini') {
+        const result = await resolveGeminiModels(provider, resolvedPayload.apiKey, {
+          onlineAccess: () => assertProviderOnlineAccess('Google AI Studio'),
           forceRefresh: !!(payload || {}).refresh,
         });
         return { success: true, models: result.models, source: result.source };

@@ -184,6 +184,13 @@ export interface CustomModelInfo {
   contextWindow?: number;
   /** Human-readable cost hint shown in the model picker, e.g. "~$0.27/1M" or "Free tier" */
   costHint?: string;
+  /**
+   * Capability metadata kept SEPARATE from the display name. For discovered
+   * Gemini models this is the API's `supportedGenerationMethods` (e.g.
+   * "generateContent", "countTokens"); the picker shows `name`, while callers
+   * can still reason about what the model can actually do.
+   */
+  capabilities?: string[];
 }
 
 export interface CustomLLMConfig {
