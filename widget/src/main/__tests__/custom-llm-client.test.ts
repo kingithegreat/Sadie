@@ -225,8 +225,8 @@ describe('fetchAvailableCustomModels', () => {
     const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.deepseek.com/v1', provider: 'deepseek' as any });
     expect(models.length).toBeGreaterThan(0);
     expect(models.every(m => m.provider === 'deepseek')).toBe(true);
-    expect(models.some(m => m.id === 'deepseek-chat')).toBe(true);
-    expect(models.some(m => m.id === 'deepseek-reasoner')).toBe(true);
+    expect(models.some(m => m.id === 'deepseek-v4-flash')).toBe(true);
+    expect(models.some(m => m.id === 'deepseek-v4-pro')).toBe(true);
   });
 
   test('returns google-ai-studio model list (no http call)', async () => {
@@ -347,6 +347,74 @@ describe('fetchAvailableCustomModels – HTTP call branches', () => {
     const models = await fetchAvailableCustomModels({ apiUrl: 'http://localhost:11434', provider: 'custom' });
     expect(models.every(m => m.id !== undefined)).toBe(true);
     expect(models.some(m => m.id === 'valid-id')).toBe(true);
+  });
+});
+
+// ─── fetchAvailableCustomModels – DeepSeek dynamic discovery ────────────────
+
+describe('fetchAvailableCustomModels – DeepSeek discovery', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('discovers current models when a key is present', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({
+      data: {
+        object: 'list',
+        data: [
+          { id: 'deepseek-v4-flash', object: 'model', owned_by: 'deepseek' },
+          { id: 'deepseek-v4-pro', object: 'model', owned_by: 'deepseek' },
+        ],
+      },
+    });
+
+    const models = await fetchAvailableCustomModels({
+      apiUrl: 'https://api.deepseek.com/v1',
+      provider: 'deepseek' as any,
+      apiKey: 'sk-ds-1',
+    });
+
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(models.map(m => m.id)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
+    expect(models.every(m => m.provider === 'deepseek')).toBe(true);
+    expect(models[0].name).toBe('DeepSeek V4 Flash');
+  });
+
+  test('falls back to the static list when discovery fails', async () => {
+    (axios.get as jest.Mock).mockRejectedValue(new Error('offline'));
+
+    const models = await fetchAvailableCustomModels({
+      apiUrl: 'https://api.deepseek.com/v1',
+      provider: 'deepseek' as any,
+      apiKey: 'sk-ds-2',
+    });
+
+    expect(models.some(m => m.id === 'deepseek-v4-flash')).toBe(true);
+    expect(models.every(m => m.provider === 'deepseek')).toBe(true);
+  });
+
+  test('caches discovery so a repeat fetch does not re-hit the network', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({
+      data: { object: 'list', data: [{ id: 'deepseek-v4-flash', object: 'model', owned_by: 'deepseek' }] },
+    });
+    const config = {
+      apiUrl: 'https://api.deepseek.com/v1',
+      provider: 'deepseek' as any,
+      apiKey: 'sk-ds-3',
+    };
+
+    await fetchAvailableCustomModels(config);
+    await fetchAvailableCustomModels(config);
+
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+
+  test('makes no network call without a key (static fallback)', async () => {
+    const models = await fetchAvailableCustomModels({
+      apiUrl: 'https://api.deepseek.com/v1',
+      provider: 'deepseek' as any,
+    });
+
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(models.length).toBeGreaterThan(0);
   });
 });
 

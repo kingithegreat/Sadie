@@ -147,10 +147,13 @@ const GROQ_MODELS: CustomModelInfo[] = [
   { id: 'llama-3.1-70b-versatile', name: 'Llama 3.1 70B', description: 'High quality', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
 ];
 
-// DeepSeek — GPT-4 class quality at ~20x lower cost than GPT-4o
+// DeepSeek — small safe FALLBACK list for when /models discovery is
+// unreachable. The real ids (deepseek-v4-flash / deepseek-v4-pro) are
+// discovered dynamically; these just keep the picker usable offline. No stale
+// version names or pricing hints we can no longer vouch for.
 const DEEPSEEK_MODELS: CustomModelInfo[] = [
-  { id: 'deepseek-chat', name: 'DeepSeek V3', description: 'GPT-4 class quality', provider: 'deepseek', contextWindow: 64000, costHint: '~$0.27/1M in' },
-  { id: 'deepseek-reasoner', name: 'DeepSeek R1', description: 'Reasoning model, rivals o1', provider: 'deepseek', contextWindow: 64000, costHint: '~$0.55/1M in' },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', description: 'Fast chat model', provider: 'deepseek' },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Stronger reasoning', provider: 'deepseek' },
 ];
 
 // Google AI Studio — Gemini models with generous free tier
@@ -1337,6 +1340,91 @@ export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig
   return validated;
 }
 
+// ── DeepSeek dynamic model discovery ────────────────────────────────────────
+//
+// DeepSeek rotates model ids (deepseek-chat / deepseek-reasoner became
+// deepseek-v4-flash / deepseek-v4-pro). Its OpenAI-compatible /models endpoint
+// is the only truthful source of "what can this key actually call"; the static
+// list above is a small safe fallback for when discovery is unreachable.
+
+const DEEPSEEK_MODELS_ENDPOINT = 'https://api.deepseek.com/models';
+const DEEPSEEK_DISCOVERY_TTL_MS = 5 * 60 * 1000;
+
+// Fingerprint of an API key so a key change invalidates the cache, without ever
+// storing the key itself (djb2 — good enough for cache-keying, not security).
+function keyFingerprint(apiKey: string): string {
+  let h = 5381;
+  for (let i = 0; i < apiKey.length; i++) h = ((h << 5) + h + apiKey.charCodeAt(i)) | 0;
+  return String(h >>> 0);
+}
+
+const deepseekDiscoveryCache = new Map<string, { at: number; models: CustomModelInfo[] }>();
+
+/** Turn an id like `deepseek-v4-flash` into a friendlier `DeepSeek V4 Flash`. */
+function humanizeDeepseekModelName(id: string): string {
+  const body = id.replace(/^deepseek[-_]/i, '');
+  const parts = body.split(/[-_]/).map((p) => {
+    if (/^v\d+(\.\d+)*$/i.test(p)) return p.toUpperCase();
+    if (/^pro$/i.test(p)) return 'Pro';
+    if (/^flash$/i.test(p)) return 'Flash';
+    return p.charAt(0).toUpperCase() + p.slice(1);
+  });
+  return `DeepSeek ${parts.join(' ')}`.trim();
+}
+
+/**
+ * Discover the DeepSeek models the given key can call via its OpenAI-compatible
+ * /models endpoint. Throws when discovery cannot produce a list; the caller
+ * decides whether to fall back.
+ */
+export async function discoverDeepseekModels(apiKey: string): Promise<CustomModelInfo[]> {
+  const response = await axios.get(DEEPSEEK_MODELS_ENDPOINT, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    timeout: 10000,
+  });
+
+  const list = normalizeModelsPayload(response.data);
+  const seen = new Set<string>();
+  const models: CustomModelInfo[] = [];
+
+  for (const item of list as any[]) {
+    const id = String(item?.id || item?.model || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: humanizeDeepseekModelName(id),
+      description: item?.owned_by || item?.description || '',
+      provider: 'deepseek',
+    });
+  }
+
+  if (models.length === 0) throw new Error('No callable DeepSeek models were returned.');
+  return models;
+}
+
+/**
+ * Discovery with a short in-memory cache and a safe fallback. No key means no
+ * network call — return the static list unchanged.
+ */
+async function resolveDeepseekModels(apiKey?: string): Promise<CustomModelInfo[]> {
+  const key = (apiKey || '').trim();
+  if (!key) return DEEPSEEK_MODELS;
+
+  const cacheKey = `deepseek:${keyFingerprint(key)}`;
+  const cached = deepseekDiscoveryCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < DEEPSEEK_DISCOVERY_TTL_MS) return cached.models;
+
+  try {
+    const models = await discoverDeepseekModels(key);
+    deepseekDiscoveryCache.set(cacheKey, { at: Date.now(), models });
+    return models;
+  } catch (err) {
+    console.warn('[DeepSeek] model discovery failed, using fallback list:', (err as any)?.message || err);
+    return DEEPSEEK_MODELS;
+  }
+}
+
 export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig>): Promise<CustomModelInfo[]> {
   // Claude Code is a local CLI — it has no /models endpoint and needs no apiUrl,
   // so answer before the apiUrl guard below.
@@ -1353,7 +1441,7 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'anthropic') return ANTHROPIC_MODELS;
   if (provider === 'openai') return OPENAI_MODELS;
   if (provider === 'groq') return GROQ_MODELS;
-  if (provider === 'deepseek') return DEEPSEEK_MODELS;
+  if (provider === 'deepseek') return resolveDeepseekModels(config.apiKey);
   if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
   if (provider === 'google-gemini') return GOOGLE_GEMINI_NATIVE_MODELS;
   if (provider === 'huggingface') return HUGGINGFACE_MODELS;
