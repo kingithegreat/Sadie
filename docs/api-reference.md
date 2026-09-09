@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (204)** — `window.electron`
+**Preload methods (210)** — `window.electron`
 
 ```
 addFeed                         addMessage                      browserAttach                   browserBack
@@ -1063,9 +1063,11 @@ terminalRun                     testN8nConnection               toggleWidgetMode
 ttsSampleVoice                  ttsSpeak                        ttsStop                         unhideFeed
 updateAutomation                updateMessage                   workspaceList                   workspaceRead
 workspaceRoot                   workspaceSave                   writeClipboard                  writeDocument
+youtubeCancel                   youtubeConnect                  youtubeConnectionStatus         youtubeImportCredentials
+youtubeRefresh                  youtubeRemove
 ```
 
-**IPC channels, renderer → main (153)**
+**IPC channels, renderer → main (159)**
 
 ```
 homebot:__e2e_get_router_logs              homebot:__e2e_invoke_tool_batch
@@ -1116,7 +1118,10 @@ homebot:media:splice-video                 homebot:media:storyboard:breakdown
 homebot:media:storyboard:create            homebot:media:storyboard:generate-frame
 homebot:media:storyboard:get               homebot:media:storyboard:list
 homebot:media:storyboard:render            homebot:media:storyboard:save
-homebot:media:trim-clip                    homebot:message
+homebot:media:trim-clip                    homebot:media:youtube:cancel
+homebot:media:youtube:connect              homebot:media:youtube:import
+homebot:media:youtube:refresh              homebot:media:youtube:remove
+homebot:media:youtube:status               homebot:message
 homebot:modules:list                       homebot:modules:set-enabled
 homebot:n8n-test-connection                homebot:open-browse
 homebot:open-external-url                  homebot:open-file

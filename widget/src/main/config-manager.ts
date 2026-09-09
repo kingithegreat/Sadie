@@ -565,6 +565,9 @@ export function getSettings(): Settings {
       throw new Error('settings.json did not contain a JSON object');
     }
     savedSettings = parsed;
+    // Integration grants are main-process only, never part of the renderer's
+    // settings snapshot, export or import surface.
+    delete savedSettings._integrationSecrets;
   } catch (parseError: any) {
     const backupPath = backupCorruptSettings(settingsPath);
     _lastConfigRecovery = {
@@ -661,6 +664,11 @@ export function saveSettings(settings: Settings): void {
     // Compare with previous to log telemetry consent events
     const previous = getSettings();
     const toSave = { ...settings } as Settings & { telemetryConsentTimestamp?: string; telemetryConsentVersion?: string };
+    // Preserve the latest opaque grants. A renderer snapshot cannot replace
+    // them, even if it supplies this private property itself.
+    delete (toSave as any)._integrationSecrets;
+    const privateSecrets = readIntegrationConfig()._integrationSecrets;
+    if (privateSecrets) (toSave as any)._integrationSecrets = privateSecrets;
 
     // Lost-update guard for secrets. The renderer saves a WHOLE settings
     // object; when its snapshot is stale (loaded during a corrupt-reset, or
@@ -756,6 +764,56 @@ export function saveSettings(settings: Settings): void {
     console.error('Failed to save settings:', error);
     throw error;
   }
+}
+
+/** Scoped integration grants use the existing config/OS encryption authority.
+ * Unlike legacy API keys, new grants fail closed when encryption is unavailable.
+ * These functions are intentionally absent from Settings and the preload API.
+ */
+function readIntegrationConfig(): Record<string, any> {
+  const file = getSettingsPath();
+  if (!existsSync(file)) return {};
+  try {
+    const value = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+    return value;
+  } catch { throw new Error('HomeBot could not read its saved connection settings.'); }
+}
+
+function checkIntegrationSecretId(id: string): void {
+  if (!/^[a-z][a-z0-9.-]{0,79}$/.test(id)) throw new Error('Invalid integration credential name.');
+}
+
+export function loadIntegrationSecret(id: string): string | undefined {
+  checkIntegrationSecretId(id);
+  const stored = readIntegrationConfig()._integrationSecrets?.[id];
+  if (stored === undefined) return undefined;
+  try {
+    if (typeof stored !== 'string' || !stored.startsWith(ENC_PREFIX) || stored.length > 100_000 || !safeStorage.isEncryptionAvailable()) throw new Error();
+    const plain = safeStorage.decryptString(Buffer.from(stored.slice(ENC_PREFIX.length), 'base64'));
+    if (plain.length > 32_000) throw new Error();
+    return plain;
+  } catch { throw new Error('HomeBot cannot unlock this saved connection on this PC. Remove it and sign in again.'); }
+}
+
+export function saveIntegrationSecret(id: string, value: string | undefined): void {
+  checkIntegrationSecretId(id);
+  try {
+    const config = readIntegrationConfig();
+    const secrets = { ...config._integrationSecrets };
+    if (value === undefined) delete secrets[id];
+    else {
+      if (typeof value !== 'string' || value.length > 32_000 || !safeStorage.isEncryptionAvailable()) throw new Error();
+      // Do not accept the legacy plaintext fallback or Linux's basic_text store.
+      if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error();
+      secrets[id] = ENC_PREFIX + safeStorage.encryptString(value).toString('base64');
+    }
+    if (Object.keys(secrets).length) config._integrationSecrets = secrets;
+    else delete config._integrationSecrets;
+    ensureConfigDirectory();
+    writeFileSync(getSettingsPath(), JSON.stringify(config, null, 2), 'utf8');
+    invalidateSettingsCache();
+  } catch { throw new Error('HomeBot could not save the connection securely on this PC.'); }
 }
 
 export function resetSettings(): Settings {

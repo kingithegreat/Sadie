@@ -26,6 +26,24 @@
   gap: 10px;
 }
 
+.youtube-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.youtube-channels { padding-left: 20px; overflow-wrap: anywhere; }
+.youtube-channels a { color: var(--text-primary); }
+.youtube-card .cnx-card-head { cursor: default; }
+.youtube-card button {
+  border: 1px solid var(--border-color, #8b95a5);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--bg-light);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+.youtube-card button:hover:not(:disabled) { border-color: var(--accent, #3b82f6); }
+.youtube-card button:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+.youtube-card button:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .cnx-card {
   background: var(--bg-medium);
   border-radius: 8px;

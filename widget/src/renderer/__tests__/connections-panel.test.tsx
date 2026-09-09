@@ -17,9 +17,11 @@ const mockAddServer = jest.fn().mockResolvedValue({ success: true });
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockListServers.mockResolvedValue([]);
   (window as any).electron = {
     mcpListServers: mockListServers,
     mcpAddServer: mockAddServer,
+    youtubeConnectionStatus: async () => ({ ok: true, status: { configured: false, signedIn: false, busy: false, channels: [] } }),
   };
 });
 
