@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import '../styles/connections-panel.css';
+import YouTubeConnectionCard from './YouTubeConnectionCard';
 import {
   CONNECTIONS,
   buildServerConfig,
@@ -121,6 +122,7 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ navContext }
       )}
 
       <div className="cnx-list">
+        <YouTubeConnectionCard />
         {CONNECTIONS.map((entry) => {
           const connected = configuredNames.has(entry.serverName);
           const expanded = expandedId === entry.id;

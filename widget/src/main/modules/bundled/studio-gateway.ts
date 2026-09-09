@@ -18,6 +18,8 @@ const signatures: Record<string, string[]> = {
   'movie:run': ['object'], 'movie:list-projects': [], 'storyboard:create': ['object'], 'storyboard:list': [],
   'storyboard:get': ['string'], 'storyboard:generate-frame': ['object'], 'storyboard:save': ['object'],
   'storyboard:render': ['object'], 'storyboard:breakdown': ['object'],
+  'youtube:status': [], 'youtube:import': [], 'youtube:connect': [],
+  'youtube:refresh': [], 'youtube:cancel': [], 'youtube:remove': [],
 };
 
 function validArgs(channel: string, args: unknown[]): boolean {
@@ -71,5 +73,5 @@ async function invokeStudioTool(event: IpcMainInvokeEvent, name: string, args: R
 
 export function registerBundledStudioIpc(): void {
   initializeBundledModules();
-  registerStudioIpc(studioGuard, invokeStudioTool);
+  registerStudioIpc(studioGuard, invokeStudioTool, () => bundledModuleHost.assertEnabled(STUDIO_MODULE_ID));
 }

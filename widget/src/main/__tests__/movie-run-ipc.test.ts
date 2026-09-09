@@ -18,7 +18,7 @@ let projectDir: string;
 beforeAll(() => {
   projectDir = fs.mkdtempSync(path.join(os.homedir(), 'homebot-movie-ipc-test-'));
   fs.writeFileSync(path.join(projectDir, 'project.json'), '{}');
-  registerStudioIpc((_channel, handler) => handler, jest.fn());
+  registerStudioIpc((_channel, handler) => handler, jest.fn(), jest.fn());
 });
 afterAll(() => { if (projectDir) fs.rmSync(projectDir, { recursive: true, force: true }); });
 

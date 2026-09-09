@@ -134,3 +134,9 @@ HTTP boundary; request arguments cannot grant Online access. A movie report
 with failed shots now returns an IPC failure and leaves full reasons in the
 report/log. Before/after, local transport and real Studio UI evidence is in
 `tasks/movie-provider-privacy.md`; remaining M2 acceptance is still open.
+
+## 2026-09-09 - YouTube connection implementation ready (Codex)
+
+The bounded owner-requested connection is implemented on claude/youtube-desktop-connection. Connect -> YouTube imports Desktop app JSON, uses system-browser PKCE/state OAuth, stores its grant through Core OS encryption, and checks channel identity. No upload or publishing capability was added. The build claim is released; remote required checks and merged-content verification remain integration conditions, tracked at https://app.notion.com/p/3d6829ebf7be81f3a9f2c96656655dc9.
+
+Windows checks: 3,903 widget tests and 227 root tests pass; both typechecks, lint (zero errors/eight existing warnings), build, docs and import/export guards pass. Two rebuilt Electron tests pass in 1.2 minutes without retries, covering the YouTube flow with synthetic Google responses and real Windows encrypted storage, restart/refresh/removal/corrupt-grant recovery, plus existing module controls. A rejected replacement sign-in preserves the previous grant; two regression cases failed before that correction and pass afterwards. Test paths, setup steps and live-account limits are in docs/YOUTUBE_CONNECTION.md. Live owner OAuth and key rotation remain unverified owner actions. Existing speech, local-export and lazy-runtime claims are preserved.
