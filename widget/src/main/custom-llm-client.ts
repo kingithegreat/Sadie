@@ -1350,6 +1350,25 @@ export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig
 const DEEPSEEK_MODELS_ENDPOINT = 'https://api.deepseek.com/models';
 const DEEPSEEK_DISCOVERY_TTL_MS = 5 * 60 * 1000;
 
+/** Where a DeepSeek model list came from, so callers never present a stale
+ *  fallback as a freshly verified connection. */
+export type ModelDiscoverySource = 'live' | 'cached' | 'fallback';
+
+export interface ModelDiscoveryResult {
+  models: CustomModelInfo[];
+  source: ModelDiscoverySource;
+}
+
+/** Discovery failures that must surface as errors, never as a quiet fallback. */
+export class ModelDiscoveryError extends Error {
+  code: 'AUTH_FAILED' | 'ONLINE_DISABLED';
+  constructor(code: 'AUTH_FAILED' | 'ONLINE_DISABLED', message: string) {
+    super(message);
+    this.name = 'ModelDiscoveryError';
+    this.code = code;
+  }
+}
+
 // Fingerprint of an API key so a key change invalidates the cache, without ever
 // storing the key itself (djb2 — good enough for cache-keying, not security).
 function keyFingerprint(apiKey: string): string {
@@ -1360,68 +1379,82 @@ function keyFingerprint(apiKey: string): string {
 
 const deepseekDiscoveryCache = new Map<string, { at: number; models: CustomModelInfo[] }>();
 
-/** Turn an id like `deepseek-v4-flash` into a friendlier `DeepSeek V4 Flash`. */
-function humanizeDeepseekModelName(id: string): string {
-  const body = id.replace(/^deepseek[-_]/i, '');
-  const parts = body.split(/[-_]/).map((p) => {
-    if (/^v\d+(\.\d+)*$/i.test(p)) return p.toUpperCase();
-    if (/^pro$/i.test(p)) return 'Pro';
-    if (/^flash$/i.test(p)) return 'Flash';
-    return p.charAt(0).toUpperCase() + p.slice(1);
-  });
-  return `DeepSeek ${parts.join(' ')}`.trim();
-}
-
 /**
  * Discover the DeepSeek models the given key can call via its OpenAI-compatible
- * /models endpoint. Throws when discovery cannot produce a list; the caller
- * decides whether to fall back.
+ * /models endpoint. The API's ids are preserved exactly and are also the
+ * display name — the endpoint reports no marketing name, and none is invented.
+ *
+ * Throws ModelDiscoveryError (AUTH_FAILED) on 401/403, and a plain Error on
+ * transient/parse failures; the caller decides whether to fall back.
  */
 export async function discoverDeepseekModels(apiKey: string): Promise<CustomModelInfo[]> {
-  const response = await axios.get(DEEPSEEK_MODELS_ENDPOINT, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-    timeout: 10000,
-  });
+  let response: any;
+  try {
+    response = await axios.get(DEEPSEEK_MODELS_ENDPOINT, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: 10000,
+    });
+  } catch (err: any) {
+    const status = err?.response?.status;
+    if (status === 401 || status === 403) {
+      throw new ModelDiscoveryError('AUTH_FAILED', 'Your DeepSeek API key was rejected. Check the key in Settings.');
+    }
+    throw err;
+  }
 
   const list = normalizeModelsPayload(response.data);
   const seen = new Set<string>();
   const models: CustomModelInfo[] = [];
 
-  for (const item of list as any[]) {
-    const id = String(item?.id || item?.model || '').trim();
-    if (!id || seen.has(id)) continue;
+  for (const item of Array.isArray(list) ? list : []) {
+    if (!item || typeof item !== 'object') continue;
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    if (!id || seen.has(id)) continue; // reject malformed + duplicate ids
     seen.add(id);
     models.push({
       id,
-      name: humanizeDeepseekModelName(id),
-      description: item?.owned_by || item?.description || '',
+      name: id,
+      description: typeof item.owned_by === 'string' ? item.owned_by : '',
       provider: 'deepseek',
     });
   }
 
-  if (models.length === 0) throw new Error('No callable DeepSeek models were returned.');
+  if (models.length === 0) throw new Error('DeepSeek returned no usable models.');
   return models;
 }
 
 /**
- * Discovery with a short in-memory cache and a safe fallback. No key means no
- * network call — return the static list unchanged.
+ * Discovery with a short in-memory cache scoped to provider + endpoint + key
+ * fingerprint, a safe fallback, and an explicit refresh. No key means no
+ * network call — the static fallback is returned unchanged. Online consent is
+ * enforced by the caller-supplied gate before any network I/O; auth failures
+ * are re-thrown rather than concealed behind the fallback.
  */
-async function resolveDeepseekModels(apiKey?: string): Promise<CustomModelInfo[]> {
+export async function resolveDeepseekModels(
+  apiKey?: string,
+  opts: { onlineAccess?: () => void; forceRefresh?: boolean } = {},
+): Promise<ModelDiscoveryResult> {
   const key = (apiKey || '').trim();
-  if (!key) return DEEPSEEK_MODELS;
+  if (!key) return { models: DEEPSEEK_MODELS, source: 'fallback' };
 
-  const cacheKey = `deepseek:${keyFingerprint(key)}`;
-  const cached = deepseekDiscoveryCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < DEEPSEEK_DISCOVERY_TTL_MS) return cached.models;
+  if (opts.onlineAccess) opts.onlineAccess();
+
+  const cacheKey = `deepseek:${DEEPSEEK_MODELS_ENDPOINT}:${keyFingerprint(key)}`;
+  if (!opts.forceRefresh) {
+    const cached = deepseekDiscoveryCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < DEEPSEEK_DISCOVERY_TTL_MS) {
+      return { models: cached.models, source: 'cached' };
+    }
+  }
 
   try {
     const models = await discoverDeepseekModels(key);
     deepseekDiscoveryCache.set(cacheKey, { at: Date.now(), models });
-    return models;
+    return { models, source: 'live' };
   } catch (err) {
+    if (err instanceof ModelDiscoveryError && err.code === 'AUTH_FAILED') throw err;
     console.warn('[DeepSeek] model discovery failed, using fallback list:', (err as any)?.message || err);
-    return DEEPSEEK_MODELS;
+    return { models: DEEPSEEK_MODELS, source: 'fallback' };
   }
 }
 
@@ -1441,7 +1474,7 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'anthropic') return ANTHROPIC_MODELS;
   if (provider === 'openai') return OPENAI_MODELS;
   if (provider === 'groq') return GROQ_MODELS;
-  if (provider === 'deepseek') return resolveDeepseekModels(config.apiKey);
+  if (provider === 'deepseek') return (await resolveDeepseekModels(config.apiKey)).models;
   if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
   if (provider === 'google-gemini') return GOOGLE_GEMINI_NATIVE_MODELS;
   if (provider === 'huggingface') return HUGGINGFACE_MODELS;

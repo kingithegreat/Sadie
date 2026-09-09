@@ -34,8 +34,9 @@ import {
   exportTelemetryConsent,
   getDefaultSettings
 } from './config-manager';
-import { fetchAvailableCustomModels, generateFromCustomLLM } from './custom-llm-client';
+import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels } from './custom-llm-client';
 import { apiKeyForProvider } from '../shared/cloud-llm';
+import { assertProviderOnlineAccess } from './utils/provider-network-policy';
 import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -544,6 +545,17 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
           ...resolvedPayload,
           apiKey: apiKeyForProvider(getSettings() as any, resolvedPayload.provider) || '',
         };
+      }
+
+      // DeepSeek discovers models over the network; enforce the Online consent
+      // gate and return the discovery source so the renderer can tell a fresh
+      // result from a cached or fallback one.
+      if (resolvedPayload.provider === 'deepseek') {
+        const result = await resolveDeepseekModels(resolvedPayload.apiKey, {
+          onlineAccess: () => assertProviderOnlineAccess('DeepSeek'),
+          forceRefresh: !!(payload || {}).refresh,
+        });
+        return { success: true, models: result.models, source: result.source };
       }
 
       const models = await fetchAvailableCustomModels(resolvedPayload);

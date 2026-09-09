@@ -209,6 +209,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
   const [modelsLoading, setModelsLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [modelFetchError, setModelFetchError] = useState<string | null>(null);
+  const [modelsStale, setModelsStale] = useState(false);
   const [_modelsFetchedAt, setModelsFetchedAt] = useState<number | null>(null);
   const [installedOllamaModels, setInstalledOllamaModels] = useState<Array<{ name: string; size: number }>>([]);
 
@@ -796,6 +797,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
       setAvailableModels(known);
       setModelFetchError(null);
       setModelsFetchedAt(Date.now());
+      setModelsStale(false);
       // Select one if none is valid for THIS provider, so the provider is
       // usable the moment it is chosen. Keeping a model from the previous
       // provider would send a request naming something it has never heard of.
@@ -818,6 +820,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     setAvailableModels([]);
     setModelFetchError(null);
     setModelsFetchedAt(null);
+    setModelsStale(false);
   }, [localSettings.customLLM?.apiUrl, selectedProvider, localSettings.useCustomLLM]);
 
   const handleSave = () => {
@@ -885,6 +888,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     setAvailableModels([]);
     setModelFetchError(null);
     setModelsFetchedAt(null);
+    setModelsStale(false);
     onClose();
   };
 
@@ -922,10 +926,11 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     }));
 
     try {
-      const result = await (window as any).electron.listCustomLLMModels({ apiUrl, apiKey, provider });
+      const result = await (window as any).electron.listCustomLLMModels({ apiUrl, apiKey, provider, refresh: true });
       if (result?.success && Array.isArray(result.models)) {
         setAvailableModels(result.models);
         setModelsFetchedAt(Date.now());
+        setModelsStale(result.source === 'fallback');
         // Keep cloud configured and ready, but local remains the default
         // until the user explicitly turns on cloud chats.
         if (result.models.length > 0) {
@@ -953,6 +958,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     } catch (err: any) {
       setAvailableModels([]);
       setModelsFetchedAt(null);
+      setModelsStale(false);
       setModelFetchError(err?.message || 'Connection failed. Check your API key.');
     } finally {
       setModelsLoading(false);
@@ -977,6 +983,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     setShowTelemetryModal,
     availableModels,
     setAvailableModels,
+    modelsStale,
     modelsLoading,
     setModelsLoading,
     panelRef,

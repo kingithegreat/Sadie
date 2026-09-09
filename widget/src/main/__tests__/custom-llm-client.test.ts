@@ -375,7 +375,7 @@ describe('fetchAvailableCustomModels – DeepSeek discovery', () => {
     expect(axios.get).toHaveBeenCalledTimes(1);
     expect(models.map(m => m.id)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
     expect(models.every(m => m.provider === 'deepseek')).toBe(true);
-    expect(models[0].name).toBe('DeepSeek V4 Flash');
+    expect(models[0].name).toBe('deepseek-v4-flash');
   });
 
   test('falls back to the static list when discovery fails', async () => {
