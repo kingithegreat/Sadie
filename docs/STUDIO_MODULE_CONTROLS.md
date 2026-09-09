@@ -99,3 +99,47 @@ Studio storyboard creation, movie Online denial, and PNG/JPEG/corrupt image
 output through the real local transport, decoder and saved-state paths. Root
 production code/tests are unchanged from the preceding 227-test checkpoint.
 Final CI and merge status remain in the linked ledger.
+
+## Final startup regression and complete local verification
+
+The unchanged M0 measurement found a real navigation obstruction on `1090fdd`:
+the startup graphics-card toast intercepted Studio clicks until its ten-second
+expiry. The three samples took 9,653 / 9,591 / 9,550 ms. Playwright's action log
+identified the toast as the intercepting element; this was not Studio render time.
+
+`overlay.e2e.spec.ts` now requires the actual toast to stay below the responsive
+header, preserve page position and permit a normal Studio click while visible.
+The regression failed before the fix at toast top 44 px versus header bottom
+169 px. `e12cf00` positions the portalled notification below the measured header
+and observes header/window resizing, with listener cleanup. The regression passes
+in 5.1 seconds. No click forcing, expiry waits or timeout increases were added.
+
+The final rebuilt Windows app passes **all 53 real Electron tests in 5.5 minutes
+with retries disabled**, including module restart controls, image decoding/cache
+and corrupt-output rejection, privacy, Studio-to-disk creation and overlays.
+All **3,867 widget tests** pass (15 existing skipped; 275 passing suites).
+App typecheck, build, docs and lint pass; lint retains eight existing warnings.
+Root code/tests remain unchanged from the preceding 227-test checkpoint.
+
+After local test/build workloads ended, the original measurement script ran
+unchanged on clean `e12cf00`, using three fresh profiles:
+
+| Sample | Renderer ready (ms) | Studio open (ms) | Studio summed working sets (KB) |
+|---|---:|---:|---:|
+| 1 | 1,352 | 386 | 686,332 |
+| 2 | 1,332 | 211 | 711,036 |
+| 3 | 1,279 | 463 | 688,920 |
+| M0 investigation limit | 4,750 | 2,050 | 899,000 |
+
+Every sample is within the M0 limits. Built output is 28,250,613 bytes; the lazy
+Studio chunk remains 216,687 bytes. Raw [before](evidence/studio-m2-controls-before.json)
+and [after](evidence/studio-m2-controls.json) data retain the slow samples as well
+as the passing ones. These service-stubbed shell/UI measurements establish that
+the click obstruction is gone; they are not controlled general speedup evidence
+or real-media peak-memory measurements. Summed working sets can double-count
+shared pages. Optional package size and expensive-media peak remain unmeasured.
+
+Application and nine-shard matrix CI passed on preceding head `1090fdd`.
+The final notification fix and evidence require fresh remote checks before merge;
+the linked ledger records that outcome. HB-M2 and playable-video acceptance remain
+open.
