@@ -35,9 +35,8 @@ import {
   getDefaultSettings
 } from './config-manager';
 import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels, resolveGeminiModels } from './custom-llm-client';
-import { apiKeyForProvider } from '../shared/cloud-llm';
 import { assertProviderOnlineAccess } from './utils/provider-network-policy';
-import { PROVIDER_API_URLS } from '../shared/provider-urls';
+import { resolveDiscoveryPayload } from './discovery-payload';
 import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -537,47 +536,32 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       }
 
       // ── Credential boundary ──────────────────────────────────────────────
-      // A saved provider key may only be sent to that provider's trusted
-      // canonical endpoint. A caller-supplied URL for a known provider is
-      // ignored (we use the canonical one); a custom/local endpoint never
-      // receives another provider's saved key — only the caller's own
-      // endpoint-bound key (customLLM.apiKey).
-      const provider = payload?.provider;
-      const isCliProvider = provider === 'claude-code' || provider === 'codex';
-      const canonicalUrl =
-        typeof provider === 'string' && PROVIDER_API_URLS[provider] ? PROVIDER_API_URLS[provider] : '';
-
-      let resolvedPayload: any = { ...(payload || {}) };
-
-      if (canonicalUrl) {
-        // Trusted provider origin: pin the endpoint and attach the saved key.
-        resolvedPayload.apiUrl = canonicalUrl;
-        if (!(resolvedPayload.apiKey || '').trim()) {
-          resolvedPayload.apiKey = apiKeyForProvider(getSettings() as any, provider!) || '';
-        }
-      } else if (!isCliProvider) {
-        // Custom/local endpoint: never attach a saved provider credential.
-        resolvedPayload.apiKey = (resolvedPayload.apiKey || '').trim() || '';
-      }
+      // A saved provider key may only reach that provider's trusted canonical
+      // endpoint; a custom/local endpoint only ever sees the caller's own key.
+      const resolved = resolveDiscoveryPayload(payload, getSettings() as any);
 
       // Dynamic discovery providers enforce Online consent and return a
       // truthful source so the renderer can tell fresh from cached/fallback.
-      if (provider === 'deepseek') {
-        const result = await resolveDeepseekModels(resolvedPayload.apiKey, {
+      if (resolved.provider === 'deepseek') {
+        const result = await resolveDeepseekModels(resolved.apiKey, {
           onlineAccess: () => assertProviderOnlineAccess('DeepSeek'),
           forceRefresh: !!(payload || {}).refresh,
         });
         return { success: true, models: result.models, source: result.source };
       }
-      if (provider === 'google-ai-studio' || provider === 'google-gemini') {
-        const result = await resolveGeminiModels(provider, resolvedPayload.apiKey, {
+      if (resolved.provider === 'google-ai-studio' || resolved.provider === 'google-gemini') {
+        const result = await resolveGeminiModels(resolved.provider, resolved.apiKey, {
           onlineAccess: () => assertProviderOnlineAccess('Google AI Studio'),
           forceRefresh: !!(payload || {}).refresh,
         });
         return { success: true, models: result.models, source: result.source };
       }
 
-      const models = await fetchAvailableCustomModels(resolvedPayload);
+      const models = await fetchAvailableCustomModels({
+        apiUrl: resolved.apiUrl,
+        apiKey: resolved.apiKey,
+        provider: resolved.provider as any,
+      });
       console.log('[IPC] Successfully fetched', models.length, 'models');
       return { success: true, models };
     } catch (err: any) {

@@ -1377,6 +1377,21 @@ function keyFingerprint(apiKey: string): string {
   return String(h >>> 0);
 }
 
+// Bound the discovery caches so a long session with many rotated keys cannot
+// grow without limit; evict the oldest entry once past this size.
+const MAX_DISCOVERY_CACHE_ENTRIES = 10;
+function cacheModels(
+  cache: Map<string, { at: number; models: CustomModelInfo[] }>,
+  key: string,
+  models: CustomModelInfo[],
+): void {
+  cache.set(key, { at: Date.now(), models });
+  if (cache.size > MAX_DISCOVERY_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+}
+
 const deepseekDiscoveryCache = new Map<string, { at: number; models: CustomModelInfo[] }>();
 
 /**
@@ -1450,7 +1465,7 @@ export async function resolveDeepseekModels(
 
   try {
     const models = await discoverDeepseekModels(key);
-    deepseekDiscoveryCache.set(cacheKey, { at: Date.now(), models });
+    cacheModels(deepseekDiscoveryCache, cacheKey, models);
     return { models, source: 'live' };
   } catch (err) {
     if (err instanceof ModelDiscoveryError && err.code === 'AUTH_FAILED') throw err;
@@ -1547,7 +1562,7 @@ export async function resolveGeminiModels(
 
   try {
     const models = await discoverGeminiModels(key, provider);
-    geminiDiscoveryCache.set(cacheKey, { at: Date.now(), models });
+    cacheModels(geminiDiscoveryCache, cacheKey, models);
     return { models, source: 'live' };
   } catch (err) {
     if (err instanceof ModelDiscoveryError && err.code === 'AUTH_FAILED') throw err;
