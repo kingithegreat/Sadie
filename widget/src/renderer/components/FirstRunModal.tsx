@@ -39,7 +39,7 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
   anthropic: 'claude-sonnet-5',
   openrouter: 'openai/gpt-4o-mini',
   groq: 'llama-3.3-70b-versatile',
-  deepseek: 'deepseek-chat',
+  deepseek: 'deepseek-v4-flash',
   'google-ai-studio': 'gemini-2.5-flash',
   'google-gemini': 'gemini-2.5-flash',
   huggingface: 'meta-llama/Llama-3.1-8B-Instruct',

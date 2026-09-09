@@ -24,6 +24,7 @@ export default function CloudProviderSection() {
     modelsLoading,
     modelFetchError,
     setModelFetchError,
+    modelsStale,
     setModelsFetchedAt,
     selectedProvider,
     isClaudeCode,
@@ -180,6 +181,12 @@ export default function CloudProviderSection() {
 
           {modelFetchError && (
             <small className="setting-hint error-hint">{modelFetchError}</small>
+          )}
+
+          {modelsStale && availableModels.length > 0 && (
+            <small className="setting-hint error-hint">
+              Couldn't reach DeepSeek — showing last-known models. Check your connection or key, then reconnect.
+            </small>
           )}
 
           {/* Which providers already have a key.
