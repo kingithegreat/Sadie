@@ -147,10 +147,13 @@ const GROQ_MODELS: CustomModelInfo[] = [
   { id: 'llama-3.1-70b-versatile', name: 'Llama 3.1 70B', description: 'High quality', provider: 'groq', contextWindow: 128000, costHint: 'Free tier' },
 ];
 
-// DeepSeek — GPT-4 class quality at ~20x lower cost than GPT-4o
+// DeepSeek — small safe FALLBACK list for when /models discovery is
+// unreachable. The real ids (deepseek-v4-flash / deepseek-v4-pro) are
+// discovered dynamically; these just keep the picker usable offline. No stale
+// version names or pricing hints we can no longer vouch for.
 const DEEPSEEK_MODELS: CustomModelInfo[] = [
-  { id: 'deepseek-chat', name: 'DeepSeek V3', description: 'GPT-4 class quality', provider: 'deepseek', contextWindow: 64000, costHint: '~$0.27/1M in' },
-  { id: 'deepseek-reasoner', name: 'DeepSeek R1', description: 'Reasoning model, rivals o1', provider: 'deepseek', contextWindow: 64000, costHint: '~$0.55/1M in' },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', description: 'Fast chat model', provider: 'deepseek' },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Stronger reasoning', provider: 'deepseek' },
 ];
 
 // Google AI Studio — Gemini models with generous free tier
@@ -1337,6 +1340,237 @@ export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig
   return validated;
 }
 
+// ── DeepSeek dynamic model discovery ────────────────────────────────────────
+//
+// DeepSeek rotates model ids (deepseek-chat / deepseek-reasoner became
+// deepseek-v4-flash / deepseek-v4-pro). Its OpenAI-compatible /models endpoint
+// is the only truthful source of "what can this key actually call"; the static
+// list above is a small safe fallback for when discovery is unreachable.
+
+const DEEPSEEK_MODELS_ENDPOINT = 'https://api.deepseek.com/models';
+const DEEPSEEK_DISCOVERY_TTL_MS = 5 * 60 * 1000;
+
+/** Where a DeepSeek model list came from, so callers never present a stale
+ *  fallback as a freshly verified connection. */
+export type ModelDiscoverySource = 'live' | 'cached' | 'fallback';
+
+export interface ModelDiscoveryResult {
+  models: CustomModelInfo[];
+  source: ModelDiscoverySource;
+}
+
+/** Discovery failures that must surface as errors, never as a quiet fallback. */
+export class ModelDiscoveryError extends Error {
+  code: 'AUTH_FAILED' | 'ONLINE_DISABLED';
+  constructor(code: 'AUTH_FAILED' | 'ONLINE_DISABLED', message: string) {
+    super(message);
+    this.name = 'ModelDiscoveryError';
+    this.code = code;
+  }
+}
+
+// Fingerprint of an API key so a key change invalidates the cache, without ever
+// storing the key itself (djb2 — good enough for cache-keying, not security).
+function keyFingerprint(apiKey: string): string {
+  let h = 5381;
+  for (let i = 0; i < apiKey.length; i++) h = ((h << 5) + h + apiKey.charCodeAt(i)) | 0;
+  return String(h >>> 0);
+}
+
+// Bound the discovery caches so a long session with many rotated keys cannot
+// grow without limit; evict the oldest entry once past this size.
+const MAX_DISCOVERY_CACHE_ENTRIES = 10;
+function cacheModels(
+  cache: Map<string, { at: number; models: CustomModelInfo[] }>,
+  key: string,
+  models: CustomModelInfo[],
+): void {
+  cache.set(key, { at: Date.now(), models });
+  if (cache.size > MAX_DISCOVERY_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+}
+
+const deepseekDiscoveryCache = new Map<string, { at: number; models: CustomModelInfo[] }>();
+
+/**
+ * Discover the DeepSeek models the given key can call via its OpenAI-compatible
+ * /models endpoint. The API's ids are preserved exactly and are also the
+ * display name — the endpoint reports no marketing name, and none is invented.
+ *
+ * Throws ModelDiscoveryError (AUTH_FAILED) on 401/403, and a plain Error on
+ * transient/parse failures; the caller decides whether to fall back.
+ */
+export async function discoverDeepseekModels(apiKey: string): Promise<CustomModelInfo[]> {
+  let response: any;
+  try {
+    response = await axios.get(DEEPSEEK_MODELS_ENDPOINT, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: 10000,
+      maxRedirects: 0,
+    });
+  } catch (err: any) {
+    const status = err?.response?.status;
+    if (status === 401 || status === 403) {
+      throw new ModelDiscoveryError('AUTH_FAILED', 'Your DeepSeek API key was rejected. Check the key in Settings.');
+    }
+    throw err;
+  }
+
+  const list = normalizeModelsPayload(response.data);
+  const seen = new Set<string>();
+  const models: CustomModelInfo[] = [];
+
+  for (const item of Array.isArray(list) ? list : []) {
+    if (!item || typeof item !== 'object') continue;
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    if (!id || seen.has(id)) continue; // reject malformed + duplicate ids
+    seen.add(id);
+    models.push({
+      id,
+      name: id,
+      description: typeof item.owned_by === 'string' ? item.owned_by : '',
+      provider: 'deepseek',
+    });
+  }
+
+  if (models.length === 0) throw new Error('DeepSeek returned no usable models.');
+  return models;
+}
+
+/**
+ * Discovery with a short in-memory cache scoped to provider + endpoint + key
+ * fingerprint, a safe fallback, and an explicit refresh. No key means no
+ * network call — the static fallback is returned unchanged. Online consent is
+ * enforced by the caller-supplied gate before any network I/O; auth failures
+ * are re-thrown rather than concealed behind the fallback.
+ */
+export async function resolveDeepseekModels(
+  apiKey?: string,
+  opts: { onlineAccess?: () => void; forceRefresh?: boolean } = {},
+): Promise<ModelDiscoveryResult> {
+  const key = (apiKey || '').trim();
+  if (!key) return { models: DEEPSEEK_MODELS, source: 'fallback' };
+
+  if (opts.onlineAccess) opts.onlineAccess();
+
+  const cacheKey = `deepseek:${DEEPSEEK_MODELS_ENDPOINT}:${keyFingerprint(key)}`;
+  if (!opts.forceRefresh) {
+    const cached = deepseekDiscoveryCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < DEEPSEEK_DISCOVERY_TTL_MS) {
+      return { models: cached.models, source: 'cached' };
+    }
+  }
+
+  try {
+    const models = await discoverDeepseekModels(key);
+    cacheModels(deepseekDiscoveryCache, cacheKey, models);
+    return { models, source: 'live' };
+  } catch (err) {
+    if (err instanceof ModelDiscoveryError && err.code === 'AUTH_FAILED') throw err;
+    console.warn('[DeepSeek] model discovery failed, using fallback list:', (err as any)?.message || err);
+    return { models: DEEPSEEK_MODELS, source: 'fallback' };
+  }
+}
+
+// ── Gemini dynamic model discovery ──────────────────────────────────────────
+//
+// Google's `models.list` endpoint is the only truthful source of "which Gemini
+// models can this API key actually call". The static lists above are a small
+// safe FALLBACK for when discovery is unreachable — they are not, and must not
+// be read as, a claim about the account's entitlement or tier.
+
+const GEMINI_MODELS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_DISCOVERY_TTL_MS = 5 * 60 * 1000;
+
+const geminiDiscoveryCache = new Map<string, { at: number; models: CustomModelInfo[] }>();
+
+/**
+ * Discover the Gemini models the given key can call, straight from Google.
+ * Filters to models whose `supportedGenerationMethods` include `generateContent`.
+ * `supportedGenerationMethods` is kept as `capabilities`, separate from the
+ * marketing `name`. Throws ModelDiscoveryError (AUTH_FAILED) on 401/403.
+ */
+export async function discoverGeminiModels(
+  apiKey: string,
+  provider: 'google-ai-studio' | 'google-gemini'
+): Promise<CustomModelInfo[]> {
+  const url = `${GEMINI_MODELS_ENDPOINT}?key=${encodeURIComponent(apiKey)}&pageSize=1000`;
+  let response: any;
+  try {
+    response = await axios.get(url, { timeout: 10000, maxRedirects: 0 });
+  } catch (err: any) {
+    const status = err?.response?.status;
+    if (status === 401 || status === 403) {
+      throw new ModelDiscoveryError('AUTH_FAILED', 'Your Google AI Studio key was rejected. Check the key in Settings.');
+    }
+    throw err;
+  }
+
+  const raw = Array.isArray(response?.data?.models) ? response.data.models : [];
+  const seen = new Set<string>();
+  const models: CustomModelInfo[] = [];
+
+  for (const item of raw as any[]) {
+    if (!item || typeof item !== 'object') continue;
+    const methods: string[] = Array.isArray(item?.supportedGenerationMethods)
+      ? item.supportedGenerationMethods
+      : [];
+    if (!methods.includes('generateContent')) continue;
+
+    const id = String(item?.name || '').replace(/^models\//, '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    models.push({
+      id,
+      name: item?.displayName || id,
+      description: item?.description || '',
+      provider,
+      contextWindow: typeof item?.inputTokenLimit === 'number' ? item.inputTokenLimit : undefined,
+      capabilities: methods,
+    });
+  }
+
+  if (models.length === 0) throw new Error('No callable Gemini models were returned.');
+  return models;
+}
+
+/**
+ * Gemini discovery with a short cache, a safe fallback, an explicit refresh and
+ * an Online-consent gate — the same contract as DeepSeek discovery.
+ */
+export async function resolveGeminiModels(
+  provider: 'google-ai-studio' | 'google-gemini',
+  apiKey?: string,
+  opts: { onlineAccess?: () => void; forceRefresh?: boolean } = {},
+): Promise<ModelDiscoveryResult> {
+  const fallback = provider === 'google-ai-studio' ? GOOGLE_AI_MODELS : GOOGLE_GEMINI_NATIVE_MODELS;
+  const key = (apiKey || '').trim();
+  if (!key) return { models: fallback, source: 'fallback' };
+
+  if (opts.onlineAccess) opts.onlineAccess();
+
+  const cacheKey = `${provider}:${GEMINI_MODELS_ENDPOINT}:${keyFingerprint(key)}`;
+  if (!opts.forceRefresh) {
+    const cached = geminiDiscoveryCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < GEMINI_DISCOVERY_TTL_MS) {
+      return { models: cached.models, source: 'cached' };
+    }
+  }
+
+  try {
+    const models = await discoverGeminiModels(key, provider);
+    cacheModels(geminiDiscoveryCache, cacheKey, models);
+    return { models, source: 'live' };
+  } catch (err) {
+    if (err instanceof ModelDiscoveryError && err.code === 'AUTH_FAILED') throw err;
+    console.warn('[Gemini] model discovery failed, using fallback list:', (err as any)?.message || err);
+    return { models: fallback, source: 'fallback' };
+  }
+}
+
 export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig>): Promise<CustomModelInfo[]> {
   // Claude Code is a local CLI — it has no /models endpoint and needs no apiUrl,
   // so answer before the apiUrl guard below.
@@ -1353,9 +1587,9 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'anthropic') return ANTHROPIC_MODELS;
   if (provider === 'openai') return OPENAI_MODELS;
   if (provider === 'groq') return GROQ_MODELS;
-  if (provider === 'deepseek') return DEEPSEEK_MODELS;
-  if (provider === 'google-ai-studio') return GOOGLE_AI_MODELS;
-  if (provider === 'google-gemini') return GOOGLE_GEMINI_NATIVE_MODELS;
+  if (provider === 'deepseek') return (await resolveDeepseekModels(config.apiKey)).models;
+  if (provider === 'google-ai-studio') return (await resolveGeminiModels('google-ai-studio', config.apiKey)).models;
+  if (provider === 'google-gemini') return (await resolveGeminiModels('google-gemini', config.apiKey)).models;
   if (provider === 'huggingface') return HUGGINGFACE_MODELS;
   if (provider === 'cerebras') return CEREBRAS_MODELS;
   if (provider === 'sambanova') return SAMBANOVA_MODELS;
@@ -1388,7 +1622,8 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   try {
     const response = await axios.get(endpoint, {
       headers,
-      timeout: 10000
+      timeout: 10000,
+      maxRedirects: 0
     });
 
     let list = normalizeModelsPayload(response.data);

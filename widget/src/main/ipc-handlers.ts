@@ -34,7 +34,9 @@ import {
   exportTelemetryConsent,
   getDefaultSettings
 } from './config-manager';
-import { fetchAvailableCustomModels, generateFromCustomLLM } from './custom-llm-client';
+import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels, resolveGeminiModels } from './custom-llm-client';
+import { assertProviderOnlineAccess } from './utils/provider-network-policy';
+import { resolveDiscoveryPayload } from './discovery-payload';
 import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -533,7 +535,33 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         }
       }
 
-      const models = await fetchAvailableCustomModels(payload || {});
+      // ── Credential boundary ──────────────────────────────────────────────
+      // A saved provider key may only reach that provider's trusted canonical
+      // endpoint; a custom/local endpoint only ever sees the caller's own key.
+      const resolved = resolveDiscoveryPayload(payload, getSettings() as any);
+
+      // Dynamic discovery providers enforce Online consent and return a
+      // truthful source so the renderer can tell fresh from cached/fallback.
+      if (resolved.provider === 'deepseek') {
+        const result = await resolveDeepseekModels(resolved.apiKey, {
+          onlineAccess: () => assertProviderOnlineAccess('DeepSeek'),
+          forceRefresh: !!(payload || {}).refresh,
+        });
+        return { success: true, models: result.models, source: result.source };
+      }
+      if (resolved.provider === 'google-ai-studio' || resolved.provider === 'google-gemini') {
+        const result = await resolveGeminiModels(resolved.provider, resolved.apiKey, {
+          onlineAccess: () => assertProviderOnlineAccess('Google AI Studio'),
+          forceRefresh: !!(payload || {}).refresh,
+        });
+        return { success: true, models: result.models, source: result.source };
+      }
+
+      const models = await fetchAvailableCustomModels({
+        apiUrl: resolved.apiUrl,
+        apiKey: resolved.apiKey,
+        provider: resolved.provider as any,
+      });
       console.log('[IPC] Successfully fetched', models.length, 'models');
       return { success: true, models };
     } catch (err: any) {
