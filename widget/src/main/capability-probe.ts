@@ -49,12 +49,36 @@ async function ollamaModelCount(base: string): Promise<number | null> {
  * the hard way with ffprobe: a binary that is present but not executable, or
  * present for a different architecture, looks identical to a working one until
  * a render fails.
+ *
+ * TWO locations are checked, because there are two ways to have ffmpeg here.
+ * PATH is the system install. The managed copy is the one HomeBot's own
+ * one-click setup downloads into userData, and Media Studio renders happily
+ * from it. A probe that only asked PATH therefore reported "ffmpeg: not
+ * installed" on a machine where setup had completed successfully and rendering
+ * worked — the capability existed and nothing asked it the right question.
  */
 async function ffmpegRunnable(): Promise<boolean> {
+  // PATH first: the common case, and the cheap one.
+  if (await runsVersion('ffmpeg')) return true;
+
+  // Then the managed copy. `findManagedFfmpeg` SEARCHES rather than assuming a
+  // layout, so this keeps working across BtbN's directory renames instead of
+  // going quietly false the next time the zip prefix changes.
+  try {
+    const { findManagedFfmpeg } = await import('./ffmpeg-setup');
+    const managed = findManagedFfmpeg();
+    return managed ? await runsVersion(managed) : false;
+  } catch {
+    return false;
+  }
+}
+
+/** Runs `<bin> -version`. True only if it actually executed. */
+async function runsVersion(bin: string): Promise<boolean> {
   try {
     const { execFile } = await import('child_process');
     const { promisify } = await import('util');
-    await promisify(execFile)('ffmpeg', ['-version'], { timeout: PROBE_TIMEOUT_MS });
+    await promisify(execFile)(bin, ['-version'], { timeout: PROBE_TIMEOUT_MS });
     return true;
   } catch {
     return false;

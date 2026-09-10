@@ -28,6 +28,7 @@ export default function CloudProviderSection() {
     setModelsFetchedAt,
     selectedProvider,
     isClaudeCode,
+    isSubscriptionCli,
     providerRequiresApiKey,
     hasApiKey,
     isConnected,
@@ -81,6 +82,7 @@ export default function CloudProviderSection() {
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="claude-code">Claude subscription — no API key (via Claude Code)</option>
+              <option value="codex">ChatGPT subscription — no API key (via Codex CLI)</option>
               <option value="openrouter">OpenRouter (all models, one key)</option>
               <option value="tokenrouter">TokenRouter (all models, one key)</option>
               <option value="groq">Groq (free tier — Llama, Gemma, Mixtral)</option>
@@ -114,7 +116,7 @@ export default function CloudProviderSection() {
           ) : null}
           
           <div className="api-key-row">
-            {isClaudeCode ? (
+            {isSubscriptionCli ? (
               <input
                 type="text"
                 className="setting-input api-key-input"
@@ -125,7 +127,7 @@ export default function CloudProviderSection() {
                     customLLM: { ...localSettings.customLLM!, apiUrl: e.target.value }
                   })
                 }
-                placeholder="Claude Code path (optional — leave blank to find it automatically)"
+                placeholder={`${isClaudeCode ? 'Claude Code' : 'Codex CLI'} path (optional — leave blank to find it automatically)`}
               />
             ) : (
               <input
@@ -169,6 +171,16 @@ export default function CloudProviderSection() {
               {modelsLoading ? '...' : isConnected ? '✓ Connected' : 'Connect'}
             </button>
           </div>
+
+          {isSubscriptionCli && !isClaudeCode && (
+            <small className="setting-hint">
+              Runs on your own ChatGPT Plus/Pro subscription through the Codex CLI — no API key, no per-token billing.
+              Requires the Codex CLI installed (<code>npm install -g @openai/codex</code>) and signed in with
+              <code> codex login</code> on this machine. Replies count against your ChatGPT plan's usage limits.
+              Chat only: Codex runs without HomeBot's tools, because its streaming output is known to corrupt once
+              MCP servers are active. Leave the path blank unless Codex isn't on your PATH.
+            </small>
+          )}
 
           {isClaudeCode && (
             <small className="setting-hint">
