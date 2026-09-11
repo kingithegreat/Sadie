@@ -21,6 +21,9 @@ import {
   buildTimelineRenderArgs,
   buildMusicAudioGraph,
   MUSIC_VOLUME_DEFAULT,
+  buildLoudnormFilter,
+  parseLoudnormOutput,
+  LoudnormStats,
 } from '../media-render';
 
 /** The -vf value, which is where every interesting decision ends up. */
@@ -390,5 +393,153 @@ describe('buildMusicAudioGraph', () => {
     const g = buildMusicAudioGraph({ narrationInput: 1, musicInput: 2, volume: 0.05 }).graph;
     expect(g).toContain('volume=0.05');
   });
+
+  test('injects loudnorm filter into the audio mix when stats are provided', () => {
+    const stats: LoudnormStats = {
+      input_i: '-17.48',
+      input_tp: '-0.97',
+      input_lra: '2.30',
+      input_thresh: '-27.97',
+      target_offset: '0.38',
+    };
+    const { graph, outLabel } = buildMusicAudioGraph({
+      narrationInput: 1,
+      musicInput: 2,
+      loudnormStats: stats,
+    });
+    expect(outLabel).toBe('[aout]');
+    expect(graph).toContain('normalize=0[mixout];[mixout]loudnorm=I=-16:TP=-1.5:LRA=11');
+    expect(graph).toContain('measured_I=-17.48');
+    expect(graph).toContain('linear=true[aout]');
+  });
 });
+
+describe('video pixel format and color space pinning (Task 2)', () => {
+  const base = {
+    audioPath: 'C:\\assets\\narration.mp3',
+    outputPath: 'C:\\assets\\video.mp4',
+    shape: 'short' as const,
+    durationSeconds: 15,
+  };
+
+  test('single-visual render pins BT.709 color primaries, transfer, matrix, and limited range', () => {
+    const args = buildRenderArgs({ ...base, imagePath: 'bg.jpg' });
+    expect(args).toContain('-pix_fmt');
+    expect(args[args.indexOf('-pix_fmt') + 1]).toBe('yuv420p');
+    expect(args).toContain('-color_range');
+    expect(args[args.indexOf('-color_range') + 1]).toBe('tv');
+    expect(args).toContain('-color_primaries');
+    expect(args[args.indexOf('-color_primaries') + 1]).toBe('bt709');
+    expect(args).toContain('-color_trc');
+    expect(args[args.indexOf('-color_trc') + 1]).toBe('bt709');
+    expect(args).toContain('-colorspace');
+    expect(args[args.indexOf('-colorspace') + 1]).toBe('bt709');
+    expect(args).toContain('-x264-params');
+    expect(args[args.indexOf('-x264-params') + 1]).toBe('colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off');
+
+    // Scale filter forces BT.709 color matrix and limited output range
+    const f = filtersOf(args);
+    expect(f).toContain('out_color_matrix=bt709:out_range=limited');
+  });
+
+  test('multi-scene timeline render pins BT.709 and limited range', () => {
+    const args = buildTimelineRenderArgs({
+      concatPath: 'C:\\assets\\scenes.txt',
+      audioPath: 'C:\\assets\\narration.mp3',
+      outputPath: 'C:\\assets\\video.mp4',
+      shape: 'long',
+    });
+    expect(args).toContain('-pix_fmt');
+    expect(args[args.indexOf('-pix_fmt') + 1]).toBe('yuv420p');
+    expect(args).toContain('-color_range');
+    expect(args[args.indexOf('-color_range') + 1]).toBe('tv');
+    expect(args).toContain('-color_primaries');
+    expect(args[args.indexOf('-color_primaries') + 1]).toBe('bt709');
+    expect(args).toContain('-color_trc');
+    expect(args[args.indexOf('-color_trc') + 1]).toBe('bt709');
+    expect(args).toContain('-colorspace');
+    expect(args[args.indexOf('-colorspace') + 1]).toBe('bt709');
+    expect(args).toContain('-x264-params');
+    expect(args[args.indexOf('-x264-params') + 1]).toBe('colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off');
+
+    const vf = args[args.indexOf('-vf') + 1];
+    expect(vf).toContain('out_color_matrix=bt709:out_range=limited');
+  });
+});
+
+describe('two-pass audio loudness normalization (Task 3)', () => {
+  const dummyStats: LoudnormStats = {
+    input_i: '-17.48',
+    input_tp: '-0.97',
+    input_lra: '2.30',
+    input_thresh: '-27.97',
+    target_offset: '0.38',
+  };
+
+  test('buildLoudnormFilter constructs compliant filter string with measured parameters', () => {
+    const f = buildLoudnormFilter(dummyStats);
+    expect(f).toBe(
+      'loudnorm=I=-16:TP=-1.5:LRA=11:measured_I=-17.48:measured_TP=-0.97:measured_LRA=2.30:measured_thresh=-27.97:offset=0.38:linear=true',
+    );
+  });
+
+  test('parseLoudnormOutput extracts stats from ffmpeg stderr json', () => {
+    const stderr = `
+      [Parsed_loudnorm_0 @ 0000021757452140]
+      {
+        "input_i" : "-17.48",
+        "input_tp" : "-0.97",
+        "input_lra" : "2.30",
+        "input_thresh" : "-27.97",
+        "output_i" : "-16.38",
+        "output_tp" : "-1.50",
+        "output_lra" : "1.60",
+        "output_thresh" : "-26.78",
+        "normalization_type" : "dynamic",
+        "target_offset" : "0.38"
+      }
+      [out#0/null @ 00000217573aa480] video:0KiB audio:6030KiB
+    `;
+    const parsed = parseLoudnormOutput(stderr);
+    expect(parsed).toEqual({
+      input_i: '-17.48',
+      input_tp: '-0.97',
+      input_lra: '2.30',
+      input_thresh: '-27.97',
+      target_offset: '0.38',
+    });
+  });
+
+  test('parseLoudnormOutput throws on malformed stderr without json', () => {
+    expect(() => parseLoudnormOutput('some error log')).toThrow('Failed to find loudnorm JSON output');
+  });
+
+  test('buildRenderArgs injects -af loudnorm when loudnormStats are provided without music', () => {
+    const args = buildRenderArgs({
+      audioPath: '/a.mp3',
+      outputPath: '/out.mp4',
+      shape: 'short',
+      durationSeconds: 10,
+      loudnormStats: dummyStats,
+    });
+    expect(args).toContain('-af');
+    const af = args[args.indexOf('-af') + 1];
+    expect(af).toContain('loudnorm=I=-16:TP=-1.5:LRA=11');
+    expect(af).toContain('measured_I=-17.48');
+  });
+
+  test('buildTimelineRenderArgs injects -af loudnorm when loudnormStats are provided without music', () => {
+    const args = buildTimelineRenderArgs({
+      concatPath: '/scenes.txt',
+      audioPath: '/a.mp3',
+      outputPath: '/out.mp4',
+      shape: 'long',
+      loudnormStats: dummyStats,
+    });
+    expect(args).toContain('-af');
+    const af = args[args.indexOf('-af') + 1];
+    expect(af).toContain('loudnorm=I=-16:TP=-1.5:LRA=11');
+  });
+});
+
 
