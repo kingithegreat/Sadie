@@ -148,7 +148,7 @@ export function registerStudioIpc(
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string }) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; visuals?: string; engine?: string }) => {
     const { readJobs } = await import('../../tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -162,7 +162,11 @@ export function registerStudioIpc(
       : 'media_write_script';
     try {
       const args: Record<string, unknown> = { job: job.id };
-      if (action === 'narrate' && opts?.voice) args.voice = opts.voice;
+      if (action === 'narrate') {
+        if (opts?.voice) args.voice = opts.voice;
+        if (opts?.engine === 'edge' || opts?.engine === 'kokoro') args.engine = opts.engine;
+      }
+      if (action === 'render' && opts?.visuals) args.visuals = opts.visuals;
       if (!['render', 'narrate', 'script'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
       const res = await invokeTool(_e, tool, args);
       return res?.success
