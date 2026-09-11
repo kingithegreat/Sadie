@@ -86,6 +86,12 @@ export interface CapabilityInput {
 
   /** ffmpeg is on PATH or bundled — everything in Media Studio needs it. */
   ffmpegAvailable: boolean;
+  /** Local image engine (sd-cli / sd.exe) is runnable. */
+  sdCppInstalled: boolean;
+  /** At least one picture model is present in the models directory. */
+  sdModelInstalled: boolean;
+  /** Git binary is runnable for versioning and code workspace. */
+  gitAvailable: boolean;
   /** n8n answered its health endpoint. */
   n8nReachable: boolean;
   /** Qdrant answered — long-term memory search. */
@@ -226,6 +232,45 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       ? 'The video engine is installed.'
       : 'The video engine (ffmpeg) is not installed, so no video can be rendered.',
     fix: input.ffmpegAvailable ? undefined : 'Media Studio → "Set it up for me".',
+  });
+
+  // ── Making pictures on this PC ─────────────────────────────────────────
+  if (!input.sdCppInstalled) {
+    caps.push({
+      id: 'image-generation',
+      label: 'Make pictures on this PC',
+      state: 'missing',
+      detail: 'The local image engine is not installed, so pictures cannot be generated offline.',
+      fix: 'Image mode → "Set it up for me", or download the image engine.',
+    });
+  } else if (!input.sdModelInstalled) {
+    caps.push({
+      id: 'image-generation',
+      label: 'Make pictures on this PC',
+      state: 'needs_setup',
+      detail: 'The local image engine is installed but no picture model is downloaded.',
+      fix: 'Image mode → download or place a model file in the models folder.',
+    });
+  } else {
+    caps.push({
+      id: 'image-generation',
+      label: 'Make pictures on this PC',
+      state: 'ready',
+      detail: 'Local image engine and model are ready on this PC.',
+    });
+  }
+
+  // ── Exploring and versioning code ──────────────────────────────────────
+  caps.push({
+    id: 'code-workspace',
+    label: 'Explore, edit and version code',
+    state: input.gitAvailable ? 'ready' : 'missing',
+    detail: input.gitAvailable
+      ? 'Git and workspace tools are ready.'
+      : 'Git is not installed on this PC, so code version control is unavailable.',
+    fix: input.gitAvailable
+      ? undefined
+      : 'Install Git from git-scm.com to enable version control.',
   });
 
   // ── Automations ─────────────────────────────────────────────────────────

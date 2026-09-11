@@ -73,15 +73,41 @@ async function ffmpegRunnable(): Promise<boolean> {
   }
 }
 
-/** Runs `<bin> -version`. True only if it actually executed. */
-async function runsVersion(bin: string): Promise<boolean> {
+/** Runs `<bin> <args>`. True only if it actually executed. */
+async function runsVersion(bin: string, args: string[] = ['-version']): Promise<boolean> {
   try {
     const { execFile } = await import('child_process');
     const { promisify } = await import('util');
-    await promisify(execFile)(bin, ['-version'], { timeout: PROBE_TIMEOUT_MS });
+    await promisify(execFile)(bin, args, { timeout: PROBE_TIMEOUT_MS });
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Is git runnable for workspace version control?
+ */
+async function gitRunnable(): Promise<boolean> {
+  return runsVersion('git', ['--version']);
+}
+
+/**
+ * Probes the local image diffusion engine (stable-diffusion.cpp) and model readiness.
+ *
+ * Engine readiness requires the binary (sd-cli.exe / sd.exe) to actually execute.
+ * Model readiness requires at least one model (.gguf / .safetensors) in models/.
+ */
+async function sdCppState(): Promise<{ installed: boolean; modelInstalled: boolean }> {
+  try {
+    const { findSDCppBinary, findSDCppModel } = await import('./tools/web');
+    const binary = findSDCppBinary();
+    const modelInstalled = Boolean(findSDCppModel());
+    if (!binary) return { installed: false, modelInstalled };
+    const installed = await runsVersion(binary, ['--version']);
+    return { installed, modelInstalled };
+  } catch {
+    return { installed: false, modelInstalled: false };
   }
 }
 
@@ -120,11 +146,13 @@ export async function probeCapabilities(settings: ProbeSettings): Promise<Capabi
   const n8nBase = (settings.n8nUrl || 'http://localhost:5678').replace(/\/+$/, '');
   const qdrantBase = (settings.qdrantUrl || 'http://localhost:6333').replace(/\/+$/, '');
 
-  const [modelCount, n8nUp, qdrantUp, ffmpeg] = await Promise.all([
+  const [modelCount, n8nUp, qdrantUp, ffmpeg, git, sdCpp] = await Promise.all([
     ollamaModelCount(ollamaBase),
     reachable(`${n8nBase}/healthz`),
     reachable(`${qdrantBase}/healthz`),
     ffmpegRunnable(),
+    gitRunnable(),
+    sdCppState(),
   ]);
 
   // Which search providers are configured. Read from settings rather than by
@@ -161,6 +189,9 @@ export async function probeCapabilities(settings: ProbeSettings): Promise<Capabi
     readerFallbackEnabled: !!settings.webReaderFallbackEnabled,
 
     ffmpegAvailable: ffmpeg,
+    sdCppInstalled: sdCpp.installed,
+    sdModelInstalled: sdCpp.modelInstalled,
+    gitAvailable: git,
     n8nReachable: n8nUp,
     qdrantReachable: qdrantUp,
 
