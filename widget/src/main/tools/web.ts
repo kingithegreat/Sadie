@@ -1709,10 +1709,11 @@ export function findSDCppModel(): string | null {
   return model ? path.join(modelsDir, model) : null;
 }
 
-export async function trySDCpp(prompt: string, width: number, height: number, steps: number = 8): Promise<string | null> {
+export async function trySDCpp(prompt: string, width: number, height: number, steps: number = 8, signal?: AbortSignal): Promise<string | null> {
   const binary = findSDCppBinary();
   const model = findSDCppModel();
   if (!binary || !model) return null;
+  if (signal?.aborted) return null;
 
   // SD-1.5 native resolution is 512x512. Higher dimensions cause an 8.7GB workspace
   // allocation failure in ggml. Scale down to <=512 (multiples of 64); ffmpeg scales & crops.
@@ -1734,6 +1735,7 @@ export async function trySDCpp(prompt: string, width: number, height: number, st
   const outputPath = path.join(getSDCppDir(), `output-${Date.now()}.png`);
 
   const runOnce = (mode: string) => new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('sd.cpp aborted'));
     const args = [
       '-M', mode,
       '-m', model,
@@ -1745,13 +1747,24 @@ export async function trySDCpp(prompt: string, width: number, height: number, st
     ];
     console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
     const proc = childProcess.spawn(binary, args, { timeout: 300000 });
+    const onAbort = () => {
+      try { proc.kill(); } catch {}
+      reject(new Error('sd.cpp aborted'));
+    };
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
     let stderr = '';
     proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
     proc.on('close', (code) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
       if (code === 0) resolve();
       else reject(new Error(`sd.cpp exited with code ${code}: ${stderr.slice(0, 500)}`));
     });
-    proc.on('error', reject);
+    proc.on('error', (err) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      reject(err);
+    });
   });
 
   try {

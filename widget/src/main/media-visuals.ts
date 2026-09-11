@@ -191,10 +191,13 @@ export async function generateSceneImages(opts: {
       }
     }
 
+    const controller = new AbortController();
+    const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
       const img = timeoutMs > 0
-        ? await withTimeout(generate(prompt, opts.width, opts.height, opts.seed), timeoutMs, `scene ${i} generation`)
-        : await generate(prompt, opts.width, opts.height, opts.seed);
+        ? await withTimeout(generate(prompt, opts.width, opts.height, opts.seed, controller.signal), timeoutMs, `scene ${i} generation`)
+        : await generate(prompt, opts.width, opts.height, opts.seed, controller.signal);
+      if (timer) clearTimeout(timer);
       if (img?.base64) {
         const buf = Buffer.from(img.base64, 'base64');
         fs.writeFileSync(file, buf);
@@ -211,6 +214,7 @@ export async function generateSceneImages(opts: {
         results[i] = { index: i, path: null, error: 'no image returned' };
       }
     } catch (e: any) {
+      if (timer) clearTimeout(timer);
       if (opts.fallbackPlates) {
         try {
           await generateFallbackPlate(file, opts.width, opts.height, i);
@@ -313,20 +317,25 @@ export function fillMissingImages(images: SceneImage[]): Array<string | null> {
   return out;
 }
 
-async function defaultGenerator(prompt: string, width: number, height: number, seed?: number) {
+async function defaultGenerator(prompt: string, width: number, height: number, seed?: number, signal?: AbortSignal) {
+  if (signal?.aborted) return null;
   // 1. Direct local sd-cpp call: bypasses dead port pinging (7860/8188) and runs offline
   const { findSDCppBinary, findSDCppModel, trySDCpp } = await import('./tools/web');
+  if (signal?.aborted) return null;
   if (findSDCppBinary() && findSDCppModel()) {
     try {
-      const b64 = await trySDCpp(prompt, width, height, 8);
+      const b64 = await trySDCpp(prompt, width, height, 8, signal);
       if (b64) return { base64: b64, source: 'sd-cpp-local' };
     } catch (err) {
+      if (signal?.aborted) return null;
       console.warn('[media-visuals] local sd-cpp generation failed, falling back:', err);
     }
   }
 
+  if (signal?.aborted) return null;
   // 2. Fallback to imageGenerateHandler with online provider / fast Pollinations
   const { imageGenerateHandler } = await import('./tools/web');
+  if (signal?.aborted) return null;
   const res: any = await imageGenerateHandler({ prompt, width, height, seed, steps: 8 }, { executionId: 'media-visuals' } as any);
   if (!res?.success) throw new Error(res?.error || 'image_generate failed');
   const base64 = res.result?.image_base64;
