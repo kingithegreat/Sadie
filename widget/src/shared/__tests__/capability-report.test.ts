@@ -27,6 +27,9 @@ const HEALTHY: CapabilityInput = {
   freeSearchBlocked: null,
   readerFallbackEnabled: true,
   ffmpegAvailable: true,
+  sdCppInstalled: true,
+  sdModelInstalled: true,
+  gitAvailable: true,
   n8nReachable: true,
   qdrantReachable: true,
   freeDiskGB: 250,
@@ -47,6 +50,9 @@ describe('the honesty rules', () => {
       freeSearchBlocked: true,
       readerFallbackEnabled: false,
       ffmpegAvailable: false,
+      sdCppInstalled: false,
+      sdModelInstalled: false,
+      gitAvailable: false,
       n8nReachable: false,
       qdrantReachable: false,
       freeDiskGB: 2,
@@ -151,6 +157,42 @@ describe('searching the web — the case this exists for', () => {
     expect(cap.detail).toMatch(/refusing requests/i);
     // The free options come first, because free is the whole point.
     expect(cap.fix).toMatch(/free/i);
+  });
+});
+
+describe('making pictures on this PC', () => {
+  test('missing engine reports missing with setup instructions', () => {
+    const cap = find({ ...HEALTHY, sdCppInstalled: false }, 'image-generation');
+    expect(cap.state).toBe('missing');
+    expect(cap.fix).toMatch(/set it up|download/i);
+  });
+
+  test('engine present but no model is needs_setup', () => {
+    const cap = find({ ...HEALTHY, sdCppInstalled: true, sdModelInstalled: false }, 'image-generation');
+    expect(cap.state).toBe('needs_setup');
+    expect(cap.fix).toMatch(/model/i);
+  });
+
+  test('engine and model present reports ready with no fix', () => {
+    const cap = find({ ...HEALTHY, sdCppInstalled: true, sdModelInstalled: true }, 'image-generation');
+    expect(cap.state).toBe('ready');
+    expect(cap.detail).toMatch(/ready/i);
+    expect(cap.fix).toBeUndefined();
+  });
+});
+
+describe('exploring and versioning code', () => {
+  test('missing git reports missing with install remedy', () => {
+    const cap = find({ ...HEALTHY, gitAvailable: false }, 'code-workspace');
+    expect(cap.state).toBe('missing');
+    expect(cap.fix).toMatch(/git-scm\.com|install git/i);
+  });
+
+  test('available git reports ready with no fix', () => {
+    const cap = find({ ...HEALTHY, gitAvailable: true }, 'code-workspace');
+    expect(cap.state).toBe('ready');
+    expect(cap.detail).toMatch(/ready/i);
+    expect(cap.fix).toBeUndefined();
   });
 });
 

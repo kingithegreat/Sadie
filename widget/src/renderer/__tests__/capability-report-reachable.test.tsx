@@ -119,3 +119,39 @@ test('a failed check reports the failure rather than an empty all-clear', async 
   await waitFor(() => expect(getByText('Could not check.')).toBeTruthy());
   expect(queryByText('Everything is working.')).toBeNull();
 });
+
+test('surfaces image-generation and code-workspace headline pillars with remedies when broken', async () => {
+  const PILLAR_REPORT: Capability[] = [
+    {
+      id: 'image-generation',
+      label: 'Make pictures on this PC',
+      state: 'missing',
+      detail: 'The local image engine is not installed, so pictures cannot be generated offline.',
+      fix: 'Image mode → "Set it up for me", or download the image engine.',
+    },
+    {
+      id: 'code-workspace',
+      label: 'Explore, edit and version code',
+      state: 'missing',
+      detail: 'Git is not installed on this PC, so code version control is unavailable.',
+      fix: 'Install Git from git-scm.com to enable version control.',
+    },
+    {
+      id: 'media-studio',
+      label: 'Make videos',
+      state: 'ready',
+      detail: 'The video engine is installed.',
+    },
+  ];
+  mockReport(PILLAR_REPORT);
+  const { getByTestId } = render(<CapabilityReport />);
+
+  await waitFor(() => expect(getByTestId('cap-image-generation')).toBeTruthy());
+  expect(getByTestId('cap-image-generation').textContent).toContain('Make pictures on this PC');
+  expect(getByTestId('cap-image-generation').textContent).toContain('Set it up for me');
+
+  expect(getByTestId('cap-code-workspace')).toBeTruthy();
+  expect(getByTestId('cap-code-workspace').textContent).toContain('Explore, edit and version code');
+  expect(getByTestId('cap-code-workspace').textContent).toContain('git-scm.com');
+});
+
