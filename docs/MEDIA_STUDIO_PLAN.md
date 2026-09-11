@@ -59,10 +59,12 @@ verification separately.
 ## Architecture for the 4 GB GPU
 
 - **On this PC:** Electron/React, job state, manifests, asset caching, previews,
-  FFmpeg CPU composition and lightweight offline speech. Run one compute job at
-  a time; small Ollama models are optional fallbacks, not a requirement to run
-  a large LLM alongside image generation. No SDXL or large video model baseline
-  on this GPU.
+  FFmpeg CPU composition, lightweight offline speech, and quantized local diffusion
+  plates (e.g. SD-1.5 + LCM or Q4 GGUF via `sd-cpp`, ~2 GB VRAM/RAM footprint).
+  Run one compute job at a time; small Ollama models are optional fallbacks, not
+  a requirement to run a large LLM alongside image generation. The restriction on
+  this 4 GB GPU applies specifically to heavy diffusion models (SDXL, Flux) and 14B+
+  LLMs loaded concurrently with video rendering.
 - **Online, with consent:** configurable text/image/speech providers with real
   availability, quota and pricing checks. No automatic paid fallback. A provider
   name is not proof of a free tier. Preserve `useCustomLLM` / `allowCloud` and
