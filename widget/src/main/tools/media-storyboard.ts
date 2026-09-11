@@ -21,6 +21,7 @@ import {
   type ShotBibleEntry,
   type GenerationRequest,
 } from '../movie/types';
+import { assembleScene } from '../movie/storyboard-assembly';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -331,65 +332,8 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
     if (fs.existsSync(scenesDir)) {
       const sceneNames = fs.readdirSync(scenesDir).filter((s) => fs.statSync(path.join(scenesDir, s)).isDirectory());
       for (const sc of sceneNames) {
-        const scPath = path.join(scenesDir, sc);
-        let sceneMeta: any = { sceneId: sc };
-        const scJson = path.join(scPath, 'scene.json');
-        if (fs.existsSync(scJson)) {
-          try {
-            sceneMeta = JSON.parse(fs.readFileSync(scJson, 'utf-8'));
-          } catch {
-            /* ignore */
-          }
-        }
-
-        const shotDirs = fs.readdirSync(scPath).filter((s) => s.startsWith('shot_') && fs.statSync(path.join(scPath, s)).isDirectory());
-        const shots = shotDirs.map((shotId, idx) => {
-          const shotPath = path.join(scPath, shotId);
-          let promptData: any = {};
-          let statusData: any = {};
-          let narration = '';
-
-          const pFile = path.join(shotPath, 'prompt.json');
-          if (fs.existsSync(pFile)) {
-            try { promptData = JSON.parse(fs.readFileSync(pFile, 'utf-8')); } catch { /* ignore */ }
-          }
-          const sFile = path.join(shotPath, 'status.json');
-          if (fs.existsSync(sFile)) {
-            try { statusData = JSON.parse(fs.readFileSync(sFile, 'utf-8')); } catch { /* ignore */ }
-          }
-          const scriptFile = path.join(shotPath, 'script.txt');
-          if (fs.existsSync(scriptFile)) {
-            try { narration = fs.readFileSync(scriptFile, 'utf-8'); } catch { /* ignore */ }
-          }
-
-          // Check for generated still frame image
-          let frameImagePath: string | null = null;
-          const imgDir = path.join(shotPath, 'image');
-          if (fs.existsSync(imgDir)) {
-            const imgs = fs.readdirSync(imgDir).filter((f) => f.endsWith('.png') || f.endsWith('.jpg'));
-            if (imgs.length > 0) {
-              frameImagePath = path.join(imgDir, imgs[0]!);
-            }
-          }
-
-          return {
-            shotId,
-            order: idx + 1,
-            prompt: promptData.prompt || '',
-            framing: promptData.framing || (idx === 0 ? 'wide' : 'medium'),
-            lens: promptData.lens || '35mm',
-            movement: promptData.movement || 'static',
-            durationSec: Number(promptData.durationSec) || 5,
-            narration,
-            status: statusData.status || ShotStatus.PLANNED,
-            frameImagePath,
-          };
-        });
-
-        scenes.push({
-          ...sceneMeta,
-          shots,
-        });
+        const assembled = assembleScene(projectDir, sc);
+        if (assembled) scenes.push(assembled);
       }
     }
 
@@ -504,6 +448,9 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
       attempts: 1,
       updatedAt: new Date().toISOString(),
       provider: res.provider || decision.chosen?.providerId || 'free-router',
+      // The exact prompt this frame was generated from — lets assembleScene
+      // flag the frame as stale if the shot's prompt changes afterward.
+      generatedPrompt: prompt,
     };
     fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2), 'utf-8');
 
@@ -527,6 +474,93 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
 };
 
 // --- 5. media_render_storyboard ----------------------------------------------
+
+// --- 5b. media_save_storyboard ------------------------------------------------
+//
+// Extracted from what used to be inline logic in the `homebot:media:storyboard:save`
+// IPC handler — every OTHER storyboard IPC channel delegates to a tool handler
+// here, which is what let this exact bug (render reading a file save never wrote)
+// go uncaught: save's real file-writing logic lived only inside an IPC callback,
+// unreachable by a test without mocking the whole IPC/electron surface. Now it's
+// a plain function, callable directly the same way renderStoryboardMovie already is.
+
+export const mediaSaveStoryboardDef: ToolDefinition = {
+  name: 'media_save_storyboard',
+  description:
+    'Persists edits to a storyboard scene — shot order, framing/lens/movement, duration and narration text — ' +
+    'to the real shot files the renderer reads from.',
+  parameters: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string', description: 'ID of the storyboard project.' },
+      sceneId: { type: 'string', description: 'Optional scene ID (defaults to scene_01).' },
+      shots: {
+        type: 'array',
+        description: 'Ordered array of shot edits to persist.',
+        items: { type: 'object' },
+      },
+    },
+    required: ['projectId', 'shots'],
+  },
+};
+
+export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const projectId = String(args.projectId || '').trim();
+  if (!projectId) {
+    return { success: false, error: 'projectId is required.' };
+  }
+  const shots = Array.isArray(args.shots) ? args.shots : [];
+
+  try {
+    const rootDir = getStoryboardsRootDir();
+    const projectDir = path.join(rootDir, projectId);
+    const sceneId = String(args.sceneId || 'scene_01');
+    const sceneDir = path.join(projectDir, 'scenes', sceneId);
+
+    if (!fs.existsSync(sceneDir)) {
+      return { success: false, error: `Scene directory not found: ${sceneDir}` };
+    }
+
+    const shotIds = shots.map((s: any) => s.shotId);
+    const sceneJsonPath = path.join(sceneDir, 'scene.json');
+    if (fs.existsSync(sceneJsonPath)) {
+      try {
+        const sceneMeta = JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8'));
+        sceneMeta.shots = shotIds;
+        fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
+      } catch { /* ignore */ }
+    }
+
+    for (const shot of shots) {
+      const shotDir = path.join(sceneDir, shot.shotId);
+      if (!fs.existsSync(shotDir)) {
+        fs.mkdirSync(shotDir, { recursive: true });
+        fs.mkdirSync(path.join(shotDir, 'image'), { recursive: true });
+        fs.mkdirSync(path.join(shotDir, 'video'), { recursive: true });
+      }
+
+      const promptPath = path.join(shotDir, 'prompt.json');
+      let promptData: any = {};
+      if (fs.existsSync(promptPath)) {
+        try { promptData = JSON.parse(fs.readFileSync(promptPath, 'utf-8')); } catch { /* ignore */ }
+      }
+      promptData.prompt = shot.prompt ?? promptData.prompt ?? '';
+      promptData.framing = shot.framing ?? promptData.framing ?? 'wide';
+      promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
+      promptData.movement = shot.movement ?? promptData.movement ?? 'static';
+      promptData.durationSec = Number(shot.durationSec) || promptData.durationSec || 5;
+      fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
+
+      if (shot.narration !== undefined) {
+        fs.writeFileSync(path.join(shotDir, 'script.txt'), String(shot.narration), 'utf-8');
+      }
+    }
+
+    return { success: true, result: { message: 'Storyboard updated successfully.' } };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+};
 
 export const mediaRenderStoryboardDef: ToolDefinition = {
   name: 'media_render_storyboard',
@@ -695,6 +729,7 @@ export const storyboardToolDefs: ToolDefinition[] = [
   mediaListStoryboardsDef,
   mediaGetStoryboardDef,
   mediaGenerateStoryboardFrameDef,
+  mediaSaveStoryboardDef,
   mediaRenderStoryboardDef,
   mediaBreakdownScriptDef,
 ];
@@ -704,6 +739,7 @@ export const storyboardToolHandlers: Record<string, ToolHandler> = {
   media_list_storyboards: mediaListStoryboardsHandler,
   media_get_storyboard: mediaGetStoryboardHandler,
   media_generate_storyboard_frame: mediaGenerateStoryboardFrameHandler,
+  media_save_storyboard: mediaSaveStoryboardHandler,
   media_render_storyboard: mediaRenderStoryboardHandler,
   media_breakdown_script: mediaBreakdownScriptHandler,
 };

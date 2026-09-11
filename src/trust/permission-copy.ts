@@ -152,6 +152,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   media_list_storyboards: { label: 'List storyboard projects', detail: 'View all planned storyboard projects, their shot counts, and frame generation status.' },
   media_get_storyboard: { label: 'Inspect storyboard details', detail: 'Read the full shot sequence, prompts, script lines, and frame thumbnails for a storyboard.' },
   media_generate_storyboard_frame: { label: 'Generate storyboard frame', detail: 'Generate a visual concept still for an individual shot using free image providers.' },
+  media_save_storyboard: { label: 'Save storyboard edits', detail: 'Persist shot order, framing, duration and narration edits made in the Storyboard Deck to disk.' },
   media_render_storyboard: { label: 'Render storyboard movie', detail: 'Compile storyboard keyframes, Ken Burns camera motion, voiceover narration, and subtitles into a 1080p MP4 video.' },
   media_breakdown_script: { label: 'Auto-direct script into storyboard', detail: 'Break down a script, scene prompt, or story synopsis into a multi-shot storyboard with camera framing, visual prompts, and dialogue.' },
   media_delete_job: { label: 'Delete a video and its files', detail: 'Permanently removes a Media Studio job and everything it produced — narration, captions, images and the rendered video. Cannot be undone.' },

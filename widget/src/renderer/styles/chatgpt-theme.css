@@ -13465,11 +13465,28 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s ease;
+  transition: transform 0.3s ease, opacity 0.2s ease;
 }
 
 .ms-shot-viewport:hover .ms-shot-thumb-img {
   transform: scale(1.02);
+}
+
+.ms-shot-thumb-img--stale {
+  opacity: 0.5;
+}
+
+.ms-shot-stale-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(120, 53, 15, 0.85);
+  color: #fed7aa;
+  border: 1px solid rgba(251, 146, 60, 0.5);
+  z-index: 1;
 }
 
 .ms-shot-thumb-overlay {

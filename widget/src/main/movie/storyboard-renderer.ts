@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { findFfmpeg, escapeFilterPath } from '../media-render';
 import { renderNarrationToFile } from '../tools/voice';
+import { assembleShotsForScene, type AssembledShot } from './storyboard-assembly';
 
 export interface StoryboardRenderOptions {
   projectId: string;
@@ -35,18 +36,8 @@ export interface StoryboardRenderResult {
   error?: string;
 }
 
-export interface ShotManifest {
-  shotId: string;
-  order: number;
-  prompt: string;
-  framing: string;
-  lens: string;
-  movement: string;
-  durationSec: number;
-  narration?: string;
-  status: string;
-  frameImagePath: string | null;
-}
+/** Alias kept for callers/tests written against the older name. */
+export type ShotManifest = AssembledShot;
 
 /** Resolves the project directory inside the movie projects folder. */
 export function getStoryboardProjectDir(projectId: string): string {
@@ -139,20 +130,8 @@ export async function renderStoryboardMovie(
   }
 
   const sceneId = opts.sceneId || 'scene_01';
-  const manifestPath = path.join(projectDir, 'scenes', sceneId, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    return { ok: false, error: `Scene manifest not found: ${manifestPath}` };
-  }
-
-  let shots: ShotManifest[] = [];
-  try {
-    const raw = fs.readFileSync(manifestPath, 'utf-8');
-    shots = JSON.parse(raw);
-  } catch (e: any) {
-    return { ok: false, error: `Could not parse scene manifest: ${e.message}` };
-  }
-
-  if (!Array.isArray(shots) || shots.length === 0) {
+  const shots = assembleShotsForScene(projectDir, sceneId);
+  if (shots.length === 0) {
     return { ok: false, error: 'Storyboard scene contains no shots to render.' };
   }
 

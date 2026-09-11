@@ -579,56 +579,10 @@ export function registerStudioIpc(
   });
 
   ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[] }) => {
-    try {
-      const { getStoryboardsRootDir } = await import('../../tools/media-storyboard');
-      const rootDir = getStoryboardsRootDir();
-      const projectDir = path.join(rootDir, args.projectId);
-      const sceneId = args.sceneId || 'scene_01';
-      const sceneDir = path.join(projectDir, 'scenes', sceneId);
-
-      if (!fs.existsSync(sceneDir)) {
-        return { ok: false, error: `Scene directory not found: ${sceneDir}` };
-      }
-
-      const shotIds = (args.shots || []).map((s: any) => s.shotId);
-      const sceneJsonPath = path.join(sceneDir, 'scene.json');
-      if (fs.existsSync(sceneJsonPath)) {
-        try {
-          const sceneMeta = JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8'));
-          sceneMeta.shots = shotIds;
-          fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
-        } catch { /* ignore */ }
-      }
-
-      for (const shot of (args.shots || [])) {
-        const shotDir = path.join(sceneDir, shot.shotId);
-        if (!fs.existsSync(shotDir)) {
-          fs.mkdirSync(shotDir, { recursive: true });
-          fs.mkdirSync(path.join(shotDir, 'image'), { recursive: true });
-          fs.mkdirSync(path.join(shotDir, 'video'), { recursive: true });
-        }
-
-        const promptPath = path.join(shotDir, 'prompt.json');
-        let promptData: any = {};
-        if (fs.existsSync(promptPath)) {
-          try { promptData = JSON.parse(fs.readFileSync(promptPath, 'utf-8')); } catch { /* ignore */ }
-        }
-        promptData.prompt = shot.prompt ?? promptData.prompt ?? '';
-        promptData.framing = shot.framing ?? promptData.framing ?? 'wide';
-        promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
-        promptData.movement = shot.movement ?? promptData.movement ?? 'static';
-        promptData.durationSec = Number(shot.durationSec) || promptData.durationSec || 5;
-        fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
-
-        if (shot.narration !== undefined) {
-          fs.writeFileSync(path.join(shotDir, 'script.txt'), String(shot.narration), 'utf-8');
-        }
-      }
-
-      return { ok: true, message: 'Storyboard updated successfully.' };
-    } catch (err: any) {
-      return { ok: false, error: err?.message || String(err) };
-    }
+    const res = await invokeTool(_ev, 'media_save_storyboard', args || {});
+    return res.success
+      ? { ok: true, message: String((res.result as any)?.message ?? 'Storyboard updated successfully.') }
+      : { ok: false, error: res.error };
   });
 
   ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) => {

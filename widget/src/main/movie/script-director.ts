@@ -491,11 +491,12 @@ export async function directScriptToStoryboard(options: ScriptBreakdownOptions):
     };
 
     MovieProjectRunner.addScene(projectDir, sceneManifest, shotEntries);
-    fs.writeFileSync(
-      path.join(projectDir, 'scenes', 'scene_01', 'manifest.json'),
-      JSON.stringify(sceneManifest, null, 2),
-      'utf-8',
-    );
+    // No separate manifest.json write: the renderer now assembles shots
+    // straight from each shot's prompt.json/script.txt (written below), the
+    // same real data the Storyboard Deck editor reads and saves. A second,
+    // hand-synced representation was the exact bug this replaces — it was
+    // never kept in sync after this one write, and its shape didn't even
+    // match what the renderer expected.
 
     // Write script lines and prompt specs to individual shot directories
     for (let i = 0; i < shots.length; i++) {
