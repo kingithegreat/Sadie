@@ -15,6 +15,24 @@ jest.mock('https', () => ({
   request: jest.fn(),
   Agent: class MockAgent { constructor() {} }
 }));
+// trySDCpp shells out via child_process, not http — this file's own header
+// says "network calls are mocked" but never mocked this, so it silently
+// depended on no local sd.cpp binary ever existing on whatever machine ran
+// the suite. True in CI, and false the moment a real local install exists:
+// these tests then actually spawn sd-cli.exe and blow the 5s default jest
+// timeout waiting on a real multi-second/minute generation. execFileSync is
+// mocked too — trySDCpp's own GPU-device probe uses it.
+jest.mock('child_process', () => ({
+  spawn: jest.fn(() => {
+    const { EventEmitter } = require('events');
+    const proc = new EventEmitter() as any;
+    proc.stderr = new EventEmitter();
+    proc.stdout = new EventEmitter();
+    queueMicrotask(() => proc.emit('close', 1));
+    return proc;
+  }),
+  execFileSync: jest.fn(() => { throw new Error('no local backend in this test'); }),
+}));
 
 import { imageGenerateDef, imageGenerateHandler } from '../tools/web';
 import * as http from 'http';
