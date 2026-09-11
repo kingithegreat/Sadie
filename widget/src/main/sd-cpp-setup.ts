@@ -42,16 +42,13 @@ export interface RepoFile { path: string; size: number }
 
 /**
  * Choose the Windows CPU build from a release's asset list.
- * Preference: avx2 (baseline for any CPU from the last decade), then plain
- * avx, then noavx as a last resort. CUDA/ROCm/Vulkan builds are deliberately
- * skipped — see the header.
+ * Preference: vulkan (hardware-accelerated GPU via RTX 2050/Intel with CPU fallback, ~38MB),
+ * then portable cpu (avx2 baseline).
  */
 export function pickBinaryAsset(assets: ReleaseAsset[]): ReleaseAsset | null {
   const winZips = assets.filter(a => /win/i.test(a.name) && /x64/.test(a.name) && /\.zip$/i.test(a.name)
-    && !/cuda|rocm|vulkan|sycl|hip/i.test(a.name));
-  // 'cpu' is the current upstream token for the portable build (2026 releases
-  // ship win-cpu-x64); the avx names are older schemes, kept for robustness.
-  for (const want of [/-cpu-/i, /avx2/i, /avx(?!2|512)/i, /noavx/i]) {
+    && !/cuda|rocm|sycl|hip/i.test(a.name));
+  for (const want of [/vulkan/i, /-cpu-/i, /avx2/i, /avx(?!2|512)/i, /noavx/i]) {
     const hit = winZips.find(a => want.test(a.name));
     if (hit) return hit;
   }

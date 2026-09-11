@@ -844,6 +844,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
           // from scratch without this — most prompts didn't change, and each
           // one is a call to a free, unSLA'd, queue-based provider.
           cacheDir: defaultImageCacheDir(),
+          fallbackPlates: true,
         });
         const filled = fillMissingImages(images);
         const made = filled.filter(Boolean).length;

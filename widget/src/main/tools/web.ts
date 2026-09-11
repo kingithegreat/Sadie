@@ -1709,10 +1709,27 @@ export function findSDCppModel(): string | null {
   return model ? path.join(modelsDir, model) : null;
 }
 
-async function trySDCpp(prompt: string, width: number, height: number, steps: number): Promise<string | null> {
+export async function trySDCpp(prompt: string, width: number, height: number, steps: number = 8): Promise<string | null> {
   const binary = findSDCppBinary();
   const model = findSDCppModel();
   if (!binary || !model) return null;
+
+  // SD-1.5 native resolution is 512x512. Higher dimensions cause an 8.7GB workspace
+  // allocation failure in ggml. Scale down to <=512 (multiples of 64); ffmpeg scales & crops.
+  const maxDim = 512;
+  let targetW = width;
+  let targetH = height;
+  if (targetW > maxDim || targetH > maxDim) {
+    if (targetW >= targetH) {
+      targetH = Math.round((targetH * maxDim) / targetW);
+      targetW = maxDim;
+    } else {
+      targetW = Math.round((targetW * maxDim) / targetH);
+      targetH = maxDim;
+    }
+  }
+  targetW = Math.max(64, Math.floor(targetW / 64) * 64);
+  targetH = Math.max(64, Math.floor(targetH / 64) * 64);
 
   const outputPath = path.join(getSDCppDir(), `output-${Date.now()}.png`);
 
@@ -1721,8 +1738,8 @@ async function trySDCpp(prompt: string, width: number, height: number, steps: nu
       '-M', mode,
       '-m', model,
       '-p', prompt,
-      '-W', String(width),
-      '-H', String(height),
+      '-W', String(targetW),
+      '-H', String(targetH),
       '--steps', String(steps),
       '-o', outputPath,
     ];

@@ -313,3 +313,58 @@ describe('keeping the scenes of one video consistent', () => {
     expect(p).toMatch(/palette/i);
   });
 });
+
+describe('synthesizing fallback plates when generation fails or times out', () => {
+  it('generates fallback plates when generator fails with fallbackPlates enabled', async () => {
+    const dir = tmp();
+    const res = await generateSceneImages({
+      scenes: [{ text: 'a' }, { text: 'b' }],
+      videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: async () => null,
+      fallbackPlates: true,
+    });
+    expect(res.every(r => !!r.path)).toBe(true);
+    for (const r of res) {
+      expect(r.source).toBe('fallback-plate');
+      expect(fs.existsSync(r.path!)).toBe(true);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('generates fallback plates when generator times out with fallbackPlates enabled', async () => {
+    const dir = tmp();
+    const res = await generateSceneImages({
+      scenes: [{ text: 'a' }],
+      videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: () => new Promise(r => setTimeout(r, 200)),
+      timeoutMs: 30,
+      fallbackPlates: true,
+    });
+    expect(res[0].path).toBeTruthy();
+    expect(res[0].source).toBe('fallback-plate');
+    expect(fs.existsSync(res[0].path!)).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('parallelising scene generations', () => {
+  it('runs multiple scene generations concurrently', async () => {
+    const dir = tmp();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    await generateSceneImages({
+      scenes: [{ text: 'a' }, { text: 'b' }, { text: 'c' }, { text: 'd' }],
+      videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: async () => {
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise(r => setTimeout(r, 20));
+        inFlight--;
+        return { base64: PNG_1PX };
+      },
+    });
+    expect(maxInFlight).toBeGreaterThan(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
