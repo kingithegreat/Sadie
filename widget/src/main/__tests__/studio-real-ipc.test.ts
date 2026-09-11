@@ -112,7 +112,7 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     }
   });
 
-  it('creates, prepares, and renders a video crossing the real IPC boundary in disposable userData', async () => {
+  it('creates, narrates for real, and renders a video crossing the real IPC boundary in disposable userData', async () => {
     // 1. Verify renderer IPC API exposure
     const hasMediaCreate = await page.evaluate(() => typeof (window as any).electron?.mediaCreate);
     const hasMediaRun = await page.evaluate(() => typeof (window as any).electron?.mediaRun);
@@ -137,61 +137,55 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     createdJobId = createResult.job.id;
     const jobId = createdJobId!;
 
-    // 3. Prepare fast 3s audio, captions, and visual plate directly in disposable testUserData
-    const jobAssetDir = path.join(testUserData, 'media-assets', jobId);
-    fs.mkdirSync(jobAssetDir, { recursive: true });
-
-    const audioPath = path.join(jobAssetDir, 'narration.mp3');
-    const captionsPath = path.join(jobAssetDir, 'captions.srt');
-    const sceneDir = path.join(jobAssetDir, 'scenes');
-    fs.mkdirSync(sceneDir, { recursive: true });
-    const scenePath = path.join(sceneDir, 'scene-00.png');
-    const concatPath = path.join(jobAssetDir, 'scenes.txt');
-
-    // Synthesize 3-second audio and 1 scene plate using managed FFmpeg
-    execFileSync(ffmpegBin, [
-      '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3',
-      '-c:a', 'libmp3lame', '-b:a', '96k', audioPath,
-    ]);
-    expect(fs.existsSync(audioPath)).toBe(true);
-
-    fs.writeFileSync(captionsPath, '1\n00:00:00,000 --> 00:00:03,000\nReal IPC verification cue\n', 'utf8');
-
-    execFileSync(ffmpegBin, [
-      '-y', '-f', 'lavfi', '-i', 'color=c=0x1E293B:s=1080x1920:d=1',
-      '-vframes', '1', scenePath,
-    ]);
-    expect(fs.existsSync(scenePath)).toBe(true);
-
-    // Write concat file
-    const concatContent = `ffconcat version 1.0\nfile '${scenePath.replace(/\\/g, '/')}'\nduration 3.000\nfile '${scenePath.replace(/\\/g, '/')}'\n`;
-    fs.writeFileSync(concatPath, concatContent, 'utf8');
-
-    // Update job record in disposable media-jobs.json to media_production state
+    // 3. Skip the LLM scripting stage (unrelated to this test, and would pull a
+    // real network LLM call into an IPC-boundary test) by writing a real script
+    // directly to script_draft — media_narrate only cares that a script exists,
+    // not how it got there.
     const jobsFile = path.join(testUserData, 'media-jobs.json');
     const jobs = JSON.parse(fs.readFileSync(jobsFile, 'utf8'));
     const targetJob = jobs.find((j: any) => j.id === jobId);
     expect(targetJob).toBeDefined();
-
-    targetJob.state = 'media_production';
-    targetJob.narrationPath = audioPath;
-    targetJob.captionsPath = captionsPath;
-    targetJob.durationSeconds = 3;
+    targetJob.state = 'script_draft';
+    targetJob.script = 'This is a short, real narration script used to verify the real IPC boundary end to end.';
     fs.writeFileSync(jobsFile, JSON.stringify(jobs, null, 2), 'utf8');
 
-    // 4. Trigger render over real IPC boundary: ipcRenderer.invoke('homebot:media:run', jobId, 'render')
+    // 4. Real narration over the real IPC boundary: ipcRenderer.invoke('homebot:media:run', jobId, 'narrate')
+    // Exercises the actual TTS engine, real duration measurement (the Kokoro
+    // duration fix), and real caption generation — not synthetic fixtures.
+    const narrateResult = await page.evaluate(async (id: string) => {
+      return await (window as any).electron.mediaRun(id, 'narrate');
+    }, jobId);
+    expect(narrateResult.ok).toBe(true);
+    expect(() => JSON.stringify(narrateResult)).not.toThrow();
+
+    const afterNarrate = JSON.parse(fs.readFileSync(jobsFile, 'utf8')).find((j: any) => j.id === jobId);
+    expect(afterNarrate.narrationPath).toBeTruthy();
+    expect(fs.existsSync(afterNarrate.narrationPath)).toBe(true);
+    expect(afterNarrate.captionsPath).toBeTruthy();
+    expect(fs.existsSync(afterNarrate.captionsPath)).toBe(true);
+    // A real measured duration, not the word-count placeholder that predates
+    // any audio — should be a small positive number of seconds for this script.
+    expect(afterNarrate.durationSeconds).toBeGreaterThan(0);
+    expect(afterNarrate.durationSeconds).toBeLessThan(30);
+
+    // 5. Trigger render over real IPC boundary. 'plain' visuals: a real narrated,
+    // real-captioned render on the generated backdrop, without a real network
+    // scene-image-generation call at this IPC-boundary layer (that path is
+    // already covered by media-render.live.test.ts).
     const t0 = Date.now();
     const renderResult = await page.evaluate(async (id: string) => {
-      return await (window as any).electron.mediaRun(id, 'render');
+      return await (window as any).electron.mediaRun(id, 'render', { visuals: 'plain' });
     }, jobId);
     const durationMs = Date.now() - t0;
 
     expect(renderResult.ok).toBe(true);
-    // Verify structured-clone fidelity of render response
     expect(() => JSON.stringify(renderResult)).not.toThrow();
-    expect(durationMs).toBeLessThan(20_000); // Must be fast (<20s)
+    // The new QA gates (frame-variance, captions) must not false-positive on
+    // real content — a real narrated, real-captioned render must say it passed.
+    expect(String(renderResult.message)).toMatch(/checks passed/i);
+    expect(durationMs).toBeLessThan(30_000);
 
-    // 5. Verify output file in real userData
+    // 6. Verify output file in real userData
     const updatedJobs = JSON.parse(fs.readFileSync(jobsFile, 'utf8'));
     const renderedJob = updatedJobs.find((j: any) => j.id === jobId);
     expect(renderedJob).toBeDefined();
@@ -203,7 +197,7 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     const stat = fs.statSync(outPath);
     expect(stat.size).toBeGreaterThan(10_000);
 
-    // 6. ffprobe stream metadata validation
+    // 7. ffprobe stream metadata validation
     const probeOutput = execFileSync(ffprobeBin, [
       '-v', 'quiet',
       '-print_format', 'json',
@@ -227,8 +221,68 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     expect(videoStream.color_transfer).toBe('bt709');
     expect(videoStream.color_primaries).toBe('bt709');
 
-    // Verify Task 3 audio stream
+    // Verify audio stream
     expect(audioStream.codec_name).toBe('aac');
-    expect(Number(audioStream.duration)).toBeGreaterThan(2.5);
+    expect(Number(audioStream.duration)).toBeGreaterThan(1);
+  });
+
+  it('rejects a flat placeholder render across the real IPC boundary, preserving the file', async () => {
+    // Isolates the new visible-content gate specifically: real narration audio
+    // (so nothing else can fail) but deliberately NO captions — captions burn
+    // in over ANY image, flat or not, so real caption text on the frame would
+    // give the flat-frame check something non-flat to see and defeat the very
+    // thing this test is proving. The missing-captions gate has its own
+    // coverage in media-render.live.test.ts; this test is captions-free on
+    // purpose. A deliberately flat placeholder image stands in for real scene
+    // art, proving the "after" half of the before/after gate at the real IPC
+    // boundary, without a network image call.
+    const createResult = await page.evaluate(async (payload: any) => {
+      return await (window as any).electron.mediaCreate(payload);
+    }, {
+      title: 'Flat Placeholder Diagnostic',
+      format: 'short',
+      brief: 'Verification that a flat placeholder render fails the real QA gate.',
+    });
+    expect(createResult.ok).toBe(true);
+    const jobId = createResult.job.id;
+
+    const jobAssetDir = path.join(testUserData, 'media-assets', jobId);
+    fs.mkdirSync(jobAssetDir, { recursive: true });
+    const audioPath = path.join(jobAssetDir, 'narration.mp3');
+    const flatImagePath = path.join(jobAssetDir, 'flat-placeholder.png');
+
+    execFileSync(ffmpegBin, [
+      '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3',
+      '-c:a', 'libmp3lame', '-b:a', '96k', audioPath,
+    ]);
+    // A solid color, same shape as the app's own generated backdrop — this is
+    // exactly the "placeholder" the new gate exists to catch.
+    execFileSync(ffmpegBin, [
+      '-y', '-f', 'lavfi', '-i', 'color=c=0x1E293B:s=1080x1920:d=1',
+      '-vframes', '1', flatImagePath,
+    ]);
+
+    const jobsFile = path.join(testUserData, 'media-jobs.json');
+    const jobs = JSON.parse(fs.readFileSync(jobsFile, 'utf8'));
+    const targetJob = jobs.find((j: any) => j.id === jobId);
+    targetJob.state = 'media_production';
+    targetJob.narrationPath = audioPath;
+    targetJob.durationSeconds = 3;
+    fs.writeFileSync(jobsFile, JSON.stringify(jobs, null, 2), 'utf8');
+
+    const renderResult = await page.evaluate(async (args: { id: string; image: string }) => {
+      return await (window as any).electron.mediaRun(args.id, 'render', { image: args.image });
+    }, { id: jobId, image: flatImagePath });
+
+    expect(renderResult.ok).toBe(false);
+    expect(String(renderResult.error)).toMatch(/flat color|placeholder/i);
+
+    const updatedJobs = JSON.parse(fs.readFileSync(jobsFile, 'utf8'));
+    const failedJob = updatedJobs.find((j: any) => j.id === jobId);
+    expect(failedJob.state).toBe('needs_revision');
+    // The render itself is not discarded on a QA failure — same trust
+    // boundary as every other QA failure in this pipeline.
+    expect(failedJob.renderPath).toBeTruthy();
+    expect(fs.existsSync(failedJob.renderPath)).toBe(true);
   });
 });

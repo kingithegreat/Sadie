@@ -89,6 +89,10 @@ maybe('rendering a real video', () => {
     // eslint-disable-next-line no-console
     console.log('--- media_render ---\n', rendered.success ? rendered.result : rendered.error);
     expect(rendered.success).toBe(true);
+    // The new frame-variance and captions QA gates must not false-positive on
+    // real narrated, real-captioned content — a real render must say it passed.
+    // (If either gate had misfired here, this would be `success: false`.)
+    expect(String(rendered.result)).toMatch(/checks passed/i);
 
     const job = readJobs()[0];
     expect(job.state).toBe('render_qa');
@@ -114,6 +118,82 @@ maybe('rendering a real video', () => {
     console.log(`video: ${video.width}x${video.height} ${video.codec_name}/${audio.codec_name} `
       + `${seconds.toFixed(1)}s, ${(Number(info.format.size) / 1024 / 1024).toFixed(1)} MB`);
     expect(seconds).toBeGreaterThan((job.durationSeconds || 10) * 0.8);
+  });
+
+  it('rejects a flat placeholder image and leaves the job in needs_revision', async () => {
+    const ffmpeg = await findFfmpeg();
+    if (!ffmpeg) throw new Error('No ffmpeg found.');
+
+    await call('media_create_job', { title: 'Flat placeholder check', format: 'short' });
+    const jobs = readJobs();
+    const j = jobs.find(x => x.title === 'Flat placeholder check')!;
+    j.script = 'A short line, just enough to produce real narration audio.';
+    j.state = 'script_draft';
+    require('../tools/media').writeJobs(jobs);
+
+    expect((await call('media_narrate', { job: 'Flat placeholder check' }) as any).success).toBe(true);
+
+    // Captions burn in over ANY image, flat or not (media-render.ts applies
+    // the subtitles filter unconditionally whenever captionsPath is set) — so
+    // real captions here would put real text on the frame and the flat-frame
+    // check would never get a clean look at the placeholder. Clear them so
+    // this test isolates the frame-variance gate specifically; the missing-
+    // captions gate has its own dedicated test right below.
+    const narratedJob = readJobs().find(x => x.title === 'Flat placeholder check')!;
+    narratedJob.captionsPath = undefined;
+    require('../tools/media').writeJobs(readJobs().map(x => (x.title === 'Flat placeholder check' ? narratedJob : x)));
+
+    const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'homebot-flat-placeholder-'));
+    const flatImage = path.join(tmpDir, 'flat.png');
+    await new Promise<void>((resolve, reject) => {
+      execFile(ffmpeg, [
+        '-y', '-f', 'lavfi', '-i', 'color=c=0x1E293B:s=1080x1920:d=1',
+        '-vframes', '1', flatImage,
+      ], (err) => (err ? reject(err) : resolve()));
+    });
+
+    const rendered: any = await call('media_render', { job: 'Flat placeholder check', image: flatImage });
+    // eslint-disable-next-line no-console
+    console.log('--- media_render (flat placeholder) ---\n', rendered.success ? rendered.result : rendered.error);
+    expect(rendered.success).toBe(false);
+    expect(String(rendered.error)).toMatch(/flat color|placeholder/i);
+
+    const failed = readJobs().find(x => x.title === 'Flat placeholder check')!;
+    expect(failed.state).toBe('needs_revision');
+    // Preserved, not discarded — same trust boundary as every other QA failure.
+    expect(failed.renderPath).toBeTruthy();
+    expect(fs.existsSync(failed.renderPath!)).toBe(true);
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('rejects a render whose captions are missing', async () => {
+    const ffmpeg = await findFfmpeg();
+    if (!ffmpeg) throw new Error('No ffmpeg found.');
+
+    await call('media_create_job', { title: 'Missing captions check', format: 'short' });
+    const jobs = readJobs();
+    const j = jobs.find(x => x.title === 'Missing captions check')!;
+    j.script = 'A short line, just enough to produce real narration audio.';
+    j.state = 'script_draft';
+    require('../tools/media').writeJobs(jobs);
+
+    expect((await call('media_narrate', { job: 'Missing captions check' }) as any).success).toBe(true);
+
+    // Emptying the real captions file the same as a write that silently failed
+    // — nothing distinguishes the two once render runs, so both must fail QA.
+    const afterNarrate = readJobs().find(x => x.title === 'Missing captions check')!;
+    expect(afterNarrate.captionsPath).toBeTruthy();
+    fs.writeFileSync(afterNarrate.captionsPath!, '', 'utf8');
+
+    const rendered: any = await call('media_render', { job: 'Missing captions check', visuals: 'plain' });
+    // eslint-disable-next-line no-console
+    console.log('--- media_render (missing captions) ---\n', rendered.success ? rendered.result : rendered.error);
+    expect(rendered.success).toBe(false);
+    expect(String(rendered.error)).toMatch(/no captions/i);
+
+    const failed = readJobs().find(x => x.title === 'Missing captions check')!;
+    expect(failed.state).toBe('needs_revision');
   });
 
   it('renders scene images into a multi-cut video', async () => {

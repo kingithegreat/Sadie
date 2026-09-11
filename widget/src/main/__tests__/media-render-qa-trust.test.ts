@@ -142,7 +142,7 @@ describe('media_render output trust', () => {
     writeReadyJob('Missing narration stream');
     mockedInspectRender.mockResolvedValueOnce({
       hasVideo: true, hasAudio: false, width: 1080, height: 1920,
-      durationSeconds: 3, meanVolumeDb: null, maxVolumeDb: null,
+      durationSeconds: 3, meanVolumeDb: null, maxVolumeDb: null, frameSamples: null,
     });
     const result = await call('media_render', { job: 'Missing narration stream', visuals: 'plain' });
     const persisted = readJobs()[0];
@@ -164,6 +164,7 @@ describe('media_render output trust', () => {
       durationSeconds: 3,
       meanVolumeDb: -21,
       maxVolumeDb: 0,
+      frameSamples: null,
     });
 
     const result: any = await call('media_render', { job: 'Measured output', visuals: 'plain' });
@@ -179,5 +180,35 @@ describe('media_render output trust', () => {
     expect(persisted.captionsPath).toBe(captionsPath);
     expect(persisted.scenePaths).toEqual([scenePath]);
     expect(persisted.state).not.toBe('approved');
+  });
+
+  it('a placeholder-flat render fails closed through the same trust boundary', async () => {
+    writeReadyJob('Flat placeholder');
+    mockedInspectRender.mockResolvedValueOnce({
+      hasVideo: true,
+      hasAudio: true,
+      width: 1080,
+      height: 1920,
+      durationSeconds: 3,
+      meanVolumeDb: -21,
+      maxVolumeDb: -14,
+      // Every sample reads flat — a solid-color placeholder, not real content.
+      frameSamples: [
+        { atSeconds: 0.3, stdDev: 0.4 },
+        { atSeconds: 0.9, stdDev: 0.2 },
+        { atSeconds: 1.5, stdDev: 0.5 },
+        { atSeconds: 2.1, stdDev: 0.1 },
+        { atSeconds: 2.7, stdDev: 0.3 },
+      ],
+    });
+
+    const result: any = await call('media_render', { job: 'Flat placeholder', visuals: 'plain' });
+    const persisted = readJobs()[0];
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toMatch(/flat color|placeholder/i);
+    expect(persisted.state).toBe('needs_revision');
+    // The render itself is preserved, same as every other QA failure here.
+    expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
   });
 });

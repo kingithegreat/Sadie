@@ -148,7 +148,7 @@ export function registerStudioIpc(
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string }) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string }) => {
     const { readJobs } = await import('../../tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -163,6 +163,12 @@ export function registerStudioIpc(
     try {
       const args: Record<string, unknown> = { job: job.id };
       if (action === 'narrate' && opts?.voice) args.voice = opts.voice;
+      // Lets a caller render against a specific image instead of generated
+      // scenes — the panel doesn't use this today, but the real-IPC QA tests
+      // need a way to exercise the placeholder-detection gate without a
+      // network image-generation call.
+      if (action === 'render' && opts?.image) args.image = opts.image;
+      if (action === 'render' && opts?.visuals) args.visuals = opts.visuals;
       if (!['render', 'narrate', 'script'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
       const res = await invokeTool(_e, tool, args);
       return res?.success
