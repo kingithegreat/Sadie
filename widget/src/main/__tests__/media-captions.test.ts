@@ -122,6 +122,21 @@ describe('file formats', () => {
     expect(buildCaptions(SCRIPT, 600_000).durationSeconds).toBeCloseTo(50, 1);
   });
 
+  it('uses a real measured duration over the bitrate estimate when given one', () => {
+    // 600_000 bytes at the assumed 96kbit/s MP3 rate estimates to 50s, but a
+    // Kokoro WAV of the same byte count is really much shorter — the real
+    // measurement (e.g. from ffmpeg) must win, exactly like the Kokoro
+    // duration-drift bug this covers.
+    const real = buildCaptions(SCRIPT, 600_000, { durationSeconds: 12.5 });
+    expect(real.durationSeconds).toBe(12.5);
+    expect(real.durationSeconds).not.toBeCloseTo(50, 1);
+  });
+
+  it('falls back to the bitrate estimate when no real duration is given', () => {
+    expect(buildCaptions(SCRIPT, 600_000, {}).durationSeconds).toBeCloseTo(50, 1);
+    expect(buildCaptions(SCRIPT, 600_000, { durationSeconds: null }).durationSeconds).toBeCloseTo(50, 1);
+  });
+
   it('produces nothing rather than an empty file for an empty script', () => {
     const empty = buildCaptions('', 600_000);
     expect(empty.cues).toEqual([]);

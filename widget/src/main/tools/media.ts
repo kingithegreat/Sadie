@@ -572,8 +572,30 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     // audio length — no speech recognition, because we are not recovering
     // unknown text, only its timing. Written next to the audio so the render
     // stage finds them without a separate step anyone could forget.
+    //
+    // The duration itself should come from measuring the real file, not from
+    // assuming a bitrate: `audio.bytes` is only actually MP3-96kbit/s-shaped
+    // for the edge engine. Kokoro writes a WAV at a very different effective
+    // bitrate, so the byte-count estimate is roughly 4x too long for it —
+    // wrong enough that the render-time duration-drift QA check would fail a
+    // correctly-rendered Kokoro video against its own (short, correct) audio.
     const { buildCaptions } = await import('../media-captions');
-    const caps = buildCaptions(job.script, audio.bytes);
+    let measuredSeconds: number | null = null;
+    try {
+      const { findFfmpeg } = await import('../media-render');
+      const { findManagedFfmpeg } = await import('../ffmpeg-setup');
+      const { inspectRender } = await import('../media-qa');
+      const ffmpeg = await findFfmpeg(findManagedFfmpeg());
+      if (ffmpeg) {
+        measuredSeconds = (await inspectRender(ffmpeg, audio.path)).durationSeconds;
+      }
+    } catch (e) {
+      // Not fatal: media_render requires ffmpeg and will fail closed later if
+      // it's genuinely missing, so falling back to the estimate here can never
+      // let a bad duration slip through as a false QA pass.
+      console.warn('[Media Studio] could not measure narration duration from the real file; using the bitrate estimate:', e);
+    }
+    const caps = buildCaptions(job.script, audio.bytes, { durationSeconds: measuredSeconds ?? undefined });
     const srtPath = path.join(dir, 'captions.srt');
     const vttPath = path.join(dir, 'captions.vtt');
     try {
@@ -809,7 +831,14 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const dir = mediaAssetsDir(job.id);
     const out = path.join(dir, 'video.mp4');
     const shape = job.format === 'long' ? 'long' : 'short';
-    const captionsPath = job.captionsPath && fs.existsSync(job.captionsPath) ? job.captionsPath : null;
+    // An empty file (a script that produced zero cues, or a write that landed
+    // partway) is not a usable captions track. Treating it as one used to hand
+    // ffmpeg's subtitles filter a file it cannot parse — "Unable to open ...
+    // Error initializing filters" — which crashed the WHOLE render instead of
+    // failing the specific, nameable QA check below.
+    const captionsPath = job.captionsPath && fs.existsSync(job.captionsPath) && fs.statSync(job.captionsPath).size > 0
+      ? job.captionsPath
+      : null;
 
     // A picture per scene, unless asked for a plain backdrop or handed a
     // single image. Best-effort: every failure here degrades the look and
@@ -889,6 +918,24 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
     const { dimensionsFor: qaDimensions } = await import('../media-render');
     const { w: qaW, h: qaH } = qaDimensions(shape);
+
+    // Captions are burned in when they exist, but nothing has ever checked
+    // that they actually do or that they cover the video — an unreadable or
+    // truncated captions file has always looked identical to a good one.
+    let captionCues: { count: number; lastCueEndSeconds: number } | null = null;
+    if (captionsPath) {
+      try {
+        const { parseSrtCues } = await import('../media-captions');
+        const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
+        captionCues = cues.length
+          ? { count: cues.length, lastCueEndSeconds: cues[cues.length - 1].endMs / 1000 }
+          : { count: 0, lastCueEndSeconds: 0 };
+      } catch {
+        // An unreadable captions file is the same failure as a missing one.
+        captionCues = { count: 0, lastCueEndSeconds: 0 };
+      }
+    }
+
     let qa: { ok: boolean; failures: string[]; warnings: string[] };
     try {
       const facts = await inspectRender(ffmpeg, rendered.path);
@@ -897,6 +944,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         height: qaH,
         narrationSeconds: job.durationSeconds ?? null,
         hasMusic: !!music.path,
+        captionCues,
       });
     } catch (qaErr: any) {
       // No measurements means there is no evidence that the render is usable.
