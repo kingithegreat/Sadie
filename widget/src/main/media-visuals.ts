@@ -26,9 +26,18 @@ const RETRY_GAP_MS = Number(process.env.HOMEBOT_SCENE_RETRY_GAP_MS ?? 1500);
 
 /**
  * How long one scene's generation may run before it counts as failed.
- * Bounded to 15 seconds so cold-cache generations do not stall the timeline.
+ *
+ * 15 seconds was tuned for cold-cache NETWORK generation (Pollinations
+ * measured at ~2.6s) and silently assumed that was the only path. Local
+ * sd.cpp generation, now the preferred path once installed, measured 37.0s
+ * end-to-end on real GPU hardware (RTX 2050, see tools/web.ts's device-
+ * selection fix) — a 15s ceiling killed every one of those before
+ * completion, which would have made the local generator perpetually
+ * "working" but never actually deliver an image through this path. 60s
+ * covers the measured 37s with real margin, and costs nothing on the
+ * network path, which finishes in single-digit seconds either way.
  */
-const SCENE_TIMEOUT_MS = Number(process.env.HOMEBOT_SCENE_IMAGE_TIMEOUT_MS ?? 15_000);
+const SCENE_TIMEOUT_MS = Number(process.env.HOMEBOT_SCENE_IMAGE_TIMEOUT_MS ?? 60_000);
 
 /**
  * Where to keep previously-generated scenes for reuse.

@@ -1709,11 +1709,49 @@ export function findSDCppModel(): string | null {
   return model ? path.join(modelsDir, model) : null;
 }
 
+/**
+ * Which ggml backend device sd-cli.exe should actually use.
+ *
+ * `--auto-fit` (the binary's own default) is supposed to do this — but on a
+ * real Intel+NVIDIA laptop it reported "no GPU devices" and ran the whole
+ * generation on CPU (measured live: 910s of sampling, then a separate VAE-
+ * decode failure, for zero images produced) despite `--list-devices` finding
+ * the RTX 2050 immediately. Forcing the device explicitly instead of trusting
+ * auto-fit's detection turned the same generation into 36.8s with weights
+ * correctly placed in VRAM. Cached for the process lifetime — the device list
+ * cannot change between two generations without a restart.
+ */
+let _sdCppDevice: string | null | undefined; // undefined = not probed yet, null = probed, none found
+
+function pickSDCppDevice(binary: string): string | null {
+  if (_sdCppDevice !== undefined) return _sdCppDevice;
+  try {
+    const out = childProcess.execFileSync(binary, ['--list-devices'], { timeout: 10_000, encoding: 'utf8' });
+    // Tab-separated "Vulkan1\tNVIDIA GeForce RTX 2050" lines; CPU is listed
+    // too and must never be picked here — that is the fallback we are trying
+    // to avoid taking by default.
+    const devices = out.split('\n')
+      .map(l => l.trim())
+      .filter(l => /^\w+\d*\t/.test(l))
+      .map(l => { const [id, name] = l.split('\t'); return { id, name: (name || '').trim() }; })
+      .filter(d => d.id.toLowerCase() !== 'cpu');
+    // Prefer a discrete GPU by name over an integrated one — "Intel(R) ...
+    // Graphics" without a discrete-tier keyword is the on-die iGPU sharing
+    // system RAM, not a real accelerator for this workload.
+    const discrete = devices.find(d => /nvidia|geforce|rtx|gtx|radeon|\bamd\b|arc a\d/i.test(d.name));
+    _sdCppDevice = (discrete ?? devices[0])?.id ?? null;
+  } catch {
+    _sdCppDevice = null; // --list-devices unsupported/failed: fall back to auto-fit, not an error
+  }
+  return _sdCppDevice;
+}
+
 export async function trySDCpp(prompt: string, width: number, height: number, steps: number = 8, signal?: AbortSignal): Promise<string | null> {
   const binary = findSDCppBinary();
   const model = findSDCppModel();
   if (!binary || !model) return null;
   if (signal?.aborted) return null;
+  const device = pickSDCppDevice(binary);
 
   // SD-1.5 native resolution is 512x512. Higher dimensions cause an 8.7GB workspace
   // allocation failure in ggml. Scale down to <=512 (multiples of 64); ffmpeg scales & crops.
@@ -1745,6 +1783,12 @@ export async function trySDCpp(prompt: string, width: number, height: number, st
       '--steps', String(steps),
       '-o', outputPath,
     ];
+    if (device) {
+      // Assign every stage to the discovered device explicitly rather than
+      // pass "--auto-fit off" — auto-fit's own device *detection* is what
+      // failed, not its placement logic, so keep the rest of its behaviour.
+      args.push('--backend', `diffusion=${device},vae=${device},clip=${device}`);
+    }
     console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
     const proc = childProcess.spawn(binary, args, { timeout: 300000 });
     const onAbort = () => {
