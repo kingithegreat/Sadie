@@ -78,7 +78,7 @@ jobs:
           HOMEBOT_E2E: '1'
           HOMEBOT_E2E_FFMPEG: '1'
         run: |
-          npx jest src/main/__tests__/media-render.test.ts src/main/__tests__/studio-real-ipc.test.ts --runInBand --no-coverage --forceExit
+          npx jest src/main/__tests__/media-render.test.ts src/main/__tests__/studio-real-ipc.test.ts src/main/__tests__/studio-diagnostic-verify.test.ts --runInBand --no-coverage --forceExit
 
       - name: Upload artifacts on failure
         if: failure()
