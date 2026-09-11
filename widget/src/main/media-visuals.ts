@@ -60,9 +60,9 @@ export function defaultImageCacheDir(): string {
 /**
  * Detects whether local quantized stable-diffusion.cpp is installed and ready.
  */
-export function hasLocalSDCpp(): boolean {
+export async function hasLocalSDCpp(): Promise<boolean> {
   try {
-    const { findSDCppBinary, findSDCppModel } = require('./tools/web');
+    const { findSDCppBinary, findSDCppModel } = await import('./tools/web');
     return Boolean(findSDCppBinary() && findSDCppModel());
   } catch {
     return false;
@@ -184,7 +184,7 @@ export async function generateSceneImages(opts: {
 }): Promise<SceneImage[]> {
   const generate = opts.generate ?? defaultGenerator;
   const timeoutMs = opts.timeoutMs ?? SCENE_TIMEOUT_MS;
-  const isLocal = !opts.generate && hasLocalSDCpp();
+  const isLocal = !opts.generate && (await hasLocalSDCpp());
   const effectiveConcurrency = Math.max(1, opts.concurrency ?? (isLocal ? 1 : CONCURRENCY));
   fs.mkdirSync(opts.outDir, { recursive: true });
   // Best-effort, like every other cache touch below: an unusable cache

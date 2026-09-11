@@ -387,9 +387,9 @@ describe('parallelising scene generations', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('detects local sd-cpp installation presence via hasLocalSDCpp', () => {
+  it('detects local sd-cpp installation presence via hasLocalSDCpp', async () => {
     const { hasLocalSDCpp } = require('../media-visuals');
-    expect(typeof hasLocalSDCpp()).toBe('boolean');
+    expect(typeof (await hasLocalSDCpp())).toBe('boolean');
   });
 });
 
