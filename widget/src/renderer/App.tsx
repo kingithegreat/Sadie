@@ -198,6 +198,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       } else if (e.ctrlKey && e.shiftKey && (e.key === 'K' || e.key === 'k')) {
         e.preventDefault();
         setMode('code');
+      } else if (e.ctrlKey && e.shiftKey && (e.key === 'M' || e.key === 'm')) {
+        e.preventDefault();
+        setMode('media');
       } else if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
         // The Shortcuts panel has advertised "Ctrl + Shift + C — Copy last
         // response" while nothing in the app bound it: pressing it did nothing
@@ -1586,7 +1589,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // navigate to directly, carrying context (e.g. "help me with this repo"
         // opens the workspace pointed at the project root).
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <WorkspaceShell open={true} onClose={() => setMode('chat')} navContext={navContext} />
+          <WorkspaceShell
+            open={true}
+            onClose={() => setMode('chat')}
+            onHome={() => setMode('dashboard')}
+            navContext={navContext}
+          />
         </Suspense>
       ) : mode === 'browser' ? (
         // The same panel the Workspace uses. It was reachable only by opening
@@ -1674,6 +1682,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           <WorkspaceShell
             open={workspaceOpen}
             onClose={() => setWorkspaceOpen(false)}
+            onHome={() => { setWorkspaceOpen(false); setMode('dashboard'); }}
             navContext={navContext}
           />
         </Suspense>

@@ -332,12 +332,12 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
 const MODES: { id: AppMode; label: string; icon: IconName; tip: string }[] = [
   { id: 'dashboard', label: 'Home', icon: 'dashboard', tip: 'Overview of what HomeBot can do right now' },
   { id: 'chat', label: 'Chat', icon: 'chat', tip: 'Talk to the AI' },
+  { id: 'code', label: 'Code', icon: 'code', tip: 'Explore, edit and run code in the workspace' },
   { id: 'automation', label: 'Automation', icon: 'tools', tip: 'Build tasks HomeBot can repeat for you' },
   { id: 'image', label: 'Image', icon: 'image', tip: 'Generate pictures from a description' },
   { id: 'documents', label: 'Docs', icon: 'document', tip: 'Read your files and ask questions about them' },
   { id: 'quiz', label: 'Quiz', icon: 'quiz', tip: 'Practise coding with questions generated for you' },
   { id: 'browser', label: 'Browser', icon: 'globe', tip: 'Browse the web inside HomeBot' },
-  { id: 'code', label: 'Code', icon: 'terminal', tip: 'Explore, edit and run code in the workspace' },
   { id: 'feeds', label: 'Feeds', icon: 'globe', tip: 'Read and search your news feeds' },
   { id: 'connections', label: 'Connect', icon: 'plug', tip: 'Link Notion, GitHub and other services to HomeBot' },
   { id: 'modules', label: 'Modules', icon: 'tools', tip: 'Enable or disable optional workspaces and tools' },

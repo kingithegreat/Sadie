@@ -319,6 +319,13 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
           </button>
           <button
             className="dashboard-action-btn"
+            onClick={() => onModeChange('code')}
+          >
+            <span className="dashboard-action-icon">💻</span>
+            <span className="dashboard-action-label">Code Workspace</span>
+          </button>
+          <button
+            className="dashboard-action-btn"
             onClick={() => onModeChange('quiz')}
           >
             <span className="dashboard-action-icon">🧠</span>
