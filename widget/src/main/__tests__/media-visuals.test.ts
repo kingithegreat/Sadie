@@ -366,5 +366,30 @@ describe('parallelising scene generations', () => {
     expect(maxInFlight).toBeGreaterThan(1);
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('serializes scene generations when concurrency: 1 is explicitly passed', async () => {
+    const dir = tmp();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    await generateSceneImages({
+      scenes: [{ text: 'a' }, { text: 'b' }, { text: 'c' }, { text: 'd' }],
+      videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      concurrency: 1,
+      generate: async () => {
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise(r => setTimeout(r, 20));
+        inFlight--;
+        return { base64: PNG_1PX };
+      },
+    });
+    expect(maxInFlight).toBe(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('detects local sd-cpp installation presence via hasLocalSDCpp', () => {
+    const { hasLocalSDCpp } = require('../media-visuals');
+    expect(typeof hasLocalSDCpp()).toBe('boolean');
+  });
 });
 

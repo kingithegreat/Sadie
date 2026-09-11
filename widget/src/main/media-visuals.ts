@@ -58,6 +58,18 @@ export function defaultImageCacheDir(): string {
 }
 
 /**
+ * Detects whether local quantized stable-diffusion.cpp is installed and ready.
+ */
+export function hasLocalSDCpp(): boolean {
+  try {
+    const { findSDCppBinary, findSDCppModel } = require('./tools/web');
+    return Boolean(findSDCppBinary() && findSDCppModel());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Identifies one generation request, independent of which video it belongs to.
  *
  * Two scenes asking the same question — same wording, same frame, same seed —
@@ -163,9 +175,17 @@ export async function generateSceneImages(opts: {
    * fail or time out, preventing cold-cache renders from stalling or failing.
    */
   fallbackPlates?: boolean;
+  /**
+   * Maximum simultaneous scene image generations. Defaults to 1 when local sd-cpp
+   * is installed and used (preventing 4GB VRAM thrashing and timeouts), or CONCURRENCY (4)
+   * for network providers.
+   */
+  concurrency?: number;
 }): Promise<SceneImage[]> {
   const generate = opts.generate ?? defaultGenerator;
   const timeoutMs = opts.timeoutMs ?? SCENE_TIMEOUT_MS;
+  const isLocal = !opts.generate && hasLocalSDCpp();
+  const effectiveConcurrency = Math.max(1, opts.concurrency ?? (isLocal ? 1 : CONCURRENCY));
   fs.mkdirSync(opts.outDir, { recursive: true });
   // Best-effort, like every other cache touch below: an unusable cache
   // directory (wrong permissions, or something already at that path that
@@ -239,10 +259,13 @@ export async function generateSceneImages(opts: {
     opts.onProgress?.(completed, opts.scenes.length);
   };
 
-  // Fixed-size worker pool: parallelises generations across workers up to CONCURRENCY.
+  // Fixed-size worker pool: parallelises generations across workers up to effectiveConcurrency.
+  // For local sd-cpp on a 4GB GPU, concurrency is serialized (1 worker) to prevent VRAM
+  // contention and allow each scene its full per-scene timeout budget. For network
+  // generators, concurrency is CONCURRENCY (4) to dispatch parallel requests.
   const queue = opts.scenes.map((_, i) => i);
   await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+    Array.from({ length: Math.min(effectiveConcurrency, queue.length) }, async () => {
       for (;;) {
         const next = queue.shift();
         if (next === undefined) return;
