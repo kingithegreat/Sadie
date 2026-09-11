@@ -224,10 +224,27 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     const off = (window as any).electron?.onSdCppSetupProgress?.((p: any) => setSdCppSetup(p));
     return () => off?.();
   }, []);
-  void sdCppStatus;
-  void sdCppPromptFor;
-  void setSdCppPromptFor;
-  void sdCppSetupRunning;
+  const refreshSDCppStatus = useCallback(async () => {
+    const s = await (window as any).electron?.sdCppStatus?.();
+    setSdCppStatus(s);
+  }, []);
+
+  const handleSDCppAutoSetup = useCallback(async (onSuccess?: () => void) => {
+    setSdCppSetup({ phase: 'resolving', note: 'Starting…' });
+    try {
+      const res = await (window as any).electron?.sdCppAutoSetup?.();
+      if (res?.success) {
+        await refreshSDCppStatus();
+        setSdCppSetup(null);
+        setSdCppPromptFor(null);
+        onSuccess?.();
+      } else if (res?.error) {
+        setSdCppSetup({ phase: 'error', note: res.error });
+      }
+    } catch (e: any) {
+      setSdCppSetup({ phase: 'error', note: e?.message || 'Setup failed.' });
+    }
+  }, [refreshSDCppStatus]);
 
   // "From Ancient Pathways…" — 2D animated history series
   const [apOpen, setApOpen] = useState(false);
@@ -1775,23 +1792,9 @@ ${shots.map((s, idx) => `
                     type="button"
                     className="ms-btn ms-btn--primary"
                     disabled={sdCppSetupRunning}
-                    onClick={async () => {
-                      setSdCppSetup({ phase: 'resolving', note: 'Starting…' });
-                      try {
-                        const res = await (window as any).electron?.sdCppAutoSetup?.();
-                        if (res?.success) {
-                          const s = await (window as any).electron?.sdCppStatus?.();
-                          setSdCppStatus(s);
-                          setSdCppPromptFor(null);
-                          setSdCppSetup(null);
-                          runJobStage(j.id, stageAction(j)!);
-                        } else if (res?.error) {
-                          setSdCppSetup({ phase: 'error', note: res.error });
-                        }
-                      } catch (e: any) {
-                        setSdCppSetup({ phase: 'error', note: e?.message || 'Setup failed.' });
-                      }
-                    }}
+                    onClick={() => handleSDCppAutoSetup(() => {
+                      runJobStage(j.id, stageAction(j)!);
+                    })}
                   >
                     {sdCppSetupRunning ? 'Setting up…' : 'Set it up for me'}
                   </button>
@@ -4470,6 +4473,44 @@ ${shots.map((s, idx) => `
                     >Show me how</a>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {sdCppStatus && !sdCppStatus.ready && (
+            <div className="ms-sdcpp-banner">
+              <div className="ms-sdcpp-banner-status">
+                <span className="ms-status-dot ms-status-dot--red" aria-hidden="true" />
+                <span className="ms-sdcpp-banner-text">
+                  Making images on this PC needs a one-time setup. Without it, rendering
+                  uses online image services. Local generation is private and offline.
+                </span>
+              </div>
+              <div className="ms-sdcpp-banner-actions">
+                <button
+                  type="button"
+                  className="ms-btn ms-btn--primary"
+                  disabled={sdCppSetupRunning}
+                  onClick={() => handleSDCppAutoSetup()}
+                >
+                  {sdCppSetupRunning ? 'Setting up…' : 'Set it up for me (about a 2 GB download)'}
+                </button>
+                <button
+                  type="button"
+                  className="ms-btn"
+                  disabled={sdCppSetupRunning}
+                  onClick={refreshSDCppStatus}
+                >
+                  I've done it — check again
+                </button>
+              </div>
+              {sdCppSetup && (
+                <div className={`ms-sdcpp-setup-progress${sdCppSetup.phase === 'error' ? ' ms-sdcpp-setup-progress--error' : ''}`} role="status" aria-live="polite">
+                  {sdCppSetup.note}
+                  {sdCppSetup.receivedMB != null && sdCppSetup.phase !== 'done' && sdCppSetup.phase !== 'error' && (
+                    <> {sdCppSetup.receivedMB}{sdCppSetup.totalMB ? ` of ${sdCppSetup.totalMB}` : ''} MB</>
+                  )}
+                </div>
               )}
             </div>
           )}
