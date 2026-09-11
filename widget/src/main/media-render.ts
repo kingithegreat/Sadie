@@ -186,6 +186,124 @@ export function defaultSubtitleStyle(shape: VideoShape): string {
   ].join(',');
 }
 
+/** Measured audio loudness statistics from FFmpeg loudnorm analysis (Pass 1). */
+export interface LoudnormStats {
+  input_i: string;
+  input_tp: string;
+  input_lra: string;
+  input_thresh: string;
+  target_offset: string;
+}
+
+/** Standard audio target loudness: -16 LUFS integrated, -1.5 dBTP true peak, 11 LRA. */
+export const LOUDNORM_DEFAULTS = {
+  i: -16,
+  tp: -1.5,
+  lra: 11,
+} as const;
+
+/**
+ * Builds the second-pass loudnorm audio filter with measured parameters injected.
+ */
+export function buildLoudnormFilter(
+  stats: LoudnormStats,
+  targetI: number = LOUDNORM_DEFAULTS.i,
+  targetTp: number = LOUDNORM_DEFAULTS.tp,
+  targetLra: number = LOUDNORM_DEFAULTS.lra,
+): string {
+  return [
+    `loudnorm=I=${targetI}`,
+    `TP=${targetTp}`,
+    `LRA=${targetLra}`,
+    `measured_I=${stats.input_i}`,
+    `measured_TP=${stats.input_tp}`,
+    `measured_LRA=${stats.input_lra}`,
+    `measured_thresh=${stats.input_thresh}`,
+    `offset=${stats.target_offset}`,
+    'linear=true',
+  ].join(':');
+}
+
+/**
+ * Parses JSON output produced by FFmpeg loudnorm pass 1 (print_format=json).
+ */
+export function parseLoudnormOutput(stderr: string): LoudnormStats {
+  const start = stderr.lastIndexOf('{');
+  const end = stderr.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Failed to find loudnorm JSON output in ffmpeg stderr');
+  }
+  const jsonStr = stderr.slice(start, end + 1);
+  const parsed = JSON.parse(jsonStr);
+  if (
+    typeof parsed.input_i !== 'string' ||
+    typeof parsed.input_tp !== 'string' ||
+    typeof parsed.input_lra !== 'string' ||
+    typeof parsed.input_thresh !== 'string' ||
+    typeof parsed.target_offset !== 'string'
+  ) {
+    throw new Error(`Incomplete loudnorm output: ${jsonStr}`);
+  }
+  return {
+    input_i: parsed.input_i,
+    input_tp: parsed.input_tp,
+    input_lra: parsed.input_lra,
+    input_thresh: parsed.input_thresh,
+    target_offset: parsed.target_offset,
+  };
+}
+
+/**
+ * Pass 1: Analyzes the audio stream (or mixed audio if music is present) to measure
+ * integrated loudness, true peak, LRA, and threshold for subsequent linear normalization.
+ */
+export async function measureAudioLoudness(opts: {
+  ffmpeg: string;
+  audioPath: string;
+  musicPath?: string | null;
+  musicVolume?: number;
+  targetI?: number;
+  targetTp?: number;
+  targetLra?: number;
+}): Promise<LoudnormStats> {
+  const targetI = opts.targetI ?? LOUDNORM_DEFAULTS.i;
+  const targetTp = opts.targetTp ?? LOUDNORM_DEFAULTS.tp;
+  const targetLra = opts.targetLra ?? LOUDNORM_DEFAULTS.lra;
+  const lnFilter = `loudnorm=I=${targetI}:TP=${targetTp}:LRA=${targetLra}:print_format=json`;
+
+  const args: string[] = ['-y'];
+  if (opts.musicPath) {
+    args.push('-i', opts.audioPath, '-i', opts.musicPath);
+    const volume = opts.musicVolume ?? MUSIC_VOLUME_DEFAULT;
+    const filterComplex = [
+      `[0:a]asplit=2[narmix][narkey]`,
+      `[1:a]volume=${volume},aloop=loop=-1:size=2147483647[musicloop]`,
+      `[musicloop][narkey]sidechaincompress=threshold=0.03:ratio=8:attack=5:release=400[ducked]`,
+      `[narmix][ducked]amix=inputs=2:duration=first:normalize=0,${lnFilter}`,
+    ].join(';');
+    args.push('-filter_complex', filterComplex);
+  } else {
+    args.push('-i', opts.audioPath, '-af', lnFilter);
+  }
+  args.push('-f', 'null', '-');
+
+  return new Promise((resolve, reject) => {
+    execFile(opts.ffmpeg, args, { timeout: 3 * 60_000, maxBuffer: 1024 * 1024 * 16 }, (err, _stdout, stderr) => {
+      if (err) {
+        const tail = String(stderr || '').trim().split('\n').slice(-6).join('\n');
+        reject(new Error(`Loudnorm measurement pass failed: ${tail || err.message}`));
+        return;
+      }
+      try {
+        const stats = parseLoudnormOutput(String(stderr || ''));
+        resolve(stats);
+      } catch (parseErr) {
+        reject(parseErr);
+      }
+    });
+  });
+}
+
 /**
  * Arguments for a single-visual render. Pure, so the command can be asserted
  * without invoking ffmpeg — the parts that break are the filter string and the
@@ -207,6 +325,8 @@ export function buildRenderArgs(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Two-pass loudness normalization measured stats. */
+  loudnormStats?: LoudnormStats | null;
 }): string[] {
   const { w, h } = dimensionsFor(opts.shape);
   const fps = opts.fps ?? 30;
@@ -225,7 +345,8 @@ export function buildRenderArgs(opts: {
   const filters: string[] = [];
   if (opts.imagePath) {
     // Cover the frame without distortion: scale to fill, crop the overflow.
-    filters.push(`scale=${w}:${h}:force_original_aspect_ratio=increase`);
+    // Force BT.709 color matrix and limited output range during scaling.
+    filters.push(`scale=${w}:${h}:force_original_aspect_ratio=increase:out_color_matrix=bt709:out_range=limited`);
     filters.push(`crop=${w}:${h}`);
     if (opts.zoom !== false) {
       // zoompan runs per input frame, so the frame count is duration x fps.
@@ -253,17 +374,34 @@ export function buildRenderArgs(opts: {
   // Without music the original -vf form is used unchanged, so switching music
   // off cannot alter a render that already worked.
   if (opts.musicPath) {
-    const music = buildMusicAudioGraph({ narrationInput: 1, musicInput: 2, volume: opts.musicVolume });
+    const music = buildMusicAudioGraph({
+      narrationInput: 1,
+      musicInput: 2,
+      volume: opts.musicVolume,
+      loudnormStats: opts.loudnormStats,
+    });
     args.push('-filter_complex', `[0:v]${filters.join(',')}[v];${music.graph}`);
     args.push('-map', '[v]', '-map', music.outLabel);
   } else {
     args.push('-vf', filters.join(','));
+    if (opts.loudnormStats) {
+      args.push('-af', buildLoudnormFilter(opts.loudnormStats));
+    }
   }
   args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
   // Forced at the encoder, not just in the filter chain. A JPEG input is
   // full-range, so the encoder picked yuvj420p — the deprecated variant that
   // renders washed out on some players — even with format=yuv420p filtered.
-  args.push('-pix_fmt', 'yuv420p');
+  // Pin BT.709 color primaries, transfer characteristics, matrix coefficients,
+  // and VUI flags for universal player compatibility.
+  args.push(
+    '-pix_fmt', 'yuv420p',
+    '-color_range', 'tv',
+    '-color_primaries', 'bt709',
+    '-color_trc', 'bt709',
+    '-colorspace', 'bt709',
+    '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off',
+  );
   args.push('-c:a', 'aac', '-b:a', '128k');
   // The image input loops forever; the audio decides when the video ends.
   args.push('-shortest', '-movflags', '+faststart');
@@ -291,6 +429,8 @@ export function buildTimelineRenderArgs(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Two-pass loudness normalization measured stats. */
+  loudnormStats?: LoudnormStats | null;
 }): string[] {
   const { w, h } = dimensionsFor(opts.shape);
   const fps = opts.fps ?? 30;
@@ -309,7 +449,7 @@ export function buildTimelineRenderArgs(opts: {
     // 1 still on screen at 6s when it should have ended at 3.17s, while the
     // pictures cut on time.
     `fps=${fps}`,
-    `scale=${w}:${h}:force_original_aspect_ratio=increase`,
+    `scale=${w}:${h}:force_original_aspect_ratio=increase:out_color_matrix=bt709:out_range=limited`,
     `crop=${w}:${h}`,
   ];
   if (opts.captionsPath) {
@@ -322,16 +462,32 @@ export function buildTimelineRenderArgs(opts: {
   // one output, so music moves the whole graph into filter_complex and the
   // no-music path stays exactly as it was.
   if (opts.musicPath) {
-    const music = buildMusicAudioGraph({ narrationInput: 1, musicInput: 2, volume: opts.musicVolume });
+    const music = buildMusicAudioGraph({
+      narrationInput: 1,
+      musicInput: 2,
+      volume: opts.musicVolume,
+      loudnormStats: opts.loudnormStats,
+    });
     args.push('-filter_complex', `[0:v]${filters.join(',')}[v];${music.graph}`);
     args.push('-map', '[v]', '-map', music.outLabel);
   } else {
     args.push('-vf', filters.join(','));
+    if (opts.loudnormStats) {
+      args.push('-af', buildLoudnormFilter(opts.loudnormStats));
+    }
   }
   args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
   // See buildRenderArgs: generated scenes arrive as JPEG/PNG and the encoder
   // otherwise settles on full-range yuvj420p.
-  args.push('-pix_fmt', 'yuv420p');
+  // Pin BT.709 color space and limited range for universal player compatibility.
+  args.push(
+    '-pix_fmt', 'yuv420p',
+    '-color_range', 'tv',
+    '-color_primaries', 'bt709',
+    '-color_trc', 'bt709',
+    '-colorspace', 'bt709',
+    '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off',
+  );
   args.push('-c:a', 'aac', '-b:a', '128k');
   args.push('-shortest', '-movflags', '+faststart');
   args.push(opts.outputPath);
@@ -432,13 +588,22 @@ export function buildMusicAudioGraph(opts: {
   narrationInput: number;
   musicInput: number;
   volume?: number;
+  loudnormStats?: LoudnormStats | null;
+  targetI?: number;
+  targetTp?: number;
+  targetLra?: number;
 }): { graph: string; outLabel: string } {
   const volume = opts.volume ?? MUSIC_VOLUME_DEFAULT;
+  const lnFilter = opts.loudnormStats
+    ? buildLoudnormFilter(opts.loudnormStats, opts.targetI, opts.targetTp, opts.targetLra)
+    : null;
   const graph = [
     `[${opts.narrationInput}:a]asplit=2[narmix][narkey]`,
     `[${opts.musicInput}:a]volume=${volume},aloop=loop=-1:size=2147483647[musicloop]`,
     `[musicloop][narkey]sidechaincompress=threshold=0.03:ratio=8:attack=5:release=400[ducked]`,
-    `[narmix][ducked]amix=inputs=2:duration=first:normalize=0[aout]`,
+    lnFilter
+      ? `[narmix][ducked]amix=inputs=2:duration=first:normalize=0[mixout];[mixout]${lnFilter}[aout]`
+      : `[narmix][ducked]amix=inputs=2:duration=first:normalize=0[aout]`,
   ].join(';');
   return { graph, outLabel: '[aout]' };
 }
@@ -447,6 +612,7 @@ export interface RenderResult {
   path: string;
   bytes: number;
   args: string[];
+  loudnorm?: LoudnormStats | null;
 }
 
 /**
@@ -468,15 +634,37 @@ export async function renderVideo(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Pass-through or pre-measured loudnorm stats. Set to false to disable loudnorm. */
+  loudnormStats?: LoudnormStats | false | null;
 }): Promise<RenderResult> {
   if (!fs.existsSync(opts.audioPath)) {
     throw new Error(`No narration audio at ${opts.audioPath}`);
   }
   fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
 
+  let loudnormStats: LoudnormStats | null = null;
+  if (opts.loudnormStats !== false) {
+    if (opts.loudnormStats && typeof opts.loudnormStats === 'object') {
+      loudnormStats = opts.loudnormStats;
+    } else {
+      // Pass 1: Run loudness analysis
+      loudnormStats = await measureAudioLoudness({
+        ffmpeg: opts.ffmpeg,
+        audioPath: opts.audioPath,
+        musicPath: opts.musicPath,
+        musicVolume: opts.musicVolume,
+      });
+    }
+  }
+
+  const renderOpts = {
+    ...opts,
+    loudnormStats,
+  };
   const args = opts.concatPath
-    ? buildTimelineRenderArgs({ ...opts, concatPath: opts.concatPath })
-    : buildRenderArgs(opts);
+    ? buildTimelineRenderArgs({ ...renderOpts, concatPath: opts.concatPath })
+    : buildRenderArgs(renderOpts);
+
   await new Promise<void>((resolve, reject) => {
     execFile(opts.ffmpeg, args, { timeout: 15 * 60_000, maxBuffer: 1024 * 1024 * 16 }, (err, _out, stderr) => {
       if (err) {
@@ -498,5 +686,5 @@ export async function renderVideo(opts: {
   if (bytes < 10_000) {
     throw new Error(`Rendered file is only ${bytes} bytes — the render produced no usable video`);
   }
-  return { path: opts.outputPath, bytes, args };
+  return { path: opts.outputPath, bytes, args, loudnorm: loudnormStats };
 }
