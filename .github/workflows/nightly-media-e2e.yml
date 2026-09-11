@@ -1,0 +1,91 @@
+name: Nightly Media E2E
+
+# Scheduled nightly end-to-end media rendering verification gate on Windows.
+# Runs the full media suite (two-pass loudness normalization, BT.709 color pinning,
+# real Electron IPC, and managed/PATH FFmpeg execution) to catch regressions
+# without slowing down regular push and pull request CI.
+
+on:
+  schedule:
+    # Runs at 02:00 UTC every night (~14:00/15:00 NZST)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab or CLI
+
+concurrency:
+  group: nightly-media-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  media-e2e-windows:
+    name: Media Studio E2E (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+
+      - name: Install dependencies (root & widget)
+        run: |
+          npm ci --ignore-scripts
+          cd widget && npm ci --ignore-scripts
+
+      - name: Rebuild native modules for Node
+        run: |
+          npm rebuild better-sqlite3
+          cd widget && npm rebuild better-sqlite3
+
+      - name: Point TEMP inside home directory
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:USERPROFILE 'homebot-test-tmp'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          "TEMP=$tmp" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TMP=$tmp"  | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "USERPROFILE=$env:USERPROFILE"
+          Write-Host "TEMP=$tmp"
+
+      - name: Ensure FFmpeg availability
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            Write-Host "ffmpeg not found on PATH; installing via choco..."
+            choco install ffmpeg -y
+          }
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Fetch Electron binary
+        working-directory: widget
+        run: node node_modules/electron/install.js
+
+      - name: Build widget
+        working-directory: widget
+        run: npm run build
+
+      - name: Run Media E2E suite (Real IPC, userData & FFmpeg render)
+        working-directory: widget
+        shell: pwsh
+        env:
+          NODE_ENV: test
+          HOMEBOT_E2E: '1'
+          HOMEBOT_E2E_FFMPEG: '1'
+        run: |
+          npx jest src/main/__tests__/media-render.test.ts src/main/__tests__/studio-real-ipc.test.ts --runInBand --no-coverage --forceExit
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-media-e2e-artifacts
+          path: |
+            widget/test-results/
+            widget/playwright-report/
+          retention-days: 7
