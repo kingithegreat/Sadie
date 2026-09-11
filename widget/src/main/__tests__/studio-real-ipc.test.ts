@@ -22,10 +22,11 @@ import { _electron as electron } from '@playwright/test';
 
 const describeSuite = process.env.HOMEBOT_E2E_FFMPEG === '1' ? describe : describe.skip;
 
-describeSuite('Media Studio Real IPC & Real UserData (Task 4)', () => {
+describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
   jest.setTimeout(60_000); // 1 minute timeout
 
-  const realUserData = path.join(process.env.APPDATA || os.homedir(), 'HomeBot');
+  const testBase = process.env.TEMP || process.env.TMPDIR || os.tmpdir();
+  const testUserData = fs.mkdtempSync(path.join(testBase, 'homebot-real-ipc-'));
   const entry = path.resolve(__dirname, '../../../out/main/index.js');
   const electronPath = require('electron');
 
@@ -41,6 +42,30 @@ describeSuite('Media Studio Real IPC & Real UserData (Task 4)', () => {
       throw new Error(`Built application entry not found at ${entry}. Run 'npm run build' first.`);
     }
 
+    // Initialize disposable test profile with baseline config
+    const cfgDir = path.join(testUserData, 'config');
+    fs.mkdirSync(cfgDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cfgDir, 'user-settings.json'),
+      JSON.stringify({
+        mediaMusicEnabled: false,
+        mediaPublishingEnabled: false,
+        narrationEngine: 'edge',
+      }),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(testUserData, 'media-jobs.json'), '[]', 'utf8');
+
+    // Link real managed ffmpeg directory into disposable test userData so findManagedFfmpeg() resolves cleanly
+    const realManagedFfmpegDir = path.join(process.env.APPDATA || os.homedir(), 'HomeBot', 'ffmpeg');
+    if (fs.existsSync(realManagedFfmpegDir)) {
+      try {
+        fs.symlinkSync(realManagedFfmpegDir, path.join(testUserData, 'ffmpeg'), 'junction');
+      } catch {
+        /* Symlink fallback or PATH resolution below */
+      }
+    }
+
     // Locate FFmpeg binary: managed copy in userData first, fallback to PATH / candidate paths
     const { findManagedFfmpeg } = await import('../ffmpeg-setup');
     const { findFfmpeg } = await import('../media-render');
@@ -53,12 +78,12 @@ describeSuite('Media Studio Real IPC & Real UserData (Task 4)', () => {
     const siblingProbe = ffmpegBin.replace(/ffmpeg(\.exe)?$/i, (m) => (m.toLowerCase().endsWith('.exe') ? 'ffprobe.exe' : 'ffprobe'));
     ffprobeBin = fs.existsSync(siblingProbe) ? siblingProbe : 'ffprobe';
 
-    // Launch real Electron pointing at real userData
+    // Launch real Electron pointing at disposable test userData directory
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       HOMEBOT_E2E: '1',
       NODE_ENV: 'test',
-      HOMEBOT_E2E_USER_DATA_DIR: realUserData,
+      HOMEBOT_E2E_USER_DATA_DIR: testUserData,
     };
     delete env.ELECTRON_RUN_AS_NODE;
     delete env.ELECTRON_RENDERER_URL;
@@ -74,30 +99,20 @@ describeSuite('Media Studio Real IPC & Real UserData (Task 4)', () => {
   });
 
   afterAll(async () => {
-    // Cleanup created test job from real userData to leave no debris
-    if (createdJobId) {
-      try {
-        const jobsFile = path.join(realUserData, 'media-jobs.json');
-        if (fs.existsSync(jobsFile)) {
-          const jobs = JSON.parse(fs.readFileSync(jobsFile, 'utf8'));
-          const filtered = jobs.filter((j: any) => j.id !== createdJobId);
-          fs.writeFileSync(jobsFile, JSON.stringify(filtered, null, 2), 'utf8');
-        }
-        const assetDir = path.join(realUserData, 'media-assets', createdJobId);
-        if (fs.existsSync(assetDir)) {
-          fs.rmSync(assetDir, { recursive: true, force: true });
-        }
-      } catch (err) {
-        console.warn('Cleanup error:', err);
-      }
-    }
-
     if (app) {
       await app.close();
     }
+    // Clean up disposable test directory completely, leaving zero debris in production APPDATA
+    try {
+      if (fs.existsSync(testUserData)) {
+        fs.rmSync(testUserData, { recursive: true, force: true });
+      }
+    } catch (err) {
+      console.warn('Cleanup error for disposable testUserData:', err);
+    }
   });
 
-  it('creates, prepares, and renders a video crossing the real IPC boundary in real userData', async () => {
+  it('creates, prepares, and renders a video crossing the real IPC boundary in disposable userData', async () => {
     // 1. Verify renderer IPC API exposure
     const hasMediaCreate = await page.evaluate(() => typeof (window as any).electron?.mediaCreate);
     const hasMediaRun = await page.evaluate(() => typeof (window as any).electron?.mediaRun);
@@ -115,11 +130,15 @@ describeSuite('Media Studio Real IPC & Real UserData (Task 4)', () => {
 
     expect(createResult.ok).toBe(true);
     expect(createResult.job).toBeDefined();
+    // Verify structured-clone fidelity across Chromium IPC
+    expect(() => JSON.stringify(createResult)).not.toThrow();
+    expect(createResult.job.title).toBe('Fast Real IPC Diagnostic');
+
     createdJobId = createResult.job.id;
     const jobId = createdJobId!;
 
-    // 3. Prepare fast 3s audio, captions, and visual plate directly in real userData
-    const jobAssetDir = path.join(realUserData, 'media-assets', jobId);
+    // 3. Prepare fast 3s audio, captions, and visual plate directly in disposable testUserData
+    const jobAssetDir = path.join(testUserData, 'media-assets', jobId);
     fs.mkdirSync(jobAssetDir, { recursive: true });
 
     const audioPath = path.join(jobAssetDir, 'narration.mp3');
@@ -148,8 +167,8 @@ describeSuite('Media Studio Real IPC & Real UserData (Task 4)', () => {
     const concatContent = `ffconcat version 1.0\nfile '${scenePath.replace(/\\/g, '/')}'\nduration 3.000\nfile '${scenePath.replace(/\\/g, '/')}'\n`;
     fs.writeFileSync(concatPath, concatContent, 'utf8');
 
-    // Update job record in real media-jobs.json to media_production state
-    const jobsFile = path.join(realUserData, 'media-jobs.json');
+    // Update job record in disposable media-jobs.json to media_production state
+    const jobsFile = path.join(testUserData, 'media-jobs.json');
     const jobs = JSON.parse(fs.readFileSync(jobsFile, 'utf8'));
     const targetJob = jobs.find((j: any) => j.id === jobId);
     expect(targetJob).toBeDefined();
@@ -168,6 +187,8 @@ describeSuite('Media Studio Real IPC & Real UserData (Task 4)', () => {
     const durationMs = Date.now() - t0;
 
     expect(renderResult.ok).toBe(true);
+    // Verify structured-clone fidelity of render response
+    expect(() => JSON.stringify(renderResult)).not.toThrow();
     expect(durationMs).toBeLessThan(20_000); // Must be fast (<20s)
 
     // 5. Verify output file in real userData
