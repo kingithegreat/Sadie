@@ -88,6 +88,124 @@ describe('generating one image per scene', () => {
   });
 });
 
+describe('reusing a previous generation by prompt hash', () => {
+  // Cache is opt-in via cacheDir precisely so these are the only tests that
+  // exercise it — every other test above shares scene text like "a"/"b"/"c"
+  // across cases with deliberately different mock behaviour, and a shared
+  // default cache would let one test's cached image answer for another's.
+
+  it('skips the network call on an identical (prompt, size, seed)', async () => {
+    const dir = tmp();
+    const cacheDir = tmp();
+    let calls = 0;
+    const opts = {
+      scenes: [{ text: 'a lighthouse at dawn' }],
+      videoTitle: 'T', outDir: dir, width: 64, height: 64, seed: 7,
+      generate: async () => { calls++; return { base64: PNG_1PX, source: 'test' }; },
+      cacheDir,
+    };
+    const first = await generateSceneImages(opts);
+    expect(calls).toBe(1);
+    expect(first[0].source).toBe('test');
+
+    const dir2 = tmp();
+    const second = await generateSceneImages({ ...opts, outDir: dir2 });
+    expect(calls).toBe(1); // no second network call
+    expect(second[0].source).toBe('cache');
+    expect(fs.existsSync(second[0].path!)).toBe(true);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir2, { recursive: true, force: true });
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+  });
+
+  it('does not cache across a different prompt, size, or seed', async () => {
+    const dir = tmp();
+    const cacheDir = tmp();
+    let calls = 0;
+    const generate = async () => { calls++; return { base64: PNG_1PX }; };
+
+    await generateSceneImages({
+      scenes: [{ text: 'a ship at sea' }], videoTitle: 'T', outDir: dir,
+      width: 64, height: 64, seed: 1, generate, cacheDir,
+    });
+    await generateSceneImages({
+      scenes: [{ text: 'a ship at sea' }], videoTitle: 'T', outDir: dir,
+      width: 64, height: 64, seed: 2, generate, cacheDir, // different seed
+    });
+    expect(calls).toBe(2);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+  });
+
+  it('stays off unless a cacheDir is given, so existing callers are unaffected', async () => {
+    const dir = tmp();
+    let calls = 0;
+    const opts = {
+      scenes: [{ text: 'no cache configured' }], videoTitle: 'T', outDir: dir,
+      width: 64, height: 64,
+      generate: async () => { calls++; return { base64: PNG_1PX }; },
+    };
+    await generateSceneImages(opts);
+    await generateSceneImages(opts);
+    expect(calls).toBe(2); // both real calls — no cache to hit
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a cache write failure does not turn a successful generation into a failed scene', async () => {
+    const dir = tmp();
+    // A file where the cache directory should be: mkdirSync on it throws,
+    // and so does writing "<file>/<hash>.png" inside it.
+    const notADir = path.join(tmp(), 'not-a-directory');
+    fs.writeFileSync(notADir, 'x');
+    const res = await generateSceneImages({
+      scenes: [{ text: 'a' }], videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: async () => ({ base64: PNG_1PX }),
+      cacheDir: notADir,
+    });
+    expect(res[0].path).toBeTruthy();
+    expect(fs.existsSync(res[0].path!)).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(notADir, { force: true });
+  });
+});
+
+describe('bounding how long one scene may take', () => {
+  it('treats a hung generator as a failure once the timeout elapses, not forever', async () => {
+    const dir = tmp();
+    const res = await generateSceneImages({
+      scenes: [{ text: 'a' }], videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: () => new Promise(() => {}), // never resolves
+      timeoutMs: 20,
+    });
+    expect(res[0].path).toBeNull();
+    expect(res[0].error).toMatch(/timed out/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 10_000);
+
+  it('does not penalize a generator that answers well inside the timeout', async () => {
+    const dir = tmp();
+    const res = await generateSceneImages({
+      scenes: [{ text: 'a' }], videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: async () => ({ base64: PNG_1PX }),
+      timeoutMs: 5_000,
+    });
+    expect(res[0].path).toBeTruthy();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('can be disabled with timeoutMs: 0, for callers that manage their own', async () => {
+    const dir = tmp();
+    const res = await generateSceneImages({
+      scenes: [{ text: 'a' }], videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: async () => ({ base64: PNG_1PX }),
+      timeoutMs: 0,
+    });
+    expect(res[0].path).toBeTruthy();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe('filling the gaps', () => {
   it('holds the previous picture rather than cutting to black', () => {
     const filled = fillMissingImages([
