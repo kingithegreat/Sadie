@@ -27,6 +27,8 @@ describe('ShortcutsPanel', () => {
     expect(screen.getByText('New line in message')).toBeInTheDocument();
     expect(screen.getByText('New conversation')).toBeInTheDocument();
     expect(screen.getByText('Toggle sidebar')).toBeInTheDocument();
+    expect(screen.getByText('Switch to Code workspace')).toBeInTheDocument();
+    expect(screen.getByText('Switch to Media Studio')).toBeInTheDocument();
   });
 
   test('renders category headings', () => {

@@ -36,10 +36,12 @@ const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 export default function WorkspaceShell({
   open,
   onClose,
+  onHome,
   navContext,
 }: {
   open: boolean;
   onClose: () => void;
+  onHome?: () => void;
   /**
    * Context handed over when the assistant sent the user here with
    * navigate_to_mode. Only `path` means anything: a directory becomes the
@@ -376,7 +378,7 @@ export default function WorkspaceShell({
             the mode tabs, so "no way to nav home from code" was a fair read.
             A labelled button in the status bar is where VS Code users look for
             state, and it reads as an action, not chrome. Escape still works. */}
-        <button type="button" className="ws-status-home" onClick={onClose}>
+        <button type="button" className="ws-status-home" onClick={onHome ?? onClose}>
           <Icon name="dashboard" size={13} />
           Home
         </button>
