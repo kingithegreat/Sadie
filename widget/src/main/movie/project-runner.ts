@@ -30,6 +30,7 @@ import { imagen3Provider } from './imagen3-adapter';
 import { localSD15Provider } from './local-sd15-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
 import { validateMovieImageFiles } from './image-output';
+import { checkAndIngestColabResult } from './colab-queue';
 
 export interface MovieProject {
   projectId: string;
@@ -344,6 +345,30 @@ export class MovieProjectRunner {
 
         // Check if already awaiting worker and worker output arrived
         if (state.status === ShotStatus.AWAITING_WORKER) {
+          // Probe Colab Drive queue if this shot has a deferred ticket
+          if (state.deferredTicket && (!state.deferredProvider || state.deferredProvider === 'colab-worker')) {
+            try {
+              const importResult = checkAndIngestColabResult(shotDir, state.deferredTicket);
+              if (importResult.status === 'imported') {
+                report.completedShots++;
+                report.results.push({
+                  shotId,
+                  sceneId,
+                  status: ShotStatus.IMAGE_GENERATED,
+                  provider: state.deferredProvider ?? 'colab-worker',
+                  files: [importResult.imagePath],
+                });
+                continue;
+              } else if (importResult.status === 'failed') {
+                failShot(importResult.error, state.deferredProvider ?? 'colab-worker');
+                continue;
+              }
+            } catch (err) {
+              failShot((err as Error).message, state.deferredProvider ?? 'colab-worker');
+              continue;
+            }
+          }
+
           const imgOut = imageFiles()[0];
           const vidOut = path.join(shotDir, 'video', `${shotId}.mp4`);
           const output = req.kind === 'image' ? imgOut : (fs.existsSync(vidOut) ? vidOut : undefined);
