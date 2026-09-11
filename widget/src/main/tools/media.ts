@@ -822,7 +822,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const wantScenes = String(args.visuals ?? 'scenes') === 'scenes' && !image;
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
-      const { generateSceneImages, fillMissingImages, seedForVideo } = await import('../media-visuals');
+      const { generateSceneImages, fillMissingImages, seedForVideo, defaultImageCacheDir } = await import('../media-visuals');
       const { parseSrtCues } = await import('../media-captions');
 
       const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
@@ -840,6 +840,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
           // One seed for the whole video, derived from its identity, so the
           // scenes look like each other and a re-render reproduces them.
           seed: seedForVideo(job.id),
+          // A re-render after tweaking timing/text regenerates every scene
+          // from scratch without this — most prompts didn't change, and each
+          // one is a call to a free, unSLA'd, queue-based provider.
+          cacheDir: defaultImageCacheDir(),
         });
         const filled = fillMissingImages(images);
         const made = filled.filter(Boolean).length;
