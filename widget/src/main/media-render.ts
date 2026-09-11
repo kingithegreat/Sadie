@@ -195,10 +195,19 @@ export interface LoudnormStats {
   target_offset: string;
 }
 
-/** Standard audio target loudness: -16 LUFS integrated, -1.5 dBTP true peak, 11 LRA. */
+/**
+ * Standard audio target loudness: -16 LUFS integrated, -2.0 dBTP true peak, 11 LRA.
+ *
+ * Note on true-peak target (-2.0 dBTP):
+ * EBU R128 s2 and AES TD1004 specify a target maximum true-peak level of -2.0 dBTP
+ * for delivery via lossy codecs (such as AAC and MP3). Because lossy MDCT
+ * reconstruction incurs ~0.2 to 0.5 dB of inter-sample true-peak regrowth,
+ * targeting -2.0 dBTP ensures the final encoded file strictly satisfies the
+ * <= -1.5 dBTP compliance ceiling without clipping or distortion on consumer players.
+ */
 export const LOUDNORM_DEFAULTS = {
   i: -16,
-  tp: -1.5,
+  tp: -2.0,
   lra: 11,
 } as const;
 
@@ -211,9 +220,10 @@ export function buildLoudnormFilter(
   targetTp: number = LOUDNORM_DEFAULTS.tp,
   targetLra: number = LOUDNORM_DEFAULTS.lra,
 ): string {
+  const tpStr = Number.isInteger(targetTp) ? targetTp.toFixed(1) : String(targetTp);
   return [
     `loudnorm=I=${targetI}`,
-    `TP=${targetTp}`,
+    `TP=${tpStr}`,
     `LRA=${targetLra}`,
     `measured_I=${stats.input_i}`,
     `measured_TP=${stats.input_tp}`,
@@ -269,7 +279,8 @@ export async function measureAudioLoudness(opts: {
   const targetI = opts.targetI ?? LOUDNORM_DEFAULTS.i;
   const targetTp = opts.targetTp ?? LOUDNORM_DEFAULTS.tp;
   const targetLra = opts.targetLra ?? LOUDNORM_DEFAULTS.lra;
-  const lnFilter = `loudnorm=I=${targetI}:TP=${targetTp}:LRA=${targetLra}:print_format=json`;
+  const tpStr = Number.isInteger(targetTp) ? targetTp.toFixed(1) : String(targetTp);
+  const lnFilter = `loudnorm=I=${targetI}:TP=${tpStr}:LRA=${targetLra}:print_format=json`;
 
   const args: string[] = ['-y'];
   if (opts.musicPath) {
@@ -327,6 +338,9 @@ export function buildRenderArgs(opts: {
   musicVolume?: number;
   /** Two-pass loudness normalization measured stats. */
   loudnormStats?: LoudnormStats | null;
+  targetI?: number;
+  targetTp?: number;
+  targetLra?: number;
 }): string[] {
   const { w, h } = dimensionsFor(opts.shape);
   const fps = opts.fps ?? 30;
@@ -379,13 +393,16 @@ export function buildRenderArgs(opts: {
       musicInput: 2,
       volume: opts.musicVolume,
       loudnormStats: opts.loudnormStats,
+      targetI: opts.targetI,
+      targetTp: opts.targetTp,
+      targetLra: opts.targetLra,
     });
     args.push('-filter_complex', `[0:v]${filters.join(',')}[v];${music.graph}`);
     args.push('-map', '[v]', '-map', music.outLabel);
   } else {
     args.push('-vf', filters.join(','));
     if (opts.loudnormStats) {
-      args.push('-af', buildLoudnormFilter(opts.loudnormStats));
+      args.push('-af', buildLoudnormFilter(opts.loudnormStats, opts.targetI, opts.targetTp, opts.targetLra));
     }
   }
   args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
@@ -431,6 +448,9 @@ export function buildTimelineRenderArgs(opts: {
   musicVolume?: number;
   /** Two-pass loudness normalization measured stats. */
   loudnormStats?: LoudnormStats | null;
+  targetI?: number;
+  targetTp?: number;
+  targetLra?: number;
 }): string[] {
   const { w, h } = dimensionsFor(opts.shape);
   const fps = opts.fps ?? 30;
@@ -467,13 +487,16 @@ export function buildTimelineRenderArgs(opts: {
       musicInput: 2,
       volume: opts.musicVolume,
       loudnormStats: opts.loudnormStats,
+      targetI: opts.targetI,
+      targetTp: opts.targetTp,
+      targetLra: opts.targetLra,
     });
     args.push('-filter_complex', `[0:v]${filters.join(',')}[v];${music.graph}`);
     args.push('-map', '[v]', '-map', music.outLabel);
   } else {
     args.push('-vf', filters.join(','));
     if (opts.loudnormStats) {
-      args.push('-af', buildLoudnormFilter(opts.loudnormStats));
+      args.push('-af', buildLoudnormFilter(opts.loudnormStats, opts.targetI, opts.targetTp, opts.targetLra));
     }
   }
   args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
@@ -636,6 +659,9 @@ export async function renderVideo(opts: {
   musicVolume?: number;
   /** Pass-through or pre-measured loudnorm stats. Set to false to disable loudnorm. */
   loudnormStats?: LoudnormStats | false | null;
+  targetI?: number;
+  targetTp?: number;
+  targetLra?: number;
 }): Promise<RenderResult> {
   if (!fs.existsSync(opts.audioPath)) {
     throw new Error(`No narration audio at ${opts.audioPath}`);
@@ -653,6 +679,9 @@ export async function renderVideo(opts: {
         audioPath: opts.audioPath,
         musicPath: opts.musicPath,
         musicVolume: opts.musicVolume,
+        targetI: opts.targetI,
+        targetTp: opts.targetTp,
+        targetLra: opts.targetLra,
       });
     }
   }

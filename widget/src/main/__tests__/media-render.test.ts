@@ -408,7 +408,7 @@ describe('buildMusicAudioGraph', () => {
       loudnormStats: stats,
     });
     expect(outLabel).toBe('[aout]');
-    expect(graph).toContain('normalize=0[mixout];[mixout]loudnorm=I=-16:TP=-1.5:LRA=11');
+    expect(graph).toContain('normalize=0[mixout];[mixout]loudnorm=I=-16:TP=-2.0:LRA=11');
     expect(graph).toContain('measured_I=-17.48');
     expect(graph).toContain('linear=true[aout]');
   });
@@ -479,7 +479,14 @@ describe('two-pass audio loudness normalization (Task 3)', () => {
   test('buildLoudnormFilter constructs compliant filter string with measured parameters', () => {
     const f = buildLoudnormFilter(dummyStats);
     expect(f).toBe(
-      'loudnorm=I=-16:TP=-1.5:LRA=11:measured_I=-17.48:measured_TP=-0.97:measured_LRA=2.30:measured_thresh=-27.97:offset=0.38:linear=true',
+      'loudnorm=I=-16:TP=-2.0:LRA=11:measured_I=-17.48:measured_TP=-0.97:measured_LRA=2.30:measured_thresh=-27.97:offset=0.38:linear=true',
+    );
+  });
+
+  test('buildLoudnormFilter honors custom target parameters', () => {
+    const f = buildLoudnormFilter(dummyStats, -14, -1.0, 7);
+    expect(f).toBe(
+      'loudnorm=I=-14:TP=-1.0:LRA=7:measured_I=-17.48:measured_TP=-0.97:measured_LRA=2.30:measured_thresh=-27.97:offset=0.38:linear=true',
     );
   });
 
@@ -524,7 +531,7 @@ describe('two-pass audio loudness normalization (Task 3)', () => {
     });
     expect(args).toContain('-af');
     const af = args[args.indexOf('-af') + 1];
-    expect(af).toContain('loudnorm=I=-16:TP=-1.5:LRA=11');
+    expect(af).toContain('loudnorm=I=-16:TP=-2.0:LRA=11');
     expect(af).toContain('measured_I=-17.48');
   });
 
@@ -538,7 +545,7 @@ describe('two-pass audio loudness normalization (Task 3)', () => {
     });
     expect(args).toContain('-af');
     const af = args[args.indexOf('-af') + 1];
-    expect(af).toContain('loudnorm=I=-16:TP=-1.5:LRA=11');
+    expect(af).toContain('loudnorm=I=-16:TP=-2.0:LRA=11');
   });
 });
 
