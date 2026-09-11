@@ -182,7 +182,7 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     // 4. Trigger render over real IPC boundary: ipcRenderer.invoke('homebot:media:run', jobId, 'render')
     const t0 = Date.now();
     const renderResult = await page.evaluate(async (id: string) => {
-      return await (window as any).electron.mediaRun(id, 'render');
+      return await (window as any).electron.mediaRun(id, 'render', { visuals: 'plain' });
     }, jobId);
     const durationMs = Date.now() - t0;
 
