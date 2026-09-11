@@ -32,12 +32,40 @@ const STATE_LABEL: Record<Capability['state'], string> = {
   unknown: 'Not checked',
 };
 
-export default function CapabilityReport() {
+const MODE_NAMES: Record<string, string> = {
+  settings: 'Settings',
+  studio: 'Media Studio',
+  image: 'Image Studio',
+  code: 'Code Workspace',
+  automation: 'Automations',
+  chat: 'Chat',
+};
+
+interface CapabilityReportProps {
+  onNavigate?: (mode: string) => void;
+}
+
+export default function CapabilityReport({ onNavigate }: CapabilityReportProps = {}) {
   const [capabilities, setCapabilities] = useState<Capability[] | null>(null);
   const [summary, setSummary] = useState<{ ready: number; total: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = useCallback(async (id: string, command: string) => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(command);
+      }
+      setCopiedId(id);
+      setTimeout(() => {
+        setCopiedId(prev => (prev === id ? null : prev));
+      }, 2000);
+    } catch {
+      // ignore copy failures in non-secure or test environments
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,6 +145,34 @@ export default function CapabilityReport() {
               // The remedy, not just the diagnosis. A status with no fix is a
               // shrug, and the app already had plenty of those.
               <p className="cap-fix"><strong>Fix:</strong> {cap.fix}</p>
+            )}
+            {(cap.fixCommand || (cap.navMode && onNavigate)) && (
+              <div className="cap-fix-actions" data-testid={`cap-actions-${cap.id}`}>
+                {cap.fixCommand && (
+                  <div className="cap-cmd-box">
+                    <code className="cap-cmd-text" data-testid={`cap-cmd-${cap.id}`}>{cap.fixCommand}</code>
+                    <button
+                      type="button"
+                      className="cap-copy-btn"
+                      onClick={() => handleCopy(cap.id, cap.fixCommand!)}
+                      aria-label="Copy command"
+                      data-testid={`cap-copy-${cap.id}`}
+                    >
+                      {copiedId === cap.id ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                )}
+                {cap.navMode && onNavigate && (
+                  <button
+                    type="button"
+                    className="cap-nav-btn"
+                    onClick={() => onNavigate(cap.navMode!)}
+                    data-testid={`cap-nav-${cap.id}`}
+                  >
+                    Open {MODE_NAMES[cap.navMode] || cap.navMode} →
+                  </button>
+                )}
+              </div>
             )}
           </li>
         ))}

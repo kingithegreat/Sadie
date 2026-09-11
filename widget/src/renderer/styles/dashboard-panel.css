@@ -510,3 +510,70 @@
 .cap-refresh { margin-left: 12px; font-size: 0.8em; }
 .cap-toggle { margin-top: 10px; font-size: 0.85em; background: none; border: none; cursor: pointer; text-decoration: underline; color: inherit; opacity: 0.8; }
 .cap-all-good, .cap-loading, .cap-error { margin: 4px 0 0; opacity: 0.8; }
+
+.cap-fix-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cap-cmd-box {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-3, rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.cap-cmd-text {
+  padding: 4px 10px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.84em;
+  color: var(--text-code, #e6edf3);
+  user-select: all;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.cap-copy-btn {
+  background: var(--surface-4, rgba(255, 255, 255, 0.08));
+  border: none;
+  border-left: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  color: var(--text-secondary, rgba(255, 255, 255, 0.85));
+  padding: 5px 9px;
+  font-size: 0.78em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cap-copy-btn:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.16));
+  color: #fff;
+}
+
+.cap-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-subtle, rgba(99, 102, 241, 0.15));
+  border: 1px solid var(--accent-border, rgba(99, 102, 241, 0.35));
+  color: var(--accent-text, #a5b4fc);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.82em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cap-nav-btn:hover {
+  background: var(--accent-subtle-hover, rgba(99, 102, 241, 0.25));
+  border-color: var(--accent-border-hover, rgba(99, 102, 241, 0.55));
+  color: #fff;
+}
+
