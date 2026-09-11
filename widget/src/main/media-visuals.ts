@@ -18,25 +18,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
-/** How many images to request at once. Enough to be quick, few enough to be polite. */
-const CONCURRENCY = 3;
+/** How many images to request at once. Parallelises cold-cache requests across workers. */
+const CONCURRENCY = 4;
 
 /** Pause before retrying a failed scene, to let a shared backoff lapse. */
 const RETRY_GAP_MS = Number(process.env.HOMEBOT_SCENE_RETRY_GAP_MS ?? 1500);
 
 /**
  * How long one scene's generation may run before it counts as failed.
- *
- * Measured live: a single scene calling the default generator walks up to six
- * providers in sequence (two local backends that are usually not running,
- * then Pollinations, Stable Horde, DALL-E, then Pollinations again) with no
- * ceiling on the total. One slow provider inside that chain used to stall an
- * entire worker slot — and the other two workers in the pool with it — for
- * however long that provider felt like taking. This bounds it so a hang
- * becomes an ordinary per-scene failure, which the existing retry/fallback
- * path already knows how to survive.
+ * Bounded to 15 seconds so cold-cache generations do not stall the timeline.
  */
-const SCENE_TIMEOUT_MS = Number(process.env.HOMEBOT_SCENE_IMAGE_TIMEOUT_MS ?? 45_000);
+const SCENE_TIMEOUT_MS = Number(process.env.HOMEBOT_SCENE_IMAGE_TIMEOUT_MS ?? 15_000);
 
 /**
  * Where to keep previously-generated scenes for reuse.
@@ -157,6 +149,11 @@ export async function generateSceneImages(opts: {
   cacheDir?: string | null;
   /** Per-scene ceiling; defaults to SCENE_TIMEOUT_MS. Set 0 to disable. */
   timeoutMs?: number;
+  /**
+   * If true, synthesize a styled visual fallback plate when all generators
+   * fail or time out, preventing cold-cache renders from stalling or failing.
+   */
+  fallbackPlates?: boolean;
 }): Promise<SceneImage[]> {
   const generate = opts.generate ?? defaultGenerator;
   const timeoutMs = opts.timeoutMs ?? SCENE_TIMEOUT_MS;
@@ -194,10 +191,13 @@ export async function generateSceneImages(opts: {
       }
     }
 
+    const controller = new AbortController();
+    const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
       const img = timeoutMs > 0
-        ? await withTimeout(generate(prompt, opts.width, opts.height, opts.seed), timeoutMs, `scene ${i} generation`)
-        : await generate(prompt, opts.width, opts.height, opts.seed);
+        ? await withTimeout(generate(prompt, opts.width, opts.height, opts.seed, controller.signal), timeoutMs, `scene ${i} generation`)
+        : await generate(prompt, opts.width, opts.height, opts.seed, controller.signal);
+      if (timer) clearTimeout(timer);
       if (img?.base64) {
         const buf = Buffer.from(img.base64, 'base64');
         fs.writeFileSync(file, buf);
@@ -207,18 +207,30 @@ export async function generateSceneImages(opts: {
           try { fs.writeFileSync(cachePath, buf); } catch { /* not fatal */ }
         }
         results[i] = { index: i, path: file, source: img.source };
+      } else if (opts.fallbackPlates) {
+        await generateFallbackPlate(file, opts.width, opts.height, i);
+        results[i] = { index: i, path: file, source: 'fallback-plate' };
       } else {
         results[i] = { index: i, path: null, error: 'no image returned' };
       }
     } catch (e: any) {
-      results[i] = { index: i, path: null, error: e?.message || String(e) };
+      if (timer) clearTimeout(timer);
+      if (opts.fallbackPlates) {
+        try {
+          await generateFallbackPlate(file, opts.width, opts.height, i);
+          results[i] = { index: i, path: file, source: 'fallback-plate', error: e?.message || String(e) };
+        } catch {
+          results[i] = { index: i, path: null, error: e?.message || String(e) };
+        }
+      } else {
+        results[i] = { index: i, path: null, error: e?.message || String(e) };
+      }
     }
     completed++;
     opts.onProgress?.(completed, opts.scenes.length);
   };
 
-  // Fixed-size worker pool: a plain Promise.all over 21 scenes would open 21
-  // simultaneous generations and get throttled or refused.
+  // Fixed-size worker pool: parallelises generations across workers up to CONCURRENCY.
   const queue = opts.scenes.map((_, i) => i);
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
@@ -235,9 +247,7 @@ export async function generateSceneImages(opts: {
   // The free backends are the flaky part, and Pollinations in particular holds
   // a shared five-minute backoff after any failure — so a single unlucky
   // request inside a batch silently takes the rest of the batch down with it.
-  // Observed: one image out of three, then every scene reusing that neighbour,
-  // which is a "multi-scene" video with one picture in it. Retrying serially
-  // with a gap recovers most of them.
+  // Retrying serially recovers transient drops.
   const failed = results.filter(r => !r.path).map(r => r.index);
   if (failed.length && failed.length < opts.scenes.length + 1) {
     for (const i of failed) {
@@ -247,6 +257,40 @@ export async function generateSceneImages(opts: {
   }
 
   return results;
+}
+
+/**
+ * Generates a clean, styled visual plate when local and online image generation
+ * are unavailable or timed out, ensuring a cold-cache render never stalls or fails.
+ */
+export async function generateFallbackPlate(
+  outPath: string,
+  width: number,
+  height: number,
+  sceneIndex: number,
+): Promise<string> {
+  const palettes = ['0x0F172A', '0x1E1B4B', '0x111827', '0x18181B', '0x0F1319'];
+  const color = palettes[sceneIndex % palettes.length];
+  try {
+    const { findFfmpeg } = await import('./media-render');
+    const { findManagedFfmpeg } = await import('./ffmpeg-setup');
+    const ffmpeg = (await findFfmpeg(findManagedFfmpeg())) || 'ffmpeg';
+    const { execFile } = await import('child_process');
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        ffmpeg,
+        ['-y', '-f', 'lavfi', '-i', `color=c=${color}:s=${width}x${height}:d=1`, '-vframes', '1', outPath],
+        { timeout: 5000 },
+        (err) => (err ? reject(err) : resolve()),
+      );
+    });
+    return outPath;
+  } catch {
+    // 1x1 PNG fallback decoded directly to buffer so plate creation never throws
+    const FALLBACK_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    fs.writeFileSync(outPath, Buffer.from(FALLBACK_PNG, 'base64'));
+    return outPath;
+  }
 }
 
 /**
@@ -273,9 +317,26 @@ export function fillMissingImages(images: SceneImage[]): Array<string | null> {
   return out;
 }
 
-async function defaultGenerator(prompt: string, width: number, height: number, seed?: number) {
+async function defaultGenerator(prompt: string, width: number, height: number, seed?: number, signal?: AbortSignal) {
+  if (signal?.aborted) return null;
+  // 1. Direct local sd-cpp call: bypasses dead port pinging (7860/8188) and runs offline
+  const { findSDCppBinary, findSDCppModel, trySDCpp } = await import('./tools/web');
+  if (signal?.aborted) return null;
+  if (findSDCppBinary() && findSDCppModel()) {
+    try {
+      const b64 = await trySDCpp(prompt, width, height, 8, signal);
+      if (b64) return { base64: b64, source: 'sd-cpp-local' };
+    } catch (err) {
+      if (signal?.aborted) return null;
+      console.warn('[media-visuals] local sd-cpp generation failed, falling back:', err);
+    }
+  }
+
+  if (signal?.aborted) return null;
+  // 2. Fallback to imageGenerateHandler with online provider / fast Pollinations
   const { imageGenerateHandler } = await import('./tools/web');
-  const res: any = await imageGenerateHandler({ prompt, width, height, seed }, { executionId: 'media-visuals' } as any);
+  if (signal?.aborted) return null;
+  const res: any = await imageGenerateHandler({ prompt, width, height, seed, steps: 8 }, { executionId: 'media-visuals' } as any);
   if (!res?.success) throw new Error(res?.error || 'image_generate failed');
   const base64 = res.result?.image_base64;
   if (!base64) return null;

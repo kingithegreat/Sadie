@@ -20,6 +20,15 @@ import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 
+/** Mirrors ImageGenerator.tsx's local shape — same IPC contract, not shared. */
+interface SDCppStatus {
+  ready: boolean;
+  hasBinary: boolean;
+  hasModel: boolean;
+  dir: string;
+  modelsDir: string;
+}
+
 type MediaJobState =
   | 'idea' | 'researching' | 'script_draft' | 'script_qa' | 'media_production'
   | 'render_qa' | 'awaiting_approval' | 'approved' | 'scheduled' | 'published'
@@ -197,6 +206,28 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   /** Which job is currently being asked for its published link, if any. */
   const [publishingFor, setPublishingFor] = useState<string | null>(null);
   const [publishedLink, setPublishedLink] = useState('');
+
+  // Local image generation (sd.cpp) readiness — same shape and IPC surface as
+  // ImageGenerator.tsx's "/Image" mode, which already has a working one-click
+  // setup. "Make the video" (media_production's render stage) was silently
+  // going straight to network image providers (Pollinations, Stable Horde —
+  // unSLA'd, nondeterministic, prompt egress) whenever nothing local was
+  // installed. This surfaces the choice instead of deciding it for the user.
+  const [sdCppStatus, setSdCppStatus] = useState<SDCppStatus | null>(null);
+  /** The job id whose "Make the video" click is paused on this choice, if any. */
+  const [sdCppPromptFor, setSdCppPromptFor] = useState<string | null>(null);
+  const [sdCppSetup, setSdCppSetup] = useState<{ phase: string; note: string; receivedMB?: number; totalMB?: number | null } | null>(null);
+  const sdCppSetupRunning = !!sdCppSetup && sdCppSetup.phase !== 'done' && sdCppSetup.phase !== 'error';
+
+  useEffect(() => {
+    (window as any).electron?.sdCppStatus?.().then((s: SDCppStatus) => setSdCppStatus(s));
+    const off = (window as any).electron?.onSdCppSetupProgress?.((p: any) => setSdCppSetup(p));
+    return () => off?.();
+  }, []);
+  void sdCppStatus;
+  void sdCppPromptFor;
+  void setSdCppPromptFor;
+  void sdCppSetupRunning;
 
   // "From Ancient Pathways…" — 2D animated history series
   const [apOpen, setApOpen] = useState(false);
@@ -442,6 +473,22 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     } finally {
       setBusy(null); setBusyLabel('');
     }
+  };
+
+  /**
+   * The actual stage-advancing call `.ms-job-actions`'s primary button makes.
+   * Pulled out of the button's onClick so the sd.cpp prompt card can trigger
+   * the same call after "Set it up for me" or "Continue with online instead"
+   * — the original one-liner inlined this, which meant the render call could
+   * only ever happen from the one place that used to make it immediately.
+   */
+  const runJobStage = (jobId: string, a: { label: string; action: 'script' | 'narrate' | 'render' }) => {
+    run(jobId, () => api()?.mediaRun?.(jobId, a.action, a.action === 'narrate'
+      ? {
+          voice: narrateVoice || undefined,
+          engine: narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+        }
+      : undefined), a.label);
   };
 
   /** Stages that call a model, the TTS service or ffmpeg — the slow ones. */
@@ -1689,16 +1736,87 @@ ${shots.map((s, idx) => `
               className="ms-btn ms-btn--primary"
               onClick={() => {
                 const a = stageAction(j)!;
-                run(j.id, () => api()?.mediaRun?.(j.id, a.action, a.action === 'narrate'
-                  ? {
-                      voice: narrateVoice || undefined,
-                      engine: narrateEngine === 'kokoro' ? 'kokoro' : undefined,
-                    }
-                  : undefined), a.label);
+                // "Make the video" is what actually calls generateSceneImages,
+                // which goes straight to Pollinations/Stable Horde whenever
+                // nothing local is installed — nondeterministic, no offline
+                // rendering, prompts leaving the machine, with no ask. Ask
+                // once, here, rather than deciding it silently.
+                if (a.action === 'render' && sdCppStatus && !sdCppStatus.ready) {
+                  setSdCppPromptFor(j.id);
+                  return;
+                }
+                runJobStage(j.id, a);
               }}
             >
               {stageAction(j)!.label}
             </button>
+            {sdCppPromptFor === j.id && (
+              <div className="ms-sdcpp-prompt" role="dialog" aria-label="Choose where images are made">
+                <div className="ms-sdcpp-prompt-text">
+                  <strong>Make this video's images on this PC instead?</strong>
+                  <p>
+                    Nothing is installed yet, so this would currently use free online
+                    services (Pollinations, Stable Horde) — that means the render time
+                    depends on their queue, prompts leave this machine, and results are
+                    not reproducible. Local generation is private and offline, and works
+                    the same way every time. It is a one-time ~2&nbsp;GB download.
+                  </p>
+                </div>
+                {sdCppSetup && (
+                  <div className={`ms-sdcpp-prompt-progress${sdCppSetup.phase === 'error' ? ' ms-sdcpp-prompt-progress--error' : ''}`} role="status" aria-live="polite">
+                    {sdCppSetup.note}
+                    {sdCppSetup.receivedMB != null && sdCppSetup.phase !== 'done' && sdCppSetup.phase !== 'error' && (
+                      <> {sdCppSetup.receivedMB}{sdCppSetup.totalMB ? ` of ${sdCppSetup.totalMB}` : ''} MB</>
+                    )}
+                  </div>
+                )}
+                <div className="ms-sdcpp-prompt-actions">
+                  <button
+                    type="button"
+                    className="ms-btn ms-btn--primary"
+                    disabled={sdCppSetupRunning}
+                    onClick={async () => {
+                      setSdCppSetup({ phase: 'resolving', note: 'Starting…' });
+                      try {
+                        const res = await (window as any).electron?.sdCppAutoSetup?.();
+                        if (res?.success) {
+                          const s = await (window as any).electron?.sdCppStatus?.();
+                          setSdCppStatus(s);
+                          setSdCppPromptFor(null);
+                          setSdCppSetup(null);
+                          runJobStage(j.id, stageAction(j)!);
+                        } else if (res?.error) {
+                          setSdCppSetup({ phase: 'error', note: res.error });
+                        }
+                      } catch (e: any) {
+                        setSdCppSetup({ phase: 'error', note: e?.message || 'Setup failed.' });
+                      }
+                    }}
+                  >
+                    {sdCppSetupRunning ? 'Setting up…' : 'Set it up for me'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ms-btn"
+                    disabled={sdCppSetupRunning}
+                    onClick={() => {
+                      setSdCppPromptFor(null);
+                      runJobStage(j.id, stageAction(j)!);
+                    }}
+                  >
+                    Continue with online instead
+                  </button>
+                  <button
+                    type="button"
+                    className="ms-btn"
+                    disabled={sdCppSetupRunning}
+                    onClick={() => setSdCppPromptFor(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         ) : PUBLISHABLE.includes(j.state) ? (
           /* Publishing asks for the link, because HomeBot does not upload.
