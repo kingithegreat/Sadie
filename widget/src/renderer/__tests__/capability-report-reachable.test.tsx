@@ -155,3 +155,58 @@ test('surfaces image-generation and code-workspace headline pillars with remedie
   expect(getByTestId('cap-code-workspace').textContent).toContain('git-scm.com');
 });
 
+test('Track D: renders actionable command snippet and copies to clipboard with user feedback', async () => {
+  const writeTextMock = jest.fn().mockResolvedValue(undefined);
+  Object.assign(navigator, {
+    clipboard: {
+      writeText: writeTextMock,
+    },
+  });
+
+  mockReport([
+    {
+      id: 'local-chat',
+      label: 'Answer on this PC',
+      state: 'missing',
+      detail: 'The local AI service is not running.',
+      fix: 'Install Ollama.',
+      fixCommand: 'winget install Ollama.Ollama',
+    },
+  ]);
+
+  const { getByTestId } = render(<CapabilityReport />);
+  await waitFor(() => expect(getByTestId('cap-cmd-local-chat')).toBeTruthy());
+  expect(getByTestId('cap-cmd-local-chat').textContent).toBe('winget install Ollama.Ollama');
+
+  const copyBtn = getByTestId('cap-copy-local-chat');
+  expect(copyBtn.textContent).toBe('Copy');
+
+  fireEvent.click(copyBtn);
+  expect(writeTextMock).toHaveBeenCalledWith('winget install Ollama.Ollama');
+  await waitFor(() => expect(getByTestId('cap-copy-local-chat').textContent).toContain('Copied'));
+});
+
+test('Track D: renders direct in-app navigation button and invokes onNavigate', async () => {
+  const onNavigateMock = jest.fn();
+  mockReport([
+    {
+      id: 'image-generation',
+      label: 'Make pictures on this PC',
+      state: 'missing',
+      detail: 'The local image engine is not installed.',
+      fix: 'Image mode → "Set it up for me".',
+      navMode: 'image',
+    },
+  ]);
+
+  const { getByTestId } = render(<CapabilityReport onNavigate={onNavigateMock} />);
+  await waitFor(() => expect(getByTestId('cap-nav-image-generation')).toBeTruthy());
+
+  const navBtn = getByTestId('cap-nav-image-generation');
+  expect(navBtn.textContent).toContain('Open Image Studio');
+
+  fireEvent.click(navBtn);
+  expect(onNavigateMock).toHaveBeenCalledWith('image');
+});
+
+

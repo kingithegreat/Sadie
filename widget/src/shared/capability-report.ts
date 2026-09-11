@@ -49,6 +49,10 @@ export interface Capability {
   detail: string;
   /** The literal thing that fixes it. Omitted only when nothing is wrong. */
   fix?: string;
+  /** Literal shell / winget command that installs or sets up the capability. */
+  fixCommand?: string;
+  /** In-app mode route for 1-click navigation to the relevant screen. */
+  navMode?: string;
   /**
    * True when the state is a judgement rather than a measurement — the probe
    * was skipped, or could not run. Always paired with `unknown`.
@@ -114,7 +118,8 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       label: 'Answer on this PC',
       state: 'missing',
       detail: 'The local AI service is not running, so nothing can be answered offline.',
-      fix: 'Start Ollama, or install it from ollama.com if it is not on this PC yet.',
+      fix: 'Start Ollama, or install it (free, local, private) with winget below or from ollama.com.',
+      fixCommand: 'winget install Ollama.Ollama',
     });
   } else if (input.localModelCount === 0) {
     caps.push({
@@ -122,7 +127,9 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       label: 'Answer on this PC',
       state: 'needs_setup',
       detail: 'The local AI service is running but no models are downloaded.',
-      fix: 'Settings → Models → download a recommended model.',
+      fix: 'Download a recommended free model with the command below, or through Settings → Models.',
+      fixCommand: 'ollama pull llama3.2',
+      navMode: 'settings',
     });
   } else if (!input.localModelSelected) {
     caps.push({
@@ -131,6 +138,7 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       state: 'needs_setup',
       detail: `${input.localModelCount} model(s) are downloaded but none is selected for chat.`,
       fix: 'Settings → Models → pick a chat model.',
+      navMode: 'settings',
     });
   } else {
     caps.push({
@@ -151,7 +159,8 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       label: 'Answer using an online AI',
       state: 'needs_setup',
       detail: 'No online AI is set up, so everything is answered on this PC.',
-      fix: 'Settings → Advanced → add a provider and key, then turn on the switch at the top of Settings.',
+      fix: 'Settings → Advanced → add a provider and key, then turn on the switch at the top of Settings. Free keys are available from Google AI Studio, Groq, and Cerebras without a credit card.',
+      navMode: 'settings',
     });
   } else if (!input.cloudAllowed) {
     caps.push({
@@ -189,6 +198,7 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
         'Set up a search source so this stops happening: run your own SearXNG (free and ' +
         'unlimited), or add a free key — Brave gives 2,000 searches a month, Tavily 1,000. ' +
         'Settings → Advanced → Search.',
+      navMode: 'settings',
     });
   } else {
     // Never claim this works. The free path is a scrape with no key and no
@@ -206,6 +216,7 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       fix:
         'Run your own SearXNG (free, unlimited, no account), or add a free key — Brave 2,000 ' +
         'searches a month, Tavily 1,000. Settings → Advanced → Search.',
+      navMode: 'settings',
     });
   }
 
@@ -221,6 +232,7 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
     fix: input.readerFallbackEnabled
       ? undefined
       : 'Settings → "Use a reading service when a page will not open", beside the privacy switch.',
+    navMode: input.readerFallbackEnabled ? undefined : 'settings',
   });
 
   // ── Making videos ───────────────────────────────────────────────────────
@@ -231,7 +243,9 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
     detail: input.ffmpegAvailable
       ? 'The video engine is installed.'
       : 'The video engine (ffmpeg) is not installed, so no video can be rendered.',
-    fix: input.ffmpegAvailable ? undefined : 'Media Studio → "Set it up for me".',
+    fix: input.ffmpegAvailable ? undefined : 'Media Studio → "Set it up for me", or install FFmpeg via winget below.',
+    fixCommand: input.ffmpegAvailable ? undefined : 'winget install Gyan.FFmpeg',
+    navMode: input.ffmpegAvailable ? undefined : 'studio',
   });
 
   // ── Making pictures on this PC ─────────────────────────────────────────
@@ -242,6 +256,7 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       state: 'missing',
       detail: 'The local image engine is not installed, so pictures cannot be generated offline.',
       fix: 'Image mode → "Set it up for me", or download the image engine.',
+      navMode: 'image',
     });
   } else if (!input.sdModelInstalled) {
     caps.push({
@@ -250,6 +265,7 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       state: 'needs_setup',
       detail: 'The local image engine is installed but no picture model is downloaded.',
       fix: 'Image mode → download or place a model file in the models folder.',
+      navMode: 'image',
     });
   } else {
     caps.push({
@@ -270,7 +286,9 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       : 'Git is not installed on this PC, so code version control is unavailable.',
     fix: input.gitAvailable
       ? undefined
-      : 'Install Git from git-scm.com to enable version control.',
+      : 'Install Git for version control via winget below, or download from git-scm.com.',
+    fixCommand: input.gitAvailable ? undefined : 'winget install Git.Git',
+    navMode: input.gitAvailable ? undefined : 'code',
   });
 
   // ── Automations ─────────────────────────────────────────────────────────
@@ -284,7 +302,9 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       ? 'Automations can run on a schedule and through your workflow server.'
       : 'Scheduled and manual automations work. The workflow server is not reachable, so ' +
         'automations that depend on it will not run.',
-    fix: input.n8nReachable ? undefined : 'Start n8n, or clear its address in Settings if you do not use it.',
+    fix: input.n8nReachable ? undefined : 'Start n8n with the command below, or clear its address in Settings if you do not use it.',
+    fixCommand: input.n8nReachable ? undefined : 'npx n8n',
+    navMode: input.n8nReachable ? undefined : 'automation',
   });
 
   // ── Long-term memory ────────────────────────────────────────────────────
@@ -295,7 +315,8 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
     detail: input.qdrantReachable
       ? 'Long-term memory search is available.'
       : 'The memory database is not reachable, so older conversations cannot be searched.',
-    fix: input.qdrantReachable ? undefined : 'Start Qdrant, or leave it — everything else works without it.',
+    fix: input.qdrantReachable ? undefined : 'Start Qdrant with the command below, or leave it — everything else works without it.',
+    fixCommand: input.qdrantReachable ? undefined : 'docker run -p 6333:6333 qdrant/qdrant',
   });
 
   // ── Disk ────────────────────────────────────────────────────────────────
@@ -314,6 +335,7 @@ export function buildCapabilityReport(input: CapabilityInput): Capability[] {
       state: 'needs_setup',
       detail: `${input.freeDiskGB.toFixed(1)} GB free. Models are several GB each and renders need working space.`,
       fix: 'Free up space, or Settings → Models → delete a model you are not using.',
+      navMode: 'settings',
     });
   } else {
     caps.push({
