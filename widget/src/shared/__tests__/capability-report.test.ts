@@ -66,6 +66,8 @@ describe('the honesty rules', () => {
   test('a ready capability never carries a fix — there is nothing to fix', () => {
     for (const cap of buildCapabilityReport(HEALTHY).filter(c => c.state === 'ready')) {
       expect(cap.fix).toBeUndefined();
+      expect(cap.fixCommand).toBeUndefined();
+      expect(cap.navMode).toBeUndefined();
     }
   });
 
@@ -229,3 +231,41 @@ describe('summarise', () => {
     expect(s.needsAttention.map(c => c.id)).toContain('web-search');
   });
 });
+
+describe('Track D: actionable setup commands and navigation', () => {
+  test('missing services carry literal CLI/winget setup commands', () => {
+    const ollamaCap = find({ ...HEALTHY, ollamaReachable: false }, 'local-chat');
+    expect(ollamaCap.fixCommand).toBe('winget install Ollama.Ollama');
+
+    const ffmpegCap = find({ ...HEALTHY, ffmpegAvailable: false }, 'media-studio');
+    expect(ffmpegCap.fixCommand).toBe('winget install Gyan.FFmpeg');
+    expect(ffmpegCap.navMode).toBe('studio');
+
+    const gitCap = find({ ...HEALTHY, gitAvailable: false }, 'code-workspace');
+    expect(gitCap.fixCommand).toBe('winget install Git.Git');
+    expect(gitCap.navMode).toBe('code');
+
+    const n8nCap = find({ ...HEALTHY, n8nReachable: false }, 'automations');
+    expect(n8nCap.fixCommand).toBe('npx n8n');
+    expect(n8nCap.navMode).toBe('automation');
+
+    const qdrantCap = find({ ...HEALTHY, qdrantReachable: false }, 'memory-search');
+    expect(qdrantCap.fixCommand).toBe('docker run -p 6333:6333 qdrant/qdrant');
+  });
+
+  test('zero models downloaded suggests pulling a recommended free model', () => {
+    const cap = find({ ...HEALTHY, localModelCount: 0 }, 'local-chat');
+    expect(cap.fixCommand).toBe('ollama pull llama3.2');
+    expect(cap.navMode).toBe('settings');
+  });
+
+  test('unconfigured capabilities provide direct in-app navigation routes', () => {
+    expect(find({ ...HEALTHY, cloudConfigured: false }, 'cloud-chat').navMode).toBe('settings');
+    expect(find({ ...HEALTHY, configuredSearchProviders: [], freeSearchBlocked: null }, 'web-search').navMode).toBe('settings');
+    expect(find({ ...HEALTHY, readerFallbackEnabled: false }, 'web-reader').navMode).toBe('settings');
+    expect(find({ ...HEALTHY, sdCppInstalled: false }, 'image-generation').navMode).toBe('image');
+    expect(find({ ...HEALTHY, sdCppInstalled: true, sdModelInstalled: false }, 'image-generation').navMode).toBe('image');
+    expect(find({ ...HEALTHY, freeDiskGB: LOW_DISK_GB - 1 }, 'disk-space').navMode).toBe('settings');
+  });
+});
+

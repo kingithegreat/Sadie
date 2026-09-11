@@ -301,7 +301,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
           "Make a video" button while ffmpeg is missing, or "Search the web"
           while no search source is set up, is how the app came to fail quietly
           in the first place. */}
-      <CapabilityReport />
+      <CapabilityReport onNavigate={onModeChange} />
 
       {/* Quick Actions */}
       <div>
