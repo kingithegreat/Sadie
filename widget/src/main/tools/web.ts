@@ -1746,72 +1746,102 @@ function pickSDCppDevice(binary: string): string | null {
   return _sdCppDevice;
 }
 
+/**
+ * Concurrency gate: only one sd-cli.exe may hold the GPU/CPU at a time.
+ *
+ * Spawning multiple local diffusion processes concurrently exhausts VRAM on a
+ * 4GB GPU (each process takes ~2.1GB), causing severe thrashing and timeouts.
+ */
+let _sdCppLock: Promise<void> = Promise.resolve();
+
+export function __resetSDCppLockForTests(): void {
+  _sdCppLock = Promise.resolve();
+}
+
 export async function trySDCpp(prompt: string, width: number, height: number, steps: number = 8, signal?: AbortSignal): Promise<string | null> {
   const binary = findSDCppBinary();
   const model = findSDCppModel();
   if (!binary || !model) return null;
   if (signal?.aborted) return null;
-  const device = pickSDCppDevice(binary);
 
-  // SD-1.5 native resolution is 512x512. Higher dimensions cause an 8.7GB workspace
-  // allocation failure in ggml. Scale down to <=512 (multiples of 64); ffmpeg scales & crops.
-  const maxDim = 512;
-  let targetW = width;
-  let targetH = height;
-  if (targetW > maxDim || targetH > maxDim) {
-    if (targetW >= targetH) {
-      targetH = Math.round((targetH * maxDim) / targetW);
-      targetW = maxDim;
-    } else {
-      targetW = Math.round((targetW * maxDim) / targetH);
-      targetH = maxDim;
-    }
-  }
-  targetW = Math.max(64, Math.floor(targetW / 64) * 64);
-  targetH = Math.max(64, Math.floor(targetH / 64) * 64);
+  const prevLock = _sdCppLock;
+  let releaseLock!: () => void;
+  _sdCppLock = new Promise<void>((resolve) => { releaseLock = resolve; });
 
   const outputPath = path.join(getSDCppDir(), `output-${Date.now()}.png`);
 
-  const runOnce = (mode: string) => new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) return reject(new Error('sd.cpp aborted'));
-    const args = [
-      '-M', mode,
-      '-m', model,
-      '-p', prompt,
-      '-W', String(targetW),
-      '-H', String(targetH),
-      '--steps', String(steps),
-      '-o', outputPath,
-    ];
-    if (device) {
-      // Assign every stage to the discovered device explicitly rather than
-      // pass "--auto-fit off" — auto-fit's own device *detection* is what
-      // failed, not its placement logic, so keep the rest of its behaviour.
-      args.push('--backend', `diffusion=${device},vae=${device},clip=${device}`);
-    }
-    console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
-    const proc = childProcess.spawn(binary, args, { timeout: 300000 });
-    const onAbort = () => {
-      try { proc.kill(); } catch {}
-      reject(new Error('sd.cpp aborted'));
-    };
-    if (signal) {
-      signal.addEventListener('abort', onAbort, { once: true });
-    }
-    let stderr = '';
-    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-    proc.on('close', (code) => {
-      if (signal) signal.removeEventListener('abort', onAbort);
-      if (code === 0) resolve();
-      else reject(new Error(`sd.cpp exited with code ${code}: ${stderr.slice(0, 500)}`));
-    });
-    proc.on('error', (err) => {
-      if (signal) signal.removeEventListener('abort', onAbort);
-      reject(err);
-    });
-  });
-
   try {
+    if (signal) {
+      await Promise.race([
+        prevLock,
+        new Promise<void>((_, reject) => {
+          if (signal.aborted) reject(new Error('sd.cpp aborted'));
+          else signal.addEventListener('abort', () => reject(new Error('sd.cpp aborted')), { once: true });
+        }),
+      ]);
+    } else {
+      await prevLock;
+    }
+    if (signal?.aborted) return null;
+
+    const device = pickSDCppDevice(binary);
+
+    // SD-1.5 native resolution is 512x512. Higher dimensions cause an 8.7GB workspace
+    // allocation failure in ggml. Scale down to <=512 (multiples of 64); ffmpeg scales & crops.
+    const maxDim = 512;
+    let targetW = width;
+    let targetH = height;
+    if (targetW > maxDim || targetH > maxDim) {
+      if (targetW >= targetH) {
+        targetH = Math.round((targetH * maxDim) / targetW);
+        targetW = maxDim;
+      } else {
+        targetW = Math.round((targetW * maxDim) / targetH);
+        targetH = maxDim;
+      }
+    }
+    targetW = Math.max(64, Math.floor(targetW / 64) * 64);
+    targetH = Math.max(64, Math.floor(targetH / 64) * 64);
+
+    const runOnce = (mode: string) => new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) return reject(new Error('sd.cpp aborted'));
+      const args = [
+        '-M', mode,
+        '-m', model,
+        '-p', prompt,
+        '-W', String(targetW),
+        '-H', String(targetH),
+        '--steps', String(steps),
+        '-o', outputPath,
+      ];
+      if (device) {
+        // Assign every stage to the discovered device explicitly rather than
+        // pass "--auto-fit off" — auto-fit's own device *detection* is what
+        // failed, not its placement logic, so keep the rest of its behaviour.
+        args.push('--backend', `diffusion=${device},vae=${device},clip=${device}`);
+      }
+      console.log(`[ImageGen] Running sd.cpp: ${binary} ${args.join(' ')}`);
+      const proc = childProcess.spawn(binary, args, { timeout: 300000 });
+      const onAbort = () => {
+        try { proc.kill(); } catch {}
+        reject(new Error('sd.cpp aborted'));
+      };
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+      let stderr = '';
+      proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        if (code === 0) resolve();
+        else reject(new Error(`sd.cpp exited with code ${code}: ${stderr.slice(0, 500)}`));
+      });
+      proc.on('error', (err) => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        reject(err);
+      });
+    });
+
     // Upstream renamed the mode: current sd-cli.exe takes `img_gen`
     // ([img_gen, adetailer, vid_gen, upscale, convert, metadata] per its own
     // --help, checked against a live binary), while older sd.exe builds only
@@ -1838,9 +1868,12 @@ export async function trySDCpp(prompt: string, width: number, height: number, st
     }
     return null;
   } catch (err: any) {
+    if (err?.message === 'sd.cpp aborted') return null;
     console.error('[ImageGen] sd.cpp failed:', err?.message);
     try { fs.unlinkSync(outputPath); } catch {}
     return null;
+  } finally {
+    releaseLock();
   }
 }
 
