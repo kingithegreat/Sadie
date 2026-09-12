@@ -488,9 +488,9 @@ app.whenReady().then(async () => {
           if (!installed.includes(configuredModel)) {
             const preferred = ['qwen2.5:7b', 'gemma4:e4b', 'qwen2.5-coder:7b'];
             const fallback = preferred.find(p => installed.includes(p)) || installed.find(n => !n.includes('embed') && !n.includes('moondream'));
-            if (fallback && fallback !== configuredModel) {
+            if (fallback && fallback !== configuredModel && getSettings().chatModel === currentSettings.chatModel) {
               console.warn(`[MAIN] chatModel "${configuredModel}" not installed — switching to "${fallback}"`);
-              saveSettings({ ...currentSettings, chatModel: fallback });
+              saveSettings({ ...getSettings(), chatModel: fallback });
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('homebot:model-fallback', { from: configuredModel, to: fallback });
               }
@@ -559,9 +559,12 @@ app.whenReady().then(async () => {
       const currentSettings = getSettings();
       if (!currentSettings.hardwareProfile) {
         const gpu = await detectGpuVram();
-        if (gpu.vramGB !== null) {
+        // Setup and privacy choices can change while GPU detection is running.
+        // Re-read immediately before saving; never restore the startup snapshot.
+        const latestSettings = getSettings();
+        if (gpu.vramGB !== null && !latestSettings.hardwareProfile) {
           const profile = gpu.vramGB >= 16 ? '16gb+' : gpu.vramGB >= 8 ? '8gb' : '4gb';
-          const patched = applyHardwareProfile({ ...currentSettings, hardwareProfile: profile });
+          const patched = applyHardwareProfile({ ...latestSettings, hardwareProfile: profile });
           saveSettings(patched);
           console.log(`[MAIN] Hardware profile auto-set: ${profile} (${gpu.vramGB} GB VRAM, ${gpu.gpuName ?? 'unknown GPU'})`);
           // Let the renderer know so it can show a one-time toast

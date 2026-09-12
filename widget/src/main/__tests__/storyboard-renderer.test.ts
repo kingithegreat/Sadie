@@ -21,6 +21,19 @@ jest.mock('../media-render', () => ({
   findFfmpeg: jest.fn(),
 }));
 
+jest.mock('../ffmpeg-setup', () => ({ findManagedFfmpeg: jest.fn() }));
+let mockMovieDuration = 0;
+jest.mock('../media-qa', () => ({
+  ...jest.requireActual('../media-qa'),
+  inspectRender: jest.fn(async (_bin: string, file: string) => ({
+    hasVideo: file.endsWith('.mp4'), hasAudio: true,
+    width: file.endsWith('.mp4') ? 1920 : null,
+    height: file.endsWith('.mp4') ? 1080 : null,
+    durationSeconds: file.endsWith('.mp4') ? mockMovieDuration : 1,
+    meanVolumeDb: -21, maxVolumeDb: -3,
+  })),
+}));
+
 // Mock renderNarrationToFile from tools/voice
 jest.mock('../tools/voice', () => ({
   renderNarrationToFile: jest.fn().mockResolvedValue({ path: '/fake/audio.mp3', bytes: 100 }),
@@ -34,7 +47,10 @@ jest.mock('child_process', () => ({
     }
     // Simulate successful ffmpeg run and create dummy output file if specified
     const lastArg = args[args.length - 1];
-    if (typeof lastArg === 'string' && (lastArg.endsWith('.mp4') || lastArg.endsWith('.mp3'))) {
+    if (typeof lastArg === 'string' && lastArg.endsWith('.mp4')) {
+      mockMovieDuration = Number(args[args.indexOf('-t') + 1]);
+    }
+    if (typeof lastArg === 'string' && /\.(mp4|mp3|wav)$/.test(lastArg)) {
       try {
         fs.writeFileSync(lastArg, 'dummy media content', 'utf-8');
       } catch {
@@ -64,7 +80,11 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     process.env.HOMEBOT_MOVIE_PROJECTS_DIR = tmpRoot;
     (findFfmpeg as jest.Mock).mockResolvedValue('/usr/bin/ffmpeg');
     (renderNarrationToFile as jest.Mock).mockClear();
-    (renderNarrationToFile as jest.Mock).mockResolvedValue({ path: '/fake/audio.mp3', bytes: 100 });
+    (renderNarrationToFile as jest.Mock).mockImplementation(async (_text: string, requested: string) => {
+      const actual = path.join(path.dirname(requested), 'narration.wav');
+      fs.writeFileSync(actual, 'controlled narration bytes');
+      return { path: actual, bytes: 26, engine: 'kokoro' };
+    });
   });
 
   afterEach(() => {

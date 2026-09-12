@@ -12,8 +12,7 @@
  * that sets the human-decision flag, not a direct write.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
-import * as path from 'path';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
@@ -336,6 +335,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     projectDir: string;
   }> | null>(null);
   const [selectedStoryboardId, setSelectedStoryboardId] = useState<string | null>(null);
+  const storyboardLoadVersion = useRef(0);
+  const [selectedStoryboardSceneId, setSelectedStoryboardSceneId] = useState<string | null>(null);
   const [activeStoryboard, setActiveStoryboard] = useState<{
     project: Record<string, any>;
     scenes: Array<{
@@ -384,6 +385,11 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [animaticLoop, setAnimaticLoop] = useState(false);
   const [storyboardRendering, setStoryboardRendering] = useState(false);
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
+  const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
+    || activeStoryboard?.scenes[0];
+  const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
+  const renderedStoryboardJob = jobs.find(job => job.renderPath === renderedMoviePath &&
+    (job.id === renderedMovieJobId || job.id === `sb_${selectedStoryboardId}`));
 
   const api = () => (window as any).electron;
 
@@ -475,16 +481,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       const workspace = (navContext.workspace as string) || '';
       if (workspace === 'storyboard') {
         setActiveWorkspace('storyboard');
-        loadStoryboardProjects();
+        loadStoryboardProjects(!(navContext.storyboardId || navContext.projectId));
         if (navContext.storyboardId || navContext.projectId) {
           const id = (navContext.storyboardId || navContext.projectId) as string;
           setSelectedStoryboardId(id);
           loadStoryboard(id);
         }
-        if (navContext.renderedMoviePath) {
-          setRenderedMoviePath(navContext.renderedMoviePath as string);
-        }
-
       } else if (workspace === 'timeline') {
         setActiveWorkspace('timeline');
       } else if (workspace === 'stage') {
@@ -905,14 +907,14 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
-  const loadStoryboardProjects = async () => {
+  const loadStoryboardProjects = async (autoSelect = true) => {
     setStoryboardLoading(true);
     setStoryboardError(null);
     try {
       const res = await api()?.mediaStoryboardList?.();
       if (res?.ok && Array.isArray(res.storyboards)) {
         setStoryboardProjects(res.storyboards);
-        if (res.storyboards.length > 0 && !selectedStoryboardId) {
+        if (autoSelect && res.storyboards.length > 0 && !selectedStoryboardId) {
           const firstId = res.storyboards[0].projectId;
           setSelectedStoryboardId(firstId);
           await loadStoryboard(firstId);
@@ -928,20 +930,30 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const loadStoryboard = async (projectId: string) => {
+    const loadVersion = ++storyboardLoadVersion.current;
     setStoryboardLoading(true);
     setStoryboardError(null);
+    setStoryboardMessage(null);
+    setActiveStoryboard(null);
+    setRenderedMoviePath(null);
+    setRenderedMovieJobId(null);
     try {
       const res = await api()?.mediaStoryboardGet?.(projectId);
+      if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.result) {
         setActiveStoryboard(res.result);
         setSelectedStoryboardId(projectId);
+        setSelectedStoryboardSceneId(res.result.scenes?.[0]?.sceneId || null);
+        setAnimaticPlaying(false);
+        setAnimaticOpen(false);
+        setRenderedMoviePath(res.result.renderedMoviePath || null);
       } else {
         setStoryboardError(res?.error || `Could not load storyboard: ${projectId}`);
       }
     } catch (e: any) {
-      setStoryboardError(e?.message || `Could not load storyboard: ${projectId}`);
+      if (loadVersion === storyboardLoadVersion.current) setStoryboardError(e?.message || `Could not load storyboard: ${projectId}`);
     } finally {
-      setStoryboardLoading(false);
+      if (loadVersion === storyboardLoadVersion.current) setStoryboardLoading(false);
     }
   };
 
@@ -1046,7 +1058,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     if (!activeStoryboard) return;
     setActiveStoryboard(prev => {
       if (!prev) return null;
-      const scenes = prev.scenes.map(sc => ({
+      const scenes = prev.scenes.map(sc => sc.sceneId !== activeStoryboardScene?.sceneId ? sc : ({
         ...sc,
         shots: sc.shots.map(s => s.shotId === shotId ? { ...s, ...updates } : s),
       }));
@@ -1054,26 +1066,27 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     });
   };
 
-  const handleSaveStoryboard = async () => {
-    if (!activeStoryboard || !selectedStoryboardId) return;
-    const scene = activeStoryboard.scenes[0];
-    if (!scene) return;
+  const handleSaveStoryboard = async (showMessage = true): Promise<boolean> => {
+    if (!activeStoryboard || !selectedStoryboardId) return false;
     setStoryboardSaving(true);
     setStoryboardError(null);
     try {
-      const res = await api()?.mediaStoryboardSave?.({
-        projectId: selectedStoryboardId,
-        sceneId: scene.sceneId || 'scene_01',
-        shots: scene.shots,
-      });
-      if (res?.ok) {
+      for (const scene of activeStoryboard.scenes) {
+        const res = await api()?.mediaStoryboardSave?.({
+          projectId: selectedStoryboardId,
+          sceneId: scene.sceneId,
+          shots: scene.shots,
+        });
+        if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
+      }
+      if (showMessage) {
         setStoryboardMessage('Storyboard saved successfully.');
         setTimeout(() => setStoryboardMessage(null), 3000);
-      } else {
-        setStoryboardError(res?.error || 'Failed to save storyboard.');
       }
+      return true;
     } catch (e: any) {
       setStoryboardError(e?.message || 'Failed to save storyboard.');
+      return false;
     } finally {
       setStoryboardSaving(false);
     }
@@ -1086,7 +1099,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     try {
       const res = await api()?.mediaStoryboardGenerateFrame?.({
         projectId: selectedStoryboardId,
-        sceneId: activeStoryboard?.scenes[0]?.sceneId || 'scene_01',
+        sceneId: activeStoryboardScene?.sceneId || 'scene_01',
         shotId,
         prompt,
       });
@@ -1109,7 +1122,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   const handleGenerateAllMissingFrames = async () => {
     if (!activeStoryboard || !selectedStoryboardId) return;
-    const shots = activeStoryboard.scenes[0]?.shots || [];
+    const shots = activeStoryboardScene?.shots || [];
     const missing = shots.filter(s => !s.frameImagePath);
     if (missing.length === 0) {
       setStoryboardMessage('All shots already have generated frames!');
@@ -1125,10 +1138,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     if (!activeStoryboard) return;
     setActiveStoryboard(prev => {
       if (!prev) return null;
-      const scene = prev.scenes[0];
+      const scene = prev.scenes.find(sc => sc.sceneId === activeStoryboardScene?.sceneId);
       if (!scene) return prev;
       const count = scene.shots.length + 1;
-      const shotId = `shot_${String(count).padStart(3, '0')}`;
+      let nextId = count;
+      while (scene.shots.some(shot => shot.shotId === `shot_${String(nextId).padStart(3, '0')}`)) nextId++;
+      const shotId = `shot_${String(nextId).padStart(3, '0')}`;
       const newShot = {
         shotId,
         order: count,
@@ -1141,7 +1156,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         status: 'PLANNED',
         frameImagePath: null,
       };
-      const scenes = [{ ...scene, shots: [...scene.shots, newShot] }, ...prev.scenes.slice(1)];
+      const scenes = prev.scenes.map(sc => sc.sceneId === scene.sceneId ? { ...sc, shots: [...sc.shots, newShot] } : sc);
       return { ...prev, scenes };
     });
   };
@@ -1150,10 +1165,10 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     if (!activeStoryboard) return;
     setActiveStoryboard(prev => {
       if (!prev) return null;
-      const scene = prev.scenes[0];
+      const scene = prev.scenes.find(sc => sc.sceneId === activeStoryboardScene?.sceneId);
       if (!scene) return prev;
       const filtered = scene.shots.filter(s => s.shotId !== shotId).map((s, idx) => ({ ...s, order: idx + 1 }));
-      return { ...prev, scenes: [{ ...scene, shots: filtered }, ...prev.scenes.slice(1)] };
+      return { ...prev, scenes: prev.scenes.map(sc => sc.sceneId === scene.sceneId ? { ...sc, shots: filtered } : sc) };
     });
   };
 
@@ -1161,7 +1176,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     if (!activeStoryboard) return;
     setActiveStoryboard(prev => {
       if (!prev) return null;
-      const scene = prev.scenes[0];
+      const scene = prev.scenes.find(sc => sc.sceneId === activeStoryboardScene?.sceneId);
       if (!scene) return prev;
       const shots = [...scene.shots];
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -1170,14 +1185,14 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       shots[index] = shots[targetIndex];
       shots[targetIndex] = temp;
       const reordered = shots.map((s, idx) => ({ ...s, order: idx + 1 }));
-      return { ...prev, scenes: [{ ...scene, shots: reordered }, ...prev.scenes.slice(1)] };
+      return { ...prev, scenes: prev.scenes.map(sc => sc.sceneId === scene.sceneId ? { ...sc, shots: reordered } : sc) };
     });
   };
 
   // Animatic Playback Timer
   useEffect(() => {
-    if (!animaticOpen || !animaticPlaying || !activeStoryboard) return;
-    const scene = activeStoryboard.scenes[0];
+    if (!animaticOpen || !animaticPlaying || !activeStoryboardScene) return;
+    const scene = activeStoryboardScene;
     const shots = scene?.shots || [];
     if (shots.length === 0) return;
 
@@ -1205,11 +1220,11 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }, 100);
 
     return () => clearInterval(interval);
-  }, [animaticOpen, animaticPlaying, animaticIndex, animaticLoop, activeStoryboard]);
+  }, [animaticOpen, animaticPlaying, animaticIndex, animaticLoop, activeStoryboardScene]);
 
   const handleEnhancePrompt = (shotId: string) => {
     if (!activeStoryboard) return;
-    const scene = activeStoryboard.scenes[0];
+    const scene = activeStoryboardScene;
     const shot = scene?.shots.find(s => s.shotId === shotId);
     if (!shot) return;
 
@@ -1270,8 +1285,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   const handleExportStoryboardHtml = () => {
     if (!activeStoryboard) return;
-    const scene = activeStoryboard.scenes[0];
-    const shots = scene?.shots || [];
+    const shots = activeStoryboard.scenes.flatMap(scene => scene.shots);
     const totalDuration = shots.reduce((acc, s) => acc + (Number(s.durationSec) || 5), 0);
     const title = activeStoryboard.project?.name || selectedStoryboardId || 'Storyboard';
     const notes = activeStoryboard.project?.notes || '';
@@ -1366,7 +1380,7 @@ ${shots.map((s, idx) => `
 
   const handleSendToTimeline = () => {
     if (!activeStoryboard) return;
-    const scene = activeStoryboard.scenes[0];
+    const scene = { shots: activeStoryboard.scenes.flatMap(sc => sc.shots) };
     if (scene && scene.shots.length > 0) {
       let accumulated = 0;
       const cuts: number[] = [];
@@ -1382,28 +1396,43 @@ ${shots.map((s, idx) => `
   };
 
   const handleRenderMovie = async () => {
-    if (!selectedStoryboardId || !activeStoryboard) return;
+    if (!selectedStoryboardId || !activeStoryboard || storyboardBusy) return;
+    const loadVersion = storyboardLoadVersion.current;
+    const previousExport = renderedMoviePath;
     setStoryboardRendering(true);
     setStoryboardError(null);
-    setStoryboardMessage('Rendering 1080p broadcast movie (Ken Burns motion, narration, subtitles)...');
+    setStoryboardMessage('Saving all scenes before rendering the complete movie...');
     try {
-      const res = await api()?.mediaStoryboardRender?.({
-        projectId: selectedStoryboardId,
-        sceneId: activeStoryboard.scenes[0]?.sceneId || 'scene_01',
-        motion: true,
-        burnSubtitles: true,
+      if (!await handleSaveStoryboard(false)) {
+        setStoryboardMessage(null);
+        return;
+      }
+      if (loadVersion !== storyboardLoadVersion.current) return;
+      setStoryboardMessage(`Rendering all ${activeStoryboard.scenes.length} scene(s) with narration and subtitles...`);
+      const res = await releaseMediaThen('storyboard-export', () => {
+        setRenderedMoviePath(null);
+        return api()?.mediaStoryboardRender?.({
+          projectId: selectedStoryboardId,
+          motion: true,
+          burnSubtitles: true,
+        });
       });
+      if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.moviePath) {
         setRenderedMoviePath(res.moviePath);
-        if (res.jobId) {
-          setRenderedMovieJobId(res.jobId);
-        }
+        setRenderedMovieJobId(res.jobId || null);
         await refresh();
-        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)! Bridged to Director queue.`);
+        setStoryboardError(res.warning || null);
+        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)!${res.jobId ? ' Added to Director review queue.' : ''}`);
       } else {
+        setRenderedMoviePath(previousExport);
+        setStoryboardMessage(null);
         setStoryboardError(res?.error || 'Failed to render movie.');
       }
     } catch (e: any) {
+      if (loadVersion !== storyboardLoadVersion.current) return;
+      setRenderedMoviePath(previousExport);
+      setStoryboardMessage(null);
       setStoryboardError(e?.message || 'Failed to render movie.');
     } finally {
       setStoryboardRendering(false);
@@ -1945,7 +1974,7 @@ ${shots.map((s, idx) => `
                 ))}
               </select>
             )}
-            {stageAction(j)!.action === 'narrate' && (narrateVoice || narrateEngine === 'kokoro') && (
+            {stageAction(j)!.action === 'narrate' && (
               <button
                 className="ms-btn"
                 disabled={sampling !== null}
@@ -2291,7 +2320,7 @@ ${shots.map((s, idx) => `
           durationSec: Math.min(timelineTime || 5, duration || 30),
         });
         if (res?.ok) {
-          setDone(`Trimmed video saved to: ${path.basename((res.result as any)?.path || 'output.mp4')}`);
+          setDone(`Trimmed video saved to: ${String((res.result as any)?.path || 'output.mp4').split(/[\\/]/).pop()}`);
         } else {
           setError(res?.error || 'Trim failed.');
         }
@@ -2348,7 +2377,7 @@ ${shots.map((s, idx) => `
           durationSec: rangeSec,
         });
         if (res?.ok) {
-          setDone(`Exported selection saved to: ${path.basename((res.result as any)?.path || 'selection.mp4')}`);
+          setDone(`Exported selection saved to: ${String((res.result as any)?.path || 'selection.mp4').split(/[\\/]/).pop()}`);
         } else {
           setError(res?.error || 'Selection export failed.');
         }
@@ -3868,7 +3897,7 @@ ${shots.map((s, idx) => `
 
   /* Visual Storyboard Deck Workspace */
   const renderStoryboardWorkspace = () => {
-    const activeScene = activeStoryboard?.scenes?.[0];
+    const activeScene = activeStoryboardScene;
     const shots = activeScene?.shots || [];
     const totalDuration = shots.reduce((acc, s) => acc + (Number(s.durationSec) || 5), 0);
     const renderedFramesCount = shots.filter(s => !!s.frameImagePath).length;
@@ -3888,6 +3917,7 @@ ${shots.map((s, idx) => `
                 className="ms-storyboard-select"
                 value={selectedStoryboardId || ''}
                 aria-label="Select Storyboard Project"
+                disabled={storyboardBusy}
                 onChange={e => {
                   const id = e.target.value;
                   if (id) {
@@ -3904,6 +3934,27 @@ ${shots.map((s, idx) => `
               </select>
             )}
 
+            {activeStoryboard && activeStoryboard.scenes.length > 1 && (
+              <select
+                className="ms-storyboard-select"
+                aria-label="Select Storyboard Scene"
+                value={activeScene?.sceneId || ''}
+                disabled={storyboardBusy}
+                onChange={e => {
+                  setSelectedStoryboardSceneId(e.target.value);
+                  setAnimaticPlaying(false);
+                  setAnimaticIndex(0);
+                  setAnimaticElapsedSec(0);
+                }}
+              >
+                {activeStoryboard.scenes.map((scene, index) => (
+                  <option key={scene.sceneId} value={scene.sceneId}>
+                    Scene {index + 1}: {scene.title || scene.sceneId} ({scene.shots.length} shots)
+                  </option>
+                ))}
+              </select>
+            )}
+
             <button
               type="button"
               className="ms-btn"
@@ -3911,6 +3962,7 @@ ${shots.map((s, idx) => `
                 setIsCreatingStoryboard(!isCreatingStoryboard);
                 if (directorOpen) setDirectorOpen(false);
               }}
+              disabled={storyboardBusy}
             >
               {isCreatingStoryboard ? '✕ Cancel' : '+ New Storyboard'}
             </button>
@@ -3923,6 +3975,7 @@ ${shots.map((s, idx) => `
                 if (isCreatingStoryboard) setIsCreatingStoryboard(false);
               }}
               title="Auto-direct any story prompt or script into a multi-shot visual storyboard ($0.00)"
+              disabled={storyboardBusy}
             >
               {directorOpen ? '✕ Cancel' : '🪄 Auto-Director'}
             </button>
@@ -3930,8 +3983,8 @@ ${shots.map((s, idx) => `
             <button
               type="button"
               className="ms-btn ms-btn--primary"
-              disabled={storyboardSaving || !activeStoryboard}
-              onClick={handleSaveStoryboard}
+              disabled={storyboardBusy || !activeStoryboard}
+              onClick={() => handleSaveStoryboard()}
             >
               {storyboardSaving ? 'Saving…' : '💾 Save Board'}
             </button>
@@ -3954,7 +4007,7 @@ ${shots.map((s, idx) => `
             <button
               type="button"
               className="ms-btn ms-btn--secondary"
-              disabled={generatingShotId !== null || !activeStoryboard || shots.length === 0}
+              disabled={storyboardBusy || !activeStoryboard || shots.length === 0}
               onClick={handleGenerateAllMissingFrames}
               title="Generate keyframes for all shots without images using free AI ($0.00)"
             >
@@ -3983,9 +4036,9 @@ ${shots.map((s, idx) => `
             <button
               type="button"
               className="ms-btn ms-btn--primary"
-              disabled={storyboardRendering || !activeStoryboard || shots.length === 0}
+              disabled={storyboardBusy || !activeStoryboard?.scenes.some(scene => scene.shots.length > 0)}
               onClick={handleRenderMovie}
-              title="Render full broadcast 1080p movie with Ken Burns camera motion, speech narration, and burned subtitles ($0.00)"
+              title="Save and render every scene in the project with camera motion, narration, and subtitles"
             >
               {storyboardRendering ? (
                 <>
@@ -4005,6 +4058,7 @@ ${shots.map((s, idx) => `
                 if (selectedStoryboardId) loadStoryboard(selectedStoryboardId);
               }}
               title="Reload storyboards from disk"
+              disabled={storyboardBusy}
             >
               ↻
             </button>
@@ -4237,7 +4291,7 @@ ${shots.map((s, idx) => `
                   <span style={{ fontSize: '1.6rem' }}>🎉</span>
                   <div>
                     <div style={{ fontWeight: 600, color: '#38bdf8', fontSize: '0.92rem' }}>
-                      1080p Broadcast Movie Ready!
+                      Saved movie
                     </div>
                     <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#94a3b8' }}>
                       {renderedMoviePath}
@@ -4259,9 +4313,11 @@ ${shots.map((s, idx) => `
                   <button
                     type="button"
                     className="ms-btn ms-btn--cta"
+                    disabled={!renderedStoryboardJob}
+                    title={renderedStoryboardJob ? 'Review this saved movie in the Director queue' : 'This older export has no matching review job. Render it again to add it to the queue.'}
                     onClick={() => {
-                      const jId = renderedMovieJobId || `sb_${selectedStoryboardId}`;
-                      setSelectedJobId(jId);
+                      if (!renderedStoryboardJob) return;
+                      setSelectedJobId(renderedStoryboardJob.id);
                       setActiveWorkspace('director');
                     }}
                     style={{
@@ -4281,6 +4337,16 @@ ${shots.map((s, idx) => `
                     ✕
                   </button>
                 </div>
+                <video
+                  key={renderedMoviePath}
+                  className="ms-video"
+                  controls
+                  preload="metadata"
+                  aria-label="Exported storyboard video"
+                  data-testid="ms-video-storyboard-export"
+                  src={toMediaFileUrl(renderedMoviePath)}
+                  style={{ width: '100%', maxHeight: 360, flexBasis: '100%' }}
+                />
               </div>
             )}
 
@@ -4314,7 +4380,7 @@ ${shots.map((s, idx) => `
             )}
 
             {/* Shot Cards Deck */}
-            <div className="ms-storyboard-deck">
+            <fieldset className="ms-storyboard-deck" disabled={storyboardBusy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               {shots.map((shot, idx) => {
                 const isGenerating = generatingShotId === shot.shotId;
                 const framingPills = ['wide', 'medium', 'close', 'extreme_close'];
@@ -4335,11 +4401,11 @@ ${shots.map((s, idx) => `
                           <input
                             type="number"
                             className="ms-shot-duration-input"
-                            value={shot.durationSec || 5}
+                            value={shot.durationSec ?? 5}
                             min={1}
                             max={120}
                             aria-label={`Duration for ${shot.shotId}`}
-                            onChange={e => handleUpdateShot(shot.shotId, { durationSec: Number(e.target.value) || 5 })}
+                            onChange={e => handleUpdateShot(shot.shotId, { durationSec: Number(e.target.value) })}
                           />s
                         </label>
 
@@ -4511,19 +4577,17 @@ ${shots.map((s, idx) => `
               })}
 
               {/* Add New Shot Card */}
-              <div
+              <button
+                type="button"
                 className="ms-shot-add-card"
-                role="button"
-                tabIndex={0}
                 aria-label="Add Shot to Storyboard"
                 onClick={handleAddShot}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddShot(); }}
               >
                 <span className="ms-shot-add-icon">+</span>
                 <span className="ms-shot-add-label">Add Shot to Sequence</span>
                 <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>New shot card with custom camera framing</span>
-              </div>
-            </div>
+              </button>
+            </fieldset>
           </>
         ) : (
           <div className="ms-runner-empty" style={{ padding: '40px 20px', textAlign: 'center' }}>

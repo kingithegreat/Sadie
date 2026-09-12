@@ -21,7 +21,7 @@ import {
   type ShotBibleEntry,
   type GenerationRequest,
 } from '../movie/types';
-import { assembleScene } from '../movie/storyboard-assembly';
+import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -228,36 +228,11 @@ export const mediaListStoryboardsHandler: ToolHandler = async (): Promise<ToolRe
         /* ignore */
       }
 
-      // Count shots and generated frames
-      let totalShots = 0;
-      let renderedFrames = 0;
-      let totalDurationSec = 0;
-      const scenesDir = path.join(projectDir, 'scenes');
-      if (fs.existsSync(scenesDir)) {
-        const scenes = fs.readdirSync(scenesDir);
-        for (const sc of scenes) {
-          const scPath = path.join(scenesDir, sc);
-          if (fs.statSync(scPath).isDirectory()) {
-            const shots = fs.readdirSync(scPath).filter((s) => s.startsWith('shot_'));
-            totalShots += shots.length;
-            for (const shot of shots) {
-              const imgDir = path.join(scPath, shot, 'image');
-              if (fs.existsSync(imgDir) && fs.readdirSync(imgDir).some((f) => f.endsWith('.png') || f.endsWith('.jpg'))) {
-                renderedFrames++;
-              }
-              const promptFile = path.join(scPath, shot, 'prompt.json');
-              if (fs.existsSync(promptFile)) {
-                try {
-                  const req = JSON.parse(fs.readFileSync(promptFile, 'utf-8'));
-                  totalDurationSec += Number(req.durationSec) || 5;
-                } catch {
-                  totalDurationSec += 5;
-                }
-              }
-            }
-          }
-        }
-      }
+      // Count the saved sequence, not retained asset folders for removed shots.
+      const shots = assembleStoryboardScenes(projectDir).flatMap(scene => scene.shots);
+      const totalShots = shots.length;
+      const renderedFrames = shots.filter(shot => !!shot.frameImagePath).length;
+      const totalDurationSec = shots.reduce((sum, shot) => sum + (Number.isFinite(shot.durationSec) ? shot.durationSec : 0), 0);
 
       return {
         projectId: d,
@@ -313,6 +288,9 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
   if (!projectId) {
     return { success: false, error: 'projectId is required.' };
   }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) {
+    return { success: false, error: 'Choose a valid storyboard project.' };
+  }
 
   const rootDir = getStoryboardsRootDir();
   const projectDir = path.join(rootDir, projectId);
@@ -327,15 +305,15 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
       projectMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     }
 
-    const scenesDir = path.join(projectDir, 'scenes');
-    const scenes: any[] = [];
-    if (fs.existsSync(scenesDir)) {
-      const sceneNames = fs.readdirSync(scenesDir).filter((s) => fs.statSync(path.join(scenesDir, s)).isDirectory());
-      for (const sc of sceneNames) {
-        const assembled = assembleScene(projectDir, sc);
-        if (assembled) scenes.push(assembled);
-      }
-    }
+    const scenes = assembleStoryboardScenes(projectDir);
+
+    // A saved file is available for review, not a new publication approval.
+    const moviePath = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
+    let renderedMoviePath: string | null = null;
+    try {
+      const stat = fs.lstatSync(moviePath);
+      if (stat.isFile() && stat.size > 0) renderedMoviePath = moviePath;
+    } catch { /* No saved export yet. */ }
 
     return {
       success: true,
@@ -343,6 +321,7 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
         project: projectMeta,
         scenes,
         projectDir,
+        renderedMoviePath,
       },
     };
   } catch (err: any) {
@@ -509,27 +488,33 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
   if (!projectId) {
     return { success: false, error: 'projectId is required.' };
   }
-  const shots = Array.isArray(args.shots) ? args.shots : [];
+  const sceneId = String(args.sceneId || 'scene_01');
+  if (![projectId, sceneId].every(id => /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id))) {
+    return { success: false, error: 'Choose a valid storyboard project and scene.' };
+  }
+  if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
+  const shots = args.shots;
+  const shotIds = shots.map((shot: any) => shot?.shotId);
+  if (shotIds.some((id: unknown) => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) || new Set(shotIds).size !== shotIds.length) {
+    return { success: false, error: 'Every shot needs a unique valid ID.' };
+  }
+  if (shots.some((shot: any) => shot.durationSec !== undefined &&
+      (typeof shot.durationSec !== 'number' || !Number.isFinite(shot.durationSec) || shot.durationSec <= 0))) {
+    return { success: false, error: 'Every shot needs a positive duration. Fix its timing before saving.' };
+  }
 
   try {
     const rootDir = getStoryboardsRootDir();
     const projectDir = path.join(rootDir, projectId);
-    const sceneId = String(args.sceneId || 'scene_01');
     const sceneDir = path.join(projectDir, 'scenes', sceneId);
 
     if (!fs.existsSync(sceneDir)) {
       return { success: false, error: `Scene directory not found: ${sceneDir}` };
     }
 
-    const shotIds = shots.map((s: any) => s.shotId);
     const sceneJsonPath = path.join(sceneDir, 'scene.json');
-    if (fs.existsSync(sceneJsonPath)) {
-      try {
-        const sceneMeta = JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8'));
-        sceneMeta.shots = shotIds;
-        fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
-      } catch { /* ignore */ }
-    }
+    const sceneMeta = fs.existsSync(sceneJsonPath)
+      ? JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8')) : { sceneId };
 
     for (const shot of shots) {
       const shotDir = path.join(sceneDir, shot.shotId);
@@ -548,7 +533,7 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       promptData.framing = shot.framing ?? promptData.framing ?? 'wide';
       promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
       promptData.movement = shot.movement ?? promptData.movement ?? 'static';
-      promptData.durationSec = Number(shot.durationSec) || promptData.durationSec || 5;
+      promptData.durationSec = shot.durationSec === undefined ? (promptData.durationSec ?? 5) : shot.durationSec;
       fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
 
       if (shot.narration !== undefined) {
@@ -556,6 +541,8 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       }
     }
 
+    sceneMeta.shots = shotIds;
+    fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
     return { success: true, result: { message: 'Storyboard updated successfully.' } };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
@@ -577,7 +564,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
       },
       sceneId: {
         type: 'string',
-        description: 'Optional scene ID (defaults to scene_01).',
+        description: 'Optional scene ID for a separate scene export. Omit to render all scenes in saved order.',
       },
       motion: {
         type: 'boolean',
@@ -614,7 +601,11 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
   }
 
   // Bridge rendered storyboard movie into primary MediaJob approval queue
-  let jobId = `sb_${projectId}`;
+  const sceneId = (args.sceneId as string)?.trim();
+  // Separate namespaces and a length-prefixed project ID avoid collisions
+  // between complete movies and independently exported scenes.
+  let jobId: string | undefined = sceneId ? `sbscene_${projectId.length}_${projectId}_${sceneId}` : `sb_${projectId}`;
+  let warning: string | undefined;
   try {
     const { readJobs, writeJobs } = await import('./media');
     const rootDir = getStoryboardsRootDir();
@@ -657,6 +648,8 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     }
     writeJobs(jobs);
   } catch (e) {
+    jobId = undefined;
+    warning = 'The movie was saved, but it could not be added to the review queue. You can still open the saved video; render again to retry the queue entry.';
     console.warn('[Storyboard] Failed to register MediaJob in approval queue:', e);
   }
 
@@ -665,6 +658,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     result: {
       projectId,
       jobId,
+      ...(warning ? { warning } : {}),
       moviePath: res.moviePath,
       durationSec: res.durationSec,
       totalShots: res.totalShots,

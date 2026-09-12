@@ -277,7 +277,15 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
   });
 
   test('rendered storyboard movie banner Review & Publish button navigates to Director console', async () => {
-    setup();
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    mocks.mediaStoryboardGet.mockResolvedValue({ ok: true, result: {
+      ...board, renderedMoviePath: '/mock/exports/pyramid-builders.mp4',
+    } });
+    (window as any).electron.mediaList.mockResolvedValue([{
+      id: 'sb_pyramid-builders', title: 'Pyramid Builders', state: 'awaiting_approval',
+      format: 'short', renderPath: '/mock/exports/pyramid-builders.mp4', history: [],
+    }]);
     await act(async () => {
       render(
         <MediaStudioPanel
@@ -291,7 +299,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
     });
 
     // Banner should be visible
-    expect(screen.getByText('1080p Broadcast Movie Ready!')).toBeInTheDocument();
+    expect(screen.getByText('Saved movie')).toBeInTheDocument();
     const reviewBtn = screen.getByRole('button', { name: /Review & Publish →/i });
     expect(reviewBtn).toBeInTheDocument();
 
