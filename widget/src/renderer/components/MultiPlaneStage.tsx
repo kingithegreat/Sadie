@@ -19,8 +19,9 @@ import {
   type CharacterDepthStaging,
   type SettingLighting,
   type StageFraming,
+  LIGHTING_PRESETS,
 } from '../../shared/multi-plane-stage';
-import { LIGHTING_PRESETS } from '../../main/series-settings';
+
 
 export interface MultiPlaneStageProps {
   bgSrc: string;
