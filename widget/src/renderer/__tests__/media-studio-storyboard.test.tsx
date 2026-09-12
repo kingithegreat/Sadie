@@ -147,6 +147,47 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('edits the selected scene only and saves every scene before rendering the whole movie', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    board.scenes.push({
+      sceneId: 'scene_02', title: 'Ending',
+      shots: [{ ...board.scenes[0].shots[0], narration: 'The ending.', durationSec: 8 }],
+    });
+    await act(async () => { render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />); });
+    fireEvent.change(screen.getByLabelText('Select Storyboard Scene'), { target: { value: 'scene_02' } });
+    fireEvent.change(screen.getByLabelText('Duration for shot_001'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('Select Storyboard Scene'), { target: { value: 'scene_01' } });
+    expect(screen.getByLabelText('Duration for shot_001')).toHaveValue(5);
+    fireEvent.click(screen.getByRole('button', { name: /Render Movie/i }));
+    await waitFor(() => expect(mocks.mediaStoryboardRender).toHaveBeenCalledTimes(1));
+    expect(mocks.mediaStoryboardSave.mock.calls.map(([args]) => args.sceneId)).toEqual(['scene_01', 'scene_02']);
+    expect(mocks.mediaStoryboardSave.mock.calls[1][0].shots[0].durationSec).toBe(9);
+    expect(mocks.mediaStoryboardRender.mock.calls[0][0]).not.toHaveProperty('sceneId');
+    expect(mocks.mediaStoryboardSave.mock.invocationCallOrder[1]).toBeLessThan(mocks.mediaStoryboardRender.mock.invocationCallOrder[0]);
+  });
+
+  test('does not render old disk content when saving the board fails', async () => {
+    const mocks = setup();
+    mocks.mediaStoryboardSave.mockResolvedValue({ ok: false, error: 'Disk is full' });
+    await act(async () => { render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />); });
+    fireEvent.click(screen.getByRole('button', { name: /Render Movie/i }));
+    expect(await screen.findByText('Disk is full')).toBeInTheDocument();
+    expect(mocks.mediaStoryboardRender).not.toHaveBeenCalled();
+  });
+
+  test('adding after a removal cannot reuse the ID of a remaining shot', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    board.scenes[0].shots.splice(1, 1);
+    await act(async () => { render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />); });
+    fireEvent.click(screen.getByRole('button', { name: /Add Shot to Storyboard/i }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+    const ids = mocks.mediaStoryboardSave.mock.calls[0][0].shots.map((s: any) => s.shotId);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).toContain('shot_003');
+  });
+
   test('renders Storyboard tab in ribbon and hub card in Director Console', async () => {
     setup();
     await act(async () => {

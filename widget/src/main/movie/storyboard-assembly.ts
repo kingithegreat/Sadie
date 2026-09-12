@@ -40,27 +40,27 @@ export interface AssembledScene {
 
 /** Reads scene.json plus each shot's prompt.json/status.json/script.txt/image dir off disk. */
 export function assembleScene(projectDir: string, sceneId: string): AssembledScene | null {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(sceneId)) throw new Error('The saved storyboard contains an invalid scene ID.');
   const scenePath = path.join(projectDir, 'scenes', sceneId);
   if (!fs.existsSync(scenePath)) return null;
 
   let sceneMeta: any = { sceneId };
   const scJson = path.join(scenePath, 'scene.json');
   if (fs.existsSync(scJson)) {
-    try { sceneMeta = JSON.parse(fs.readFileSync(scJson, 'utf-8')); } catch { /* ignore */ }
+    sceneMeta = JSON.parse(fs.readFileSync(scJson, 'utf-8'));
   }
 
   const onDisk = fs.readdirSync(scenePath)
     .filter((s) => s.startsWith('shot_') && fs.statSync(path.join(scenePath, s)).isDirectory());
 
   // Reorder edits are saved into scene.json's `shots` array (shot IDs in the
-  // desired order) — directory listing order never changes once a shot is
-  // created, so honoring that array is the only way a reorder actually takes
-  // effect. Fall back to directory order for any shot scene.json doesn't
-  // mention yet (e.g. a shot added after the last save).
-  const savedOrder: string[] = Array.isArray(sceneMeta.shots) ? sceneMeta.shots : [];
-  const known = new Set(onDisk);
-  const ordered = savedOrder.filter((id) => known.has(id));
-  const shotDirs = [...ordered, ...onDisk.filter((id) => !ordered.includes(id))];
+  // desired order). Retained folders for removed shots are recoverable assets,
+  // not instructions to put those shots back into the movie. Older scenes
+  // without an explicit shot list keep their directory-based order.
+  const shotDirs: string[] = Array.isArray(sceneMeta.shots) ? sceneMeta.shots : onDisk.sort();
+  if (shotDirs.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) || new Set(shotDirs).size !== shotDirs.length) {
+    throw new Error('The saved storyboard contains invalid or duplicate shot IDs.');
+  }
 
   const shots: AssembledShot[] = shotDirs.map((shotId, idx) => {
     const shotPath = path.join(scenePath, shotId);
@@ -115,7 +115,21 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
     };
   });
 
-  return { ...sceneMeta, shots };
+  return { ...sceneMeta, sceneId, shots };
+}
+
+/** The editor and complete-project export use the same persisted scene order. */
+export function assembleStoryboardScenes(projectDir: string): AssembledScene[] {
+  const scenesDir = path.join(projectDir, 'scenes');
+  if (!fs.existsSync(scenesDir)) return [];
+  return fs.readdirSync(scenesDir, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => assembleScene(projectDir, entry.name)!)
+    .sort((a, b) => {
+      const aOrder = Number.isFinite(a.order) ? a.order! : 0;
+      const bOrder = Number.isFinite(b.order) ? b.order! : 0;
+      return aOrder - bOrder || a.sceneId.localeCompare(b.sceneId, undefined, { numeric: true });
+    });
 }
 
 /** Convenience for callers that only need one scene's shots (the renderer). */

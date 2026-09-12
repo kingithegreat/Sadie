@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { findFfmpeg, escapeFilterPath } from '../media-render';
 import { inspectRender, SILENCE_FLOOR_DB } from '../media-qa';
-import { assembleShotsForScene, type AssembledShot } from './storyboard-assembly';
+import { assembleShotsForScene, assembleStoryboardScenes, type AssembledShot } from './storyboard-assembly';
 
 export interface StoryboardRenderOptions {
   projectId: string;
@@ -138,11 +138,18 @@ export async function renderStoryboardMovie(
     return { ok: false, error: `Storyboard project directory not found: ${projectDir}` };
   }
 
-  const sceneId = opts.sceneId || 'scene_01';
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(sceneId)) {
+  const sceneId = opts.sceneId;
+  if (sceneId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(sceneId)) {
     return { ok: false, error: 'Choose a valid storyboard scene before exporting.' };
   }
-  const shots = assembleShotsForScene(projectDir, sceneId);
+  let shots: ShotManifest[];
+  try {
+    shots = sceneId === undefined
+      ? assembleStoryboardScenes(projectDir).flatMap(scene => scene.shots)
+      : assembleShotsForScene(projectDir, sceneId);
+  } catch (error) {
+    return { ok: false, error: `Could not read the saved storyboard: ${error instanceof Error ? error.message : String(error)}` };
+  }
   if (!Array.isArray(shots) || shots.length === 0) {
     return { ok: false, error: 'Storyboard scene contains no shots to render.' };
   }
@@ -170,7 +177,7 @@ export async function renderStoryboardMovie(
   }
 
   const rendersDir = path.join(projectDir, 'renders');
-  const outputFilename = opts.outputName || `${opts.projectId}-1080p.mp4`;
+  const outputFilename = opts.outputName || `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-1080p.mp4`;
   if (path.basename(outputFilename) !== outputFilename || /[<>:"|?*\\/\x00-\x1f]/.test(outputFilename) || !/\.mp4$/i.test(outputFilename)) {
     return { ok: false, error: 'The export needs an MP4 filename inside this project.' };
   }

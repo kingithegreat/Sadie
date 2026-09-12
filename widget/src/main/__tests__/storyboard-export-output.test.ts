@@ -7,6 +7,7 @@ import { findManagedFfmpeg } from '../ffmpeg-setup';
 import { inspectRender, RenderFacts } from '../media-qa';
 import { renderNarrationToFile } from '../tools/voice';
 import { renderStoryboardMovie, ShotManifest } from '../movie/storyboard-renderer';
+import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler } from '../tools/media-storyboard';
 
 jest.mock('../media-render', () => ({
   ...jest.requireActual('../media-render'), findFfmpeg: jest.fn(),
@@ -178,5 +179,64 @@ describe('storyboard export output contract', () => {
     expect(result.ok).toBe(true);
     expect(renderNarrationToFile).not.toHaveBeenCalled();
     expect(fs.existsSync(output)).toBe(true);
+  });
+
+  test('the complete movie includes every saved scene in its declared order', async () => {
+    const secondScene = path.join(path.dirname(scene), 'scene_02');
+    fs.cpSync(scene, secondScene, { recursive: true });
+    fs.writeFileSync(path.join(scene, 'scene.json'), JSON.stringify({ sceneId: 'scene_01', order: 2, shots: shots.map(shot => shot.shotId) }));
+    fs.writeFileSync(path.join(secondScene, 'scene.json'), JSON.stringify({ sceneId: 'scene_02', order: 1, shots: shots.map(shot => shot.shotId) }));
+    for (const shot of shots) fs.writeFileSync(path.join(secondScene, shot.shotId, 'script.txt'), `Opening ${shot.narration}`);
+    movieFacts.durationSeconds = 12;
+
+    const saved = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect(saved.result.scenes.map((item: any) => item.sceneId)).toEqual(['scene_02', 'scene_01']);
+    const result = await render();
+    expect(result).toMatchObject({ ok: true, totalShots: 4, durationSec: 12 });
+    expect((renderNarrationToFile as jest.Mock).mock.calls.map(call => call[0]))
+      .toEqual(['Opening Narration 1', 'Opening Narration 2', 'Narration 1', 'Narration 2']);
+  });
+
+  test('a missing ending frame blocks the whole movie instead of exporting just its first scene', async () => {
+    const ending = path.join(path.dirname(scene), 'scene_02', 'shot_001');
+    fs.mkdirSync(ending, { recursive: true });
+    fs.writeFileSync(path.join(ending, 'prompt.json'), JSON.stringify({ prompt: 'Ending', durationSec: 3 }));
+    fs.writeFileSync(path.join(ending, 'script.txt'), 'The complete ending.');
+    const result = await render();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/frame|image/i);
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+  });
+
+  test('a shot removed by Save Board stays removed after reopening and export while its assets remain', async () => {
+    const saved = await mediaSaveStoryboardHandler({ projectId: 'export-check', sceneId: 'scene_01', shots: [shots[1]] }, {} as any);
+    expect(saved.success).toBe(true);
+    const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect(reopened.result.scenes[0].shots.map((shot: any) => shot.shotId)).toEqual(['shot_002']);
+    fs.writeFileSync(path.join(path.dirname(path.dirname(scene)), 'project.json'), JSON.stringify({ name: 'Export check' }));
+    const listed = await mediaListStoryboardsHandler({}, {} as any);
+    expect(listed.result.storyboards[0]).toMatchObject({ totalShots: 1, renderedFrames: 1, totalDurationSec: 3 });
+    expect(fs.existsSync(shots[0].frameImagePath!)).toBe(true);
+    movieFacts.durationSeconds = 3;
+    expect(await render()).toMatchObject({ ok: true, totalShots: 1, durationSec: 3 });
+    expect((renderNarrationToFile as jest.Mock).mock.calls.map(call => call[0])).toEqual(['Narration 2']);
+  });
+
+  test('invalid timing is rejected before Save Board changes any saved files', async () => {
+    const promptPath = path.join(scene, shots[0].shotId, 'prompt.json');
+    const before = fs.readFileSync(promptPath, 'utf8');
+    const result = await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: [{ ...shots[0], prompt: 'Must not be saved', durationSec: 0 }] }, {} as any);
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/duration|timing/i);
+    expect(fs.readFileSync(promptPath, 'utf8')).toBe(before);
+  });
+
+  test('an explicit scene export does not replace the complete-project movie', async () => {
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, 'complete project movie');
+    const result = await renderStoryboardMovie({ projectId: 'export-check', sceneId: 'scene_01', motion: false });
+    expect(result.ok).toBe(true);
+    expect(result.moviePath).not.toBe(output);
+    expect(fs.readFileSync(output, 'utf8')).toBe('complete project movie');
   });
 });

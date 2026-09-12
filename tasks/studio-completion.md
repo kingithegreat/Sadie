@@ -59,3 +59,38 @@ required remote checks are pending at this entry. This two-shot authored-card te
 mechanics, not a full episode, two-scene ending, generated-art quality, all
 aspect ratios, installed release, publication or owner visual acceptance.
 Continue the existing Notion STUDIO-01 through STUDIO-05 queue after recovery.
+
+## Complete saved scenes and restart reliability
+
+The editor now exposes each scene, scopes repeated shot IDs to that scene, and
+saves every scene before Render Movie. A failed save stops export. Whole-project
+export follows saved scene order; explicit single-scene exports use a separate
+filename. Saved shot lists, including empty lists, are authoritative: removing
+a card no longer resurrects its retained assets in reopening, project counts,
+or export. Adding after removal cannot duplicate a remaining shot ID. Invalid
+timing/IDs are rejected before Save Board writes. Shot sheets and timeline cuts
+include the whole project. Editing is disabled while saving/rendering.
+
+Five new export regressions and three new UI regressions failed before repair.
+The subsequent five-suite run passed 60 tests. An actual two-scene Electron
+test (same shot ID in each scene, unsaved last-scene edit) passed without retries
+in 1.7 minutes: 8 seconds, 1920x1080, both captions and timed speech, last frame
+played through `ended` with loop off, app restart, failed replacement preserving
+bytes and playback, then successful replacement with the player loaded. The
+encoded output matches the hash above. Raw evidence is retained under
+`widget/test-results/storyboard-export.live.e2e-4fcbb-imed-narration-and-captions`.
+
+The first two-scene restart run exposed a real startup settings race: a delayed
+hardware probe restored `firstRun: true` after setup dismissal. The actual
+startup block also reproduced lost privacy changes and an overwritten chosen
+profile. Re-reading settings immediately before the startup write repairs it;
+the same protection covers background model fallback, which also respects a
+model chosen while discovery was running. Regression tests execute the actual
+startup blocks without launching unrelated integrations. Both hardware tests
+failed before repair; the concurrent model-choice test also failed before its
+guard. The real movie restart passes after the settings repair.
+
+PR #312's workspace integration is now merged on main `0ac2326`; combine it
+with this checkpoint and rerun gates before publishing the takeover branch.
+Full episode, all aspect ratios, trustworthy export identity, owner visual
+acceptance, installer and publication are still separate acceptance work.
