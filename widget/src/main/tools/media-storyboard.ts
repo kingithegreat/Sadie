@@ -22,6 +22,7 @@ import {
   type GenerationRequest,
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
+import { resolveBurnSubtitles } from '../../shared/media-output';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -78,6 +79,7 @@ export const mediaCreateStoryboardDef: ToolDefinition = {
         type: 'boolean',
         description: 'Hard gate ensuring all generations cost $0.00 (defaults to true).',
       },
+      burnSubtitles: { type: 'boolean', description: 'Burn captions into the movie. New projects default to off.' },
     },
     required: ['projectId', 'title'],
   },
@@ -102,6 +104,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       freeOnly: args.freeOnly !== false,
+      burnSubtitles: resolveBurnSubtitles(args.burnSubtitles, false),
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: args.notes || '',
@@ -473,6 +476,7 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
     properties: {
       projectId: { type: 'string', description: 'ID of the storyboard project.' },
       sceneId: { type: 'string', description: 'Optional scene ID (defaults to scene_01).' },
+      burnSubtitles: { type: 'boolean', description: 'Save the project caption burn-in choice. Omit to keep the saved choice.' },
       shots: {
         type: 'array',
         description: 'Ordered array of shot edits to persist.',
@@ -493,6 +497,9 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     return { success: false, error: 'Choose a valid storyboard project and scene.' };
   }
   if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
+  if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') {
+    return { success: false, error: 'Choose whether captions are on or off.' };
+  }
   const shots = args.shots;
   const shotIds = shots.map((shot: any) => shot?.shotId);
   if (shotIds.some((id: unknown) => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) || new Set(shotIds).size !== shotIds.length) {
@@ -513,6 +520,10 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     }
 
     const sceneJsonPath = path.join(sceneDir, 'scene.json');
+    const metaPath = path.join(projectDir, 'project.json');
+    // Parse before touching shot files; preserve unrelated project metadata.
+    const projectMeta = args.burnSubtitles !== undefined
+      ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : null;
     const sceneMeta = fs.existsSync(sceneJsonPath)
       ? JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8')) : { sceneId };
 
@@ -543,6 +554,11 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
 
     sceneMeta.shots = shotIds;
     fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
+    if (projectMeta) {
+      const stagedMeta = `${metaPath}.saving`;
+      fs.writeFileSync(stagedMeta, JSON.stringify({ ...projectMeta, burnSubtitles: args.burnSubtitles, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+      fs.renameSync(stagedMeta, metaPath);
+    }
     return { success: true, result: { message: 'Storyboard updated successfully.' } };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
@@ -572,7 +588,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
       },
       burnSubtitles: {
         type: 'boolean',
-        description: 'Whether to burn aligned dialogue/action subtitles into the video (default: true).',
+        description: 'Optional override for the saved project caption choice. New projects default to off; legacy projects retain captions until changed.',
       },
     },
     required: ['projectId'],
@@ -590,7 +606,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     projectId,
     sceneId: (args.sceneId as string)?.trim(),
     motion: args.motion !== false,
-    burnSubtitles: args.burnSubtitles !== false,
+    burnSubtitles: args.burnSubtitles,
   });
 
   if (!res.ok) {
@@ -624,6 +640,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
       title: `[Storyboard] ${title}`,
       format: (res.durationSec && res.durationSec > 60) ? 'long' : 'short',
       state: 'awaiting_approval',
+      burnSubtitles: res.burnSubtitles,
       renderPath: res.moviePath,
       durationSeconds: res.durationSec,
       brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)`,

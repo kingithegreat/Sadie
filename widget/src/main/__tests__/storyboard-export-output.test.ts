@@ -109,6 +109,29 @@ describe('storyboard export output contract', () => {
     expect(fs.readFileSync(output, 'utf8')).toBe('controlled encoder bytes');
   });
 
+  test('saved captions off reaches export without a caller override and survives reopening', async () => {
+    const metaPath = path.join(root, 'export-check', 'project.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ projectId: 'export-check', notes: 'keep this', burnSubtitles: true }));
+    const saved = await mediaSaveStoryboardHandler({ projectId: 'export-check', shots, burnSubtitles: false }, {} as any);
+    expect(saved.success).toBe(true);
+    const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect(reopened.result.project).toMatchObject({ burnSubtitles: false, notes: 'keep this' });
+    const result = await mediaRenderStoryboardHandler({ projectId: 'export-check', motion: false }, {} as any);
+    expect(result.success).toBe(true);
+    const commands = (execFile as unknown as jest.Mock).mock.calls.map(([, args]) => args.join(' '));
+    expect(commands.some(command => command.includes('subtitles='))).toBe(false);
+    expect(readJobs).toHaveBeenCalled();
+    expect(writeJobs).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ burnSubtitles: false })]));
+  });
+
+  test('rejects malformed caption preferences before writing any saved shot', async () => {
+    const prompt = path.join(scene, shots[0].shotId, 'prompt.json');
+    const before = fs.readFileSync(prompt);
+    const result = await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: [{ ...shots[0], prompt: 'changed' }], burnSubtitles: 'false' }, {} as any);
+    expect(result.success).toBe(false);
+    expect(fs.readFileSync(prompt)).toEqual(before);
+  });
+
   test('a narration failure cannot become a successful silent movie or replace the old export', async () => {
     fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.writeFileSync(output, 'previous valid export');

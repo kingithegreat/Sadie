@@ -14,6 +14,7 @@
 
 import { execFile } from 'child_process';
 import * as fs from 'fs';
+import { resolveBurnSubtitles } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
 import { findFfmpeg, escapeFilterPath } from '../media-render';
@@ -33,6 +34,8 @@ export interface StoryboardRenderResult {
   moviePath?: string;
   durationSec?: number;
   totalShots?: number;
+  /** The choice actually used by this render, not metadata reread afterwards. */
+  burnSubtitles?: boolean;
   error?: string;
 }
 
@@ -191,7 +194,10 @@ export async function renderStoryboardMovie(
     const stagedMoviePath = path.join(tempDir, 'movie.mp4');
     const totalDuration = shots.reduce((acc, s) => acc + s.durationSec, 0);
     const motion = opts.motion !== false;
-    const burnSubtitles = opts.burnSubtitles !== false;
+    const metaPath = path.join(projectDir, 'project.json');
+    const projectMeta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
+    const burnSubtitles = resolveBurnSubtitles(opts.burnSubtitles,
+      resolveBurnSubtitles(projectMeta.burnSubtitles));
     const hasNarration = shots.some(shot => !!shot.narration?.trim());
 
     // 1. Render Audio Track (Voiceover per shot or silent bed)
@@ -383,6 +389,7 @@ export async function renderStoryboardMovie(
       moviePath: finalMoviePath,
       durationSec: facts.durationSeconds,
       totalShots: shots.length,
+      burnSubtitles,
     };
   } catch (error) {
     return { ok: false, error: `Movie export failed: ${(error as Error).message}` };

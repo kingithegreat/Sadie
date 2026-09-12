@@ -533,11 +533,11 @@ export interface ElectronAPI {
     };
     error?: string;
   }>;
-  mediaCreate?: (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
+  mediaCreate?: (input: { title: string; format?: 'short' | 'long'; brief?: string; burnSubtitles?: boolean }) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -671,7 +671,7 @@ export interface ElectronAPI {
     result?: any;
     error?: string;
   }>;
-  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[] }) => Promise<{
+  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean }) => Promise<{
     ok: boolean;
     message?: string;
     error?: string;

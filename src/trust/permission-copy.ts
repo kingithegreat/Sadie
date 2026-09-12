@@ -157,6 +157,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   media_breakdown_script: { label: 'Auto-direct script into storyboard', detail: 'Break down a script, scene prompt, or story synopsis into a multi-shot storyboard with camera framing, visual prompts, and dialogue.' },
   media_delete_job: { label: 'Delete a video and its files', detail: 'Permanently removes a Media Studio job and everything it produced — narration, captions, images and the rendered video. Cannot be undone.' },
   media_create_job: { label: 'Start a video', detail: 'Add a new video to the Media Studio. Nothing is published.' },
+  media_set_output: { label: 'Save video output settings', detail: 'Choose captions for the next export of an editable video. Existing audio and video files are preserved. Nothing is published.' },
   media_list_jobs: { label: 'List your videos', detail: 'See videos in progress and the stage each has reached.' },
   media_advance_job: { label: 'Move a video along', detail: 'Move a video to its next stage. Cannot approve or publish it.' },
   media_approve_job: { label: 'Approve a video', detail: 'Approve a finished video so it can be scheduled and published.' },

@@ -125,6 +125,7 @@ export function registerStudioIpc(
       const job = createJob({
         title: String(input?.title || ''),
         format: input?.format === 'long' ? 'long' : 'short',
+        burnSubtitles: input?.burnSubtitles,
         brief: input?.brief ? String(input.brief) : undefined,
       });
       writeJobs([...readJobs(), job]);
@@ -186,7 +187,7 @@ export function registerStudioIpc(
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string }) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean }) => {
     const { readJobs } = await import('../../tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -195,7 +196,8 @@ export function registerStudioIpc(
     // could write a script and record narration, then had no button for the
     // one step that actually produces the video. A panel-first workflow that
     // dead-ends before the deliverable is not a workflow.
-    const tool = action === 'render' ? 'media_render'
+    const tool = action === 'output' ? 'media_set_output'
+      : action === 'render' ? 'media_render'
       : action === 'narrate' ? 'media_narrate'
       : 'media_write_script';
     try {
@@ -207,7 +209,8 @@ export function registerStudioIpc(
       // network image-generation call.
       if (action === 'render' && opts?.image) args.image = opts.image;
       if (action === 'render' && opts?.visuals) args.visuals = opts.visuals;
-      if (!['render', 'narrate', 'script'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
+      if (action === 'output') args.burnSubtitles = opts?.burnSubtitles;
+      if (!['render', 'narrate', 'script', 'output'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
       const res = await invokeTool(_e, tool, args);
       return res?.success
         ? { ok: true, message: String(res.result ?? '') }
@@ -398,6 +401,7 @@ export function registerStudioIpc(
     // script_qa — from a fresh job (state idea) it throws, which used to
     // report a successful Python render as a failure. Walks the chain instead.
     job = fastForwardToMediaProduction(job, { by: 'studio', note: 'Ancient Pathways pipeline runs its own stages internally' });
+    job = { ...job, externalRenderer: 'ancient-pathways', burnSubtitles: undefined };
     // transition() returns a NEW object; `jobs` still holds whatever `job`
     // pointed to before that call (the array push above captured the
     // pre-transition object too), so the array must be re-synced or the
@@ -491,6 +495,7 @@ export function registerStudioIpc(
       brief: `Showrunner — ${options.prompt.slice(0, 120)}`,
     });
     job = fastForwardToMediaProduction(job, { by: 'studio', note: 'Showrunner runs its own stages internally' });
+    job = { ...job, externalRenderer: 'ancient-pathways', burnSubtitles: undefined };
     const jobs = readJobs();
     jobs.push(job);
     writeJobs(jobs);
@@ -671,7 +676,7 @@ export function registerStudioIpc(
         projectId: args.projectId,
         sceneId: args.sceneId,
         motion: args.motion !== false,
-        burnSubtitles: args.burnSubtitles !== false,
+        burnSubtitles: args.burnSubtitles,
       });
       return res.success
           ? { ok: true, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId, ...(res.result.warning ? { warning: res.result.warning } : {}) }

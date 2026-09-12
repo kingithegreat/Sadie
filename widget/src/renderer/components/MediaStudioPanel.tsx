@@ -20,6 +20,7 @@ import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
+import { canEditMediaOutput, hasExternalMediaRenderer } from '../../shared/media-output';
 import {
   type CameraMotion,
   type StageFraming,
@@ -82,6 +83,8 @@ interface MediaJob {
   id: string;
   title: string;
   format: 'short' | 'long';
+  burnSubtitles?: boolean;
+  externalRenderer?: string;
   state: MediaJobState;
   brief?: string;
   script?: string;
@@ -1076,6 +1079,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           projectId: selectedStoryboardId,
           sceneId: scene.sceneId,
           shots: scene.shots,
+          burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
         });
         if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
       }
@@ -1408,13 +1412,13 @@ ${shots.map((s, idx) => `
         return;
       }
       if (loadVersion !== storyboardLoadVersion.current) return;
-      setStoryboardMessage(`Rendering all ${activeStoryboard.scenes.length} scene(s) with narration and subtitles...`);
+      setStoryboardMessage(`Rendering all ${activeStoryboard.scenes.length} scene(s) with narration${activeStoryboard.project.burnSubtitles !== false ? ' and captions' : ', captions off'}...`);
       const res = await releaseMediaThen('storyboard-export', () => {
         setRenderedMoviePath(null);
         return api()?.mediaStoryboardRender?.({
           projectId: selectedStoryboardId,
           motion: true,
-          burnSubtitles: true,
+          burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
         });
       });
       if (loadVersion !== storyboardLoadVersion.current) return;
@@ -1768,6 +1772,22 @@ ${shots.map((s, idx) => `
           {j.durationSeconds ? ` · ${j.durationSeconds}s recorded` : ''}
           {j.narratedWith ? ` · narrated: ${j.narratedWith}` : ''}
         </span>
+
+        {hasExternalMediaRenderer(j) ? <span className="ms-job-format">
+          Caption settings for this export are controlled by Ancient Pathways.
+        </span> : <label className="ms-job-format">
+          <input
+            type="checkbox"
+            aria-label={`Burn captions into ${j.title}`}
+            checked={j.burnSubtitles !== false}
+            disabled={busy === j.id || !canEditMediaOutput(j.state)}
+            onChange={e => {
+              const burnSubtitles = e.target.checked;
+              void run(j.id, () => api()?.mediaRun?.(j.id, 'output', { burnSubtitles }), 'Saving output');
+            }}
+          />{' '}Burn captions into video
+          {!canEditMediaOutput(j.state) && ' — send back for revision to change'}
+        </label>}
 
         {/* 4-Step User-Friendly Progress Stepper */}
         {(() => {
@@ -4064,6 +4084,21 @@ ${shots.map((s, idx) => `
             </button>
           </div>
         </div>
+
+        {activeStoryboard && (
+          <label className="ms-job-format">
+            <input
+              type="checkbox"
+              aria-label="Burn captions into storyboard video"
+              checked={activeStoryboard.project.burnSubtitles !== false}
+              disabled={storyboardBusy}
+              onChange={e => {
+                const burnSubtitles = e.target.checked;
+                setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, burnSubtitles } } : prev);
+              }}
+            />{' '}Burn captions into video — saved with Save Board or Render Movie
+          </label>
+        )}
 
         {/* Inline Create Drawer */}
         {isCreatingStoryboard && (
