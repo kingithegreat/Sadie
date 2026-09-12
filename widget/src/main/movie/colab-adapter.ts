@@ -19,17 +19,16 @@
  *    and writes the character-consistent still to `image/{shotId}.png`.
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import type {
   GenerationCapability,
   GenerationProvider,
   GenerationRequest,
   GenerationResult,
-  ShotJobState,
 } from './types';
 import { ShotStatus } from './types';
 import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
+import { stageColabJob } from './colab-queue';
 
 export const COLAB_WORKER_ID = 'colab-worker';
 
@@ -87,67 +86,13 @@ export async function generateColabShot(req: GenerationRequest): Promise<Generat
     // A deferred remote job is still an online choice, even before its ticket
     // is handed to the operator or picked up by a synced-folder worker.
     assertProviderOnlineAccess('Colab');
-    const timestamp = Date.now();
-    const ticketId = `colab_ticket_${req.shotId}_${timestamp}`;
 
-    if (req.shotDir) {
-      fs.mkdirSync(req.shotDir, { recursive: true });
-
-      // Write prompt.json (immutable input)
-      const promptPath = path.join(req.shotDir, 'prompt.json');
-      fs.writeFileSync(promptPath, JSON.stringify(req, null, 2), 'utf-8');
-
-      // Update or initialize status.json (resumable state)
-      const statusPath = path.join(req.shotDir, 'status.json');
-      let jobState: ShotJobState;
-      if (fs.existsSync(statusPath)) {
-        try {
-          jobState = JSON.parse(fs.readFileSync(statusPath, 'utf-8')) as ShotJobState;
-        } catch {
-          jobState = {
-            shotId: req.shotId,
-            status: ShotStatus.AWAITING_WORKER,
-            attempts: 1,
-            characterRevisions: {},
-            updatedAt: new Date().toISOString(),
-          };
-        }
-      } else {
-        jobState = {
-          shotId: req.shotId,
-          status: ShotStatus.AWAITING_WORKER,
-          attempts: 1,
-          characterRevisions: {},
-          updatedAt: new Date().toISOString(),
-        };
-      }
-
-      jobState.status = ShotStatus.AWAITING_WORKER;
-      jobState.deferredTicket = ticketId;
-      jobState.deferredProvider = COLAB_WORKER_ID;
-      jobState.updatedAt = new Date().toISOString();
-      fs.writeFileSync(statusPath, JSON.stringify(jobState, null, 2), 'utf-8');
-
-      // Write ticket.json for the Colab worker runner
-      const ticket: ColabWorkerTicket = {
-        ticketId,
-        createdAt: new Date().toISOString(),
-        shotId: req.shotId,
-        shotDir: req.shotDir,
-        prompt: req.prompt,
-        width: req.width,
-        height: req.height,
-        characterRefs: req.characterRefs,
-        status: ShotStatus.AWAITING_WORKER,
-        outputPattern: path.join(req.shotDir, 'image', `${req.shotId}.png`),
-      };
-      fs.writeFileSync(path.join(req.shotDir, 'ticket.json'), JSON.stringify(ticket, null, 2), 'utf-8');
-    }
+    const manifest = stageColabJob(req);
 
     return {
       status: 'deferred',
       provider: COLAB_WORKER_ID,
-      ticket: ticketId,
+      ticket: manifest.ticketId,
       where: req.shotDir
         ? `Ticket written to ${path.join(req.shotDir, 'ticket.json')} (run notebooks/colab_sdxl_ipadapter.ipynb)`
         : 'Colab worker queue (run notebooks/colab_sdxl_ipadapter.ipynb)',
