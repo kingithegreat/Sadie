@@ -890,7 +890,13 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         // says so rather than showing nothing and looking broken.
         scenePaths = images.map(i => i.path);
         if (made) {
-          const timeline = timelineFromCues(scenes, i => filled[i]);
+          // The narration length, so the scenes cover the pauses too and the
+          // render is not trimmed back to the spoken total.
+          const timeline = timelineFromCues(
+            scenes,
+            i => filled[i],
+            job.durationSeconds ? Math.round(job.durationSeconds * 1000) : undefined,
+          );
           concatPath = path.join(dir, 'scenes.txt');
           fs.writeFileSync(concatPath, buildConcatFileContent(timeline), 'utf8');
           const failed = images.filter(i => !i.path).length;

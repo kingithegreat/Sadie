@@ -50,6 +50,37 @@ describe('generating one image per scene', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  /**
+   * The renderer feeds every scene of one video to a SINGLE ffmpeg concat
+   * demuxer, which probes the first file, picks one decoder, and then cannot
+   * decode any scene stored in a different format — measured on the 2026-09-12
+   * nightly artifacts as `[mjpeg] No JPEG data found in image`, the odd frames
+   * dropped, and a 10.0s narration rendered as a 6.3s video.
+   *
+   * Providers do not agree on a format: Pollinations returns JPEG while the
+   * local fallback plate is a real PNG, so a mixed render was the normal case,
+   * not an edge case. Correct file extensions do NOT help — one concat gets one
+   * decoder, so the bytes themselves have to agree.
+   */
+  it('stores every scene in one real format, whatever the provider sent', async () => {
+    const dir = tmp();
+    // A JPEG (SOI + EXIF, exactly what Pollinations returns) alongside a PNG.
+    const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10, 0x45, 0x78, 0x69, 0x66]).toString('base64');
+    const res = await generateSceneImages({
+      scenes: [{ text: 'a' }, { text: 'b' }],
+      videoTitle: 'T', outDir: dir, width: 64, height: 64,
+      generate: async (prompt) => ({ base64: prompt.includes('b —') ? PNG_1PX : JPEG_BYTES }),
+    });
+
+    const magics = res
+      .filter(r => r.path)
+      .map(r => fs.readFileSync(r.path!).subarray(0, 4).toString('hex'));
+    expect(magics.length).toBe(2);
+    // One decoder must be able to read all of them.
+    expect(new Set(magics).size).toBe(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('records a failure per scene instead of throwing', async () => {
     const dir = tmp();
     const res = await generateSceneImages({
