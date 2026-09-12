@@ -240,6 +240,13 @@ describe('ImageGenerator — select controls', () => {
     expect(select.value).toBe('local');
   });
 
+  test('backend can be changed to Google Imagen 3', () => {
+    render(<ImageGenerator />);
+    const select = screen.getByLabelText(/Where to make it/i) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'imagen' } });
+    expect(select.value).toBe('imagen');
+  });
+
   test('selected style and resolution are passed in the payload', async () => {
     const electronFn = jest.fn().mockResolvedValue({ status: 'success', image: 'x' });
     (window as any).electron = { executeImageGenerate: electronFn };

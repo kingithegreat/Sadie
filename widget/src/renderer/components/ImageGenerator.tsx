@@ -183,6 +183,7 @@ const ImageGenerator: React.FC = () => {
             <label htmlFor="backend">Where to make it:</label>
             <select id="backend" value={backend} onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}>
               <option value="hybrid">Best available</option>
+              <option value="imagen">Google Imagen 3 — high quality (Gemini key)</option>
               <option value="local">Only on this PC — private</option>
               <option value="cloud">Online — free, no account</option>
             </select>

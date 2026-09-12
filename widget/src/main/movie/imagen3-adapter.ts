@@ -17,7 +17,6 @@ import { apiKeyForProvider } from '../../shared/cloud-llm';
 import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 import { saveMovieShotImage } from './image-output';
 
-const IMAGEN_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict';
 
 // ---------------------------------------------------------------------------
 // Probe — what the provider can do right now
@@ -69,82 +68,8 @@ export async function probeImagen3(
 // Generate — produce one image
 // ---------------------------------------------------------------------------
 
-export async function generateImagen3(
-  prompt: string,
-  _width: number,
-  _height: number,
-  _seed?: number
-): Promise<{ base64: string; mimeType: 'png' }> {
-  assertProviderOnlineAccess('Imagen');
-  const settings = getSettings();
-  const apiKey = apiKeyForProvider(settings as any, 'google-ai-studio');
-  if (!apiKey) {
-    throw new Error('Gemini API key not configured. Add it in Settings → Custom LLM → Google AI Studio.');
-  }
-
-  // Imagen 3 expects a specific JSON payload.
-  // Width and height must be one of the supported aspect ratios; we will
-  // request the closest and then let the caller crop/resize if needed.
-  // For simplicity, we ask for the exact size and hope the model complies.
-  // In practice, Imagen 3 returns 1024x1024 squares; we may need to adapt.
-  const payload = {
-    instances: [{ prompt }],
-    parameters: {
-      sampleCount: 1,
-      // width and height are not direct parameters; aspect ratio is controlled via
-      // the prompt or by post-processing. For now, we ignore and document.
-    },
-  };
-
-  const endpoint = `${IMAGEN_ENDPOINT}?key=${encodeURIComponent(apiKey)}`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120_000);
-
-  let resp: Response;
-  try {
-    assertProviderOnlineAccess('Imagen');
-    resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(`Imagen 3 ${resp.status}: ${txt}`);
-  }
-
-  const data = (await resp.json()) as {
-    predictions?: {
-      bytesBase64Encoded?: string;
-      mimeType?: string; // usually 'image/png'
-    }[];
-  };
-
-  const pred = data.predictions?.[0];
-  if (!pred?.bytesBase64Encoded) {
-    throw new Error('Imagen 3 returned no image');
-  }
-
-  const b64 = pred.bytesBase64Encoded;
-  const mime = pred.mimeType ?? 'png';
-
-  if (mime !== 'image/png') {
-    // Imagen 3 is documented to return PNG; if it changes, we adapt.
-    throw new Error(`Imagen 3 returned unexpected mime type: ${mime}`);
-  }
-
-  if (b64.length < 100) {
-    throw new Error('Imagen 3 returned empty image data');
-  }
-
-  return { base64: b64, mimeType: 'png' as const };
-}
+import { generateImagen3 } from '../tools/imagen';
+export { generateImagen3 };
 
 // ---------------------------------------------------------------------------
 // Adapter registration — GenerationProvider
