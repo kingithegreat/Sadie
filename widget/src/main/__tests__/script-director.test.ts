@@ -162,7 +162,11 @@ She retrieves the encrypted datacore from the chassis.`;
       const projectDir = res.projectDir!;
       expect(fs.existsSync(projectDir)).toBe(true);
       expect(fs.existsSync(path.join(projectDir, 'project.json'))).toBe(true);
-      expect(fs.existsSync(path.join(projectDir, 'scenes', 'scene_01', 'manifest.json'))).toBe(true);
+      // No manifest.json: the renderer now assembles shots from scene.json/
+      // prompt.json/script.txt directly (see storyboard-assembly.ts) — a
+      // second, hand-synced representation was the bug this replaced.
+      expect(fs.existsSync(path.join(projectDir, 'scenes', 'scene_01', 'manifest.json'))).toBe(false);
+      expect(fs.existsSync(path.join(projectDir, 'scenes', 'scene_01', 'scene.json'))).toBe(true);
 
       // Verify shot files
       const shot01 = path.join(projectDir, 'scenes', 'scene_01', 'shot_001');
