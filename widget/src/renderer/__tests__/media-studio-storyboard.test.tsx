@@ -147,6 +147,21 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('a late project response cannot replace the newly selected project or its movie', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    let finishOldLoad!: (value: any) => void;
+    mocks.mediaStoryboardGet.mockImplementation((id: string) => id === 'pyramid-builders'
+      ? new Promise(resolve => { finishOldLoad = resolve; })
+      : Promise.resolve({ ok: true, result: { ...board, project: { projectId: id, name: 'New project' }, renderedMoviePath: 'C:/new/movie.mp4' } }));
+    const { rerender } = render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    await act(async () => { rerender(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'new-project' }} />); });
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/new/movie.mp4');
+    await act(async () => { finishOldLoad({ ok: true, result: { ...board, renderedMoviePath: 'C:/old/movie.mp4' } }); });
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/new/movie.mp4');
+    expect(screen.getByRole('button', { name: /Review & Publish/i })).toBeDisabled();
+  });
+
   test('edits the selected scene only and saves every scene before rendering the whole movie', async () => {
     const mocks = setup();
     const board = (await mocks.mediaStoryboardGet()).result;

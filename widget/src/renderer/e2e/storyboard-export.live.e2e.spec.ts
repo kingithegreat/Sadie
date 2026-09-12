@@ -107,6 +107,13 @@ test('Studio exports a complete two-scene local movie with timed narration and c
         .then(async () => page.getByRole('region', { name: 'Visual Storyboard Deck' }).getByRole('alert').innerText()),
     ]);
     expect(result).toBe('ready');
+    const reviewJob = (await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.id === `sb_${projectId}`);
+    expect(reviewJob).toMatchObject({ state: 'awaiting_approval', durationSeconds: 8 });
+    expect(reviewJob?.renderPath).toBe(path.join(projectDir, 'renders', `${projectId}-1080p.mp4`));
+    await page.getByRole('button', { name: /Review & Publish/ }).click();
+    await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('tab', { name: /Storyboard/ }).click();
+    await expect(page.getByLabel('Exported storyboard video')).toBeVisible();
     expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'scenes', 'scene_02', 'shot_01', 'prompt.json'), 'utf8')).durationSec).toBe(4);
     expect(fs.readFileSync(path.join(projectDir, 'scenes', 'scene_01', 'shot_01', 'script.txt'), 'utf8')).toBe(lines[0]);
     const movie = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
@@ -157,6 +164,7 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);
     await expect(page.locator('.ms-movie-rendered-banner')).toContainText(movie);
+    await expect(page.getByRole('button', { name: /Review & Publish/ })).toBeEnabled();
     expect(createHash('sha256').update(fs.readFileSync(movie)).digest('hex')).toBe(evidence.sha256);
     const player = page.getByLabel('Exported storyboard video');
     await expect(player).toBeVisible();
@@ -201,7 +209,7 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     expect(await app.evaluate(() => (globalThis as any).exportSpeechAttempts)).toEqual([]);
     fs.writeFileSync(testInfo.outputPath('export-evidence.json'), JSON.stringify({
       ...evidence, finalSha256: createHash('sha256').update(fs.readFileSync(movie)).digest('hex'),
-      sceneCount: 2, lastSceneEditsSavedByRender: true, fullEndingPlayedWithoutLoop: true,
+      sceneCount: 2, lastSceneEditsSavedByRender: true, fullEndingPlayedWithoutLoop: true, reviewQueueReachable: true,
       reopenedAfterRestart: true, playerDecodedAndPlayed: true, failedReplacementPreserved: true, replacementWithPlayerLoaded: true,
     }, null, 2));
   } finally {

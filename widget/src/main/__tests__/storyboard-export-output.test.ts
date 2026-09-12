@@ -7,7 +7,8 @@ import { findManagedFfmpeg } from '../ffmpeg-setup';
 import { inspectRender, RenderFacts } from '../media-qa';
 import { renderNarrationToFile } from '../tools/voice';
 import { renderStoryboardMovie, ShotManifest } from '../movie/storyboard-renderer';
-import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler } from '../tools/media-storyboard';
+import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler, mediaRenderStoryboardHandler } from '../tools/media-storyboard';
+import { readJobs, writeJobs } from '../tools/media';
 
 jest.mock('../media-render', () => ({
   ...jest.requireActual('../media-render'), findFfmpeg: jest.fn(),
@@ -17,6 +18,7 @@ jest.mock('../media-qa', () => ({
   ...jest.requireActual('../media-qa'), inspectRender: jest.fn(),
 }));
 jest.mock('../tools/voice', () => ({ renderNarrationToFile: jest.fn() }));
+jest.mock('../tools/media', () => ({ readJobs: jest.fn(), writeJobs: jest.fn() }));
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
 
 describe('storyboard export output contract', () => {
@@ -44,6 +46,8 @@ describe('storyboard export output contract', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (readJobs as jest.Mock).mockReturnValue([]);
+    (writeJobs as jest.Mock).mockReset();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-export-contract-'));
     process.env.HOMEBOT_MOVIE_PROJECTS_DIR = root;
     scene = path.join(root, 'export-check', 'scenes', 'scene_01');
@@ -238,5 +242,23 @@ describe('storyboard export output contract', () => {
     expect(result.ok).toBe(true);
     expect(result.moviePath).not.toBe(output);
     expect(fs.readFileSync(output, 'utf8')).toBe('complete project movie');
+  });
+
+  test('an explicit scene export cannot replace the complete movie review job', async () => {
+    const completeJob = { id: 'sb_export-check', renderPath: output, state: 'awaiting_approval' };
+    (readJobs as jest.Mock).mockReturnValue([completeJob]);
+    const result = await mediaRenderStoryboardHandler({ projectId: 'export-check', sceneId: 'scene_01', motion: false }, {} as any);
+    expect(result.success).toBe(true);
+    expect(result.result.jobId).not.toBe(completeJob.id);
+    expect((writeJobs as jest.Mock).mock.calls[0][0]).toContainEqual(completeJob);
+  });
+
+  test('a movie saved without a review-queue record reports the partial outcome honestly', async () => {
+    (writeJobs as jest.Mock).mockImplementation(() => { throw new Error('Queue disk full'); });
+    const result = await mediaRenderStoryboardHandler({ projectId: 'export-check', motion: false }, {} as any);
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(result.result.moviePath)).toBe(true);
+    expect(result.result.jobId).toBeUndefined();
+    expect(result.result.warning).toMatch(/review queue/i);
   });
 });

@@ -12,7 +12,7 @@
  * that sets the human-decision flag, not a direct write.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
@@ -335,6 +335,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     projectDir: string;
   }> | null>(null);
   const [selectedStoryboardId, setSelectedStoryboardId] = useState<string | null>(null);
+  const storyboardLoadVersion = useRef(0);
   const [selectedStoryboardSceneId, setSelectedStoryboardSceneId] = useState<string | null>(null);
   const [activeStoryboard, setActiveStoryboard] = useState<{
     project: Record<string, any>;
@@ -386,7 +387,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
-  const storyboardBusy = storyboardRendering || storyboardSaving || generatingShotId !== null;
+  const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
+  const renderedStoryboardJob = jobs.find(job => job.renderPath === renderedMoviePath &&
+    (job.id === renderedMovieJobId || job.id === `sb_${selectedStoryboardId}`));
 
   const api = () => (window as any).electron;
 
@@ -478,16 +481,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       const workspace = (navContext.workspace as string) || '';
       if (workspace === 'storyboard') {
         setActiveWorkspace('storyboard');
-        loadStoryboardProjects();
+        loadStoryboardProjects(!(navContext.storyboardId || navContext.projectId));
         if (navContext.storyboardId || navContext.projectId) {
           const id = (navContext.storyboardId || navContext.projectId) as string;
           setSelectedStoryboardId(id);
           loadStoryboard(id);
         }
-        if (navContext.renderedMoviePath) {
-          setRenderedMoviePath(navContext.renderedMoviePath as string);
-        }
-
       } else if (workspace === 'timeline') {
         setActiveWorkspace('timeline');
       } else if (workspace === 'stage') {
@@ -908,14 +907,14 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
-  const loadStoryboardProjects = async () => {
+  const loadStoryboardProjects = async (autoSelect = true) => {
     setStoryboardLoading(true);
     setStoryboardError(null);
     try {
       const res = await api()?.mediaStoryboardList?.();
       if (res?.ok && Array.isArray(res.storyboards)) {
         setStoryboardProjects(res.storyboards);
-        if (res.storyboards.length > 0 && !selectedStoryboardId) {
+        if (autoSelect && res.storyboards.length > 0 && !selectedStoryboardId) {
           const firstId = res.storyboards[0].projectId;
           setSelectedStoryboardId(firstId);
           await loadStoryboard(firstId);
@@ -931,10 +930,16 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const loadStoryboard = async (projectId: string) => {
+    const loadVersion = ++storyboardLoadVersion.current;
     setStoryboardLoading(true);
     setStoryboardError(null);
+    setStoryboardMessage(null);
+    setActiveStoryboard(null);
+    setRenderedMoviePath(null);
+    setRenderedMovieJobId(null);
     try {
       const res = await api()?.mediaStoryboardGet?.(projectId);
+      if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.result) {
         setActiveStoryboard(res.result);
         setSelectedStoryboardId(projectId);
@@ -946,9 +951,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         setStoryboardError(res?.error || `Could not load storyboard: ${projectId}`);
       }
     } catch (e: any) {
-      setStoryboardError(e?.message || `Could not load storyboard: ${projectId}`);
+      if (loadVersion === storyboardLoadVersion.current) setStoryboardError(e?.message || `Could not load storyboard: ${projectId}`);
     } finally {
-      setStoryboardLoading(false);
+      if (loadVersion === storyboardLoadVersion.current) setStoryboardLoading(false);
     }
   };
 
@@ -1392,6 +1397,7 @@ ${shots.map((s, idx) => `
 
   const handleRenderMovie = async () => {
     if (!selectedStoryboardId || !activeStoryboard || storyboardBusy) return;
+    const loadVersion = storyboardLoadVersion.current;
     const previousExport = renderedMoviePath;
     setStoryboardRendering(true);
     setStoryboardError(null);
@@ -1401,6 +1407,7 @@ ${shots.map((s, idx) => `
         setStoryboardMessage(null);
         return;
       }
+      if (loadVersion !== storyboardLoadVersion.current) return;
       setStoryboardMessage(`Rendering all ${activeStoryboard.scenes.length} scene(s) with narration and subtitles...`);
       const res = await releaseMediaThen('storyboard-export', () => {
         setRenderedMoviePath(null);
@@ -1410,19 +1417,20 @@ ${shots.map((s, idx) => `
           burnSubtitles: true,
         });
       });
+      if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.moviePath) {
         setRenderedMoviePath(res.moviePath);
-        if (res.jobId) {
-          setRenderedMovieJobId(res.jobId);
-        }
+        setRenderedMovieJobId(res.jobId || null);
         await refresh();
-        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)! Bridged to Director queue.`);
+        setStoryboardError(res.warning || null);
+        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)!${res.jobId ? ' Added to Director review queue.' : ''}`);
       } else {
         setRenderedMoviePath(previousExport);
         setStoryboardMessage(null);
         setStoryboardError(res?.error || 'Failed to render movie.');
       }
     } catch (e: any) {
+      if (loadVersion !== storyboardLoadVersion.current) return;
       setRenderedMoviePath(previousExport);
       setStoryboardMessage(null);
       setStoryboardError(e?.message || 'Failed to render movie.');
@@ -4305,9 +4313,11 @@ ${shots.map((s, idx) => `
                   <button
                     type="button"
                     className="ms-btn ms-btn--cta"
+                    disabled={!renderedStoryboardJob}
+                    title={renderedStoryboardJob ? 'Review this saved movie in the Director queue' : 'This older export has no matching review job. Render it again to add it to the queue.'}
                     onClick={() => {
-                      const jId = renderedMovieJobId || `sb_${selectedStoryboardId}`;
-                      setSelectedJobId(jId);
+                      if (!renderedStoryboardJob) return;
+                      setSelectedJobId(renderedStoryboardJob.id);
                       setActiveWorkspace('director');
                     }}
                     style={{

@@ -601,7 +601,11 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
   }
 
   // Bridge rendered storyboard movie into primary MediaJob approval queue
-  let jobId = `sb_${projectId}`;
+  const sceneId = (args.sceneId as string)?.trim();
+  // Separate namespaces and a length-prefixed project ID avoid collisions
+  // between complete movies and independently exported scenes.
+  let jobId: string | undefined = sceneId ? `sbscene_${projectId.length}_${projectId}_${sceneId}` : `sb_${projectId}`;
+  let warning: string | undefined;
   try {
     const { readJobs, writeJobs } = await import('./media');
     const rootDir = getStoryboardsRootDir();
@@ -644,6 +648,8 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     }
     writeJobs(jobs);
   } catch (e) {
+    jobId = undefined;
+    warning = 'The movie was saved, but it could not be added to the review queue. You can still open the saved video; render again to retry the queue entry.';
     console.warn('[Storyboard] Failed to register MediaJob in approval queue:', e);
   }
 
@@ -652,6 +658,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     result: {
       projectId,
       jobId,
+      ...(warning ? { warning } : {}),
       moviePath: res.moviePath,
       durationSec: res.durationSec,
       totalShots: res.totalShots,

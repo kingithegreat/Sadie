@@ -94,3 +94,33 @@ PR #312's workspace integration is now merged on main `0ac2326`; combine it
 with this checkpoint and rerun gates before publishing the takeover branch.
 Full episode, all aspect ratios, trustworthy export identity, owner visual
 acceptance, installer and publication are still separate acceptance work.
+
+## Combined-workspace checkpoint — 2026-09-13 NZ
+
+Integrated #312 at main `0ac2326` (merge checkpoint `269f03b`). A reproduced
+late project-load race no longer attaches a previous project's movie to the
+new selection. Review requires a real queue job with the matching saved path;
+arbitrary navigation text is not treated as a verified export. Single-scene
+exports cannot replace the whole-movie review entry. If the queue cannot be
+saved, the completed file stays available with an explicit warning, not an
+invented successful job ID. These three regressions failed before repair.
+The React review informed scoped/functional shot updates and deriving the
+matching review job from the current project/file instead of stale UI state.
+
+Final combined Windows checks: **303 passing widget suites / 4,158 tests**,
+6 existing skipped suites / 19 skipped tests; root **18 suites / 227 tests**.
+Both typechecks, build, docs and duplicate-export guard pass. Lint: zero errors,
+eight existing warnings. The guard inspected the new production speech adapter.
+The first combined suite had one old banner-label expectation failure; that
+test now checks the saved-file contract and queue navigation with persisted
+metadata. The complete rerun above is green, not a filtered retry.
+
+Two rebuilt Electron tests pass without retries in 1.8 minutes: default Sample
+with Online off, plus the complete two-scene film, reachable Director review
+queue, correct saved path after restart, full ending with no looping, and
+failed/corrected replacement with the player loaded. No approval or upload was
+performed. Encoded dimensions/duration/audio/captions/hash are unchanged.
+The latest local movie is retained in the disposable profile
+`homebot-storyboard-export-EgKMtM`; portable measurements are in
+`docs/evidence/studio-completion.json`. Remote CI is a separate gate, and this
+eight-second diagnostic is not a finished episode or full Studio acceptance.
