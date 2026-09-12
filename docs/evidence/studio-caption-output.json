@@ -7,6 +7,19 @@
   "testsPassed": 2,
   "retries": 0,
   "elapsedMinutes": 2.9,
+  "reverifiedAfterPaletteIntegration": {
+    "sourceCheckpoint": "c796512",
+    "integratedMain": "ebb786a",
+    "electronTestsPassed": 5,
+    "retries": 0,
+    "elapsedMinutes": 1.8,
+    "bothMovieHashesUnchanged": true,
+    "widgetTestsPassed": 4182,
+    "widgetTestsSkipped": 19,
+    "widgetSuitesPassed": 304,
+    "widgetExitCode": 0,
+    "rootTestsPassed": 227
+  },
   "scope": "Two-scene authored-card diagnostics, not an approved episode, generated-art quality proof or installed release",
   "commonOutput": {
     "durationSeconds": 8,

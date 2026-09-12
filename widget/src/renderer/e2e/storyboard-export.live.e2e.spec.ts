@@ -66,9 +66,12 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     if (!burnSubtitles) {
       const jobCaptions = page.getByRole('checkbox', { name: 'Burn captions into Output preference proof' });
       await expect(jobCaptions).not.toBeChecked();
-      await jobCaptions.check();
+      // This is a persisted control: its checked state changes after IPC save
+      // and refresh, not synchronously with the click.
+      await jobCaptions.click();
       await expect.poll(async () => (await page.evaluate(() => window.electron.mediaList!()))
         .find((job: any) => job.title === 'Output preference proof')?.burnSubtitles).toBe(true);
+      await expect(jobCaptions).toBeChecked();
     }
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);

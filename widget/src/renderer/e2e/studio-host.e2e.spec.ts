@@ -28,7 +28,9 @@ test('Studio creates a real storyboard through its trusted module and Core tool 
     const projectDir = path.join(projects, projectDirs[0]);
     expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8'))).toMatchObject({
       name: 'Host boundary fixture', notes: 'Created through the visible Studio button.',
+      burnSubtitles: false,
     });
+    await expect(page.getByRole('checkbox', { name: 'Burn captions into storyboard video' })).not.toBeChecked();
     const scene = JSON.parse(fs.readFileSync(path.join(projectDir, 'scenes', 'scene_01', 'scene.json'), 'utf8'));
     expect(scene.shots).toHaveLength(3);
     expect(fs.readFileSync(path.join(projectDir, 'scenes', 'scene_01', scene.shots[0], 'script.txt'), 'utf8')).toContain('Host boundary fixture');

@@ -89,3 +89,26 @@ palette. No CI checks or test thresholds changed.
 the branch and shared uncommitted files are untouched. #315's handoff content
 is incorporated at `b3f6d61` with the owner decision brought up to date. Its
 separate PR can close once this integrated continuation is published/verified.
+
+## Final combined local gate
+
+Main #317's palette is preserved at `c796512`. The unchanged CI Jest command
+passes with exit 0: 4182 tests, 19 skipped, 304 suites in 175.072 seconds.
+Both previously interrupted stuck-job assertions pass unchanged.
+
+The first combined Electron attempt caught a test assumption: `check()` expects
+a synchronous checked state, but this control changes after IPC save/refresh.
+The persisted record was true, telemetry recorded success, and the failure
+screenshot showed it checked. The test now uses one real click, then assertions
+on actual saved state and the refreshed control. No production change, retry
+increase, artificial delay or timeout increase. Failure evidence is retained in
+`.kilo/artifacts/studio-output-c796512-first-final`.
+
+Final five-test Electron run: **5 passed, no retries, 1.8 minutes**, on the rebuilt
+combined app. Includes voice privacy, paired caption exports with ordinary job
+setting/restart, visible storyboard creation (new captions default off), and
+palette/contrast/keyboard flow. Both movie hashes and measurements match exactly.
+Final traces/screenshots/outputs: `.kilo/artifacts/studio-output-c796512`.
+Both typechecks, final build/docs/export guard pass; lint zero errors/eight
+existing warnings. Remote checks, main integration and remaining Studio work
+are separate next gates.
