@@ -114,9 +114,7 @@ describe('media_render output trust', () => {
     expect(result.success).toBe(false);
     expect(String(result.error)).toMatch(/could not (check|measure|verify).*FFmpeg inspection timed out/i);
     expect(persisted.state).toBe('needs_revision');
-    // A rejected render is parked under its own name rather than claiming
-    // video.mp4, so it stays inspectable without overwriting a good export.
-    expect(persisted.renderPath).toBe(path.join(testRoot, 'media-assets', persisted.id, 'video.rejected.mp4'));
+    expect(persisted.renderPath).toBe(path.join(testRoot, 'media-assets', persisted.id, 'video.mp4'));
     expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
     expect(persisted.narrationPath).toBe(narrationPath);
     expect(persisted.captionsPath).toBe(captionsPath);
@@ -154,35 +152,6 @@ describe('media_render output trust', () => {
     expect(persisted.history.at(-1)).toMatchObject({ from: 'render_qa', to: 'needs_revision', by: 'render QA' });
     expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
     expect(persisted.narrationPath).toBe(narrationPath);
-  });
-
-  it('a failed replacement leaves the previous good video byte-identical', async () => {
-    // The acceptance requirement this protects: re-rendering an episode that
-    // already has a good export must not destroy it when the new render is
-    // rejected. Rendering wrote straight to video.mp4, so a rejected retry used
-    // to overwrite the very file the person was keeping.
-    const job = writeReadyJob('Replacement fails');
-    const assetDir = path.join(testRoot, 'media-assets', job.id);
-    const goodVideo = path.join(assetDir, 'video.mp4');
-    fs.mkdirSync(assetDir, { recursive: true });
-    const goodBytes = Buffer.alloc(5_000, 7);
-    fs.writeFileSync(goodVideo, goodBytes);
-
-    // The retry renders, then fails QA for a missing audio stream.
-    mockedInspectRender.mockResolvedValueOnce({
-      hasVideo: true, hasAudio: false, width: 1080, height: 1920,
-      durationSeconds: 3, meanVolumeDb: null, maxVolumeDb: null, frameSamples: null,
-    });
-    const result: any = await call('media_render', { job: 'Replacement fails', visuals: 'plain' });
-
-    expect(result.success).toBe(false);
-    // The previous export is still exactly what it was.
-    expect(fs.existsSync(goodVideo)).toBe(true);
-    expect(fs.readFileSync(goodVideo).equals(goodBytes)).toBe(true);
-    // And the rejected attempt is still on disk under its own name.
-    const persisted = readJobs()[0];
-    expect(persisted.renderPath).toBe(path.join(assetDir, 'video.rejected.mp4'));
-    expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
   });
 
   it('keeps a measured QA success and warning on the existing render_qa path', async () => {

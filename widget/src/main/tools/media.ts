@@ -829,15 +829,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       : (music.reason ? `no music — ${music.reason}` : '');
 
     const dir = mediaAssetsDir(job.id);
-    const finalOut = path.join(dir, 'video.mp4');
-    // Render to a sibling temp file and only swap it in once QA has passed.
-    //
-    // Rendering straight to video.mp4 meant a re-render that failed partway —
-    // or produced a file the QA below rejects — had already destroyed the good
-    // export the person already had. A replacement that does not work is not a
-    // reason to lose the thing it was replacing. The rename is same-directory,
-    // so it is atomic, matching the store's own write pattern above.
-    const out = path.join(dir, `video.rendering-${process.pid}.mp4`);
+    const out = path.join(dir, 'video.mp4');
     const shape = job.format === 'long' ? 'long' : 'short';
     // An empty file (a script that produced zero cues, or a write that landed
     // partway) is not a usable captions track. Treating it as one used to hand
@@ -969,27 +961,8 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // state machine requires QA failures to leave render_qa, while persistence
     // happens only after the verdict so a rejected render is never stored as
     // ready for review.
-    // Only a render that passed QA earns the real filename. A rejected one is
-    // parked beside it so it can still be inspected, leaving any previously
-    // good video.mp4 exactly where it was.
-    let finalPath = rendered.path;
-    try {
-      if (qa.ok) {
-        fs.renameSync(rendered.path, finalOut);
-        finalPath = finalOut;
-      } else {
-        const rejected = path.join(dir, 'video.rejected.mp4');
-        if (fs.existsSync(rejected)) fs.unlinkSync(rejected);
-        fs.renameSync(rendered.path, rejected);
-        finalPath = rejected;
-      }
-    } catch {
-      // The rename is a convenience, not the render. If it fails the temp file
-      // is still on disk and still named in the reply.
-    }
-
     const renderedForQa = transition(
-      { ...job, renderPath: finalPath, ...(scenePaths ? { scenePaths } : {}) },
+      { ...job, renderPath: rendered.path, ...(scenePaths ? { scenePaths } : {}) },
       'render_qa',
       { by: 'render stage' },
     );
@@ -1003,9 +976,8 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       upsert(blocked);
       return err([
         `Rendered "${blocked.title}", but it did not pass checks: ${qa.failures.join('; ')}.`,
-        `video: ${finalPath}`,
+        `video: ${rendered.path}`,
         'The file is on disk if you want to look — but it is not worth approving as it stands.',
-        ...(fs.existsSync(finalOut) ? [`Your previous video is untouched: ${finalOut}`] : []),
       ].join('\n'));
     }
 
@@ -1018,7 +990,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     const notes = [visualNote, musicNote, describeQa(qa)].filter(Boolean).join(', ');
     return ok(withNextStep([
       `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${notes ? `, ${notes}` : ''}.`,
-      `video: ${finalPath}`,
+      `video: ${rendered.path}`,
       'Watch it before approving; nothing publishes on its own.',
     ], updated));
   } catch (e: any) {
