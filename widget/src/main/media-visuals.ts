@@ -231,11 +231,16 @@ export async function generateSceneImages(opts: {
       if (timer) clearTimeout(timer);
       if (img?.base64) {
         const buf = Buffer.from(img.base64, 'base64');
-        fs.writeFileSync(file, buf);
+        // Normalised, not written raw: every scene in one render must decode
+        // with the same ffmpeg decoder or the concat drops frames. See
+        // writeSceneImagePng.
+        await writeSceneImagePng(file, buf);
         if (cachePath) {
+          // Cache the NORMALISED bytes, so a cache hit cannot reintroduce a
+          // foreign format on a later render.
           // Best-effort: a full disk or a permissions hiccup here must not
           // turn a successful generation into a failed scene.
-          try { fs.writeFileSync(cachePath, buf); } catch { /* not fatal */ }
+          try { fs.copyFileSync(file, cachePath); } catch { /* not fatal */ }
         }
         results[i] = { index: i, path: file, source: img.source };
       } else if (opts.fallbackPlates) {
@@ -297,6 +302,61 @@ export async function generateSceneImages(opts: {
  * Generates a clean, styled visual plate when local and online image generation
  * are unavailable or timed out, ensuring a cold-cache render never stalls or fails.
  */
+/** PNG magic bytes: \x89 P N G \r \n \x1a \n. */
+function isRealPng(buf: Buffer): boolean {
+  return buf.length > 8
+    && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
+    && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a;
+}
+
+/**
+ * Write a generated scene image as a REAL png, whatever the provider sent.
+ *
+ * Scene files are all named `.png`, but the bytes were whatever came back —
+ * Pollinations returns JPEG, and the local fallback plate is a genuine PNG. The
+ * renderer feeds all of them to ONE ffmpeg concat demuxer, which probes the
+ * first file, picks a decoder, and then cannot decode the others: measured as
+ * `[mjpeg] No JPEG data found in image`, the odd frames silently dropped, and a
+ * 10.0s narration rendered as a 6.3s video. That is what took the nightly gate
+ * red on 2026-09-12.
+ *
+ * Correct extensions do NOT fix it — one concat gets one decoder, so the BYTES
+ * have to agree. Measured on the failing artifacts: mixed jpg+jpg+png with
+ * correct extensions still produced 6.333s, while the same three images in one
+ * uniform format decoded without error. Transcoding is skipped when the bytes
+ * are already PNG, so the normal local-diffusion path costs nothing.
+ */
+export async function writeSceneImagePng(file: string, buf: Buffer): Promise<void> {
+  if (isRealPng(buf)) {
+    fs.writeFileSync(file, buf);
+    return;
+  }
+  const source = `${file}.src`;
+  fs.writeFileSync(source, buf);
+  try {
+    const { findFfmpeg } = await import('./media-render');
+    const { findManagedFfmpeg } = await import('./ffmpeg-setup');
+    const ffmpeg = (await findFfmpeg(findManagedFfmpeg())) || 'ffmpeg';
+    const { execFile } = await import('child_process');
+    await new Promise<void>((resolve, reject) => {
+      execFile(ffmpeg, ['-y', '-i', source, '-frames:v', '1', file], { timeout: 20_000 },
+        (err) => (err ? reject(err) : resolve()));
+    });
+    if (!isRealPng(fs.readFileSync(file).subarray(0, 16))) throw new Error('transcode did not produce a png');
+  } catch {
+    // No ffmpeg, or it refused the bytes. Keeping the original is worse than a
+    // plate: a foreign format here truncates the whole video, and a plate only
+    // costs this one scene its picture.
+    fs.writeFileSync(file, Buffer.from(FALLBACK_PLATE_PNG, 'base64'));
+  } finally {
+    try { fs.unlinkSync(source); } catch { /* best effort */ }
+  }
+}
+
+/** 1x1 png, used when no encoder is available to produce a real one. */
+const FALLBACK_PLATE_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 export async function generateFallbackPlate(
   outPath: string,
   width: number,

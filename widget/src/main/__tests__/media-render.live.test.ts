@@ -238,10 +238,20 @@ maybe('rendering a real video', () => {
   it('says what to install when ffmpeg is missing, and leaves the job alone', async () => {
     // The whole reason for detect-don't-bundle: the refusal has to be
     // actionable, and must not strand the job in a state it cannot leave.
-    const real = process.env.HOMEBOT_FFMPEG;
-    const prevPath = process.env.PATH;
-    process.env.HOMEBOT_FFMPEG = path.join(require('os').tmpdir(), 'definitely-not-ffmpeg.exe');
-    process.env.PATH = path.join(require('os').tmpdir(), 'empty-path-for-test');
+    // Clearing HOMEBOT_FFMPEG and PATH cannot actually hide ffmpeg: findFfmpeg
+    // also probes EXTRA_FFMPEG_PATHS ('C:\ffmpeg\bin\ffmpeg.exe' and the
+    // Program Files twin), which are absolute and unaffected by either. So on
+    // any machine with a real install — including the nightly runner, which
+    // installs ffmpeg on purpose one step earlier — the render SUCCEEDED and
+    // this case asserted against the wrong outcome. It failed the gate nightly
+    // while the product was fine.
+    //
+    // What this case is actually about is the refusal: it must name what to
+    // install and must not strand the job. So make "no ffmpeg" true at the
+    // lookup itself. The search ORDER has its own coverage in
+    // media-render.test.ts, which injects a probe.
+    const renderModule = require('../media-render');
+    const ffmpegLookup = jest.spyOn(renderModule, 'findFfmpeg').mockResolvedValue(null);
     try {
       await call('media_create_job', { title: 'No ffmpeg here', format: 'short' });
       const jobs = readJobs();
@@ -258,8 +268,7 @@ maybe('rendering a real video', () => {
       // Still where it was, so a retry after installing just works.
       expect(readJobs().find(x => x.title === 'No ffmpeg here')!.state).toBe('media_production');
     } finally {
-      if (real) process.env.HOMEBOT_FFMPEG = real; else delete process.env.HOMEBOT_FFMPEG;
-      process.env.PATH = prevPath;
+      ffmpegLookup.mockRestore();
     }
   });
 });

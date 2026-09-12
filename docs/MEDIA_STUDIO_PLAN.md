@@ -182,3 +182,82 @@ All three: honesty-A/B verified (the new regression test reverted and
 confirmed to fail before the fix, then confirmed to pass after), full
 widget suite green, real content verified on `main` post-merge — see
 CLAIMS.md for the complete evidence trail on each.
+
+## Nightly media gate — red from 2026-09-12, repaired 2026-09-13
+
+The scheduled real-media gate (`nightly-media-e2e.yml`) failed on 2026-09-12,
+run `34679541301`: **2 failed, 60 passed**. Both causes are now fixed, and they
+were different in kind — one real, one a test that could never have passed.
+
+**1. A real truncation bug (`renders scene images into a multi-cut video`).**
+The run reported *"the video is 6.3s but the narration is 10.0s — 3.7s of it has
+no speech; captions end at 9.8s but the video is 6.3s"*. `groupCues` gives each
+scene a span from its own first cue's start to its own last cue's end, so the
+silence between groups, the lead-in before the first word and the tail after the
+last belonged to no segment; `buildConcatFileContent` totalled only spoken time
+and ffmpeg's `-shortest` trimmed the render to it. Every pre-existing concat test
+fed contiguous segments, which is why unit coverage never saw it — the scheduled
+real-media gate is what caught it, which is the argument for having one.
+
+Reproduced deterministically offline before fixing, with cue timings shaped like
+the failure (three sentences, 6.3s of speech inside a 10.0s narration):
+`media-render.test.ts` → *"covers the whole narration, not just the spoken
+parts"* reports `Expected: 10000, Received: 6300` against the old code — the same
+6.3s the nightly saw, with no network involved. `timelineFromCues` now emits a
+contiguous timeline and takes the narration duration, which `tools/media.ts`
+passes from `job.durationSeconds`. That suite: **56/56**, including the 55
+pre-existing cases unchanged.
+
+**2. A case that could not pass on that runner (`says what to install when
+ffmpeg is missing`).** It cleared `HOMEBOT_FFMPEG` and `PATH`, but `findFfmpeg`
+also probes `EXTRA_FFMPEG_PATHS` — absolute Windows locations neither variable
+can hide — and the workflow's own "Ensure FFmpeg availability" step installs
+ffmpeg via choco one step earlier. So the render succeeded and the case asserted
+the wrong outcome, failing the gate nightly while the product was fine. The
+observed error also exposed a separate defect, tracked as remaining Studio work:
+a caption-free render is rejected with *"there are no captions"*, which the
+acceptance rules explicitly forbid. The case now mocks the lookup itself; search
+ORDER retains real coverage in `media-render.test.ts` via the injected `probe`.
+
+**3. The actual cause of the 6.3s render: mixed image formats in one concat.**
+The timeline fix above is real but was NOT what took the gate red. With it in
+place the concat file on disk correctly totalled 10.0s
+(`3.173 + 3.425 + 3.402`) and ffmpeg still emitted 6.333s. Probing the rejected
+artifact showed BOTH streams truncated — video 6.333s / 190 frames, audio
+6.325s — against a 9.768s narration.
+
+Running ffmpeg directly on that same concat file exposed it:
+
+```
+[mjpeg @ ...] No JPEG data found in image
+[dec:mjpeg] Error submitting packet to decoder: Invalid data found when processing input
+```
+
+The scene files are all named `.png`, but their BYTES differ by provider —
+`scene-00/01` were `ffd8 ffe1` (JPEG, what Pollinations returns) while
+`scene-02` was `8950 4e47` (a real PNG, the locally generated fallback plate).
+One concat demuxer probes the first file, picks one decoder, and silently drops
+every frame it cannot decode.
+
+Measured on the failing artifacts, which also rules out the obvious wrong fix:
+
+| concat contents | result |
+|---|---|
+| mixed formats, correct `.jpg`/`.png` extensions | `[mjpeg] No JPEG data found` → **6.333s** |
+| the same three images in one uniform format | no decode errors → full length |
+
+So correct extensions do not help: one concat gets one decoder, and the bytes
+themselves have to agree. `generateSceneImages` now normalises every scene to a
+real PNG on write (`writeSceneImagePng`), skipping the transcode when the bytes
+already are PNG, and caches the normalised bytes so a later cache hit cannot
+reintroduce a foreign format. Honesty-A/B: with normalisation reverted the new
+`media-visuals.test.ts` case reports `Expected: 1, Received: 2` distinct magic
+signatures; restored, 86/86 pass across that suite and `media-render.test.ts`,
+tsc clean.
+
+**Why this hid.** Mixed formats were the NORMAL case, not an edge case — a
+network provider and the local plate simply disagree — but it only surfaces when
+a render mixes them, and nothing asserted format uniformity. It also explains
+the misleading isolation behaviour: the case passed alone whenever all scenes
+happened to come back in one format, and failed in the full file when they did
+not, which reads exactly like provider flakiness and is not.

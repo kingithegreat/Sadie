@@ -44,12 +44,30 @@ export function staticTimeline(durationMs: number, imagePath?: string | null): S
   return [{ startMs: 0, endMs: Math.max(1, Math.round(durationMs)), imagePath: imagePath ?? null }];
 }
 
-/** One visual per caption cue, for when a source of images exists. */
+/**
+ * One visual per caption cue, for when a source of images exists.
+ *
+ * The timeline is CONTIGUOUS: each segment holds until the next one starts, the
+ * first absorbs the lead-in before the first word, and the last runs to
+ * `totalMs` when given. A cue group only spans its own speech, so without this
+ * the pauses between groups belong to no segment, the concat file totals just
+ * the spoken time, and ffmpeg's `-shortest` truncates the render to it — the
+ * nightly gate caught exactly that as "the video is 6.3s but the narration is
+ * 10.0s". Pass the narration duration so the picture covers all of it.
+ */
 export function timelineFromCues(
   cues: Array<{ startMs: number; endMs: number }>,
   imageFor: (index: number) => string | null,
+  totalMs?: number,
 ): Segment[] {
-  return cues.map((c, i) => ({ startMs: c.startMs, endMs: c.endMs, imagePath: imageFor(i) }));
+  return cues.map((c, i) => {
+    const next = cues[i + 1];
+    return {
+      startMs: i === 0 ? 0 : c.startMs,
+      endMs: next ? next.startMs : Math.max(c.endMs, totalMs ?? c.endMs),
+      imagePath: imageFor(i),
+    };
+  });
 }
 
 /**
