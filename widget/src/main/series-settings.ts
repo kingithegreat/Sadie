@@ -11,7 +11,7 @@
  *   - lighting.json: Ambient lighting CSS filter parameters and floor contact shadow profiles
  *   - preview.png: Composite reference image for UI selection
  *
- * Compositing runs zero-VRAM on Remotion/CSS, using the CSS filter and contact shadow
+ * Compositing runs zero-VRAM on the multi-plane stage's CSS, using the CSS filter and contact shadow
  * profiles defined here.
  */
 
@@ -171,7 +171,7 @@ export function resolveSettingDir(seriesId: string, settingId: string, baseDir?:
 }
 
 /**
- * Builds the CSS filter string matching the lighting profile for Remotion character sprites.
+ * Builds the CSS filter string matching the lighting profile for character sprites.
  */
 export function buildCssFilter(lighting: SettingLighting): string {
   const b = lighting.brightness ?? 1.0;
@@ -184,7 +184,7 @@ export function buildCssFilter(lighting: SettingLighting): string {
 }
 
 /**
- * Builds contact shadow inline style parameters for zero-VRAM Remotion compositing.
+ * Builds contact shadow inline style parameters for zero-VRAM CSS compositing.
  */
 export function buildContactShadowStyle(
   lighting: SettingLighting,

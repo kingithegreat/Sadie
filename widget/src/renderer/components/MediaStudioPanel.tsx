@@ -3082,7 +3082,7 @@ ${shots.map((s, idx) => `
                 <div className="ms-viewport-fallback">
                   <div className="ms-viewport-rig-preview">
                     <span className="ms-rig-character" aria-hidden="true">🏛️</span>
-                    <span className="ms-rig-title">Remotion 2D Puppet Canvas</span>
+                    <span className="ms-rig-title">2D Puppet Canvas</span>
                     <span className="ms-rig-sub">4px Alpha-Feathered Viseme Lip-Sync Rig Active</span>
                   </div>
                 </div>
@@ -3172,7 +3172,7 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Camera Motion (Remotion Parallax):</label>
+              <label className="ms-param-label">Camera Motion (Multi-Plane Parallax):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"
