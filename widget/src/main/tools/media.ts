@@ -800,6 +800,19 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // simply be retried once ffmpeg is there.
     if (!ffmpeg) return err(FFMPEG_MISSING_MESSAGE);
 
+    const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
+    // Saved jobs historically round this value. Measuring before generation
+    // prevents both a silent tail and cutting fractional seconds off speech.
+    let narrationSeconds = job.durationSeconds || 60;
+    if (outputVariant) {
+      const sourceAudio = await inspectRender(ffmpeg, job.narrationPath);
+      if (!sourceAudio.hasAudio || typeof sourceAudio.durationSeconds !== 'number' ||
+          !Number.isFinite(sourceAudio.durationSeconds) || sourceAudio.durationSeconds <= 0) {
+        return err('Could not measure the narration length. Check the audio before exporting.');
+      }
+      narrationSeconds = sourceAudio.durationSeconds;
+    }
+
     const image = args.image ? String(args.image) : null;
     if (image && !fs.existsSync(image)) {
       return err(`No image at ${image}.`);
@@ -912,7 +925,8 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
           const timeline = timelineFromCues(
             scenes,
             i => filled[i],
-            job.durationSeconds ? Math.round(job.durationSeconds * 1000) : undefined,
+            outputVariant ? Math.round(narrationSeconds * 1000)
+              : job.durationSeconds ? Math.round(job.durationSeconds * 1000) : undefined,
           );
           concatPath = path.join(dir, 'scenes.txt');
           fs.writeFileSync(concatPath, buildConcatFileContent(timeline), 'utf8');
@@ -933,7 +947,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       imagePath: image,
       captionsPath: resolveBurnSubtitles(job.burnSubtitles) ? captionsPath : null,
       concatPath,
-      durationSeconds: job.durationSeconds || 60,
+      durationSeconds: narrationSeconds,
       zoom: args.zoom === undefined ? true : Boolean(args.zoom),
       musicPath: music.path,
     });
@@ -947,7 +961,6 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     //
     // A failed check does NOT throw away the file — it is on disk and named in
     // the reply, so a false negative costs a click, not a re-render.
-    const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
     const { dimensionsFor: qaDimensions } = await import('../media-render');
     const { w: qaW, h: qaH } = outputVariant ? { w: outputVariant.width, h: outputVariant.height } : qaDimensions(shape);
 
@@ -976,10 +989,13 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       qa = evaluateRenderQa(facts, {
         width: qaW,
         height: qaH,
-        narrationSeconds: job.durationSeconds ?? null,
+        narrationSeconds: outputVariant ? narrationSeconds : job.durationSeconds ?? null,
         hasMusic: !!music.path,
         captionCues: resolveBurnSubtitles(job.burnSubtitles) ? captionCues : undefined,
       });
+      if (outputVariant && (typeof facts.durationSeconds !== 'number' || !Number.isFinite(facts.durationSeconds) || Math.abs(facts.durationSeconds - narrationSeconds) > 0.15)) {
+        qa = { ...qa, ok: false, failures: [...qa.failures, 'The video duration does not match the measured narration.'] };
+      }
     } catch (qaErr: any) {
       // No measurements means there is no evidence that the render is usable.
       // Fail closed through the same needs_revision path as a measured fault;

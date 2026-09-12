@@ -58,7 +58,29 @@ geometry and naming; external renderer settings remain explicitly unsupported.
   `809782be8cc2928dd62f767ae515646fbebb5f5ddeee4aa32d563f90c5d6cde2`.
   Evidence: `.kilo/artifacts/studio-formats-first/` (local retained fixture).
 
-Full encoded matrix and full gates are still pending. The real geometry test
+The eight-case encoded matrix passed without retries in 5.1 minutes; portable
+measurements/hashes are in `docs/evidence/studio-output-formats.json`. It covers
+4s/66s landscape/portrait 720p fit, square 720p crop, landscape/portrait 1080p crop
+and square 1080p fit. All eight survive restart and play to their ending.
+
+The full widget suite initially found one stale new-project fixed-filename
+assertion. Its replacement verifies actual crop motion and immutable metadata;
+the rerun passed 4211 tests. An additional real ordinary-job test then caught
+3-second input producing 4.1 seconds of video. New-format job export now measures
+audio length before generation, uses it for the timeline and encoder duration
+cap (one frame of headroom), and rejects QA drift over 0.15 seconds. Three unit
+expectations failed before this change; the 91 related tests pass afterwards.
+Actual corrected outputs: 3.0s input → 3.0s video/audio; 3.49s input with a rounded
+3s job label → 3.5s video/audio, without cutting the source. These and the theme
+check pass without retries, with retained artifacts under
+`.kilo/artifacts/studio-formats-timing/`. The original failing output is retained.
+The portrait/captions-on fractional-audio case also passes: 720x1280, clear caption
+side margins and no clipped speech. Full widget verification on the correction:
+4212 passed, 19 skipped, 305 passing suites. TypeScript, lint (eight existing
+warnings, no errors), and the rebuilt Electron app pass.
+FFmpeg output-duration semantics: https://ffmpeg.org/ffmpeg.html#Main-options.
+
+Final combined verification is still pending. The real geometry test
 uses deliberately unnarrated diagnostic cards; the separate caption test covers
 actual local speech. Neither is approval of a creative pilot or installed release.
 Stage lighting/foreground export parity, revision/freshness workspace, complete

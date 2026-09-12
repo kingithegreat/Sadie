@@ -70,6 +70,7 @@ describe('saved Studio output formats', () => {
     expect(filters).toContain('pad=1920:1080');
     expect(filters).toContain('setsar=1');
     expect(filters).not.toContain('crop=');
+    expect(Number(args[args.indexOf('-t') + 1])).toBeCloseTo(45 + 1 / 30);
   });
 
   it('carries an explicit portrait crop anchor into the timeline encoder', () => {
@@ -77,11 +78,12 @@ describe('saved Studio output formats', () => {
     outputVariant.framing = { mode: 'crop', x: 0.25, y: 0.75 };
     const args = buildTimelineRenderArgs({
       audioPath: 'speech.wav', concatPath: 'scenes.txt', outputPath: 'movie.mp4',
-      shape: 'long', outputVariant,
+      shape: 'long', outputVariant, durationSeconds: 66.49,
     } as any);
     const filters = args[args.indexOf('-vf') + 1];
     expect(filters).toContain('scale=1080:1920:force_original_aspect_ratio=increase');
     expect(filters).toContain('crop=1080:1920:(iw-ow)*0.25:(ih-oh)*0.75');
     expect(filters).toContain('setsar=1');
+    expect(Number(args[args.indexOf('-t') + 1])).toBeCloseTo(66.49 + 1 / 30);
   });
 });

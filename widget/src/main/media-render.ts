@@ -55,6 +55,16 @@ export function buildStudioFrameFilters(value: StudioOutputVariant): string[] {
   ];
 }
 
+/** -shortest alone can leave an encoder tail. Allow one frame beyond measured
+ * audio length, not a rounded UI label, so the last spoken samples stay intact. */
+function boundedOutputDuration(variant: StudioOutputVariant | undefined, durationSeconds: number | undefined): string[] {
+  if (!variant) return [];
+  if (typeof durationSeconds !== 'number' || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new Error('Could not measure narration duration before encoding.');
+  }
+  return ['-t', (durationSeconds + 1 / variant.fps).toFixed(6)];
+}
+
 /** The whole duration as one visual: the simplest timeline that is still a timeline. */
 export function staticTimeline(durationMs: number, imagePath?: string | null): Segment[] {
   return [{ startMs: 0, endMs: Math.max(1, Math.round(durationMs)), imagePath: imagePath ?? null }];
@@ -462,6 +472,7 @@ export function buildRenderArgs(opts: {
   args.push('-c:a', 'aac', '-b:a', '128k');
   // The image input loops forever; the audio decides when the video ends.
   args.push('-shortest', '-movflags', '+faststart');
+  args.push(...boundedOutputDuration(variant, opts.durationSeconds));
   args.push(opts.outputPath);
   return args;
 }
@@ -480,6 +491,8 @@ export function buildTimelineRenderArgs(opts: {
   outputPath: string;
   shape: VideoShape;
   outputVariant?: StudioOutputVariant;
+  /** Measured source audio length, required for new-format output. */
+  durationSeconds?: number;
   captionsPath?: string | null;
   fps?: number;
   subtitleStyle?: string;
@@ -557,6 +570,7 @@ export function buildTimelineRenderArgs(opts: {
   );
   args.push('-c:a', 'aac', '-b:a', '128k');
   args.push('-shortest', '-movflags', '+faststart');
+  args.push(...boundedOutputDuration(variant, opts.durationSeconds));
   args.push(opts.outputPath);
   return args;
 }
@@ -709,6 +723,7 @@ export async function renderVideo(opts: {
   targetLra?: number;
 }): Promise<RenderResult> {
   if (opts.outputVariant) resolveStudioOutputVariant(opts.outputVariant);
+  boundedOutputDuration(opts.outputVariant, opts.durationSeconds);
   if (!fs.existsSync(opts.audioPath)) {
     throw new Error(`No narration audio at ${opts.audioPath}`);
   }

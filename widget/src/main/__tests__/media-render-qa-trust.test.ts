@@ -114,6 +114,20 @@ afterEach(() => {
 });
 
 describe('media_render output trust', () => {
+  it('uses measured fractional narration length and rejects an encoder tail beyond it', async () => {
+    const job = writeReadyJob('Fractional narration');
+    writeJobs([{ ...job, outputSpec: createStudioOutputSpec(), burnSubtitles: false }]);
+    mockedInspectRender.mockResolvedValueOnce({ hasVideo: false, hasAudio: true, width: null, height: null,
+      durationSeconds: 3.49, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null });
+    mockedInspectRender.mockResolvedValueOnce({ hasVideo: true, hasAudio: true, width: 1920, height: 1080,
+      durationSeconds: 4.6, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null });
+    const result = await call('media_render', { job: job.id, visuals: 'solid' });
+    expect(renderVideo).toHaveBeenLastCalledWith(expect.objectContaining({ durationSeconds: 3.49 }));
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/duration|narration/i);
+    expect(readJobs()[0].state).toBe('needs_revision');
+  });
+
   it('persists a landscape format on a short job and inspects the requested dimensions', async () => {
     const job = writeReadyJob('Short landscape');
     const outputSpec = createStudioOutputSpec('16:9', 'short', '720p');
