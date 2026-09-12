@@ -936,8 +936,18 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // Captions are burned in when they exist, but nothing has ever checked
     // that they actually do or that they cover the video — an unreadable or
     // truncated captions file has always looked identical to a good one.
-    let captionCues: { count: number; lastCueEndSeconds: number } | null = null;
-    if (captionsPath) {
+    // `undefined` and `null` mean different things to evaluateRenderQa:
+    // undefined is "captions were not part of this render, do not judge them",
+    // null/zero-count is "captions were expected and are missing". This used to
+    // pass null for BOTH, so a deliberately caption-free video was rejected with
+    // "there are no captions" and parked in needs_revision — which the pilot
+    // acceptance rules explicitly forbid. A job that never produced a captions
+    // file wanted no captions; one whose file has gone missing or empty is the
+    // real failure, and still fails below.
+    let captionCues: { count: number; lastCueEndSeconds: number } | null | undefined;
+    if (!job.captionsPath) {
+      captionCues = undefined;
+    } else if (captionsPath) {
       try {
         const { parseSrtCues } = await import('../media-captions');
         const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
@@ -948,6 +958,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         // An unreadable captions file is the same failure as a missing one.
         captionCues = { count: 0, lastCueEndSeconds: 0 };
       }
+    } else {
+      // The job names a captions file, but it is gone or empty by the time the
+      // render runs — captions WERE expected, so this stays a failure.
+      captionCues = { count: 0, lastCueEndSeconds: 0 };
     }
 
     let qa: { ok: boolean; failures: string[]; warnings: string[] };

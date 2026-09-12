@@ -156,6 +156,51 @@ describe('media_render output trust', () => {
     expect(persisted.narrationPath).toBe(narrationPath);
   });
 
+  /**
+   * The acceptance rule is explicit: "No-caption projects must not be rejected
+   * merely for lacking captions." The QA gate distinguishes two cases that used
+   * to collapse into one — a job that never produced a captions file wanted
+   * none, while a job whose file has vanished expected them and is broken.
+   */
+  it('accepts a render that was never meant to have captions', async () => {
+    const job = writeReadyJob('No captions wanted');
+    // A caption-free project: nothing ever wrote a captions file for it.
+    const jobs = readJobs();
+    delete (jobs[0] as any).captionsPath;
+    writeJobs(jobs);
+
+    mockedInspectRender.mockResolvedValueOnce({
+      hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -20, maxVolumeDb: -3,
+      frameSamples: [{ atSeconds: 1, stdDev: 42 }],
+    });
+
+    const result: any = await call('media_render', { job: 'No captions wanted', visuals: 'plain' });
+    const persisted = readJobs().find(j => j.id === job.id)!;
+
+    expect(String(result.error ?? '')).not.toMatch(/no captions/i);
+    expect(result.success).toBe(true);
+    expect(persisted.state).toBe('render_qa');
+  });
+
+  it('still rejects a render whose expected captions went missing', async () => {
+    writeReadyJob('Captions vanished');
+    // The job names a captions file, but it is empty by render time — the
+    // failure this gate exists for, which must survive the fix above.
+    fs.writeFileSync(captionsPath, '', 'utf8');
+
+    mockedInspectRender.mockResolvedValueOnce({
+      hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -20, maxVolumeDb: -3,
+      frameSamples: [{ atSeconds: 1, stdDev: 42 }],
+    });
+
+    const result: any = await call('media_render', { job: 'Captions vanished', visuals: 'plain' });
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toMatch(/no captions/i);
+    expect(readJobs()[0].state).toBe('needs_revision');
+  });
+
   it('a failed replacement leaves the previous good video byte-identical', async () => {
     // The acceptance requirement this protects: re-rendering an episode that
     // already has a good export must not destroy it when the new render is
