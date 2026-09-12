@@ -18,7 +18,7 @@
  * structural rather than a matter of remembering.
  */
 
-import { resolveBurnSubtitles } from '../shared/media-output';
+import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput } from '../shared/media-output';
 
 /** Pipeline states, in the order the plan defines them. */
 export const MEDIA_STATES = [
@@ -76,6 +76,9 @@ export interface MediaJob {
   captionsPath?: string;
   /** Explicit burn-in preference. Absent on legacy jobs means captions on. */
   burnSubtitles?: boolean;
+  /** Absent on legacy jobs: preserve their original short/long geometry. */
+  outputSpec?: StudioOutputSpec;
+  renderedOutput?: StudioRenderedOutput;
   /** External bridges have their own output settings, not HomeBot's renderer. */
   externalRenderer?: 'ancient-pathways';
   /** True spoken length, measured from the audio rather than estimated. */
@@ -303,6 +306,7 @@ export function markPublished(
 export interface NewJobInput {
   title: string;
   burnSubtitles?: boolean;
+  outputSpec?: unknown;
   format?: MediaFormat;
   brief?: string;
   id?: string;
@@ -313,12 +317,16 @@ export function createJob(input: NewJobInput): MediaJob {
   const title = (input.title || '').trim();
   if (!title) throw new Error('A media job needs a title.');
 
+  const outputSpec = resolveStudioOutputSpec(input.outputSpec, input.format ?? 'short');
+  if (input.format && input.format !== outputSpec.durationIntent) throw new Error('The content length and output settings disagree.');
+
   const at = (input.now?.() ?? new Date()).toISOString();
   return {
     id: input.id || `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     title,
     burnSubtitles: resolveBurnSubtitles(input.burnSubtitles, false),
-    format: input.format ?? 'short',
+    format: outputSpec.durationIntent,
+    outputSpec,
     state: 'idea',
     brief: input.brief?.trim() || undefined,
     createdAt: at,

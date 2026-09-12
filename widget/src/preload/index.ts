@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
 import { debug as logDebug } from '../shared/logger';
+import type { StudioOutputSpec } from '../shared/media-output';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -768,11 +769,11 @@ const electronAPI: ElectronAPI = {
   youtubeUpload: async (jobId: string, metadata: import('../shared/youtube-connection').YouTubeVideoMetadata) =>
     ipcRenderer.invoke('homebot:media:youtube:upload', jobId, metadata),
   mediaParseFeed: async (url: string) => ipcRenderer.invoke('homebot:media:parse-feed', url),
-  mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string; burnSubtitles?: boolean }) =>
+  mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean }) =>
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:run', id, action, opts),
   mediaApprove: async (id: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note),
@@ -824,9 +825,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:get', projectId),
   mediaStoryboardGenerateFrame: async (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
-  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean }) =>
+  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
-  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) =>
+  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
   mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),

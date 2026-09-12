@@ -57,6 +57,7 @@ import { inspectRender } from '../media-qa';
 import { renderVideo } from '../media-render';
 import { generateSceneImages } from '../media-visuals';
 import { createJob } from '../media-studio';
+import { createStudioOutputSpec } from '../../shared/media-output';
 import {
   __resetMediaJobsForTests,
   mediaToolHandlers,
@@ -113,6 +114,22 @@ afterEach(() => {
 });
 
 describe('media_render output trust', () => {
+  it('persists a landscape format on a short job and inspects the requested dimensions', async () => {
+    const job = writeReadyJob('Short landscape');
+    const outputSpec = createStudioOutputSpec('16:9', 'short', '720p');
+    expect((await call('media_set_output', { job: job.id, outputSpec })).success).toBe(true);
+    expect(readJobs()[0]).toMatchObject({ outputSpec, format: 'short', narrationPath });
+    mockedInspectRender.mockResolvedValue({ hasVideo: true, hasAudio: true, width: 1280, height: 720,
+      durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null });
+    const result = await call('media_render', { job: job.id, visuals: 'solid' });
+    expect(result.success).toBe(true);
+    expect(renderVideo).toHaveBeenLastCalledWith(expect.objectContaining({ outputVariant: outputSpec.variants[0] }));
+    const saved = readJobs()[0];
+    expect(saved.renderPath).toMatch(/video-landscape-[\w-]+\.mp4$/);
+    expect(saved.renderedOutput).toMatchObject({ outputSpec, durationSeconds: 3 });
+    expect(JSON.parse(fs.readFileSync(`${saved.renderPath}.json`, 'utf8'))).toEqual(saved.renderedOutput);
+  });
+
   it.each([
     { externalRenderer: 'ancient-pathways' },
     { history: [{ note: 'Showrunner runs its own stages internally' }] },

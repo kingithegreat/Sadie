@@ -38,6 +38,28 @@ and playback through the real app, not only mocked arguments.
 - External Ancient Pathways has its own renderer; do not imply options reach
   it when its actual bridge cannot accept them.
 
-No format implementation or verification is claimed at this planning checkpoint.
+## Local implementation checkpoint (not published)
+
+Strict format validation and controlled UI now reach new jobs, existing editable
+jobs and storyboard save/render. Both FFmpeg paths take the saved geometry,
+frame rate and fit/crop. New-spec exports use unique filenames and immutable
+settings sidecars. Storyboard exports get distinct review records and reopen
+through the project's latest-success pointer. Legacy exports retain their prior
+geometry and naming; external renderer settings remain explicitly unsupported.
+
+- Red contract checkpoint `4878d22`: 17 missing-behavior failures, two controls.
+- New storyboard round-trip cases: three failed before handler wiring; all 32
+  passed afterwards with a simulated encoder.
+- Five focused suites: 98 tests passed, TypeScript clean, Electron build passed.
+- First actual Windows Electron case passed without retries: four seconds,
+  1280x720 H.264, 30 fps/120 frames, SAR 1:1, fit framing. The diagnostic square
+  marker retained its proportions; restart reopened the same video and review
+  record, and playback reached its end without looping. SHA-256:
+  `809782be8cc2928dd62f767ae515646fbebb5f5ddeee4aa32d563f90c5d6cde2`.
+  Evidence: `.kilo/artifacts/studio-formats-first/` (local retained fixture).
+
+Full encoded matrix and full gates are still pending. The real geometry test
+uses deliberately unnarrated diagnostic cards; the separate caption test covers
+actual local speech. Neither is approval of a creative pilot or installed release.
 Stage lighting/foreground export parity, revision/freshness workspace, complete
 approved pilot and installed-release acceptance remain explicitly open.

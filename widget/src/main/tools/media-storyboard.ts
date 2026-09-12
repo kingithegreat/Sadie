@@ -22,7 +22,7 @@ import {
   type GenerationRequest,
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
-import { resolveBurnSubtitles } from '../../shared/media-output';
+import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -80,6 +80,7 @@ export const mediaCreateStoryboardDef: ToolDefinition = {
         description: 'Hard gate ensuring all generations cost $0.00 (defaults to true).',
       },
       burnSubtitles: { type: 'boolean', description: 'Burn captions into the movie. New projects default to off.' },
+      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p fit.' },
     },
     required: ['projectId', 'title'],
   },
@@ -105,6 +106,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
       updatedAt: new Date().toISOString(),
       freeOnly: args.freeOnly !== false,
       burnSubtitles: resolveBurnSubtitles(args.burnSubtitles, false),
+      outputSpec: resolveStudioOutputSpec(args.outputSpec),
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: args.notes || '',
@@ -311,11 +313,15 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
     const scenes = assembleStoryboardScenes(projectDir);
 
     // A saved file is available for review, not a new publication approval.
-    const moviePath = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
+    const savedOutput = projectMeta.latestSuccessfulOutput;
+    const filename = savedOutput === undefined ? `${projectId}-1080p.mp4` : savedOutput?.filename;
     let renderedMoviePath: string | null = null;
     try {
+      if (typeof filename !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(filename)) throw new Error('Invalid saved export filename');
+      const moviePath = path.join(projectDir, 'renders', filename);
       const stat = fs.lstatSync(moviePath);
-      if (stat.isFile() && stat.size > 0) renderedMoviePath = moviePath;
+      const expected = path.join(fs.realpathSync(projectDir), 'renders', filename);
+      if (stat.isFile() && stat.size > 0 && fs.realpathSync(moviePath) === expected) renderedMoviePath = moviePath;
     } catch { /* No saved export yet. */ }
 
     return {
@@ -325,6 +331,7 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
         scenes,
         projectDir,
         renderedMoviePath,
+        ...(renderedMoviePath && savedOutput ? { renderedOutput: savedOutput } : {}),
       },
     };
   } catch (err: any) {
@@ -477,6 +484,7 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
       projectId: { type: 'string', description: 'ID of the storyboard project.' },
       sceneId: { type: 'string', description: 'Optional scene ID (defaults to scene_01).' },
       burnSubtitles: { type: 'boolean', description: 'Save the project caption burn-in choice. Omit to keep the saved choice.' },
+      outputSpec: { type: 'object', description: 'Save the versioned output settings described by media_create_storyboard. Omit to retain the saved settings, including legacy geometry.' },
       shots: {
         type: 'array',
         description: 'Ordered array of shot edits to persist.',
@@ -511,6 +519,8 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
   }
 
   try {
+    // Validate the complete output contract before mutating any shot or project file.
+    const outputSpec = args.outputSpec === undefined ? undefined : resolveStudioOutputSpec(args.outputSpec);
     const rootDir = getStoryboardsRootDir();
     const projectDir = path.join(rootDir, projectId);
     const sceneDir = path.join(projectDir, 'scenes', sceneId);
@@ -522,7 +532,7 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     const sceneJsonPath = path.join(sceneDir, 'scene.json');
     const metaPath = path.join(projectDir, 'project.json');
     // Parse before touching shot files; preserve unrelated project metadata.
-    const projectMeta = args.burnSubtitles !== undefined
+    const projectMeta = args.burnSubtitles !== undefined || outputSpec !== undefined
       ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : null;
     const sceneMeta = fs.existsSync(sceneJsonPath)
       ? JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8')) : { sceneId };
@@ -556,7 +566,12 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
     if (projectMeta) {
       const stagedMeta = `${metaPath}.saving`;
-      fs.writeFileSync(stagedMeta, JSON.stringify({ ...projectMeta, burnSubtitles: args.burnSubtitles, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+      fs.writeFileSync(stagedMeta, JSON.stringify({
+        ...projectMeta,
+        ...(args.burnSubtitles !== undefined ? { burnSubtitles: args.burnSubtitles } : {}),
+        ...(outputSpec !== undefined ? { outputSpec } : {}),
+        updatedAt: new Date().toISOString(),
+      }, null, 2), 'utf-8');
       fs.renameSync(stagedMeta, metaPath);
     }
     return { success: true, result: { message: 'Storyboard updated successfully.' } };
@@ -568,9 +583,9 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
 export const mediaRenderStoryboardDef: ToolDefinition = {
   name: 'media_render_storyboard',
   description:
-    'Renders a complete visual storyboard sequence into a broadcast-quality 1080p MP4 movie using local FFmpeg, ' +
-    'per-shot Ken Burns motion (slow push in, pan, tilt), voiceover narration (Edge or Kokoro TTS), and burned subtitles. ' +
-    'Strictly $0.00 spend invariant.',
+    'Renders a complete visual storyboard into an MP4 using local FFmpeg and saved output settings. ' +
+    'Includes voiceover narration and optional captions; crop framing supports Ken Burns motion, while fit retains the whole image. ' +
+    'Does not approve, upload or publish the movie.',
   parameters: {
     type: 'object',
     properties: {
@@ -590,6 +605,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
         type: 'boolean',
         description: 'Optional override for the saved project caption choice. New projects default to off; legacy projects retain captions until changed.',
       },
+      outputSpec: { type: 'object', description: 'Optional output override using the versioned settings described by media_create_storyboard. Omit to use the saved project settings.' },
     },
     required: ['projectId'],
   },
@@ -607,6 +623,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     sceneId: (args.sceneId as string)?.trim(),
     motion: args.motion !== false,
     burnSubtitles: args.burnSubtitles,
+    ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
   });
 
   if (!res.ok) {
@@ -620,7 +637,10 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
   const sceneId = (args.sceneId as string)?.trim();
   // Separate namespaces and a length-prefixed project ID avoid collisions
   // between complete movies and independently exported scenes.
-  let jobId: string | undefined = sceneId ? `sbscene_${projectId.length}_${projectId}_${sceneId}` : `sb_${projectId}`;
+  let jobId: string | undefined = res.renderedOutput ? `sbexport_${res.renderedOutput.exportId}`
+    : sceneId ? `sbscene_${projectId.length}_${projectId}_${sceneId}` : `sb_${projectId}`;
+  const variant = res.outputSpec?.variants[0];
+  const outputLabel = variant ? `${variant.width} × ${variant.height} ${variant.aspectRatio}` : '1080p';
   let warning: string | undefined;
   try {
     const { readJobs, writeJobs } = await import('./media');
@@ -638,9 +658,10 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     const job: any = {
       id: jobId,
       title: `[Storyboard] ${title}`,
-      format: (res.durationSec && res.durationSec > 60) ? 'long' : 'short',
+      format: res.outputSpec?.durationIntent ?? ((res.durationSec && res.durationSec > 60) ? 'long' : 'short'),
       state: 'awaiting_approval',
       burnSubtitles: res.burnSubtitles,
+      ...(res.outputSpec ? { outputSpec: res.outputSpec, renderedOutput: res.renderedOutput } : {}),
       renderPath: res.moviePath,
       durationSeconds: res.durationSec,
       brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)`,
@@ -653,7 +674,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
           from: existing?.state || 'media_production',
           to: 'awaiting_approval',
           by: 'storyboard_render',
-          note: res.moviePath ? `Rendered 1080p movie: ${path.basename(res.moviePath)}` : 'Rendered 1080p movie',
+          note: res.moviePath ? `Rendered ${outputLabel} movie: ${path.basename(res.moviePath)}` : `Rendered ${outputLabel} movie`,
         },
       ],
     };
@@ -679,7 +700,8 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
       moviePath: res.moviePath,
       durationSec: res.durationSec,
       totalShots: res.totalShots,
-      message: `Rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
+      ...(res.outputSpec ? { outputSpec: res.outputSpec, renderedOutput: res.renderedOutput } : {}),
+      message: `Rendered ${outputLabel} movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
       handoff: {
         mode: 'media',
         payload: {

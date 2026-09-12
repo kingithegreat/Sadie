@@ -147,11 +147,51 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('storyboard shape, resolution and framing reach Save Board and Render Movie without changing shot timing', async () => {
+    const api = setup();
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    fireEvent.change(await screen.findByLabelText('Storyboard picture shape'), { target: { value: '9:16' } });
+    fireEvent.change(screen.getByLabelText('Storyboard resolution'), { target: { value: '720p' } });
+    fireEvent.change(screen.getByLabelText('Storyboard image framing'), { target: { value: 'fit' } });
+    expect(screen.getByLabelText('Duration for shot_001')).toHaveValue(5);
+    fireEvent.click(screen.getByRole('button', { name: /Render Movie/ }));
+    await waitFor(() => expect(api.mediaStoryboardRender).toHaveBeenCalledTimes(1));
+    const spec = api.mediaStoryboardSave.mock.calls[0][0].outputSpec;
+    expect(spec).toMatchObject({ schemaVersion: 1, variants: [{ aspectRatio: '9:16', width: 720, height: 1280, framing: { mode: 'fit' } }] });
+    expect(api.mediaStoryboardRender.mock.calls[0][0].outputSpec).toEqual(spec);
+  });
+
+  test('new video content length does not reset the selected picture shape', async () => {
+    const mediaCreate = jest.fn(async () => ({ ok: true }));
+    setup({ mediaCreate });
+    render(<MediaStudioPanel />);
+    fireEvent.change(await screen.findByLabelText('New video picture shape'), { target: { value: '9:16' } });
+    fireEvent.change(screen.getByLabelText('Video format'), { target: { value: 'long' } });
+    expect(screen.getByLabelText('New video picture shape')).toHaveValue('9:16');
+    fireEvent.change(screen.getByLabelText('New video title'), { target: { value: 'Portrait feature' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add video' }));
+    await waitFor(() => expect(mediaCreate).toHaveBeenCalledWith(expect.objectContaining({ format: 'long', outputSpec: expect.objectContaining({ durationIntent: 'long', variants: [expect.objectContaining({ aspectRatio: '9:16' })] }) })));
+  });
+
+  test('job format changes wait for persistence and approved jobs cannot be changed', async () => {
+    const job: any = { id: 'draft', title: 'Format draft', format: 'short', state: 'idea', history: [] };
+    const mediaRun = jest.fn(async (_id, _action, options) => { job.outputSpec = options.outputSpec; return { ok: true }; });
+    setup({ mediaList: jest.fn(async () => [job, { ...job, id: 'approved', title: 'Reviewed master', state: 'approved' }]), mediaRun });
+    render(<MediaStudioPanel />);
+    const shape = await screen.findByLabelText('Format draft picture shape');
+    expect(shape).toHaveValue('9:16'); // Legacy short geometry, not the new landscape default.
+    fireEvent.change(shape, { target: { value: '16:9' } });
+    await waitFor(() => expect(shape).toHaveValue('16:9'));
+    expect(mediaRun).toHaveBeenCalledWith('draft', 'output', { outputSpec: expect.objectContaining({ durationIntent: 'short', variants: [expect.objectContaining({ width: 1920, height: 1080 })] }) });
+    expect(screen.getByLabelText('Reviewed master picture shape')).toBeDisabled();
+    expect(mediaRun).toHaveBeenCalledTimes(1);
+  });
+
   test('does not offer a caption switch that cannot change an external export', async () => {
     setup({ mediaList: jest.fn(async () => [{ id: 'external', title: 'External production', format: 'long',
       state: 'media_production', history: [{ note: 'Ancient Pathways pipeline runs its own stages internally' }] }]) });
     render(<MediaStudioPanel />);
-    expect(await screen.findByText('Caption settings for this export are controlled by Ancient Pathways.')).toBeVisible();
+    expect(await screen.findByText('Output settings for this export are controlled by Ancient Pathways.')).toBeVisible();
     expect(screen.queryByRole('checkbox', { name: 'Burn captions into External production' })).not.toBeInTheDocument();
   });
 

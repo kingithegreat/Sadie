@@ -23,6 +23,7 @@
 import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveStudioOutputVariant, type StudioAspectRatio, type StudioOutputVariant } from '../shared/media-output';
 
 /** One visual, held for a span of the video. */
 export interface Segment {
@@ -32,11 +33,26 @@ export interface Segment {
   imagePath?: string | null;
 }
 
-export type VideoShape = 'short' | 'long';
+export type VideoShape = 'short' | 'long' | StudioAspectRatio;
 
-/** Portrait for shorts, landscape for long-form — what each platform expects. */
+/** Explicit geometry; short/long remain compatibility aliases for old callers. */
 export function dimensionsFor(shape: VideoShape): { w: number; h: number } {
-  return shape === 'long' ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 };
+  if (shape === 'long' || shape === '16:9') return { w: 1920, h: 1080 };
+  if (shape === 'short' || shape === '9:16') return { w: 1080, h: 1920 };
+  if (shape === '1:1') return { w: 1080, h: 1080 };
+  throw new Error('Choose a supported video shape.');
+}
+
+/** Shared geometry for both encoders. Fit never stretches or crops approved art. */
+export function buildStudioFrameFilters(value: StudioOutputVariant): string[] {
+  const v = resolveStudioOutputVariant(value);
+  const fill = v.framing.mode === 'crop';
+  return [
+    `scale=${v.width}:${v.height}:force_original_aspect_ratio=${fill ? 'increase' : 'decrease'}:force_divisible_by=2:out_color_matrix=bt709:out_range=limited`,
+    fill ? `crop=${v.width}:${v.height}:(iw-ow)*${v.framing.x}:(ih-oh)*${v.framing.y}`
+      : `pad=${v.width}:${v.height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    'setsar=1',
+  ];
 }
 
 /** The whole duration as one visual: the simplest timeline that is still a timeline. */
@@ -186,10 +202,11 @@ export function toAssUnits(px: number, frameHeight: number): number {
 
 export function defaultSubtitleStyle(shape: VideoShape): string {
   const { h } = dimensionsFor(shape);
+  const portrait = shape === 'short' || shape === '9:16';
   // Wanted, in real pixels on the finished frame.
-  const marginPx = shape === 'long' ? 70 : 280;
-  const fontPx = shape === 'long' ? 56 : 110;
-  const outlinePx = shape === 'long' ? 5 : 8;
+  const marginPx = portrait ? 280 : 70;
+  const fontPx = portrait ? 110 : 56;
+  const outlinePx = portrait ? 8 : 5;
   return [
     'FontName=Arial',
     `FontSize=${toAssUnits(fontPx, h)}`,
@@ -342,6 +359,7 @@ export function buildRenderArgs(opts: {
   audioPath: string;
   outputPath: string;
   shape: VideoShape;
+  outputVariant?: StudioOutputVariant;
   imagePath?: string | null;
   captionsPath?: string | null;
   /** Slow Ken Burns drift. A frozen frame reads as broken; a drift reads as chosen. */
@@ -360,8 +378,9 @@ export function buildRenderArgs(opts: {
   targetTp?: number;
   targetLra?: number;
 }): string[] {
-  const { w, h } = dimensionsFor(opts.shape);
-  const fps = opts.fps ?? 30;
+  const variant = opts.outputVariant ? resolveStudioOutputVariant(opts.outputVariant) : undefined;
+  const { w, h } = variant ? { w: variant.width, h: variant.height } : dimensionsFor(opts.shape);
+  const fps = variant?.fps ?? opts.fps ?? 30;
   const args: string[] = ['-y'];
 
   if (opts.imagePath) {
@@ -378,9 +397,12 @@ export function buildRenderArgs(opts: {
   if (opts.imagePath) {
     // Cover the frame without distortion: scale to fill, crop the overflow.
     // Force BT.709 color matrix and limited output range during scaling.
-    filters.push(`scale=${w}:${h}:force_original_aspect_ratio=increase:out_color_matrix=bt709:out_range=limited`);
-    filters.push(`crop=${w}:${h}`);
-    if (opts.zoom !== false) {
+    if (variant) filters.push(...buildStudioFrameFilters(variant));
+    else {
+      filters.push(`scale=${w}:${h}:force_original_aspect_ratio=increase:out_color_matrix=bt709:out_range=limited`);
+      filters.push(`crop=${w}:${h}`);
+    }
+    if (opts.zoom !== false && variant?.framing.mode !== 'fit') {
       // zoompan runs per input frame, so the frame count is duration x fps.
       const frames = Math.max(1, Math.round(opts.durationSeconds * fps));
       filters.push(
@@ -395,7 +417,7 @@ export function buildRenderArgs(opts: {
     // format exists for. MarginV lifts them clear of that band. The outline
     // keeps them readable once a real image is behind them instead of a flat
     // backdrop.
-    const style = opts.subtitleStyle ?? defaultSubtitleStyle(opts.shape);
+    const style = opts.subtitleStyle ?? defaultSubtitleStyle(variant?.aspectRatio ?? opts.shape);
     filters.push(`subtitles='${escapeFilterPath(opts.captionsPath)}':force_style='${style}'`);
   }
   // yuv420p or the file will not play in most browsers or on phones.
@@ -457,6 +479,7 @@ export function buildTimelineRenderArgs(opts: {
   audioPath: string;
   outputPath: string;
   shape: VideoShape;
+  outputVariant?: StudioOutputVariant;
   captionsPath?: string | null;
   fps?: number;
   subtitleStyle?: string;
@@ -470,8 +493,9 @@ export function buildTimelineRenderArgs(opts: {
   targetTp?: number;
   targetLra?: number;
 }): string[] {
-  const { w, h } = dimensionsFor(opts.shape);
-  const fps = opts.fps ?? 30;
+  const variant = opts.outputVariant ? resolveStudioOutputVariant(opts.outputVariant) : undefined;
+  const { w, h } = variant ? { w: variant.width, h: variant.height } : dimensionsFor(opts.shape);
+  const fps = variant?.fps ?? opts.fps ?? 30;
   const args: string[] = ['-y'];
 
   // -safe 0 because the script holds absolute paths.
@@ -487,11 +511,13 @@ export function buildTimelineRenderArgs(opts: {
     // 1 still on screen at 6s when it should have ended at 3.17s, while the
     // pictures cut on time.
     `fps=${fps}`,
-    `scale=${w}:${h}:force_original_aspect_ratio=increase:out_color_matrix=bt709:out_range=limited`,
-    `crop=${w}:${h}`,
+    ...(variant ? buildStudioFrameFilters(variant) : [
+      `scale=${w}:${h}:force_original_aspect_ratio=increase:out_color_matrix=bt709:out_range=limited`,
+      `crop=${w}:${h}`,
+    ]),
   ];
   if (opts.captionsPath) {
-    const style = opts.subtitleStyle ?? defaultSubtitleStyle(opts.shape);
+    const style = opts.subtitleStyle ?? defaultSubtitleStyle(variant?.aspectRatio ?? opts.shape);
     filters.push(`subtitles='${escapeFilterPath(opts.captionsPath)}':force_style='${style}'`);
   }
   filters.push('format=yuv420p');
@@ -665,6 +691,7 @@ export async function renderVideo(opts: {
   audioPath: string;
   outputPath: string;
   shape: VideoShape;
+  outputVariant?: StudioOutputVariant;
   imagePath?: string | null;
   captionsPath?: string | null;
   durationSeconds: number;
@@ -681,6 +708,7 @@ export async function renderVideo(opts: {
   targetTp?: number;
   targetLra?: number;
 }): Promise<RenderResult> {
+  if (opts.outputVariant) resolveStudioOutputVariant(opts.outputVariant);
   if (!fs.existsSync(opts.audioPath)) {
     throw new Error(`No narration audio at ${opts.audioPath}`);
   }

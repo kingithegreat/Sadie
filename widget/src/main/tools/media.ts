@@ -12,7 +12,8 @@
  */
 
 import * as fs from 'fs';
-import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles } from '../../shared/media-output';
+import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioRenderedOutput } from '../../shared/media-output';
+import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { app } from 'electron';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
@@ -240,6 +241,7 @@ export const createMediaJobDef: ToolDefinition = {
       format: { type: 'string', description: '"short" (30-60s) or "long" (5-12 min). Defaults to short.', enum: ['short', 'long'] },
       brief: { type: 'string', description: 'Optional topic or angle for the video' },
       burnSubtitles: { type: 'boolean', description: 'Burn captions into the video; defaults to off for a new production.' },
+      outputSpec: { type: 'object', description: 'Saved output: {schemaVersion:1,durationIntent:"short"|"long",variants:[{id:"landscape"|"portrait"|"square",aspectRatio:"16:9"|"9:16"|"1:1",width:1920,height:1080,fps:30,framing:{mode:"fit"|"crop",x:0.5,y:0.5}}]}. Use matching 1080p or 720p dimensions. One variant per export currently. New jobs default landscape/fit independently of length.' },
     },
     required: ['title'],
   },
@@ -335,7 +337,8 @@ const createMediaJobHandler: ToolHandler = async (args) => {
     const job = createJob({
       title: String(args.title || ''),
       burnSubtitles: args.burnSubtitles,
-      format: (args.format === 'long' ? 'long' : 'short') as MediaFormat,
+      outputSpec: args.outputSpec,
+      format: args.format === undefined ? undefined : (args.format === 'long' ? 'long' : 'short') as MediaFormat,
       brief: args.brief ? String(args.brief) : undefined,
     });
     upsert(job);
@@ -780,6 +783,8 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     if (renderingJobs.has(job.id)) return err('This video is already rendering. Wait for its current export to finish.');
     renderingJobs.add(job.id);
     renderingJobId = job.id;
+    const outputSpec = job.outputSpec === undefined ? undefined : resolveStudioOutputSpec(job.outputSpec, job.format);
+    const outputVariant = outputSpec?.variants[0];
 
     const {
       findFfmpeg, renderVideo, FFMPEG_MISSING_MESSAGE,
@@ -839,7 +844,8 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       : (music.reason ? `no music — ${music.reason}` : '');
 
     const dir = mediaAssetsDir(job.id);
-    const finalOut = path.join(dir, 'video.mp4');
+    const exportId = outputSpec ? randomUUID() : undefined;
+    const finalOut = path.join(dir, outputVariant ? `video-${outputVariant.id}-${exportId}.mp4` : 'video.mp4');
     // Render to a sibling temp file and only swap it in once QA has passed.
     //
     // Rendering straight to video.mp4 meant a re-render that failed partway —
@@ -848,7 +854,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // reason to lose the thing it was replacing. The rename is same-directory,
     // so it is atomic, matching the store's own write pattern above.
     const out = path.join(dir, `video.rendering-${process.pid}.mp4`);
-    const shape = job.format === 'long' ? 'long' : 'short';
+    const shape = outputVariant?.aspectRatio ?? (job.format === 'long' ? 'long' : 'short');
     // An empty file (a script that produced zero cues, or a write that landed
     // partway) is not a usable captions track. Treating it as one used to hand
     // ffmpeg's subtitles filter a file it cannot parse — "Unable to open ...
@@ -875,14 +881,15 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
       const scenes = groupCues(cues, 5);
       if (scenes.length) {
-        const { w, h } = dimensionsFor(shape);
+        const { w, h } = outputVariant ? { w: outputVariant.width, h: outputVariant.height } : dimensionsFor(shape);
+        const imageScale = Math.min(1, 1024 / Math.max(w, h));
         const images = await generateSceneImages({
           scenes,
           videoTitle: job.title,
           outDir: path.join(dir, 'scenes'),
           // Generators cap at 1024; the renderer scales and crops to fill.
-          width: Math.min(w, 1024),
-          height: Math.min(h, 1024),
+          width: outputVariant ? Math.round(w * imageScale) : Math.min(w, 1024),
+          height: outputVariant ? Math.round(h * imageScale) : Math.min(h, 1024),
           style: args.style ? String(args.style) : undefined,
           // One seed for the whole video, derived from its identity, so the
           // scenes look like each other and a re-render reproduces them.
@@ -922,6 +929,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       audioPath: job.narrationPath,
       outputPath: out,
       shape,
+      outputVariant,
       imagePath: image,
       captionsPath: resolveBurnSubtitles(job.burnSubtitles) ? captionsPath : null,
       concatPath,
@@ -941,7 +949,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // the reply, so a false negative costs a click, not a re-render.
     const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
     const { dimensionsFor: qaDimensions } = await import('../media-render');
-    const { w: qaW, h: qaH } = qaDimensions(shape);
+    const { w: qaW, h: qaH } = outputVariant ? { w: outputVariant.width, h: outputVariant.height } : qaDimensions(shape);
 
     // Captions are burned in when they exist, but nothing has ever checked
     // that they actually do or that they cover the video — an unreadable or
@@ -961,8 +969,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     }
 
     let qa: { ok: boolean; failures: string[]; warnings: string[] };
+    let measuredDuration: number | null = null;
     try {
       const facts = await inspectRender(ffmpeg, rendered.path);
+      measuredDuration = facts.durationSeconds;
       qa = evaluateRenderQa(facts, {
         width: qaW,
         height: qaH,
@@ -994,18 +1004,25 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         fs.renameSync(rendered.path, finalOut);
         finalPath = finalOut;
       } else {
-        const rejected = path.join(dir, 'video.rejected.mp4');
+        const rejected = path.join(dir, exportId ? `video-${exportId}.rejected.mp4` : 'video.rejected.mp4');
         if (fs.existsSync(rejected)) fs.unlinkSync(rejected);
         fs.renameSync(rendered.path, rejected);
         finalPath = rejected;
       }
-    } catch {
+    } catch (saveError) {
+      if (outputSpec) return err(`The export could not be saved: ${errText(saveError)}. Your previous successful video is unchanged.`);
       // The rename is a convenience, not the render. If it fails the temp file
       // is still on disk and still named in the reply.
     }
 
+    const renderedOutput: StudioRenderedOutput | undefined = qa.ok && outputSpec && exportId && measuredDuration !== null ? {
+      exportId, filename: path.basename(finalPath), createdAt: new Date().toISOString(), sourceSavedAt: job.updatedAt,
+      durationSeconds: measuredDuration, burnSubtitles: resolveBurnSubtitles(job.burnSubtitles), outputSpec,
+    } : undefined;
+    if (renderedOutput) fs.writeFileSync(`${finalPath}.json`, JSON.stringify(renderedOutput, null, 2), 'utf8');
+
     const renderedForQa = transition(
-      { ...job, renderPath: finalPath, ...(scenePaths ? { scenePaths } : {}) },
+      { ...job, renderPath: finalPath, ...(renderedOutput ? { renderedOutput } : {}), ...(scenePaths ? { scenePaths } : {}) },
       'render_qa',
       { by: 'render stage' },
     );
@@ -1193,15 +1210,16 @@ const deleteMediaJobHandler: ToolHandler = async (args) => {
 
 const setMediaOutputDef: ToolDefinition = {
   name: 'media_set_output',
-  description: 'Save the caption choice for an editable Media Studio video. Existing audio, timing cues and exports are preserved. Send reviewed or approved videos back for revision first.',
+  description: 'Save captions and/or output format for an editable Media Studio video. Existing audio, timing cues and exports are preserved. Send reviewed or approved videos back for revision first.',
   category: 'media',
   parameters: {
     type: 'object',
     properties: {
       job: { type: 'string', description: 'Job id or title' },
       burnSubtitles: { type: 'boolean', description: 'Whether to burn captions into the next video export' },
+      outputSpec: { type: 'object', description: 'Same versioned outputSpec as media_create_job. Saves the next export shape/size/framing independently of content length.' },
     },
-    required: ['job', 'burnSubtitles'],
+    required: ['job'],
   },
 };
 
@@ -1212,9 +1230,14 @@ const setMediaOutputHandler: ToolHandler = async (args) => {
     if (hasExternalMediaRenderer(job)) return err('Caption settings for this video are controlled by Ancient Pathways. HomeBot cannot change that external export yet.');
     if (renderingJobs.has(job.id)) return err('This video is rendering. Wait for its current export before changing output settings.');
     if (!canEditMediaOutput(job.state)) return err('Send this video back for revision before changing its output. The reviewed export is unchanged.');
-    if (typeof args.burnSubtitles !== 'boolean') return err('Choose whether captions are on or off.');
-    upsert({ ...job, burnSubtitles: args.burnSubtitles, updatedAt: new Date().toISOString() });
-    return ok(`Captions ${args.burnSubtitles ? 'on' : 'off'} saved for the next export. Existing audio and video files are unchanged.`);
+    if (args.burnSubtitles === undefined && args.outputSpec === undefined) return err('Choose output settings to save.');
+    if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') return err('Choose whether captions are on or off.');
+    const outputSpec = args.outputSpec === undefined ? undefined : resolveStudioOutputSpec(args.outputSpec, job.format);
+    if (outputSpec && outputSpec.durationIntent !== job.format) return err('Output settings must retain this video’s content length. Shape is independent of length.');
+    upsert({ ...job,
+      ...(args.burnSubtitles === undefined ? {} : { burnSubtitles: args.burnSubtitles }),
+      ...(outputSpec ? { outputSpec } : {}), updatedAt: new Date().toISOString() });
+    return ok(`Output settings saved for the next export. Existing audio and video files are unchanged.`);
   } catch (e) { return err(`Could not save output settings: ${errText(e)}`); }
 };
 
