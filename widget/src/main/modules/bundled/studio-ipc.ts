@@ -674,7 +674,7 @@ export function registerStudioIpc(
         burnSubtitles: args.burnSubtitles !== false,
       });
       return res.success
-        ? { ok: true, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots }
+        ? { ok: true, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId }
         : { ok: false, error: res.error, code: res.code };
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };

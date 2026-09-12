@@ -613,10 +613,58 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     };
   }
 
+  // Bridge rendered storyboard movie into primary MediaJob approval queue
+  let jobId = `sb_${projectId}`;
+  try {
+    const { readJobs, writeJobs } = await import('./media');
+    const rootDir = getStoryboardsRootDir();
+    const projectDir = path.join(rootDir, projectId);
+    let projectMeta: any = {};
+    const metaPath = path.join(projectDir, 'project.json');
+    if (fs.existsSync(metaPath)) {
+      try { projectMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch { /* ignore */ }
+    }
+
+    const jobs = readJobs();
+    const existing = jobs.find(j => j.id === jobId);
+    const title = projectMeta.title || projectMeta.name || projectId;
+    const job: any = {
+      id: jobId,
+      title: `[Storyboard] ${title}`,
+      format: (res.durationSec && res.durationSec > 60) ? 'long' : 'short',
+      state: 'awaiting_approval',
+      renderPath: res.moviePath,
+      durationSeconds: res.durationSec,
+      brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)`,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      history: [
+        ...(existing?.history || []),
+        {
+          at: new Date().toISOString(),
+          from: existing?.state || 'media_production',
+          to: 'awaiting_approval',
+          by: 'storyboard_render',
+          note: res.moviePath ? `Rendered 1080p movie: ${path.basename(res.moviePath)}` : 'Rendered 1080p movie',
+        },
+      ],
+    };
+    const existingIdx = jobs.findIndex(j => j.id === jobId);
+    if (existingIdx >= 0) {
+      jobs[existingIdx] = job;
+    } else {
+      jobs.push(job);
+    }
+    writeJobs(jobs);
+  } catch (e) {
+    console.warn('[Storyboard] Failed to register MediaJob in approval queue:', e);
+  }
+
   return {
     success: true,
     result: {
       projectId,
+      jobId,
       moviePath: res.moviePath,
       durationSec: res.durationSec,
       totalShots: res.totalShots,
