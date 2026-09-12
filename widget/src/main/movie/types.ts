@@ -208,3 +208,35 @@ export interface MovieRoutingDecision {
   summary: string;
 }
 
+// --- multi-plane staging manifest --------------------------------------------
+
+import type { CameraMotion, CharacterDepthStaging } from '../../shared/multi-plane-stage';
+export type { CameraMotion, CharacterDepthStaging };
+
+export interface MultiPlaneCharacterStaging {
+  characterId: string;
+  pose: string;
+  mouthViseme?: string;
+  /** Normalized coordinate percentages (0 to 100) */
+  xPercent: number;
+  yPercent: number;
+  scale: number;
+  depth: CharacterDepthStaging;
+  flipHorizontal?: boolean;
+}
+
+export interface MultiPlaneShotManifest {
+  shotId: string;
+  sceneId: string;
+  seriesId: string;
+  settingId: string;
+  durationSec: number;
+  cameraMotion: CameraMotion;
+  framing: 'wide' | 'medium' | 'close' | 'two' | 'ots';
+  character?: MultiPlaneCharacterStaging;
+  audio?: {
+    narrationFile?: string;
+    ambientFile?: string;
+  };
+}
+

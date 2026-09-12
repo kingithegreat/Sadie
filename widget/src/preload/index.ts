@@ -830,6 +830,22 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
   mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),
+  mediaSeriesSettingsList: async (seriesId: string) =>
+    ipcRenderer.invoke('homebot:media:series-settings:list', seriesId),
+  mediaSeriesSettingsGet: async (seriesId: string, settingId: string) =>
+    ipcRenderer.invoke('homebot:media:series-settings:get', seriesId, settingId),
+  mediaSeriesSettingsSave: async (args: {
+    seriesId: string;
+    manifest: any;
+    bgBase64: string;
+    fgBase64?: string;
+    previewBase64?: string;
+  }) =>
+    ipcRenderer.invoke('homebot:media:series-settings:save', args),
+  mediaSeriesSettingsDelete: async (seriesId: string, settingId: string) =>
+    ipcRenderer.invoke('homebot:media:series-settings:delete', seriesId, settingId),
+  mediaSeriesSettingsSegment: async (args: { imageBase64: string; preferCpu?: boolean }) =>
+    ipcRenderer.invoke('homebot:media:series-settings:segment', args),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
   licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),

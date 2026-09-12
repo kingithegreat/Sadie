@@ -698,7 +698,39 @@ export interface ElectronAPI {
     projectDir?: string;
     error?: string;
   }>;
-
+  mediaSeriesSettingsList?: (seriesId: string) => Promise<{
+    ok: boolean;
+    settings?: any[];
+    error?: string;
+  }>;
+  mediaSeriesSettingsGet?: (seriesId: string, settingId: string) => Promise<{
+    ok: boolean;
+    bundle?: any;
+    error?: string;
+  }>;
+  mediaSeriesSettingsSave?: (args: {
+    seriesId: string;
+    manifest: any;
+    bgBase64: string;
+    fgBase64?: string;
+    previewBase64?: string;
+  }) => Promise<{
+    ok: boolean;
+    bundle?: any;
+    error?: string;
+  }>;
+  mediaSeriesSettingsDelete?: (seriesId: string, settingId: string) => Promise<{
+    ok: boolean;
+    deleted?: boolean;
+    error?: string;
+  }>;
+  mediaSeriesSettingsSegment?: (args: { imageBase64: string; preferCpu?: boolean }) => Promise<{
+    ok: boolean;
+    bgBase64?: string;
+    fgBase64?: string;
+    engineUsed?: string;
+    error?: string;
+  }>;
 
   licenseStatus?: () => Promise<LicenseStatus>;
   licenseActivate?: (licenseKey: string) => Promise<LicenseActionResult>;
