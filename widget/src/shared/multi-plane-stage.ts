@@ -9,7 +9,7 @@ import type React from 'react';
 
 export type CameraMotion = 'pan_left' | 'pan_right' | 'zoom_in' | 'zoom_out' | 'static';
 export type CharacterDepthStaging = 'midground_behind_fg' | 'foreground_in_front_of_fg';
-export type CameraFraming = 'wide' | 'medium' | 'close' | 'two' | 'ots';
+export type StageFraming = 'wide' | 'medium' | 'close' | 'two' | 'ots';
 
 export interface SettingLighting {
   preset: 'torchlight' | 'daylight' | 'moonlight' | 'studio_warm' | 'scifi_cool' | 'custom';
@@ -41,7 +41,7 @@ export interface LayerTransforms {
 /**
  * Base framing scale targets for standard camera shots.
  */
-export const FRAMING_BASE_SCALES: Record<CameraFraming, number> = {
+export const FRAMING_BASE_SCALES: Record<StageFraming, number> = {
   wide: 1.05,
   medium: 1.25,
   two: 1.20,
@@ -58,7 +58,7 @@ export const FRAMING_BASE_SCALES: Record<CameraFraming, number> = {
 export function calculateParallaxTransforms(
   progress: number, // 0.0 to 1.0 across the shot
   motion: CameraMotion,
-  framing: CameraFraming = 'medium'
+  framing: StageFraming = 'medium'
 ): LayerTransforms {
   const clampedProgress = Math.max(0, Math.min(1, progress));
   const baseScale = FRAMING_BASE_SCALES[framing] || 1.15;

@@ -34,14 +34,14 @@ export interface SettingLighting {
   shadowOffsetYPercent?: number; // e.g. 2.0
 }
 
-export type CameraFraming = 'wide' | 'medium' | 'close' | 'two' | 'ots';
+export type StageFraming = 'wide' | 'medium' | 'close' | 'two' | 'ots';
 
 export interface SettingManifest {
   id: string;
   seriesId: string;
   name: string;
   description: string;
-  cameraSetups?: CameraFraming[];
+  cameraSetups?: StageFraming[];
   hasForeground: boolean;
   lighting: SettingLighting;
   createdAt: string;

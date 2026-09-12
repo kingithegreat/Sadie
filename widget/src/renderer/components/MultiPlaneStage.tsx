@@ -18,7 +18,7 @@ import {
   type CameraMotion,
   type CharacterDepthStaging,
   type SettingLighting,
-  type CameraFraming,
+  type StageFraming,
 } from '../../shared/multi-plane-stage';
 import { LIGHTING_PRESETS } from '../../main/series-settings';
 
@@ -34,7 +34,7 @@ export interface MultiPlaneStageProps {
   depthStaging?: CharacterDepthStaging;
   lighting?: SettingLighting;
   cameraMotion?: CameraMotion;
-  framing?: CameraFraming;
+  framing?: StageFraming;
   progress?: number; // 0.0 to 1.0
   aspectRatio?: string; // default '16/9'
   showVignette?: boolean;
