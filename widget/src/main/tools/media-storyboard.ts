@@ -23,6 +23,7 @@ import {
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
+import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -315,14 +316,8 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
     // A saved file is available for review, not a new publication approval.
     const savedOutput = projectMeta.latestSuccessfulOutput;
     const filename = savedOutput === undefined ? `${projectId}-1080p.mp4` : savedOutput?.filename;
-    let renderedMoviePath: string | null = null;
-    try {
-      if (typeof filename !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(filename)) throw new Error('Invalid saved export filename');
-      const moviePath = path.join(projectDir, 'renders', filename);
-      const stat = fs.lstatSync(moviePath);
-      const expected = path.join(fs.realpathSync(projectDir), 'renders', filename);
-      if (stat.isFile() && stat.size > 0 && fs.realpathSync(moviePath) === expected) renderedMoviePath = moviePath;
-    } catch { /* No saved export yet. */ }
+    const renderedMoviePath = resolveStoryboardExportPath(projectDir, filename);
+    const exportState = await readStoryboardExportState(projectDir, projectMeta, scenes);
 
     return {
       success: true,
@@ -331,6 +326,7 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
         scenes,
         projectDir,
         renderedMoviePath,
+        exportState,
         ...(renderedMoviePath && savedOutput ? { renderedOutput: savedOutput } : {}),
       },
     };
@@ -532,8 +528,7 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     const sceneJsonPath = path.join(sceneDir, 'scene.json');
     const metaPath = path.join(projectDir, 'project.json');
     // Parse before touching shot files; preserve unrelated project metadata.
-    const projectMeta = args.burnSubtitles !== undefined || outputSpec !== undefined
-      ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : null;
+    const projectMeta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : {};
     const sceneMeta = fs.existsSync(sceneJsonPath)
       ? JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8')) : { sceneId };
 
@@ -661,7 +656,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
       format: res.outputSpec?.durationIntent ?? ((res.durationSec && res.durationSec > 60) ? 'long' : 'short'),
       state: 'awaiting_approval',
       burnSubtitles: res.burnSubtitles,
-      ...(res.outputSpec ? { outputSpec: res.outputSpec, renderedOutput: res.renderedOutput } : {}),
+      ...(res.outputSpec ? { outputSpec: res.outputSpec } : {}), renderedOutput: res.renderedOutput,
       renderPath: res.moviePath,
       durationSeconds: res.durationSec,
       brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)`,
@@ -700,7 +695,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
       moviePath: res.moviePath,
       durationSec: res.durationSec,
       totalShots: res.totalShots,
-      ...(res.outputSpec ? { outputSpec: res.outputSpec, renderedOutput: res.renderedOutput } : {}),
+      ...(res.outputSpec ? { outputSpec: res.outputSpec } : {}), renderedOutput: res.renderedOutput,
       message: `Rendered ${outputLabel} movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
       handoff: {
         mode: 'media',

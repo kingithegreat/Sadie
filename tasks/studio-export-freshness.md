@@ -46,3 +46,26 @@ The real Windows Electron/FFmpeg test fails after saving a duration edit because
 MP4 before/after save: the file survives but the workspace misrepresents freshness.
 Evidence: `.kilo/artifacts/studio-freshness-red/`; fixture profile
 `homebot-freshness-proof-1qeFT7`. No providers or online speech were used.
+
+## Storyboard checkpoint implementation
+
+Source identity hashes ordered saved shots, timing/text/framing, actual image
+bytes, output/caption/motion choices and the requested narration engine. No-op
+saves leave the content revision alone. Images are copied per attempt; later
+edits cannot silently alter its source. Attempts are independent of successful
+outputs and incomplete attempts are recovered on reopen. Duplicate attempts in
+the same app are refused. Cross-process scheduling remains a separate concern.
+
+All new storyboard exports, including legacy projects, have immutable filenames
+and review identities. Exclusive file creation protects a name claimed during
+rendering. Legacy encoder geometry/captions stay unchanged. Unknown old files
+stay reachable with unknown provenance; malformed sidecars cannot invent it.
+The preview shows saved/unsaved source versus the selected export, attempt/error,
+times, dimensions, duration, size, history and Open/Reveal/Review. Open now uses
+the existing local-file IPC rather than the web-only opener; OS errors propagate.
+
+First real A/B green: `.kilo/artifacts/studio-freshness-surface/`, 54.2 seconds,
+zero retries. Two earlier navigation/screenshot timeouts are retained separately.
+This is a storyboard checkpoint, not all STUDIO-04: ordinary job history and
+freshness remain next, along with the already recorded multi-output/stage/UI/
+pilot/installed gates. Final unchanged-source regression evidence follows.

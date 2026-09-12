@@ -685,7 +685,7 @@ export function registerStudioIpc(
       });
       return res.success
           ? { ok: true, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId,
-              ...(res.result.outputSpec ? { outputSpec: res.result.outputSpec, renderedOutput: res.result.renderedOutput } : {}),
+              ...(res.result.outputSpec ? { outputSpec: res.result.outputSpec } : {}), renderedOutput: res.result.renderedOutput,
               ...(res.result.warning ? { warning: res.result.warning } : {}) }
         : { ok: false, error: res.error, code: res.code };
     } catch (err: any) {

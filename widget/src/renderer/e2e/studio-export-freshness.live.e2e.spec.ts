@@ -36,6 +36,7 @@ test('Studio distinguishes edited A from failed B and preserves each good movie 
   const movie = (id: string) => path.join(projects, id, 'renders', meta(id).latestSuccessfulOutput.filename);
   const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   const enterStudio = async () => {
+    await page.bringToFront();
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     await page.getByRole('tab', { name: /Storyboard/ }).click();
   };
@@ -60,8 +61,8 @@ test('Studio distinguishes edited A from failed B and preserves each good movie 
     await page.getByRole('button', { name: /Save Board/ }).click();
     await expect.poll(() => JSON.parse(fs.readFileSync(path.join(projects, 'freshness-a', 'scenes', 'scene_01', 'shot_01', 'prompt.json'), 'utf8')).durationSec).toBe(3);
     expect(hash(movieA)).toBe(hashA); // Positive control: the old good file still exists.
-    await page.screenshot({ path: testInfo.outputPath('edited-a-preview.png') });
     await expect(page.getByText(/Preview out of date/i)).toBeVisible();
+    await page.getByRole('region', { name: 'Export freshness' }).screenshot({ path: testInfo.outputPath('edited-a-preview.png'), animations: 'disabled' });
 
     await choose('freshness-b');
     await render();
@@ -96,8 +97,39 @@ test('Studio distinguishes edited A from failed B and preserves each good movie 
     expect(hash(movieB)).toBe(hashB);
     expect(meta('freshness-b').latestExportAttempt.status).toBe('succeeded');
     await expect(page.getByText(/latest attempt failed/i)).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('recovered-b-preview.png') });
-    fs.writeFileSync(testInfo.outputPath('freshness-evidence.json'), JSON.stringify({ profile, movieA, hashA, movieB, hashB, replacementB, replacementHash: hash(replacementB), projectA: meta('freshness-a'), projectB: meta('freshness-b') }, null, 2));
+    // Opening/revealing uses the real guarded preload/IPC path. Trap only the
+    // OS-launch boundary so this verification does not open unrelated desktop apps.
+    await app.evaluate(({ shell }) => {
+      const state = globalThis as any;
+      state.freshnessFileActions = [];
+      state.freshnessOpenError = '';
+      shell.openPath = async file => { state.freshnessFileActions.push({ action: 'open', file }); return state.freshnessOpenError; };
+      shell.showItemInFolder = file => { state.freshnessFileActions.push({ action: 'reveal', file }); };
+    });
+    await page.getByLabel('Export history').selectOption(movieB);
+    await expect(page.getByLabel('Exported storyboard video')).toHaveAttribute('src', new RegExp(path.basename(movieB).replace(/\./g, '\\.')));
+    await page.getByRole('button', { name: /Open Video/ }).click();
+    await page.getByRole('button', { name: 'Show in Folder' }).click();
+    expect(await app.evaluate(() => (globalThis as any).freshnessFileActions)).toEqual([
+      { action: 'open', file: movieB }, { action: 'reveal', file: movieB },
+    ]);
+    await app.evaluate(() => { (globalThis as any).freshnessOpenError = 'No default video player is configured.'; });
+    await page.getByRole('button', { name: /Open Video/ }).click();
+    await expect(page.getByRole('alert')).toContainText('No default video player is configured.');
+    await page.getByLabel('Export history').selectOption(replacementB);
+    await page.getByRole('button', { name: /Review & Publish/ }).click();
+    await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
+    expect((await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.renderPath === replacementB)?.state).toBe('awaiting_approval');
+    await page.getByRole('tab', { name: /Storyboard/ }).click();
+    await page.getByRole('region', { name: 'Export freshness' }).screenshot({ path: testInfo.outputPath('recovered-b-preview.png'), animations: 'disabled' });
+    fs.writeFileSync(testInfo.outputPath('freshness-evidence.json'), JSON.stringify({ profile, movieA, hashA, movieB, hashB, replacementB, replacementHash: hash(replacementB), projectA: meta('freshness-a'), projectB: meta('freshness-b'), historicalOpenRevealIpcVerified: true, osLaunchTrapped: true, openFailureVisible: true, reviewWithoutApproval: true }, null, 2));
+  } catch (error) {
+    fs.writeFileSync(testInfo.outputPath('failure-surface.json'), JSON.stringify(await page.evaluate(() => ({
+      title: document.title, body: document.body.innerText, viewport: { width: innerWidth, height: innerHeight },
+      buttons: [...document.querySelectorAll('button.mode-btn')].map(button => ({ text: button.textContent, rect: button.getBoundingClientRect().toJSON(), display: getComputedStyle(button).display })),
+    })).catch(() => ({ unavailable: true })), null, 2));
+    await page.screenshot({ path: testInfo.outputPath('failure-surface.png'), timeout: 5000 }).catch(() => {});
+    throw error;
   } finally {
     await app.close(); // Preserve all diagnostic projects and previous-good outputs.
   }
