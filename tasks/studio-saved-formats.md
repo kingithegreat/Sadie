@@ -1,4 +1,4 @@
-# Saved Studio output formats — STUDIO-03
+# Saved Studio output formats — STUDIO-03 checkpoint 1
 
 Owner: Codex following Aden's Studio handoff. Base: main `8a8372f` (#318).
 Existing acceptance: https://app.notion.com/p/3d6829ebf7be8196973af95a4365f965.
@@ -38,7 +38,7 @@ and playback through the real app, not only mocked arguments.
 - External Ancient Pathways has its own renderer; do not imply options reach
   it when its actual bridge cannot accept them.
 
-## Local implementation checkpoint (not published)
+## Local implementation checkpoint
 
 Strict format validation and controlled UI now reach new jobs, existing editable
 jobs and storyboard save/render. Both FFmpeg paths take the saved geometry,
@@ -80,8 +80,24 @@ side margins and no clipped speech. Full widget verification on the correction:
 warnings, no errors), and the rebuilt Electron app pass.
 FFmpeg output-duration semantics: https://ffmpeg.org/ffmpeg.html#Main-options.
 
-Final combined verification is still pending. The real geometry test
+Final combined verification on `a49c1a8` passed all 14 actual Electron cases in
+7.4 minutes, without retries or skips. Eight saved formats, both ordinary-job
+duration cases, paired legacy captions, Online-off voice preview and theme UI
+all pass. The eight format hashes and both legacy caption hashes are unchanged.
+All 12 generated MP4s are archived under
+`.kilo/artifacts/studio-formats-final/exports/`; source and copied hashes match.
+The geometry playback check starts the reopened file, then seeks near its end
+and asserts ended/no loop; the storyboard QA separately decodes the whole file.
+Both typechecks, root 227 tests, docs parity and positive one-file export guard
+are green. Remote CI/merge is the next gate, not yet asserted by this local proof.
+
+The real geometry test
 uses deliberately unnarrated diagnostic cards; the separate caption test covers
 actual local speech. Neither is approval of a creative pilot or installed release.
 Stage lighting/foreground export parity, revision/freshness workspace, complete
 approved pilot and installed-release acceptance remain explicitly open.
+
+Checkpoint 2 will handle explicit multiple outputs, reuse and independent
+failure/retry status. Storyboard source-image generation also still uses its
+existing generation size; selected fit/crop reaches export, not every provider's
+source-generation geometry. Keep that distinction visible until verified.

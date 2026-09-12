@@ -1,4 +1,39 @@
 {
+  "finalRun": {
+    "sourceCommit": "a49c1a8b1cc418cad3b6bfdad3dbf424350f5946",
+    "result": "14 passed in 444.94687 seconds; zero failures, skips or retries",
+    "artifactRoot": ".kilo/artifacts/studio-formats-final",
+    "archivedVideos": 12,
+    "archiveHashesVerified": true,
+    "originalEightFormatHashesUnchanged": true,
+    "playbackCheck": "After restart, start playback, seek to 0.25s before the ending, and verify ended without loop. Storyboard export QA separately decodes the complete file.",
+    "ordinaryJobCases": [
+      {
+        "case": "studio-job-format.live.e2e-4f2b9--real-single-image-encoding",
+        "sha256": "ce5e204b83db2721923b323081365f46db9c3f97ac6bf4e89057005bf98b87e3",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "frames": "90",
+        "durationSeconds": 3,
+        "sourceAudioSeconds": 3,
+        "captions": false,
+        "archivedFile": "exports/studio-job-format.live.e2e-4f2b9--real-single-image-encoding.mp4"
+      },
+      {
+        "case": "studio-job-format.live.e2e-7eead--real-single-image-encoding",
+        "sha256": "1e6dbda9a578001ef52e9c3627eeff6d5b3b01619dd9711e7e707466f1fe5f26",
+        "width": 720,
+        "height": 1280,
+        "fps": "30/1",
+        "frames": "105",
+        "durationSeconds": 3.5,
+        "sourceAudioSeconds": 3.49,
+        "captions": true,
+        "archivedFile": "exports/studio-job-format.live.e2e-7eead--real-single-image-encoding.mp4"
+      }
+    ]
+  },
   "sourceCommit": "d6af04289d6a3bfd4a9711a9542e2fe175b876de",
   "environment": "Windows Electron out/main/index.js build; installed FFmpeg n9.0; isolated test profiles",
   "test": "widget/src/renderer/e2e/studio-output-formats.live.e2e.spec.ts",
