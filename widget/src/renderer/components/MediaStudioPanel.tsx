@@ -83,6 +83,7 @@ interface MediaJob {
   id: string;
   title: string;
   format: 'short' | 'long';
+  aspectRatio?: '16:9' | '9:16' | '1:1';
   state: MediaJobState;
   brief?: string;
   script?: string;
@@ -657,7 +658,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const create = async () => {
     const t = title.trim();
     if (!t) return;
-    await run('new', () => api()?.mediaCreate?.({ title: t, format }));
+    await run('new', () => api()?.mediaCreate?.({ title: t, format, aspectRatio: stageAspectRatio }));
     setTitle('');
   };
 
@@ -935,6 +936,11 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       if (res?.ok && res.result) {
         setActiveStoryboard(res.result);
         setSelectedStoryboardId(projectId);
+        if (res.result.renderedMoviePath) {
+          setRenderedMoviePath(res.result.renderedMoviePath);
+        } else if (!navContext?.renderedMoviePath) {
+          setRenderedMoviePath(null);
+        }
       } else {
         setStoryboardError(res?.error || `Could not load storyboard: ${projectId}`);
       }
@@ -1383,15 +1389,20 @@ ${shots.map((s, idx) => `
 
   const handleRenderMovie = async () => {
     if (!selectedStoryboardId || !activeStoryboard) return;
+    const previousExport = renderedMoviePath;
     setStoryboardRendering(true);
     setStoryboardError(null);
     setStoryboardMessage('Rendering 1080p broadcast movie (Ken Burns motion, narration, subtitles)...');
     try {
-      const res = await api()?.mediaStoryboardRender?.({
-        projectId: selectedStoryboardId,
-        sceneId: activeStoryboard.scenes[0]?.sceneId || 'scene_01',
-        motion: true,
-        burnSubtitles: true,
+      const res = await releaseMediaThen('storyboard-export', () => {
+        setRenderedMoviePath(null);
+        return api()?.mediaStoryboardRender?.({
+          projectId: selectedStoryboardId,
+          sceneId: activeStoryboard.scenes[0]?.sceneId || 'scene_01',
+          motion: true,
+          burnSubtitles: true,
+          aspectRatio: stageAspectRatio,
+        });
       });
       if (res?.ok && res.moviePath) {
         setRenderedMoviePath(res.moviePath);
@@ -1401,9 +1412,13 @@ ${shots.map((s, idx) => `
         await refresh();
         setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)! Bridged to Director queue.`);
       } else {
+        setRenderedMoviePath(previousExport);
+        setStoryboardMessage(null);
         setStoryboardError(res?.error || 'Failed to render movie.');
       }
     } catch (e: any) {
+      setRenderedMoviePath(previousExport);
+      setStoryboardMessage(null);
       setStoryboardError(e?.message || 'Failed to render movie.');
     } finally {
       setStoryboardRendering(false);
@@ -4281,6 +4296,16 @@ ${shots.map((s, idx) => `
                     ✕
                   </button>
                 </div>
+                <video
+                  key={renderedMoviePath}
+                  className="ms-video"
+                  controls
+                  preload="metadata"
+                  aria-label="Exported storyboard video"
+                  data-testid="ms-video-storyboard-export"
+                  src={toMediaFileUrl(renderedMoviePath)}
+                  style={{ width: '100%', maxHeight: 360, flexBasis: '100%' }}
+                />
               </div>
             )}
 
@@ -4931,6 +4956,16 @@ ${shots.map((s, idx) => `
             >
               <option value="short">Short (30–60s)</option>
               <option value="long">Long (5–12 min)</option>
+            </select>
+            <select
+              className="ms-select"
+              value={stageAspectRatio}
+              onChange={e => setStageAspectRatio(e.target.value as '16:9' | '9:16' | '1:1')}
+              aria-label="Aspect ratio"
+            >
+              <option value="16:9">16:9 (Landscape)</option>
+              <option value="9:16">9:16 (Portrait)</option>
+              <option value="1:1">1:1 (Square)</option>
             </select>
             <button className="ms-btn ms-btn--primary" onClick={create} disabled={!title.trim() || busy === 'new'}>
               Add video

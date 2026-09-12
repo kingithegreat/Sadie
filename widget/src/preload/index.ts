@@ -768,11 +768,11 @@ const electronAPI: ElectronAPI = {
   youtubeUpload: async (jobId: string, metadata: import('../shared/youtube-connection').YouTubeVideoMetadata) =>
     ipcRenderer.invoke('homebot:media:youtube:upload', jobId, metadata),
   mediaParseFeed: async (url: string) => ipcRenderer.invoke('homebot:media:parse-feed', url),
-  mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
+  mediaCreate: async (input: { title: string; format?: 'short' | 'long'; aspectRatio?: '16:9' | '9:16' | '1:1'; brief?: string }) =>
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; image?: string; visuals?: string }) =>
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; aspectRatio?: '16:9' | '9:16' | '1:1' }) =>
     ipcRenderer.invoke('homebot:media:run', id, action, opts),
   mediaApprove: async (id: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note),

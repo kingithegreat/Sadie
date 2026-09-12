@@ -1,0 +1,72 @@
+{
+  "date": "2026-09-09",
+  "platform": "Windows 11",
+  "base": "84963bc",
+  "testedCommit": "f096a80",
+  "test": "widget/src/renderer/e2e/storyboard-export.live.e2e.spec.ts",
+  "localArtifact": ".kilo/artifacts/studio-narrated-export/demo.mp4",
+  "fixture": "Two authored color cards with the repository HomeBot icon; real cached CPU Kokoro speech; real FFmpeg and Electron playback.",
+  "bytes": 131760,
+  "sha256": "1c810b1f215cba5e1bf905dad64ff081cce51daadbf6be860f54d92e63bcb314",
+  "durationSeconds": 8,
+  "codec": "h264",
+  "width": 1920,
+  "height": 1080,
+  "fps": "30/1",
+  "narration": [
+    "Blue scene begins.",
+    "Amber scene follows."
+  ],
+  "audioSampleStarts": [
+    0.1,
+    3,
+    4.1
+  ],
+  "audioRms": [
+    0.08743477235224051,
+    0,
+    0.08693222478777374
+  ],
+  "sampledFrames": [
+    {
+      "second": 0.5,
+      "rgb": [
+        21,
+        76,
+        126
+      ],
+      "captionWhitePixels": 8950
+    },
+    {
+      "second": 4.5,
+      "rgb": [
+        187,
+        84,
+        28
+      ],
+      "captionWhitePixels": 9705
+    }
+  ],
+  "speechNetworkAttempts": [],
+  "positiveTransportControls": 5,
+  "reopenedAfterRestart": true,
+  "playerDecodedAndPlayed": true,
+  "failedReplacementPreserved": true,
+  "replacementWithPlayerLoaded": true,
+  "limits": "Local fixture output, not live AI image/video generation, creative quality, human voice preference, an installer or full M2 pilot acceptance.",
+  "offlineSpeech": {
+    "node": "v24.13.0",
+    "platform": "win32",
+    "bytes": 528044,
+    "sha256": "313a392eb2386715adffcbb8920a8750c4055f44612993651c975aed96b3a2cf",
+    "seconds": 5.5,
+    "sampleRate": 24000,
+    "channels": 1,
+    "rms": 0.06514227278612898,
+    "networkAttempts": 0,
+    "elapsedMs": 8918,
+    "positiveTransportControls": 5,
+    "emptyCacheOutcome": "missing_cache_denied",
+    "emptyCacheNetworkAttempts": 0
+  }
+}

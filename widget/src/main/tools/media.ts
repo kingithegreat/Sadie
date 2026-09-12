@@ -26,6 +26,7 @@ import {
   type MediaJobState,
   type MediaFormat,
 } from '../media-studio';
+import type { VideoShape } from '../media-render';
 
 // ---- Store (mirrors automation.ts: atomic write, corrupt-file backup) ----
 
@@ -333,10 +334,11 @@ const createMediaJobHandler: ToolHandler = async (args) => {
     const job = createJob({
       title: String(args.title || ''),
       format: (args.format === 'long' ? 'long' : 'short') as MediaFormat,
+      aspectRatio: args.aspectRatio as any,
       brief: args.brief ? String(args.brief) : undefined,
     });
     upsert(job);
-    return ok(withNextStep([`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`], job));
+    return ok(withNextStep([`Created "${job.title}" (${job.format}${job.aspectRatio ? `, ${job.aspectRatio}` : ''}) at the idea stage. id: ${job.id}`], job));
   } catch (e: any) {
     return err(`media_create_job failed: ${errText(e)}`);
   }
@@ -838,7 +840,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // reason to lose the thing it was replacing. The rename is same-directory,
     // so it is atomic, matching the store's own write pattern above.
     const out = path.join(dir, `video.rendering-${process.pid}.mp4`);
-    const shape = job.format === 'long' ? 'long' : 'short';
+    const shape = (args.shape || args.aspectRatio || job.aspectRatio || (job.format === 'long' ? '16:9' : '9:16')) as VideoShape;
     // An empty file (a script that produced zero cues, or a write that landed
     // partway) is not a usable captions track. Treating it as one used to hand
     // ffmpeg's subtitles filter a file it cannot parse — "Unable to open ...

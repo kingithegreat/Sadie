@@ -9598,9 +9598,9 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .ms-error {
   padding: .7rem .9rem;
   border-radius: 6px;
-  background: oklch(45% 0.14 25 / 0.18);
-  border: 1px solid oklch(60% 0.16 25 / 0.5);
-  color: var(--text-primary);
+  background: oklch(42% 0.16 25 / 0.22);
+  border: 1px solid oklch(55% 0.2 25 / 0.62);
+  color: oklch(95% 0.02 25);
   font-size: .9rem;
 }
 
@@ -9771,8 +9771,9 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .ms-done {
   padding: .6rem .9rem;
   border-radius: 6px;
-  background: oklch(45% 0.10 150 / 0.16);
-  border: 1px solid oklch(60% 0.12 150 / 0.45);
+  background: oklch(42% 0.1 150 / 0.18);
+  border: 1px solid oklch(58% 0.14 150 / 0.55);
+  color: oklch(95% 0.02 150);
   font-size: .88rem;
 }
 
@@ -11547,11 +11548,11 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* DCC Bar & Branding */
 .ms-dcc-bar {
-  background: linear-gradient(180deg, #181b22 0%, #12141a 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, var(--bg-dark) 0%, var(--bg-darker) 100%);
+  border: 1px solid var(--border-light);
   border-radius: 12px;
   padding: 14px 18px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 22px oklch(0 0 0 / 0.2), inset 0 1px 0 oklch(100% 0 0 / 0.06);
   backdrop-filter: blur(16px);
   margin-bottom: 8px;
 }
@@ -11572,9 +11573,61 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-size: 1.4rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #ffffff 0%, #a0a6b5 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
+  font-family: Inter, 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.ms-dcc-mode-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ms-dcc-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  background: var(--bg-dark);
+  letter-spacing: 0.02em;
+}
+
+.ms-dcc-mode-pill.is-performance {
+  border-color: oklch(78% 0.17 85 / 0.45);
+  color: oklch(90% 0.17 85);
+  background: oklch(20% 0.12 85 / 0.3);
+}
+
+.ms-dcc-mode-toggle {
+  border-radius: 8px;
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  background: var(--bg-medium);
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-dcc-mode-toggle:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.ms-dcc-mode-toggle.is-performance {
+  border-color: oklch(78% 0.17 85 / 0.55);
+  color: oklch(90% 0.17 85);
+  background: oklch(24% 0.1 85 / 0.35);
 }
 
 .ms-dcc-pill-row {
@@ -11650,27 +11703,28 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-size: 0.84rem;
   font-weight: 600;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-secondary, #9aa0a6);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-dark);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
   position: relative;
   user-select: none;
+  min-height: 34px;
 }
 
 .ms-workspace-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: oklch(74% 0.05 250 / 0.45);
   transform: translateY(-1px);
 }
 
 .ms-workspace-tab.active {
-  background: linear-gradient(135deg, rgba(255, 133, 27, 0.16) 0%, rgba(0, 240, 255, 0.14) 100%);
-  color: #fff;
-  border-color: rgba(0, 240, 255, 0.55);
-  box-shadow: 0 0 16px rgba(0, 240, 255, 0.22), inset 0 0 8px rgba(255, 133, 27, 0.1);
+  background: linear-gradient(135deg, oklch(68% 0.16 285 / 0.23) 0%, oklch(60% 0.1 285 / 0.2) 100%);
+  color: var(--text-primary);
+  border-color: oklch(68% 0.16 285 / 0.55);
+  box-shadow: 0 0 8px oklch(68% 0.16 285 / 0.2), inset 0 0 8px oklch(66% 0.16 285 / 0.16);
 }
 
 .ms-tab-icon {
@@ -11687,14 +11741,40 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-size: 0.68rem;
   font-weight: 700;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #d1d5db;
+  background: color-mix(in srgb, var(--bg-dark) 76%, black 24%);
+  color: var(--text-secondary);
   letter-spacing: 0.02em;
 }
 
 .ms-workspace-tab.active .ms-tab-pill {
-  background: rgba(0, 240, 255, 0.25);
-  color: #00f0ff;
+  background: oklch(60% 0.1 285 / 0.32);
+  color: var(--text-primary);
+}
+
+.media-studio--performance .ms-dcc-bar {
+  box-shadow: 0 1px 0 oklch(0 0 0 / 0.08);
+  backdrop-filter: none;
+}
+
+.media-studio--performance .ms-dcc-chip,
+.media-studio--performance .ms-chip--orange,
+.media-studio--performance .ms-chip--cyan,
+.media-studio--performance .ms-chip--green,
+.media-studio--performance .ms-chip--purple,
+.media-studio--performance .ms-chip--amber,
+.media-studio--performance .ms-chip--teal {
+  box-shadow: none;
+}
+
+.media-studio--performance .ms-workspace-tab {
+  border-color: var(--border-light);
+  box-shadow: none;
+}
+
+.media-studio--performance .ms-workspace-tab.active {
+  background: var(--bg-hover);
+  border-color: oklch(68% 0.14 285 / 0.6);
+  box-shadow: none;
 }
 
 /* Job Card Quick DCC Buttons */
@@ -13194,21 +13274,30 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-weight: 600;
   border-radius: 6px;
   background: transparent;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-light);
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .ms-nle-tab:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .ms-nle-tab.active {
-  color: #00e5ff;
-  background: rgba(0, 240, 255, 0.1);
-  border-color: rgba(0, 240, 255, 0.3);
+  color: var(--text-primary);
+  background: oklch(64% 0.16 285 / 0.18);
+  border-color: oklch(68% 0.16 285 / 0.45);
+}
+
+.media-studio--performance .ms-nle-tab {
+  box-shadow: none;
+}
+
+.media-studio--performance .ms-nle-tab.active {
+  background: oklch(32% 0.04 250 / 0.45);
+  border-color: oklch(68% 0.14 285 / 0.65);
 }
 
 .ms-nle-tab-pane {

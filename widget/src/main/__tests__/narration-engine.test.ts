@@ -4,7 +4,7 @@
  * Contract under test:
  *  - Default stays Edge; Kokoro runs ONLY when asked (explicit arg or saved
  *    preference).
- *  - Any Kokoro failure falls back to Edge and the RESULT says which engine
+ *  - With Online permitted, Kokoro failure falls back to Edge and the RESULT says which engine
  *    actually rendered — a silent substitution must be impossible to ship.
  *  - An Edge-style voice name never reaches the local model (the panel swaps
  *    its list, this is the backstop).
@@ -30,14 +30,12 @@ const kokoroGenerate = jest.fn(async (_text: string, opts: any) => {
   return { toWav: () => new ArrayBuffer(64) };
 });
 
-jest.mock('kokoro-js', () => ({
-  KokoroTTS: {
-    from_pretrained: (...args: unknown[]) => kokoroFromPretrained(...args),
-  },
+jest.mock('../tts/kokoro-loader', () => ({
+  loadKokoroForSpeech: (...args: unknown[]) => kokoroFromPretrained(...args),
 }));
 
 jest.mock('../config-manager', () => ({
-  getSettings: jest.fn(() => ({ narrationEngine: mockNarrationEngine })),
+  getSettings: jest.fn(() => ({ useCustomLLM: true, narrationEngine: mockNarrationEngine })),
 }));
 
 let mockNarrationEngine: 'edge' | 'kokoro' | undefined = undefined;
@@ -103,10 +101,7 @@ describe('renderNarrationToFile provider seam', () => {
     );
     expect(r.engine).toBe('kokoro');
     expect(path.basename(r.path)).toBe('narration.wav');
-    expect(kokoroFromPretrained).toHaveBeenCalledWith(
-      'onnx-community/Kokoro-82M-v1.0-ONNX',
-      expect.objectContaining({ dtype: 'q8', device: 'cpu' }),
-    );
+    expect(kokoroFromPretrained).toHaveBeenCalledWith(true);
     expect(kokoroGenerate).toHaveBeenCalledWith(
       'Hello there.',
       expect.objectContaining({ voice: 'af_heart', speed: 1 }),

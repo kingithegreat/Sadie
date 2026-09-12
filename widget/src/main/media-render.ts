@@ -32,11 +32,13 @@ export interface Segment {
   imagePath?: string | null;
 }
 
-export type VideoShape = 'short' | 'long';
+export type VideoShape = 'short' | 'long' | '16:9' | '9:16' | '1:1';
 
-/** Portrait for shorts, landscape for long-form — what each platform expects. */
+/** Portrait for shorts/9:16, landscape for long-form/16:9, square for 1:1. */
 export function dimensionsFor(shape: VideoShape): { w: number; h: number } {
-  return shape === 'long' ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 };
+  if (shape === '1:1') return { w: 1080, h: 1080 };
+  if (shape === '9:16' || shape === 'short') return { w: 1080, h: 1920 };
+  return { w: 1920, h: 1080 };
 }
 
 /** The whole duration as one visual: the simplest timeline that is still a timeline. */
@@ -169,9 +171,10 @@ export function toAssUnits(px: number, frameHeight: number): number {
 export function defaultSubtitleStyle(shape: VideoShape): string {
   const { h } = dimensionsFor(shape);
   // Wanted, in real pixels on the finished frame.
-  const marginPx = shape === 'long' ? 70 : 280;
-  const fontPx = shape === 'long' ? 56 : 110;
-  const outlinePx = shape === 'long' ? 5 : 8;
+  const isLandscape = shape === 'long' || shape === '16:9';
+  const marginPx = isLandscape ? 70 : 280;
+  const fontPx = isLandscape ? 56 : 110;
+  const outlinePx = isLandscape ? 5 : 8;
   return [
     'FontName=Arial',
     `FontSize=${toAssUnits(fontPx, h)}`,

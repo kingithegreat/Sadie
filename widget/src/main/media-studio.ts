@@ -55,10 +55,13 @@ export interface MediaJobEvent {
   note?: string;
 }
 
+export type MediaAspectRatio = '16:9' | '9:16' | '1:1';
+
 export interface MediaJob {
   id: string;
   title: string;
   format: MediaFormat;
+  aspectRatio?: MediaAspectRatio;
   state: MediaJobState;
   /** Free-text topic or brief the idea started from. */
   brief?: string;
@@ -297,6 +300,7 @@ export function markPublished(
 export interface NewJobInput {
   title: string;
   format?: MediaFormat;
+  aspectRatio?: MediaAspectRatio;
   brief?: string;
   id?: string;
   now?: () => Date;
@@ -307,10 +311,13 @@ export function createJob(input: NewJobInput): MediaJob {
   if (!title) throw new Error('A media job needs a title.');
 
   const at = (input.now?.() ?? new Date()).toISOString();
+  const format = input.format ?? 'short';
+  const aspectRatio = input.aspectRatio ?? (format === 'long' ? '16:9' : '9:16');
   return {
     id: input.id || `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     title,
-    format: input.format ?? 'short',
+    format,
+    aspectRatio,
     state: 'idea',
     brief: input.brief?.trim() || undefined,
     createdAt: at,

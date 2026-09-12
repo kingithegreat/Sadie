@@ -313,6 +313,9 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
   if (!projectId) {
     return { success: false, error: 'projectId is required.' };
   }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) {
+    return { success: false, error: 'Choose a valid storyboard project.' };
+  }
 
   const rootDir = getStoryboardsRootDir();
   const projectDir = path.join(rootDir, projectId);
@@ -337,12 +340,22 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
       }
     }
 
+    // Recover the existing local export when this project is reopened. This is
+    // a saved-file reference, not a new QA or publication approval.
+    const moviePath = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
+    let renderedMoviePath: string | null = null;
+    try {
+      const stat = fs.lstatSync(moviePath);
+      if (stat.isFile() && stat.size > 0) renderedMoviePath = moviePath;
+    } catch { /* No saved export yet. */ }
+
     return {
       success: true,
       result: {
         project: projectMeta,
         scenes,
         projectDir,
+        renderedMoviePath,
       },
     };
   } catch (err: any) {
@@ -598,12 +611,22 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     return { success: false, error: 'projectId is required to render a storyboard.' };
   }
 
+  // Export the same saved shot files Studio displays. The director's initial
+  // manifest can be stale after edits or frame generation, or absent entirely.
+  const saved = await mediaGetStoryboardHandler({ projectId }, _context);
+  if (!saved.success) return saved;
+  const sceneId = (args.sceneId as string)?.trim() || 'scene_01';
+  const scene = saved.result.scenes.find((item: any) => item.sceneId === sceneId);
+  if (!scene) return { success: false, error: 'The selected storyboard scene was not found.' };
+
   const { renderStoryboardMovie } = await import('../movie/storyboard-renderer');
   const res = await renderStoryboardMovie({
     projectId,
-    sceneId: (args.sceneId as string)?.trim(),
+    sceneId,
+    savedShots: scene.shots,
     motion: args.motion !== false,
     burnSubtitles: args.burnSubtitles !== false,
+    aspectRatio: args.aspectRatio,
   });
 
   if (!res.ok) {
