@@ -21,6 +21,8 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 ## Active claims
 
+| UI palette and visual harmony | claude/ui-harmony | Publishing / CI verification (2026-09-13, Codex) | Owner approved the next integration step. Unified charcoal/cream/sage palette, softer chrome, readable Studio light theme and compact cards. Real Electron dark/light, Studio navigation, contrast, compact composer/cards/Settings and keyboard check passes. Full widget 4,107 and root 227 tests passed before integrating current main; integrated renderer checks and typecheck/build pass. Evidence: tasks/ui-harmony.md. |
+
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
 | Nightly media gate repair — uniform scene image format; timeline covers full narration | claude/fix-nightly-media-gate | Ready for integration — PR #316 (2026-09-13) | Repairs the red 2026-09-12 nightly (run 34679541301, `2 failed / 60 passed` → `3 suites / 63 tests` green). Root cause was **mixed image formats in one ffmpeg concat**: scene files are all named `.png` but Pollinations returns JPEG while the local fallback plate is a real PNG, so the single concat decoder dropped the frames it could not read and a 9.768s narration rendered as 6.333s. Correct extensions do NOT fix it — measured. `generateSceneImages` now normalises every scene to real PNG and caches the normalised bytes. Separately fixes a real latent bug where the scene timeline omitted inter-cue pauses/lead-in/tail, and makes the ffmpeg-missing case deterministic. Honesty-A/B on both. |
