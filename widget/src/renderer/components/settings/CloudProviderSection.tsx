@@ -13,6 +13,28 @@
 import { useSettingsCtx } from './SettingsContext';
 import { apiKeyForProvider } from '../../../shared/cloud-llm';
 
+// Short human name for the "couldn't reach X" warning below — the dropdown
+// options carry marketing copy (parentheticals, taglines) that doesn't read
+// well inline in a sentence.
+const PROVIDER_SHORT_NAMES: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  'claude-code': 'Claude',
+  codex: 'Codex',
+  openrouter: 'OpenRouter',
+  tokenrouter: 'TokenRouter',
+  groq: 'Groq',
+  deepseek: 'DeepSeek',
+  'google-ai-studio': 'Google AI Studio',
+  'google-gemini': 'Gemini',
+  huggingface: 'Hugging Face',
+  cerebras: 'Cerebras',
+  sambanova: 'SambaNova',
+  together: 'Together AI',
+  moonshot: 'Moonshot',
+  custom: 'the custom endpoint',
+};
+
 export default function CloudProviderSection() {
   const {
     defaultCustomLLM,
@@ -197,7 +219,7 @@ export default function CloudProviderSection() {
 
           {modelsStale && availableModels.length > 0 && (
             <small className="setting-hint error-hint">
-              Couldn't reach DeepSeek — showing last-known models. Check your connection or key, then reconnect.
+              Couldn't reach {PROVIDER_SHORT_NAMES[selectedProvider] || selectedProvider} — showing last-known models. Check your connection or key, then reconnect.
             </small>
           )}
 

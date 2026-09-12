@@ -1502,7 +1502,15 @@ export async function discoverGeminiModels(
     response = await axios.get(url, { timeout: 10000, maxRedirects: 0 });
   } catch (err: any) {
     const status = err?.response?.status;
-    if (status === 401 || status === 403) {
+    // Google's Generative Language API rejects an invalid key with HTTP 400
+    // (reason API_KEY_INVALID), not 401/403 — verified directly against the
+    // live endpoint. Treating only 401/403 as "key rejected" meant a genuinely
+    // bad key silently fell through to the fallback list with no explanation.
+    const details: any[] = Array.isArray(err?.response?.data?.error?.details)
+      ? err.response.data.error.details
+      : [];
+    const isInvalidKey = details.some((d) => d?.reason === 'API_KEY_INVALID');
+    if (status === 401 || status === 403 || (status === 400 && isInvalidKey)) {
       throw new ModelDiscoveryError('AUTH_FAILED', 'Your Google AI Studio key was rejected. Check the key in Settings.');
     }
     throw err;
