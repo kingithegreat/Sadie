@@ -73,8 +73,47 @@ const GITHUB_TOKEN_URL = 'https://github.com/settings/tokens';
 const NOTION_INTEGRATIONS_URL = 'https://www.notion.so/profile/integrations';
 const SLACK_APPS_URL = 'https://api.slack.com/quickstart';
 const BRAVE_API_URL = 'https://brave.com/search/api/';
+const GOOGLE_CLOUD_CREDENTIALS_URL = 'https://console.cloud.google.com/apis/credentials';
 
 export const CONNECTIONS: ReadonlyArray<ConnectionEntry> = [
+  {
+    id: 'google-drive',
+    name: 'Google Drive & Docs',
+    reach: 'Search, list, and read your Google Drive files and Google Docs documents as clean text.',
+    cost: 'free-key',
+    costNote: 'Free Google Cloud project; you enable the Drive API and paste your OAuth credentials file path.',
+    serverName: 'google-drive',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-gdrive'],
+    keys: [
+      {
+        key: 'GDRIVE_CREDENTIALS_PATH',
+        label: 'Path to gcp-oauth.keys.json credentials file',
+        secret: false,
+        whereToGet: GOOGLE_CLOUD_CREDENTIALS_URL,
+      },
+    ],
+    docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive',
+  },
+  {
+    id: 'gmail',
+    name: 'Gmail',
+    reach: 'Search, read unread messages, and draft email replies when you ask.',
+    cost: 'free-key',
+    costNote: 'Free Google Cloud project; you enable the Gmail API and paste your OAuth credentials file path.',
+    serverName: 'gmail',
+    command: 'npx',
+    args: ['-y', 'mcp-server-gmail'],
+    keys: [
+      {
+        key: 'GMAIL_CREDENTIALS_PATH',
+        label: 'Path to credentials.json file',
+        secret: false,
+        whereToGet: GOOGLE_CLOUD_CREDENTIALS_URL,
+      },
+    ],
+    docsUrl: 'https://github.com/modelcontextprotocol/servers',
+  },
   {
     id: 'notion',
     name: 'Notion',
@@ -187,6 +226,12 @@ export const CONNECTIONS: ReadonlyArray<ConnectionEntry> = [
 export function findConnection(id: unknown): ConnectionEntry | undefined {
   if (typeof id !== 'string') return undefined;
   const needle = id.trim().toLowerCase();
+  if (needle === 'gdrive' || needle === 'drive' || needle === 'google-docs' || needle === 'docs') {
+    return CONNECTIONS.find((c) => c.id === 'google-drive');
+  }
+  if (needle === 'email' || needle === 'mail') {
+    return CONNECTIONS.find((c) => c.id === 'gmail');
+  }
   return CONNECTIONS.find((c) => c.id === needle);
 }
 
