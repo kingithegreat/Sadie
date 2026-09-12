@@ -207,6 +207,17 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [publishingFor, setPublishingFor] = useState<string | null>(null);
   const [publishedLink, setPublishedLink] = useState('');
 
+  // YouTube upload dialog state
+  const [youtubeStatus, setYoutubeStatus] = useState<import('../../shared/youtube-connection').YouTubeConnectionStatus | null>(null);
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDesc, setUploadDesc] = useState('');
+  const [uploadTags, setUploadTags] = useState('');
+  const [uploadPrivacy, setUploadPrivacy] = useState<'private' | 'unlisted' | 'public'>('private');
+  const [uploadUseThumbnail, setUploadUseThumbnail] = useState(true);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   // Local image generation (sd.cpp) readiness — same shape and IPC surface as
   // ImageGenerator.tsx's "/Image" mode, which already has a working one-click
   // setup. "Make the video" (media_production's render stage) was silently
@@ -559,6 +570,56 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     await run(j.id, () => api()?.mediaMarkPublished?.(j.id, link), 'Saving');
     setPublishingFor(null);
     setPublishedLink('');
+  };
+
+  const checkYouTubeStatus = useCallback(async () => {
+    try {
+      const res = await api()?.youtubeConnectionStatus?.();
+      if (res?.ok && res.status) {
+        setYoutubeStatus(res.status);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const openUploadDialog = (j: MediaJob) => {
+    setUploadingFor(j.id);
+    setUploadTitle(j.title || '');
+    setUploadDesc(j.brief || (j.script ? j.script.slice(0, 500) : ''));
+    setUploadTags('homebot, video');
+    setUploadPrivacy('private');
+    setUploadUseThumbnail(!!(j.scenePaths && j.scenePaths[0]));
+    setUploadError(null);
+    void checkYouTubeStatus();
+  };
+
+  const submitYouTubeUpload = async (j: MediaJob) => {
+    if (!uploadTitle.trim()) {
+      setUploadError('Please enter a video title.');
+      return;
+    }
+    setUploadBusy(true);
+    setUploadError(null);
+    try {
+      const thumb = uploadUseThumbnail && j.scenePaths?.[0] ? j.scenePaths[0] : undefined;
+      const res = await api()?.youtubeUpload?.(j.id, {
+        title: uploadTitle.trim(),
+        description: uploadDesc.trim(),
+        tags: uploadTags.split(',').map((t: string) => t.trim()).filter(Boolean),
+        privacyStatus: uploadPrivacy,
+        thumbnailPath: thumb,
+      });
+      if (res?.ok) {
+        setDone(`🎉 Uploaded to YouTube! ${res.url || `ID: ${res.videoId}`}`);
+        setUploadingFor(null);
+        await refresh();
+      } else {
+        setUploadError(res?.error || 'Failed to upload video to YouTube.');
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Failed to upload video to YouTube.');
+    } finally {
+      setUploadBusy(false);
+    }
   };
 
   /** One episode → one ordinary job, via the shared composition. */
@@ -1821,12 +1882,127 @@ ${shots.map((s, idx) => `
             )}
           </>
         ) : PUBLISHABLE.includes(j.state) ? (
-          /* Publishing asks for the link, because HomeBot does not upload.
-             The old button set the state to `published` and stopped, so the
-             app claimed to have published something it had never sent
-             anywhere — and with no id, the guard against publishing twice had
-             nothing to compare. */
-          publishingFor === j.id ? (
+          uploadingFor === j.id ? (
+            <div className="ms-youtube-upload-card" role="dialog" aria-label={`Upload ${j.title} to YouTube`}>
+              <div className="ms-upload-header">
+                <strong>Upload to YouTube</strong>
+                {youtubeStatus?.signedIn && youtubeStatus.channels[0] && (
+                  <span className="ms-upload-channel">
+                    Channel: {youtubeStatus.channels[0].title}
+                  </span>
+                )}
+              </div>
+              {!youtubeStatus?.signedIn ? (
+                <div className="ms-upload-auth-prompt">
+                  <p>
+                    YouTube is not connected or sign-in is required.
+                    Connect with Google in Connections to enable direct publishing.
+                  </p>
+                  <div className="ms-upload-actions">
+                    <button
+                      type="button"
+                      className="ms-btn ms-btn--primary"
+                      onClick={async () => {
+                        try {
+                          await api()?.youtubeConnectUpload?.();
+                          await checkYouTubeStatus();
+                        } catch { /* ignore */ }
+                      }}
+                    >
+                      Sign in with Google
+                    </button>
+                    <button
+                      type="button"
+                      className="ms-btn"
+                      onClick={() => setUploadingFor(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="ms-upload-form">
+                  <label className="ms-field-label">
+                    Video Title:
+                    <input
+                      className="ms-input"
+                      value={uploadTitle}
+                      onChange={e => setUploadTitle(e.target.value)}
+                      placeholder="Title on YouTube"
+                    />
+                  </label>
+                  <label className="ms-field-label">
+                    Description:
+                    <textarea
+                      className="ms-input ms-upload-desc"
+                      rows={3}
+                      value={uploadDesc}
+                      onChange={e => setUploadDesc(e.target.value)}
+                      placeholder="Video description, links, and credits"
+                    />
+                  </label>
+                  <div className="ms-upload-row">
+                    <label className="ms-field-label">
+                      Tags:
+                      <input
+                        className="ms-input"
+                        value={uploadTags}
+                        onChange={e => setUploadTags(e.target.value)}
+                        placeholder="tag1, tag2, tag3"
+                      />
+                    </label>
+                    <label className="ms-field-label">
+                      Privacy:
+                      <select
+                        className="ms-select"
+                        value={uploadPrivacy}
+                        onChange={e => setUploadPrivacy(e.target.value as any)}
+                      >
+                        <option value="private">Private (Only you)</option>
+                        <option value="unlisted">Unlisted (Anyone with link)</option>
+                        <option value="public">Public (Everyone)</option>
+                      </select>
+                    </label>
+                  </div>
+                  {j.scenePaths?.[0] && (
+                    <label className="ms-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={uploadUseThumbnail}
+                        onChange={e => setUploadUseThumbnail(e.target.checked)}
+                      />
+                      Upload Slide 1 as custom thumbnail
+                    </label>
+                  )}
+                  {uploadError && <div className="ms-error" role="alert">{uploadError}</div>}
+                  {uploadBusy ? (
+                    <div className="ms-working" role="status">
+                      <span className="ms-spinner" aria-hidden="true" />
+                      Uploading video to YouTube…
+                    </div>
+                  ) : (
+                    <div className="ms-upload-actions">
+                      <button
+                        type="button"
+                        className="ms-btn ms-btn--primary"
+                        onClick={() => submitYouTubeUpload(j)}
+                        disabled={!uploadTitle.trim()}
+                      >
+                        Upload to YouTube
+                      </button>
+                      <button
+                        type="button"
+                        className="ms-btn"
+                        onClick={() => setUploadingFor(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : publishingFor === j.id ? (
             <span className="ms-publish">
               <input
                 className="ms-input ms-publish-input"
@@ -1857,8 +2033,17 @@ ${shots.map((s, idx) => `
                   Move to {label(NEXT_STAGE[j.state]!)}
                 </button>
               )}
+              {j.renderPath && (
+                <button
+                  className="ms-btn ms-btn--primary"
+                  title="Upload this rendered video directly to YouTube"
+                  onClick={() => openUploadDialog(j)}
+                >
+                  ▶ Upload to YouTube…
+                </button>
+              )}
               <button
-                className="ms-btn ms-btn--primary"
+                className="ms-btn"
                 onClick={() => { setPublishingFor(j.id); setPublishedLink(''); }}
               >
                 Mark as published…
@@ -1878,7 +2063,7 @@ ${shots.map((s, idx) => `
         {/* Removing a video was chat-only, so the queue could only ever grow
             and renders piled up on disk with nothing in the UI to clear them.
             Irreversible, so it asks — the same rule the Reject button follows. */}
-        {busy !== j.id && publishingFor !== j.id && (
+        {busy !== j.id && publishingFor !== j.id && uploadingFor !== j.id && (
           <button
             className="ms-btn ms-btn--reject"
             aria-label={`Delete ${j.title}`}
@@ -2440,6 +2625,18 @@ ${shots.map((s, idx) => `
                         onClick={() => run(job.id, () => api()?.mediaAdvance?.(job.id, 'approved'), 'Approving')}
                       >
                         ✓ Approve Master Video
+                      </button>
+                    )}
+                    {PUBLISHABLE.includes(job.state) && job.renderPath && (
+                      <button
+                        className="ms-btn ms-btn--primary"
+                        style={{ width: '100%', marginBottom: 6 }}
+                        onClick={() => {
+                          setActiveWorkspace('director');
+                          openUploadDialog(job);
+                        }}
+                      >
+                        ▶ Upload to YouTube…
                       </button>
                     )}
                   </div>

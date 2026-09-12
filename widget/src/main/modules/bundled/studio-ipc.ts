@@ -57,9 +57,22 @@ export function registerStudioIpc(
 
   ipcMain.handle('homebot:media:youtube:status', () => youtubeAction(service => ({ ok: true, status: service.status() })));
   ipcMain.handle('homebot:media:youtube:connect', () => youtubeAction(async service => ({ ok: true, status: await service.connect() })));
+  ipcMain.handle('homebot:media:youtube:connect-upload', () => youtubeAction(async service => ({ ok: true, status: await service.connect({ upload: true }) })));
   ipcMain.handle('homebot:media:youtube:refresh', () => youtubeAction(async service => ({ ok: true, status: await service.refresh() })));
   ipcMain.handle('homebot:media:youtube:cancel', () => youtubeAction(service => ({ ok: true, status: service.cancel() })));
   ipcMain.handle('homebot:media:youtube:remove', () => youtubeAction(service => ({ ok: true, status: service.remove() })));
+  ipcMain.handle('homebot:media:youtube:upload', async (_e, jobId: string, metadata: any) => {
+    try {
+      assertEnabled();
+      const { assertProviderOnlineAccess } = await import('../../utils/provider-network-policy');
+      assertProviderOnlineAccess('YouTube');
+      const { YouTubeUploader } = await import('../../media-youtube-uploader');
+      const uploader = new YouTubeUploader({ youtube: await getYouTube() });
+      return await uploader.upload(jobId, metadata);
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'HomeBot could not complete that YouTube upload request.' };
+    }
+  });
   ipcMain.handle('homebot:media:youtube:import', () => youtubeAction(async service => {
     const { dialog } = await import('electron');
     const { isWithinHomeDir } = await import('../../utils/home-boundary');

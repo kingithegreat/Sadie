@@ -516,10 +516,12 @@ export interface ElectronAPI {
   mediaList?: () => Promise<any[]>;
   youtubeConnectionStatus?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeImportCredentials?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
-  youtubeConnect?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeConnect?: (options?: { upload?: boolean }) => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeConnectUpload?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeRefresh?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeCancel?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeRemove?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
+  youtubeUpload?: (jobId: string, metadata: import('./youtube-connection').YouTubeVideoMetadata) => Promise<import('./youtube-connection').YouTubeUploadResult>;
   mediaParseFeed?: (url: string) => Promise<{
     ok: boolean;
     feed?: {

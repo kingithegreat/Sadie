@@ -9888,6 +9888,58 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 .ms-publish { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
 .ms-publish-input { min-width: 12rem; }
 
+.ms-youtube-upload-card {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: var(--bg-secondary, #1a1a1a);
+  border: 1px solid var(--border-subtle, #333);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+.ms-upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary, #eee);
+}
+.ms-upload-channel {
+  font-size: 0.78rem;
+  color: var(--accent, #00e5ff);
+  font-weight: normal;
+}
+.ms-upload-auth-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #aaa);
+}
+.ms-upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ms-upload-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.ms-upload-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.ms-upload-desc {
+  resize: vertical;
+  min-height: 3.5rem;
+  font-family: inherit;
+}
+
 /* [DEAD as of the portal change â€” kept, not deleted, because deleting it has
    now caused the same merge conflict twice. ToastContainer portals to
    document.body, so `.app-container > .toast-container` matches nothing. The
