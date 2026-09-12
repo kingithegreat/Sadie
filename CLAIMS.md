@@ -15,6 +15,8 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 ## Active claims
 
+| UI palette and visual harmony | claude/ui-harmony | In progress (2026-09-13, Codex) | Owner-requested cohesive colours and less Windows-like chrome. Scope: renderer theme CSS and visual verification only; preserve active Studio logic and export work. Isolated worktree: .kilo/worktrees/codex-ui-harmony. |
+
 | Feature | Branch | Status | Notes |
 | Media Studio Unification & Multi-Plane Stage Integration | claude/media-studio-unification | In progress (2026-09-12) | Mount MultiPlaneStage with Series Settings plate selector & CPU RMBG in Stage Viewport; bridge rendered Storyboards into Director MediaJob approval queue for review & YouTube upload; connect live CSS color grade preview & honest timeline editing. |
 | ~~Wire Imagen 3 into real media pipeline & image generator~~ | claude/wire-imagen3-real-pipeline | ~~Ready for integration~~ → **MERGED as #306 (2026-09-12)** | Wire Google AI Studio Imagen 3 adapter into image_generate and media-visuals pipeline, reusing the configured Gemini API key; add imagen/imagen-3 backend option with fallback to Pollinations/DALL-E. 81/81 image suite tests pass, 227/227 root tests pass, module boundaries clean, tsc/eslint 0 errors. |
