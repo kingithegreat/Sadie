@@ -38,7 +38,8 @@ mixed dynamic/static imports and outdated Browserslist data are unrelated.
 ## Handoff
 
 Branch `claude/ui-harmony`; worktree `.kilo/worktrees/codex-ui-harmony`.
-Implementation and verification claim released. No push, merge or installer
-change performed. Pushing this branch activates `.github/workflows/auto-merge.yml`,
-which opens a PR and enables automatic merging; shared-main publication is a
-separate handoff from this local visual change.
+Owner approved the next integration step on 13 September 2026 after reviewing
+the local implementation handoff. Publishing activates the existing
+`.github/workflows/auto-merge.yml` workflow. The required build, export guard,
+lint, permissions, widget and e2e-all checks must all be present and green
+before merge. Installed-release acceptance remains separate.

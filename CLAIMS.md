@@ -15,7 +15,7 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 ## Active claims
 
-| UI palette and visual harmony | claude/ui-harmony | Implementation complete; claim released (2026-09-13, Codex) | Unified charcoal/cream/sage palette, softer chrome, readable Studio light theme and compact cards. Local branch only; not pushed, merged or installed. Real Electron dark/light, Studio navigation, contrast, compact composer/cards/Settings and keyboard check passes. Full widget 4,107 and root 227 tests passed before integrating current main; integrated renderer checks and typecheck/build pass. Evidence: tasks/ui-harmony.md. |
+| UI palette and visual harmony | claude/ui-harmony | Publishing / CI verification (2026-09-13, Codex) | Owner approved the next integration step. Unified charcoal/cream/sage palette, softer chrome, readable Studio light theme and compact cards. Real Electron dark/light, Studio navigation, contrast, compact composer/cards/Settings and keyboard check passes. Full widget 4,107 and root 227 tests passed before integrating current main; integrated renderer checks and typecheck/build pass. Evidence: tasks/ui-harmony.md. |
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
