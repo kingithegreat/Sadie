@@ -1462,8 +1462,8 @@ export const imageGenerateDef: ToolDefinition = {
       },
       backend: {
         type: 'string',
-        description: '"local" (SD/ComfyUI only), "cloud" (Pollinations free → DALL-E), or "hybrid" (local first, then Pollinations, default)',
-        enum: ['local', 'cloud', 'hybrid'],
+        description: '"local" (SD/ComfyUI only), "cloud" (Imagen 3 / Pollinations free → DALL-E), "imagen" (Google AI Studio Imagen 3), or "hybrid" (local first, then Imagen/Pollinations, default)',
+        enum: ['local', 'cloud', 'hybrid', 'imagen', 'imagen-3'],
         default: 'hybrid'
       },
       seed: {
@@ -1877,6 +1877,20 @@ export async function trySDCpp(prompt: string, width: number, height: number, st
   }
 }
 
+// ── Backend 2.5: Google AI Studio Imagen 3 ───────────────────────────────────
+export async function tryImagen3(prompt: string, width: number, height: number, seed?: number): Promise<string | null> {
+  try {
+    const { generateImagen3 } = await import('./imagen');
+    const res = await generateImagen3(prompt, width, height, seed);
+    return res?.base64 || null;
+  } catch (err: any) {
+    if (err?.code !== 'ONLINE_ACCESS_DISABLED' && !err?.message?.includes('not configured')) {
+      console.warn('[ImageGen] Imagen 3 failed:', err?.message || err);
+    }
+    return null;
+  }
+}
+
 // ── Backend 3: OpenAI DALL-E 3 ───────────────────────────────────────────────
 async function tryDallE(prompt: string, width: number, height: number): Promise<string | null> {
   const key = _openaiApiKey;
@@ -1909,7 +1923,18 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     let image_base64: string | null = null;
     let source = '';
 
-    if (backend !== 'cloud') {
+    if (backend === 'imagen' || backend === 'imagen-3') {
+      image_base64 = await tryImagen3(prompt, width, height, seed);
+      if (image_base64) { source = 'imagen-3'; }
+      if (!image_base64) {
+        return {
+          success: false,
+          error: 'Google Imagen 3 failed. Ensure a Gemini API key is configured in Settings (Google AI Studio) and Online access is enabled.',
+        };
+      }
+    }
+
+    if (!image_base64 && backend !== 'cloud' && backend !== 'imagen' && backend !== 'imagen-3') {
       // Try local backends: AUTOMATIC1111 → ComfyUI → stable-diffusion.cpp
       image_base64 = await tryAutomatic1111(prompt, width, height, steps);
       if (image_base64) { source = 'automatic1111'; }
@@ -1923,25 +1948,31 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
       }
     }
 
-    if (!image_base64 && backend !== 'local') {
+    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
+      // Try Google AI Studio Imagen 3 if Gemini API key is configured
+      image_base64 = await tryImagen3(prompt, width, height, seed);
+      if (image_base64) { source = 'imagen-3'; }
+    }
+
+    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
       // Try Pollinations.ai — free, no API key required
       image_base64 = await tryPollinations(prompt, width, height, seed);
       if (image_base64) { source = 'pollinations'; }
     }
 
-    if (!image_base64 && backend !== 'local') {
+    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
       // Try Stable Horde — free community-powered distributed inference
       image_base64 = await tryStableHorde(prompt, width, height);
       if (image_base64) { source = 'stable-horde'; }
     }
 
-    if (!image_base64 && backend !== 'local') {
+    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
       // Fall back to DALL-E 3 if OpenAI key is set
       image_base64 = await tryDallE(prompt, width, height);
       if (image_base64) { source = 'dall-e-3'; }
     }
 
-    if (!image_base64 && backend !== 'local') {
+    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
       // Retry Pollinations once more with backoff reset in case it was a transient failure
       _pollinationsLastFailAt = 0;
       image_base64 = await tryPollinations(prompt, width, height, seed);
@@ -1957,7 +1988,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
           `3. ComfyUI: Run ComfyUI on port 8188\n` +
           `Or switch to "Hybrid" to use free cloud generation.`
         : 'All image backends failed. ' +
-          'Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
+          'Google AI Studio (Imagen 3), Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
           'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
           'For DALL-E 3, add an OpenAI API key in Settings.';
       return { success: false, error: msg };

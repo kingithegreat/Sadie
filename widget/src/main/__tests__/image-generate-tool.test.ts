@@ -34,6 +34,11 @@ jest.mock('child_process', () => ({
   execFileSync: jest.fn(() => { throw new Error('no local backend in this test'); }),
 }));
 
+const mockGenerateImagen3 = jest.fn().mockResolvedValue(null);
+jest.mock('../tools/imagen', () => ({
+  generateImagen3: (...args: any[]) => mockGenerateImagen3(...args),
+}));
+
 import { imageGenerateDef, imageGenerateHandler } from '../tools/web';
 import * as http from 'http';
 
@@ -79,6 +84,8 @@ describe('imageGenerateDef', () => {
     expect(backendProp.enum).toContain('local');
     expect(backendProp.enum).toContain('cloud');
     expect(backendProp.enum).toContain('hybrid');
+    expect(backendProp.enum).toContain('imagen');
+    expect(backendProp.enum).toContain('imagen-3');
   });
 });
 
@@ -97,6 +104,40 @@ describe('imageGenerateHandler', () => {
     expect(res.success).toBe(true);
     expect(res.result.image_base64).toBe('base64encodedimage==');
     expect(res.result.source).toBe('automatic1111');
+  });
+
+  test('backend: imagen returns image from Imagen 3', async () => {
+    mockGenerateImagen3.mockResolvedValueOnce({
+      base64: 'imagen3b64test==',
+      mimeType: 'png',
+    });
+
+    const res = await imageGenerateHandler({ prompt: 'a glowing nebula', backend: 'imagen' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.image_base64).toBe('imagen3b64test==');
+    expect(res.result.source).toBe('imagen-3');
+  });
+
+  test('backend: imagen reports clear error when Imagen 3 fails', async () => {
+    mockGenerateImagen3.mockRejectedValueOnce(new Error('Gemini API key not configured'));
+
+    const res = await imageGenerateHandler({ prompt: 'a spaceship', backend: 'imagen' }, {} as any);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('Google Imagen 3 failed');
+  });
+
+  test('hybrid mode tries Imagen 3 before Pollinations when available', async () => {
+    // Mock local engines returning null
+    mockN8nResponse({ images: [] });
+    mockGenerateImagen3.mockResolvedValueOnce({
+      base64: 'imagen3hybridb64==',
+      mimeType: 'png',
+    });
+
+    const res = await imageGenerateHandler({ prompt: 'a futuristic city', backend: 'hybrid' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.image_base64).toBe('imagen3hybridb64==');
+    expect(res.result.source).toBe('imagen-3');
   });
 
   test('returns error when n8n reports failure', async () => {
