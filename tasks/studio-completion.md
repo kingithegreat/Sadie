@@ -166,3 +166,9 @@ revision/latest-attempt/latest-good state, stage/export parity, accessible
 workspace review, a complete owner-approved pilot, repeatability and an actual
 fresh-profile installed build. Eight-second authored cards do not satisfy those
 gates. No paid generation, account/credential changes, approval or upload occurred.
+
+Authorship correction: Codex wrote `e8de4aa`, `33bc636` and the retirement
+commit `833c40b`. Shared repo-local Git configuration had changed to Antigravity
+before those commits. Their published history is preserved; future commits pin
+the correct identity on the commit command. This is a metadata correction,
+not a change to the tested source or a transfer of Antigravity's #313 work.

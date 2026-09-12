@@ -13,6 +13,15 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 **Integration notes â€” 2026-09-12, Ancient Pathways bridge (`widget/src/main/ancient-pathways.ts` + `modules/bundled/studio-ipc.ts`):** PR #300 fixed two real bugs anyone building further on this bridge (character rigs, compositor path, placeholder rejection, etc.) needs to know about before touching it again. (1) `homebot:media:ancient-pathways-run`/`-showrunner` used to attempt an illegal state-machine jump on every freshly-created job (`idea` has no legal edge to `media_production`/`render_qa` in `media-studio.ts`'s `TRANSITIONS` map) â€” fixed via a `fastForwardToMediaProduction` helper in `media-studio.ts`; don't reintroduce a direct `transition(job, 'media_production'|'render_qa', ...)` call on a job that might still be at `idea`. (2) Both handlers used to judge success by exit code + `fs.existsSync` alone and skip straight to `render_qa` with zero content check â€” a placeholder solid-color clip passed. Fixed by reusing `media-qa.ts`'s `inspectRender`/`evaluateRenderQa` (the same real ffmpeg frame-variance placeholder detector Task 3 built for the job-based pipeline) via a small `verifyAncientPathwaysRender` helper in `studio-ipc.ts`, routing a failed check to `needs_revision` instead of `render_qa`. If you're adding a real compositor/placeholder-rejection path here, check whether this existing gate already covers it before building a second one.
 
+**Concurrent Git identity — 2026-09-13 NZ:** Repo-local Git configuration is shared
+by worktrees. Another agent can change it between setup and commit. After setting
+your identity, pin it on the actual commit command with `git -c user.name=Codex
+-c user.email=codex@openai.com commit ...` (substitute your own identity). Verify
+the recorded author immediately. Codex authored the Studio recovery commits
+`e8de4aa` and `33bc636` and retirement `833c40b`, which were inadvertently
+recorded as Antigravity after the shared config changed. Published history is
+preserved; this note corrects attribution without rewriting another worktree.
+
 ## Active claims
 
 | Feature | Branch | Status | Notes |
