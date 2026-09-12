@@ -33,6 +33,7 @@ jest.mock('../media-music', () => ({
 }));
 
 jest.mock('../media-render', () => ({
+  ...jest.requireActual('../media-render'),
   findFfmpeg: jest.fn(async () => 'mock-ffmpeg.exe'),
   dimensionsFor: jest.fn(() => ({ w: 1080, h: 1920 })),
   renderVideo: jest.fn(async ({ outputPath }: { outputPath: string }) => {
@@ -42,12 +43,20 @@ jest.mock('../media-render', () => ({
   }),
 }));
 
+jest.mock('../media-visuals', () => ({
+  ...jest.requireActual('../media-visuals'),
+  generateSceneImages: jest.fn(),
+}));
+
 jest.mock('../media-qa', () => {
   const actual = jest.requireActual('../media-qa');
   return { ...actual, inspectRender: jest.fn() };
 });
 
 import { inspectRender } from '../media-qa';
+import { renderVideo } from '../media-render';
+import { generateSceneImages } from '../media-visuals';
+import { createJob } from '../media-studio';
 import {
   __resetMediaJobsForTests,
   mediaToolHandlers,
@@ -104,6 +113,124 @@ afterEach(() => {
 });
 
 describe('media_render output trust', () => {
+  it.each([
+    { externalRenderer: 'ancient-pathways' },
+    { history: [{ note: 'Showrunner runs its own stages internally' }] },
+  ])('does not claim control over an external renderer: %j', async external => {
+    const job = writeReadyJob('External production');
+    writeJobs([{ ...job, ...external } as MediaJob]);
+    const result = await call('media_set_output', { job: job.id, burnSubtitles: false });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/controlled by Ancient Pathways/);
+    expect(readJobs()[0].burnSubtitles).toBeUndefined();
+  });
+
+  it('defaults new jobs to captions off and persists a deliberate choice without touching audio', async () => {
+    expect((createJob({ title: 'New production' }) as any).burnSubtitles).toBe(false);
+    const job = writeReadyJob('Caption preference');
+    const result = await call('media_set_output', { job: job.id, burnSubtitles: false });
+    expect(result.success).toBe(true);
+    expect(readJobs()[0]).toMatchObject({ burnSubtitles: false, narrationPath, captionsPath, state: 'media_production' });
+    const invalid = await call('media_set_output', { job: job.id, burnSubtitles: 'false' });
+    expect(invalid.success).toBe(false);
+    expect((readJobs()[0] as any).burnSubtitles).toBe(false);
+  });
+
+  it('allows intentional no-caption output without an SRT while retaining audio and picture QA', async () => {
+    const job = writeReadyJob('No captions');
+    writeJobs([{ ...job, burnSubtitles: false } as any]);
+    fs.unlinkSync(captionsPath);
+    mockedInspectRender.mockResolvedValueOnce({
+      hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null,
+    });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    expect(renderVideo).toHaveBeenLastCalledWith(expect.objectContaining({ captionsPath: null }));
+    expect(readJobs()[0].state).toBe('render_qa');
+  });
+
+  it('does not burn a retained timing SRT when captions are off', async () => {
+    const job = writeReadyJob('Retain cue timing');
+    writeJobs([{ ...job, burnSubtitles: false } as any]);
+    mockedInspectRender.mockResolvedValueOnce({
+      hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null,
+    });
+    await call('media_render', { job: job.id, visuals: 'plain' });
+    expect(renderVideo).toHaveBeenLastCalledWith(expect.objectContaining({ captionsPath: null }));
+    expect(fs.readFileSync(captionsPath, 'utf8')).toContain('Hello');
+  });
+
+  it('still builds scene images and their timing from cues when burn-in is off', async () => {
+    const job = writeReadyJob('Cue-driven scenes without captions');
+    writeJobs([{ ...job, burnSubtitles: false }]);
+    (generateSceneImages as jest.Mock).mockImplementationOnce(async ({ outDir }) => {
+      fs.mkdirSync(outDir, { recursive: true });
+      return [{ path: scenePath }];
+    });
+    mockedInspectRender.mockResolvedValueOnce({
+      hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null,
+    });
+    const result = await call('media_render', { job: job.id, visuals: 'scenes' });
+    expect(result.error).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect(generateSceneImages).toHaveBeenLastCalledWith(expect.objectContaining({
+      scenes: [expect.objectContaining({ text: 'Hello' })],
+    }));
+    const render = (renderVideo as jest.Mock).mock.calls.at(-1)![0];
+    expect(render.captionsPath).toBeNull();
+    expect(fs.readFileSync(render.concatPath, 'utf8')).toContain('duration 3.000');
+  });
+
+  it('rejects output changes and duplicate renders while a job is rendering, then releases the lock', async () => {
+    const job = writeReadyJob('Output snapshot');
+    let releaseQa!: (facts: any) => void;
+    let reachedQa!: () => void;
+    const atQa = new Promise<void>(resolve => { reachedQa = resolve; });
+    mockedInspectRender.mockImplementationOnce(() => {
+      reachedQa();
+      return new Promise(resolve => { releaseQa = resolve; });
+    });
+    const rendering = call('media_render', { job: job.id, visuals: 'plain' });
+    await atQa;
+    try {
+      const changed = await call('media_set_output', { job: job.id, burnSubtitles: false });
+      expect(changed.success).toBe(false);
+      expect(changed.error).toMatch(/rendering/i);
+      const duplicate = await call('media_render', { job: job.id, visuals: 'plain' });
+      expect(duplicate.success).toBe(false);
+      expect(duplicate.error).toMatch(/rendering/i);
+    } finally {
+      releaseQa({ hasVideo: true, hasAudio: false, width: 1080, height: 1920,
+        durationSeconds: 3, meanVolumeDb: null, maxVolumeDb: null, frameSamples: null });
+      await rendering;
+    }
+    expect((await call('media_set_output', { job: job.id, burnSubtitles: false })).success).toBe(true);
+  });
+
+  it('refuses to silently change the output choice of an approved master', async () => {
+    const job = writeReadyJob('Approved master');
+    writeJobs([{ ...job, state: 'approved' }]);
+    expect((await call('media_set_output', { job: job.id, burnSubtitles: false })).success).toBe(false);
+    expect(readJobs()[0].state).toBe('approved');
+    expect((readJobs()[0] as any).burnSubtitles).toBeUndefined();
+  });
+
+  it('still rejects a caption-enabled movie with a missing SRT', async () => {
+    const job = writeReadyJob('Captions required');
+    writeJobs([{ ...job, burnSubtitles: true }]);
+    fs.unlinkSync(captionsPath);
+    mockedInspectRender.mockResolvedValueOnce({
+      hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null,
+    });
+    const result = await call('media_render', { job: job.id, visuals: 'plain' });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/caption/i);
+    expect(readJobs()[0].state).toBe('needs_revision');
+  });
+
   it('fails closed when the rendered file cannot be measured, while preserving every asset', async () => {
     writeReadyJob('Probe unavailable');
     mockedInspectRender.mockRejectedValueOnce(new Error('FFmpeg inspection timed out'));

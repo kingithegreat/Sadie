@@ -18,6 +18,8 @@
  * structural rather than a matter of remembering.
  */
 
+import { resolveBurnSubtitles } from '../shared/media-output';
+
 /** Pipeline states, in the order the plan defines them. */
 export const MEDIA_STATES = [
   'idea',
@@ -72,6 +74,10 @@ export interface MediaJob {
   narratedWith?: string;
   /** Absolute path to the SRT subtitles generated alongside the narration. */
   captionsPath?: string;
+  /** Explicit burn-in preference. Absent on legacy jobs means captions on. */
+  burnSubtitles?: boolean;
+  /** External bridges have their own output settings, not HomeBot's renderer. */
+  externalRenderer?: 'ancient-pathways';
   /** True spoken length, measured from the audio rather than estimated. */
   durationSeconds?: number;
   /**
@@ -296,6 +302,7 @@ export function markPublished(
 
 export interface NewJobInput {
   title: string;
+  burnSubtitles?: boolean;
   format?: MediaFormat;
   brief?: string;
   id?: string;
@@ -310,6 +317,7 @@ export function createJob(input: NewJobInput): MediaJob {
   return {
     id: input.id || `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     title,
+    burnSubtitles: resolveBurnSubtitles(input.burnSubtitles, false),
     format: input.format ?? 'short',
     state: 'idea',
     brief: input.brief?.trim() || undefined,

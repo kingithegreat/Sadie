@@ -11,7 +11,8 @@ import { dismissFirstRun } from './helpers/firstRun';
 // Opt-in: uses the installed FFmpeg/ffprobe and cached Kokoro model, with
 // speech/model network transports trapped. It never downloads models or calls
 // a paid/cloud provider. Ordinary CI still runs the export failure contracts.
-test('Studio exports a complete two-scene local movie with timed narration and captions', async ({}, testInfo) => {
+for (const burnSubtitles of [true, false]) {
+test(`Studio exports a complete two-scene local movie with timed narration and captions ${burnSubtitles ? 'on' : 'off'}`, async ({}, testInfo) => {
   test.skip(process.env.HOMEBOT_STUDIO_EXPORT_LIVE !== '1', 'Requires installed FFmpeg and cached Kokoro; enable explicitly.');
   test.setTimeout(360_000);
   const ffmpeg = process.env.HOMEBOT_FFMPEG;
@@ -54,12 +55,32 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     expect(await dismissFirstRun(page)).toBe(true);
     await page.evaluate(() => window.electron.saveSettings({
       narrationEngine: 'kokoro', useCustomLLM: false,
-      permissions: { media_render_storyboard: true },
+      permissions: { media_render_storyboard: true, media_set_output: true },
     }));
+    if (!burnSubtitles) {
+      const created = await page.evaluate(() => window.electron.mediaCreate!({ title: 'Output preference proof', format: 'long' }));
+      expect(created.ok).toBe(true);
+      expect(created.job?.burnSubtitles).toBe(false);
+    }
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
+    if (!burnSubtitles) {
+      const jobCaptions = page.getByRole('checkbox', { name: 'Burn captions into Output preference proof' });
+      await expect(jobCaptions).not.toBeChecked();
+      // This is a persisted control: its checked state changes after IPC save
+      // and refresh, not synchronously with the click.
+      await jobCaptions.click();
+      await expect.poll(async () => (await page.evaluate(() => window.electron.mediaList!()))
+        .find((job: any) => job.title === 'Output preference proof')?.burnSubtitles).toBe(true);
+      await expect(jobCaptions).toBeChecked();
+    }
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);
     await expect(page.locator('.ms-storyboard-meta-path')).toContainText(projectId);
+    const captionChoice = page.getByRole('checkbox', { name: 'Burn captions into storyboard video' });
+    // This pre-existing project has no preference: preserve its legacy output
+    // until the user explicitly changes it through the real Studio control.
+    await expect(captionChoice).toBeChecked();
+    await captionChoice.setChecked(burnSubtitles);
     await page.getByRole('combobox', { name: 'Select Storyboard Scene' }).selectOption('scene_02');
     await expect(page.getByLabel('Narration for shot_01')).toHaveValue(lines[1]);
     await page.getByLabel('Duration for shot_01').fill('4');
@@ -108,7 +129,8 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     ]);
     expect(result).toBe('ready');
     const reviewJob = (await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.id === `sb_${projectId}`);
-    expect(reviewJob).toMatchObject({ state: 'awaiting_approval', durationSeconds: 8 });
+    expect(reviewJob).toMatchObject({ state: 'awaiting_approval', durationSeconds: 8, burnSubtitles });
+    expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).burnSubtitles).toBe(burnSubtitles);
     expect(reviewJob?.renderPath).toBe(path.join(projectDir, 'renders', `${projectId}-1080p.mp4`));
     await page.getByRole('button', { name: /Review & Publish/ }).click();
     await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
@@ -131,7 +153,9 @@ test('Studio exports a complete two-scene local movie with timed narration and c
       const captions = run(['-ss', String(second), '-i', movie, '-vf', 'crop=1600:220:160:760', '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1']);
       let whitePixels = 0;
       for (let p = 0; p < captions.length; p += 3) if (captions[p] > 200 && captions[p + 1] > 200 && captions[p + 2] > 200) whitePixels++;
-      expect(whitePixels).toBeGreaterThan(200);
+      // The caption-on case is the positive control for this image check.
+      if (burnSubtitles) expect(whitePixels).toBeGreaterThan(200);
+      else expect(whitePixels).toBe(0);
       return { second, rgb: [...pixel.subarray(0, 3)], captionWhitePixels: whitePixels, frame };
     });
     expect(samples[0].rgb[2]).toBeGreaterThan(samples[0].rgb[0] + 30);
@@ -151,7 +175,7 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     const events = fs.readFileSync(path.join(profile, 'logs', 'telemetry-events.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
     expect(events.some(event => event.event === 'tool_call' && event.details.tool === 'media_render_storyboard' && event.details.outcome === 'success')).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('studio-export-ready.png') });
-    const evidence = { movie, bytes: fs.statSync(movie).size, sha256: createHash('sha256').update(fs.readFileSync(movie)).digest('hex'), duration: info.format.duration, video, audioRms, samples, speechNetworkAttempts: attempts };
+    const evidence = { movie, burnSubtitles, bytes: fs.statSync(movie).size, sha256: createHash('sha256').update(fs.readFileSync(movie)).digest('hex'), duration: info.format.duration, video, audioRms, samples, speechNetworkAttempts: attempts };
     fs.writeFileSync(testInfo.outputPath('export-evidence.json'), JSON.stringify(evidence, null, 2));
     console.log('STUDIO_EXPORT_EVIDENCE', JSON.stringify(evidence));
     // Reopen the app surface and select the persisted project. A successful
@@ -161,8 +185,13 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     await waitForAppReady(page);
     await trapSpeechNetwork();
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
+    if (!burnSubtitles) {
+      await page.getByRole('tab', { name: /Director Console/ }).click();
+      await expect(page.getByRole('checkbox', { name: 'Burn captions into Output preference proof' })).toBeChecked();
+    }
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);
+    await expect(page.getByRole('checkbox', { name: 'Burn captions into storyboard video' })).toBeChecked({ checked: burnSubtitles });
     await expect(page.locator('.ms-movie-rendered-banner')).toContainText(movie);
     await expect(page.getByRole('button', { name: /Review & Publish/ })).toBeEnabled();
     expect(createHash('sha256').update(fs.readFileSync(movie)).digest('hex')).toBe(evidence.sha256);
@@ -217,3 +246,4 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     // Retain this isolated fixture and finished movie for inspection.
   }
 });
+}

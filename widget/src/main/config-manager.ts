@@ -366,6 +366,7 @@ export const DEFAULT_SETTINGS: Settings = {
     media_delete_job: false,
     media_setup_research: false,
     media_create_job: true,
+    media_set_output: true,
     media_list_jobs: true,
     media_advance_job: true,
     media_approve_job: false,

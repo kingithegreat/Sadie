@@ -147,6 +147,38 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('does not offer a caption switch that cannot change an external export', async () => {
+    setup({ mediaList: jest.fn(async () => [{ id: 'external', title: 'External production', format: 'long',
+      state: 'media_production', history: [{ note: 'Ancient Pathways pipeline runs its own stages internally' }] }]) });
+    render(<MediaStudioPanel />);
+    expect(await screen.findByText('Caption settings for this export are controlled by Ancient Pathways.')).toBeVisible();
+    expect(screen.queryByRole('checkbox', { name: 'Burn captions into External production' })).not.toBeInTheDocument();
+  });
+
+  test('the ordinary job card saves its caption choice without starting a render', async () => {
+    const job = { id: 'draft', title: 'Caption draft', format: 'long', state: 'idea', burnSubtitles: false, history: [] };
+    const mediaRun = jest.fn(async () => { job.burnSubtitles = true; return { ok: true }; });
+    setup({ mediaList: jest.fn(async () => [job]), mediaRun });
+    render(<MediaStudioPanel />);
+    const captions = await screen.findByRole('checkbox', { name: 'Burn captions into Caption draft' });
+    expect(captions).not.toBeChecked();
+    fireEvent.click(captions);
+    await waitFor(() => expect(mediaRun).toHaveBeenCalledWith('draft', 'output', { burnSubtitles: true }));
+    await waitFor(() => expect(captions).toBeChecked());
+    expect(mediaRun).toHaveBeenCalledTimes(1);
+  });
+
+  test('caption choice is reachable, saved with the board, and reaches the full movie render', async () => {
+    const api = setup();
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    const captions = await screen.findByRole('checkbox', { name: 'Burn captions into storyboard video' });
+    expect(captions).toBeChecked(); // legacy project retains its prior behavior
+    fireEvent.click(captions);
+    fireEvent.click(screen.getByRole('button', { name: /Render Movie/ }));
+    await waitFor(() => expect(api.mediaStoryboardRender).toHaveBeenCalledWith(expect.objectContaining({ burnSubtitles: false })));
+    expect(api.mediaStoryboardSave).toHaveBeenCalledWith(expect.objectContaining({ burnSubtitles: false }));
+  });
+
   test('a late project response cannot replace the newly selected project or its movie', async () => {
     const mocks = setup();
     const board = (await mocks.mediaStoryboardGet()).result;

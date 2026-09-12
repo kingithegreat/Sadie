@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles } from '../../shared/media-output';
 import * as path from 'path';
 import { app } from 'electron';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
@@ -238,6 +239,7 @@ export const createMediaJobDef: ToolDefinition = {
       title: { type: 'string', description: 'Working title, e.g. "One-Minute Bible: Jonah"' },
       format: { type: 'string', description: '"short" (30-60s) or "long" (5-12 min). Defaults to short.', enum: ['short', 'long'] },
       brief: { type: 'string', description: 'Optional topic or angle for the video' },
+      burnSubtitles: { type: 'boolean', description: 'Burn captions into the video; defaults to off for a new production.' },
     },
     required: ['title'],
   },
@@ -332,6 +334,7 @@ const createMediaJobHandler: ToolHandler = async (args) => {
   try {
     const job = createJob({
       title: String(args.title || ''),
+      burnSubtitles: args.burnSubtitles,
       format: (args.format === 'long' ? 'long' : 'short') as MediaFormat,
       brief: args.brief ? String(args.brief) : undefined,
     });
@@ -760,7 +763,10 @@ const renderMediaJobDef: ToolDefinition = {
   },
 };
 
+const renderingJobs = new Set<string>();
+
 const renderMediaJobHandler: ToolHandler = async (args) => {
+  let renderingJobId: string | undefined;
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
@@ -770,6 +776,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     if (job.state !== 'media_production') {
       return err(`"${job.title}" is at ${describeProgress(job)} — rendering runs from media_production.`);
     }
+
+    if (renderingJobs.has(job.id)) return err('This video is already rendering. Wait for its current export to finish.');
+    renderingJobs.add(job.id);
+    renderingJobId = job.id;
 
     const {
       findFfmpeg, renderVideo, FFMPEG_MISSING_MESSAGE,
@@ -913,7 +923,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       outputPath: out,
       shape,
       imagePath: image,
-      captionsPath,
+      captionsPath: resolveBurnSubtitles(job.burnSubtitles) ? captionsPath : null,
       concatPath,
       durationSeconds: job.durationSeconds || 60,
       zoom: args.zoom === undefined ? true : Boolean(args.zoom),
@@ -958,7 +968,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         height: qaH,
         narrationSeconds: job.durationSeconds ?? null,
         hasMusic: !!music.path,
-        captionCues,
+        captionCues: resolveBurnSubtitles(job.burnSubtitles) ? captionCues : undefined,
       });
     } catch (qaErr: any) {
       // No measurements means there is no evidence that the render is usable.
@@ -1029,6 +1039,8 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     ], updated));
   } catch (e: any) {
     return err(`Could not render the video: ${errText(e)}`);
+  } finally {
+    if (renderingJobId) renderingJobs.delete(renderingJobId);
   }
 };
 
@@ -1179,7 +1191,35 @@ const deleteMediaJobHandler: ToolHandler = async (args) => {
   }
 };
 
+const setMediaOutputDef: ToolDefinition = {
+  name: 'media_set_output',
+  description: 'Save the caption choice for an editable Media Studio video. Existing audio, timing cues and exports are preserved. Send reviewed or approved videos back for revision first.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title' },
+      burnSubtitles: { type: 'boolean', description: 'Whether to burn captions into the next video export' },
+    },
+    required: ['job', 'burnSubtitles'],
+  },
+};
+
+const setMediaOutputHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err('That video is no longer in the list.');
+    if (hasExternalMediaRenderer(job)) return err('Caption settings for this video are controlled by Ancient Pathways. HomeBot cannot change that external export yet.');
+    if (renderingJobs.has(job.id)) return err('This video is rendering. Wait for its current export before changing output settings.');
+    if (!canEditMediaOutput(job.state)) return err('Send this video back for revision before changing its output. The reviewed export is unchanged.');
+    if (typeof args.burnSubtitles !== 'boolean') return err('Choose whether captions are on or off.');
+    upsert({ ...job, burnSubtitles: args.burnSubtitles, updatedAt: new Date().toISOString() });
+    return ok(`Captions ${args.burnSubtitles ? 'on' : 'off'} saved for the next export. Existing audio and video files are unchanged.`);
+  } catch (e) { return err(`Could not save output settings: ${errText(e)}`); }
+};
+
 export const mediaToolDefs: ToolDefinition[] = [
+  setMediaOutputDef,
   deleteMediaJobDef,
   listMusicDef,
   writeMediaScriptDef,
@@ -1194,6 +1234,7 @@ export const mediaToolDefs: ToolDefinition[] = [
 ];
 
 export const mediaToolHandlers: Record<string, ToolHandler> = {
+  media_set_output: setMediaOutputHandler,
   media_write_script: writeMediaScriptHandler,
   media_narrate: narrateMediaJobHandler,
   media_render: renderMediaJobHandler,
