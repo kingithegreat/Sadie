@@ -90,10 +90,10 @@ verification separately.
 | **1. Verified baseline** — complete | Isolate work, reconcile claims/docs, reproduce and fix the overlay failure blocking #259, run local and required CI checks, then integrate without overwriting other agents. | Failure reproduced before fix; real Electron regression passes after fix; app/root checks pass; all required remote contexts present and green; actual merged content verified. |
 | **2. Provider correctness** — QA component complete; remaining work queued under HB-M2 | QA inspection failure now blocks approval (#264). Repair privacy, availability/free-tier routing, provider output and reference-image contracts; replace obsolete model assumptions. | With online access off, zero outbound calls; unusable/empty assets never report success; each enabled provider passes a real request and output validation with configured access. Credentials remain Aden's. |
 | **3. One reliable faceless video** — complete for the one real, job-based pipeline; the movie/project-runner image pipeline, the Ancient Pathways bridge and the storyboard renderer remain separate, disconnected pipelines outside this task's scope | Unify manifests and orchestration; fix Python argv, narration, frame handling, render and QA. | From a real HomeBot control through IPC/Python or n8n to a playable MP4: correct duration, visible content, audible narration and captions. Inspect sampled frames/audio; test failure propagation too. |
-| **4. Colab round trip** — queued | Portable unique jobs, asset upload, Drive discovery, worker result import, retry/resume/cancel. | Submit from HomeBot, run in Colab, ingest validated assets and continue the same project; survive runtime restart and duplicate/partial results. |
+| **4. Colab round trip** — complete (PR [#298](https://github.com/kingithegreat/Sadie/pull/298), merged 2026-09-12) | Portable unique jobs, asset upload, Drive discovery, worker result import, retry/resume/cancel. | Submit from HomeBot, run in Colab, ingest validated assets and continue the same project; survive runtime restart and duplicate/partial results. |
 | **5. Consistent characters** — HomeBot-side bridge fixed; character art enrollment, cross-shot consistency and lip-movement validation remain Ancient Pathways' own internal responsibility, deliberately not redesigned | Complete one character's art enrollment and actual compositor path under the existing Ancient Pathways rig plan. | Render multiple shots of one recognizable character with intended poses/lip movement; validate real output and reject placeholder clips. |
 | **6. Editing affects exports** — complete for the Storyboard Deck's reorder/retime/text/prompt edits; the post-render trim/ripple-delete editor remains a separate, smaller follow-up | Persist storyboard/timeline edits, invalidate changed assets, replace simulated progress/completion. | Change shot order, timing, text and voice through the UI; reopen the project and export; compare the resulting frames/audio to those edits. |
-| **7. YouTube operations** — queued | Channel profiles, metadata, thumbnails, OAuth, scheduling and approved idempotent upload. | Profile isolation, an explicitly approved test upload, verified visibility/metadata and retries without duplicate publication; never publish merely to test without approval. |
+| **7. YouTube operations** — complete (PR [#303](https://github.com/kingithegreat/Sadie/pull/303), merged 2026-09-12) | Channel profiles, metadata, thumbnails, OAuth, scheduling and approved idempotent upload. | Profile isolation, an explicitly approved test upload, verified visibility/metadata and retries without duplicate publication; never publish merely to test without approval. |
 | **8. Release verification** — queued | Installer/runtime dependencies, configuration, startup guidance and fresh Windows acceptance. | Install the actual artifact on a fresh profile/machine; complete the agreed video flow, verify privacy modes and document every required external setup step. |
 
 Prioritize media generation, editing and orchestration. Existing knowledge,
@@ -182,3 +182,25 @@ All three: honesty-A/B verified (the new regression test reverted and
 confirmed to fail before the fix, then confirmed to pass after), full
 widget suite green, real content verified on `main` post-merge — see
 CLAIMS.md for the complete evidence trail on each.
+
+## Tasks 4 and 7 — shipped by other sessions, table rows synced 2026-09-12
+
+CLAIMS.md already recorded both as merged; this plan's own task table still
+read "queued" for each, which is exactly the drift CLAUDE.md warns against —
+an item genuinely done but still reads as outstanding. Corroborated before
+updating the table: PR [#298](https://github.com/kingithegreat/Sadie/pull/298)
+(Colab round trip, 1136 additions across 7 files) and PR
+[#303](https://github.com/kingithegreat/Sadie/pull/303) (YouTube operations,
+1261 additions across 14 files, fail-closed gates on the publishing kill
+switch/idempotency/online-access consent, 16 new unit/IPC/renderer tests
+per its own PR description) are both real, substantive, merged work — not
+re-verified end-to-end by this session, since that was already done by
+whoever shipped them; this is a documentation-truth sync, not a new
+acceptance pass.
+
+## Remaining: Task 8 — release verification
+
+Untouched — no claim, no PR. Its acceptance gate ("install the actual
+artifact on a fresh profile/machine") needs a genuinely fresh Windows
+machine or VM, which is Aden's to run, not something a coding session can
+fabricate evidence for from inside an existing dev environment.
