@@ -292,6 +292,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         narration: string;
         status: string;
         frameImagePath: string | null;
+        /** True when a frame exists but its prompt has changed since it was generated. */
+        frameStale?: boolean;
       }>;
     }>;
     projectDir: string;
@@ -1978,7 +1980,7 @@ ${shots.map((s, idx) => `
         setDone(`Ripple removed clip cut at ${formatTimecode(removed)}`);
         return;
       }
-      setDone('Ripple delete simulation — would remove clip at ' + formatTimecode(timelineTime));
+      setDone('No cut point near the playhead to remove — add a split with Trim first.');
     };
 
     const handleExportSelection = async () => {
@@ -3943,10 +3945,13 @@ ${shots.map((s, idx) => `
                       <div className="ms-shot-frame-guide" />
                       {shot.frameImagePath ? (
                         <>
+                          {shot.frameStale && (
+                            <span className="ms-shot-stale-badge">⚠ Prompt changed — regenerate</span>
+                          )}
                           <img
                             src={`file:///${shot.frameImagePath.replace(/\\/g, '/')}`}
                             alt={shot.shotId}
-                            className="ms-shot-thumb-img"
+                            className={`ms-shot-thumb-img${shot.frameStale ? ' ms-shot-thumb-img--stale' : ''}`}
                           />
                           <div className="ms-shot-thumb-overlay">
                             <button

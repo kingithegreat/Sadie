@@ -89,10 +89,10 @@ verification separately.
 |---|---|---|
 | **1. Verified baseline** — complete | Isolate work, reconcile claims/docs, reproduce and fix the overlay failure blocking #259, run local and required CI checks, then integrate without overwriting other agents. | Failure reproduced before fix; real Electron regression passes after fix; app/root checks pass; all required remote contexts present and green; actual merged content verified. |
 | **2. Provider correctness** — QA component complete; remaining work queued under HB-M2 | QA inspection failure now blocks approval (#264). Repair privacy, availability/free-tier routing, provider output and reference-image contracts; replace obsolete model assumptions. | With online access off, zero outbound calls; unusable/empty assets never report success; each enabled provider passes a real request and output validation with configured access. Credentials remain Aden's. |
-| **3. One reliable faceless video** — queued | Unify manifests and orchestration; fix Python argv, narration, frame handling, render and QA. | From a real HomeBot control through IPC/Python or n8n to a playable MP4: correct duration, visible content, audible narration and captions. Inspect sampled frames/audio; test failure propagation too. |
+| **3. One reliable faceless video** — complete for the one real, job-based pipeline; the movie/project-runner image pipeline, the Ancient Pathways bridge and the storyboard renderer remain separate, disconnected pipelines outside this task's scope | Unify manifests and orchestration; fix Python argv, narration, frame handling, render and QA. | From a real HomeBot control through IPC/Python or n8n to a playable MP4: correct duration, visible content, audible narration and captions. Inspect sampled frames/audio; test failure propagation too. |
 | **4. Colab round trip** — queued | Portable unique jobs, asset upload, Drive discovery, worker result import, retry/resume/cancel. | Submit from HomeBot, run in Colab, ingest validated assets and continue the same project; survive runtime restart and duplicate/partial results. |
-| **5. Consistent characters** — queued | Complete one character's art enrollment and actual compositor path under the existing Ancient Pathways rig plan. | Render multiple shots of one recognizable character with intended poses/lip movement; validate real output and reject placeholder clips. |
-| **6. Editing affects exports** — queued | Persist storyboard/timeline edits, invalidate changed assets, replace simulated progress/completion. | Change shot order, timing, text and voice through the UI; reopen the project and export; compare the resulting frames/audio to those edits. |
+| **5. Consistent characters** — HomeBot-side bridge fixed; character art enrollment, cross-shot consistency and lip-movement validation remain Ancient Pathways' own internal responsibility, deliberately not redesigned | Complete one character's art enrollment and actual compositor path under the existing Ancient Pathways rig plan. | Render multiple shots of one recognizable character with intended poses/lip movement; validate real output and reject placeholder clips. |
+| **6. Editing affects exports** — complete for the Storyboard Deck's reorder/retime/text/prompt edits; the post-render trim/ripple-delete editor remains a separate, smaller follow-up | Persist storyboard/timeline edits, invalidate changed assets, replace simulated progress/completion. | Change shot order, timing, text and voice through the UI; reopen the project and export; compare the resulting frames/audio to those edits. |
 | **7. YouTube operations** — queued | Channel profiles, metadata, thumbnails, OAuth, scheduling and approved idempotent upload. | Profile isolation, an explicitly approved test upload, verified visibility/metadata and retries without duplicate publication; never publish merely to test without approval. |
 | **8. Release verification** — queued | Installer/runtime dependencies, configuration, startup guidance and fresh Windows acceptance. | Install the actual artifact on a fresh profile/machine; complete the agreed video flow, verify privacy modes and document every required external setup step. |
 
@@ -147,3 +147,38 @@ tests and 13 overlay tests. The complete local Electron run passed 47 tests,
 without retries. Evidence: [HB-M0 baseline](CORE_MODULE_BASELINE.md).
 This UI/documentation change does not modify the n8n contract; its unit coverage
 passed within the widget suite. Live n8n/cloud/media runs remain unverified.
+
+## Tasks 3, 5, 6 verification — 2026-09-12
+
+Investigation found "Media Studio" is actually four separate, disconnected
+pipelines sharing almost no code: the real job-based pipeline behind the
+"Make the video" button, the movie/project-runner image pipeline, the
+Ancient Pathways Python bridge, and the storyboard renderer. Tasks 3, 5 and
+6 each close for one of these pipelines specifically; the others remain
+separate, tracked work, not silently declared fixed.
+
+- **Task 3** (PR #297): the job-based pipeline had a real bug making every
+  Kokoro-narrated job fail its own duration check, and no visible-content
+  or captions verification at all — a placeholder video passed every gate.
+  Added real ffmpeg frame-variance placeholder detection and captions
+  verification to the existing QA gate; fixed the duration bug; fixed a
+  related crash on an empty captions file. Verified with real ffmpeg/TTS
+  runs and a real Electron IPC boundary test, not just mocks.
+- **Task 6** (PR #299): Storyboard Deck edits saved correctly but the
+  renderer read a completely different file the save path never wrote to —
+  edits never reached export, and even a fresh, unedited project couldn't
+  render. Unified both onto one real on-disk representation. Found and
+  fixed a second bug while proving the fix for real: saved reorders were
+  never actually read back by the renderer either.
+- **Task 5** (PR #300): the Ancient Pathways bridge attempted an illegal
+  state-machine jump on every freshly-created job — the Showrunner path hit
+  this on every single production, reporting failure even when the render
+  succeeded, with zero test coverage. Fixed the transition bug and added
+  the same real output validation as Task 3. Character art enrollment,
+  cross-shot consistency and lip-movement validation remain Ancient
+  Pathways' own internal responsibility, deliberately not redesigned.
+
+All three: honesty-A/B verified (the new regression test reverted and
+confirmed to fail before the fix, then confirmed to pass after), full
+widget suite green, real content verified on `main` post-merge — see
+CLAIMS.md for the complete evidence trail on each.

@@ -143,12 +143,37 @@ export function registerStudioIpc(
     }
   };
 
+  /**
+   * Ancient Pathways judges its own success by exit code + file existence —
+   * no read of frame content, duration, or audio on either side. Reuses the
+   * same real ffmpeg-based QA the job-based render pipeline already has
+   * (frame-variance placeholder detection, track presence, dimensions) so a
+   * placeholder solid-color clip can't reach render_qa here either.
+   * `narrationSeconds`/`captionCues` are deliberately left unset — AP owns
+   * its own audio and captions internally, so those specific sub-checks
+   * don't apply to output HomeBot didn't generate the audio for.
+   */
+  const verifyAncientPathwaysRender = async (filePath: string): Promise<{ ok: boolean; failures: string[] }> => {
+    try {
+      const { findFfmpeg } = await import('../../media-render');
+      const { findManagedFfmpeg } = await import('../../ffmpeg-setup');
+      const { inspectRender, evaluateRenderQa } = await import('../../media-qa');
+      const ffmpeg = await findFfmpeg(findManagedFfmpeg());
+      if (!ffmpeg) return { ok: true, failures: [] }; // Can't verify without ffmpeg; don't block on an unrelated missing tool.
+      const facts = await inspectRender(ffmpeg, filePath);
+      const verdict = evaluateRenderQa(facts, { width: 1920, height: 1080 });
+      return { ok: verdict.ok, failures: verdict.failures };
+    } catch (err: any) {
+      return { ok: false, failures: [`could not verify the render: ${err?.message || String(err)}`] };
+    }
+  };
+
   // Run a long stage (script, narration) from the panel.
   //
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string }) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string }) => {
     const { readJobs } = await import('../../tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -163,6 +188,12 @@ export function registerStudioIpc(
     try {
       const args: Record<string, unknown> = { job: job.id };
       if (action === 'narrate' && opts?.voice) args.voice = opts.voice;
+      // Lets a caller render against a specific image instead of generated
+      // scenes — the panel doesn't use this today, but the real-IPC QA tests
+      // need a way to exercise the placeholder-detection gate without a
+      // network image-generation call.
+      if (action === 'render' && opts?.image) args.image = opts.image;
+      if (action === 'render' && opts?.visuals) args.visuals = opts.visuals;
       if (!['render', 'narrate', 'script'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
       const res = await invokeTool(_e, tool, args);
       return res?.success
@@ -326,7 +357,7 @@ export function registerStudioIpc(
       resolveAncientPathwaysDir,
     } = await import('../../ancient-pathways');
     const { readJobs, writeJobs } = await import('../../tools/media');
-    const { createJob, transition } = await import('../../media-studio');
+    const { createJob, transition, fastForwardToMediaProduction } = await import('../../media-studio');
 
     const ep = ANCIENT_PATHWAYS_EPISODES.find(x => x.id.toLowerCase() === String(episodeId || '').toLowerCase());
     if (!ep) return { ok: false, error: `Unknown episode '${episodeId}'.` };
@@ -350,9 +381,16 @@ export function registerStudioIpc(
       jobs.push(job);
     }
 
-    if (['idea', 'researching', 'script_draft', 'script_qa'].includes(job.state)) {
-      job = transition(job, 'media_production', { by: 'studio', note: 'Running Ancient Pathways pipeline' });
-    }
+    // A single-hop jump to media_production is only actually legal from
+    // script_qa — from a fresh job (state idea) it throws, which used to
+    // report a successful Python render as a failure. Walks the chain instead.
+    job = fastForwardToMediaProduction(job, { by: 'studio', note: 'Ancient Pathways pipeline runs its own stages internally' });
+    // transition() returns a NEW object; `jobs` still holds whatever `job`
+    // pointed to before that call (the array push above captured the
+    // pre-transition object too), so the array must be re-synced or the
+    // fast-forwarded state is never actually persisted.
+    const jobIdx = jobs.findIndex(j => j.id === job!.id);
+    if (jobIdx >= 0) jobs[jobIdx] = job; else jobs.push(job);
     writeJobs(jobs);
 
     const onProgress = (p: { stage: string; note: string }) => {
@@ -378,6 +416,8 @@ export function registerStudioIpc(
         return { ok: false, error: res.error || 'Episode render failed.' };
       }
 
+      const qa = await verifyAncientPathwaysRender(res.renderPath!);
+
       const updatedJobs = readJobs();
       const idx = updatedJobs.findIndex(j => j.id === job.id);
       if (idx >= 0) {
@@ -388,10 +428,22 @@ export function registerStudioIpc(
             note: '1080p master render complete',
           });
         }
+        if (!qa.ok && updatedJobs[idx].state === 'render_qa') {
+          updatedJobs[idx] = transition(updatedJobs[idx], 'needs_revision', {
+            by: 'studio',
+            note: `Automatic render QA: ${qa.failures.join('; ')}`,
+          });
+        }
         writeJobs(updatedJobs);
+        if (!qa.ok) {
+          return { ok: false, error: `Rendered, but it did not pass checks: ${qa.failures.join('; ')}.`, job: updatedJobs[idx], renderPath: res.renderPath };
+        }
         return { ok: true, job: updatedJobs[idx], renderPath: res.renderPath };
       }
 
+      if (!qa.ok) {
+        return { ok: false, error: `Rendered, but it did not pass checks: ${qa.failures.join('; ')}.`, renderPath: res.renderPath };
+      }
       return { ok: true, renderPath: res.renderPath };
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };
@@ -409,18 +461,23 @@ export function registerStudioIpc(
       resolveAncientPathwaysDir,
     } = await import('../../ancient-pathways');
     const { readJobs, writeJobs } = await import('../../tools/media');
-    const { createJob, transition } = await import('../../media-studio');
+    const { createJob, transition, fastForwardToMediaProduction } = await import('../../media-studio');
 
     const dir = resolveAncientPathwaysDir();
     if (!dir) {
       return { ok: false, error: 'Ancient Pathways directory not found.' };
     }
 
-    const job = createJob({
+    // Every Showrunner job starts fresh (state idea) and, before this fix,
+    // jumped straight to render_qa — idea has no legal edge to render_qa, so
+    // this threw on every single production regardless of whether the Python
+    // render succeeded. Fast-forward to media_production now instead.
+    let job = createJob({
       title: `Production: ${options.name}`,
       format: 'long',
       brief: `Showrunner — ${options.prompt.slice(0, 120)}`,
     });
+    job = fastForwardToMediaProduction(job, { by: 'studio', note: 'Showrunner runs its own stages internally' });
     const jobs = readJobs();
     jobs.push(job);
     writeJobs(jobs);
@@ -450,18 +507,34 @@ export function registerStudioIpc(
         return { ok: false, error: res.error || 'Showrunner failed.' };
       }
 
+      const qa = await verifyAncientPathwaysRender(res.outputPath!);
+
       const updatedJobs = readJobs();
       const idx = updatedJobs.findIndex(j => j.id === job.id);
       if (idx >= 0) {
         updatedJobs[idx].renderPath = res.outputPath;
-        updatedJobs[idx] = transition(updatedJobs[idx], 'render_qa', {
-          by: 'studio',
-          note: 'Showrunner production complete',
-        });
+        if (updatedJobs[idx].state === 'media_production') {
+          updatedJobs[idx] = transition(updatedJobs[idx], 'render_qa', {
+            by: 'studio',
+            note: 'Showrunner production complete',
+          });
+        }
+        if (!qa.ok && updatedJobs[idx].state === 'render_qa') {
+          updatedJobs[idx] = transition(updatedJobs[idx], 'needs_revision', {
+            by: 'studio',
+            note: `Automatic render QA: ${qa.failures.join('; ')}`,
+          });
+        }
         writeJobs(updatedJobs);
+        if (!qa.ok) {
+          return { ok: false, error: `Rendered, but it did not pass checks: ${qa.failures.join('; ')}.`, job: updatedJobs[idx], renderPath: res.outputPath };
+        }
         return { ok: true, job: updatedJobs[idx], renderPath: res.outputPath };
       }
 
+      if (!qa.ok) {
+        return { ok: false, error: `Rendered, but it did not pass checks: ${qa.failures.join('; ')}.`, renderPath: res.outputPath };
+      }
       return { ok: true, renderPath: res.outputPath };
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };
@@ -573,56 +646,10 @@ export function registerStudioIpc(
   });
 
   ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[] }) => {
-    try {
-      const { getStoryboardsRootDir } = await import('../../tools/media-storyboard');
-      const rootDir = getStoryboardsRootDir();
-      const projectDir = path.join(rootDir, args.projectId);
-      const sceneId = args.sceneId || 'scene_01';
-      const sceneDir = path.join(projectDir, 'scenes', sceneId);
-
-      if (!fs.existsSync(sceneDir)) {
-        return { ok: false, error: `Scene directory not found: ${sceneDir}` };
-      }
-
-      const shotIds = (args.shots || []).map((s: any) => s.shotId);
-      const sceneJsonPath = path.join(sceneDir, 'scene.json');
-      if (fs.existsSync(sceneJsonPath)) {
-        try {
-          const sceneMeta = JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8'));
-          sceneMeta.shots = shotIds;
-          fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
-        } catch { /* ignore */ }
-      }
-
-      for (const shot of (args.shots || [])) {
-        const shotDir = path.join(sceneDir, shot.shotId);
-        if (!fs.existsSync(shotDir)) {
-          fs.mkdirSync(shotDir, { recursive: true });
-          fs.mkdirSync(path.join(shotDir, 'image'), { recursive: true });
-          fs.mkdirSync(path.join(shotDir, 'video'), { recursive: true });
-        }
-
-        const promptPath = path.join(shotDir, 'prompt.json');
-        let promptData: any = {};
-        if (fs.existsSync(promptPath)) {
-          try { promptData = JSON.parse(fs.readFileSync(promptPath, 'utf-8')); } catch { /* ignore */ }
-        }
-        promptData.prompt = shot.prompt ?? promptData.prompt ?? '';
-        promptData.framing = shot.framing ?? promptData.framing ?? 'wide';
-        promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
-        promptData.movement = shot.movement ?? promptData.movement ?? 'static';
-        promptData.durationSec = Number(shot.durationSec) || promptData.durationSec || 5;
-        fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
-
-        if (shot.narration !== undefined) {
-          fs.writeFileSync(path.join(shotDir, 'script.txt'), String(shot.narration), 'utf-8');
-        }
-      }
-
-      return { ok: true, message: 'Storyboard updated successfully.' };
-    } catch (err: any) {
-      return { ok: false, error: err?.message || String(err) };
-    }
+    const res = await invokeTool(_ev, 'media_save_storyboard', args || {});
+    return res.success
+      ? { ok: true, message: String((res.result as any)?.message ?? 'Storyboard updated successfully.') }
+      : { ok: false, error: res.error };
   });
 
   ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) => {

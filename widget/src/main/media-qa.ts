@@ -28,6 +28,17 @@ export interface RenderFacts {
   meanVolumeDb: number | null;
   /** Loudest sample, in dBFS. 0 means it hit the ceiling and may be clipping. */
   maxVolumeDb: number | null;
+  /**
+   * Spatial variation of a handful of sampled frames. Null when there is no
+   * video to sample, or duration is too short to sample meaningfully.
+   */
+  frameSamples: FrameSample[] | null;
+}
+
+export interface FrameSample {
+  atSeconds: number;
+  /** Population standard deviation of the sampled frame's grayscale pixels. */
+  stdDev: number;
 }
 
 export interface QaVerdict {
@@ -73,6 +84,10 @@ export function parseRenderFacts(stderr: string): RenderFacts {
     durationSeconds,
     meanVolumeDb: mean ? Number(mean[1]) : null,
     maxVolumeDb: max ? Number(max[1]) : null,
+    // Sampling touches a real process (grabFrame/sampleFrameVariance) and is
+    // never derivable from ffmpeg's stderr text alone, so a pure parse of
+    // that text can never populate this — only inspectRender does.
+    frameSamples: null,
   };
 }
 
@@ -86,6 +101,97 @@ export const SILENCE_FLOOR_DB = -50;
 /** How far the finished video may drift from the narration it was built from. */
 export const DURATION_TOLERANCE_SECONDS = 2;
 
+/**
+ * Below this, a sampled frame's pixels read as a flat color plus compression
+ * noise, not real scene art — a solid-color placeholder backdrop measures
+ * close to 0. Calibrated against a solid-fill PNG versus a photo, both
+ * through the same encoder path (see media-qa.test.ts).
+ */
+export const FLAT_FRAME_STDDEV = 3;
+
+/**
+ * Where to sample, as a fraction of the render's duration. The first and last
+ * 5% are excluded so a deliberate fade-to-black at the very start or end is
+ * not mistaken for a placeholder that never had real content.
+ */
+export const FRAME_SAMPLE_FRACTIONS = [0.1, 0.3, 0.5, 0.7, 0.9];
+
+/** Side of the square a sampled frame is scaled down to before measuring. */
+const FRAME_SAMPLE_SIZE = 64;
+
+/**
+ * Population standard deviation of raw 8-bit grayscale pixel bytes. A frame
+ * of one flat color (plus tiny compression noise) reads near 0; any frame
+ * with real picture content — edges, gradients, shapes — reads well above
+ * `FLAT_FRAME_STDDEV`.
+ */
+export function frameStdDev(pixels: Buffer): number {
+  if (!pixels.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < pixels.length; i++) sum += pixels[i];
+  const mean = sum / pixels.length;
+  let variance = 0;
+  for (let i = 0; i < pixels.length; i++) {
+    const d = pixels[i] - mean;
+    variance += d * d;
+  }
+  return Math.sqrt(variance / pixels.length);
+}
+
+/**
+ * Grab one frame at `atSeconds`, scaled to a small grayscale square, as raw
+ * 8-bit pixel bytes (`size * size` bytes, no header). Small on purpose: this
+ * runs several times per render and only needs to answer "is there a real
+ * picture here," not preserve detail.
+ */
+export function grabFrame(
+  ffmpeg: string,
+  filePath: string,
+  atSeconds: number,
+  size = FRAME_SAMPLE_SIZE,
+  timeoutMs = 15_000,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      ffmpeg,
+      [
+        '-hide_banner', '-loglevel', 'error',
+        '-ss', String(Math.max(0, atSeconds)),
+        '-i', filePath,
+        '-frames:v', '1',
+        '-vf', `scale=${size}:${size}:flags=fast_bilinear,format=gray`,
+        '-f', 'rawvideo',
+        '-',
+      ],
+      { timeout: timeoutMs, maxBuffer: size * size * 4, encoding: 'buffer' },
+      (err, stdout) => {
+        const buf = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout || '');
+        if (buf.length < size * size) {
+          reject(err || new Error(`ffmpeg produced no frame at ${atSeconds}s in ${filePath}`));
+          return;
+        }
+        resolve(buf.subarray(0, size * size));
+      },
+    );
+  });
+}
+
+/** Sample frames across the render and measure each one's pixel variance. */
+export async function sampleFrameVariance(
+  ffmpeg: string,
+  filePath: string,
+  durationSeconds: number,
+  size = FRAME_SAMPLE_SIZE,
+): Promise<FrameSample[]> {
+  const samples: FrameSample[] = [];
+  for (const fraction of FRAME_SAMPLE_FRACTIONS) {
+    const atSeconds = durationSeconds * fraction;
+    const pixels = await grabFrame(ffmpeg, filePath, atSeconds, size);
+    samples.push({ atSeconds, stdDev: frameStdDev(pixels) });
+  }
+  return samples;
+}
+
 export interface QaExpectations {
   /** What the shape asked for — a short is 1080x1920. */
   width: number;
@@ -94,6 +200,13 @@ export interface QaExpectations {
   narrationSeconds?: number | null;
   /** Whether a music track was mixed in, which changes what a loud mix means. */
   hasMusic?: boolean;
+  /**
+   * Caption cues the render was expected to burn in. `undefined` means the
+   * caller did not check captions — skip the gate entirely, matching every
+   * caller that predates this field. `null` (or a zero count) means captions
+   * were expected and are missing — a real failure.
+   */
+  captionCues?: { count: number; lastCueEndSeconds: number } | null;
 }
 
 /**
@@ -155,6 +268,33 @@ export function evaluateRenderQa(facts: RenderFacts, expected: QaExpectations): 
     );
   }
 
+  // A render can pass every check above and still be a solid-color
+  // placeholder with narration playing over it. Fail only when EVERY sample
+  // is flat — one legitimately simple frame among several must not trip this.
+  if (facts.hasVideo && facts.frameSamples && facts.frameSamples.length > 0) {
+    const maxStdDev = Math.max(...facts.frameSamples.map(s => s.stdDev));
+    if (maxStdDev < FLAT_FRAME_STDDEV) {
+      failures.push(
+        `every sampled frame is a flat color (max variation ${maxStdDev.toFixed(1)}) — ` +
+        'this looks like a placeholder backdrop, not real scene art',
+      );
+    }
+  }
+
+  if (expected.captionCues !== undefined) {
+    if (!expected.captionCues || expected.captionCues.count === 0) {
+      failures.push('there are no captions — the on-screen text is missing');
+    } else if (facts.durationSeconds !== null) {
+      const drift = Math.abs(facts.durationSeconds - expected.captionCues.lastCueEndSeconds);
+      if (drift > DURATION_TOLERANCE_SECONDS) {
+        failures.push(
+          `captions end at ${expected.captionCues.lastCueEndSeconds.toFixed(1)}s but the video is ` +
+          `${facts.durationSeconds.toFixed(1)}s — the captions do not cover the video`,
+        );
+      }
+    }
+  }
+
   return { ok: failures.length === 0, failures, warnings };
 }
 
@@ -173,8 +313,8 @@ export function describeQa(verdict: QaVerdict): string {
  * audio track, so this costs real time on a long video — it runs once, after a
  * render that already took minutes.
  */
-export function inspectRender(ffmpeg: string, filePath: string, timeoutMs = 120_000): Promise<RenderFacts> {
-  return new Promise((resolve, reject) => {
+export async function inspectRender(ffmpeg: string, filePath: string, timeoutMs = 120_000): Promise<RenderFacts> {
+  const facts = await new Promise<RenderFacts>((resolve, reject) => {
     execFile(
       ffmpeg,
       ['-hide_banner', '-i', filePath, '-af', 'volumedetect', '-f', 'null', '-'],
@@ -184,13 +324,24 @@ export function inspectRender(ffmpeg: string, filePath: string, timeoutMs = 120_
         // ffmpeg exits non-zero for "-f null -" on some builds while still
         // having printed everything needed. Trust the output over the code,
         // and only fail when nothing was parseable.
-        const facts = parseRenderFacts(text);
-        if (!facts.hasVideo && !facts.hasAudio) {
+        const parsed = parseRenderFacts(text);
+        if (!parsed.hasVideo && !parsed.hasAudio) {
           reject(new Error(err ? `ffmpeg could not read the file: ${text.slice(-400)}` : `nothing readable in ${filePath}`));
           return;
         }
-        resolve(facts);
+        resolve(parsed);
       },
     );
   });
+
+  // Frame sampling needs a real duration to pick offsets from, and is not
+  // meaningful on a clip too short to have a middle. Let a sampling failure
+  // propagate rather than swallowing it — the caller's existing fail-closed
+  // handling around inspectRender already covers this the same as any other
+  // inspection failure.
+  if (facts.hasVideo && facts.durationSeconds !== null && facts.durationSeconds > 0.5) {
+    facts.frameSamples = await sampleFrameVariance(ffmpeg, filePath, facts.durationSeconds);
+  }
+
+  return facts;
 }

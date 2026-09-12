@@ -29,11 +29,14 @@ const MAX_LINES = 2;
 const MAX_CUE_CHARS = MAX_LINE * MAX_LINES;
 
 /**
- * Duration of a constant-bitrate MP3 from its size.
+ * Duration of a constant-bitrate MP3 from its size — a fallback estimate only.
  *
- * Edge TTS emits 24 kHz 96 kbit/s mono CBR, so bytes map directly to seconds.
- * Reading the real file beats re-estimating from word count: the estimate is
- * what we are trying to correct.
+ * Edge TTS emits 24 kHz 96 kbit/s mono CBR, so for THAT engine bytes map
+ * directly to seconds. Kokoro writes WAV at a much higher effective bitrate,
+ * so this assumption is wrong for it by roughly 4x. Callers that can measure
+ * the real file (ffmpeg/ffprobe on the actual audio) should do that instead
+ * and pass it to `buildCaptions` via `opts.durationSeconds` — this function
+ * exists only for when the real file can't be measured.
  */
 export function mp3DurationSeconds(bytes: number, bitrateKbps = 96): number {
   if (!bytes || bytes <= 0) return 0;
@@ -182,13 +185,17 @@ export function parseSrtCues(srt: string): Cue[] {
 }
 
 /** Everything a caller needs from a script plus the audio it produced. */
-export function buildCaptions(script: string, audioBytes: number): {
+export function buildCaptions(
+  script: string,
+  audioBytes: number,
+  opts?: { durationSeconds?: number | null },
+): {
   cues: Cue[];
   srt: string;
   vtt: string;
   durationSeconds: number;
 } {
-  const durationSeconds = mp3DurationSeconds(audioBytes);
+  const durationSeconds = opts?.durationSeconds ?? mp3DurationSeconds(audioBytes);
   const cues = timeCues(splitIntoCues(script), durationSeconds);
   return { cues, srt: toSrt(cues), vtt: toVtt(cues), durationSeconds };
 }
