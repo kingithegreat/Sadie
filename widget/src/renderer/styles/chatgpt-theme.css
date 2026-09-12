@@ -12110,6 +12110,39 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-size: 0.8rem;
 }
 
+.ms-timeline-workspace .ms-transport-volume input[type="range"] {
+  width: 80px;
+  accent-color: #00e676;
+}
+
+.ms-timeline-workspace .ms-transport-play:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ms-timeline-audio-status,
+.ms-timeline-empty-track {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #bcc5d6);
+}
+
+.ms-timeline-empty-track {
+  display: inline-block;
+  padding: 10px;
+}
+
+.ms-timeline-audio-notice {
+  position: absolute;
+  bottom: 36px;
+  left: 12px;
+  right: 12px;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(10, 14, 22, 0.9);
+  color: #e8edf5;
+  font-size: 0.75rem;
+}
+
 .ms-transport-vol-bar {
   width: 50px;
   height: 4px;
