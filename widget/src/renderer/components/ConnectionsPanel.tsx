@@ -29,6 +29,8 @@ interface ConnectionsPanelProps {
  */
 export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ navContext }) => {
   const [configuredNames, setConfiguredNames] = useState<ReadonlySet<string>>(new Set());
+  const [configuredServers, setConfiguredServers] = useState<ReadonlyMap<string, { enabled: boolean }>>(new Map());
+  const [serverStatuses, setServerStatuses] = useState<ReadonlyMap<string, { connected: boolean; toolCount: number }>>(new Map());
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Context handed over when chat or the assistant sent the user here. A
@@ -55,11 +57,45 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ navContext }
       const servers = await (window as any).electron?.mcpListServers?.();
       if (Array.isArray(servers)) {
         setConfiguredNames(new Set(servers.map((s: any) => String(s?.name ?? ''))));
+        setConfiguredServers(new Map(servers.map((s: any) => [String(s?.name ?? ''), { enabled: s?.enabled !== false }])));
+      }
+      const statuses = await (window as any).electron?.mcpGetStatus?.();
+      if (Array.isArray(statuses)) {
+        setServerStatuses(new Map(statuses.map((st: any) => [String(st?.name ?? ''), { connected: Boolean(st?.connected), toolCount: Number(st?.toolCount ?? 0) }])));
       }
     } catch { /* IPC not ready yet — cards simply show as not connected */ }
   };
 
   useEffect(() => { loadServers(); }, []);
+
+  const disconnect = async (entry: ConnectionEntry) => {
+    if (typeof window.confirm === 'function' && !window.confirm(`Disconnect ${entry.name}? HomeBot will remove this server.`)) return;
+    setBusyId(entry.id);
+    setNotice(null);
+    try {
+      await (window as any).electron?.mcpRemoveServer?.(entry.serverName);
+      await loadServers();
+      setNotice({ text: `${entry.name} disconnected.`, error: false });
+    } catch (e: any) {
+      setNotice({ text: `Could not disconnect ${entry.name}: ${e?.message || e}`, error: true });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggle = async (entry: ConnectionEntry, enabled: boolean) => {
+    setBusyId(entry.id);
+    setNotice(null);
+    try {
+      await (window as any).electron?.mcpToggleServer?.(entry.serverName, enabled);
+      await loadServers();
+      setNotice({ text: `${entry.name} ${enabled ? 'enabled' : 'disabled'}.`, error: false });
+    } catch (e: any) {
+      setNotice({ text: `Failed to update ${entry.name}: ${e?.message || e}`, error: true });
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const setValue = (entryId: string, key: string, v: string) => {
     setValues((prev) => ({ ...prev, [entryId]: { ...(prev[entryId] ?? {}), [key]: v } }));
@@ -124,7 +160,10 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ navContext }
       <div className="cnx-list">
         <YouTubeConnectionCard />
         {CONNECTIONS.map((entry) => {
+          const configured = configuredServers.get(entry.serverName);
           const connected = configuredNames.has(entry.serverName);
+          const isEnabled = configured?.enabled !== false;
+          const liveStatus = serverStatuses.get(entry.serverName);
           const expanded = expandedId === entry.id;
           const entryValues = values[entry.id] ?? {};
           const allFilled = entry.keys.every((k) => (entryValues[k.key] ?? '').trim().length > 0);
@@ -182,9 +221,36 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ navContext }
               )}
 
               {expanded && connected && (
-                <p className="cnx-manage-hint">
-                  Already connected. Enable, disable or remove it in Settings → Permissions → MCP Servers.
-                </p>
+                <div className="cnx-connected-actions" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.82rem', color: isEnabled ? '#22c55e' : '#eab308' }}>
+                      {isEnabled ? (liveStatus?.connected ? `🟢 ${liveStatus.toolCount || 0} tools active and ready` : '⚪ Connected (idle)') : '🟡 Disabled'}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                        disabled={busyId === entry.id}
+                        onClick={() => toggle(entry, !isEnabled)}
+                      >
+                        {isEnabled ? 'Disable' : 'Enable'}
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-danger"
+                        style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                        disabled={busyId === entry.id}
+                        onClick={() => disconnect(entry)}
+                      >
+                        {busyId === entry.id ? 'Working…' : 'Disconnect'}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="cnx-manage-hint" style={{ marginTop: 6 }}>
+                    Connected tools ask for permission before modifying your outside data.
+                  </p>
+                </div>
               )}
             </div>
           );
