@@ -52,7 +52,7 @@ describe('SettingsPanel — cloud connection defaults', () => {
 
   test('connecting a cloud API keeps local chat as default until explicitly enabled', async () => {
     const onSave = jest.fn();
-    const { container, getByText } = render(
+    const { container } = render(
       <SettingsPanel settings={baseSettings as any} onSave={onSave} onClose={noop} />
     );
     expandSection(container, 'API Keys');
