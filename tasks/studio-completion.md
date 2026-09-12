@@ -124,3 +124,45 @@ The latest local movie is retained in the disposable profile
 `homebot-storyboard-export-EgKMtM`; portable measurements are in
 `docs/evidence/studio-completion.json`. Remote CI is a separate gate, and this
 eight-second diagnostic is not a finished episode or full Studio acceptance.
+
+## Recovery merged and bounded handoff — 2026-09-13 NZ
+
+[PR #314](https://github.com/kingithegreat/Sadie/pull/314) merged at
+`c90f077f3d3b7886581d5197cfc7219de91dcafc` (12 September 12:38:51 UTC).
+Fetched main and verified its entire Git tree matches tested `33bc636`:
+`9abc5c0e8047673f8bda4930657bdee624cbd071`. All six live required contexts
+are present and green, including `e2e-all`; the recovery claim is released.
+
+The [matrix logs](https://github.com/kingithegreat/Sadie/actions/runs/34693313469)
+show actual tests, not a zero-test success. Linux shards passed 20 + 18 + 17
+(one opt-in skip). macOS passed 20 + (17 plus one flaky) + 17 (one skip).
+Windows passed 20 + 18 + (16 plus one flaky), with one skip; shard 2 required
+the workflow's second attempt after a conversation-search overlay retry and
+an error outside a test. Its second attempt passed all 18. macOS's context-menu
+position test and Windows's visual-mode test also passed after test retries.
+These qualifications do not change the green merge gate, but are not evidence
+of a no-retry full matrix. No CI thresholds, retries or tests were weakened.
+The two scoped local real speech/export tests passed without retries.
+
+The actual MP4, evidence JSON, sampled frames, Studio screenshots and trace
+are archived under this checkout's ignored
+`.kilo/artifacts/studio-completion-33bc636/`. The copied MP4's SHA-256 matches
+the measured hash above. Earlier #271 history and worktrees remain intact;
+its production recovery is superseded by #314, not blindly merged.
+
+Antigravity is actively editing `claude/pilot-16-9-acceptance` (#313) in the
+shared checkout. No files in that checkout were changed by this session.
+The owner has been asked to resolve sole ownership versus continued parallel
+integration/testing. Source review at `e948aa7` found its storyboard IPC drops
+the UI's aspect ratio, captions remain forced on, and its single-scene/legacy
+manifest behavior must not replace this verified all-scene implementation.
+Its later `3a6f6d7` repairs the default Sample control and browser `path` import;
+that branch has not been runtime-accepted by this session. Preserve its unique
+work and this branch's canonical scene, privacy, identity and replacement tests.
+
+Remaining acceptance is unchanged: persisted independent duration/ratio and
+output variants, captions off for the approved 16:9 productions, truthful
+revision/latest-attempt/latest-good state, stage/export parity, accessible
+workspace review, a complete owner-approved pilot, repeatability and an actual
+fresh-profile installed build. Eight-second authored cards do not satisfy those
+gates. No paid generation, account/credential changes, approval or upload occurred.
