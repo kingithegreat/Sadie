@@ -5,12 +5,13 @@ import type { YouTubeConnectionStatus } from '../../shared/youtube-connection';
 import { requestProviderEndpoint } from '../utils/provider-network-policy';
 
 const READ_SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
+export const YOUTUBE_UPLOAD_SCOPE = 'https://www.googleapis.com/auth/youtube.upload';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const CHANNEL_URL = 'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=50&fields=items(id,snippet(title))';
 const CANCELLED = 'YouTube sign-in was cancelled. You can try again when Production Studio and Online access are enabled.';
 
 interface DesktopClient { id: string; secret?: string }
-interface GoogleTokens { access: string; refresh: string; expiresAt: number }
+interface GoogleTokens { access: string; refresh: string; expiresAt: number; scope?: string }
 interface SavedConnection {
   version: 1;
   client: DesktopClient;
@@ -167,8 +168,14 @@ export class YouTubeConnection {
 
   status(): YouTubeConnectionStatus {
     const saved = this.load();
-    return { configured: !!saved, signedIn: !!saved?.tokens, busy: !!this.operation,
-      channels: saved?.channels || [], lastChecked: saved?.lastChecked };
+    const result: YouTubeConnectionStatus = {
+      configured: !!saved, signedIn: !!saved?.tokens, busy: !!this.operation,
+      channels: saved?.channels || [], lastChecked: saved?.lastChecked,
+    };
+    if (saved?.tokens && saved.tokens.scope) {
+      result.canUpload = saved.tokens.scope.includes('youtube.upload') || saved.tokens.scope.includes('/auth/youtube');
+    }
+    return result;
   }
 
   importClient(raw: string): YouTubeConnectionStatus {
@@ -233,13 +240,18 @@ export class YouTubeConnection {
   }
 
   private tokens(response: any, refresh?: string): GoogleTokens {
+    const validScope = response.scope === undefined || (typeof response.scope === 'string' && response.scope.split(' ').some((s: string) => s === READ_SCOPE || s === YOUTUBE_UPLOAD_SCOPE || s === 'https://www.googleapis.com/auth/youtube'));
     if (!tokenString(response?.access_token) || !tokenString(response?.refresh_token ?? refresh) ||
         typeof response.expires_in !== 'number' || response.expires_in <= 0 || response.expires_in > 86_400 ||
-        String(response.token_type).toLowerCase() !== 'bearer' ||
-        (response.scope !== undefined && (typeof response.scope !== 'string' || !response.scope.split(' ').includes(READ_SCOPE)))) {
+        String(response.token_type).toLowerCase() !== 'bearer' || !validScope) {
       throw new YouTubeConnectionError('Google did not return the required YouTube sign-in permission. Sign in again and allow YouTube access.');
     }
-    return { access: response.access_token, refresh: response.refresh_token ?? refresh, expiresAt: Date.now() + response.expires_in * 1000 };
+    return {
+      access: response.access_token,
+      refresh: response.refresh_token ?? refresh,
+      expiresAt: Date.now() + response.expires_in * 1000,
+      scope: typeof response.scope === 'string' ? response.scope : undefined,
+    };
   }
 
   private async channels(tokens: GoogleTokens, signal: AbortSignal): Promise<YouTubeConnectionStatus['channels']> {
@@ -251,7 +263,7 @@ export class YouTubeConnection {
     });
   }
 
-  connect(): Promise<YouTubeConnectionStatus> {
+  connect(options?: { upload?: boolean }): Promise<YouTubeConnectionStatus> {
     return this.run('connect', async signal => {
       const saved = this.load();
       if (!saved) throw new YouTubeConnectionError('Import your Google Desktop app JSON first.');
@@ -259,9 +271,10 @@ export class YouTubeConnection {
       const state = randomBytes(32).toString('hex');
       const callback = await authorizationCallback(state, signal);
       this.check(signal);
+      const requestedScope = options?.upload ? `${READ_SCOPE} ${YOUTUBE_UPLOAD_SCOPE}` : READ_SCOPE;
       const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       url.search = new URLSearchParams({ client_id: saved.client.id, redirect_uri: callback.redirect,
-        response_type: 'code', scope: READ_SCOPE, state, code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+        response_type: 'code', scope: requestedScope, state, code_challenge: createHash('sha256').update(verifier).digest('base64url'),
         code_challenge_method: 'S256', access_type: 'offline', prompt: 'consent select_account' }).toString();
       await this.dependencies.openBrowser(url.toString());
       this.check(signal);
@@ -289,5 +302,25 @@ export class YouTubeConnection {
       this.check(signal);
       this.save({ ...saved, tokens, channels, lastChecked: new Date().toISOString() });
     });
+  }
+
+  async getAccessToken(signal: AbortSignal, requireUpload = false): Promise<string> {
+    this.check(signal);
+    const saved = this.load();
+    if (!saved?.tokens) throw new YouTubeConnectionError('Sign in to Google first.', true);
+    if (requireUpload && saved.tokens.scope && !saved.tokens.scope.includes('youtube.upload') && !saved.tokens.scope.includes('/auth/youtube')) {
+      throw new YouTubeConnectionError('YouTube upload permission is not granted. Please sign in again and allow upload access.', true);
+    }
+    let tokens = saved.tokens;
+    if (tokens.expiresAt < Date.now() + 60_000) {
+      tokens = this.tokens(await this.request('token', {
+        client_id: saved.client.id,
+        ...(saved.client.secret ? { client_secret: saved.client.secret } : {}),
+        refresh_token: tokens.refresh,
+        grant_type: 'refresh_token',
+      }, signal), tokens.refresh);
+      this.save({ ...saved, tokens, lastChecked: new Date().toISOString() });
+    }
+    return tokens.access;
   }
 }

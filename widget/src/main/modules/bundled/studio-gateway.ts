@@ -19,7 +19,8 @@ const signatures: Record<string, string[]> = {
   'storyboard:get': ['string'], 'storyboard:generate-frame': ['object'], 'storyboard:save': ['object'],
   'storyboard:render': ['object'], 'storyboard:breakdown': ['object'],
   'youtube:status': [], 'youtube:import': [], 'youtube:connect': [],
-  'youtube:refresh': [], 'youtube:cancel': [], 'youtube:remove': [],
+  'youtube:connect-upload': [], 'youtube:refresh': [], 'youtube:cancel': [], 'youtube:remove': [],
+  'youtube:upload': ['string', 'object'],
 };
 
 function validArgs(channel: string, args: unknown[]): boolean {
