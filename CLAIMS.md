@@ -19,6 +19,15 @@ CI runs `scripts/check-duplicate-exports.mjs` on every PR and will fail the buil
 
 **Integration notes — 2026-09-13, "no ffmpeg" cannot be simulated with env vars:** `findFfmpeg` probes `HOMEBOT_FFMPEG`, the managed copy, `PATH`, and then `EXTRA_FFMPEG_PATHS` — absolute paths (`C:\ffmpeg\bin\ffmpeg.exe` and the Program Files twin) that neither `PATH` nor `HOMEBOT_FFMPEG` can hide. The nightly's own "Ensure FFmpeg availability" step installs ffmpeg via choco, so the live "says what to install when ffmpeg is missing" case rendered successfully and asserted the wrong outcome — failing the gate nightly while the product was fine. That case now mocks the lookup itself; search ORDER keeps its real coverage in `media-render.test.ts` via the injected `probe`. **Don't re-add env-var-based ffmpeg hiding.**
 
+**Concurrent Git identity — 2026-09-13 NZ:** Repo-local Git configuration is shared
+by worktrees. Another agent can change it between setup and commit. After setting
+your identity, pin it on the actual commit command with `git -c user.name=Codex
+-c user.email=codex@openai.com commit ...` (substitute your own identity). Verify
+the recorded author immediately. Codex authored the Studio recovery commits
+`e8de4aa` and `33bc636` and retirement `833c40b`, which were inadvertently
+recorded as Antigravity after the shared config changed. Published history is
+preserved; this note corrects attribution without rewriting another worktree.
+
 ## Active claims
 
 | Feature | Branch | Status | Notes |
