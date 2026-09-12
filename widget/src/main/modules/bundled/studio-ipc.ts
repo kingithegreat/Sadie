@@ -692,4 +692,76 @@ export function registerStudioIpc(
     }
   });
 
+  // ── Series Settings Catalog & Multi-Plane IPC Handlers ───────────────────────
+  ipcMain.handle('homebot:media:series-settings:list', async (_ev, seriesId: string) => {
+    try {
+      assertEnabled();
+      const { listSeriesSettings } = await import('../../series-settings');
+      const settings = await listSeriesSettings(seriesId);
+      return { ok: true, settings };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:series-settings:get', async (_ev, seriesId: string, settingId: string) => {
+    try {
+      assertEnabled();
+      const { getSetting } = await import('../../series-settings');
+      const bundle = await getSetting(seriesId, settingId);
+      return { ok: true, bundle };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:series-settings:save', async (_ev, args: {
+    seriesId: string;
+    manifest: any;
+    bgBase64: string;
+    fgBase64?: string;
+    previewBase64?: string;
+  }) => {
+    try {
+      assertEnabled();
+      const { saveSetting } = await import('../../series-settings');
+      const bgBuf = Buffer.from(args.bgBase64, 'base64');
+      const fgBuf = args.fgBase64 ? Buffer.from(args.fgBase64, 'base64') : undefined;
+      const previewBuf = args.previewBase64 ? Buffer.from(args.previewBase64, 'base64') : undefined;
+      const bundle = await saveSetting(args.seriesId, args.manifest, bgBuf, fgBuf, previewBuf);
+      return { ok: true, bundle };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:series-settings:delete', async (_ev, seriesId: string, settingId: string) => {
+    try {
+      assertEnabled();
+      const { deleteSetting } = await import('../../series-settings');
+      const deleted = await deleteSetting(seriesId, settingId);
+      return { ok: true, deleted };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('homebot:media:series-settings:segment', async (_ev, args: { imageBase64: string; preferCpu?: boolean }) => {
+    try {
+      assertEnabled();
+      const { segmentSettingImage } = await import('../../tools/media-foreground-segmenter');
+      const inBuf = Buffer.from(args.imageBase64, 'base64');
+      const result = await segmentSettingImage(inBuf, { preferCpu: args.preferCpu !== false });
+      return {
+        ok: result.ok,
+        bgBase64: result.bgBuffer.toString('base64'),
+        fgBase64: result.fgBuffer.toString('base64'),
+        engineUsed: result.engineUsed,
+        error: result.error,
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
 }
