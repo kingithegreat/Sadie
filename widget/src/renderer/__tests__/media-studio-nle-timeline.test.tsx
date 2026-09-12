@@ -38,10 +38,105 @@ function setup(overrides: Record<string, any> = {}) {
 }
 
 afterEach(() => {
+  jest.restoreAllMocks();
   delete (window as any).electron;
 });
 
+beforeEach(() => {
+  jest.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+});
+
 describe('Media Studio Pro NLE Timeline Workspace', () => {
+  test('Play starts the actual rendered media, and Pause stops it', async () => {
+    setup();
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+    const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
+    expect((HTMLMediaElement.prototype.play as jest.Mock).mock.instances[0]).toBe(video);
+    await act(async () => { fireEvent.click(screen.getByTitle('Pause (Space)')); });
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  test('an unrendered job plays its narration and an empty job shows no pretend audio', async () => {
+    setup({ mediaList: jest.fn().mockResolvedValue([
+      { id: 'voice', title: 'Narration only', state: 'media_production', narrationPath: '/mock/voice #1.wav', durationSeconds: 8 },
+      { id: 'empty', title: 'Script only', state: 'script_draft', script: 'A script is not yet audio.' },
+    ]) });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    const audio = document.querySelector('.ms-timeline-workspace audio');
+    expect(audio).toHaveAttribute('src', 'file:///mock/voice%20%231.wav');
+    await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
+    expect((HTMLMediaElement.prototype.play as jest.Mock).mock.instances[0]).toBe(audio);
+    await act(async () => { fireEvent.change(screen.getByLabelText('Active Project:'), { target: { value: 'empty' } }); });
+    expect(screen.getByTitle('Play (Space)')).toBeDisabled();
+    expect(screen.getByText(/No narration or rendered video yet/)).toBeVisible();
+    expect(document.querySelectorAll('.ms-wave-bar, .ms-vu-bar.playing')).toHaveLength(0);
+  });
+
+  test('time comes from media; seek, volume, mute and speed change the actual player', async () => {
+    setup();
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, value: 12 });
+    await act(async () => { fireEvent.loadedMetadata(video); });
+    expect(document.querySelector('.ms-timecode-tot')).toHaveTextContent('00:00:12:00');
+    video.currentTime = 3.5;
+    await act(async () => { fireEvent.timeUpdate(video); });
+    expect(document.querySelector('.ms-timecode-curr')).toHaveTextContent('00:00:03:15');
+    await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
+    expect(video.currentTime).toBe(4.5);
+    await act(async () => { fireEvent.change(screen.getByRole('slider', { name: 'Timeline master volume' }), { target: { value: '25' } }); });
+    expect(video.volume).toBe(0.25);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Mute track A1' })); });
+    expect(video.muted).toBe(true);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Unmute track A1' })); });
+    expect(video.muted).toBe(false);
+  });
+
+  test('play rejection stops transport and leaving the workspace releases the media file', async () => {
+    setup();
+    (HTMLMediaElement.prototype.play as jest.Mock).mockRejectedValueOnce(new Error('decoder rejected file'));
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
+    await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Timeline playback failed');
+    expect(screen.getByTitle('Play (Space)')).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
+    expect(video.getAttribute('src')).toBeNull();
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    expect(HTMLMediaElement.prototype.load).toHaveBeenCalled();
+  });
+
+  test('end of a marked range pauses or loops the actual media', async () => {
+    setup();
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
+    await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
+    await act(async () => { fireEvent.click(screen.getByText('[I] In')); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
+    await act(async () => { fireEvent.click(screen.getByText('[O] Out')); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Loop Playback (🔁)')); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
+    expect(video.currentTime).toBe(1);
+    video.currentTime = 2.1;
+    await act(async () => { fireEvent.timeUpdate(video); });
+    expect(video.currentTime).toBe(2);
+    expect(screen.getByTitle('Play (Space)')).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByTitle('Loop Playback (🔁)')); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
+    video.currentTime = 2.1;
+    await act(async () => { fireEvent.timeUpdate(video); });
+    expect(video.currentTime).toBe(1);
+    expect(screen.getByTitle('Pause (Space)')).toBeEnabled();
+  });
   test('renders timeline workspace with pro track controls, In/Out tools, and hotkey bar', async () => {
     setup();
     await act(async () => {
@@ -185,7 +280,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('tab', { name: /🎙️ Audio & Ducking/i }));
     });
-    expect(screen.getByText(/Voice Gain:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Master Volume:/i)).toBeInTheDocument();
     expect(screen.getByText(/BGM Ducking:/i)).toBeInTheDocument();
     expect(screen.getByText(/Auto-attenuates BGM bed volume by/i)).toBeInTheDocument();
 

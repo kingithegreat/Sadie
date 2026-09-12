@@ -19,6 +19,18 @@ import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
+import { useTimelinePlayback } from './useTimelinePlayback';
+
+/**
+ * Safely format local filesystem paths into valid file:/// URLs for Chromium.
+ * Handles backslashes, spaces, and escapes # (%23) and ? (%3F) so that
+ * file paths containing hash symbols or special characters do not break.
+ */
+export function toMediaFileUrl(filePath: string | null | undefined): string {
+  if (!filePath) return '';
+  const normalized = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  return encodeURI(`file:///${normalized}`).replace(/#/g, '%23').replace(/\?/g, '%3F');
+}
 
 /** Mirrors ImageGenerator.tsx's local shape — same IPC contract, not shared. */
 interface SDCppStatus {
@@ -139,6 +151,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineLoop, setTimelineLoop] = useState<boolean>(true);
   const [timelineZoom, setTimelineZoom] = useState<number>(1);
+  const [timelineMediaDuration, setTimelineMediaDuration] = useState<number | null>(null);
   const [clipCuts, setClipCuts] = useState<number[]>([]);
   const [selectedClipIndex, setSelectedClipIndex] = useState<number | null>(0);
   const [inPoint, setInPoint] = useState<number | null>(null);
@@ -1206,7 +1219,7 @@ ${shots.map((s, idx) => `
       <span>⏱ ${s.durationSec || 5}s</span>
     </div>
     <div class="thumb">
-      ${s.frameImagePath ? `<img src="file:///${escapeHtml(s.frameImagePath.replace(/\\/g, '/'))}" alt="${escapeHtml(s.shotId)}" />` : `<span style="color:#64748b;font-size:0.8rem;">[Frame Not Generated]</span>`}
+      ${s.frameImagePath ? `<img src="${escapeHtml(toMediaFileUrl(s.frameImagePath))}" alt="${escapeHtml(s.shotId)}" />` : `<span style="color:#64748b;font-size:0.8rem;">[Frame Not Generated]</span>`}
     </div>
     <div class="card-body">
       <div class="pills">
@@ -1443,11 +1456,44 @@ ${shots.map((s, idx) => `
   const active = jobs.filter(j => j.state !== 'awaiting_approval' && !FAILURE.includes(j.state));
   const stalled = jobs.filter(j => FAILURE.includes(j.state));
 
-  // CapCut Timeline auto-advancing playhead
+  // Play the rendered mix, or narration before a video exists. Never play both.
   const currentSelectedJob = jobs.find(j => j.id === selectedJobId) || jobs[0] || null;
-  const activeDuration = currentSelectedJob?.durationSeconds || (
+  const timelineMediaPath = currentSelectedJob?.renderPath || currentSelectedJob?.narrationPath || '';
+  const timelineMediaSource = timelineMediaPath ? toMediaFileUrl(timelineMediaPath) : '';
+  const timelineCanPlay = Boolean(timelineMediaSource || currentSelectedJob?.scenePaths?.some(Boolean));
+  const activeDuration = timelineMediaDuration || currentSelectedJob?.durationSeconds || (
     currentSelectedJob?.scenePaths?.length ? currentSelectedJob.scenePaths.length * 5 : 30
   );
+
+  const timelineMedia = useTimelinePlayback({
+    active: activeWorkspace === 'timeline',
+    source: timelineMediaSource,
+    playing: timelinePlaying,
+    duration: activeDuration,
+    loop: timelineLoop,
+    inPoint,
+    outPoint,
+    rate: clipSpeed,
+    volume: voiceGain / 100,
+    muted: trackMuted.A1,
+    onTime: setTimelineTime,
+    onPlaying: setTimelinePlaying,
+    onDuration: setTimelineMediaDuration,
+    onError: setError,
+  });
+
+  const { seek: seekTimelineMedia } = timelineMedia;
+
+  const seekTimeline = useCallback((next: number | ((current: number) => number)) => {
+    seekTimelineMedia(typeof next === 'function' ? next(timelineTime) : next);
+  }, [seekTimelineMedia, timelineTime]);
+
+  useEffect(() => {
+    setTimelinePlaying(false);
+    setTimelineTime(0);
+    setInPoint(null);
+    setOutPoint(null);
+  }, [currentSelectedJob?.id, timelineMediaSource]);
 
   const formatTimecode = (sec: number) => {
     const safeSec = Math.max(0, sec || 0);
@@ -1458,10 +1504,12 @@ ${shots.map((s, idx) => `
   };
 
   useEffect(() => {
-    if (!timelinePlaying) return;
+    // Image-only storyboard previews are explicitly silent. With media, its
+    // decoder supplies time through useTimelinePlayback instead of this timer.
+    if (activeWorkspace !== 'timeline' || !timelinePlaying || timelineMediaSource || !timelineCanPlay) return;
     const interval = setInterval(() => {
       setTimelineTime(t => {
-        const next = t + 0.1;
+        const next = t + 0.1 * clipSpeed;
         const maxBound = outPoint !== null && outPoint > (inPoint ?? 0) ? outPoint : activeDuration;
         const minBound = inPoint !== null && inPoint < maxBound ? inPoint : 0;
         if (next >= maxBound) {
@@ -1473,7 +1521,7 @@ ${shots.map((s, idx) => `
       });
     }, 100);
     return () => clearInterval(interval);
-  }, [timelinePlaying, timelineLoop, activeDuration, inPoint, outPoint]);
+  }, [activeWorkspace, timelinePlaying, timelineLoop, activeDuration, inPoint, outPoint, timelineMediaSource, timelineCanPlay, clipSpeed]);
 
   // Pro NLE Keyboard Shortcuts
   useEffect(() => {
@@ -1485,7 +1533,7 @@ ${shots.map((s, idx) => `
 
       if (e.code === 'Space') {
         e.preventDefault();
-        setTimelinePlaying(p => !p);
+        if (timelineCanPlay) setTimelinePlaying(p => !p);
       } else if (e.key === 'i' || e.key === 'I') {
         setInPoint(timelineTime);
         setDone(`In-point marked at ${formatTimecode(timelineTime)}`);
@@ -1531,15 +1579,15 @@ ${shots.map((s, idx) => `
           });
         }
       } else if (e.key === 'ArrowLeft') {
-        setTimelineTime(t => Math.max(0, t - 1));
+        seekTimeline(t => Math.max(0, t - 1));
       } else if (e.key === 'ArrowRight') {
-        setTimelineTime(t => Math.min(activeDuration, t + 1));
+        seekTimeline(t => Math.min(activeDuration, t + 1));
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeWorkspace, timelineTime, activeDuration, trackLocked.V1]);
+  }, [activeWorkspace, timelineTime, activeDuration, trackLocked.V1, timelineCanPlay, seekTimeline]);
 
   const renderJob = (j: MediaJob, showApproval: boolean) => (
     <li
@@ -1638,7 +1686,7 @@ ${shots.map((s, idx) => `
                     className="ms-slide"
                     loading="lazy"
                     alt={`Slide ${i + 1} of ${j.scenePaths!.length}`}
-                    src={`file:///${p.replace(/\\/g, '/')}`}
+                    src={toMediaFileUrl(p)}
                   />
                 ) : (
                   /* Named rather than hidden: a gap the user cannot explain
@@ -1669,7 +1717,7 @@ ${shots.map((s, idx) => `
               controls
               preload="metadata"
               data-testid={`ms-video-${j.id}`}
-              src={`file:///${j.renderPath.replace(/\\/g, '/')}`}
+              src={toMediaFileUrl(j.renderPath)}
             />
             <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
               <button
@@ -1690,7 +1738,7 @@ ${shots.map((s, idx) => `
             controls
             preload="none"
             data-testid={`ms-audio-${j.id}`}
-            src={`file:///${j.narrationPath.replace(/\\/g, '/')}`}
+            src={toMediaFileUrl(j.narrationPath)}
           />
         ) : null}
         {j.videoId && (
@@ -2201,7 +2249,7 @@ ${shots.map((s, idx) => `
       }
     };
 
-    const renderTrackControls = (trackId: string, isAudio: boolean) => (
+    const renderTrackControls = (trackId: string, isAudio: boolean, canMute = true) => (
       <div className="ms-track-controls" aria-label={`Track ${trackId} controls`}>
         <button
           type="button"
@@ -2216,6 +2264,7 @@ ${shots.map((s, idx) => `
           <button
             type="button"
             className={`ms-track-ctrl-btn ${trackMuted[trackId] ? 'muted' : ''}`}
+            disabled={!canMute}
             title={trackMuted[trackId] ? `Unmute track ${trackId}` : `Mute track ${trackId}`}
             aria-label={trackMuted[trackId] ? `Unmute track ${trackId}` : `Mute track ${trackId}`}
             onClick={() => setTrackMuted(prev => ({ ...prev, [trackId]: !prev[trackId] }))}
@@ -2345,10 +2394,10 @@ ${shots.map((s, idx) => `
             </div>
             <div className="ms-timeline-vu-meter" title={`Master Audio Output (${bgmDuckingLevel}dB Ducking Active)`}>
               <div className="ms-vu-channel">
-                <div className={`ms-vu-bar ${timelinePlaying && !trackMuted.A1 && !trackMuted.A2 ? 'playing' : ''}`} />
+                <div className={`ms-vu-bar ${timelinePlaying && timelineMediaSource && !trackMuted.A1 ? 'playing' : ''}`} />
               </div>
               <div className="ms-vu-channel">
-                <div className={`ms-vu-bar ${timelinePlaying && !trackMuted.A1 && !trackMuted.A2 ? 'playing' : ''}`} />
+                <div className={`ms-vu-bar ${timelinePlaying && timelineMediaSource && !trackMuted.A1 ? 'playing' : ''}`} />
               </div>
               <span className="ms-vu-label">VU</span>
             </div>
@@ -2361,8 +2410,12 @@ ${shots.map((s, idx) => `
             <div className="ms-monitor-screen">
               {job?.renderPath ? (
                 <video
+                  key={timelineMediaSource}
+                  {...timelineMedia.events}
                   className="ms-monitor-video"
-                  src={`file:///${job.renderPath.replace(/\\/g, '/')}`}
+                  aria-label="Timeline video preview"
+                  src={timelineMediaSource}
+                  preload="metadata"
                   controls={false}
                 />
               ) : job?.scenePaths?.length ? (
@@ -2376,7 +2429,7 @@ ${shots.map((s, idx) => `
                     return scenePath ? (
                       <img
                         className="ms-monitor-img"
-                        src={`file:///${scenePath.replace(/\\/g, '/')}`}
+                        src={toMediaFileUrl(scenePath)}
                         alt={`Active Scene ${sceneIndex + 1}`}
                       />
                     ) : (
@@ -2389,8 +2442,20 @@ ${shots.map((s, idx) => `
               ) : (
                 <div className="ms-monitor-empty">
                   <span className="ms-monitor-empty-icon">🎬</span>
-                  <p>Ready to render · 1080p 30fps Remotion / FFmpeg Master</p>
+                  <p>{job?.narrationPath ? 'Narration preview' : 'Create a storyboard, then generate its images and narration.'}</p>
                 </div>
+              )}
+              {!job?.renderPath && job?.narrationPath && (
+                <audio
+                  key={timelineMediaSource}
+                  {...timelineMedia.events}
+                  src={timelineMediaSource}
+                  aria-label="Timeline narration preview"
+                  preload="metadata"
+                />
+              )}
+              {!timelineMediaSource && (
+                <p className="ms-timeline-audio-notice">No narration or rendered video yet. Generate narration to hear audio here.</p>
               )}
               <div className="ms-monitor-timecode-badge">
                 {formatTimecode(timelineTime)} / {formatTimecode(duration)}
@@ -2556,17 +2621,25 @@ ${shots.map((s, idx) => `
             {inspectorTab === 'audio' && (
               <div className="ms-nle-tab-pane">
                 <div className="ms-nle-field-row">
-                  <span className="ms-nle-field-label">Voice Gain:</span>
+                  <span className="ms-nle-field-label">Master Volume:</span>
                   <input
                     type="range"
                     min="0"
-                    max="200"
+                    max="100"
                     value={voiceGain}
+                    aria-label="Timeline preview volume"
                     onChange={e => setVoiceGain(Number(e.target.value))}
                     className="ms-nle-slider"
                   />
                   <span className="ms-nle-field-val">{voiceGain}%</span>
                 </div>
+                <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '4px 0' }}>
+                  {job?.renderPath
+                    ? 'Playing the rendered mix. Adjust master volume above.'
+                    : job?.narrationPath
+                    ? 'Playing narration audio. Export to mix with BGM and sound effects.'
+                    : 'No separate audio file. Generate narration to hear audio.'}
+                </p>
                 <div className="ms-nle-field-row">
                   <span className="ms-nle-field-label">BGM Ducking:</span>
                   <input
@@ -2653,18 +2726,19 @@ ${shots.map((s, idx) => `
               type="button"
               className="ms-transport-btn"
               title="Step frame back 1s (|◀)"
-              onClick={() => setTimelineTime(t => Math.max(0, t - 1))}
+              onClick={() => seekTimeline(t => Math.max(0, t - 1))}
             >|◀</button>
             <button
               type="button"
               className="ms-transport-btn"
               title="Jump to Start (⏮)"
-              onClick={() => setTimelineTime(inPoint !== null ? inPoint : 0)}
+              onClick={() => seekTimeline(inPoint !== null ? inPoint : 0)}
             >⏮</button>
             <button
               type="button"
               className={`ms-transport-btn ms-transport-play ${timelinePlaying ? 'active' : ''}`}
               title={timelinePlaying ? 'Pause (Space)' : 'Play (Space)'}
+              disabled={!timelineCanPlay}
               onClick={() => setTimelinePlaying(!timelinePlaying)}
             >
               {timelinePlaying ? '⏸' : '▶'}
@@ -2673,7 +2747,7 @@ ${shots.map((s, idx) => `
               type="button"
               className="ms-transport-btn"
               title="Step frame forward 1s (▶|)"
-              onClick={() => setTimelineTime(t => Math.min(duration, t + 1))}
+              onClick={() => seekTimeline(t => Math.min(duration, t + 1))}
             >▶|</button>
             <button
               type="button"
@@ -2691,8 +2765,15 @@ ${shots.map((s, idx) => `
 
           <div className="ms-transport-volume">
             <span>🔊</span>
-            <div className="ms-transport-vol-bar"><div className="ms-vol-fill" /></div>
-            <span className="ms-transport-vol-pct">100%</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={voiceGain}
+              aria-label="Timeline master volume"
+              onChange={e => setVoiceGain(Number(e.target.value))}
+            />
+            <span className="ms-transport-vol-pct">{voiceGain}%</span>
           </div>
         </div>
 
@@ -2704,7 +2785,7 @@ ${shots.map((s, idx) => `
             onClick={e => {
               const rect = e.currentTarget.getBoundingClientRect();
               const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-              setTimelineTime(fraction * duration);
+              seekTimeline(fraction * duration);
             }}
           >
             <div className="ms-ruler-ticks">
@@ -2763,7 +2844,7 @@ ${shots.map((s, idx) => `
                           style={{ width: `${widthPct}%` }}
                           onClick={() => {
                             setSelectedClipIndex(i);
-                            setTimelineTime(start);
+                            seekTimeline(start);
                           }}
                           title={`Segment ${i + 1}: ${formatTimecode(start)} to ${formatTimecode(end)} (${segDuration.toFixed(1)}s)`}
                         >
@@ -2790,13 +2871,13 @@ ${shots.map((s, idx) => `
                         key={i}
                         className={`ms-track-clip ms-clip--shot ${isFocus ? 'active' : ''}`}
                         style={{ width: `${shotWidth}%` }}
-                        onClick={() => setTimelineTime((i / job.scenePaths!.length) * duration)}
+                        onClick={() => seekTimeline((i / job.scenePaths!.length) * duration)}
                         title={`Shot ${i + 1}: ${p ? 'Frame rendered' : 'Reusing neighbour'}`}
                       >
                         {p ? (
                           <img
                             className="ms-clip-thumb"
-                            src={`file:///${p.replace(/\\/g, '/')}`}
+                            src={toMediaFileUrl(p)}
                             alt={`Shot ${i + 1}`}
                           />
                         ) : (
@@ -2809,8 +2890,7 @@ ${shots.map((s, idx) => `
                   })
                 ) : (
                   <div className="ms-track-clip ms-clip--shot" style={{ width: '100%' }}>
-                    <span className="ms-clip-label">Master Scene Video Track · Remotion 2D</span>
-                    <span className="ms-clip-framing">[1080p 30fps]</span>
+                    <span className="ms-clip-label">{job?.renderPath ? 'Rendered video' : 'No generated shots yet'}</span>
                   </div>
                 )}
               </div>
@@ -2821,28 +2901,13 @@ ${shots.map((s, idx) => `
               <div className="ms-track-header">
                 <span className="ms-track-id">A1</span>
                 <span className="ms-track-icon">🎙️</span>
-                <span className="ms-track-title">Voice</span>
-                {renderTrackControls('A1', true)}
+                <span className="ms-track-title">{job?.renderPath ? 'Rendered mix' : 'Voice'}</span>
+                {renderTrackControls('A1', true, Boolean(timelineMediaSource))}
               </div>
               <div className="ms-track-content">
-                <div className="ms-track-clip ms-clip--audio" style={{ width: '92%' }}>
-                  <div className="ms-clip-avatar" aria-hidden="true">
-                    {narrateEngine === 'kokoro' ? '💖' : '🗣️'}
-                  </div>
-                  <div className="ms-clip-wave">
-                    {Array.from({ length: 48 }).map((_, i) => (
-                      <span
-                        key={i}
-                        className="ms-wave-bar"
-                        style={{
-                          height: `${20 + Math.sin(i * 0.45) * 60 + ((i % 3) * 10)}%`,
-                          animationDelay: `${(i % 10) * 0.08}s`,
-                        }}
-                      />
-                    ))}
-                  </div>
+                <div className={timelineMediaSource ? 'ms-track-clip ms-clip--audio' : 'ms-timeline-empty-track'} style={{ width: '100%' }}>
                   <span className="ms-clip-label">
-                    {job?.narratedWith || narrateEngine || 'Kokoro: Heart'} ({job?.durationSeconds || 30}s)
+                    {job?.renderPath ? 'Audio from rendered video' : job?.narrationPath ? `Generated narration (${job.narratedWith || 'voice'})` : 'No narration file yet'}
                   </span>
                 </div>
               </div>
@@ -2854,13 +2919,10 @@ ${shots.map((s, idx) => `
                 <span className="ms-track-id">A2</span>
                 <span className="ms-track-icon">🎵</span>
                 <span className="ms-track-title">BGM</span>
-                {renderTrackControls('A2', true)}
+                {renderTrackControls('A2', true, false)}
               </div>
               <div className="ms-track-content">
-                <div className="ms-track-clip ms-clip--music" style={{ width: '100%' }}>
-                  <span className="ms-clip-label">Ancient Temple Ambience (Auto-Ducked {bgmDuckingLevel}dB)</span>
-                  <div className="ms-ducking-curve" title={`Ducking curve drops volume during narration by ${Math.abs(bgmDuckingLevel)}dB`} />
-                </div>
+                <span className="ms-timeline-empty-track">No separate music file. Any rendered music plays with the video mix.</span>
               </div>
             </div>
 
@@ -2870,18 +2932,10 @@ ${shots.map((s, idx) => `
                 <span className="ms-track-id">A3</span>
                 <span className="ms-track-icon">🔊</span>
                 <span className="ms-track-title">Foley</span>
-                {renderTrackControls('A3', true)}
+                {renderTrackControls('A3', true, false)}
               </div>
               <div className="ms-track-content">
-                <div className="ms-cue-pin" style={{ left: '12%' }} title="Cue: Desert Wind Ambience">
-                  <span>💨 Wind</span>
-                </div>
-                <div className="ms-cue-pin" style={{ left: '44%' }} title="Cue: Blueprint Unroll">
-                  <span>📜 Parchment</span>
-                </div>
-                <div className="ms-cue-pin" style={{ left: '78%' }} title="Cue: Temple Stone Step">
-                  <span>🏛️ Footsteps</span>
-                </div>
+                <span className="ms-timeline-empty-track">No separate sound-effects file.</span>
               </div>
             </div>
 
@@ -2894,12 +2948,7 @@ ${shots.map((s, idx) => `
                 {renderTrackControls('T1', false)}
               </div>
               <div className="ms-track-content">
-                <div className="ms-track-clip ms-clip--sub" style={{ left: '5%', width: '40%' }}>
-                  <span className="ms-clip-label">"In the shadow of the Nile..."</span>
-                </div>
-                <div className="ms-track-clip ms-clip--sub" style={{ left: '48%', width: '45%' }}>
-                  <span className="ms-clip-label">"The master architect unveils..."</span>
-                </div>
+                <span className="ms-timeline-empty-track">Captions appear in the rendered video when included.</span>
               </div>
             </div>
           </div>
@@ -3020,13 +3069,13 @@ ${shots.map((s, idx) => `
               {job?.renderPath ? (
                 <video
                   className="ms-viewport-content-video"
-                  src={`file:///${job.renderPath.replace(/\\/g, '/')}`}
+                  src={toMediaFileUrl(job.renderPath)}
                   controls
                 />
               ) : job?.scenePaths?.length && job.scenePaths[0] ? (
                 <img
                   className="ms-viewport-content-img"
-                  src={`file:///${job.scenePaths[0]!.replace(/\\/g, '/')}`}
+                  src={toMediaFileUrl(job.scenePaths[0]!)}
                   alt="Viewport Stage Preview"
                 />
               ) : (
@@ -4028,7 +4077,7 @@ ${shots.map((s, idx) => `
                     className="ms-btn ms-btn--primary"
                     onClick={() => {
                       if (api()?.openExternalUrl) {
-                        api().openExternalUrl(`file:///${renderedMoviePath.replace(/\\/g, '/')}`);
+                        api().openExternalUrl(toMediaFileUrl(renderedMoviePath));
                       }
                     }}
                   >
@@ -4146,7 +4195,7 @@ ${shots.map((s, idx) => `
                             <span className="ms-shot-stale-badge">⚠ Prompt changed — regenerate</span>
                           )}
                           <img
-                            src={`file:///${shot.frameImagePath.replace(/\\/g, '/')}`}
+                            src={toMediaFileUrl(shot.frameImagePath)}
                             alt={shot.shotId}
                             className={`ms-shot-thumb-img${shot.frameStale ? ' ms-shot-thumb-img--stale' : ''}`}
                           />
@@ -4334,7 +4383,7 @@ ${shots.map((s, idx) => `
               <div className="ms-animatic-screen">
                 {shots[animaticIndex]?.frameImagePath ? (
                   <img
-                    src={`file:///${shots[animaticIndex].frameImagePath.replace(/\\/g, '/')}`}
+                    src={toMediaFileUrl(shots[animaticIndex].frameImagePath)}
                     alt={shots[animaticIndex].shotId}
                     className="ms-animatic-img"
                   />
@@ -4828,7 +4877,7 @@ ${shots.map((s, idx) => `
               className="ms-audio"
               controls
               autoPlay
-              src={`file:///${samplePath.replace(/\\/g, '/')}`}
+              src={toMediaFileUrl(samplePath)}
             />
           )}
 
