@@ -35,4 +35,14 @@ then all required CI and exact merged-content verification.
 
 Preserve separately claimed preview-settings-doctor edits, its running app and
 profile, all original projects/assets, and the pending full pilot/installed/owner
-visual acceptance gates. No product changes or new tests exist at this claim.
+visual acceptance gates. No product changes existed at claim time.
+
+## Red evidence before implementation
+
+On merged #320, three new handler tests fail on missing source revision,
+attempt/history and changed-asset/interruption state (32 existing pass).
+The real Windows Electron/FFmpeg test fails after saving a duration edit because
+`Preview out of date` is absent. Its positive control hashes the previous good
+MP4 before/after save: the file survives but the workspace misrepresents freshness.
+Evidence: `.kilo/artifacts/studio-freshness-red/`; fixture profile
+`homebot-freshness-proof-1qeFT7`. No providers or online speech were used.

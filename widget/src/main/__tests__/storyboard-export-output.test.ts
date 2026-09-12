@@ -110,6 +110,56 @@ describe('storyboard export output contract', () => {
     expect(fs.readFileSync(output, 'utf8')).toBe('controlled encoder bytes');
   });
 
+  test('tracks the saved source revision without inventing a change on a no-op save', async () => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
+    const read = async () => (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    const before = await read();
+    expect(before.exportState?.sourceRevision).toMatch(/^[a-f0-9]{64}$/);
+    const first = await render();
+    expect(first.ok).toBe(true);
+    expect((first.renderedOutput as any)?.sourceRevision).toBe(before.exportState.sourceRevision);
+    expect((await read()).exportState.latestAttempt).toMatchObject({ status: 'succeeded', exportId: first.renderedOutput?.exportId });
+    expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots, outputSpec: createStudioOutputSpec(), burnSubtitles: false }, {} as any)).success).toBe(true);
+    expect((await read()).exportState.sourceRevision).toBe(before.exportState.sourceRevision);
+    shots[0].prompt = 'A deliberately changed source prompt';
+    expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots }, {} as any)).success).toBe(true);
+    const changed = await read();
+    expect(changed.exportState.sourceRevision).not.toBe(before.exportState.sourceRevision);
+    expect(changed.renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test('persists a failed latest attempt separately from successful export history', async () => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
+    const first = await render();
+    const second = await render();
+    expect(first.ok && second.ok).toBe(true);
+    movieFacts.width = 640;
+    expect((await render()).ok).toBe(false);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState?.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/picture size|match the storyboard/i) });
+    expect(reopened.renderedMoviePath).toBe(second.moviePath);
+    expect(reopened.exportState.outputs.map((item: any) => item.exportId)).toEqual(expect.arrayContaining([first.renderedOutput!.exportId, second.renderedOutput!.exportId]));
+    expect(fs.readFileSync(first.moviePath!, 'utf8')).toBe('controlled encoder bytes');
+  });
+
+  test('detects changed source image bytes and recovers an interrupted attempt on reopen', async () => {
+    const metaPath = path.join(root, 'export-check', 'project.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const previousRevision = (first.renderedOutput as any)?.sourceRevision;
+    expect(previousRevision).toMatch(/^[a-f0-9]{64}$/);
+    fs.writeFileSync(shots[0].frameImagePath!, 'different source pixels');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    meta.latestExportAttempt = { id: 'interrupted-fixture', status: 'rendering', sourceRevision: previousRevision, startedAt: new Date().toISOString() };
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.sourceRevision).not.toBe(previousRevision);
+    expect(reopened.exportState.latestAttempt.status).toBe('interrupted');
+    expect(JSON.parse(fs.readFileSync(metaPath, 'utf8')).latestExportAttempt.status).toBe('interrupted');
+    expect(reopened.renderedMoviePath).toBe(first.moviePath);
+  });
+
   test('saved captions off reaches export without a caller override and survives reopening', async () => {
     const metaPath = path.join(root, 'export-check', 'project.json');
     fs.writeFileSync(metaPath, JSON.stringify({ projectId: 'export-check', notes: 'keep this', burnSubtitles: true }));
