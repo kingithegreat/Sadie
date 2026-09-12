@@ -239,6 +239,34 @@ export function transition(job: MediaJob, to: MediaJobState, opts: TransitionOpt
   };
 }
 
+const FORWARD_TO_PRODUCTION: MediaJobState[] =
+  ['idea', 'researching', 'script_draft', 'script_qa', 'media_production'];
+
+/**
+ * Steps a job forward through the legal chain to `media_production`.
+ *
+ * For a bridge like Ancient Pathways, which does scripting, narration and
+ * rendering in one external call, HomeBot's job record only needs to land in
+ * the right place afterward — not track each stage for real. Calling
+ * `transition(job, 'media_production', ...)` directly on a fresh job (state
+ * `idea`) throws: `idea`'s only legal next states are researching/blocked/
+ * rejected, so a single-hop jump is illegal from every state except
+ * `script_qa`. This walks the chain instead. A no-op if the job is already
+ * at or past `media_production`.
+ */
+export function fastForwardToMediaProduction(
+  job: MediaJob,
+  opts: TransitionOptions = {},
+): MediaJob {
+  const startIdx = FORWARD_TO_PRODUCTION.indexOf(job.state);
+  if (startIdx === -1) return job;
+  let current = job;
+  for (let i = startIdx; i < FORWARD_TO_PRODUCTION.length - 1; i++) {
+    current = transition(current, FORWARD_TO_PRODUCTION[i + 1], opts);
+  }
+  return current;
+}
+
 /**
  * Record that a video actually went out, with the id the platform gave it.
  *
