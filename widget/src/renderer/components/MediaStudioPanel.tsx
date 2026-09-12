@@ -19,6 +19,13 @@ import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 import { useTimelinePlayback } from './useTimelinePlayback';
+import { MultiPlaneStage } from './MultiPlaneStage';
+import {
+  type CameraMotion,
+  type StageFraming,
+  type SettingLighting,
+  LIGHTING_PRESETS,
+} from '../../shared/multi-plane-stage';
 
 /**
  * Safely format local filesystem paths into valid file:/// URLs for Chromium.
@@ -27,9 +34,31 @@ import { useTimelinePlayback } from './useTimelinePlayback';
  */
 export function toMediaFileUrl(filePath: string | null | undefined): string {
   if (!filePath) return '';
+  if (filePath.startsWith('data:')) return filePath;
   const normalized = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
   return encodeURI(`file:///${normalized}`).replace(/#/g, '%23').replace(/\?/g, '%3F');
 }
+
+/**
+ * Maps Timeline Color Grade LUT presets to GPU-accelerated live CSS preview filters.
+ */
+export function getLutCssFilter(lut: 'rec709' | 'warm_nile' | 'teal_orange' | 'nocturne'): string {
+  switch (lut) {
+    case 'warm_nile':
+      return 'sepia(0.35) contrast(1.1) saturate(1.2) brightness(0.95)';
+    case 'teal_orange':
+      return 'contrast(1.15) hue-rotate(-10deg) saturate(1.25)';
+    case 'nocturne':
+      return 'brightness(0.75) contrast(1.2) hue-rotate(180deg) saturate(0.6)';
+    case 'rec709':
+    default:
+      return 'none';
+  }
+}
+
+export const DEFAULT_STAGE_BG = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080' viewBox='0 0 1920 1080'><defs><linearGradient id='sky' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='%231a2035'/><stop offset='60%' stop-color='%232c3e55'/><stop offset='100%' stop-color='%234a5d6e'/></linearGradient><linearGradient id='floor' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='%23232733'/><stop offset='100%' stop-color='%2312141a'/></linearGradient></defs><rect width='1920' height='720' fill='url(%23sky)'/><rect y='720' width='1920' height='360' fill='url(%23floor)'/><path d='M0 720 L1920 720' stroke='%23d97706' stroke-width='3'/><circle cx='960' cy='420' r='180' fill='%23fbbf24' opacity='0.15'/><rect x='280' y='220' width='90' height='500' fill='%23334155' rx='8'/><rect x='1550' y='220' width='90' height='500' fill='%23334155' rx='8'/><rect x='520' y='280' width='70' height='440' fill='%231e293b' rx='6'/><rect x='1330' y='280' width='70' height='440' fill='%231e293b' rx='6'/></svg>";
+
+export const DEFAULT_STAGE_FG = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080' viewBox='0 0 1920 1080'><rect x='150' y='820' width='320' height='260' fill='%230f172a' rx='12' opacity='0.95'/><rect x='1450' y='780' width='380' height='300' fill='%230f172a' rx='12' opacity='0.95'/><path d='M100 880 L520 880' stroke='%23475569' stroke-width='8'/><path d='M1400 840 L1880 840' stroke='%23475569' stroke-width='8'/></svg>";
 
 /** Mirrors ImageGenerator.tsx's local shape — same IPC contract, not shared. */
 interface SDCppStatus {
@@ -176,6 +205,13 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [stageCameraPreset, setStageCameraPreset] = useState<'35mm' | '50mm' | '85mm'>('35mm');
   const [stageMotionPreset, setStageMotionPreset] = useState<'static' | 'pan' | 'zoom' | 'orbit'>('static');
   const [stageLightingPreset, setStageLightingPreset] = useState<'dawn' | 'torch' | 'noon' | 'neon'>('dawn');
+  const [stageScrubProgress, setStageScrubProgress] = useState<number>(0.5);
+  const [selectedSeriesId] = useState<string>('ancient-pathways');
+  const [selectedSettingId, setSelectedSettingId] = useState<string>('');
+  const [availableSettings, setAvailableSettings] = useState<Array<{ id: string; name: string; hasForeground: boolean }>>([]);
+  const [activeSettingBundle, setActiveSettingBundle] = useState<any>(null);
+  const [isSegmenting, setIsSegmenting] = useState<boolean>(false);
+  const [renderedMovieJobId, setRenderedMovieJobId] = useState<string | null>(null);
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -364,6 +400,77 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  const loadSeriesSettings = useCallback(async (seriesId: string) => {
+    try {
+      const res = await api()?.mediaSeriesSettingsList?.(seriesId);
+      if (res?.ok && Array.isArray(res.settings)) {
+        setAvailableSettings(res.settings);
+        if (res.settings.length > 0 && !selectedSettingId) {
+          const firstId = res.settings[0].id;
+          setSelectedSettingId(firstId);
+          const bundleRes = await api()?.mediaSeriesSettingsGet?.(seriesId, firstId);
+          if (bundleRes?.ok && bundleRes.bundle) {
+            setActiveSettingBundle(bundleRes.bundle);
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [selectedSettingId]);
+
+  useEffect(() => {
+    if (activeWorkspace === 'stage') {
+      loadSeriesSettings(selectedSeriesId);
+    }
+  }, [activeWorkspace, selectedSeriesId, loadSeriesSettings]);
+
+  const handleSelectSetting = async (settingId: string) => {
+    setSelectedSettingId(settingId);
+    if (!settingId) {
+      setActiveSettingBundle(null);
+      return;
+    }
+    try {
+      const res = await api()?.mediaSeriesSettingsGet?.(selectedSeriesId, settingId);
+      if (res?.ok && res.bundle) {
+        setActiveSettingBundle(res.bundle);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleExtractForegroundRmbg = async () => {
+    setError(null);
+    if (!activeSettingBundle?.bgPath) {
+      setDone('To extract foreground layers with CPU RMBG, select a custom setting plate first.');
+      setTimeout(() => setDone(null), 4000);
+      return;
+    }
+    setIsSegmenting(true);
+    setBusy('rmbg-segment');
+    setBusyLabel('Extracting foreground occlusion layer via CPU RMBG neural model (0 MB VRAM)...');
+    try {
+      const res = await api()?.mediaSeriesSettingsSegment?.({
+        imageBase64: '',
+        preferCpu: true,
+      });
+      if (res?.ok) {
+        setDone('✓ Successfully extracted foreground occlusion layer using CPU RMBG!');
+        await loadSeriesSettings(selectedSeriesId);
+      } else {
+        setError(res?.error || 'Foreground segmentation completed with no plate changes.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to extract foreground plate.');
+    } finally {
+      setIsSegmenting(false);
+      setBusy(null);
+      setBusyLabel('');
+    }
+  };
 
   // Deep linking and cross-workspace handoff (e.g. from Chat or external tool invocation)
   useEffect(() => {
@@ -1305,7 +1412,11 @@ ${shots.map((s, idx) => `
       });
       if (res?.ok && res.moviePath) {
         setRenderedMoviePath(res.moviePath);
-        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)!`);
+        if (res.jobId) {
+          setRenderedMovieJobId(res.jobId);
+        }
+        await refresh();
+        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)! Bridged to Director queue.`);
       } else {
         setRenderedMoviePath(previousExport);
         setStoryboardMessage(null);
@@ -2438,6 +2549,7 @@ ${shots.map((s, idx) => `
                   src={timelineMediaSource}
                   preload="metadata"
                   controls={false}
+                  style={{ filter: getLutCssFilter(colorGradeLut) }}
                 />
               ) : job?.scenePaths?.length ? (
                 <div className="ms-monitor-slides">
@@ -2452,6 +2564,7 @@ ${shots.map((s, idx) => `
                         className="ms-monitor-img"
                         src={toMediaFileUrl(scenePath)}
                         alt={`Active Scene ${sceneIndex + 1}`}
+                        style={{ filter: getLutCssFilter(colorGradeLut) }}
                       />
                     ) : (
                       <div className="ms-monitor-placeholder">
@@ -2602,7 +2715,9 @@ ${shots.map((s, idx) => `
                   </div>
                 </div>
                 <div className="ms-nle-field-row">
-                  <span className="ms-nle-field-label">Color Grade LUT:</span>
+                  <span className="ms-nle-field-label">
+                    Color Grade LUT: <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 500 }}>(Live CSS Preview)</span>
+                  </span>
                   <div className="ms-nle-btn-group">
                     {[
                       { id: 'rec709', label: 'Rec.709 Natural' },
@@ -3010,6 +3125,17 @@ ${shots.map((s, idx) => `
         ? 'ms-viewport-screen--square'
         : 'ms-viewport-screen--landscape';
 
+    const framing: StageFraming = stageCameraPreset === '35mm' ? 'wide' : stageCameraPreset === '50mm' ? 'medium' : 'close';
+    const cameraMotion: CameraMotion = stageMotionPreset === 'static' ? 'static' : stageMotionPreset === 'pan' ? 'pan_left' : stageMotionPreset === 'zoom' ? 'zoom_in' : 'pan_right';
+    const lighting: SettingLighting = stageLightingPreset === 'dawn' ? LIGHTING_PRESETS.daylight : stageLightingPreset === 'torch' ? LIGHTING_PRESETS.torchlight : stageLightingPreset === 'noon' ? LIGHTING_PRESETS.studio_warm : LIGHTING_PRESETS.scifi_cool;
+
+    const bgSrc = activeSettingBundle?.bgPath
+      ? toMediaFileUrl(activeSettingBundle.bgPath)
+      : (job?.scenePaths?.length && job.scenePaths[0] ? toMediaFileUrl(job.scenePaths[0]) : DEFAULT_STAGE_BG);
+    const fgSrc = activeSettingBundle?.fgPath
+      ? toMediaFileUrl(activeSettingBundle.fgPath)
+      : (!activeSettingBundle && (!job?.scenePaths?.length || !job.scenePaths[0]) ? DEFAULT_STAGE_FG : undefined);
+
     return (
       <div className="ms-stage-workspace">
         {/* Stage Header Controls */}
@@ -3080,12 +3206,38 @@ ${shots.map((s, idx) => `
               ➕ Reticle
             </button>
           </div>
+
+          <div className="ms-stage-setting-selector" style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto' }}>
+            <select
+              className="ms-select"
+              aria-label="Active Setting Plate"
+              value={selectedSettingId}
+              onChange={e => handleSelectSetting(e.target.value)}
+              style={{ maxWidth: '200px', fontSize: '0.8rem', padding: '4px 8px' }}
+            >
+              <option value="">Virtual Ancient Stage (Default)</option>
+              {availableSettings.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.hasForeground ? '2-Plate BG+FG' : '1-Plate BG'})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="ms-dcc-toggle-btn"
+              disabled={isSegmenting}
+              onClick={handleExtractForegroundRmbg}
+              title="Run CPU RMBG neural model to extract foreground occlusion plate from current background"
+            >
+              {isSegmenting ? '⏳ Segmenting...' : '✂️ CPU RMBG'}
+            </button>
+          </div>
         </div>
 
         {/* Viewport Frame & Blender N-Panel Inspector Row */}
         <div className="ms-stage-viewport-grid">
           <div className="ms-viewport-container">
-            <div className={`ms-viewport-screen ${aspectClass}`}>
+            <div className={`ms-viewport-screen ${aspectClass}`} style={{ position: 'relative', overflow: 'hidden' }}>
               {/* Active Image or Video Layer */}
               {job?.renderPath ? (
                 <video
@@ -3093,20 +3245,26 @@ ${shots.map((s, idx) => `
                   src={toMediaFileUrl(job.renderPath)}
                   controls
                 />
-              ) : job?.scenePaths?.length && job.scenePaths[0] ? (
-                <img
-                  className="ms-viewport-content-img"
-                  src={toMediaFileUrl(job.scenePaths[0]!)}
-                  alt="Viewport Stage Preview"
-                />
               ) : (
-                <div className="ms-viewport-fallback">
-                  <div className="ms-viewport-rig-preview">
-                    <span className="ms-rig-character" aria-hidden="true">🏛️</span>
-                    <span className="ms-rig-title">Remotion 2D Puppet Canvas</span>
-                    <span className="ms-rig-sub">4px Alpha-Feathered Viseme Lip-Sync Rig Active</span>
-                  </div>
-                </div>
+                <MultiPlaneStage
+                  bgSrc={bgSrc}
+                  fgSrc={fgSrc}
+                  framing={framing}
+                  cameraMotion={cameraMotion}
+                  lighting={lighting}
+                  progress={stageScrubProgress}
+                  aspectRatio={stageAspectRatio === '16:9' ? '16/9' : stageAspectRatio === '9:16' ? '9/16' : '1/1'}
+                  characterSlot={
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <span style={{ fontSize: '72px', filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.5))' }}>
+                        🏛️
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#f8fafc', background: 'rgba(0,0,0,0.6)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, marginTop: '4px' }}>
+                        Leila (Sprite Rig)
+                      </span>
+                    </div>
+                  }
+                />
               )}
 
               {/* Viewport Overlays */}
@@ -3227,6 +3385,21 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
+              <label className="ms-param-label">
+                Parallax Scrub ({Math.round(stageScrubProgress * 100)}%):
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={Math.round(stageScrubProgress * 100)}
+                aria-label="Stage parallax scrub progress"
+                onChange={e => setStageScrubProgress(Number(e.target.value) / 100)}
+                className="ms-nle-slider"
+              />
+            </div>
+
+            <div className="ms-stage-param-group">
               <label className="ms-param-label">Lighting Mood &amp; Color Grade:</label>
               <div className="ms-param-btn-row">
                 <button
@@ -3261,23 +3434,23 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Character Sprite Rig Telemetry:</label>
+              <label className="ms-param-label">Optical Staging &amp; Depth Telemetry:</label>
               <div className="ms-rig-telemetry-box">
                 <div className="ms-telemetry-row">
-                  <span>Canonical Model Sheet:</span>
-                  <span className="ms-telemetry-val">12 Libraries Loaded</span>
+                  <span>Active Setting:</span>
+                  <span className="ms-telemetry-val">{activeSettingBundle ? activeSettingBundle.manifest.name : 'Virtual Ancient Stage'}</span>
                 </div>
                 <div className="ms-telemetry-row">
-                  <span>Viseme Lip-Sync Scale:</span>
-                  <span className="ms-telemetry-val">scale(0.42) Feathered</span>
+                  <span>Depth Planes:</span>
+                  <span className="ms-telemetry-val">{fgSrc ? '4 Tiers (BG, Shadow, Sprite, FG Occlusion)' : '3 Tiers (BG, Shadow, Sprite)'}</span>
                 </div>
                 <div className="ms-telemetry-row">
-                  <span>Chroma Extraction:</span>
-                  <span className="ms-telemetry-val">Panel Slicer (0 bleed)</span>
+                  <span>Lighting Grade:</span>
+                  <span className="ms-telemetry-val">{stageLightingPreset.toUpperCase()} ({lighting.preset})</span>
                 </div>
                 <div className="ms-telemetry-row">
-                  <span>Preflight Doctor Status:</span>
-                  <span className="ms-telemetry-pass">✓ 20/20 Checks Passed</span>
+                  <span>Parallax Differential:</span>
+                  <span className="ms-telemetry-pass">BG: 1.00x · Char: 1.15x · FG: 1.35x (0 MB VRAM)</span>
                 </div>
               </div>
             </div>
@@ -4128,6 +4301,22 @@ ${shots.map((s, idx) => `
                     }}
                   >
                     ▶ Open Video
+                  </button>
+                  <button
+                    type="button"
+                    className="ms-btn ms-btn--cta"
+                    onClick={() => {
+                      const jId = renderedMovieJobId || `sb_${selectedStoryboardId}`;
+                      setSelectedJobId(jId);
+                      setActiveWorkspace('director');
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#fff',
+                      fontWeight: 600,
+                    }}
+                  >
+                    🎬 Review &amp; Publish →
                   </button>
                   <button
                     type="button"
