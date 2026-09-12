@@ -246,6 +246,40 @@ describe('the concat script', () => {
   it('is empty when no scene has an image, so the caller falls back', () => {
     expect(buildConcatFileContent([{ startMs: 0, endMs: 1000, imagePath: null }])).toBe('');
   });
+
+  /**
+   * Real narration has pauses. Every case above feeds CONTIGUOUS segments, which
+   * is why this never showed up here — it showed up in the nightly gate instead,
+   * as "the video is 6.3s but the narration is 10.0s".
+   *
+   * A cue group spans its own first-cue start to its own last-cue end, so the
+   * silence BETWEEN groups, the lead-in before the first word and the tail after
+   * the last belong to no segment at all. The concat then totals only spoken
+   * time, ffmpeg's -shortest trims the render to it, and the video comes out
+   * shorter than its own audio.
+   */
+  it('covers the whole narration, not just the spoken parts', () => {
+    // Timings taken from the shape of the nightly failure: three sentences with
+    // real pauses, 6.3s of speech inside a 10.0s narration.
+    const cues = [
+      { startMs: 500, endMs: 2500 },
+      { startMs: 3700, endMs: 5900 },
+      { startMs: 7700, endMs: 9800 },
+    ];
+    const narrationMs = 10_000;
+
+    const timeline = timelineFromCues(cues, i => `scene-${i}.png`, narrationMs);
+    const covered = timeline.reduce((sum, s) => sum + (s.endMs - s.startMs), 0);
+
+    // Without this, covered is 6300 — the 3.7s of pause/lead-in/tail is dropped
+    // and the render is truncated to the spoken total.
+    expect(covered).toBe(narrationMs);
+
+    // And the same must hold in the file ffmpeg actually reads.
+    const durations = [...buildConcatFileContent(timeline).matchAll(/^duration ([\d.]+)$/gm)]
+      .map(m => Number(m[1]));
+    expect(durations.reduce((a, b) => a + b, 0)).toBeCloseTo(narrationMs / 1000, 3);
+  });
 });
 
 describe('the multi-scene command', () => {
