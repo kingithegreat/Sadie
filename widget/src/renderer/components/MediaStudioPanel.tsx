@@ -13,7 +13,6 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import * as path from 'path';
 import { useConfirmDestructive } from './ConfirmDestructive';
 import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
@@ -1960,7 +1959,7 @@ ${shots.map((s, idx) => `
                 ))}
               </select>
             )}
-            {stageAction(j)!.action === 'narrate' && (narrateVoice || narrateEngine === 'kokoro') && (
+            {stageAction(j)!.action === 'narrate' && (
               <button
                 className="ms-btn"
                 disabled={sampling !== null}
@@ -2306,7 +2305,8 @@ ${shots.map((s, idx) => `
           durationSec: Math.min(timelineTime || 5, duration || 30),
         });
         if (res?.ok) {
-          setDone(`Trimmed video saved to: ${path.basename((res.result as any)?.path || 'output.mp4')}`);
+          const outPath = String((res.result as any)?.path || 'output.mp4');
+          setDone(`Trimmed video saved to: ${outPath.split(/[\\/]/).pop() || outPath}`);
         } else {
           setError(res?.error || 'Trim failed.');
         }
@@ -2363,7 +2363,8 @@ ${shots.map((s, idx) => `
           durationSec: rangeSec,
         });
         if (res?.ok) {
-          setDone(`Exported selection saved to: ${path.basename((res.result as any)?.path || 'selection.mp4')}`);
+          const outPath = String((res.result as any)?.path || 'selection.mp4');
+          setDone(`Exported selection saved to: ${outPath.split(/[\\/]/).pop() || outPath}`);
         } else {
           setError(res?.error || 'Selection export failed.');
         }
