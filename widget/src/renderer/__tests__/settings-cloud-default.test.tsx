@@ -61,7 +61,9 @@ describe('SettingsPanel — cloud connection defaults', () => {
     expect(apiKeyInput).toBeTruthy();
     fireEvent.change(apiKeyInput, { target: { value: 'sk-test' } });
 
-    fireEvent.click(getByText('Connect'));
+    const connectBtn = container.querySelector('.custom-llm-section .connect-btn') as HTMLButtonElement;
+    expect(connectBtn).toBeTruthy();
+    fireEvent.click(connectBtn);
 
     await waitFor(() => {
       // Copy updated: the old wording ("available when you choose it") described
