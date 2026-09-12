@@ -5,6 +5,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { I18nProvider } from "./i18n";
 import "./styles/chatgpt-theme.css";
 import "highlight.js/styles/atom-one-dark.css";
+import "./styles/homebot-palette.css";
 
 const root = document.getElementById("root");
 

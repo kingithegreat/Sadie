@@ -30,6 +30,8 @@ preserved; this note corrects attribution without rewriting another worktree.
 
 ## Active claims
 
+| UI palette and visual harmony | claude/ui-harmony | Publishing / CI verification (2026-09-13, Codex) | Owner approved the next integration step. Unified charcoal/cream/sage palette, softer chrome, readable Studio light theme and compact cards. Real Electron dark/light, Studio navigation, contrast, compact composer/cards/Settings and keyboard check passes. Full widget 4,107 and root 227 tests passed before integrating current main; integrated renderer checks and typecheck/build pass. Evidence: tasks/ui-harmony.md. |
+
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
 | Studio output contract — captions, saved formats and production acceptance | claude/studio-output-contract | In progress — Codex, sole ownership confirmed by Aden 2026-09-13 NZ | Continues STUDIO-02–05 from main c90f077 after #314. First persist captions off through UI/IPC/job/storyboard/QA, preserving timing metadata and legacy approved exports; then saved output formats and parity. #313 at 3a6f6d7 and its uncommitted docs are preserved as handoff/reference, not merged wholesale. Existing nightly-media gate (#316), UI harmony and unrelated claims are preserved. CPU FFmpeg/4 GB/privacy constraints remain; no paid generation or publication. |

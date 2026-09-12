@@ -1,0 +1,380 @@
+/* HomeBot's shared visual palette. Keep legacy token names as aliases so
+   chat, settings, lazy panels and Studio all inherit the same colours.
+   This file owns colour and chrome; structural/overlay rules stay in the
+   component stylesheet. Media pixels and semantic status colours stay intact. */
+:root, [data-theme='dark'] {
+  color-scheme: dark;
+  --bg-darkest: #171918;
+  --bg-darker: #1c1e1c;
+  --bg-dark: #222522;
+  --bg-medium: #292c29;
+  --bg-light: #343834;
+  --bg-hover: #303530;
+  --text-primary: #f1f0e9;
+  --text-secondary: #c0c4ba;
+  --text-muted: #969e92;
+  --text-light: var(--text-primary);
+  --text-dark: #192118;
+  --text-inverse: #192118;
+  --accent-primary: #b9cda6;
+  --accent-hover: #cedebb;
+  --accent-light: #dce8cf;
+  --accent-dark: #536b43;
+  --accent-contrast: #192118;
+  --accent-muted: rgb(185 205 166 / 12%);
+  --border-light: rgb(218 226 208 / 7%);
+  --border-medium: rgb(218 226 208 / 16%);
+  --border-color: rgb(218 226 208 / 11%);
+  --border-focus: #a9c294;
+  --glass-bg: #222522;
+  --glass-border: var(--border-color);
+  --material-thin: #242724;
+  --material-regular: #282b27;
+  --material-thick: #20231f;
+  --bg-user-msg: #35432e;
+  --shadow-glow: none;
+  --shadow-inset: none;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg-darkest: #eeede6;
+  --bg-darker: #f2f1eb;
+  --bg-dark: #f8f7f1;
+  --bg-medium: #fdfcf7;
+  --bg-light: #e9eae1;
+  --bg-hover: #e5e8dc;
+  --text-primary: #272d24;
+  --text-secondary: #535e4f;
+  --text-muted: #65705f;
+  --text-light: var(--text-primary);
+  --text-dark: #ffffff;
+  --text-inverse: #ffffff;
+  --accent-primary: #49663a;
+  --accent-hover: #39552c;
+  --accent-light: #49663a;
+  --accent-dark: #304b25;
+  --accent-contrast: #ffffff;
+  --accent-muted: rgb(73 102 58 / 10%);
+  --border-light: rgb(55 67 46 / 8%);
+  --border-medium: rgb(55 67 46 / 20%);
+  --border-color: rgb(55 67 46 / 13%);
+  --border-focus: #49663a;
+  --glass-bg: #f8f7f1;
+  --glass-border: var(--border-color);
+  --material-thin: #f8f7f1;
+  --material-regular: #fdfcf7;
+  --material-thick: #f2f1eb;
+  --bg-user-msg: #e2e9d9;
+}
+
+:root, [data-theme] {
+  --bg-main: var(--bg-darker);
+  --bg-sidebar: var(--bg-darkest);
+  --bg-chat: var(--bg-main);
+  --bg-input: var(--bg-medium);
+  --bg-panel: var(--bg-dark);
+  --bg-card: var(--bg-medium);
+  --bg-secondary: var(--bg-dark);
+  --bg-primary: var(--bg-dark);
+  --bg-assistant-msg: var(--bg-dark);
+  --accent: var(--accent-primary);
+  --accent-quiet: var(--accent-muted);
+  --hairline: var(--border-color);
+  --homebot-blue-300: var(--accent-light);
+  --homebot-blue-500: var(--accent-primary);
+  --homebot-blue-700: var(--accent-dark);
+  --homebot-navy: var(--bg-darkest);
+  --glow-cyan: var(--accent-primary);
+  --glow-blue: var(--accent-primary);
+  --glow-purple: var(--accent-primary);
+  --terminal-bg: var(--bg-darkest);
+  --terminal-fg: var(--text-primary);
+  --terminal-prompt: var(--accent-primary);
+  --font-sans: 'Aptos', 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+}
+
+button, input, textarea, select { font-family: inherit; }
+input, select, textarea { accent-color: var(--accent-primary); }
+::selection { background: var(--accent-muted); color: var(--text-primary); }
+
+/* A quiet continuous frame, without coloured glass, neon or bevels. */
+[data-theme] .app-container, .app-container[data-theme] {
+  background: var(--bg-main);
+  animation: none;
+}
+[data-theme] :is(.app-header, .widget-titlebar, .expanded-titlebar) {
+  background: var(--bg-main);
+  border-color: var(--border-light);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+[data-theme] .app-header { padding: 12px 20px; }
+[data-theme] .widget-titlebar { padding-inline: 18px; }
+[data-theme] .widget-titlebar-controls button {
+  border-radius: 10px;
+  color: var(--text-secondary);
+}
+[data-theme] .widget-titlebar-controls button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+[data-theme] .widget-titlebar-controls .close-btn:hover {
+  background: var(--error-muted);
+  color: var(--error);
+}
+[data-theme] :is(.header-logo, .welcome-logo) { filter: none; animation: none; }
+[data-theme] .hb-logo stop { stop-color: var(--accent-primary); }
+[data-theme] .hb-logo g path { stroke: var(--accent-contrast); }
+[data-theme] .hb-logo g path[fill-rule] { fill: var(--accent-contrast); stroke: none; }
+[data-theme] :is(.widget-titlebar-brand h1, .app-header h1, .app-title, .welcome-title) {
+  color: var(--text-primary);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  text-shadow: none;
+  animation: none;
+}
+[data-theme] .mode-switcher {
+  background: var(--bg-darkest);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 4px;
+  gap: 3px;
+  backdrop-filter: none;
+}
+[data-theme] .mode-switcher .mode-btn {
+  border-radius: 10px;
+  padding: 7px 12px;
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+[data-theme] .mode-switcher .mode-btn.active {
+  background: var(--bg-light);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+[data-theme] .mode-switcher .mode-btn:not(.active):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+[data-theme] .mode-btn.active::after { display: none; }
+[data-theme] .app-header::after { display: none; }
+[data-theme] .mode-switcher { border-image: none; }
+[data-theme] .app-header .mode-switcher { border-color: var(--border-color); }
+
+/* Give the conversation space to breathe; keep the composer easy to find. */
+[data-theme] :is(.welcome-container, .chat-interface) { background: transparent; }
+[data-theme] .welcome-container::before,
+[data-theme] .welcome-container::after,
+[data-theme] .welcome-icon::after { display: none; }
+[data-theme] .welcome-title { font-size: clamp(26px, 3vw, 38px); font-weight: 500; }
+[data-theme] .welcome-subtitle { color: var(--text-secondary); }
+[data-theme] .input-container {
+  background: var(--bg-main);
+  border: none;
+  box-shadow: none;
+}
+[data-theme] .input-box {
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: 22px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 8%);
+}
+[data-theme] .input-box:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+[data-theme] .input-field { background: transparent; color: var(--text-primary); }
+[data-theme] .daily-label { opacity: 1; color: var(--text-muted); }
+[data-theme] .ms-tab-badge { background: var(--bg-medium); color: var(--text-secondary); }
+[data-theme] :is(.suggested-pill, .daily-card, .automation-card, .template-card) {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+[data-theme] .suggested-prompts .suggested-pill {
+  border-radius: 14px;
+  padding: 12px 16px;
+  animation: none;
+}
+[data-theme] .suggested-prompts .suggested-pill:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-focus);
+  box-shadow: none;
+  transform: none;
+}
+[data-theme] :is(.button-primary, .hb-modal-btn-primary, .send-button) {
+  background: var(--accent-primary);
+  color: var(--accent-contrast);
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+}
+[data-theme] :is(.button-primary, .hb-modal-btn-primary, .send-button):not(:disabled):hover {
+  background: var(--accent-hover);
+  box-shadow: none;
+}
+[data-theme] :is(.message-avatar.assistant, .message-avatar.user) {
+  background: var(--bg-light);
+  color: var(--accent-primary);
+  box-shadow: none;
+  animation: none;
+}
+[data-theme] .message-avatar::before { display: none; }
+[data-theme] .message-wrapper:hover .message-avatar { box-shadow: none; }
+[data-theme] :is(.model-dropdown, .settings-panel, .conversation-sidebar) {
+  background: var(--bg-panel);
+  border-color: var(--border-color);
+}
+[data-theme] .settings-panel :is(.settings-header, .settings-footer, .settings-tabs) {
+  background: var(--bg-panel);
+  border-color: var(--border-color);
+}
+[data-theme] .settings-panel .setting-hint { opacity: 1; color: var(--text-muted); }
+[data-theme] .settings-panel :is(.sp-view-btn, .theme-btn, .button-cancel, .close-button) {
+  background: var(--bg-medium);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: none;
+}
+[data-theme] .settings-panel :is(.sp-view-btn.active, .theme-btn.active, .button-save) {
+  background: var(--accent-primary);
+  color: var(--accent-contrast);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+[data-theme] .settings-panel .close-button { width: 30px; height: 30px; }
+[data-theme] .model-card.active { border-color: var(--border-focus); box-shadow: none; }
+[data-theme] :is(.setting-input, .model-search-input):focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+/* Studio is part of the app. Only the actual media canvas keeps a black
+   background; inspector, tabs and project cards use the shared surfaces. */
+[data-theme] .media-studio {
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+[data-theme] :is(.ms-dcc-bar, .ms-dcc-shell, .ms-workspace,
+  .ms-timeline-workspace, .ms-stage-workspace, .ms-storyboard-workspace,
+  .ms-timeline-inspector, .ms-stage-inspector, .ms-storyboard-create-box,
+  .ms-storyboard-meta-card, .ms-storyboard-director-box, .ms-shot-card,
+  .ms-nle-panel, .ms-nle-tab-pane, .ms-animatic-modal, .ms-rig-telemetry-box) {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+[data-theme] :is(.ms-timeline-transport, .ms-timeline-toolbar, .ms-storyboard-topbar,
+  .ms-shot-card-header, .ms-animatic-header, .ms-animatic-controls, .ms-nle-tabs) {
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+[data-theme] :is(.ms-hub-card, .ms-hub-card:hover) {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  border-radius: 18px;
+  box-shadow: none;
+  transform: none;
+  padding: 20px;
+}
+[data-theme] .ms-hub-card:hover { background: var(--bg-hover); border-color: var(--border-focus); }
+[data-theme] .ms-hub-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  text-align: left;
+}
+[data-theme] .ms-hub-badge { grid-column: 2; justify-self: start; }
+[data-theme] .ms-dcc-branding h2 {
+  color: var(--text-primary);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  text-shadow: none;
+  font-family: var(--font-sans);
+}
+[data-theme] .ms-dcc-pill-row .ms-dcc-chip {
+  background: var(--bg-medium);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+[data-theme] :is(.ms-workspace-tab, .ms-workspace-tab:hover) {
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+[data-theme] .ms-tab-pill { color: var(--text-secondary); background: var(--bg-medium); }
+[data-theme] .ms-hub-desc { white-space: normal; line-height: 1.5; }
+[data-theme] :is(.ms-hub-title, .ms-stage-inspector-title, .ms-storyboard-meta-title,
+  .ms-storyboard-titles h3, .ms-timeline-inspector h4, .ms-animatic-title) {
+  color: var(--text-primary);
+  text-shadow: none;
+}
+[data-theme] :is(.ms-input, .ms-select, .ms-storyboard-select, .ms-director-select,
+  .ms-shot-textarea, .ms-shot-duration-input, .ms-director-textarea) {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+  border-radius: 10px;
+}
+[data-theme] :is(.ms-chip--orange, .ms-chip--cyan, .ms-chip--purple, .ms-hub-badge,
+  .ms-shot-number-badge, .ms-animatic-badge) {
+  background: var(--accent-muted);
+  color: var(--accent-primary);
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+[data-theme] :is(.ms-param-btn, .ms-dcc-aspect-btn, .ms-dcc-toggle-btn,
+  .ms-nle-pill-btn, .ms-preset-chip, .ms-shot-pill, .ms-shot-icon-btn, .ms-transport-btn) {
+  color: var(--text-secondary);
+  background: var(--bg-medium);
+  border-color: var(--border-color);
+  border-radius: 8px;
+  box-shadow: none;
+}
+[data-theme] :is(.ms-param-btn, .ms-dcc-aspect-btn, .ms-dcc-toggle-btn,
+  .ms-nle-pill-btn, .ms-shot-pill, .ms-source-tab, .ms-nle-tab, .ms-workspace-tab).active {
+  background: var(--accent-muted);
+  color: var(--accent-primary);
+  border-color: var(--border-focus);
+  box-shadow: none;
+}
+[data-theme] .ms-workspace-tab.active .ms-tab-pill { background: var(--accent-muted); }
+[data-theme] .ms-transport-play {
+  background: var(--accent-primary);
+  color: var(--accent-contrast);
+  box-shadow: none;
+}
+[data-theme] .ms-animatic-progress-fill { background: var(--accent-primary); }
+[data-theme] .ms-director-checkbox-label input { accent-color: var(--accent-primary); }
+[data-theme] .ws-statusbar { background: var(--bg-dark); color: var(--text-secondary); }
+
+/* Preserve a clear keyboard path and compact-window usability. */
+[data-theme] :is(button, select, input, textarea):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+}
+@media (max-width: 640px) {
+  [data-theme] .app-header { padding: 8px 12px; }
+  [data-theme] .mode-switcher .mode-btn { padding: 6px 9px; }
+  [data-theme] .ms-director-hub { grid-template-columns: minmax(0, 1fr); }
+  [data-theme] .ms-hub-card { padding: 16px; }
+}
+.app-container.widget-mode .welcome-container { width: 100%; min-width: 0; padding: 20px 16px; }
+.app-container.widget-mode .welcome-title { font-size: 24px; }
+.app-container.widget-mode .daily-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 360px;
+}
+.app-container.widget-mode .daily-card { min-width: 0; width: 100%; }
+.app-container.widget-mode .suggested-prompts { min-width: 0; width: 100%; }
