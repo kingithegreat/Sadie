@@ -222,6 +222,173 @@ describe('MovieProjectRunner', () => {
       expect(rep2.skippedShots).toBe(2);
       expect(generateCalls).toBe(2); // No new calls!
     });
+
+    it('ingests completed Colab worker results from the Drive queue on resumption', async () => {
+      MovieProjectRunner.createProject(tmpDir, sampleProject, [sampleCharacter]);
+      MovieProjectRunner.addScene(tmpDir, sampleScene, [sampleShots[0]]);
+
+      const shotDir = path.join(tmpDir, 'scenes', 'scene_01', 'shot_001');
+      const queueDir = path.join(tmpDir, 'mock_queue');
+      process.env.HOMEBOT_COLAB_QUEUE = queueDir;
+
+      try {
+        // Stage a deferred ticket
+        const ticketId = 'colab_ticket_shot_001_12345678';
+        const manifest = {
+          version: '1.0',
+          jobId: '12345678',
+          ticketId,
+          createdAt: new Date().toISOString(),
+          shotId: 'shot_001',
+          shotDir,
+          prompt: 'test prompt',
+          width: 1024,
+          height: 576,
+          stagedCharacterRefs: [],
+          relativeOutputPath: 'outputs/12345678/shot_001.png',
+          status: ShotStatus.AWAITING_WORKER,
+          attempts: 1,
+        };
+
+        // Write ticket in queue and shot directory
+        fs.mkdirSync(path.join(queueDir, 'tickets'), { recursive: true });
+        fs.writeFileSync(
+          path.join(queueDir, 'tickets', `${ticketId}.json`),
+          JSON.stringify(manifest, null, 2),
+        );
+        fs.writeFileSync(path.join(shotDir, 'ticket.json'), JSON.stringify(manifest, null, 2));
+
+        // Mark shot as AWAITING_WORKER
+        const statusData = {
+          shotId: 'shot_001',
+          status: ShotStatus.AWAITING_WORKER,
+          deferredTicket: ticketId,
+          deferredProvider: 'colab-worker',
+          attempts: 1,
+          characterRevisions: {},
+          updatedAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(path.join(shotDir, 'status.json'), JSON.stringify(statusData, null, 2));
+
+        // Simulate Colab worker producing the completed image
+        const outImg = path.join(queueDir, 'outputs', '12345678', 'shot_001.png');
+        fs.mkdirSync(path.dirname(outImg), { recursive: true });
+        fs.writeFileSync(outImg, movieImageFixture);
+
+        // Run project runner
+        const router = new GenerationRouter().register(mockProvider('mock-engine'));
+        const report = await MovieProjectRunner.runProject(tmpDir, { router });
+
+        expect(report.completedShots).toBe(1);
+        expect(report.deferredShots).toBe(0);
+
+        // Image should be imported into shotDir/image/shot_001.png
+        const importedImg = path.join(shotDir, 'image', 'shot_001.png');
+        expect(fs.existsSync(importedImg)).toBe(true);
+        expect(fs.readFileSync(importedImg)).toEqual(movieImageFixture);
+
+        // status.json should be IMAGE_GENERATED
+        const finalStatus = JSON.parse(fs.readFileSync(path.join(shotDir, 'status.json'), 'utf-8'));
+        expect(finalStatus.status).toBe(ShotStatus.IMAGE_GENERATED);
+        expect(finalStatus.outputFiles).toEqual([path.join('image', 'shot_001.png')]);
+      } finally {
+        delete process.env.HOMEBOT_COLAB_QUEUE;
+      }
+    });
+
+    it('handles partial results: ingests finished shot and preserves pending shot', async () => {
+      MovieProjectRunner.createProject(tmpDir, sampleProject, [sampleCharacter]);
+      MovieProjectRunner.addScene(tmpDir, sampleScene, sampleShots);
+
+      const shot1Dir = path.join(tmpDir, 'scenes', 'scene_01', 'shot_001');
+      const shot2Dir = path.join(tmpDir, 'scenes', 'scene_01', 'shot_002');
+      const queueDir = path.join(tmpDir, 'mock_queue_partial');
+      process.env.HOMEBOT_COLAB_QUEUE = queueDir;
+
+      try {
+        fs.mkdirSync(path.join(queueDir, 'tickets'), { recursive: true });
+
+        // Ticket 1: finished
+        const t1 = 'colab_ticket_shot_001_aaa';
+        const m1 = {
+          version: '1.0',
+          jobId: 'aaa',
+          ticketId: t1,
+          createdAt: new Date().toISOString(),
+          shotId: 'shot_001',
+          shotDir: shot1Dir,
+          prompt: 'shot 1',
+          width: 1024,
+          height: 576,
+          stagedCharacterRefs: [],
+          relativeOutputPath: 'outputs/aaa/shot_001.png',
+          status: ShotStatus.AWAITING_WORKER,
+          attempts: 1,
+        };
+        fs.writeFileSync(path.join(queueDir, 'tickets', `${t1}.json`), JSON.stringify(m1));
+        fs.writeFileSync(path.join(shot1Dir, 'ticket.json'), JSON.stringify(m1));
+        fs.writeFileSync(
+          path.join(shot1Dir, 'status.json'),
+          JSON.stringify({
+            shotId: 'shot_001',
+            status: ShotStatus.AWAITING_WORKER,
+            deferredTicket: t1,
+            deferredProvider: 'colab-worker',
+            attempts: 1,
+            characterRevisions: {},
+          }),
+        );
+        const out1 = path.join(queueDir, 'outputs', 'aaa', 'shot_001.png');
+        fs.mkdirSync(path.dirname(out1), { recursive: true });
+        fs.writeFileSync(out1, movieImageFixture);
+
+        // Ticket 2: still pending (no output in queue)
+        const t2 = 'colab_ticket_shot_002_bbb';
+        const m2 = {
+          version: '1.0',
+          jobId: 'bbb',
+          ticketId: t2,
+          createdAt: new Date().toISOString(),
+          shotId: 'shot_002',
+          shotDir: shot2Dir,
+          prompt: 'shot 2',
+          width: 1024,
+          height: 576,
+          stagedCharacterRefs: [],
+          relativeOutputPath: 'outputs/bbb/shot_002.png',
+          status: ShotStatus.AWAITING_WORKER,
+          attempts: 1,
+        };
+        fs.writeFileSync(path.join(queueDir, 'tickets', `${t2}.json`), JSON.stringify(m2));
+        fs.writeFileSync(path.join(shot2Dir, 'ticket.json'), JSON.stringify(m2));
+        fs.writeFileSync(
+          path.join(shot2Dir, 'status.json'),
+          JSON.stringify({
+            shotId: 'shot_002',
+            status: ShotStatus.AWAITING_WORKER,
+            deferredTicket: t2,
+            deferredProvider: 'colab-worker',
+            attempts: 1,
+            characterRevisions: {},
+          }),
+        );
+
+        const router = new GenerationRouter().register(mockProvider('mock-engine'));
+        const report = await MovieProjectRunner.runProject(tmpDir, { router });
+
+        // Shot 1 finished, Shot 2 remains deferred
+        expect(report.completedShots).toBe(1);
+        expect(report.deferredShots).toBe(1);
+
+        const s1 = JSON.parse(fs.readFileSync(path.join(shot1Dir, 'status.json'), 'utf-8'));
+        expect(s1.status).toBe(ShotStatus.IMAGE_GENERATED);
+
+        const s2 = JSON.parse(fs.readFileSync(path.join(shot2Dir, 'status.json'), 'utf-8'));
+        expect(s2.status).toBe(ShotStatus.AWAITING_WORKER);
+      } finally {
+        delete process.env.HOMEBOT_COLAB_QUEUE;
+      }
+    });
   });
 
   describe('createStandardRouter', () => {
