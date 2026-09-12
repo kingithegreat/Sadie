@@ -13,11 +13,12 @@
  */
 
 import { execFile } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import { resolveBurnSubtitles } from '../../shared/media-output';
+import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
-import { findFfmpeg, escapeFilterPath } from '../media-render';
+import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle } from '../media-render';
 import { inspectRender, SILENCE_FLOOR_DB } from '../media-qa';
 import { assembleShotsForScene, assembleStoryboardScenes, type AssembledShot } from './storyboard-assembly';
 
@@ -27,6 +28,7 @@ export interface StoryboardRenderOptions {
   motion?: boolean;
   burnSubtitles?: boolean;
   outputName?: string;
+  outputSpec?: unknown;
 }
 
 export interface StoryboardRenderResult {
@@ -36,6 +38,8 @@ export interface StoryboardRenderResult {
   totalShots?: number;
   /** The choice actually used by this render, not metadata reread afterwards. */
   burnSubtitles?: boolean;
+  outputSpec?: StudioOutputSpec;
+  renderedOutput?: StudioRenderedOutput;
   error?: string;
 }
 
@@ -82,25 +86,31 @@ export function buildSrtFromShots(shots: ShotManifest[]): string {
 }
 
 /** Generates FFmpeg video filter for Ken Burns motion based on shot movement preset. */
-export function buildKenBurnsFilter(movement: string, durationSec: number, fps = 30): string {
+export function buildKenBurnsFilter(movement: string, durationSec: number, fps = 30, outputVariant?: StudioOutputVariant): string {
+  const base = outputVariant ? buildStudioFrameFilters(outputVariant).join(',') : '';
+  if (outputVariant?.framing.mode === 'fit') return base;
+  const w = outputVariant?.width ?? 1920;
+  const h = outputVariant?.height ?? 1080;
+  fps = outputVariant?.fps ?? fps;
+  const framed = (filter: string) => base ? `${base},${filter}` : filter;
   const frames = Math.max(1, Math.round(durationSec * fps));
   const move = movement.toLowerCase().trim();
 
   if (move === 'slow push in') {
     // Zoom from 1.0 to 1.25 toward center
-    return `zoompan=z='min(zoom+0.0015,1.25)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=${fps}`;
+    return framed(`zoompan=z='min(zoom+0.0015,1.25)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${w}x${h}:fps=${fps}`);
   } else if (move === 'pan right') {
     // Constant 1.15 scale with horizontal rightward pan
-    return `zoompan=z='1.15':x='if(lte(on,1),(iw-iw/zoom)/2,min(x+1.5,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':d=${frames}:s=1920x1080:fps=${fps}`;
+    return framed(`zoompan=z='1.15':x='if(lte(on,1),(iw-iw/zoom)/2,min(x+1.5,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`);
   } else if (move === 'tilt up') {
     // Constant 1.15 scale with upward vertical tilt
-    return `zoompan=z='1.15':x='iw/2-(iw/zoom/2)':y='if(lte(on,1),(ih-ih/zoom)/2,max(y-1.5,0))':d=${frames}:s=1920x1080:fps=${fps}`;
+    return framed(`zoompan=z='1.15':x='iw/2-(iw/zoom/2)':y='if(lte(on,1),(ih-ih/zoom)/2,max(y-1.5,0))':d=${frames}:s=${w}x${h}:fps=${fps}`);
   } else if (move === 'tracking') {
     // Slight zoom with diagonal flow
-    return `zoompan=z='min(zoom+0.001,1.18)':x='if(lte(on,1),(iw-iw/zoom)/2,min(x+1.2,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':d=${frames}:s=1920x1080:fps=${fps}`;
+    return framed(`zoompan=z='min(zoom+0.001,1.18)':x='if(lte(on,1),(iw-iw/zoom)/2,min(x+1.2,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`);
   } else {
     // Static locked shot: scale to fill 1920x1080 cleanly
-    return `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080`;
+    return base || `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080`;
   }
 }
 
@@ -141,6 +151,26 @@ export async function renderStoryboardMovie(
     return { ok: false, error: `Storyboard project directory not found: ${projectDir}` };
   }
 
+  const metaPath = path.join(projectDir, 'project.json');
+  let projectMeta: Record<string, any>;
+  let outputSpec: StudioOutputSpec | undefined;
+  let burnSubtitles: boolean;
+  try {
+    projectMeta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
+    const requestedSpec = opts.outputSpec === undefined ? projectMeta.outputSpec : opts.outputSpec;
+    outputSpec = requestedSpec === undefined ? undefined : resolveStudioOutputSpec(requestedSpec);
+    if (outputSpec && !fs.existsSync(metaPath)) throw new Error('Save this project before choosing an export format.');
+    burnSubtitles = resolveBurnSubtitles(opts.burnSubtitles, resolveBurnSubtitles(projectMeta.burnSubtitles));
+  } catch (error) {
+    return { ok: false, error: `Could not read output settings: ${(error as Error).message}` };
+  }
+  const outputVariant = outputSpec?.variants[0];
+  const width = outputVariant?.width ?? 1920;
+  const height = outputVariant?.height ?? 1080;
+  const fps = outputVariant?.fps ?? 30;
+  const subtitleStyle = outputVariant ? defaultSubtitleStyle(outputVariant.aspectRatio)
+    : 'FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Alignment=2,MarginV=35';
+
   const sceneId = opts.sceneId;
   if (sceneId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(sceneId)) {
     return { ok: false, error: 'Choose a valid storyboard scene before exporting.' };
@@ -180,11 +210,15 @@ export async function renderStoryboardMovie(
   }
 
   const rendersDir = path.join(projectDir, 'renders');
-  const outputFilename = opts.outputName || `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-1080p.mp4`;
+  const exportId = randomUUID();
+  const outputFilename = opts.outputName || (outputVariant
+    ? `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-${outputVariant.id}-${exportId}.mp4`
+    : `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-1080p.mp4`);
   if (path.basename(outputFilename) !== outputFilename || /[<>:"|?*\\/\x00-\x1f]/.test(outputFilename) || !/\.mp4$/i.test(outputFilename)) {
     return { ok: false, error: 'The export needs an MP4 filename inside this project.' };
   }
   const finalMoviePath = path.join(rendersDir, outputFilename);
+  if (outputSpec && fs.existsSync(finalMoviePath)) return { ok: false, error: 'Choose a new export filename. Existing exports are preserved.' };
   let tempDir: string | undefined;
 
   try {
@@ -194,10 +228,6 @@ export async function renderStoryboardMovie(
     const stagedMoviePath = path.join(tempDir, 'movie.mp4');
     const totalDuration = shots.reduce((acc, s) => acc + s.durationSec, 0);
     const motion = opts.motion !== false;
-    const metaPath = path.join(projectDir, 'project.json');
-    const projectMeta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
-    const burnSubtitles = resolveBurnSubtitles(opts.burnSubtitles,
-      resolveBurnSubtitles(projectMeta.burnSubtitles));
     const hasNarration = shots.some(shot => !!shot.narration?.trim());
 
     // 1. Render Audio Track (Voiceover per shot or silent bed)
@@ -278,7 +308,7 @@ export async function renderStoryboardMovie(
         const imgPath = shot.frameImagePath!;
 
         const shotClipPath = path.join(tempDir, `clip_${String(i).padStart(3, '0')}.mp4`);
-        const kbFilter = buildKenBurnsFilter(shot.movement || 'static', dur, 30);
+        const kbFilter = buildKenBurnsFilter(shot.movement || 'static', dur, fps, outputVariant);
 
         await runCommand(ffmpeg, [
           '-y',
@@ -288,7 +318,7 @@ export async function renderStoryboardMovie(
           '-c:v', 'libx264',
           '-preset', 'veryfast',
           '-t', String(dur),
-          '-r', '30',
+          '-r', String(fps),
           shotClipPath,
         ]);
         videoClips.push(shotClipPath);
@@ -313,7 +343,7 @@ export async function renderStoryboardMovie(
         const escapedSrt = escapeFilterPath(srtPath);
         muxArgs.push(
           '-vf',
-          `subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Alignment=2,MarginV=35'`
+          `subtitles='${escapedSrt}':force_style='${subtitleStyle}'`
         );
       }
 
@@ -342,13 +372,14 @@ export async function renderStoryboardMovie(
       fs.writeFileSync(concatListPath, rows.join('\n') + '\n', 'utf-8');
 
       const filters = [
-        'fps=30',
-        'scale=1920:1080:force_original_aspect_ratio=increase',
-        'crop=1920:1080',
+        `fps=${fps}`,
+        ...(outputVariant ? buildStudioFrameFilters(outputVariant) : [
+          'scale=1920:1080:force_original_aspect_ratio=increase', 'crop=1920:1080',
+        ]),
       ];
       if (srtPath && fs.existsSync(srtPath)) {
         const escapedSrt = escapeFilterPath(srtPath);
-        filters.push(`subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Alignment=2,MarginV=35'`);
+        filters.push(`subtitles='${escapedSrt}':force_style='${subtitleStyle}'`);
       }
       filters.push('format=yuv420p');
 
@@ -375,7 +406,7 @@ export async function renderStoryboardMovie(
     // encoder exit alone cannot establish that its video/audio packets are readable.
     await runCommand(ffmpeg, ['-v', 'error', '-xerror', '-i', stagedMoviePath, '-map', '0:v:0', '-map', '0:a:0', '-f', 'null', '-']);
     const facts = await inspectRender(ffmpeg, stagedMoviePath);
-    if (!facts.hasVideo || facts.width !== 1920 || facts.height !== 1080 || !facts.hasAudio ||
+    if (!facts.hasVideo || facts.width !== width || facts.height !== height || !facts.hasAudio ||
         !Number.isFinite(facts.durationSeconds) || facts.durationSeconds === null ||
         Math.abs(facts.durationSeconds - totalDuration) > 0.15) {
       throw new Error('The exported video did not match the storyboard duration, picture size or audio tracks. The previous export has been kept.');
@@ -384,12 +415,28 @@ export async function renderStoryboardMovie(
       throw new Error('The exported narration is missing or silent. Check the selected voice and retry.');
     }
     fs.renameSync(stagedMoviePath, finalMoviePath);
+    let renderedOutput: StudioRenderedOutput | undefined;
+    if (outputSpec) {
+      renderedOutput = { exportId, filename: outputFilename, createdAt: new Date().toISOString(),
+        sourceSavedAt: typeof projectMeta.updatedAt === 'string' ? projectMeta.updatedAt : null,
+        durationSeconds: facts.durationSeconds, burnSubtitles, outputSpec };
+      fs.writeFileSync(`${finalMoviePath}.json`, JSON.stringify(renderedOutput, null, 2));
+      if (!sceneId) {
+        // Keep any edits made while rendering. The output records its original
+        // specification; saving the pointer must not overwrite newer settings.
+        const currentMeta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+        const stagedMeta = `${metaPath}.${exportId}.saving`;
+        fs.writeFileSync(stagedMeta, JSON.stringify({ ...currentMeta, latestSuccessfulOutput: renderedOutput }, null, 2));
+        fs.renameSync(stagedMeta, metaPath);
+      }
+    }
     return {
       ok: true,
       moviePath: finalMoviePath,
       durationSec: facts.durationSeconds,
       totalShots: shots.length,
       burnSubtitles,
+      ...(outputSpec ? { outputSpec, renderedOutput } : {}),
     };
   } catch (error) {
     return { ok: false, error: `Movie export failed: ${(error as Error).message}` };

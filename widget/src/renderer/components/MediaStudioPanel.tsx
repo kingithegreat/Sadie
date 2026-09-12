@@ -20,7 +20,8 @@ import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
-import { canEditMediaOutput, hasExternalMediaRenderer } from '../../shared/media-output';
+import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioOutputSpec } from '../../shared/media-output';
+import { StudioOutputSettings } from './StudioOutputSettings';
 import {
   type CameraMotion,
   type StageFraming,
@@ -84,6 +85,7 @@ interface MediaJob {
   title: string;
   format: 'short' | 'long';
   burnSubtitles?: boolean;
+  outputSpec?: StudioOutputSpec;
   externalRenderer?: string;
   state: MediaJobState;
   brief?: string;
@@ -230,6 +232,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [done, setDone] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [format, setFormat] = useState<'short' | 'long'>('short');
+  const [newOutputSpec, setNewOutputSpec] = useState(() => createStudioOutputSpec());
   // "From a podcast…" — collapsed until asked for, so the ordinary create row
   // stays as simple as it was.
   const [feedOpen, setFeedOpen] = useState(false);
@@ -392,7 +395,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
   const renderedStoryboardJob = jobs.find(job => job.renderPath === renderedMoviePath &&
-    (job.id === renderedMovieJobId || job.id === `sb_${selectedStoryboardId}`));
+    (job.id === renderedMovieJobId || job.id === `sb_${selectedStoryboardId}` || job.id.startsWith('sbexport_')));
 
   const api = () => (window as any).electron;
 
@@ -662,7 +665,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const create = async () => {
     const t = title.trim();
     if (!t) return;
-    await run('new', () => api()?.mediaCreate?.({ title: t, format }));
+    await run('new', () => api()?.mediaCreate?.({ title: t, format, outputSpec: { ...newOutputSpec, durationIntent: format } }));
     setTitle('');
   };
 
@@ -1080,6 +1083,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           sceneId: scene.sceneId,
           shots: scene.shots,
           burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
+          ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
         });
         if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
       }
@@ -1419,6 +1423,7 @@ ${shots.map((s, idx) => `
           projectId: selectedStoryboardId,
           motion: true,
           burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
+          ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
         });
       });
       if (loadVersion !== storyboardLoadVersion.current) return;
@@ -1427,7 +1432,9 @@ ${shots.map((s, idx) => `
         setRenderedMovieJobId(res.jobId || null);
         await refresh();
         setStoryboardError(res.warning || null);
-        setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)!${res.jobId ? ' Added to Director review queue.' : ''}`);
+        const output = res.outputSpec?.variants[0];
+        const size = output ? `${output.width} × ${output.height}` : '1080p';
+        setStoryboardMessage(`🎬 Successfully rendered ${size} movie (${res.durationSec}s, ${res.totalShots} shots)!${res.jobId ? ' Added to Director review queue.' : ''}`);
       } else {
         setRenderedMoviePath(previousExport);
         setStoryboardMessage(null);
@@ -1774,7 +1781,7 @@ ${shots.map((s, idx) => `
         </span>
 
         {hasExternalMediaRenderer(j) ? <span className="ms-job-format">
-          Caption settings for this export are controlled by Ancient Pathways.
+          Output settings for this export are controlled by Ancient Pathways.
         </span> : <label className="ms-job-format">
           <input
             type="checkbox"
@@ -1789,6 +1796,12 @@ ${shots.map((s, idx) => `
           {!canEditMediaOutput(j.state) && ' — send back for revision to change'}
         </label>}
 
+        {!hasExternalMediaRenderer(j) && <StudioOutputSettings label={j.title} value={j.outputSpec}
+          durationIntent={j.format} legacyRatio={j.format === 'long' ? '16:9' : '9:16'}
+          disabled={busy === j.id || !canEditMediaOutput(j.state)}
+          saveHint={canEditMediaOutput(j.state) ? 'Changes save to this job; render to make a new video.' : 'Send back for revision to change these settings.'}
+          onChange={outputSpec => { void run(j.id, () => api()?.mediaRun?.(j.id, 'output', { outputSpec }), 'Saving output'); }} />}
+
         {/* 4-Step User-Friendly Progress Stepper */}
         {(() => {
           const currentStep = getJobProgressStep(j);
@@ -1796,7 +1809,7 @@ ${shots.map((s, idx) => `
             { num: 1, label: 'Story & Script' },
             { num: 2, label: 'Voice & Audio' },
             { num: 3, label: 'Animation & Visuals' },
-            { num: 4, label: '1080p Video' },
+            { num: 4, label: 'Video export' },
           ];
           return (
             <div className="ms-stepper" aria-label={`Progress: Step ${currentStep} of 4`}>
@@ -4086,6 +4099,10 @@ ${shots.map((s, idx) => `
         </div>
 
         {activeStoryboard && (
+          <><StudioOutputSettings label="Storyboard" value={activeStoryboard.project.outputSpec} legacyRatio="16:9"
+            disabled={storyboardBusy} saveHint="Saved with Save Board or Render Movie."
+            previewUrl={toMediaFileUrl(activeStoryboardScene?.shots[0]?.frameImagePath)}
+            onChange={outputSpec => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, outputSpec } } : prev)} />
           <label className="ms-job-format">
             <input
               type="checkbox"
@@ -4097,7 +4114,7 @@ ${shots.map((s, idx) => `
                 setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, burnSubtitles } } : prev);
               }}
             />{' '}Burn captions into video — saved with Save Board or Render Movie
-          </label>
+          </label></>
         )}
 
         {/* Inline Create Drawer */}
@@ -5037,6 +5054,8 @@ ${shots.map((s, idx) => `
           </div>
 
           {/* A second source: recap an episode of a podcast. */}
+          <StudioOutputSettings label="New video" value={{ ...newOutputSpec, durationIntent: format }} disabled={busy === 'new'}
+            saveHint="Saved when you add this video." onChange={setNewOutputSpec} />
           <div className="ms-feed">
             {!feedOpen ? (
               <button type="button" className="ms-btn ms-btn-icon-podcast" onClick={() => setFeedOpen(true)}>

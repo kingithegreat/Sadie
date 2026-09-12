@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createStudioOutputSpec } from '../../shared/media-output';
+import { execFile } from 'child_process';
 import {
   formatSrtTimestamp,
   buildSrtFromShots,
@@ -200,6 +202,7 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     const created: any = await mediaCreateStoryboardHandler({
       projectId: 'full-movie-proj',
       title: 'Full Movie',
+      outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop'),
       shots: [
         { prompt: 'Establishing landscape', durationSec: 5, narration: 'Behold the horizon.', movement: 'slow push in' },
         { prompt: 'Subject enters temple', durationSec: 4, narration: 'He enters with caution.', movement: 'pan right' },
@@ -220,7 +223,11 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     expect(res.ok).toBe(true);
     expect(res.durationSec).toBe(9);
     expect(res.totalShots).toBe(2);
-    expect(res.moviePath).toBe(path.join(projectDir, 'renders', 'full-movie-proj-1080p.mp4'));
+    expect(path.dirname(res.moviePath!)).toBe(path.join(projectDir, 'renders'));
+    expect(path.basename(res.moviePath!)).toMatch(/^full-movie-proj-landscape-[a-f0-9-]+\.mp4$/);
+    expect(res.outputSpec).toEqual(createStudioOutputSpec('16:9', 'short', '1080p', 'crop'));
+    expect(res.renderedOutput?.filename).toBe(path.basename(res.moviePath!));
+    expect((execFile as unknown as jest.Mock).mock.calls.some(([, args]) => args.some((arg: string) => arg.includes('zoompan=')))).toBe(true);
 
     // Regression pin: the exact bug this replaces — render must not depend on
     // manifest.json existing anywhere in the project.

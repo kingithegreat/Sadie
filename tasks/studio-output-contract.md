@@ -112,3 +112,28 @@ Final traces/screenshots/outputs: `.kilo/artifacts/studio-output-c796512`.
 Both typechecks, final build/docs/export guard pass; lint zero errors/eight
 existing warnings. Remote checks, main integration and remaining Studio work
 are separate next gates.
+
+## Integrated checkpoint
+
+PR #318 merged on 12 September 2026 at 21:36:34 UTC as
+`8a8372f89160df4a244194141cd9f1acff2ae065`. Its complete tree is identical to
+tested/pushed `7b5c0f5`: `4115ff0098a1680e07a06b5fbf09c0b592a4e46e`.
+All six live required contexts are present and green. Both Windows CI app
+runs execute 4182 widget tests, 227 root tests and 13 overlay Electron tests.
+
+Matrix run `34719486383` executed 20 + 21 + 15 tests on Linux and macOS;
+two opt-in real-media tests are intentionally skipped in each third shard.
+Windows executed 20 + 21 + 14 passed plus one flaky speech-preview test
+that passed its existing first retry; all outer shard runs exited zero on
+attempt 1. The initial speech-preview attempt exceeded its 60-second test
+timeout; its failure screenshot is retained by CI. No timeout or retry policy
+was changed. The five local final Electron tests remain no-retry evidence,
+not a claim that the full CI matrix was retry-free.
+
+The reconciled #315 documentation was compared and is retained in #318 with
+the newer ownership decision. #315 closed, branch/history kept; its obsolete
+matrix was cancelled, not counted green. #319 is a separately preserved
+two-file caption-QA proposal; its absence-of-SRT heuristic must not override
+the explicit caption choice. The caption build claim is released. Remaining
+format/framing/variants, freshness, stage/workspace, pilot and installed-release
+acceptance continue under the existing Studio plan.
