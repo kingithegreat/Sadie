@@ -1,0 +1,48 @@
+{
+  "verifiedOn": "2026-09-13 Pacific/Auckland",
+  "platform": "Windows",
+  "sourceCheckpoint": "2e23161",
+  "integratedMain": "146b1a9",
+  "liveTest": "widget/src/renderer/e2e/storyboard-export.live.e2e.spec.ts",
+  "testsPassed": 2,
+  "retries": 0,
+  "elapsedMinutes": 2.9,
+  "scope": "Two-scene authored-card diagnostics, not an approved episode, generated-art quality proof or installed release",
+  "commonOutput": {
+    "durationSeconds": 8,
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "videoCodec": "h264",
+    "audioCodec": "aac",
+    "audioRmsSpeechSilenceSpeech": [0.08743477235224051, 0, 0.08693222478777374],
+    "sceneCount": 2
+  },
+  "outputs": [
+    {
+      "burnSubtitles": false,
+      "bytes": 113807,
+      "sha256": "559b329a717b34bc338a5e805a846785d51fbe529b1843ae4d7cef5b1ab155b3",
+      "captionWhitePixelCounts": [0, 0]
+    },
+    {
+      "burnSubtitles": true,
+      "bytes": 131760,
+      "sha256": "1c810b1f215cba5e1bf905dad64ff081cce51daadbf6be860f54d92e63bcb314",
+      "captionWhitePixelCounts": [8950, 9705]
+    }
+  ],
+  "legacyCaptionBehaviorPreserved": true,
+  "visibleStoryboardChoiceSavedByRender": true,
+  "newJobDefaultsCaptionsOff": true,
+  "visibleJobChoicePersistsThroughActualIpcAndRestart": true,
+  "savedPreferenceMatchesReviewQueue": true,
+  "fullEndingPlayedWithoutLoop": true,
+  "reopenedAfterRestart": true,
+  "failedReplacementPreservedBytesAndPlayback": true,
+  "replacementWithPlayerLoaded": true,
+  "speechNetworkPositiveControlsPerTest": 5,
+  "speechNetworkAttemptsPerTest": 0,
+  "publicationPerformed": false,
+  "externalAncientPathwaysCaptionParityVerified": false
+}
