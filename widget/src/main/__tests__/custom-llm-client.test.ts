@@ -15,6 +15,8 @@ import {
   autoConfigureCustomLLM,
   fetchAvailableCustomModels,
   streamFromCustomLLM,
+  discoverGeminiModels,
+  ModelDiscoveryError,
 } from '../custom-llm-client';
 
 describe('getModelMetadata', () => {
@@ -499,6 +501,55 @@ describe('fetchAvailableCustomModels – Gemini discovery', () => {
 
     expect(axios.get).not.toHaveBeenCalled();
     expect(models.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── discoverGeminiModels – invalid-key detection ───────────────────────────
+//
+// Google's Generative Language API rejects an invalid key with HTTP 400
+// (reason API_KEY_INVALID), not 401/403 — verified directly against the live
+// endpoint on 2026-09-12. Before the fix, only 401/403 were treated as "key
+// rejected", so a genuinely bad key silently degraded to the fallback model
+// list instead of telling the user their key was wrong.
+describe('discoverGeminiModels – invalid key detection', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('a real 401 is reported as AUTH_FAILED', async () => {
+    (axios.get as jest.Mock).mockRejectedValue({ response: { status: 401, data: {} } });
+    await expect(discoverGeminiModels('bad-key', 'google-ai-studio'))
+      .rejects.toBeInstanceOf(ModelDiscoveryError);
+  });
+
+  test('the actual Google 400/API_KEY_INVALID shape is reported as AUTH_FAILED', async () => {
+    (axios.get as jest.Mock).mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          error: {
+            code: 400,
+            message: 'API key not valid. Please pass a valid API key.',
+            status: 'INVALID_ARGUMENT',
+            details: [
+              { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID', domain: 'googleapis.com' },
+            ],
+          },
+        },
+      },
+    });
+
+    await expect(discoverGeminiModels('bad-key', 'google-ai-studio'))
+      .rejects.toMatchObject({ code: 'AUTH_FAILED' });
+  });
+
+  test('a plain 400 with no API_KEY_INVALID reason is NOT treated as a key rejection', async () => {
+    // Guards against over-widening the fix to "any 400" — only the specific
+    // reason Google actually returns for a bad key should map to AUTH_FAILED.
+    (axios.get as jest.Mock).mockRejectedValue({
+      response: { status: 400, data: { error: { message: 'Malformed request' } } },
+    });
+
+    const err = await discoverGeminiModels('some-key', 'google-ai-studio').catch(e => e);
+    expect(err).not.toBeInstanceOf(ModelDiscoveryError);
   });
 });
 
