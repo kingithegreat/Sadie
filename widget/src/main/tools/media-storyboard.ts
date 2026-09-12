@@ -313,6 +313,9 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
   if (!projectId) {
     return { success: false, error: 'projectId is required.' };
   }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) {
+    return { success: false, error: 'Choose a valid storyboard project.' };
+  }
 
   const rootDir = getStoryboardsRootDir();
   const projectDir = path.join(rootDir, projectId);
@@ -337,12 +340,21 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
       }
     }
 
+    // A saved file is available for review, not a new publication approval.
+    const moviePath = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
+    let renderedMoviePath: string | null = null;
+    try {
+      const stat = fs.lstatSync(moviePath);
+      if (stat.isFile() && stat.size > 0) renderedMoviePath = moviePath;
+    } catch { /* No saved export yet. */ }
+
     return {
       success: true,
       result: {
         project: projectMeta,
         scenes,
         projectDir,
+        renderedMoviePath,
       },
     };
   } catch (err: any) {

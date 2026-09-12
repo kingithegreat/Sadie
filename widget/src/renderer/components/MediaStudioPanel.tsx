@@ -828,6 +828,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       if (res?.ok && res.result) {
         setActiveStoryboard(res.result);
         setSelectedStoryboardId(projectId);
+        setRenderedMoviePath(res.result.renderedMoviePath || null);
       } else {
         setStoryboardError(res?.error || `Could not load storyboard: ${projectId}`);
       }
@@ -1276,23 +1277,31 @@ ${shots.map((s, idx) => `
 
   const handleRenderMovie = async () => {
     if (!selectedStoryboardId || !activeStoryboard) return;
+    const previousExport = renderedMoviePath;
     setStoryboardRendering(true);
     setStoryboardError(null);
     setStoryboardMessage('Rendering 1080p broadcast movie (Ken Burns motion, narration, subtitles)...');
     try {
-      const res = await api()?.mediaStoryboardRender?.({
-        projectId: selectedStoryboardId,
-        sceneId: activeStoryboard.scenes[0]?.sceneId || 'scene_01',
-        motion: true,
-        burnSubtitles: true,
+      const res = await releaseMediaThen('storyboard-export', () => {
+        setRenderedMoviePath(null);
+        return api()?.mediaStoryboardRender?.({
+          projectId: selectedStoryboardId,
+          sceneId: activeStoryboard.scenes[0]?.sceneId || 'scene_01',
+          motion: true,
+          burnSubtitles: true,
+        });
       });
       if (res?.ok && res.moviePath) {
         setRenderedMoviePath(res.moviePath);
         setStoryboardMessage(`🎬 Successfully rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots)!`);
       } else {
+        setRenderedMoviePath(previousExport);
+        setStoryboardMessage(null);
         setStoryboardError(res?.error || 'Failed to render movie.');
       }
     } catch (e: any) {
+      setRenderedMoviePath(previousExport);
+      setStoryboardMessage(null);
       setStoryboardError(e?.message || 'Failed to render movie.');
     } finally {
       setStoryboardRendering(false);
@@ -1834,7 +1843,7 @@ ${shots.map((s, idx) => `
                 ))}
               </select>
             )}
-            {stageAction(j)!.action === 'narrate' && (narrateVoice || narrateEngine === 'kokoro') && (
+            {stageAction(j)!.action === 'narrate' && (
               <button
                 className="ms-btn"
                 disabled={sampling !== null}
@@ -3715,6 +3724,7 @@ ${shots.map((s, idx) => `
                 className="ms-storyboard-select"
                 value={selectedStoryboardId || ''}
                 aria-label="Select Storyboard Project"
+                disabled={storyboardRendering}
                 onChange={e => {
                   const id = e.target.value;
                   if (id) {
@@ -3738,6 +3748,7 @@ ${shots.map((s, idx) => `
                 setIsCreatingStoryboard(!isCreatingStoryboard);
                 if (directorOpen) setDirectorOpen(false);
               }}
+              disabled={storyboardRendering}
             >
               {isCreatingStoryboard ? '✕ Cancel' : '+ New Storyboard'}
             </button>
@@ -3750,6 +3761,7 @@ ${shots.map((s, idx) => `
                 if (isCreatingStoryboard) setIsCreatingStoryboard(false);
               }}
               title="Auto-direct any story prompt or script into a multi-shot visual storyboard ($0.00)"
+              disabled={storyboardRendering}
             >
               {directorOpen ? '✕ Cancel' : '🪄 Auto-Director'}
             </button>
@@ -4064,7 +4076,7 @@ ${shots.map((s, idx) => `
                   <span style={{ fontSize: '1.6rem' }}>🎉</span>
                   <div>
                     <div style={{ fontWeight: 600, color: '#38bdf8', fontSize: '0.92rem' }}>
-                      1080p Broadcast Movie Ready!
+                      Saved movie
                     </div>
                     <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#94a3b8' }}>
                       {renderedMoviePath}
@@ -4092,6 +4104,16 @@ ${shots.map((s, idx) => `
                     ✕
                   </button>
                 </div>
+                <video
+                  key={renderedMoviePath}
+                  className="ms-video"
+                  controls
+                  preload="metadata"
+                  aria-label="Exported storyboard video"
+                  data-testid="ms-video-storyboard-export"
+                  src={toMediaFileUrl(renderedMoviePath)}
+                  style={{ width: '100%', maxHeight: 360, flexBasis: '100%' }}
+                />
               </div>
             )}
 

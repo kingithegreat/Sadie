@@ -204,6 +204,8 @@ export interface CustomLLMConfig {
 }
 
 export interface Settings {
+  /** Saved narration provider used by Studio and the shared speech adapter. */
+  narrationEngine?: 'edge' | 'kokoro';
   alwaysOnTop: boolean;
   n8nUrl: string;
   n8nApiKey?: string;

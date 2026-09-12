@@ -105,7 +105,9 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       framing: promptData.framing || (idx === 0 ? 'wide' : 'medium'),
       lens: promptData.lens || '35mm',
       movement: promptData.movement || 'static',
-      durationSec: Number(promptData.durationSec) || 5,
+      // Missing legacy timing has a default; invalid saved timing must reach
+      // export validation instead of silently becoming a different duration.
+      durationSec: promptData.durationSec === undefined ? 5 : promptData.durationSec,
       narration,
       status: statusData.status || ShotStatus.PLANNED,
       frameImagePath,

@@ -13,6 +13,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { logTelemetryEvent } from '../utils/logger';
 import { getSettings } from '../config-manager';
+import { resolveCloudLLM } from '../../shared/cloud-llm';
+import { loadKokoroForSpeech } from '../tts/kokoro-loader';
 import {
   KOKORO_DEFAULT_VOICE,
   isKokoroVoice,
@@ -32,6 +34,18 @@ const TTS_CACHE_DIR = path.join(os.tmpdir(), 'homebot-tts');
 let ttsInstance: MsEdgeTTS | null = null;
 let currentVoice: string = DEFAULT_VOICE;
 let ttsInitPromise: Promise<MsEdgeTTS> | null = null; // guards concurrent init
+
+function onlineSpeechAllowed(): boolean {
+  // Reuse the existing persisted consent decision (including legacy settings).
+  // Speech needs consent, not a configured/working text-model API key.
+  try { return resolveCloudLLM(getSettings()).intended; } catch { return false; }
+}
+
+function requireOnlineSpeech(): void {
+  if (!onlineSpeechAllowed()) {
+    throw new Error('Online is off. Choose a voice on this PC after setup, or turn on Online in Settings to use online speech.');
+  }
+}
 
 /**
  * Throw away the cached instance so the next call builds a fresh connection.
@@ -65,6 +79,7 @@ export function isRecoverableStreamError(err: unknown): boolean {
 }
 
 async function getTTS(voice?: string): Promise<MsEdgeTTS> {
+  requireOnlineSpeech();
   const targetVoice = voice || DEFAULT_VOICE;
   // Fast path: already initialized with the right voice
   if (ttsInstance && currentVoice === targetVoice) {
@@ -73,6 +88,7 @@ async function getTTS(voice?: string): Promise<MsEdgeTTS> {
   // Guard: if another call is already initializing, wait for it
   if (ttsInitPromise) {
     const existing = await ttsInitPromise;
+    requireOnlineSpeech();
     if (currentVoice === targetVoice) return existing;
   }
   // Initialize (only one caller runs this at a time)
@@ -88,6 +104,7 @@ async function getTTS(voice?: string): Promise<MsEdgeTTS> {
       console.warn(`[HomeBot Voice] Edge TTS voice ${targetVoice} failed:`, err?.message || err);
       try { logTelemetryEvent('tts_voice_init', { voice: targetVoice, outcome: 'failed', error: err?.message || String(err) }); } catch (_e) {}
       if (targetVoice !== FALLBACK_VOICE) {
+        requireOnlineSpeech();
         await inst.setMetadata(FALLBACK_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
         ttsInstance = inst;
         currentVoice = FALLBACK_VOICE;
@@ -120,37 +137,32 @@ function ensureCacheDir() {
 // the SAME onnxruntime stack Whisper speech recognition already ships, so it
 // adds ~1 MB of JS and zero new runtime classes — but it only speaks English,
 // has no pitch control, and its weights (~90 MB) download on first use. Every
-// Kokoro failure falls back to Edge, and the caller is told which engine ran.
+// Kokoro failure falls back to Edge only while Online is permitted. With
+// Online off, both model/tokenizer loading are cache-only and fail with setup
+// guidance when local resources are absent.
 
 let kokoroTTS: any = null;
-let kokoroLoad: Promise<any> | null = null;
+const kokoroLoads = new Map<boolean, Promise<any>>();
 
 async function getKokoro(): Promise<any> {
   if (kokoroTTS) return kokoroTTS;
-  if (!kokoroLoad) {
-    kokoroLoad = (async () => {
-      const { KokoroTTS } = await import('kokoro-js');
-      console.log('[HomeBot Voice] loading Kokoro-82M — first use downloads ≈90 MB of weights');
-      // q8 + cpu is the configuration that was measured for the decision:
-      // 24 kHz mono PCM, -22.6 dB mean / -4.4 dB max on the A/B script.
-      const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-        dtype: 'q8',
-        device: 'cpu',
-      });
+  const allowDownloads = onlineSpeechAllowed();
+  // A newly offline request must not join an earlier download-capable load.
+  if (!kokoroLoads.has(allowDownloads)) {
+    const pending = (async () => {
+      const tts = await loadKokoroForSpeech(allowDownloads);
       kokoroTTS = tts;
       return tts;
-    })().catch((err) => {
-      kokoroLoad = null; // allow a retry once whatever was missing exists
-      throw err;
-    });
+    })().finally(() => { kokoroLoads.delete(allowDownloads); });
+    kokoroLoads.set(allowDownloads, pending);
   }
-  return kokoroLoad;
+  return kokoroLoads.get(allowDownloads)!;
 }
 
 /** Test seam: drop the cached local model so a suite starts clean. */
 export function __resetKokoroForTest(): void {
   kokoroTTS = null;
-  kokoroLoad = null;
+  kokoroLoads.clear();
 }
 
 /** ±percent rate maps onto Kokoro's speed factor, clamped to its sane range. */
@@ -211,16 +223,17 @@ export async function renderNarrationToFile(
   const clean = (text || '').trim();
   if (!clean) throw new Error('Nothing to narrate — the script is empty.');
 
-  // Kokoro first when asked; ANY failure (weights missing, no window, OOM,
-  // model error) falls back to Edge rather than failing the job. The returned
-  // `engine` is the one that ACTUALLY rendered, so a silent substitution can
-  // never ship unnoticed.
+  // The selected local engine stays local when Online is off. Re-read consent
+  // after a failure so revocation also blocks an online fallback.
   if (resolveNarrationEngine(opts?.engine) === 'kokoro') {
     try {
       const rendered = await renderWithKokoro(clean, path.dirname(outPath), opts);
       try { logTelemetryEvent('tts_render', { engine: 'kokoro', outcome: 'success' }); } catch (_e) {}
       return { ...rendered, engine: 'kokoro' };
     } catch (err: any) {
+      if (!onlineSpeechAllowed()) {
+        throw new Error('The voice on this PC is not ready, and Online is off. Set up the local voice with Online enabled, then try again. No online fallback was used.');
+      }
       console.warn(`[HomeBot Voice] Kokoro unavailable (${err?.message || err}); falling back to Edge TTS.`);
       try { logTelemetryEvent('tts_fallback', { from: 'kokoro', to: 'edge', error: err?.message || String(err) }); } catch (_e) {}
     }
@@ -259,6 +272,7 @@ export async function renderNarrationToFile(
 
   let res: any;
   try {
+    requireOnlineSpeech();
     res = await tts.toFile(dir, clean, prosody);
   } catch (err: any) {
     console.warn(`[HomeBot Voice] synthesis failed — ${context()} — ${err?.message || err}`);
@@ -278,6 +292,7 @@ export async function renderNarrationToFile(
     resetTTS();
     const fresh = await getTTS(opts?.voice);
     try {
+      requireOnlineSpeech();
       res = await fresh.toFile(dir, clean, prosody);
       console.log(`[HomeBot Voice] retry succeeded — ${context()}`);
     } catch (retryErr: any) {
@@ -440,8 +455,9 @@ export const speakHandler: ToolHandler = async (args): Promise<ToolResult> => {
       }
     };
   } catch (err: any) {
-    // Fallback to Web Speech API if Edge TTS fails
-    console.error('[HomeBot Voice] Edge TTS failed, falling back to Web Speech API:', err.message);
+    // The system fallback permits only explicitly local voices, regardless of
+    // why the primary engine failed (including a privacy denial).
+    console.error('[HomeBot Voice] Speech engine unavailable; trying a local system voice:', err?.message || err);
     try { logTelemetryEvent('tts_fallback', { from: 'edge', to: 'web_speech', error: err?.message || String(err) }); } catch (_e) {}
     return speakFallback(args);
   }
@@ -473,7 +489,8 @@ async function speakFallback(args: any): Promise<ToolResult> {
         utterance.pitch = ${pitch};
         utterance.volume = ${volume};
 
-        function pickVoice(voices) {
+        function pickVoice(available) {
+          const voices = available.filter(v => v.localService === true);
           const prefs = ['Microsoft Jenny', 'Microsoft Aria', 'Microsoft Zira',
             'Microsoft Eva', 'Microsoft Hazel', 'Microsoft Heera',
             'Google UK English Female', 'Samantha', 'Karen', 'Victoria'];
@@ -491,13 +508,20 @@ async function speakFallback(args: any): Promise<ToolResult> {
             || enVoices[0] || voices[0] || null;
         }
 
+        let started = false;
         function go(voices) {
+          if (started) return;
+          started = true;
           const chosen = pickVoice(voices);
-          if (chosen) utterance.voice = chosen;
+          if (!chosen) {
+            resolve({ success: false, error: 'No voice on this PC is available. Set up a local voice, or turn on Online in Settings.' });
+            return;
+          }
+          utterance.voice = chosen;
           utterance.onend = () => resolve({ success: true, voice: chosen?.name || 'default' });
           utterance.onerror = (e) => resolve({ success: false, error: e.error || 'Speech failed' });
           window.speechSynthesis.speak(utterance);
-          setTimeout(() => resolve({ success: true }), 60000);
+          setTimeout(() => resolve({ success: false, error: 'Speech did not finish in time.' }), 60000);
         }
 
         let voices = window.speechSynthesis.getVoices();
@@ -537,6 +561,7 @@ export const stopSpeakingHandler: ToolHandler = async (): Promise<ToolResult> =>
 
 export const getVoicesHandler: ToolHandler = async (): Promise<ToolResult> => {
   try {
+    requireOnlineSpeech();
     const tts = new MsEdgeTTS();
     const voices = await tts.getVoices();
     const english = voices
