@@ -29,6 +29,18 @@ describe('saved Studio output formats', () => {
     expect(job.format).toBe(format);
   });
 
+  it.each(['short', 'long'])('persists explicit landscape and portrait choices for %s jobs without making length imply both', format => {
+    const outputSpec = { ...specification('16:9', format),
+      variants: [specification('16:9', format).variants[0], specification('9:16', format).variants[0]] };
+    outputSpec.variants[1].framing = { mode: 'crop', x: 0.25, y: 0.75 };
+    const job = createJob({ title: 'Two explicit formats', format, outputSpec } as any) as any;
+    expect(job.outputSpec).toEqual(outputSpec);
+    expect(job.format).toBe(format);
+    outputSpec.variants[1].framing.x = 1;
+    expect(job.outputSpec.variants[1].framing.x).toBe(0.25);
+    expect((createJob({ title: 'One by default', format } as any) as any).outputSpec.variants).toHaveLength(1);
+  });
+
   it.each([
     ['version', (s: any) => { s.schemaVersion = 2; }],
     ['dimensions', (s: any) => { s.variants[0].width = 8192; }],

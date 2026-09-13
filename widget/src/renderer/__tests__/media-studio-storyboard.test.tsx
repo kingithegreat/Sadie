@@ -259,6 +259,40 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(mediaRun).toHaveBeenCalledTimes(1);
   });
 
+  test('explicit both selection keeps new-video length independent and reaches job creation', async () => {
+    const mediaCreate = jest.fn(async () => ({ ok: true }));
+    setup({ mediaCreate });
+    render(<MediaStudioPanel />);
+    fireEvent.change(await screen.findByLabelText('New video output selection'), { target: { value: 'both' } });
+    fireEvent.change(screen.getByLabelText('Video format'), { target: { value: 'long' } });
+    expect(screen.getByLabelText('New video output selection')).toHaveValue('both');
+    expect(mediaCreate).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('New video title'), { target: { value: 'Two explicit formats' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add video' }));
+    await waitFor(() => expect(mediaCreate).toHaveBeenCalledWith(expect.objectContaining({ format: 'long',
+      outputSpec: expect.objectContaining({ durationIntent: 'long', variants: [
+        expect.objectContaining({ aspectRatio: '16:9' }), expect.objectContaining({ aspectRatio: '9:16' }),
+      ] }) })));
+  });
+
+  test('storyboard both choice saves independent portrait framing and reaches the existing render action', async () => {
+    const api = setup();
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    fireEvent.change(await screen.findByLabelText('Storyboard output selection'), { target: { value: 'both' } });
+    fireEvent.change(screen.getByLabelText('Storyboard portrait image framing'), { target: { value: 'crop' } });
+    fireEvent.change(screen.getByLabelText('Storyboard portrait crop horizontal position'), { target: { value: '0.25' } });
+    expect(api.mediaStoryboardRender).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Render both formats/ }));
+    await waitFor(() => expect(api.mediaStoryboardRender).toHaveBeenCalledTimes(1));
+    const spec = api.mediaStoryboardSave.mock.calls[0][0].outputSpec;
+    expect(spec.variants).toEqual([
+      expect.objectContaining({ aspectRatio: '16:9', framing: expect.objectContaining({ x: 0.5 }) }),
+      expect.objectContaining({ aspectRatio: '9:16', framing: expect.objectContaining({ mode: 'crop', x: 0.25 }) }),
+    ]);
+    expect(api.mediaStoryboardRender.mock.calls[0][0].outputSpec).toEqual(spec);
+    expect(screen.getByLabelText('Duration for shot_001')).toHaveValue(5);
+  });
+
   test('does not offer a caption switch that cannot change an external export', async () => {
     setup({ mediaList: jest.fn(async () => [{ id: 'external', title: 'External production', format: 'long',
       state: 'media_production', history: [{ note: 'Ancient Pathways pipeline runs its own stages internally' }] }]) });

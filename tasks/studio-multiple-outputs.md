@@ -52,3 +52,15 @@ and fresh-profile installed acceptance remain later parts of the existing plan.
 
 This is a pre-implementation claim and plan. No new source or passing behavior
 is asserted by creating it.
+
+## Initial red checkpoint
+
+Before production edits, four new regressions fail and 46 existing cases pass
+across `studio-output-formats.test.ts` and `media-studio-storyboard.test.tsx`
+(25.658 seconds, Windows). Both short/long job creation rejects two explicit
+variants; visible new-video/storyboard output-selection controls are absent.
+The cases also specify independent framing and saved choices reaching existing
+create/render IPC. `.kilo/artifacts/studio-multiple-outputs/red-widget.log` retains
+the result. The earlier `red.log` is only a wrong-working-directory invocation
+that ran no tests, not product evidence. Render reuse/partial recovery tests and
+implementation follow; no two-format export success is claimed.
