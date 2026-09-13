@@ -222,3 +222,46 @@ describe('ancient-pathways-run — fast-forward and real QA', () => {
     expect(String(res.error)).toMatch(/unknown episode/i);
   });
 });
+
+describe('Character Anchor Workbench through the Studio gateway', () => {
+  // Disposable fixture checkout, resolved via ANCIENT_PATHWAYS_DIR. The resolver only
+  // accepts a folder containing run_pipeline.py and otherwise falls through to the
+  // owner's real Desktop checkout, so the marker is required and asserted below.
+  const fixture = path.join(userData, 'ap-fixture');
+  const charDir = path.join(fixture, 'workspace', 'branding', 'characters', 'leila');
+  const manifestPath = path.join(charDir, 'manifest.json');
+  const original = process.env.ANCIENT_PATHWAYS_DIR;
+  const save = (event: any, args: unknown) => handlers['homebot:media:ancient-pathways-save-anchor'](event, args);
+
+  beforeEach(() => {
+    fs.rmSync(fixture, { recursive: true, force: true });
+    fs.mkdirSync(path.join(charDir, 'pose_a'), { recursive: true });
+    fs.copyFileSync(path.join(__dirname, '../../../resources/icon.png'), path.join(charDir, 'pose_a', 'idle.png'));
+    fs.writeFileSync(manifestPath, JSON.stringify({ pose_a: { idle: 'pose_a/idle.png' }, _mouth_anchors: { pose_a: { idle: [200, 300, 60, 40] } } }));
+    fs.writeFileSync(path.join(fixture, 'run_pipeline.py'), '# fixture marker');
+    process.env.ANCIENT_PATHWAYS_DIR = fixture;
+    const { resolveAncientPathwaysDir } = jest.requireActual('../ancient-pathways');
+    expect(resolveAncientPathwaysDir()).toBe(path.resolve(fixture)); // never the real checkout
+  });
+  afterEach(() => { if (original === undefined) delete process.env.ANCIENT_PATHWAYS_DIR; else process.env.ANCIENT_PATHWAYS_DIR = original; });
+
+  it('reads anchors and refuses to replace a hand-placed one until the owner confirms', async () => {
+    const read = await handlers['homebot:media:ancient-pathways-get-anchors'](trustedEvent(), 'leila');
+    expect(read.ok).toBe(true);
+    expect(read.characters.map((c: any) => c.slug)).toEqual(['leila']); // the fixture, and only the fixture
+    expect(read.characters[0]).toMatchObject({ handPlacedMouthAnchors: 1 });
+    const args = { character: 'leila', group: 'pose_a', pose: 'idle', anchorType: 'mouth', box: [210, 310, 50, 30] };
+    expect(await save(trustedEvent(), args)).toMatchObject({ ok: false, code: 'CONFIRM_OVERWRITE', existingBox: [200, 300, 60, 40] });
+    expect(JSON.parse(fs.readFileSync(manifestPath, 'utf8'))._mouth_anchors.pose_a.idle).toEqual([200, 300, 60, 40]);
+    expect(await save(trustedEvent(), { ...args, confirmOverwrite: true })).toMatchObject({ ok: true });
+    expect(JSON.parse(fs.readFileSync(manifestPath, 'utf8'))._mouth_anchors.pose_a.idle).toEqual([210, 310, 50, 30]);
+  });
+
+  it('rejects malformed requests and other senders before touching the manifest', async () => {
+    const before = fs.readFileSync(manifestPath);
+    expect(await save(trustedEvent(), 'not an object')).toMatchObject({ ok: false, code: 'INVALID_ARGUMENT' });
+    expect(await save({ sender: {}, senderFrame: {} }, { character: 'leila', group: 'pose_a', pose: 'idle', anchorType: 'mouth', box: [1, 1, 1, 1], confirmOverwrite: true }))
+      .toMatchObject({ ok: false, code: 'INVALID_SENDER' });
+    expect(fs.readFileSync(manifestPath)).toEqual(before);
+  });
+});

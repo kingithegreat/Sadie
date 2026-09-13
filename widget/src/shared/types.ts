@@ -619,6 +619,62 @@ export interface ElectronAPI {
     renderPath?: string;
     error?: string;
   }>;
+  mediaAncientPathwaysGetAnchors?: (character?: string) => Promise<{
+    ok: boolean;
+    characters?: Array<{
+      slug: string;
+      name: string;
+      totalPoses: number;
+      handPlacedMouthAnchors: number;
+      headBoxes: number;
+      suggestedMouthAnchors: number;
+      missingMouthAnchors: number;
+    }>;
+    selected?: {
+      slug: string;
+      name: string;
+      manifest: any;
+      groups: string[];
+      mouthVisemes: Record<string, string>;
+      stats: {
+        totalPoses: number;
+        handPlacedMouthAnchors: number;
+        headBoxes: number;
+        suggestedMouthAnchors: number;
+        missingMouthAnchors: number;
+      };
+    };
+    error?: string;
+  }>;
+  mediaAncientPathwaysGetSprite?: (character: string, group: string, pose: string) => Promise<{
+    ok: boolean;
+    dataUrl?: string;
+    character?: string;
+    group?: string;
+    pose?: string;
+    error?: string;
+  }>;
+  /** Replacing an existing hand-placed box returns code CONFIRM_OVERWRITE unless confirmOverwrite is true. */
+  mediaAncientPathwaysSaveAnchor?: (args: {
+    character: string;
+    group: string;
+    pose: string;
+    anchorType: 'mouth' | 'head';
+    box: [number, number, number, number];
+    confirmOverwrite?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    message?: string;
+    box?: [number, number, number, number];
+    code?: 'CONFIRM_OVERWRITE';
+    existingBox?: [number, number, number, number];
+    error?: string;
+  }>;
+  mediaAncientPathwaysSuggestAnchors?: (character?: string) => Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+  }>;
   onMediaAncientPathwaysProgress?: (cb: (p: {
     jobId: string;
     episodeId: string;
