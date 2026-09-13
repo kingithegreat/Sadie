@@ -576,6 +576,28 @@ export function registerStudioIpc(
     }
   });
 
+  // Character Anchor Workbench. Reads are free; a save that would replace a
+  // hand-placed box is refused (CONFIRM_OVERWRITE) unless the owner confirmed it.
+  ipcMain.handle('homebot:media:ancient-pathways-get-anchors', async (_e, character?: string) => {
+    const { getCharacterAnchors } = await import('../../ancient-pathways');
+    return getCharacterAnchors(character);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-get-sprite', async (_e, character: string, group: string, pose: string) => {
+    const { getCharacterPoseSprite } = await import('../../ancient-pathways');
+    return getCharacterPoseSprite(character, group, pose);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-save-anchor', async (_e, args: any) => {
+    const { saveCharacterAnchor } = await import('../../ancient-pathways');
+    return saveCharacterAnchor(args);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-suggest-anchors', async (_e, character?: string) => {
+    const { suggestCharacterAnchors } = await import('../../ancient-pathways');
+    return suggestCharacterAnchors(character);
+  });
+
   // ── Movie Generation Router ────────────────────────────────────────────────
   // Wires MovieProjectRunner.runProject() (which uses GenerationRouter + all 5
   // providers, including the Ancient Pathways local 2D adapter) behind an IPC

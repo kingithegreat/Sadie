@@ -805,6 +805,20 @@ const electronAPI: ElectronAPI = {
     name: string;
   }) =>
     ipcRenderer.invoke('homebot:media:ancient-pathways-showrunner', options),
+  mediaAncientPathwaysGetAnchors: async (character?: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-get-anchors', character),
+  mediaAncientPathwaysGetSprite: async (character: string, group: string, pose: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-get-sprite', character, group, pose),
+  mediaAncientPathwaysSaveAnchor: async (args: {
+    character: string;
+    group: string;
+    pose: string;
+    anchorType: 'mouth' | 'head';
+    box: [number, number, number, number];
+    confirmOverwrite?: boolean;
+  }) => ipcRenderer.invoke('homebot:media:ancient-pathways-save-anchor', args),
+  mediaAncientPathwaysSuggestAnchors: async (character?: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-suggest-anchors', character),
   onMediaAncientPathwaysProgress: (cb: (p: any) => void) => {
     const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
     ipcRenderer.on('homebot:media:ancient-pathways-progress', listener);

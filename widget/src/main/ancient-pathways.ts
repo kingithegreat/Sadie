@@ -693,3 +693,422 @@ export function runShowrunner(options: ShowrunnerOptions): Promise<ShowrunnerRes
     });
   });
 }
+
+// ── Character anchors (Workbench) ──────────────────────────────────────────
+// `_mouth_anchors` and `_head_boxes` in Ancient Pathways manifests are placed by
+// hand (AP's CLAUDE.md: never re-measure, never overwrite). Reading is free;
+// writing validates every value against the sprite and refuses to replace an
+// existing hand-placed box unless the owner explicitly confirmed that change.
+
+const ANCHOR_SEGMENT = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+
+/** A manifest-relative file inside the character folder, or null if it would escape. */
+function characterFile(charDir: string, relPath: unknown): string | null {
+  if (typeof relPath !== 'string' || !relPath) return null;
+  const resolved = path.resolve(charDir, relPath);
+  const relative = path.relative(charDir, resolved);
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? resolved : null;
+}
+
+/** Width/height from a PNG header; null for anything that is not a PNG. */
+function pngSize(file: string): { width: number; height: number } | null {
+  try {
+    const fd = fs.openSync(file, 'r');
+    const head = Buffer.alloc(24);
+    try { fs.readSync(fd, head, 0, 24, 0); } finally { fs.closeSync(fd); }
+    if (!head.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return null;
+    return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+  } catch {
+    return null;
+  }
+}
+
+export interface CharacterSummary {
+  slug: string;
+  name: string;
+  totalPoses: number;
+  handPlacedMouthAnchors: number;
+  headBoxes: number;
+  suggestedMouthAnchors: number;
+  missingMouthAnchors: number;
+}
+
+export interface CharacterDetail {
+  slug: string;
+  name: string;
+  manifest: any;
+  groups: string[];
+  mouthVisemes: Record<string, string>;
+  stats: {
+    totalPoses: number;
+    handPlacedMouthAnchors: number;
+    headBoxes: number;
+    suggestedMouthAnchors: number;
+    missingMouthAnchors: number;
+  };
+}
+
+export interface GetCharacterAnchorsResult {
+  ok: boolean;
+  characters?: CharacterSummary[];
+  selected?: CharacterDetail;
+  error?: string;
+}
+
+export interface SaveAnchorArgs {
+  character: string;
+  group: string;
+  pose: string;
+  anchorType: 'mouth' | 'head';
+  box: [number, number, number, number];
+  /** Required to replace an existing hand-placed box with a different one. */
+  confirmOverwrite?: boolean;
+}
+
+export interface SaveAnchorResult {
+  ok: boolean;
+  message?: string;
+  box?: [number, number, number, number];
+  /** Set when a hand-placed box exists and the save needs explicit confirmation. */
+  code?: 'CONFIRM_OVERWRITE';
+  existingBox?: [number, number, number, number];
+  error?: string;
+}
+
+export interface GetPoseSpriteResult {
+  ok: boolean;
+  dataUrl?: string;
+  group?: string;
+  pose?: string;
+  character?: string;
+  error?: string;
+}
+
+export interface SuggestAnchorsResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Reads character manifests and anchor stats from Ancient Pathways.
+ */
+export async function getCharacterAnchors(charSlug?: string, dirOverride?: string): Promise<GetCharacterAnchorsResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  const charsDir = path.join(dir, 'workspace', 'branding', 'characters');
+  if (!fs.existsSync(charsDir)) {
+    return { ok: false, error: 'Characters directory not found in workspace/branding/characters.' };
+  }
+
+  try {
+    const entries = fs.readdirSync(charsDir, { withFileTypes: true });
+    const summaries: CharacterSummary[] = [];
+    let selectedDetail: CharacterDetail | undefined;
+
+    for (const ent of entries) {
+      if (!ent.isDirectory() || ent.name.startsWith('.') || ent.name.endsWith('_parts')) {
+        continue;
+      }
+      const slug = ent.name;
+      const manifestPath = path.join(charsDir, slug, 'manifest.json');
+      if (!fs.existsSync(manifestPath)) {
+        continue;
+      }
+
+      let manifest: any;
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      } catch {
+        continue;
+      }
+
+      // Count poses across standard pose groups
+      const poseGroupKeys = Object.keys(manifest).filter((k) => {
+        if (k.startsWith('_') || k === 'mouth' || k === 'palette') return false;
+        const val = manifest[k];
+        return val && typeof val === 'object' && !Array.isArray(val);
+      });
+
+      let totalPoses = 0;
+      for (const gk of poseGroupKeys) {
+        totalPoses += Object.keys(manifest[gk] || {}).length;
+      }
+
+      let handPlacedMouthAnchors = 0;
+      const mouthAnchors = manifest._mouth_anchors || {};
+      for (const gk of Object.keys(mouthAnchors)) {
+        handPlacedMouthAnchors += Object.keys(mouthAnchors[gk] || {}).length;
+      }
+
+      let headBoxes = 0;
+      const headBoxesObj = manifest._head_boxes || {};
+      for (const gk of Object.keys(headBoxesObj)) {
+        headBoxes += Object.keys(headBoxesObj[gk] || {}).length;
+      }
+
+      let suggestedMouthAnchors = 0;
+      const suggestedObj = manifest._mouth_anchors_suggested || {};
+      for (const gk of Object.keys(suggestedObj)) {
+        suggestedMouthAnchors += Object.keys(suggestedObj[gk] || {}).length;
+      }
+
+      const missingMouthAnchors = Math.max(0, totalPoses - handPlacedMouthAnchors - suggestedMouthAnchors);
+      const name = slug
+        .split('_')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+
+      const stats = {
+        totalPoses,
+        handPlacedMouthAnchors,
+        headBoxes,
+        suggestedMouthAnchors,
+        missingMouthAnchors,
+      };
+
+      summaries.push({
+        slug,
+        name,
+        ...stats,
+      });
+
+      if (charSlug && slug.toLowerCase() === charSlug.toLowerCase()) {
+        const mouthVisemes: Record<string, string> = {};
+        const mouthObj = manifest.mouth || {};
+        for (const [visemeKey, relPath] of Object.entries(mouthObj)) {
+          if (typeof relPath === 'string') {
+            const vPath = characterFile(path.join(charsDir, slug), relPath);
+            if (vPath && fs.existsSync(vPath)) {
+              try {
+                const b64 = fs.readFileSync(vPath).toString('base64');
+                mouthVisemes[visemeKey] = `data:image/png;base64,${b64}`;
+              } catch {
+                /* ignore unreadable viseme tile */
+              }
+            }
+          }
+        }
+
+        selectedDetail = {
+          slug,
+          name,
+          manifest,
+          groups: poseGroupKeys,
+          mouthVisemes,
+          stats,
+        };
+      }
+    }
+
+    // Sort summaries: Leila first, then alphabetical
+    summaries.sort((a, b) => {
+      if (a.slug === 'leila') return -1;
+      if (b.slug === 'leila') return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      ok: true,
+      characters: summaries,
+      selected: selectedDetail,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Loads a single character pose sprite as a base64 data URL for preview and calibration.
+ */
+export async function getCharacterPoseSprite(
+  character: string,
+  group: string,
+  pose: string,
+  dirOverride?: string
+): Promise<GetPoseSpriteResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  if (![character, group, pose].every(segment => typeof segment === 'string' && ANCHOR_SEGMENT.test(segment))) {
+    return { ok: false, error: 'Invalid character, group, or pose parameter.' };
+  }
+
+  const charsDir = path.join(dir, 'workspace', 'branding', 'characters');
+  const manifestPath = path.join(charsDir, character, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return { ok: false, error: `Manifest for character '${character}' not found.` };
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const relPath = manifest?.[group]?.[pose];
+    if (!relPath || typeof relPath !== 'string') {
+      return { ok: false, error: `Pose '${pose}' in group '${group}' not defined in manifest.` };
+    }
+
+    const spritePath = characterFile(path.join(charsDir, character), relPath);
+    if (!spritePath || !fs.existsSync(spritePath)) {
+      return { ok: false, error: `Sprite image not found at ${relPath}.` };
+    }
+
+    const b64 = fs.readFileSync(spritePath).toString('base64');
+    return {
+      ok: true,
+      dataUrl: `data:image/png;base64,${b64}`,
+      character,
+      group,
+      pose,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Saves a hand-calibrated anchor (mouth anchor or head box) to the character manifest,
+ * creating an automatic timestamped backup first.
+ */
+export async function saveCharacterAnchor(
+  args: SaveAnchorArgs,
+  dirOverride?: string
+): Promise<SaveAnchorResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  const { character, group, pose, anchorType, box, confirmOverwrite } = args ?? ({} as SaveAnchorArgs);
+  if (![character, group, pose].every(segment => typeof segment === 'string' && ANCHOR_SEGMENT.test(segment)) ||
+      !['mouth', 'head'].includes(anchorType)) {
+    return { ok: false, error: 'Invalid anchor arguments.' };
+  }
+  if (!Array.isArray(box) || box.length !== 4 || box.some(n => typeof n !== 'number' || !Number.isFinite(n))) {
+    return { ok: false, error: 'Anchor box must be four numbers [x, y, w, h].' };
+  }
+  const roundedBox = box.map(n => Math.round(n)) as [number, number, number, number];
+  const [x, y, w, h] = roundedBox;
+  if (x < 0 || y < 0 || w <= 0 || h <= 0) {
+    return { ok: false, error: 'Anchor box needs a non-negative position and a positive width and height.' };
+  }
+
+  const charDir = path.join(dir, 'workspace', 'branding', 'characters', character);
+  const manifestPath = path.join(charDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return { ok: false, error: `Manifest for character '${character}' not found.` };
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const spritePath = characterFile(charDir, manifest?.[group]?.[pose]);
+    if (!spritePath || !fs.existsSync(spritePath)) {
+      return { ok: false, error: `Pose '${pose}' in group '${group}' has no sprite in the manifest.` };
+    }
+    const size = pngSize(spritePath);
+    if (!size) return { ok: false, error: 'The pose sprite is not a readable PNG, so the box cannot be checked.' };
+    if (x + w > size.width || y + h > size.height) {
+      return { ok: false, error: `Anchor box [${roundedBox.join(', ')}] falls outside the ${size.width}×${size.height} sprite.` };
+    }
+
+    const key = anchorType === 'mouth' ? '_mouth_anchors' : '_head_boxes';
+    const existing = manifest?.[key]?.[group]?.[pose];
+    const existingBox = Array.isArray(existing) && existing.length === 4
+      ? (existing.map((n: unknown) => Math.round(Number(n))) as [number, number, number, number]) : undefined;
+    const changesHandPlaced = !!existingBox && existingBox.some((n, i) => n !== roundedBox[i]);
+    if (changesHandPlaced && confirmOverwrite !== true) {
+      return {
+        ok: false,
+        code: 'CONFIRM_OVERWRITE',
+        existingBox,
+        error: `A hand-placed ${anchorType === 'mouth' ? 'mouth anchor' : 'head box'} already exists for ${character} ${group}/${pose}. Confirm to replace it.`,
+      };
+    }
+
+    // Timestamped backup before any change to the manifest.
+    const backupDir = path.join(charDir, '.backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.copyFileSync(manifestPath, path.join(backupDir, `manifest_backup_${Date.now()}.json`));
+
+    if (!manifest[key]) manifest[key] = {};
+    if (!manifest[key][group]) manifest[key][group] = {};
+    manifest[key][group][pose] = roundedBox;
+
+    // A confirmed placement supersedes any auto-suggestion for the same pose.
+    if (anchorType === 'mouth' && manifest._mouth_anchors_suggested?.[group]?.[pose]) {
+      delete manifest._mouth_anchors_suggested[group][pose];
+      if (Object.keys(manifest._mouth_anchors_suggested[group]).length === 0) delete manifest._mouth_anchors_suggested[group];
+      if (Object.keys(manifest._mouth_anchors_suggested).length === 0) delete manifest._mouth_anchors_suggested;
+    }
+
+    const staged = `${manifestPath}.saving`;
+    fs.writeFileSync(staged, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+    fs.renameSync(staged, manifestPath);
+
+    return {
+      ok: true,
+      message: `${changesHandPlaced ? 'Replaced' : 'Saved'} ${anchorType} anchor for ${character} [${group}/${pose}].`,
+      box: roundedBox,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Runs learn_from_anchors.py with --suggest --apply to fill missing anchors
+ * from per-character priors. Existing hand-placed anchors are strictly preserved.
+ */
+export async function suggestCharacterAnchors(
+  _character?: string,
+  dirOverride?: string
+): Promise<SuggestAnchorsResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  const scriptPath = path.join(dir, 'scripts', 'learn_from_anchors.py');
+  if (!fs.existsSync(scriptPath)) {
+    return { ok: false, error: 'learn_from_anchors.py script not found.' };
+  }
+
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  return new Promise((resolve) => {
+    const child = spawn(python, ['scripts/learn_from_anchors.py', '--suggest', '--apply'], {
+      cwd: dir,
+      windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c.toString('utf8'); });
+    child.stderr.on('data', (c) => { stderr += c.toString('utf8'); });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        resolve({
+          ok: false,
+          error: `Auto-suggest failed (code ${code}): ${stderr || stdout}`,
+        });
+        return;
+      }
+      resolve({
+        ok: true,
+        message: stdout.trim(),
+      });
+    });
+
+    child.on('error', (err) => {
+      resolve({
+        ok: false,
+        error: `Could not launch Python: ${err.message}`,
+      });
+    });
+  });
+}

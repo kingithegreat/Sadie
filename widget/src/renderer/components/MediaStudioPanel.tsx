@@ -20,6 +20,7 @@ import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
+import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import { OverlayPortal } from './anchoredOverlay';
 import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
@@ -316,6 +317,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   // "From Ancient Pathways…" — 2D animated history series
   const [apOpen, setApOpen] = useState(false);
+  const [apTab, setApTab] = useState<'episodes' | 'anchors'>('episodes');
   const [apLoading, setApLoading] = useState(false);
   const [apError, setApError] = useState<string | null>(null);
   const [apEpisodes, setApEpisodes] = useState<Array<{
@@ -3715,14 +3717,24 @@ ${shots.map((s, idx) => `
               historical backgrounds, and sound design in 1 click.
             </p>
           </div>
-          {showClose && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               type="button"
               className="ms-btn"
-              onClick={() => { setApOpen(false); setApError(null); }}
-              aria-label="Close Ancient Pathways section"
-            >✕ Close</button>
-          )}
+              onClick={() => { setActiveWorkspace('ap'); setApTab('anchors'); }}
+              title="Open the Character Anchor Workbench: review and adjust head boxes and mouth anchors"
+            >
+              🎭 Character Anchors
+            </button>
+            {showClose && (
+              <button
+                type="button"
+                className="ms-btn"
+                onClick={() => { setApOpen(false); setApError(null); }}
+                aria-label="Close Ancient Pathways section"
+              >✕ Close</button>
+            )}
+          </div>
         </div>
 
         {/* Showrunner: free-first autonomous prompt-to-movie production */}
@@ -3967,15 +3979,43 @@ ${shots.map((s, idx) => `
               audit character sheets and viseme sync with Preflight Doctor, and produce 4K episodes.
             </p>
           </div>
-          <button
-            type="button"
-            className="ms-btn ms-btn-back"
-            onClick={() => setActiveWorkspace('director')}
-          >
-            ← Back to Director
-          </button>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div role="tablist" aria-label="Ancient Pathways views" style={{ display: 'flex', gap: 4 }}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={apTab === 'episodes'}
+                className={`ms-btn ${apTab === 'episodes' ? 'ms-btn--primary' : ''}`}
+                onClick={() => setApTab('episodes')}
+              >
+                🎬 Episodes &amp; Showrunner
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={apTab === 'anchors'}
+                className={`ms-btn ${apTab === 'anchors' ? 'ms-btn--primary' : ''}`}
+                onClick={() => setApTab('anchors')}
+              >
+                🎭 Character Anchor Workbench
+              </button>
+            </div>
+            <button
+              type="button"
+              className="ms-btn ms-btn-back"
+              onClick={() => setActiveWorkspace('director')}
+            >
+              ← Back to Director
+            </button>
+          </div>
         </div>
-        {renderAncientPathwaysShowcase(false)}
+        {apTab === 'anchors' ? (
+          <div style={{ padding: '10px 0' }}>
+            <CharacterAnchorWorkbench />
+          </div>
+        ) : (
+          renderAncientPathwaysShowcase(false)
+        )}
       </div>
     );
   };
