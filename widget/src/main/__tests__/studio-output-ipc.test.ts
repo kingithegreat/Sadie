@@ -51,3 +51,15 @@ test('malformed IPC format requests do not create a job', async () => {
   expect((await handlers['homebot:media:create']({}, { title: 'Bad size', outputSpec: { schemaVersion: 99 } })).ok).toBe(false);
   expect(mockWriteJobs).not.toHaveBeenCalled();
 });
+
+test('only the selected retry format crosses job and storyboard IPC, and partial movies remain in the response', async () => {
+  await handlers['homebot:media:run']({}, 'draft', 'render', { variantId: 'portrait' });
+  expect(invokeTool).toHaveBeenLastCalledWith({}, 'media_render', { job: 'draft', variantId: 'portrait' });
+  const variants = [{ variantId: 'landscape', ok: true, moviePath: 'C:/landscape.mp4', jobId: 'review-landscape' },
+    { variantId: 'portrait', ok: false, error: 'Portrait stopped' }];
+  (invokeTool as jest.Mock).mockResolvedValueOnce({ success: false, error: 'Portrait stopped',
+    result: { variants, moviePath: 'C:/landscape.mp4', jobId: 'review-landscape' } });
+  const result = await handlers['homebot:media:storyboard:render']({}, { projectId: 'film', variantId: 'portrait' });
+  expect(invokeTool).toHaveBeenLastCalledWith({}, 'media_render_storyboard', expect.objectContaining({ projectId: 'film', variantId: 'portrait' }));
+  expect(result).toMatchObject({ ok: false, error: 'Portrait stopped', moviePath: 'C:/landscape.mp4', jobId: 'review-landscape', variants });
+});

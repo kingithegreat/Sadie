@@ -61,3 +61,32 @@ export function hasKnownModels(provider: string | undefined): boolean {
 export function knownModelsFor(provider: string | undefined): CustomModelInfo[] {
   return (provider && SUBSCRIPTION_CLI_MODELS[provider]) || [];
 }
+
+/**
+ * Curated fallback models for metered cloud providers when an API key is present.
+ * These are NOT CLI subscription models, so knownModelsFor() remains empty for them.
+ */
+export const CURATED_METERED_MODELS: Record<string, CustomModelInfo[]> = {
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Flagship omni model', provider: 'openai' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o mini', description: 'Fast and affordable', provider: 'openai' },
+  ],
+  anthropic: [
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Intelligent, fast', provider: 'anthropic' },
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast, lightweight', provider: 'anthropic' },
+  ],
+  deepseek: [
+    { id: 'deepseek-chat', name: 'DeepSeek Chat', description: 'General purpose', provider: 'deepseek' },
+    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: 'Reasoning model (R1)', provider: 'deepseek' },
+  ],
+  'google-ai-studio': [
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Next-gen multimodal', provider: 'google-ai-studio' },
+  ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'Fast inference on Groq LPU', provider: 'groq' },
+  ],
+  openrouter: [
+    { id: 'auto', name: 'OpenRouter Auto', description: 'Best model for prompt', provider: 'openrouter' },
+  ],
+};
+

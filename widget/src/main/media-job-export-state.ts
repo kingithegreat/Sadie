@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import type { MediaJob } from './media-studio';
-import { hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec,
+import { hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, readStudioExportAttempt,
   type StudioExportState, type StudioRenderedOutput } from '../shared/media-output';
 
 export const mediaScriptDigest = (script: string) => createHash('sha256').update(script).digest('hex');
@@ -32,8 +32,16 @@ export async function mediaJobSourceRevision(job: MediaJob, inputs = job.renderI
   } catch { return null; }
 }
 
+/** Geometry/caption display changes do not require new narration or scene art. */
+export async function mediaJobInputRevision(job: MediaJob, inputs = job.renderInputs): Promise<string | null> {
+  return mediaJobSourceRevision({ ...job, outputSpec: undefined, burnSubtitles: true }, inputs);
+}
+
 /** Review verifies current bytes and source again, not a cached renderer label. */
 export async function assertMediaJobReviewable(job: MediaJob, expectedRenderPath?: string): Promise<void> {
+  if (job.perExportReview || job.outputSpec?.variants.length === 2) {
+    throw new Error('Review each exported format separately, using its saved movie review entry.');
+  }
   if (expectedRenderPath !== undefined && expectedRenderPath !== job.renderPath) {
     throw new Error('The current movie changed. Select and watch that export before approving it.');
   }
@@ -123,7 +131,20 @@ export async function readMediaJobExportState(job: MediaJob, dir: string): Promi
       !untrackedOutputs.some(output => output.moviePath === job.renderPath)) {
     untrackedOutputs.push({ filename: path.basename(job.renderPath), moviePath: job.renderPath });
   }
-  return { sourceRevision: await mediaJobSourceRevision(job), sourceSavedAt: job.updatedAt,
-    latestAttempt: job.latestExportAttempt, outputs: outputs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+  const variantRevisions: StudioExportState['variantRevisions'] = {};
+  try {
+    const spec = resolveStudioOutputSpec(job.outputSpec, job.format, job.format === 'long' ? '16:9' : '9:16');
+    for (const variant of spec.variants) {
+      variantRevisions[variant.id] = await mediaJobSourceRevision({ ...job, outputSpec: { ...spec, variants: [variant] } });
+    }
+  } catch { warnings.push('The saved output settings could not be compared with these movies.'); }
+  const variantAttempts: NonNullable<StudioExportState['variantAttempts']> = {};
+  for (const id of ['landscape', 'portrait', 'square'] as const) {
+    const attempt = readStudioExportAttempt(job.variantExportAttempts?.[id]);
+    if (attempt?.variantId === id) variantAttempts[id] = attempt;
+  }
+  return { sourceRevision: await mediaJobSourceRevision(job), variantRevisions, sourceSavedAt: job.updatedAt,
+    latestAttempt: readStudioExportAttempt(job.latestExportAttempt), variantAttempts,
+    outputs: outputs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     untrackedOutputs, ...(warnings.length ? { warning: [...new Set(warnings)].join(' ') } : {}) };
 }

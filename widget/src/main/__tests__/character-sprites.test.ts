@@ -221,14 +221,18 @@ describe('mediaGenerateSpritesHandler', () => {
   });
 
   it('successfully slices and auto-rigs sprites when Ancient Pathways slicer succeeds', async () => {
-    // Mock Imagen 3 response
+    // A Gemini key is saved, but Google retired Imagen 3: it must not be
+    // contacted (and the key must not leave the machine). The sheet comes from
+    // the existing Pollinations fallback.
     mockGoogleKey = 'fake-gemini-key';
-    const fakeImageB64 = Buffer.from('IMAGEN_PNG').toString('base64');
-    mockHttpsRequest.mockImplementation((_opts, callback) => {
+    const fakeImage = Buffer.from('FAKE_PNG_BYTES');
+    const requestedUrls: string[] = [];
+    mockHttpsGet.mockImplementation((url, _opts, callback) => {
+      requestedUrls.push(String(url));
       const res = new EventEmitter() as any;
       res.statusCode = 200;
       setImmediate(() => {
-        res.emit('data', Buffer.from(JSON.stringify({ predictions: [{ bytesBase64Encoded: fakeImageB64 }] })));
+        res.emit('data', fakeImage);
         res.emit('end');
       });
       callback(res);
@@ -267,9 +271,11 @@ describe('mediaGenerateSpritesHandler', () => {
       expect(res.success).toBe(true);
       expect(res.result?.spriteCount).toBe(39);
       expect(res.result?.character).toBe('cleopatra');
-      expect(res.result?.source).toBe('imagen-3');
+      expect(res.result?.source).toBe('pollinations-flux');
       expect(res.result?.message).toContain('Generated and auto-rigged 39 sprites');
       expect(mockSpawn).toHaveBeenCalled();
+      expect(mockHttpsRequest).not.toHaveBeenCalled(); // no Imagen POST
+      expect(requestedUrls.some(u => /googleapis|fake-gemini-key/.test(u))).toBe(false);
     } finally {
       fs.rmSync(fakeApDir, { recursive: true, force: true });
     }

@@ -61,6 +61,8 @@ export interface StudioExportAttempt {
   error?: string;
   exportId?: string;
   sceneId?: string;
+  variantId?: StudioOutputVariant['id'];
+  batchId?: string;
 }
 
 export interface StudioExportState {
@@ -68,10 +70,46 @@ export interface StudioExportState {
   sceneRevisions?: Record<string, string>;
   sourceSavedAt: string | null;
   latestAttempt?: StudioExportAttempt;
+  variantAttempts?: Partial<Record<StudioOutputVariant['id'], StudioExportAttempt>>;
+  variantRevisions?: Partial<Record<StudioOutputVariant['id'], string | null>>;
+  sceneVariantRevisions?: Record<string, Partial<Record<StudioOutputVariant['id'], string | null>>>;
   outputs: Array<StudioRenderedOutput & { moviePath: string }>;
   /** Real files without trusted sidecars remain reachable, with unknown provenance. */
   untrackedOutputs?: Array<{ filename: string; moviePath: string }>;
   warning?: string;
+}
+
+/** A partial batch carries its successful movies through IPC as well as its error. */
+export interface StudioMovieResult {
+  ok: boolean;
+  moviePath?: string;
+  durationSec?: number;
+  totalShots?: number;
+  burnSubtitles?: boolean;
+  outputSpec?: StudioOutputSpec;
+  renderedOutput?: StudioRenderedOutput;
+  jobId?: string;
+  warning?: string;
+  error?: string;
+  variants?: Array<StudioMovieResult & { variantId: StudioOutputVariant['id'] }>;
+}
+
+/** Disk metadata is input, never JSX-ready display data. */
+export function readStudioExportAttempt(value: unknown): StudioExportAttempt | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const saved = value as Record<string, unknown>;
+  if (typeof saved.id !== 'string' || typeof saved.status !== 'string' ||
+      !['preparing', 'rendering', 'validating', 'succeeded', 'failed', 'interrupted'].includes(saved.status) ||
+      typeof saved.startedAt !== 'string' || !Number.isFinite(Date.parse(saved.startedAt))) return undefined;
+  return { id: saved.id, status: saved.status as StudioExportAttempt['status'], startedAt: saved.startedAt,
+    sourceRevision: typeof saved.sourceRevision === 'string' && /^[a-f0-9]{64}$/.test(saved.sourceRevision) ? saved.sourceRevision : null,
+    ...(typeof saved.finishedAt === 'string' ? { finishedAt: saved.finishedAt } : {}),
+    ...(typeof saved.error === 'string' ? { error: saved.error.slice(0, 8000) } : {}),
+    ...(typeof saved.exportId === 'string' ? { exportId: saved.exportId } : {}),
+    ...(typeof saved.sceneId === 'string' ? { sceneId: saved.sceneId } : {}),
+    ...(typeof saved.batchId === 'string' ? { batchId: saved.batchId } : {}),
+    ...(saved.variantId === 'landscape' || saved.variantId === 'portrait' || saved.variantId === 'square' ? { variantId: saved.variantId } : {}),
+  };
 }
 
 const outputPresets = {
@@ -121,10 +159,14 @@ export function resolveStudioOutputSpec(
   const spec = value as Record<string, unknown>;
   if (spec.schemaVersion !== 1) throw new Error('This output-settings version is not supported.');
   if (spec.durationIntent !== 'short' && spec.durationIntent !== 'long') throw new Error('Choose short or long content length.');
-  if (!Array.isArray(spec.variants) || spec.variants.length !== 1) {
-    throw new Error('Choose one output for this export. Multi-output rendering is not available yet.');
+  if (!Array.isArray(spec.variants) || spec.variants.length < 1 || spec.variants.length > 2) {
+    throw new Error('Choose one output, or landscape and portrait together.');
   }
-  return { schemaVersion: 1, durationIntent: spec.durationIntent, variants: spec.variants.map(resolveStudioOutputVariant) };
+  const variants = spec.variants.map(resolveStudioOutputVariant);
+  if (variants.length === 2 && (!variants.some(v => v.id === 'landscape') || !variants.some(v => v.id === 'portrait'))) {
+    throw new Error('Two outputs must be one landscape and one portrait.');
+  }
+  return { schemaVersion: 1, durationIntent: spec.durationIntent, variants };
 }
 
 export function createStudioOutputSpec(

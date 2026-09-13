@@ -32,6 +32,7 @@ interface StatusIndicatorProps {
   useCustomLLM?: boolean;
   onModelChange?: (model: string, useCustom: boolean, provider?: string) => void;
   uncensoredModel?: string;
+  providerApiKeys?: Record<string, string>;
   vramGB?: number | null;
 }
 
@@ -61,6 +62,7 @@ interface HeaderModelProps {
   uncensoredMode: boolean;
   uncensoredModel: string;
   useCustomLLM: boolean;
+  providerApiKeys?: Record<string, string>;
   vramGB?: number | null;
 }
 
@@ -286,6 +288,7 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
   uncensoredMode,
   uncensoredModel,
   useCustomLLM,
+  providerApiKeys,
   vramGB
 }) => (
   <div className="header-model">
@@ -312,6 +315,7 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
         currentModel={currentModel}
         customLLM={customLLM}
         useCustomLLM={useCustomLLM}
+        providerApiKeys={providerApiKeys}
         onModelChange={onModelChange}
         onConfigureCustom={onSettingsClick}
         locked={false}
@@ -432,6 +436,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   currentModel = 'qwen2.5:7b',
   customLLM,
   useCustomLLM = false,
+  providerApiKeys,
   onModelChange,
   uncensoredModel = 'dolphin:7b',
   vramGB
@@ -486,6 +491,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           uncensoredMode={uncensoredMode}
           uncensoredModel={uncensoredModel}
           useCustomLLM={useCustomLLM}
+          providerApiKeys={providerApiKeys}
           vramGB={vramGB}
         />
 

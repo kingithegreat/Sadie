@@ -33,7 +33,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-for (const [name, generate] of [['Pollinations', generatePollinationsShot], ['Imagen', generateImagen3Shot]] as const) {
+for (const [name, generate] of [['Pollinations', generatePollinationsShot]] as const) {
   for (const valid of [true, false]) {
     test(`${name} ${valid ? 'saves the returned image before done' : 'rejects corrupt image bytes'}`, async () => {
       const base64 = (valid ? bytes : Buffer.from('not an image'.repeat(100))).toString('base64');
@@ -49,6 +49,16 @@ for (const [name, generate] of [['Pollinations', generatePollinationsShot], ['Im
     });
   }
 }
+
+test('retired Imagen writes no shot image and makes no request, even when a response would be valid', async () => {
+  globalThis.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({
+    predictions: [{ bytesBase64Encoded: bytes.toString('base64'), mimeType: 'image/png' }],
+  }) });
+  const result = await generateImagen3Shot(req);
+  expect(result).toMatchObject({ status: 'failed', provider: 'imagen-3', error: expect.stringMatching(/retired Imagen 3/) });
+  expect(globalThis.fetch).not.toHaveBeenCalled();
+  expect(fs.existsSync(path.join(dir, 'image'))).toBe(false);
+});
 
 test('Stable Diffusion writes real loopback response bytes to the shot folder', async () => {
   const server = http.createServer((_request, response) => response.end(JSON.stringify({ images: [bytes.toString('base64')] })));

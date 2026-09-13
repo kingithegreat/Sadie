@@ -1462,8 +1462,8 @@ export const imageGenerateDef: ToolDefinition = {
       },
       backend: {
         type: 'string',
-        description: '"local" (SD/ComfyUI only), "cloud" (Imagen 3 / Pollinations free → DALL-E), "imagen" (Google AI Studio Imagen 3), or "hybrid" (local first, then Imagen/Pollinations, default)',
-        enum: ['local', 'cloud', 'hybrid', 'imagen', 'imagen-3'],
+        description: '"local" (SD/ComfyUI only), "cloud" (Pollinations free → Stable Horde → DALL-E), or "hybrid" (local first, then cloud, default). Google Imagen 3 was retired by Google in November 2025 and is not available.',
+        enum: ['local', 'cloud', 'hybrid'],
         default: 'hybrid'
       },
       seed: {
@@ -1884,7 +1884,7 @@ export async function tryImagen3(prompt: string, width: number, height: number, 
     const res = await generateImagen3(prompt, width, height, seed);
     return res?.base64 || null;
   } catch (err: any) {
-    if (err?.code !== 'ONLINE_ACCESS_DISABLED' && !err?.message?.includes('not configured')) {
+    if (err?.code !== 'IMAGEN3_RETIRED' && err?.code !== 'ONLINE_ACCESS_DISABLED' && !err?.message?.includes('not configured')) {
       console.warn('[ImageGen] Imagen 3 failed:', err?.message || err);
     }
     return null;
@@ -1927,10 +1927,8 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
       image_base64 = await tryImagen3(prompt, width, height, seed);
       if (image_base64) { source = 'imagen-3'; }
       if (!image_base64) {
-        return {
-          success: false,
-          error: 'Google Imagen 3 failed. Ensure a Gemini API key is configured in Settings (Google AI Studio) and Online access is enabled.',
-        };
+        const { IMAGEN3_RETIRED_MESSAGE } = await import('./imagen');
+        return { success: false, error: IMAGEN3_RETIRED_MESSAGE };
       }
     }
 
@@ -1949,7 +1947,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     }
 
     if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
-      // Try Google AI Studio Imagen 3 if Gemini API key is configured
+      // Imagen 3 is retired: this returns null at once, without a network request.
       image_base64 = await tryImagen3(prompt, width, height, seed);
       if (image_base64) { source = 'imagen-3'; }
     }

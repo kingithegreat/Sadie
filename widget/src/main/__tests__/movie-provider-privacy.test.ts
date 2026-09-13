@@ -75,7 +75,7 @@ afterEach(() => {
   fs.rmSync(fixtureDir, { recursive: true, force: true });
 });
 
-test.each([imagen3Provider, pollinationsProvider, comfyUIProvider, localSD15Provider, colabProvider])(
+test.each([pollinationsProvider, comfyUIProvider, localSD15Provider, colabProvider])(
   '$id is rejected during discovery and direct execution when Online is off', async provider => {
     await expect(provider.probe(shot())).rejects.toThrow(/Online/);
     expect(await provider.generate(shot())).toMatchObject({ status: 'failed', error: expect.stringMatching(/Online/) });
@@ -85,7 +85,6 @@ test.each([imagen3Provider, pollinationsProvider, comfyUIProvider, localSD15Prov
 );
 
 test.each([
-  ['Imagen', () => generateImagen3('private', 512, 512)],
   ['Pollinations', () => generatePollinations('private', 512, 512)],
   ['ComfyUI', () => generateComfyUI('private', 512, 512)],
   ['ComfyUI health', () => isComfyUIReachable()],
@@ -94,6 +93,16 @@ test.each([
 ] as const)('%s direct helper cannot bypass online consent', async (_name, invoke) => {
   await expect(invoke()).rejects.toThrow(/Online/);
   noRequests();
+});
+
+test('retired Imagen refuses before any request even with Online on and a Gemini key saved', async () => {
+  settings = { useCustomLLM: true, providerApiKeys: { 'google-ai-studio': 'fixture-key' } };
+  await expect(imagen3Provider.probe(shot())).resolves.toMatchObject({ canGenerate: false, availability: 'offline', reason: expect.stringMatching(/retired Imagen 3/) });
+  expect(await imagen3Provider.generate(shot())).toMatchObject({ status: 'failed', error: expect.stringMatching(/retired Imagen 3/) });
+  await expect(generateImagen3('private', 512, 512)).rejects.toMatchObject({ code: 'IMAGEN3_RETIRED' });
+  noRequests();
+  expect(mockGetSettings).not.toHaveBeenCalled(); // the key is never even read
+  expect(fs.existsSync(path.join(shot().shotDir, 'image'))).toBe(false);
 });
 
 test.each([undefined, {}, { customLLM: { enabled: false } }])('missing/offline settings fail closed: %j', async value => {

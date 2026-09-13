@@ -13,9 +13,9 @@
  */
 
 import { execFile } from 'child_process';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
-import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput } from '../../shared/media-output';
+import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput, type StudioMovieResult } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
 import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle } from '../media-render';
@@ -31,18 +31,14 @@ export interface StoryboardRenderOptions {
   burnSubtitles?: boolean;
   outputName?: string;
   outputSpec?: unknown;
+  variantId?: StudioOutputVariant['id'];
 }
 
-export interface StoryboardRenderResult {
-  ok: boolean;
-  moviePath?: string;
-  durationSec?: number;
-  totalShots?: number;
-  /** The choice actually used by this render, not metadata reread afterwards. */
-  burnSubtitles?: boolean;
-  outputSpec?: StudioOutputSpec;
-  renderedOutput?: StudioRenderedOutput;
-  error?: string;
+export type StoryboardRenderResult = StudioMovieResult;
+
+function readableFile(file: unknown): file is string {
+  if (typeof file !== 'string' || !file) return false;
+  try { const stat = fs.statSync(file); return stat.isFile() && stat.size > 0; } catch { return false; }
 }
 
 /** Alias kept for callers/tests written against the older name. */
@@ -142,37 +138,77 @@ export async function renderStoryboardMovie(
     if (opts.sceneId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(opts.sceneId)) throw new Error('Choose a valid storyboard scene before exporting.');
     attempt = beginStoryboardExport(projectDir, opts.sceneId);
   } catch (error) { return { ok: false, error: (error as Error).message }; }
+  let prepared: Awaited<ReturnType<typeof prepareStoryboardInputs>> | undefined;
+  let children: StudioExportAttempt[] = [];
   try {
-    const result = await renderStoryboardAttempt(opts, attempt);
-    Object.assign(attempt, { status: result.ok ? 'succeeded' : 'failed', finishedAt: new Date().toISOString(),
-      ...(result.ok ? { exportId: result.renderedOutput?.exportId } : { error: result.error }) });
-    recordStoryboardAttempt(projectDir, attempt);
-    return result;
+    const metaPath = path.join(projectDir, 'project.json');
+    const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
+    const requested = opts.outputSpec === undefined ? meta.outputSpec : opts.outputSpec;
+    const spec = requested === undefined ? undefined : resolveStudioOutputSpec(requested);
+    if (opts.variantId !== undefined && !spec?.variants.some(v => v.id === opts.variantId)) throw new Error('Choose a saved output format to retry.');
+    if (opts.outputName && (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(opts.outputName) || spec?.variants.length === 2)) {
+      throw new Error('Choose an MP4 filename for one format, or let both formats use their own filenames.');
+    }
+    if (opts.outputName && fs.existsSync(path.join(projectDir, 'renders', opts.outputName))) throw new Error('Choose a new export filename. Existing exports are preserved.');
+    const variants = spec?.variants ?? [undefined];
+    const selected = opts.variantId === undefined ? variants : variants.filter(v => v?.id === opts.variantId);
+    children = selected.map(variant => {
+      const child: StudioExportAttempt = variants.length > 1 ? { id: randomUUID(), batchId: attempt.id,
+        variantId: variant!.id, status: 'preparing', sourceRevision: null, startedAt: new Date().toISOString(),
+        ...(opts.sceneId ? { sceneId: opts.sceneId } : {}) } : attempt;
+      if (variant) child.variantId = variant.id;
+      recordStoryboardAttempt(projectDir, child);
+      return child;
+    });
+    prepared = await prepareStoryboardInputs({ ...opts, ...(spec ? { outputSpec: spec } : {}) });
+    const results: StoryboardRenderResult[] = [];
+    for (let i = 0; i < selected.length; i++) {
+      const variant = selected[i];
+      const child = children[i];
+      const result = await renderStoryboardAttempt(opts, child, prepared, variant);
+      Object.assign(child, { status: result.ok ? 'succeeded' : 'failed', finishedAt: new Date().toISOString(),
+        ...(result.ok ? { exportId: result.renderedOutput?.exportId } : { error: result.error }) });
+      recordStoryboardAttempt(projectDir, child);
+      results.push({ ...result, ...(variant ? { variantId: variant.id } : {}) });
+    }
+    if (variants.length === 1) return results[0];
+    const ok = results.every(result => result.ok);
+    const error = results.flatMap((result, i) => result.ok ? [] : [`${selected[i]?.id}: ${result.error}`]).join('\n');
+    recordStoryboardAttempt(projectDir, { ...attempt, status: ok ? 'succeeded' : 'failed', finishedAt: new Date().toISOString(), ...(ok ? {} : { error }) });
+    return { ...results.find(result => result.ok), ok,
+      variants: results as NonNullable<StoryboardRenderResult['variants']>, ...(ok ? {} : { error }) };
   } catch (error) {
     const message = `Movie export failed: ${(error as Error).message}`;
-    try { recordStoryboardAttempt(projectDir, { ...attempt, status: 'failed', finishedAt: new Date().toISOString(), error: message }); } catch { /* Storage itself is unavailable; do not claim success. */ }
+    try {
+      for (const child of children.filter(child => ['preparing', 'rendering', 'validating'].includes(child.status))) {
+        recordStoryboardAttempt(projectDir, { ...child, status: 'failed', finishedAt: new Date().toISOString(), error: message });
+      }
+      recordStoryboardAttempt(projectDir, { ...attempt, status: 'failed', finishedAt: new Date().toISOString(), error: message });
+    } catch { /* Storage itself is unavailable; do not claim success. */ }
     return { ok: false, error: message };
-  } finally { endStoryboardExport(projectDir); }
+  } finally {
+    if (prepared) {
+      try { fs.rmSync(prepared.inputDir, { recursive: true, force: true }); } catch { /* A remaining diagnostic input directory is not a successful movie. */ }
+    }
+    endStoryboardExport(projectDir);
+  }
 }
 
-async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: StudioExportAttempt): Promise<StoryboardRenderResult> {
+async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
   const { findManagedFfmpeg } = await import('../ffmpeg-setup');
   const ffmpeg = await findFfmpeg(findManagedFfmpeg());
   if (!ffmpeg) {
-    return {
-      ok: false,
-      error: 'FFmpeg was not found. Choose "Set it up for me" in Media Studio to install the video engine.',
-    };
+    throw new Error('FFmpeg was not found. Choose "Set it up for me" in Media Studio to install the video engine.');
   }
 
   let projectDir: string;
   try {
     projectDir = getStoryboardProjectDir(opts.projectId);
   } catch (error) {
-    return { ok: false, error: (error as Error).message };
+    throw new Error((error as Error).message);
   }
   if (!fs.existsSync(projectDir)) {
-    return { ok: false, error: `Storyboard project directory not found: ${projectDir}` };
+    throw new Error(`Storyboard project directory not found: ${projectDir}`);
   }
 
   const metaPath = path.join(projectDir, 'project.json');
@@ -186,18 +222,11 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     if (outputSpec && !fs.existsSync(metaPath)) throw new Error('Save this project before choosing an export format.');
     burnSubtitles = resolveBurnSubtitles(opts.burnSubtitles, resolveBurnSubtitles(projectMeta.burnSubtitles));
   } catch (error) {
-    return { ok: false, error: `Could not read output settings: ${(error as Error).message}` };
+    throw new Error(`Could not read output settings: ${(error as Error).message}`);
   }
-  const outputVariant = outputSpec?.variants[0];
-  const width = outputVariant?.width ?? 1920;
-  const height = outputVariant?.height ?? 1080;
-  const fps = outputVariant?.fps ?? 30;
-  const subtitleStyle = outputVariant ? defaultSubtitleStyle(outputVariant.aspectRatio)
-    : 'FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Alignment=2,MarginV=35';
-
   const sceneId = opts.sceneId;
   if (sceneId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(sceneId)) {
-    return { ok: false, error: 'Choose a valid storyboard scene before exporting.' };
+    throw new Error('Choose a valid storyboard scene before exporting.');
   }
   let shots: ShotManifest[];
   let sourceScenes: AssembledScene[];
@@ -205,52 +234,35 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     sourceScenes = assembleStoryboardScenes(projectDir).filter(scene => !sceneId || scene.sceneId === sceneId);
     shots = sourceScenes.flatMap(scene => scene.shots);
   } catch (error) {
-    return { ok: false, error: `Could not read the saved storyboard: ${error instanceof Error ? error.message : String(error)}` };
+    throw new Error(`Could not read the saved storyboard: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!Array.isArray(shots) || shots.length === 0) {
-    return { ok: false, error: 'Storyboard scene contains no shots to render.' };
+    throw new Error('Storyboard scene contains no shots to render.');
   }
 
   // A saved manifest is input, not proof that its shots can be exported.
   if (shots.some(s => !s || typeof s.durationSec !== 'number' || !Number.isFinite(s.durationSec) || s.durationSec <= 0)) {
-    return { ok: false, error: 'Every shot needs a positive duration. Fix the shot timing and save the board before exporting.' };
+    throw new Error('Every shot needs a positive duration. Fix the shot timing and save the board before exporting.');
   }
   if (shots.some(s => typeof s.prompt !== 'string' || (s.narration !== undefined && typeof s.narration !== 'string'))) {
-    return { ok: false, error: 'A shot has invalid text. Open and save the storyboard before exporting.' };
+    throw new Error('A shot has invalid text. Open and save the storyboard before exporting.');
   }
-  const readableFile = (file: unknown): file is string => {
-    if (typeof file !== 'string' || !file) return false;
-    try { const stat = fs.statSync(file); return stat.isFile() && stat.size > 0; } catch { return false; }
-  };
   const missingFrames = shots.filter(s => !readableFile(s.frameImagePath));
   if (missingFrames.length === shots.length) {
-    return {
-      ok: false,
-      error: 'No rendered keyframes found for this storyboard. Please generate frames first before rendering.',
-    };
+    throw new Error('No rendered keyframes found for this storyboard. Please generate frames first before rendering.');
   }
   if (missingFrames.length > 0) {
-    return { ok: false, error: `${missingFrames.length} shot image(s) are missing or empty. Generate or replace those frames before exporting.` };
+    throw new Error(`${missingFrames.length} shot image(s) are missing or empty. Generate or replace those frames before exporting.`);
   }
 
   const rendersDir = path.join(projectDir, 'renders');
-  const exportId = randomUUID();
-  // New exports are immutable even for legacy projects. Their picture/caption
-  // behavior stays legacy, but a reviewed fixed-name movie is never replaced.
-  const outputFilename = opts.outputName || `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-${outputVariant?.id ?? '1080p'}-${exportId}.mp4`;
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(outputFilename)) {
-    return { ok: false, error: 'The export needs an MP4 filename inside this project.' };
-  }
-  const finalMoviePath = path.join(rendersDir, outputFilename);
-  if (fs.existsSync(finalMoviePath)) return { ok: false, error: 'Choose a new export filename. Existing exports are preserved.' };
   let tempDir: string | undefined;
 
   try {
     fs.mkdirSync(rendersDir, { recursive: true });
     if (fs.realpathSync(rendersDir) !== path.join(fs.realpathSync(projectDir), 'renders')) throw new Error('The render folder must be inside this project, not a linked directory.');
     // Stage on the same filesystem. A failed replacement must retain the last good export.
-    tempDir = fs.mkdtempSync(path.join(rendersDir, '.homebot-render-'));
-    const stagedMoviePath = path.join(tempDir, 'movie.mp4');
+    tempDir = fs.mkdtempSync(path.join(rendersDir, '.homebot-inputs-'));
     // Copy the inputs this attempt actually uses. An edit made while FFmpeg is
     // running must not produce a movie claiming the earlier image's revision.
     const snapshotScenes = sourceScenes.map(scene => ({ ...scene, shots: scene.shots.map(shot => ({ ...shot })) }));
@@ -264,9 +276,6 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     }
     shots = snapshotScenes.flatMap(scene => scene.shots);
     const engine = storyboardNarrationEngine();
-    attempt.sourceRevision = await storyboardSourceRevision(snapshotScenes, { ...projectMeta, outputSpec, burnSubtitles }, { sceneId, motion: opts.motion, engine });
-    attempt.status = 'rendering';
-    recordStoryboardAttempt(projectDir, attempt);
     const totalDuration = shots.reduce((acc, s) => acc + s.durationSec, 0);
     const motion = opts.motion !== false;
     const hasNarration = shots.some(shot => !!shot.narration?.trim());
@@ -284,12 +293,40 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         // a separate directory and use the returned path, including its actual codec.
         const speechDir = path.join(tempDir, `speech_${i}`);
         fs.mkdirSync(speechDir);
-        const audio = await renderNarrationToFile(shot.narration.trim(), path.join(speechDir, 'audio.mp3'), { engine });
+        // Framing retries must not buy/generate the same speech again. Only
+        // reuse exact text + requested engine and verified local audio bytes.
+        const cacheDir = path.join(rendersDir, '.homebot-narration');
+        fs.mkdirSync(cacheDir, { recursive: true });
+        if (fs.realpathSync(cacheDir) !== path.join(fs.realpathSync(rendersDir), '.homebot-narration')) throw new Error('The narration cache must be inside this project.');
+        const cacheKey = createHash('sha256').update(JSON.stringify({ schema: 'storyboard-narration-1', text: shot.narration.trim(), engine, voice: 'adapter-default' })).digest('hex');
+        const cacheMetaPath = path.join(cacheDir, `${cacheKey}.json`);
+        let audio: { path: string; engine: string } | undefined;
+        try {
+          if (fs.realpathSync(cacheMetaPath) !== path.join(fs.realpathSync(cacheDir), `${cacheKey}.json`)) throw new Error('Linked cache record');
+          const cached = JSON.parse(fs.readFileSync(cacheMetaPath, 'utf8'));
+          if (cached.key !== cacheKey || typeof cached.filename !== 'string' ||
+              !new RegExp(`^${cacheKey}-[a-f0-9-]+\\.(wav|mp3)$`).test(cached.filename)) throw new Error('Invalid cache identity');
+          const cachedPath = path.join(cacheDir, cached.filename);
+          if (fs.realpathSync(cachedPath) !== path.join(fs.realpathSync(cacheDir), cached.filename) ||
+              !readableFile(cachedPath) || await storyboardFileDigest(cachedPath) !== cached.sha256) throw new Error('Changed cached audio');
+          audio = { path: cachedPath, engine: cached.engine };
+        } catch { /* Missing/unverifiable cache is not usable speech. The adapter below still enforces Online consent. */ }
+        const reused = !!audio;
+        audio ??= await renderNarrationToFile(shot.narration.trim(), path.join(speechDir, 'audio.mp3'), { engine });
         if (!readableFile(audio.path)) throw new Error(`Narration for shot ${i + 1} produced no usable audio file.`);
         const facts = await inspectRender(ffmpeg, audio.path);
         if (!facts.hasAudio || !Number.isFinite(facts.durationSeconds) || !facts.durationSeconds ||
             facts.meanVolumeDb === null || !Number.isFinite(facts.meanVolumeDb) || facts.meanVolumeDb < SILENCE_FLOOR_DB) {
           throw new Error(`Narration for shot ${i + 1} could not be verified as audible speech. Check the selected voice and retry.`);
+        }
+        if (!reused) {
+          const extension = path.extname(audio.path).toLowerCase() === '.wav' ? '.wav' : '.mp3';
+          const filename = `${cacheKey}-${randomUUID()}${extension}`;
+          const cachedPath = path.join(cacheDir, filename);
+          fs.copyFileSync(audio.path, cachedPath, fs.constants.COPYFILE_EXCL);
+          const stagedMeta = `${cacheMetaPath}.${randomUUID()}.saving`;
+          fs.writeFileSync(stagedMeta, JSON.stringify({ key: cacheKey, filename, sha256: await storyboardFileDigest(cachedPath), engine: audio.engine }), { flag: 'wx' });
+          fs.renameSync(stagedMeta, cacheMetaPath);
         }
         if (facts.durationSeconds > dur + 0.05) {
           throw new Error(`Narration for shot ${i + 1} needs ${facts.durationSeconds.toFixed(1)} seconds. Increase its duration from ${dur} seconds or shorten the text.`);
@@ -338,6 +375,39 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
       const srtText = buildSrtFromShots(shots);
       fs.writeFileSync(srtPath, srtText, 'utf-8');
     }
+
+    return { ffmpeg, projectDir, projectMeta, outputSpec, burnSubtitles, sceneId, shots, snapshotScenes,
+      engine, totalDuration, motion, hasNarration, combinedAudioPath, srtPath, inputDir: tempDir, rendersDir };
+  } catch (error) {
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: StudioExportAttempt,
+  prepared: Awaited<ReturnType<typeof prepareStoryboardInputs>>, variant?: StudioOutputVariant,
+): Promise<StoryboardRenderResult> {
+  const { ffmpeg, projectDir, projectMeta, burnSubtitles, sceneId, shots, snapshotScenes, engine,
+    totalDuration, motion, hasNarration, combinedAudioPath, srtPath, rendersDir } = prepared;
+  const outputSpec = prepared.outputSpec ? { ...prepared.outputSpec, variants: [variant!] } : undefined;
+  const outputVariant = variant;
+  const width = variant?.width ?? 1920;
+  const height = variant?.height ?? 1080;
+  const fps = variant?.fps ?? 30;
+  const subtitleStyle = variant ? defaultSubtitleStyle(variant.aspectRatio)
+    : 'FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Alignment=2,MarginV=35';
+  const exportId = attempt.id;
+  const outputFilename = opts.outputName || `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-${variant?.id ?? '1080p'}-${exportId}.mp4`;
+  const finalMoviePath = path.join(rendersDir, outputFilename);
+  let tempDir: string | undefined;
+  try {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(outputFilename)) throw new Error('The export needs an MP4 filename inside this project.');
+    if (fs.existsSync(finalMoviePath)) throw new Error('Choose a new export filename. Existing exports are preserved.');
+    tempDir = fs.mkdtempSync(path.join(rendersDir, '.homebot-render-'));
+    const stagedMoviePath = path.join(tempDir, 'movie.mp4');
+    attempt.sourceRevision = await storyboardSourceRevision(snapshotScenes, { ...projectMeta, outputSpec, burnSubtitles }, { sceneId, motion: opts.motion, engine });
+    attempt.status = 'rendering';
+    recordStoryboardAttempt(projectDir, attempt);
 
     // 3. Render Video Track
     if (motion) {

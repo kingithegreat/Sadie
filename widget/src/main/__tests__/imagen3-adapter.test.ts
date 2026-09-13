@@ -1,6 +1,7 @@
 /**
- * Tests for movie/imagen3-adapter.ts — Google AI Studio Imagen 3 image generation.
- * Uses the Gemini API key from settings (google-ai-studio provider vault).
+ * Tests for movie/imagen3-adapter.ts and tools/imagen.ts — Google Imagen 3 was
+ * shut down on 10 November 2025, so both must refuse before any request, never
+ * read or send the Gemini key, and never write a shot image.
  */
 
 jest.mock('electron', () => ({
@@ -17,13 +18,6 @@ jest.mock('../config-manager', () => ({
   getSettings: (...a: any[]) => mockGetSettings(...a),
 }));
 
-let mockGoogleKey = '';
-jest.mock('../../shared/cloud-llm', () => ({
-  ...jest.requireActual('../../shared/cloud-llm'),
-  apiKeyForProvider: (_settings: any, provider: string) =>
-    provider === 'google-ai-studio' ? mockGoogleKey : '',
-}));
-
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
@@ -32,7 +26,10 @@ import {
   generateImagen3,
   generateImagen3Shot,
   imagen3Provider,
+  IMAGEN3_COST_MICRO_USD,
 } from '../movie/imagen3-adapter';
+import { IMAGEN3_RETIRED_MESSAGE } from '../tools/imagen';
+import { GenerationRouter } from '../movie/router';
 import type { GenerationRequest, MediaKind } from '../movie/types';
 
 const fakeRequest: GenerationRequest = {
@@ -42,159 +39,56 @@ const fakeRequest: GenerationRequest = {
   height: 1024,
   shotId: 'shot_01',
   shotDir: '/tmp/test-shot',
-  freeOnly: true,
-  allowWatermark: false,
+  freeOnly: false,
+  allowWatermark: true,
   allowDeferred: false,
 };
 
-describe('imagen3-adapter', () => {
+describe('imagen3-adapter (retired)', () => {
   beforeEach(() => {
-    mockGetSettings.mockReturnValue({ useCustomLLM: true });
-    mockFetch.mockReset();
-    mockGoogleKey = '';
-  });
-
-  describe('probeImagen3', () => {
-    it('reports cannotGenerate when no API key is present', async () => {
-      mockGoogleKey = '';
-      const cap = await probeImagen3(fakeRequest);
-      expect(cap.canGenerate).toBe(false);
-      expect(cap.reason).toContain('GEMINI_API_KEY');
-    });
-
-    it('reports canGenerate when API key is present', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      const cap = await probeImagen3(fakeRequest);
-      expect(cap.canGenerate).toBe(true);
-      expect(cap.availability).toBe('ready');
-      expect(cap.costMicroUsd).toBe(0); // free tier
-      expect(cap.maxWidth).toBe(2048);
-      expect(cap.throughputPerMin).toBe(15);
+    // The most permissive setup: Online on and a key saved. Retirement must still refuse.
+    mockGetSettings.mockReturnValue({ useCustomLLM: true, providerApiKeys: { 'google-ai-studio': 'AIza-test-key' } });
+    mockFetch.mockReset().mockResolvedValue({
+      ok: true,
+      json: async () => ({ predictions: [{ bytesBase64Encoded: movieImageFixture.toString('base64'), mimeType: 'image/png' }] }),
     });
   });
 
-  describe('generateImagen3', () => {
-    it('throws when no API key is present', async () => {
-      mockGoogleKey = '';
-      await expect(generateImagen3('test prompt', 1024, 1024))
-        .rejects.toThrow('Gemini API key not configured');
-    });
-
-    it('returns base64 image on success', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          predictions: [{
-            bytesBase64Encoded: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-            mimeType: 'image/png',
-          }],
-        }),
-      });
-
-      const result = await generateImagen3('test prompt', 1024, 1024);
-      expect(result.mimeType).toBe('png');
-      expect(result.base64).toMatch(/^[A-Za-z0-9+/=]+$/);
-    });
-
-    it('throws on HTTP error with status', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        text: () => Promise.resolve('Quota exceeded'),
-      });
-
-      await expect(generateImagen3('test prompt', 1024, 1024))
-        .rejects.toThrow('Imagen 3 403');
-    });
-
-    it('throws when API returns no predictions', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ predictions: [] }),
-      });
-
-      await expect(generateImagen3('test prompt', 1024, 1024))
-        .rejects.toThrow('Imagen 3 returned no image');
-    });
-
-    it('throws when image data is too short', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          predictions: [{
-            bytesBase64Encoded: 'abc123',
-            mimeType: 'image/png',
-          }],
-        }),
-      });
-
-      await expect(generateImagen3('test prompt', 1024, 1024))
-        .rejects.toThrow('empty image data');
-    });
-
-    it('respects 120s timeout', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      mockFetch.mockImplementationOnce(() => new Promise((resolve) => {
-        setTimeout(() => resolve({ ok: true, json: () => Promise.resolve({ predictions: [] }) }), 5000);
-      }));
-
-      // The AbortController is created inside generateImagen3, so we test via timing
-      // This is a structural test - real timeout testing would need integration tests
-      expect(true).toBe(true);
-    });
+  it('probe reports it cannot generate, with the retirement reason, without reading settings', async () => {
+    const cap = await probeImagen3(fakeRequest);
+    expect(cap).toMatchObject({ canGenerate: false, availability: 'offline', reason: IMAGEN3_RETIRED_MESSAGE });
+    expect(cap.costMicroUsd).toBe(IMAGEN3_COST_MICRO_USD); // never presented as free
+    expect(mockGetSettings).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  describe('generateImagen3Shot', () => {
-    it('returns done status on success', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          predictions: [{
-            bytesBase64Encoded: movieImageFixture.toString('base64'),
-            mimeType: 'image/png',
-          }],
-        }),
-      });
-
-      const shotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'imagen-shot-'));
-      try {
-        const result = await generateImagen3Shot({ ...fakeRequest, shotDir });
-        expect(result.status).toBe('done');
-        expect(result.provider).toBe('imagen-3');
-        expect((result as { costMicroUsd: number }).costMicroUsd).toBe(0);
-        if (result.status === 'done') expect(fs.readFileSync(result.files[0])).toEqual(movieImageFixture);
-      } finally { fs.rmSync(shotDir, { recursive: true, force: true }); }
+  it('the client refuses before any request, even with a key and a valid response waiting', async () => {
+    await expect(generateImagen3('test prompt', 1024, 1024)).rejects.toMatchObject({
+      code: 'IMAGEN3_RETIRED', message: IMAGEN3_RETIRED_MESSAGE,
     });
-
-    it('returns failed status on error', async () => {
-      mockGoogleKey = 'AIza-test-key';
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        text: () => Promise.resolve('Internal error'),
-      });
-
-      const result = await generateImagen3Shot(fakeRequest);
-      expect(result.status).toBe('failed');
-      expect(result.provider).toBe('imagen-3');
-      expect((result as { error: string }).error).toContain('Imagen 3 500');
-    });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockGetSettings).not.toHaveBeenCalled();
   });
 
-  describe('imagen3Provider', () => {
-    it('has correct id and kind', () => {
-      expect(imagen3Provider.id).toBe('imagen-3');
-      expect(imagen3Provider.kind).toBe('image');
-    });
+  it('shot generation fails with the retirement message and writes no image', async () => {
+    const shotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'imagen-shot-'));
+    try {
+      const result = await generateImagen3Shot({ ...fakeRequest, shotDir });
+      expect(result).toMatchObject({ status: 'failed', provider: 'imagen-3', error: IMAGEN3_RETIRED_MESSAGE });
+      expect(fs.existsSync(path.join(shotDir, 'image'))).toBe(false);
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally { fs.rmSync(shotDir, { recursive: true, force: true }); }
+  });
 
-    it('probe and generate are functions', () => {
-      expect(typeof imagen3Provider.probe).toBe('function');
-      expect(typeof imagen3Provider.generate).toBe('function');
-    });
+  it('a router rejects it with the retirement reason even when paid generation is allowed', async () => {
+    const decision = await new GenerationRouter().register(imagen3Provider).route(fakeRequest, { freeOnly: false });
+    expect(decision.chosen).toBeNull();
+    expect(decision.rejected).toEqual([expect.objectContaining({ providerId: 'imagen-3', reason: IMAGEN3_RETIRED_MESSAGE })]);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps its registration identity so routing decisions can name it', () => {
+    expect(imagen3Provider.id).toBe('imagen-3');
+    expect(imagen3Provider.kind).toBe('image');
   });
 });

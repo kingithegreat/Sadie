@@ -81,13 +81,19 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       try { narration = fs.readFileSync(scriptFile, 'utf-8'); } catch { /* ignore */ }
     }
 
-    // Check for a generated still frame image.
+    // Check for a generated still frame image. A regenerate can change format
+    // (provider-dependent PNG/JPEG) and a legacy frame.png may sit beside it;
+    // earlier attempts are kept, so the newest write is the active frame —
+    // never whichever name happens to sort first.
     let frameImagePath: string | null = null;
     const imgDir = path.join(shotPath, 'image');
     if (fs.existsSync(imgDir)) {
-      const imgs = fs.readdirSync(imgDir).filter((f) => f.endsWith('.png') || f.endsWith('.jpg'));
-      if (imgs.length > 0) {
-        frameImagePath = path.join(imgDir, imgs[0]!);
+      const newest = fs.readdirSync(imgDir)
+        .filter((f) => f.endsWith('.png') || f.endsWith('.jpg'))
+        .map((f) => ({ f, mtime: fs.statSync(path.join(imgDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime || a.f.localeCompare(b.f))[0];
+      if (newest) {
+        frameImagePath = path.join(imgDir, newest.f);
       }
     }
 

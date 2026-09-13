@@ -62,7 +62,7 @@ describe('Series Settings Catalog & Zero-VRAM Compositing Profiles', () => {
   });
 
   describe('Contact Shadow Style Construction', () => {
-    it('generates grounded absolute positioning and blur for Remotion character base', () => {
+    it('generates grounded absolute positioning and blur for the character base', () => {
       const shadowStyle = buildContactShadowStyle(LIGHTING_PRESETS.torchlight, 50, 70, 1.0, 200);
 
       expect(shadowStyle.position).toBe('absolute');
