@@ -69,3 +69,32 @@ test('an unchanged single frame is still found', () => {
   const only = saveMovieShotImage(req, png.toString('base64'));
   expect(assembleScene(projectDir, 'scene_01')!.shots[0].frameImagePath).toBe(only);
 });
+
+describe('a failed or invalid replacement keeps the previous good frame', () => {
+  const corrupt = Buffer.from('this is not an image, whatever the provider claimed');
+  const listing = () => fs.readdirSync(path.join(shotDir, 'image')).sort();
+
+  test.each([
+    ['PNG', png],
+    ['JPEG', jpeg],
+  ])('previous %s stays active and byte-identical when the next attempt is invalid', (_name, good) => {
+    const kept = saveMovieShotImage(req, good.toString('base64'));
+    const before = listing();
+    expect(() => saveMovieShotImage(req, corrupt.toString('base64'))).toThrow(/not a PNG or JPEG/);
+    expect(() => saveMovieShotImage(req, 'not base64 at all!')).toThrow();
+    expect(listing()).toEqual(before); // no partial or temporary file left behind
+    expect(fs.readFileSync(kept)).toEqual(good);
+    expect(assembleScene(projectDir, 'scene_01')!.shots[0].frameImagePath).toBe(kept);
+  });
+
+  test('after a mixed-format history, a failed attempt leaves the newest successful frame active and every version recoverable', () => {
+    const first = saveMovieShotImage(req, png.toString('base64'));
+    age(first);
+    const second = saveMovieShotImage(req, jpeg.toString('base64'));
+    expect(() => saveMovieShotImage(req, corrupt.toString('base64'))).toThrow();
+    expect(listing()).toEqual(['shot_001.jpg', 'shot_001.png']);
+    expect(assembleScene(projectDir, 'scene_01')!.shots[0].frameImagePath).toBe(second);
+    expect(fs.readFileSync(first)).toEqual(png);
+    expect(fs.readFileSync(second)).toEqual(jpeg);
+  });
+});

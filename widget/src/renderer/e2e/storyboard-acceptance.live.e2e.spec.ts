@@ -33,6 +33,7 @@ const REGEN = [
   { key: 'lamp room door', prompt: 'Medium shot of Mara, a lighthouse keeper in a red scarf, pausing at the lamp room door', color: '0x20A0B0', format: 'jpg' as const },
   { key: 'lamp room door', prompt: '', color: '0xE070C0', format: 'png' as const },
   { key: 'lamp room door', prompt: '', color: '0x90D030', format: 'png' as const },
+  { key: 'lamp room door', prompt: '', color: '0x303030', format: 'jpg' as const },
 ];
 const TITLE = 'Harbour Lantern';
 const TOTAL = SHOTS.reduce((sum, s) => sum + s.durationSec, 0);
@@ -480,6 +481,49 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
     evidence.restart = { sameMovie: true, playedToEnd: true, loop: false };
     await exported.scrollIntoViewIfNeeded();
     await page.screenshot({ path: out('c1-reopened.png'), fullPage: true });
+    expect(await attempts()).toEqual([]);
+    // ── Mixed-format regeneration, then export again ────────────────────────
+    // shot_002 becomes a JPEG while the other four shots stay PNG and the older
+    // shot_002.png stays on disk. The export must use the new JPEG, keep all 19s
+    // and every shot's first/last frames, and leave the first movie untouched.
+    const card2c = page.locator('.ms-shot-card').nth(1);
+    await card2c.locator('.ms-shot-viewport').hover();
+    await card2c.getByRole('button', { name: /Regenerate Frame/ }).click();
+    await expect.poll(() => served.length, { timeout: 60_000 }).toBe(9);
+    await expect(card2c.getByRole('button', { name: /Regenerate Frame/ })).toBeEnabled({ timeout: 60_000 });
+    expect(sha(jpg2)).toBe(sha(served[8].file));
+    expect(sha(png2)).toBe(sha(served[7].file)); // the previous successful frame, byte-for-byte
+    expect(fs.readdirSync(path.dirname(png2)).filter(f => !f.startsWith('.')).sort()).toEqual(['shot_002.jpg', 'shot_002.png']);
+    // The first export's "Saved movie" banner is already showing after the restart,
+    // so wait for the effect: a new latest successful output, not a visible banner.
+    const latestOutput = () => JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).latestSuccessfulOutput?.filename;
+    await page.getByRole('button', { name: /Render Movie/ }).click();
+    await expect.poll(latestOutput, { timeout: 300_000, message: 'a new export replaces the latest successful output' }).not.toBe(path.basename(movie));
+    await expect(board().getByRole('alert')).toHaveCount(0);
+    const mixedRecord = JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).latestSuccessfulOutput;
+    const mixedMovie = path.join(projectDir, 'renders', mixedRecord.filename);
+    expect(mixedMovie).not.toBe(movie);
+    expect(sha(movie)).toBe(evidence.export.sha256); // first export untouched
+    const mixedInfo = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', mixedMovie], { windowsHide: true }).toString());
+    const mv = mixedInfo.streams.find((st: any) => st.codec_type === 'video');
+    const ma = mixedInfo.streams.find((st: any) => st.codec_type === 'audio');
+    expect(mv).toMatchObject({ width: 1920, height: 1080 });
+    expect(Math.abs(Number(mixedInfo.format.duration) - TOTAL)).toBeLessThan(0.15);
+    expect(Math.abs(Number(mv.duration) - TOTAL)).toBeLessThan(0.15);
+    expect(Math.abs(Number(mv.duration) - Number(ma.duration))).toBeLessThan(0.1);
+    const mixedPalette = [...SHOTS.map((_s, i) => ({ id: `shot_00${i + 1}`, mean: i === 1 ? served[8].mean : served[i].mean })),
+      ...[1, 5, 6, 7].map(i => ({ id: `stale shot_002 #${i}`, mean: served[i].mean }))];
+    const identifyMixed = (t: number) => { const m = meanRgb(['-i', mixedMovie], t); return mixedPalette.map(pp => ({ id: pp.id, d: dist(m, pp.mean) })).sort((a, b) => a.d - b.d)[0]; };
+    let mixedStart = 0; const mixedShots: any[] = [];
+    for (const [i, sh] of SHOTS.entries()) {
+      const at = { first: identifyMixed(mixedStart + 0.1), middle: identifyMixed(mixedStart + sh.durationSec / 2), last: identifyMixed(mixedStart + sh.durationSec - 0.12) };
+      mixedShots.push({ shot: `shot_00${i + 1}`, startSec: mixedStart, ...at });
+      for (const sample of Object.values(at)) expect(sample.id, `mixed-format export frame at shot ${i + 1}`).toBe(`shot_00${i + 1}`);
+      mixedStart += sh.durationSec;
+    }
+    evidence.mixedFormatExport = { movie: mixedMovie, sha256: sha(mixedMovie), duration: Number(mixedInfo.format.duration),
+      video: { w: mv.width, h: mv.height, dur: mv.duration }, audio: { dur: ma.duration }, shotsOnScreen: mixedShots,
+      activeShot002: 'jpg', olderShot002Png: sha(png2), firstMovieUnchanged: true };
     expect(await attempts()).toEqual([]);
     evidence.externalOrPaidAttempts = 0;
   } finally {
