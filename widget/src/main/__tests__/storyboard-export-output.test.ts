@@ -117,6 +117,31 @@ describe('storyboard export output contract', () => {
     expect(fs.readFileSync(result.moviePath!, 'utf8')).toBe('controlled encoder bytes');
   });
 
+  test('renders explicit landscape and portrait movies while preparing narration only once', async () => {
+    const outputSpec = { ...createStudioOutputSpec('16:9'), variants: [
+      createStudioOutputSpec('16:9').variants[0], createStudioOutputSpec('9:16').variants[0],
+    ] };
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec, burnSubtitles: false }));
+    let checkedMovies = 0;
+    (inspectRender as jest.Mock).mockImplementation(async (_bin: string, file: string) => {
+      if (!file.endsWith('.mp4')) return speechFacts;
+      checkedMovies++;
+      return checkedMovies === 1 ? movieFacts : { ...movieFacts, width: 1080, height: 1920 };
+    });
+    const result = await render() as any;
+    expect(result.ok).toBe(true);
+    expect(result.variants).toHaveLength(2);
+    expect(result.variants.map((item: any) => item.renderedOutput.outputSpec.variants[0].id)).toEqual(['landscape', 'portrait']);
+    expect(new Set(result.variants.map((item: any) => item.moviePath)).size).toBe(2);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2); // two shots, not four variant-dependent calls
+    expect(checkedMovies).toBe(2);
+    for (const item of result.variants) {
+      expect(item.ok).toBe(true);
+      expect(fs.existsSync(item.moviePath)).toBe(true);
+      expect(item.renderedOutput.sha256).toMatch(/^[a-f0-9]{64}$/);
+    }
+  });
+
   test('tracks the saved source revision without inventing a change on a no-op save', async () => {
     fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
     const read = async () => (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;

@@ -119,6 +119,49 @@ describe('media_render output trust', () => {
   const goodFacts = { hasVideo: true, hasAudio: true, width: 1080, height: 1920,
     durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null };
 
+  it('encodes both variants from one frozen input set and preserves two successful files', async () => {
+    const job = writeReadyJob('Two frozen outputs');
+    job.burnSubtitles = false;
+    job.outputSpec = { ...createStudioOutputSpec('16:9'), variants: [
+      createStudioOutputSpec('16:9').variants[0], createStudioOutputSpec('9:16').variants[0],
+    ] };
+    writeJobs([job]);
+    const calls: any[] = [];
+    const encode = async (options: any) => {
+      calls.push(options);
+      expect(fs.readFileSync(options.audioPath, 'utf8')).toBe('narration');
+      expect(fs.readFileSync(options.imagePath, 'utf8')).toBe('scene');
+      fs.writeFileSync(narrationPath, 'a later source edit');
+      fs.writeFileSync(scenePath, 'later artwork');
+      fs.writeFileSync(options.outputPath, Buffer.alloc(12000, calls.length));
+      return { path: options.outputPath, bytes: 12000, args: [] };
+    };
+    const renderMock = renderVideo as jest.Mock;
+    const defaultEncode = renderMock.getMockImplementation();
+    renderMock.mockImplementationOnce(encode).mockImplementationOnce(encode);
+    mockedInspectRender.mockImplementation(async (_bin, file) => {
+      const encoded = calls.find(options => options.outputPath === file);
+      return encoded ? { ...goodFacts, width: encoded.outputVariant.width, height: encoded.outputVariant.height }
+        : { ...goodFacts, hasVideo: false };
+    });
+    try {
+      const result = await call('media_render', { job: job.id, image: scenePath, visuals: 'plain' });
+      expect(result.success).toBe(true);
+      expect(calls.map(options => options.outputVariant.id)).toEqual(['landscape', 'portrait']);
+      expect(calls[1].audioPath).toBe(calls[0].audioPath);
+      expect(calls[1].imagePath).toBe(calls[0].imagePath);
+      const state = await getMediaJobExportState(job.id);
+      expect(state.outputs).toHaveLength(2);
+      expect(new Set(state.outputs.map(item => item.moviePath)).size).toBe(2);
+      expect(state.outputs.map(item => item.outputSpec.variants[0].id).sort()).toEqual(['landscape', 'portrait']);
+      for (const item of state.outputs) expect(fs.existsSync(item.moviePath)).toBe(true);
+    } finally {
+      // Early validation can leave both one-shot encoders unused. Clear that
+      // queue as well as restoring the default, even when the assertion fails.
+      renderMock.mockReset().mockImplementation(defaultEncode);
+    }
+  });
+
   it('keeps immutable legacy history and compares content, not save timestamps', async () => {
     const job = writeReadyJob('Immutable legacy history');
     mockedInspectRender.mockResolvedValue(goodFacts);

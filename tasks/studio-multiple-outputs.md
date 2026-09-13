@@ -64,3 +64,26 @@ create/render IPC. `.kilo/artifacts/studio-multiple-outputs/red-widget.log` reta
 the result. The earlier `red.log` is only a wrong-working-directory invocation
 that ran no tests, not product evidence. Render reuse/partial recovery tests and
 implementation follow; no two-format export success is claimed.
+
+## Review and recovery design constraint
+
+Ordinary jobs currently have one state, one current renderPath and one approval
+decision. That state cannot stand for two independently reviewed movies. Reuse
+the storyboard's immutable per-export review-queue pattern for successful batch
+outputs: the source production keeps attempts/history, while each reviewed file
+has its own decision. Preserve an existing review entry on retry; do not reset
+an approved record or let a parent production approve the whole batch implicitly.
+Per-variant current-source revisions must compare only that variant's settings,
+not invalidate landscape merely because portrait framing changed. The preparation
+and input snapshots are shared; the CPU encode and QA verdict are independent.
+
+## Render red checkpoint
+
+Two new renderer regressions fail and 69 existing cases pass (4.490 seconds,
+Windows). Ordinary and storyboard exports reject both formats before encoding;
+the tests require shared frozen ordinary inputs and one storyboard narration
+preparation for both encodes. Evidence: `render-red-isolated.log` in the same
+artifact directory. The first `render-red.log` had three additional failures
+caused by unused one-shot mocks leaking from the new early-rejection test.
+Scoped cleanup now clears that queue even on assertion failure. That original
+run is retained as a test-harness defect, not five product regressions.
