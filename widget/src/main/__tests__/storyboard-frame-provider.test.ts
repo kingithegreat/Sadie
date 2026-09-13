@@ -86,8 +86,9 @@ const generate = () => mediaGenerateStoryboardFrameHandler({ projectId: 'harbour
 const shotStatus = () => JSON.parse(fs.readFileSync(path.join(root, 'harbour', 'scenes', 'scene_01', 'shot_001', 'status.json'), 'utf8'));
 
 test('the picker never offers Ancient Pathways or local SD 1.5 for still frames', () => {
-  expect(STORYBOARD_FRAME_PROVIDERS.map(o => o.routerProviderId).sort()).toEqual(['comfyui', 'imagen-3', 'pollinations']);
-  expect(STORYBOARD_FRAME_PROVIDERS.find(o => o.id === 'imagen')).toMatchObject({ paid: true });
+  // Imagen was removed when Google retired it (10 November 2025).
+  expect(STORYBOARD_FRAME_PROVIDERS.map(o => o.routerProviderId).sort()).toEqual(['comfyui', 'pollinations']);
+  expect(STORYBOARD_FRAME_PROVIDERS.some(o => o.paid)).toBe(false);
   expect(STORYBOARD_FRAME_PROVIDERS.find(o => o.id === 'online')?.label).toMatch(/may add a watermark/);
 });
 
@@ -130,26 +131,23 @@ test('an Online choice with Online off fails honestly and does not fall back to 
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test('Imagen is refused before any network call until paid use is confirmed', async () => {
+test('a project that saved Imagen before it was retired is asked to choose again, and nothing is contacted', async () => {
   mockSettings = { useCustomLLM: true };
   mockGeminiKey = 'AIza-test-key';
-  await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'imagen' });
-  const refused = await generate();
-  expect(refused.success).toBe(false);
-  expect(refused.error).toMatch(/costs money|confirm/i);
+  const metaPath = path.join(root, 'harbour', 'project.json');
+  fs.writeFileSync(metaPath, JSON.stringify({ ...JSON.parse(fs.readFileSync(metaPath, 'utf8')), frameProvider: 'imagen' }));
+  const res = await generate();
+  expect(res.success).toBe(false);
+  expect(res.error).toMatch(/Choose how this storyboard makes frame images/);
   expect(fetchMock).not.toHaveBeenCalled();
-  expect(recordPaidFrameConfirmation('imagen')).toEqual({ ok: true });
-  expect(typeof mockSettings.paidFrameConfirmations.imagen).toBe('string');
-  const allowed = await generate();
-  expect(allowed.success).toBe(true);
-  expect((allowed.result as any).provider).toBe('imagen-3');
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(String(fetchMock.mock.calls[0][0])).toContain('imagen');
+  expect(comfyPrompts).toEqual([]);
+  expect((await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'imagen' })).success).toBe(false);
 });
 
-test('paid confirmation can only be recorded for a paid provider', () => {
-  expect(recordPaidFrameConfirmation('online').ok).toBe(false);
-  expect(recordPaidFrameConfirmation('ancient-pathways').ok).toBe(false);
+test('no current option can record a paid confirmation', () => {
+  for (const id of ['imagen', 'online', 'this-pc', 'ancient-pathways']) {
+    expect(recordPaidFrameConfirmation(id).ok).toBe(false);
+  }
   expect(mockSettings.paidFrameConfirmations).toBeUndefined();
 });
 
@@ -157,16 +155,11 @@ test('status checks say what each option needs, without generating anything', as
   let status = Object.fromEntries((await describeStoryboardFrameProviders()).map(s => [s.id, s]));
   expect(status.online).toMatchObject({ ready: false, needs: 'online' });
   expect(status['this-pc']).toMatchObject({ ready: true, needs: null });
-  expect(status.imagen).toMatchObject({ ready: false, needs: 'online' });
+  expect(Object.keys(status).sort()).toEqual(['online', 'this-pc']);
   mockSettings = { useCustomLLM: true };
-  status = Object.fromEntries((await describeStoryboardFrameProviders()).map(s => [s.id, s]));
-  expect(status.online).toMatchObject({ ready: true });
-  expect(status.imagen).toMatchObject({ ready: false, needs: 'gemini-key' });
   mockGeminiKey = 'AIza-test-key';
   status = Object.fromEntries((await describeStoryboardFrameProviders()).map(s => [s.id, s]));
-  expect(status.imagen).toMatchObject({ ready: false, needs: 'paid-confirmation' });
-  recordPaidFrameConfirmation('imagen');
-  expect((await describeStoryboardFrameProviders()).find(s => s.id === 'imagen')).toMatchObject({ ready: true });
+  expect(status.online).toMatchObject({ ready: true });
   expect(comfyPrompts).toEqual([]);
   expect(fetchMock).not.toHaveBeenCalled();
 });
@@ -195,12 +188,14 @@ describe('Auto-Director frames follow the same choice', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test('a paid choice from chat is saved but never generates without the owner confirming', async () => {
+  test('a retired provider named from chat is not saved and makes no frames', async () => {
     mockSettings = { useCustomLLM: true };
     mockGeminiKey = 'AIza-test-key';
     const res = await direct({ autoGenerateFrames: true, frameProvider: 'imagen' });
     expect(res.framesGenerated).toBe(0);
-    expect(res.framesSkipped).toMatch(/costs money/);
+    expect(res.framesSkipped).toMatch(/Choose how this storyboard makes frame images/);
+    expect(JSON.parse(fs.readFileSync(path.join(res.projectDir!, 'project.json'), 'utf8')).frameProvider).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(comfyPrompts).toEqual([]);
   });
 });

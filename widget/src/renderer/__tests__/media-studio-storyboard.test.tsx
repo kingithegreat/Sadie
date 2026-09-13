@@ -750,7 +750,7 @@ describe('Storyboard frame provider picker', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'How to make frame images' })).toBeInTheDocument());
   }
 
-  test('offers only the three honest options and no generation until one is chosen', async () => {
+  test('offers only the supported honest options and no generation until one is chosen', async () => {
     const mocks = setup();
     await openBoard(mocks, { frameProvider: undefined });
     const picker = screen.getByRole('combobox', { name: 'How to make frame images' }) as HTMLSelectElement;
@@ -758,8 +758,8 @@ describe('Storyboard frame provider picker', () => {
       'Choose how to make frame images…',
       'Online · free third-party service · may add a watermark',
       'This PC · ComfyUI · private, no watermark',
-      'Imagen · Google cloud · paid per image',
     ]);
+    expect(screen.getByRole('region', { name: 'Visual Storyboard Deck' })).not.toHaveTextContent('Imagen');
     expect(picker.value).toBe('');
     expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent('Choose one before generating. Nothing is sent anywhere until you do.');
     for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
@@ -792,20 +792,14 @@ describe('Storyboard frame provider picker', () => {
     expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
   });
 
-  test('choosing Imagen asks for paid-use confirmation naming the cost, and only then records it', async () => {
+  test('a project that saved the retired Imagen choice is asked to choose again instead of hanging', async () => {
     const mocks = setup();
-    mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ imagen: { ready: false, needs: 'paid-confirmation', reason: 'Confirm paid use before the first image.' } }) });
-    await openBoard(mocks, { frameProvider: undefined });
-    await act(async () => { fireEvent.change(screen.getByRole('combobox', { name: 'How to make frame images' }), { target: { value: 'imagen' } }); });
-    const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('about US$0.03 per image');
-    expect(dialog).toHaveTextContent('every regenerate, is a separate paid image');
-    expect(mocks.mediaStoryboardConfirmPaidFrames).not.toHaveBeenCalled();
+    await openBoard(mocks, { frameProvider: 'imagen' });
+    expect((screen.getByRole('combobox', { name: 'How to make frame images' }) as HTMLSelectElement).value).toBe('');
+    await waitFor(() => expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent('Choose one before generating.'));
     for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
-    mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ imagen: { ready: true, needs: null, reason: null } }) });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use it and pay per image' })); });
-    expect(mocks.mediaStoryboardConfirmPaidFrames).toHaveBeenCalledWith('imagen');
-    await waitFor(() => expect(screen.getAllByRole('button', { name: /Generate Frame/ })[0]).toBeEnabled());
+    expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
+    expect(mocks.mediaStoryboardConfirmPaidFrames).not.toHaveBeenCalled();
   });
 
   test('the Auto-Director will not auto-generate frames until a provider is chosen, then passes that choice', async () => {
