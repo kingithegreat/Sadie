@@ -104,3 +104,27 @@ after enabling shared validation (2 failed, 26 passed). The new storyboard
 partial review/retry/cached-speech test and existing both-encode test remain red:
 2 failed, 43 passed, 2.289 seconds (`storyboard-partial-red.log`). Storyboard
 batch, recovery UI/IPC, full checks and real Windows files are still in progress.
+
+## Connected batch checkpoint
+
+152 tests pass across seven focused Windows suites (9.879 seconds), with a clean
+typecheck. `focused-checkpoint.log` and `checkpoint-types.log` retain the results.
+Storyboard batch encodes share copied pictures/assembled speech; text/engine-keyed
+local narration cache reuse checks bytes and audible duration. Partial successes
+cross IPC into exact-file reviews, and visible portrait-only retry preserves the
+landscape movie. Per-format source/status/history controls and Open source project
+use the existing Studio paths. Model-facing schemas now describe explicit both.
+
+Additional reproduced/fixed seams: missing failed-format records after shared
+preparation failure (`recovery-edges-first.log`, then 75 passing edge/format tests
+in `recovery-edges-green.log`); object-valued attempt error metadata that could
+crash React (`attempt-fields-red.log`); and narrowing Both to one output allowing
+a duplicate parent approval (`narrowed-review-red.log`). The persistent per-export
+review rule prevents that last case. All are included in the 152 passing result.
+
+An intermediate lint run reports zero errors and the same eight existing warnings.
+Earlier storyboard refactor failures are retained: an over-escaped MP4 regex was
+corrected; the concurrency fixture now expects preparing during speech and awaits
+its released work in finally. No assertions about encoded files, CI, integration,
+installed acceptance or owner art approval are made by these unit results. Next:
+full local gates and actual Windows UI-to-FFmpeg both/partial/retry proof.

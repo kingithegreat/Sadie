@@ -273,7 +273,7 @@ export const createMediaJobDef: ToolDefinition = {
       format: { type: 'string', description: '"short" (30-60s) or "long" (5-12 min). Defaults to short.', enum: ['short', 'long'] },
       brief: { type: 'string', description: 'Optional topic or angle for the video' },
       burnSubtitles: { type: 'boolean', description: 'Burn captions into the video; defaults to off for a new production.' },
-      outputSpec: { type: 'object', description: 'Saved output: {schemaVersion:1,durationIntent:"short"|"long",variants:[{id:"landscape"|"portrait"|"square",aspectRatio:"16:9"|"9:16"|"1:1",width:1920,height:1080,fps:30,framing:{mode:"fit"|"crop",x:0.5,y:0.5}}]}. Use matching 1080p or 720p dimensions. One variant per export currently. New jobs default landscape/fit independently of length.' },
+      outputSpec: { type: 'object', description: 'Saved output: {schemaVersion:1,durationIntent:"short"|"long",variants:[{id:"landscape"|"portrait"|"square",aspectRatio:"16:9"|"9:16"|"1:1",width:1920,height:1080,fps:30,framing:{mode:"fit"|"crop",x:0.5,y:0.5}}]}. Use matching 1080p or 720p dimensions. Use one variant, or explicitly select landscape and portrait together; never infer both from content length. New jobs default landscape/fit independently of length.' },
     },
     required: ['title'],
   },
@@ -781,6 +781,7 @@ const renderMediaJobDef: ToolDefinition = {
     properties: {
       job: { type: 'string', description: 'Job id or title' },
       image: { type: 'string', description: 'Optional single background image path' },
+      variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved output format. Omit to encode all explicitly selected formats.' },
       visuals: {
         type: 'string',
         enum: ['scenes', 'plain'],
@@ -838,7 +839,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     for (let i = 0; i < selected.length; i++) {
       attempt = attempts[i];
       const variantJob = spec ? { ...job, outputSpec: { ...spec, variants: [selected[i]!] } } : job;
-      const result = await renderMediaJobAttempt(variantJob, attempt, record, prepared, variants.length > 1);
+      const result = await renderMediaJobAttempt(variantJob, attempt, record, prepared, variants.length > 1 || !!job.perExportReview);
       record(result.success ? 'succeeded' : 'failed', result.success ? undefined : String(result.error || 'The export did not finish.'));
       results.push(result);
     }
@@ -1171,7 +1172,7 @@ async function renderMediaJobAttempt(
         upsert({ ...currentJob, rejectedRenderPath: finalPath });
         return err(`${outputVariant!.id} did not pass checks: ${qa.failures.join('; ')}. Other successful movies are kept. Diagnostic: ${finalPath}`);
       }
-      upsert({ ...currentJob, renderPath: finalPath, renderedOutput, scenePaths: renderedOutput.scenePaths, rejectedRenderPath: undefined });
+      upsert({ ...currentJob, perExportReview: true, renderPath: finalPath, renderedOutput, scenePaths: renderedOutput.scenePaths, rejectedRenderPath: undefined });
       const reviewId = `jobexport_${renderedOutput.exportId}`;
       const review = createStudioExportReview({ source: { type: 'job', id: job.id }, title: job.title,
         moviePath: finalPath, output: renderedOutput, brief: job.brief }, readJobs().find(item => item.id === reviewId));
@@ -1383,6 +1384,7 @@ const setMediaOutputHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err('That video is no longer in the list.');
+    if (job.reviewSource) return err('This review belongs to one saved movie. Change output settings on its source project instead.');
     if (hasExternalMediaRenderer(job)) return err('Caption settings for this video are controlled by Ancient Pathways. HomeBot cannot change that external export yet.');
     if (renderingJobs.has(job.id)) return err('This video is rendering. Wait for its current export before changing output settings.');
     if (!canEditMediaOutput(job.state)) return err('Send this video back for revision before changing its output. The reviewed export is unchanged.');

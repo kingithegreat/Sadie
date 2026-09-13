@@ -96,6 +96,8 @@ export interface MediaJob {
   variantExportAttempts?: Partial<Record<'landscape' | 'portrait' | 'square', StudioExportAttempt>>;
   /** Review entries cannot be edited into a different movie. */
   reviewSource?: { type: 'job' | 'storyboard'; id: string };
+  /** Once exports have independent reviews, narrowing future outputs cannot duplicate their approval on this parent. */
+  perExportReview?: boolean;
   /** A QA-rejected diagnostic is never the successful movie in renderPath. */
   rejectedRenderPath?: string;
   /** External bridges have their own output settings, not HomeBot's renderer. */
@@ -230,7 +232,7 @@ export interface TransitionOptions {
  * pipeline ends up with a job that looks published and is not.
  */
 export function transition(job: MediaJob, to: MediaJobState, opts: TransitionOptions = {}): MediaJob {
-  if (job.outputSpec?.variants.length === 2 && ['awaiting_approval', 'approved', 'scheduled', 'published'].includes(to)) {
+  if ((job.perExportReview || job.outputSpec?.variants.length === 2) && ['awaiting_approval', 'approved', 'scheduled', 'published'].includes(to)) {
     throw new Error('Review each exported format separately. This production cannot approve or publish both movies together.');
   }
   if (job.reviewSource && ['idea', 'researching', 'script_draft', 'script_qa', 'media_production', 'needs_revision'].includes(to)) {

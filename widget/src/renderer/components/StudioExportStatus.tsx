@@ -1,4 +1,4 @@
-import type { StudioExportState } from '../../shared/media-output';
+import type { StudioExportState, StudioOutputVariant } from '../../shared/media-output';
 import './StudioExportStatus.css';
 
 interface Props {
@@ -8,22 +8,25 @@ interface Props {
   busy: boolean;
   rendering?: boolean;
   onSelect: (moviePath: string) => void;
+  onRetry?: (variantId: StudioOutputVariant['id'], sceneId?: string) => void;
 }
 
 const date = (value: string | null | undefined) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString() : 'Unknown';
 const revision = (value: string | null | undefined) => value ? value.slice(0, 12) : 'Unknown';
 
 /** Describes the exact file in the player, not whichever attempt ran most recently. */
-export function StudioExportStatus({ state, moviePath, unsaved, busy, rendering, onSelect }: Props) {
+export function StudioExportStatus({ state, moviePath, unsaved, busy, rendering, onSelect, onRetry }: Props) {
   const output = state?.outputs.find(item => item.moviePath === moviePath);
-  const attempt = state?.latestAttempt;
-  const currentRevision = output?.sceneId
+  const variant = output?.outputSpec.variants[0];
+  const recorded = variant ? state?.variantAttempts?.[variant.id] : undefined;
+  const attempt = recorded && recorded.sceneId === output?.sceneId ? recorded : state?.latestAttempt;
+  const variantRevisions = output?.sceneId ? state?.sceneVariantRevisions?.[output.sceneId] : state?.variantRevisions;
+  const currentRevision = variant && variantRevisions && Object.keys(variantRevisions).length > 0 ? variantRevisions[variant.id] : output?.sceneId
     ? state?.sceneRevisions && Object.prototype.hasOwnProperty.call(state.sceneRevisions, output.sceneId) ? state.sceneRevisions[output.sceneId] : undefined
     : state?.sourceRevision;
   const known = !!output?.sourceRevision && !!currentRevision;
   const stale = unsaved || (known && output!.sourceRevision !== currentRevision);
   const failed = attempt?.status === 'failed' || attempt?.status === 'interrupted';
-  const variant = output?.outputSpec.variants[0];
   const heading = rendering ? 'Export in progress — previous movies are kept'
     : moviePath && failed && output ? `Previous successful export — latest attempt ${attempt.status}`
     : moviePath && failed ? `Unverified older file — latest attempt ${attempt.status}`
@@ -44,6 +47,19 @@ export function StudioExportStatus({ state, moviePath, unsaved, busy, rendering,
       {attempt && <div><dt>{rendering ? 'Previous recorded attempt' : 'Latest attempt'}{attempt.sceneId ? ` (scene ${attempt.sceneId})` : ''}</dt><dd>{attempt.status} · started {date(attempt.startedAt)}{attempt.finishedAt ? ` · finished ${date(attempt.finishedAt)}` : ''}</dd></div>}
     </dl>
     {failed && attempt.error && <details><summary>Why this attempt did not finish</summary><p className="ms-export-error">{attempt.error}</p></details>}
+    {onRetry && <div aria-label="Output format progress">
+      {(['landscape', 'portrait', 'square'] as const).filter(id => Object.prototype.hasOwnProperty.call(state?.variantRevisions ?? {}, id)).map(id => {
+        const status = state?.variantAttempts?.[id];
+        const needsRetry = status?.status === 'failed' || status?.status === 'interrupted';
+        const previous = state?.outputs.find(item => item.outputSpec.variants[0]?.id === id && item.sceneId === status?.sceneId);
+        return <div key={id}>
+          <p>{id === 'landscape' ? 'Landscape' : id === 'portrait' ? 'Portrait' : 'Square'}{status?.sceneId ? ` (scene ${status.sceneId})` : ''}: {status?.status ?? 'not exported'}{needsRetry && previous ? ' — previous successful movie kept' : ''}</p>
+          {needsRetry && status?.error && <p>{status.error}</p>}
+          {previous && <button type="button" className="ms-btn" disabled={busy} onClick={() => onSelect(previous.moviePath)}>View {id}</button>}
+          <button type="button" className="ms-btn" disabled={busy} onClick={() => onRetry(id, status?.sceneId)}>{needsRetry ? 'Retry' : 'Render'} {id}</button>
+        </div>;
+      })}
+    </div>}
     {state?.warning && <p>{state.warning}</p>}
     {!!state && (state.outputs.length > 0 || !!state.untrackedOutputs?.length) && <label>Export history
       <select aria-label="Export history" value={moviePath ?? ''} disabled={busy} onChange={event => onSelect(event.target.value)}>

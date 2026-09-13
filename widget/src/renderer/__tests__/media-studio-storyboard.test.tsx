@@ -148,6 +148,39 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('visible portrait retry renders only portrait and the successful landscape remains selectable for review', async () => {
+    const mocks = setup();
+    const board: any = (await mocks.mediaStoryboardGet()).result;
+    board.project.outputSpec = { ...createStudioOutputSpec(), variants: [createStudioOutputSpec().variants[0], createStudioOutputSpec('9:16').variants[0]] };
+    const landscape = { exportId: 'landscape', filename: 'landscape.mp4', moviePath: 'C:/proof/landscape.mp4',
+      createdAt: '2026-09-13T00:00:00Z', sourceSavedAt: null, sourceRevision: 'a'.repeat(64), durationSeconds: 14,
+      burnSubtitles: true, outputSpec: createStudioOutputSpec() };
+    const portrait = { ...landscape, exportId: 'portrait', filename: 'portrait.mp4', moviePath: 'C:/proof/portrait.mp4',
+      sourceRevision: 'b'.repeat(64), outputSpec: createStudioOutputSpec('9:16') };
+    board.renderedMoviePath = landscape.moviePath;
+    board.exportState = { sourceRevision: 'batch', sourceSavedAt: null, outputs: [landscape],
+      variantRevisions: { landscape: landscape.sourceRevision, portrait: portrait.sourceRevision },
+      variantAttempts: { landscape: { id: 'landscape', variantId: 'landscape', status: 'succeeded', sourceRevision: landscape.sourceRevision, startedAt: landscape.createdAt },
+        portrait: { id: 'failed-portrait', variantId: 'portrait', status: 'failed', sourceRevision: portrait.sourceRevision, startedAt: landscape.createdAt, error: 'Portrait stopped' } } };
+    mocks.mediaList.mockResolvedValue([{ id: 'sbexport_landscape', title: 'Landscape review', state: 'awaiting_approval', format: 'short',
+      renderPath: landscape.moviePath, durationSeconds: 14, createdAt: landscape.createdAt, updatedAt: landscape.createdAt, history: [] }] as never[]);
+    mocks.mediaStoryboardRender.mockImplementationOnce(async () => {
+      board.exportState.outputs = [portrait, landscape];
+      board.exportState.variantAttempts.portrait.status = 'succeeded';
+      return { ok: true, moviePath: portrait.moviePath, jobId: 'sbexport_portrait', variants: [{ ...portrait, ok: true, variantId: 'portrait' }] } as any;
+    });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    const retry = await screen.findByRole('button', { name: 'Retry portrait' });
+    await act(async () => { fireEvent.click(retry); });
+    expect(mocks.mediaStoryboardRender).toHaveBeenCalledTimes(1);
+    expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'pyramid-builders', variantId: 'portrait', outputSpec: board.project.outputSpec }));
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/proof/portrait.mp4');
+    fireEvent.click(screen.getByRole('button', { name: 'View landscape' }));
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/proof/landscape.mp4');
+    expect(screen.getByRole('button', { name: /Review & Publish/ })).toBeEnabled();
+    expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
+  });
+
   test('saved and unsaved revisions, history, Open and Reveal all reach the selected file', async () => {
     const mocks = setup();
     const board = (await mocks.mediaStoryboardGet()).result;

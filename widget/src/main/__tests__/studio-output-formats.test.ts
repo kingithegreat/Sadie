@@ -50,6 +50,10 @@ describe('saved Studio output formats', () => {
     ['crop position', (s: any) => { s.variants[0].framing.x = -1; }],
     ['duration intent', (s: any) => { s.durationIntent = 'tiny'; }],
     ['variant identity', (s: any) => { s.variants[0].id = '../another-project'; }],
+    ['empty selection', (s: any) => { s.variants = []; }],
+    ['duplicate formats', (s: any) => { s.variants.push(s.variants[0]); }],
+    ['unsupported format pair', (s: any) => { s.variants.push(specification('1:1').variants[0]); }],
+    ['too many outputs', (s: any) => { s.variants.push(specification('9:16').variants[0], specification('1:1').variants[0]); }],
   ])('rejects unsupported %s before creating a job', (_name, mutate) => {
     const outputSpec = specification();
     (mutate as (s: any) => void)(outputSpec);

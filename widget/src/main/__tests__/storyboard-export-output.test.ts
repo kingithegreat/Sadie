@@ -107,7 +107,8 @@ describe('storyboard export output contract', () => {
 
   test('uses the managed video engine and the distinct speech files actually returned', async () => {
     const result = await render();
-    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({ ok: true });
     expect(findFfmpeg).toHaveBeenCalledWith('/managed/ffmpeg');
     expect(new Set(speechPaths).size).toBe(2);
     const inputs = (execFile as unknown as jest.Mock).mock.calls.flatMap(([, args]) =>
@@ -190,6 +191,46 @@ describe('storyboard export output contract', () => {
     expect(stored.find(item => item.id === review.id)).toEqual(review);
     expect(stored[1].renderPath).not.toBe(review.renderPath);
     expect(stored[1].outputSpec.variants[0].id).toBe('portrait');
+  });
+
+  test('a shared preparation failure leaves both formats retryable after reopening', async () => {
+    const outputSpec = { ...createStudioOutputSpec(), variants: [createStudioOutputSpec().variants[0], createStudioOutputSpec('9:16').variants[0]] };
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ outputSpec, burnSubtitles: false }));
+    (findFfmpeg as jest.Mock).mockResolvedValue(null);
+    expect((await render()).ok).toBe(false);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.variantAttempts).toMatchObject({ landscape: { status: 'failed' }, portrait: { status: 'failed' } });
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+  });
+
+  test('malformed per-format attempt fields never reach the renderer as objects', async () => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ outputSpec: createStudioOutputSpec(),
+      variantExportAttempts: { landscape: { id: 'bad-note', variantId: 'landscape', status: 'failed',
+        startedAt: '2026-09-13T00:00:00Z', sourceRevision: null, error: { injected: 'not display text' } } } }));
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.variantAttempts.landscape?.error).toBeUndefined();
+  });
+
+  test('changed cached audio cannot be reused and output-only changes do reuse verified speech', async () => {
+    expect((await render()).ok).toBe(true);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2);
+    expect((await renderStoryboardMovie({ projectId: 'export-check', burnSubtitles: false, motion: false })).ok).toBe(true);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2);
+    const cacheDir = path.join(root, 'export-check', 'renders', '.homebot-narration');
+    const cacheRecords = fs.readdirSync(cacheDir).filter(name => name.endsWith('.json'));
+    expect(cacheRecords).toHaveLength(2);
+    const record = JSON.parse(fs.readFileSync(path.join(cacheDir, cacheRecords[0]), 'utf8'));
+    fs.writeFileSync(path.join(cacheDir, record.filename), 'changed cached bytes');
+    expect((await render()).ok).toBe(true);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(3);
+  });
+
+  test.each(['square', '__proto__', null])('an unavailable retry format %s fails before narration or encoding', async variantId => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ outputSpec: createStudioOutputSpec() }));
+    const result = await renderStoryboardMovie({ projectId: 'export-check', variantId } as any);
+    expect(result.ok).toBe(false);
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+    expect(execFile).not.toHaveBeenCalled();
   });
 
   test('persists a failed latest attempt separately from successful export history', async () => {
@@ -277,12 +318,13 @@ describe('storyboard export output contract', () => {
       shots[0].prompt = 'Saved while exporting';
       expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots }, {} as any)).success).toBe(true);
       const during = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
-      expect(during.exportState.latestAttempt.status).toBe('rendering');
+      // Speech is now an explicit shared preparation phase, before either encode.
+      expect(during.exportState.latestAttempt.status).toBe('preparing');
       expect(during.exportState.sourceRevision).not.toBe(before.exportState.sourceRevision);
       const duplicate = await render();
       expect(duplicate).toMatchObject({ ok: false, error: expect.stringMatching(/already rendering/) });
       expect(JSON.parse(fs.readFileSync(metaPath, 'utf8')).latestExportAttempt.id).toBe(during.exportState.latestAttempt.id);
-    } finally { release(); }
+    } finally { release(); await pending; }
     const result = await pending;
     expect(result.ok).toBe(true);
     expect(result.renderedOutput?.sourceRevision).toBe(before.exportState.sourceRevision);

@@ -200,7 +200,7 @@ export function registerStudioIpc(
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: unknown }) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown }) => {
     const { readJobs } = await import('../../tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -222,6 +222,7 @@ export function registerStudioIpc(
       // network image-generation call.
       if (action === 'render' && opts?.image) args.image = opts.image;
       if (action === 'render' && opts?.visuals) args.visuals = opts.visuals;
+      if (action === 'render' && opts?.variantId !== undefined) args.variantId = opts.variantId;
       if (action === 'output') {
         args.burnSubtitles = opts?.burnSubtitles;
         if (opts?.outputSpec !== undefined) args.outputSpec = opts.outputSpec;
@@ -229,7 +230,7 @@ export function registerStudioIpc(
       if (!['render', 'narrate', 'script', 'output'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
       const res = await invokeTool(_e, tool, args);
       return res?.success
-        ? { ok: true, message: String(res.result ?? '') }
+        ? { ok: true, message: typeof res.result === 'string' ? res.result : res.result?.message || 'Export saved. Review the selected movie before approval.' }
         : { ok: false, error: String(res?.error ?? 'That stage failed.') };
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e) };
@@ -686,7 +687,7 @@ export function registerStudioIpc(
       : { ok: false, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown }) => {
+  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown }) => {
     try {
       const res = await invokeTool(_ev, 'media_render_storyboard', {
         projectId: args.projectId,
@@ -694,10 +695,12 @@ export function registerStudioIpc(
         motion: args.motion !== false,
         burnSubtitles: args.burnSubtitles,
         ...(args.outputSpec === undefined ? {} : { outputSpec: args.outputSpec }),
+        ...(args.variantId === undefined ? {} : { variantId: args.variantId }),
       });
-      return res.success
-          ? { ok: true, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId,
+      return res.success || res.result?.variants
+          ? { ok: res.success, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId,
               ...(res.result.outputSpec ? { outputSpec: res.result.outputSpec } : {}), renderedOutput: res.result.renderedOutput,
+              ...(res.result.variants ? { variants: res.result.variants } : {}), ...(res.error ? { error: res.error } : {}),
               ...(res.result.warning ? { warning: res.result.warning } : {}) }
         : { ok: false, error: res.error, code: res.code };
     } catch (err: any) {

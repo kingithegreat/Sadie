@@ -234,6 +234,13 @@ describe('media_render output trust', () => {
       const parentReview = await call('media_advance_job', { job: job.id, to: 'awaiting_approval' });
       expect(parentReview.success).toBe(false);
       expect(parentReview.error).toMatch(/each|separate|format/i);
+      // Selecting one future output must not turn an existing per-file review
+      // into a second parent approval for the same movie.
+      writeJobs(readJobs().map(item => item.id === job.id ? { ...item,
+        outputSpec: { ...item.outputSpec!, variants: item.outputSpec!.variants.filter(v => v.id === 'portrait') } } : item));
+      const narrowedReview = await call('media_advance_job', { job: job.id, to: 'awaiting_approval' });
+      expect(narrowedReview.success).toBe(false);
+      expect(narrowedReview.error).toMatch(/each|separate|format/i);
     } finally { renderMock.mockReset().mockImplementation(defaultEncode); }
   });
 

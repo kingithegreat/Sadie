@@ -79,6 +79,39 @@ export interface StudioExportState {
   warning?: string;
 }
 
+/** A partial batch carries its successful movies through IPC as well as its error. */
+export interface StudioMovieResult {
+  ok: boolean;
+  moviePath?: string;
+  durationSec?: number;
+  totalShots?: number;
+  burnSubtitles?: boolean;
+  outputSpec?: StudioOutputSpec;
+  renderedOutput?: StudioRenderedOutput;
+  jobId?: string;
+  warning?: string;
+  error?: string;
+  variants?: Array<StudioMovieResult & { variantId: StudioOutputVariant['id'] }>;
+}
+
+/** Disk metadata is input, never JSX-ready display data. */
+export function readStudioExportAttempt(value: unknown): StudioExportAttempt | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const saved = value as Record<string, unknown>;
+  if (typeof saved.id !== 'string' || typeof saved.status !== 'string' ||
+      !['preparing', 'rendering', 'validating', 'succeeded', 'failed', 'interrupted'].includes(saved.status) ||
+      typeof saved.startedAt !== 'string' || !Number.isFinite(Date.parse(saved.startedAt))) return undefined;
+  return { id: saved.id, status: saved.status as StudioExportAttempt['status'], startedAt: saved.startedAt,
+    sourceRevision: typeof saved.sourceRevision === 'string' && /^[a-f0-9]{64}$/.test(saved.sourceRevision) ? saved.sourceRevision : null,
+    ...(typeof saved.finishedAt === 'string' ? { finishedAt: saved.finishedAt } : {}),
+    ...(typeof saved.error === 'string' ? { error: saved.error.slice(0, 8000) } : {}),
+    ...(typeof saved.exportId === 'string' ? { exportId: saved.exportId } : {}),
+    ...(typeof saved.sceneId === 'string' ? { sceneId: saved.sceneId } : {}),
+    ...(typeof saved.batchId === 'string' ? { batchId: saved.batchId } : {}),
+    ...(saved.variantId === 'landscape' || saved.variantId === 'portrait' || saved.variantId === 'square' ? { variantId: saved.variantId } : {}),
+  };
+}
+
 const outputPresets = {
   '16:9': { id: 'landscape', width: 1920, height: 1080 },
   '9:16': { id: 'portrait', width: 1080, height: 1920 },
