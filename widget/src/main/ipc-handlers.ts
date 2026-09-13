@@ -1370,7 +1370,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       if (!fs.existsSync(normalizedPath)) {
         return { success: false, error: 'File not found' };
       }
-      await shell.openPath(normalizedPath);
+      const openError = await shell.openPath(normalizedPath);
+      if (openError) return { success: false, error: openError };
       return { success: true };
     } catch (err: any) {
       console.error('Error opening file:', err.message);

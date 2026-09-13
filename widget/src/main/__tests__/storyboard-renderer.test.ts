@@ -174,6 +174,7 @@ describe('One-Click 1080p Storyboard Renderer', () => {
 
   test('fails gracefully when FFmpeg is not found', async () => {
     (findFfmpeg as jest.Mock).mockResolvedValue(null);
+    fs.mkdirSync(path.join(tmpRoot, 'any-project'));
     const res = await renderStoryboardMovie({ projectId: 'any-project' });
     expect(res.ok).toBe(false);
     expect(res.error).toContain('FFmpeg was not found');

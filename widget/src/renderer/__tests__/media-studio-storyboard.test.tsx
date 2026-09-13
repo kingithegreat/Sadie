@@ -6,6 +6,7 @@
 
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
+import { createStudioOutputSpec } from '../../shared/media-output';
 
 function setup(overrides: Record<string, any> = {}) {
   const mediaList = jest.fn().mockResolvedValue([]);
@@ -147,6 +148,77 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('saved and unsaved revisions, history, Open and Reveal all reach the selected file', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    const output = { exportId: 'export-one', filename: 'one.mp4', moviePath: 'C:/proof/one.mp4', createdAt: '2026-09-12T00:00:00Z',
+      sourceSavedAt: null, sourceRevision: 'a'.repeat(64), durationSeconds: 14, fileSizeBytes: 2048, burnSubtitles: true, outputSpec: createStudioOutputSpec() };
+    const older = { ...output, exportId: 'export-old', filename: 'old.mp4', moviePath: 'C:/proof/old.mp4', sourceRevision: 'b'.repeat(64) };
+    Object.assign(board, { renderedMoviePath: output.moviePath, exportState: { sourceRevision: output.sourceRevision, sourceSavedAt: null, outputs: [output, older] } });
+    const openFile = jest.fn().mockResolvedValue({ success: true });
+    const showInFolder = jest.fn().mockResolvedValue({ success: true });
+    Object.assign((window as any).electron, { openFile, showInFolder });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    expect(await screen.findByText('Preview matches the saved revision')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Duration for shot_001'), { target: { value: '6' } });
+    expect(screen.getByText('Preview out of date')).toBeVisible();
+    expect(screen.getByText(/Unsaved edits/)).toBeVisible();
+    (board as any).exportState.sourceRevision = 'c'.repeat(64);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/ })); });
+    expect(screen.queryByText(/Unsaved edits/)).not.toBeInTheDocument();
+    expect(screen.getByText('Preview out of date')).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Export history' }), { target: { value: older.moviePath } });
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/proof/old.mp4');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Open Video/ })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show in Folder' })); });
+    expect(openFile).toHaveBeenCalledWith(older.moviePath);
+    expect(showInFolder).toHaveBeenCalledWith(older.moviePath);
+    expect(mocks.mediaStoryboardRender).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Review & Publish/ })).toBeDisabled();
+  });
+
+  test.each(['save', 'render'])('a late %s from A cannot replace B or clear its unsaved edits', async operation => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    mocks.mediaStoryboardGet.mockImplementation((id: string) => Promise.resolve({ ok: true,
+      result: { ...board, project: { projectId: id, name: id }, renderedMoviePath: `C:/${id}/movie.mp4` } }));
+    let finish!: (result: any) => void;
+    const pending = new Promise(resolve => { finish = resolve; });
+    if (operation === 'save') mocks.mediaStoryboardSave.mockReturnValueOnce(pending);
+    else mocks.mediaStoryboardRender.mockReturnValueOnce(pending);
+    const { rerender } = render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    await screen.findByLabelText('Duration for shot_001');
+    fireEvent.click(screen.getByRole('button', { name: operation === 'save' ? /Save Board/ : /Render Movie/ }));
+    if (operation === 'render') await waitFor(() => expect(mocks.mediaStoryboardRender).toHaveBeenCalled());
+    else await waitFor(() => expect(mocks.mediaStoryboardSave).toHaveBeenCalled());
+    await act(async () => { rerender(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'project-b' }} />); });
+    fireEvent.change(screen.getByLabelText('Duration for shot_001'), { target: { value: '9' } });
+    await act(async () => { finish({ ok: true, moviePath: 'C:/pyramid-builders/new.mp4', totalShots: 3, durationSec: 14 }); });
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/project-b/movie.mp4');
+    expect(screen.getByLabelText('Duration for shot_001')).toHaveValue(9);
+    expect(screen.getByText(/Unsaved edits/)).toBeVisible();
+    expect(screen.queryByText(/Successfully rendered/)).not.toBeInTheDocument();
+  });
+
+  test('an older file with unknown provenance never claims it matches the saved source', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    Object.assign(board, { renderedMoviePath: 'C:/old/movie.mp4' });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    expect(await screen.findByText('Saved movie — source revision unknown')).toBeVisible();
+    expect(screen.queryByText('Preview matches the saved revision')).not.toBeInTheDocument();
+  });
+
+  test('a removed scene with a JavaScript property name has unknown freshness, not an inherited revision', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    const output = { exportId: 'removed-scene', filename: 'scene.mp4', moviePath: 'C:/proof/scene.mp4', createdAt: '2026-09-12T00:00:00Z',
+      sourceSavedAt: null, sourceRevision: 'a'.repeat(64), sceneId: 'constructor', durationSeconds: 4, burnSubtitles: false, outputSpec: createStudioOutputSpec() };
+    Object.assign(board, { renderedMoviePath: output.moviePath, exportState: { sourceRevision: 'b'.repeat(64), sceneRevisions: {}, outputs: [output] } });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    expect(await screen.findByText('Saved movie — current source cannot be verified')).toBeVisible();
+  });
+
   test('storyboard shape, resolution and framing reach Save Board and Render Movie without changing shot timing', async () => {
     const api = setup();
     render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);

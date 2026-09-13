@@ -42,6 +42,34 @@ export interface StudioRenderedOutput {
   durationSeconds: number;
   burnSubtitles: boolean;
   outputSpec: StudioOutputSpec;
+  /** Absent on older exports: never infer provenance from a filename or mtime. */
+  sourceRevision?: string;
+  fileSizeBytes?: number;
+  sha256?: string;
+  sceneId?: string;
+  motion?: boolean;
+}
+
+export interface StudioExportAttempt {
+  id: string;
+  status: 'preparing' | 'rendering' | 'validating' | 'succeeded' | 'failed' | 'interrupted';
+  sourceRevision: string | null;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  exportId?: string;
+  sceneId?: string;
+}
+
+export interface StudioExportState {
+  sourceRevision: string | null;
+  sceneRevisions?: Record<string, string>;
+  sourceSavedAt: string | null;
+  latestAttempt?: StudioExportAttempt;
+  outputs: Array<StudioRenderedOutput & { moviePath: string }>;
+  /** Real files without trusted sidecars remain reachable, with unknown provenance. */
+  untrackedOutputs?: Array<{ filename: string; moviePath: string }>;
+  warning?: string;
 }
 
 const outputPresets = {

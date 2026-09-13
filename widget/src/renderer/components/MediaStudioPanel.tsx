@@ -20,8 +20,9 @@ import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
-import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioOutputSpec } from '../../shared/media-output';
+import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
+import { StudioExportStatus } from './StudioExportStatus';
 import {
   type CameraMotion,
   type StageFraming,
@@ -77,6 +78,15 @@ type MediaJobState =
   | 'blocked' | 'failed' | 'needs_revision' | 'rejected';
 
 interface MediaJobEvent { at: string; from: string; to: string; by: string; note?: string }
+
+/** Only editable source fields: operational export metadata cannot dirty a draft. */
+function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: Array<{ sceneId: string; shots: any[] }> }): string {
+  return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, outputSpec: board.project.outputSpec,
+    scenes: board.scenes.map(scene => ({ sceneId: scene.sceneId, shots: scene.shots.map(shot => ({
+      shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens, movement: shot.movement,
+      durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
+    })) })) });
+}
 
 /** What homebot:media:parse-feed returns — see main/podcast-feed.ts. */
 interface ParsedFeedView { showTitle: string; showDescription: string; episodes: FeedEpisode[] }
@@ -342,6 +352,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   }> | null>(null);
   const [selectedStoryboardId, setSelectedStoryboardId] = useState<string | null>(null);
   const storyboardLoadVersion = useRef(0);
+  const [savedStoryboardDraft, setSavedStoryboardDraft] = useState<string | null>(null);
   const [selectedStoryboardSceneId, setSelectedStoryboardSceneId] = useState<string | null>(null);
   const [activeStoryboard, setActiveStoryboard] = useState<{
     project: Record<string, any>;
@@ -364,6 +375,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       }>;
     }>;
     projectDir: string;
+    exportState?: StudioExportState;
   } | null>(null);
   const [storyboardLoading, setStoryboardLoading] = useState<boolean>(false);
   const [storyboardSaving, setStoryboardSaving] = useState<boolean>(false);
@@ -943,11 +955,15 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     setActiveStoryboard(null);
     setRenderedMoviePath(null);
     setRenderedMovieJobId(null);
+    setSavedStoryboardDraft(null);
+    setStoryboardRendering(false);
+    setStoryboardSaving(false);
     try {
       const res = await api()?.mediaStoryboardGet?.(projectId);
       if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.result) {
         setActiveStoryboard(res.result);
+        setSavedStoryboardDraft(storyboardDraftIdentity(res.result));
         setSelectedStoryboardId(projectId);
         setSelectedStoryboardSceneId(res.result.scenes?.[0]?.sceneId || null);
         setAnimaticPlaying(false);
@@ -1074,6 +1090,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   const handleSaveStoryboard = async (showMessage = true): Promise<boolean> => {
     if (!activeStoryboard || !selectedStoryboardId) return false;
+    const loadVersion = storyboardLoadVersion.current;
+    const savedDraft = storyboardDraftIdentity(activeStoryboard);
     setStoryboardSaving(true);
     setStoryboardError(null);
     try {
@@ -1087,17 +1105,29 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         });
         if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
       }
+      if (loadVersion !== storyboardLoadVersion.current) return false;
+      setSavedStoryboardDraft(savedDraft);
+      await refreshStoryboardExport(selectedStoryboardId, loadVersion);
+      if (loadVersion !== storyboardLoadVersion.current) return false;
       if (showMessage) {
         setStoryboardMessage('Storyboard saved successfully.');
-        setTimeout(() => setStoryboardMessage(null), 3000);
+        setTimeout(() => { if (loadVersion === storyboardLoadVersion.current) setStoryboardMessage(null); }, 3000);
       }
       return true;
     } catch (e: any) {
-      setStoryboardError(e?.message || 'Failed to save storyboard.');
+      if (loadVersion === storyboardLoadVersion.current) setStoryboardError(e?.message || 'Failed to save storyboard.');
       return false;
     } finally {
-      setStoryboardSaving(false);
+      if (loadVersion === storyboardLoadVersion.current) setStoryboardSaving(false);
     }
+  };
+
+  const refreshStoryboardExport = async (projectId: string, loadVersion: number) => {
+    const res = await api()?.mediaStoryboardGet?.(projectId);
+    if (loadVersion !== storyboardLoadVersion.current) return;
+    // Keep edits made while an IPC call was in flight. Only replace read-only export state.
+    setActiveStoryboard(previous => previous ? { ...previous, exportState: res?.ok ? res.result?.exportState : undefined } : previous);
+    if (!res?.ok) throw new Error(res?.error || 'The board was saved, but export freshness could not be refreshed. Reopen it to check.');
   };
 
   const handleGenerateFrame = async (shotId: string, prompt?: string) => {
@@ -1412,25 +1442,27 @@ ${shots.map((s, idx) => `
     setStoryboardMessage('Saving all scenes before rendering the complete movie...');
     try {
       if (!await handleSaveStoryboard(false)) {
-        setStoryboardMessage(null);
+        if (loadVersion === storyboardLoadVersion.current) setStoryboardMessage(null);
         return;
       }
       if (loadVersion !== storyboardLoadVersion.current) return;
       setStoryboardMessage(`Rendering all ${activeStoryboard.scenes.length} scene(s) with narration${activeStoryboard.project.burnSubtitles !== false ? ' and captions' : ', captions off'}...`);
-      const res = await releaseMediaThen('storyboard-export', () => {
-        setRenderedMoviePath(null);
-        return api()?.mediaStoryboardRender?.({
-          projectId: selectedStoryboardId,
-          motion: true,
-          burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
-          ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
-        });
+      // Every storyboard export now has its own filename, including legacy
+      // projects. Keep the previous player reachable while its replacement runs.
+      const res = await api()?.mediaStoryboardRender?.({
+        projectId: selectedStoryboardId,
+        motion: true,
+        burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
+        ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
       });
+      if (loadVersion !== storyboardLoadVersion.current) return;
+      await refreshStoryboardExport(selectedStoryboardId, loadVersion);
       if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.moviePath) {
         setRenderedMoviePath(res.moviePath);
         setRenderedMovieJobId(res.jobId || null);
         await refresh();
+        if (loadVersion !== storyboardLoadVersion.current) return;
         setStoryboardError(res.warning || null);
         const output = res.outputSpec?.variants[0];
         const size = output ? `${output.width} × ${output.height}` : '1080p';
@@ -1446,7 +1478,7 @@ ${shots.map((s, idx) => `
       setStoryboardMessage(null);
       setStoryboardError(e?.message || 'Failed to render movie.');
     } finally {
-      setStoryboardRendering(false);
+      if (loadVersion === storyboardLoadVersion.current) setStoryboardRendering(false);
     }
   };
 
@@ -4321,7 +4353,12 @@ ${shots.map((s, idx) => `
               </div>
             </div>
 
-            {/* Rendered Movie Celebration Banner */}
+            <StudioExportStatus state={activeStoryboard.exportState} moviePath={renderedMoviePath}
+              unsaved={savedStoryboardDraft !== null && savedStoryboardDraft !== storyboardDraftIdentity(activeStoryboard)}
+              busy={storyboardBusy} rendering={storyboardRendering}
+              onSelect={moviePath => { setRenderedMoviePath(moviePath); setRenderedMovieJobId(null); }} />
+
+            {/* Exact saved file selected above; opening is separate from approval/publication. */}
             {renderedMoviePath && (
               <div
                 className="ms-movie-rendered-banner"
@@ -4354,14 +4391,21 @@ ${shots.map((s, idx) => `
                   <button
                     type="button"
                     className="ms-btn ms-btn--primary"
-                    onClick={() => {
-                      if (api()?.openExternalUrl) {
-                        api().openExternalUrl(toMediaFileUrl(renderedMoviePath));
-                      }
+                    onClick={async () => {
+                      try {
+                        const result = await api()?.openFile?.(renderedMoviePath);
+                        if (!result?.success) setStoryboardError(result?.error || 'The saved movie could not be opened.');
+                      } catch (error: any) { setStoryboardError(error?.message || 'The saved movie could not be opened.'); }
                     }}
                   >
                     ▶ Open Video
                   </button>
+                  <button type="button" className="ms-btn" onClick={async () => {
+                    try {
+                      const result = await api()?.showInFolder?.(renderedMoviePath);
+                      if (!result?.success) setStoryboardError(result?.error || 'The saved movie could not be shown in its folder.');
+                    } catch (error: any) { setStoryboardError(error?.message || 'The saved movie could not be shown in its folder.'); }
+                  }}>Show in Folder</button>
                   <button
                     type="button"
                     className="ms-btn ms-btn--cta"

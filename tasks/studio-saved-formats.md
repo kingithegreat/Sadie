@@ -101,3 +101,29 @@ Checkpoint 2 will handle explicit multiple outputs, reuse and independent
 failure/retry status. Storyboard source-image generation also still uses its
 existing generation size; selected fit/crop reaches export, not every provider's
 source-generation geometry. Keep that distinction visible until verified.
+
+## Merged checkpoint
+
+PR #320 merged 2026-09-12 23:17:02 UTC as
+`afc4cae374ea296755d63372df7f17afb6781af1`. Its full tree matches tested/published
+`f67826ba6576b9b3ebc31456578f843efcb511d9`:
+`15d4fc58fc57487aba8ca79b13fa9cef30522176`. All six required contexts were
+present/green under live strict protection and the expected GitHub Actions app.
+Windows CI executes 4212 widget/227 root/13 overlays. Every platform's matrix
+executes 23 + 22 + 11 passing tests with 12 deliberate opt-in media skips;
+no flaky/retry result is reported. The actual-media proof is the separate local
+14-case run above, not those skipped CI cases.
+
+The checkpoint claim is released. The master records a dependency adjustment:
+STUDIO-04 source-revision/latest-attempt/previous-good visibility comes before
+explicit multi-output retries. This does not remove any remaining STUDIO-03/05,
+full approved pilot, owner visual or installed-release acceptance requirement.
+
+Read-only device inventory: Windows 11 Home build 26200, RTX 2050 4096 MiB VRAM,
+driver 610.62, 16866664448 bytes system RAM. Current Updated Preview launches
+the separate `codex-preview-repairs/widget` build with `.kilo/profiles/ui-preview`,
+not this checkout. Its media-tool fingerprint is present but the new format
+validation fingerprint is absent. The running app, shortcuts and profile were
+not changed. Standard local Programs/uninstall records show no HomeBot/Sadie
+installation; this is not an exhaustive portable-install search or peak-resource
+measurement. Keep the final launch/install acceptance separate.

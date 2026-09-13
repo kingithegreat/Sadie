@@ -1,0 +1,19 @@
+.ms-export-status {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--border-color, #475569);
+  border-radius: 10px;
+  background: var(--bg-secondary, #1e293b);
+  color: var(--text-primary, #f1f5f9);
+  overflow-wrap: anywhere;
+}
+.ms-export-status p { margin: 8px 0; }
+.ms-export-status dl { margin: 10px 0; display: grid; gap: 8px; }
+.ms-export-status dl > div { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.ms-export-status dt { font-weight: 600; }
+.ms-export-status dd { margin: 0; }
+.ms-export-status label { display: grid; gap: 6px; }
+.ms-export-status select { width: 100%; min-width: 0; padding: 8px; color: inherit; background: var(--bg-secondary, #1e293b); border: 1px solid var(--border-color, #64748b); border-radius: 6px; }
+.ms-export-status summary { cursor: pointer; }
+.ms-export-status :focus-visible { outline: 2px solid var(--border-focus, #b4c49c); outline-offset: 3px; }
+.ms-export-error { max-height: 180px; overflow: auto; white-space: pre-wrap; font-size: 0.85em; }

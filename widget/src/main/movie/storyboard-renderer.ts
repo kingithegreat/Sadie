@@ -15,12 +15,14 @@
 import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput } from '../../shared/media-output';
+import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
 import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle } from '../media-render';
 import { inspectRender, SILENCE_FLOOR_DB } from '../media-qa';
-import { assembleShotsForScene, assembleStoryboardScenes, type AssembledShot } from './storyboard-assembly';
+import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
+import { beginStoryboardExport, endStoryboardExport, recordStoryboardAttempt, storyboardSourceRevision,
+  storyboardNarrationEngine, storyboardFileDigest, updateStoryboardExportMeta } from './storyboard-export-state';
 
 export interface StoryboardRenderOptions {
   projectId: string;
@@ -132,6 +134,28 @@ function runCommand(bin: string, args: string[]): Promise<{ stdout: string; stde
 export async function renderStoryboardMovie(
   opts: StoryboardRenderOptions
 ): Promise<StoryboardRenderResult> {
+  let projectDir: string;
+  let attempt: StudioExportAttempt;
+  try {
+    projectDir = getStoryboardProjectDir(opts.projectId);
+    if (!fs.existsSync(projectDir)) throw new Error(`Storyboard project directory not found: ${projectDir}`);
+    if (opts.sceneId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(opts.sceneId)) throw new Error('Choose a valid storyboard scene before exporting.');
+    attempt = beginStoryboardExport(projectDir, opts.sceneId);
+  } catch (error) { return { ok: false, error: (error as Error).message }; }
+  try {
+    const result = await renderStoryboardAttempt(opts, attempt);
+    Object.assign(attempt, { status: result.ok ? 'succeeded' : 'failed', finishedAt: new Date().toISOString(),
+      ...(result.ok ? { exportId: result.renderedOutput?.exportId } : { error: result.error }) });
+    recordStoryboardAttempt(projectDir, attempt);
+    return result;
+  } catch (error) {
+    const message = `Movie export failed: ${(error as Error).message}`;
+    try { recordStoryboardAttempt(projectDir, { ...attempt, status: 'failed', finishedAt: new Date().toISOString(), error: message }); } catch { /* Storage itself is unavailable; do not claim success. */ }
+    return { ok: false, error: message };
+  } finally { endStoryboardExport(projectDir); }
+}
+
+async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: StudioExportAttempt): Promise<StoryboardRenderResult> {
   const { findManagedFfmpeg } = await import('../ffmpeg-setup');
   const ffmpeg = await findFfmpeg(findManagedFfmpeg());
   if (!ffmpeg) {
@@ -176,10 +200,10 @@ export async function renderStoryboardMovie(
     return { ok: false, error: 'Choose a valid storyboard scene before exporting.' };
   }
   let shots: ShotManifest[];
+  let sourceScenes: AssembledScene[];
   try {
-    shots = sceneId === undefined
-      ? assembleStoryboardScenes(projectDir).flatMap(scene => scene.shots)
-      : assembleShotsForScene(projectDir, sceneId);
+    sourceScenes = assembleStoryboardScenes(projectDir).filter(scene => !sceneId || scene.sceneId === sceneId);
+    shots = sourceScenes.flatMap(scene => scene.shots);
   } catch (error) {
     return { ok: false, error: `Could not read the saved storyboard: ${error instanceof Error ? error.message : String(error)}` };
   }
@@ -211,21 +235,38 @@ export async function renderStoryboardMovie(
 
   const rendersDir = path.join(projectDir, 'renders');
   const exportId = randomUUID();
-  const outputFilename = opts.outputName || (outputVariant
-    ? `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-${outputVariant.id}-${exportId}.mp4`
-    : `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-1080p.mp4`);
-  if (path.basename(outputFilename) !== outputFilename || /[<>:"|?*\\/\x00-\x1f]/.test(outputFilename) || !/\.mp4$/i.test(outputFilename)) {
+  // New exports are immutable even for legacy projects. Their picture/caption
+  // behavior stays legacy, but a reviewed fixed-name movie is never replaced.
+  const outputFilename = opts.outputName || `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-${outputVariant?.id ?? '1080p'}-${exportId}.mp4`;
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(outputFilename)) {
     return { ok: false, error: 'The export needs an MP4 filename inside this project.' };
   }
   const finalMoviePath = path.join(rendersDir, outputFilename);
-  if (outputSpec && fs.existsSync(finalMoviePath)) return { ok: false, error: 'Choose a new export filename. Existing exports are preserved.' };
+  if (fs.existsSync(finalMoviePath)) return { ok: false, error: 'Choose a new export filename. Existing exports are preserved.' };
   let tempDir: string | undefined;
 
   try {
     fs.mkdirSync(rendersDir, { recursive: true });
+    if (fs.realpathSync(rendersDir) !== path.join(fs.realpathSync(projectDir), 'renders')) throw new Error('The render folder must be inside this project, not a linked directory.');
     // Stage on the same filesystem. A failed replacement must retain the last good export.
     tempDir = fs.mkdtempSync(path.join(rendersDir, '.homebot-render-'));
     const stagedMoviePath = path.join(tempDir, 'movie.mp4');
+    // Copy the inputs this attempt actually uses. An edit made while FFmpeg is
+    // running must not produce a movie claiming the earlier image's revision.
+    const snapshotScenes = sourceScenes.map(scene => ({ ...scene, shots: scene.shots.map(shot => ({ ...shot })) }));
+    let imageIndex = 0;
+    for (const scene of snapshotScenes) {
+      for (const shot of scene.shots) {
+        const copy = path.join(tempDir, `source-${imageIndex++}${path.extname(shot.frameImagePath!)}`);
+        fs.copyFileSync(shot.frameImagePath!, copy, fs.constants.COPYFILE_EXCL);
+        shot.frameImagePath = copy;
+      }
+    }
+    shots = snapshotScenes.flatMap(scene => scene.shots);
+    const engine = storyboardNarrationEngine();
+    attempt.sourceRevision = await storyboardSourceRevision(snapshotScenes, { ...projectMeta, outputSpec, burnSubtitles }, { sceneId, motion: opts.motion, engine });
+    attempt.status = 'rendering';
+    recordStoryboardAttempt(projectDir, attempt);
     const totalDuration = shots.reduce((acc, s) => acc + s.durationSec, 0);
     const motion = opts.motion !== false;
     const hasNarration = shots.some(shot => !!shot.narration?.trim());
@@ -243,7 +284,7 @@ export async function renderStoryboardMovie(
         // a separate directory and use the returned path, including its actual codec.
         const speechDir = path.join(tempDir, `speech_${i}`);
         fs.mkdirSync(speechDir);
-        const audio = await renderNarrationToFile(shot.narration.trim(), path.join(speechDir, 'audio.mp3'));
+        const audio = await renderNarrationToFile(shot.narration.trim(), path.join(speechDir, 'audio.mp3'), { engine });
         if (!readableFile(audio.path)) throw new Error(`Narration for shot ${i + 1} produced no usable audio file.`);
         const facts = await inspectRender(ffmpeg, audio.path);
         if (!facts.hasAudio || !Number.isFinite(facts.durationSeconds) || !facts.durationSeconds ||
@@ -401,6 +442,8 @@ export async function renderStoryboardMovie(
       ]);
     }
 
+    attempt.status = 'validating';
+    recordStoryboardAttempt(projectDir, attempt);
     if (!readableFile(stagedMoviePath)) throw new Error('The video engine produced no usable movie file.');
     // Require a complete decode as well as metadata. An MP4 header or successful
     // encoder exit alone cannot establish that its video/audio packets are readable.
@@ -414,21 +457,20 @@ export async function renderStoryboardMovie(
     if (hasNarration && (facts.meanVolumeDb === null || !Number.isFinite(facts.meanVolumeDb) || facts.meanVolumeDb < SILENCE_FLOOR_DB)) {
       throw new Error('The exported narration is missing or silent. Check the selected voice and retry.');
     }
-    fs.renameSync(stagedMoviePath, finalMoviePath);
-    let renderedOutput: StudioRenderedOutput | undefined;
-    if (outputSpec) {
-      renderedOutput = { exportId, filename: outputFilename, createdAt: new Date().toISOString(),
+    // The existence check above is only a friendly early error. EXCL is the
+    // actual no-overwrite guarantee if another process creates that name later.
+    fs.copyFileSync(stagedMoviePath, finalMoviePath, fs.constants.COPYFILE_EXCL);
+    const renderedOutput: StudioRenderedOutput = { exportId, filename: outputFilename, createdAt: new Date().toISOString(),
         sourceSavedAt: typeof projectMeta.updatedAt === 'string' ? projectMeta.updatedAt : null,
-        durationSeconds: facts.durationSeconds, burnSubtitles, outputSpec };
-      fs.writeFileSync(`${finalMoviePath}.json`, JSON.stringify(renderedOutput, null, 2));
-      if (!sceneId) {
+        durationSeconds: facts.durationSeconds, burnSubtitles,
+        outputSpec: outputSpec ?? createStudioOutputSpec('16:9', totalDuration > 60 ? 'long' : 'short', '1080p', 'crop'),
+        sourceRevision: attempt.sourceRevision!, fileSizeBytes: fs.statSync(finalMoviePath).size,
+        sha256: await storyboardFileDigest(finalMoviePath), motion, ...(sceneId ? { sceneId } : {}) };
+    fs.writeFileSync(`${finalMoviePath}.json`, JSON.stringify(renderedOutput, null, 2), { flag: 'wx' });
+    if (!sceneId) {
         // Keep any edits made while rendering. The output records its original
         // specification; saving the pointer must not overwrite newer settings.
-        const currentMeta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-        const stagedMeta = `${metaPath}.${exportId}.saving`;
-        fs.writeFileSync(stagedMeta, JSON.stringify({ ...currentMeta, latestSuccessfulOutput: renderedOutput }, null, 2));
-        fs.renameSync(stagedMeta, metaPath);
-      }
+        updateStoryboardExportMeta(projectDir, { latestSuccessfulOutput: renderedOutput });
     }
     return {
       ok: true,
@@ -436,7 +478,7 @@ export async function renderStoryboardMovie(
       durationSec: facts.durationSeconds,
       totalShots: shots.length,
       burnSubtitles,
-      ...(outputSpec ? { outputSpec, renderedOutput } : {}),
+      ...(outputSpec ? { outputSpec } : {}), renderedOutput,
     };
   } catch (error) {
     return { ok: false, error: `Movie export failed: ${(error as Error).message}` };
