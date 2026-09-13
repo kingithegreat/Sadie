@@ -164,3 +164,33 @@ that controls are wide before setup but collapse when it opens; it retains the
 same preflight failure, not an additional rendering defect. Types and rebuild
 pass. Narrated storyboard Both/restart/input-reuse proof is running next; full
 final gates, CI and integration are still unverified. Owner preview is unchanged.
+
+## Actual storyboard and final review-return checkpoint
+
+`storyboard-live-second.log`: the full narrated Both/restart/portrait-only export
+test passes in 35.4s, no retry/skip. Two real 8s 720p H.264/AAC movies share
+byte-identical decoded CPU Kokoro narration. A third portrait-only Crop export
+retains both original movies/reviews, landscape attempt and both speech cache
+manifests/audio files. Exact Fit black bars and Crop blue pixels are measured.
+All movies decode fully; audible RMS exceeds 0.005. A/B clears the other project's
+player; selected landscape opens its exact review. Five network trap positive
+controls per launch precede zero actual speech/model requests with Online off.
+The first run made both movies but failed on a test locator tied to the closed
+pre-restart page; the refreshed locator fixes the harness, not a product crash.
+
+Final review then finds the visible Send back button blocked by the new immutable
+review transition guard. Three new regressions fail/32 pass, then all 35 pass
+(3.824s, review-return-red/green.log). Human Send back now records requested
+changes while the saved file remains immutable. Script, narration and rendering
+refuse review IDs before provider work; the UI directs edits to Open source
+project, not Write script on the review. The real ordinary case now covers that
+button/navigation. The third case sanitizes malformed ordinary attempt errors
+before React, matching storyboard/per-variant handling. The contradictory $0
+badge beside unknown-cost output controls is replaced with actual caption status.
+No broader estimate/workspace completion is claimed.
+
+Previous 6515717 full widget result: 4,278 passed/19 skipped, 307 suites, 118.667s;
+process exits 0 on its own after late-exit warning. Both typechecks, lint (eight
+existing warnings, zero errors), docs 218/167/33 and one-new-file duplicate guard
+pass. These final review corrections require another full/actual regression sweep
+before publication. Still Building; original owner preview/assets are untouched.

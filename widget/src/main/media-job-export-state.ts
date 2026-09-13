@@ -144,7 +144,7 @@ export async function readMediaJobExportState(job: MediaJob, dir: string): Promi
     if (attempt?.variantId === id) variantAttempts[id] = attempt;
   }
   return { sourceRevision: await mediaJobSourceRevision(job), variantRevisions, sourceSavedAt: job.updatedAt,
-    latestAttempt: job.latestExportAttempt, variantAttempts,
+    latestAttempt: readStudioExportAttempt(job.latestExportAttempt), variantAttempts,
     outputs: outputs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     untrackedOutputs, ...(warnings.length ? { warning: [...new Set(warnings)].join(' ') } : {}) };
 }

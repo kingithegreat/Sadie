@@ -72,3 +72,13 @@ test('a job that needs new scene images still asks about generator setup', async
   expect(screen.getByRole('dialog', { name: 'Choose where images are made' })).toBeTruthy();
   expect(mediaRun).not.toHaveBeenCalled();
 });
+
+test('requested changes on a saved movie lead to its source, never a new script on the review', async () => {
+  (window as any).electron = {
+    mediaList: jest.fn().mockResolvedValue([{ ...JOB, state: 'needs_revision', reviewSource: { type: 'job', id: 'source' } }]),
+  };
+  await act(async () => { render(<MediaStudioPanel />); });
+  expect(screen.getByRole('button', { name: 'Open source project' })).toBeTruthy();
+  expect(screen.queryByText('Write script')).toBeNull();
+  expect(screen.getByText(/Changes requested.*source project/)).toBeTruthy();
+});

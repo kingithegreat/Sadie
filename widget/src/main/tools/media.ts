@@ -178,6 +178,7 @@ function findJob(idOrTitle: string): MediaJob | undefined {
  * sentence copied into six success messages would.
  */
 function nextStepFor(job: MediaJob): string {
+  if (job.reviewSource && job.state === 'needs_revision') return 'Changes requested. Open the source project to edit and export a new movie; this review keeps its original file.';
   switch (job.state) {
     case 'idea':
     case 'researching':
@@ -462,7 +463,7 @@ const rejectMediaJobHandler: ToolHandler = async (args) => {
     });
     upsert(moved);
     return ok(revise
-      ? `Sent "${moved.title}" back for revision.`
+      ? withNextStep([`Sent "${moved.title}" back for revision.`], moved)
       : `Rejected "${moved.title}".`);
   } catch (e: any) {
     return err(errText(e));
@@ -489,6 +490,7 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
+    if (job.reviewSource) return err('This review keeps one saved movie. Write the script on its source project instead.');
     // A job can reach script_draft WITHOUT a script: the panel's generic
     // "Move to …" button advances the state and does none of the work. That
     // left a job wedged with no way out — media_narrate refused for having no
@@ -594,6 +596,7 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
+    if (job.reviewSource) return err('This review keeps one saved movie. Record narration on its source project instead.');
     if (!job.script?.trim()) {
       return err(`"${job.title}" has no script yet — run media_write_script first.`);
     }
@@ -809,6 +812,7 @@ const renderMediaJobDef: ToolDefinition = {
 const renderMediaJobHandler: ToolHandler = async (args) => {
   const job = findJob(String(args.job || ''));
   if (!job) return err(`No media job matching "${args.job}".`);
+  if (job.reviewSource) return err('This review keeps one saved movie. Render its source project to create a new review.');
   if (job.state !== 'media_production') return err(`"${job.title}" is at ${describeProgress(job)} — rendering runs from media_production.`);
   if (renderingJobs.has(job.id)) return err('This video is already rendering. Wait for its current export to finish.');
   renderingJobs.add(job.id);

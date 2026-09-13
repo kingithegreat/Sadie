@@ -235,7 +235,7 @@ export function transition(job: MediaJob, to: MediaJobState, opts: TransitionOpt
   if ((job.perExportReview || job.outputSpec?.variants.length === 2) && ['awaiting_approval', 'approved', 'scheduled', 'published'].includes(to)) {
     throw new Error('Review each exported format separately. This production cannot approve or publish both movies together.');
   }
-  if (job.reviewSource && ['idea', 'researching', 'script_draft', 'script_qa', 'media_production', 'needs_revision'].includes(to)) {
+  if (job.reviewSource && ['idea', 'researching', 'script_draft', 'script_qa', 'media_production'].includes(to)) {
     throw new Error('This review belongs to one saved movie. Edit and render its source project to create a new review.');
   }
   if (!isValidState(to)) throw new InvalidTransitionError(job.state, to as MediaJobState);

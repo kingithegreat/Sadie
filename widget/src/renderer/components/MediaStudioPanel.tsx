@@ -654,6 +654,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   /** Stages that call a model, the TTS service or ffmpeg — the slow ones. */
   const stageAction = (j: MediaJob): { label: string; action: 'script' | 'narrate' | 'render' } | null => {
+    if (j.reviewSource) return null;
     if (j.state === 'idea' || j.state === 'researching' || j.state === 'needs_revision') {
       return { label: 'Write script', action: 'script' };
     }
@@ -1706,7 +1707,7 @@ ${shots.map((s, idx) => `
     {job.rejectedRenderPath && <button className="ms-btn" onClick={() => revealJobMovie(job.rejectedRenderPath!)}>
       Reveal rejected attempt (not approved)
     </button>}
-    {job.narrationPath && !hasExternalMediaRenderer(job) && ['needs_revision', 'failed', 'blocked'].includes(job.state) &&
+    {job.narrationPath && !job.reviewSource && !hasExternalMediaRenderer(job) && ['needs_revision', 'failed', 'blocked'].includes(job.state) &&
       job.latestExportAttempt && <button className="ms-btn" disabled={busy !== null} onClick={() => run(job.id, async () => {
         const moved = await api()?.mediaAdvance?.(job.id, 'media_production');
         if (!moved?.ok) return moved;
@@ -2391,6 +2392,8 @@ ${shots.map((s, idx) => `
               </button>
             </>
           )
+        ) : j.reviewSource && j.state === 'needs_revision' ? (
+          <span className="ms-job-terminal">Changes requested. Open source project to edit and export a new movie. This review keeps its original file.</span>
         ) : NEXT_STAGE[j.state] ? (
           <button
             className="ms-btn"
@@ -4442,7 +4445,7 @@ ${shots.map((s, idx) => `
                 <span className="ms-storyboard-badge">{shots.length} Shot(s)</span>
                 <span className="ms-storyboard-badge">⏱ {totalDuration}s Total</span>
                 <span className="ms-storyboard-badge">🖼 {renderedFramesCount}/{shots.length} Frames Generated</span>
-                <span className="ms-storyboard-badge ms-storyboard-badge--free">✓ $0.00 Free Policy</span>
+                <span className="ms-storyboard-badge">{activeStoryboard.project.burnSubtitles === false ? 'Captions off' : 'Captions on'}</span>
               </div>
             </div>
 

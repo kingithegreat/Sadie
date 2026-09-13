@@ -162,6 +162,33 @@ describe('media_render output trust', () => {
     }
   });
 
+  it('records requested changes on an immutable review and keeps editing on its source', async () => {
+    const parent = writeReadyJob('Review source');
+    const review: MediaJob = { ...parent, id: 'jobexport_review', title: 'Saved movie review', state: 'awaiting_approval',
+      reviewSource: { type: 'job', id: parent.id }, renderPath: scenePath };
+    writeJobs([parent, review]);
+    expect((await call('media_reject_job', { job: review.id, reason: 'revise', note: 'Fix portrait framing' })).success).toBe(true);
+    const saved = readJobs().find(job => job.id === review.id)!;
+    expect(saved).toMatchObject({ state: 'needs_revision', renderPath: scenePath, reviewSource: review.reviewSource });
+    expect(saved.history.at(-1)).toMatchObject({ by: 'human', to: 'needs_revision', note: 'Fix portrait framing' });
+    expect(readJobs().find(job => job.id === parent.id)).toEqual(parent);
+    for (const name of ['media_write_script', 'media_narrate', 'media_render']) {
+      const result = await call(name, { job: review.id });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/source project/i);
+    }
+    expect((await call('media_advance_job', { job: review.id, to: 'media_production' })).success).toBe(false);
+    expect(readJobs().find(job => job.id === review.id)).toEqual(saved);
+    expect(fs.readFileSync(scenePath, 'utf8')).toBe('scene');
+  });
+
+  it('does not return object-valued ordinary attempt errors to the renderer', async () => {
+    const job = writeReadyJob('Malformed ordinary attempt');
+    writeJobs([{ ...job, latestExportAttempt: { id: 'bad-error', status: 'failed', startedAt: '2026-09-13T00:00:00Z',
+      sourceRevision: null, error: { unexpected: true } } as any }]);
+    expect((await getMediaJobExportState(job.id)).latestAttempt?.error).toBeUndefined();
+  });
+
   it('keeps immutable legacy history and compares content, not save timestamps', async () => {
     const job = writeReadyJob('Immutable legacy history');
     mockedInspectRender.mockResolvedValue(goodFacts);

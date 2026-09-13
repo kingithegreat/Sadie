@@ -125,8 +125,17 @@ test('both formats keep landscape after real portrait QA failure, then retry onl
     expect(wrongApproval.error).toMatch(/current movie changed/i);
     expect(readJobs().every((job: any) => job.state !== 'approved' && !job.videoId)).toBe(true);
     await reviewCard.screenshot({ path: testInfo.outputPath('exact-landscape-review.png'), animations: 'disabled' });
+    await reviewCard.getByRole('button', { name: 'Send back', exact: true }).click();
+    await expect.poll(() => readJobs().find((job: any) => job.id === landscapeReview.id).state).toBe('needs_revision');
+    await expect(reviewCard.getByText(/Changes requested.*source project/)).toBeVisible();
+    await expect(reviewCard.getByRole('button', { name: 'Write script', exact: true })).toHaveCount(0);
+    expect(digest(landscapePath)).toBe(landscapeHash);
+    expect(read().state).toBe('media_production');
+    await reviewCard.getByRole('button', { name: 'Open source project', exact: true }).click();
+    await expect(page.getByLabel('Active Project:', { exact: true })).toHaveValue(id);
     fs.writeFileSync(testInfo.outputPath('multiple-output-evidence.json'), JSON.stringify({ profile, failed, history,
       landscapeReview, landscapeHash, portraitHash: digest(portrait.moviePath), streams, wrongApproval,
+      requestedChanges: readJobs().find((job: any) => job.id === landscapeReview.id),
       source: 'Local diagnostic colours and three-second sine audio; no providers, approvals or publication.' }, null, 2));
   } catch (error) {
     fs.writeFileSync(testInfo.outputPath('failure-jobs.json'), JSON.stringify({ profile, jobs: readJobs() }, null, 2));
