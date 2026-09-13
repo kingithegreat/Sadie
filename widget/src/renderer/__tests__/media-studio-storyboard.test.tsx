@@ -443,7 +443,8 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(screen.getByText(/🎬 Pyramid Builders/)).toBeInTheDocument();
     expect(screen.getByText(/3 Shot\(s\)/)).toBeInTheDocument();
     expect(screen.getByText(/14s Total/)).toBeInTheDocument();
-    expect(screen.getByText(/✓ \$0\.00 Free Policy/)).toBeInTheDocument();
+    expect(screen.getByText('Captions on')).toBeInTheDocument();
+    expect(screen.queryByText(/✓ \$0\.00 Free Policy/)).not.toBeInTheDocument();
   });
 
   test('displays shot cards with camera framing pills and allows changing shot attributes', async () => {
