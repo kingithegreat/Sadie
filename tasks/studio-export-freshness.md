@@ -69,3 +69,10 @@ zero retries. Two earlier navigation/screenshot timeouts are retained separately
 This is a storyboard checkpoint, not all STUDIO-04: ordinary job history and
 freshness remain next, along with the already recorded multi-output/stage/UI/
 pilot/installed gates. Final unchanged-source regression evidence follows.
+
+Final review found a reachable legacy-card mismatch: its new MP4 has a recorded
+landscape spec, but the review job omitted it and the card inferred portrait
+from a short duration. A red handler assertion reproduced this. The bridge now
+passes the actual output spec into the review record and IPC response; it does
+not change the saved legacy project or encoder filters. The local narrated
+caption pair additionally checks that exact review geometry.

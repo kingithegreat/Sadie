@@ -634,7 +634,8 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
   // between complete movies and independently exported scenes.
   let jobId: string | undefined = res.renderedOutput ? `sbexport_${res.renderedOutput.exportId}`
     : sceneId ? `sbscene_${projectId.length}_${projectId}_${sceneId}` : `sb_${projectId}`;
-  const variant = res.outputSpec?.variants[0];
+  const exportSpec = res.outputSpec ?? res.renderedOutput?.outputSpec;
+  const variant = exportSpec?.variants[0];
   const outputLabel = variant ? `${variant.width} × ${variant.height} ${variant.aspectRatio}` : '1080p';
   let warning: string | undefined;
   try {
@@ -653,10 +654,10 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     const job: any = {
       id: jobId,
       title: `[Storyboard] ${title}`,
-      format: res.outputSpec?.durationIntent ?? ((res.durationSec && res.durationSec > 60) ? 'long' : 'short'),
+      format: exportSpec?.durationIntent ?? ((res.durationSec && res.durationSec > 60) ? 'long' : 'short'),
       state: 'awaiting_approval',
       burnSubtitles: res.burnSubtitles,
-      ...(res.outputSpec ? { outputSpec: res.outputSpec } : {}), renderedOutput: res.renderedOutput,
+      ...(exportSpec ? { outputSpec: exportSpec } : {}), renderedOutput: res.renderedOutput,
       renderPath: res.moviePath,
       durationSeconds: res.durationSec,
       brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)`,
@@ -695,7 +696,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
       moviePath: res.moviePath,
       durationSec: res.durationSec,
       totalShots: res.totalShots,
-      ...(res.outputSpec ? { outputSpec: res.outputSpec } : {}), renderedOutput: res.renderedOutput,
+      ...(exportSpec ? { outputSpec: exportSpec } : {}), renderedOutput: res.renderedOutput,
       message: `Rendered ${outputLabel} movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
       handoff: {
         mode: 'media',

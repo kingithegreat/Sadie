@@ -187,6 +187,10 @@ describe('storyboard export output contract', () => {
     expect(rendered.result.jobId).not.toBe(approved.id);
     expect((writeJobs as jest.Mock).mock.calls[0][0]).toContainEqual(approved);
     expect(fs.readFileSync(output, 'utf8')).toBe('legacy approved master');
+    // The new review card must describe the actual landscape legacy movie,
+    // not infer portrait just because this complete movie is under a minute.
+    expect((writeJobs as jest.Mock).mock.calls[0][0].find((job: any) => job.id === rendered.result.jobId))
+      .toMatchObject({ outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop') });
     const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
     expect(reopened.renderedMoviePath).toBe(rendered.result.moviePath);
     expect(reopened.exportState.untrackedOutputs).toContainEqual({ filename: path.basename(output), moviePath: output });

@@ -131,6 +131,7 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     const exportRecord = JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).latestSuccessfulOutput;
     const reviewJob = (await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.id === `sbexport_${exportRecord.exportId}`);
     expect(reviewJob).toMatchObject({ state: 'awaiting_approval', durationSeconds: 8, burnSubtitles });
+    expect(reviewJob?.outputSpec?.variants[0]).toMatchObject({ aspectRatio: '16:9', width: 1920, height: 1080 });
     expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).burnSubtitles).toBe(burnSubtitles);
     expect(reviewJob?.renderPath).toBe(path.join(projectDir, 'renders', exportRecord.filename));
     await page.getByRole('button', { name: /Review & Publish/ }).click();
