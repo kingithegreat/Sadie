@@ -85,3 +85,13 @@ test('no slides section before the render stage has made any', async () => {
   await mount({ ...base, script: SCRIPT });
   expect(screen.queryByTestId('ms-slides-j1')).toBeNull();
 });
+
+test('a failed replacement is not announced as a ready episode', async () => {
+  await mount({ ...base, state: 'needs_revision', renderPath: 'C:\\media\\j1\\good.mp4',
+    rejectedRenderPath: 'C:\\media\\j1\\rejected.mp4',
+    latestExportAttempt: { id: 'failed-replacement', status: 'failed', sourceRevision: null,
+      startedAt: '2026-09-13T00:00:00Z', finishedAt: '2026-09-13T00:00:05Z', error: 'Replacement has no audio stream.' } });
+  expect(screen.getByTestId('ms-video-j1')).toHaveAttribute('src', 'file:///C:/media/j1/good.mp4');
+  expect(screen.queryByText(/Your episode is ready to watch!/)).not.toBeInTheDocument();
+  expect(screen.getByText(/latest attempt failed/i)).toBeInTheDocument();
+});

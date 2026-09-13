@@ -114,6 +114,27 @@ afterEach(() => {
 });
 
 describe('media_render output trust', () => {
+  it('keeps the last successful movie selected when its replacement fails QA', async () => {
+    const job = writeReadyJob('Previous success stays selected');
+    mockedInspectRender.mockResolvedValue({ hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    const good = readJobs()[0];
+    const goodBytes = fs.readFileSync(good.renderPath!);
+    expect((await call('media_advance_job', { job: job.id, to: 'needs_revision' })).success).toBe(true);
+    expect((await call('media_advance_job', { job: job.id, to: 'media_production' })).success).toBe(true);
+    mockedInspectRender.mockResolvedValue({ hasVideo: true, hasAudio: false, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: null, maxVolumeDb: null, frameSamples: null });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(false);
+    const failed = readJobs()[0] as any;
+    expect(fs.readFileSync(good.renderPath!).equals(goodBytes)).toBe(true);
+    expect(failed.renderPath).toBe(good.renderPath);
+    expect(failed.rejectedRenderPath).not.toBe(good.renderPath);
+    expect(fs.existsSync(failed.rejectedRenderPath)).toBe(true);
+    expect(failed.latestExportAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/audio/i) });
+    expect((await call('media_advance_job', { job: job.id, to: 'awaiting_approval' })).success).toBe(false);
+  });
+
   it('uses measured fractional narration length and rejects an encoder tail beyond it', async () => {
     const job = writeReadyJob('Fractional narration');
     writeJobs([{ ...job, outputSpec: createStudioOutputSpec(), burnSubtitles: false }]);
