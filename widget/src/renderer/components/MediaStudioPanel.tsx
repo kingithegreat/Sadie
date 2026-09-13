@@ -3496,7 +3496,7 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Camera Motion (Remotion Parallax):</label>
+              <label className="ms-param-label">Camera Motion (Multi-Plane Parallax):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"

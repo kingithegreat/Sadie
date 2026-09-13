@@ -3,7 +3,7 @@
  * background isolation, slicing, quality gate validation, and manifest generation.
  *
  * Driven directly from HomeBot chat to generate production-quality sprites for
- * Ancient Pathways and Remotion video animation.
+ * Ancient Pathways and the multi-plane stage compositor.
  */
 
 import { spawn } from 'child_process';
@@ -21,7 +21,7 @@ export const mediaGenerateSpritesDef: ToolDefinition = {
   name: 'media_generate_sprites',
   description:
     'Generate a production-quality 2D character sprite sheet from a character concept, validate ' +
-    'it against Ancient Pathways & Remotion quality gates, remove the background to transparent alpha, ' +
+    'it against Ancient Pathways & multi-plane stage quality gates, remove the background to transparent alpha, ' +
     'and slice it into named sprite libraries (turnaround, poses, visemes, and manifest.json).',
   category: 'media',
   parameters: {
@@ -374,7 +374,7 @@ export const mediaGenerateSpritesHandler: ToolHandler = async (args): Promise<To
           charDir: parsed.charDir,
           manifestPath: parsed.manifestPath,
           warnings: parsed.warnings || [],
-          message: `Generated and auto-rigged ${parsed.spriteCount} sprites for "${parsed.character}" across 8 canonical groups. Registered in ${parsed.charDir} ready for Remotion & Ancient Pathways.`,
+          message: `Generated and auto-rigged ${parsed.spriteCount} sprites for "${parsed.character}" across 8 canonical groups. Registered in ${parsed.charDir} ready for the multi-plane stage & Ancient Pathways.`,
         };
         resolve({
           success: true,
