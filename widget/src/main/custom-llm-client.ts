@@ -159,7 +159,8 @@ const DEEPSEEK_MODELS: CustomModelInfo[] = [
 // Google AI Studio — Gemini models with generous free tier
 const GOOGLE_AI_MODELS: CustomModelInfo[] = [
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest — thinking + tools, free tier', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Fast & smart', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
+  // gemini-2.0-flash was shut down on 1 June 2026; saved settings naming it are
+  // remapped at load by model-lifecycle.ts.
   { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: '1M context window', provider: 'google-ai-studio', contextWindow: 1048576, costHint: '~$1.25/1M in' },
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
 ];
@@ -167,7 +168,6 @@ const GOOGLE_AI_MODELS: CustomModelInfo[] = [
 // Gemini native API (generateContent endpoint)
 const GOOGLE_GEMINI_NATIVE_MODELS: CustomModelInfo[] = [
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest & best free model — thinking + tools', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Fast & smart', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
   { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Large context and stronger reasoning', provider: 'google-gemini', contextWindow: 1048576, costHint: '~$1.25/1M in' },
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and cost-efficient', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
 ];

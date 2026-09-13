@@ -65,6 +65,11 @@ export function knownModelsFor(provider: string | undefined): CustomModelInfo[] 
 /**
  * Curated fallback models for metered cloud providers when an API key is present.
  * These are NOT CLI subscription models, so knownModelsFor() remains empty for them.
+ *
+ * Every ID here must also be in the main-process list for its provider
+ * (custom-llm-client.ts), which is where retired models get pruned; this list
+ * once kept offering Claude 3.5, DeepSeek Chat/Reasoner and Gemini 2.0 Flash
+ * after their providers had shut them down. model-lifecycle.test.ts enforces it.
  */
 export const CURATED_METERED_MODELS: Record<string, CustomModelInfo[]> = {
   openai: [
@@ -72,15 +77,15 @@ export const CURATED_METERED_MODELS: Record<string, CustomModelInfo[]> = {
     { id: 'gpt-4o-mini', name: 'GPT-4o mini', description: 'Fast and affordable', provider: 'openai' },
   ],
   anthropic: [
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Intelligent, fast', provider: 'anthropic' },
-    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast, lightweight', provider: 'anthropic' },
+    { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', description: 'Best balance of speed and intelligence', provider: 'anthropic' },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', description: 'Fastest and most affordable', provider: 'anthropic' },
   ],
   deepseek: [
-    { id: 'deepseek-chat', name: 'DeepSeek Chat', description: 'General purpose', provider: 'deepseek' },
-    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: 'Reasoning model (R1)', provider: 'deepseek' },
+    { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', description: 'Fast chat model', provider: 'deepseek' },
+    { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Stronger reasoning', provider: 'deepseek' },
   ],
   'google-ai-studio': [
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Next-gen multimodal', provider: 'google-ai-studio' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Thinking + tools, free tier', provider: 'google-ai-studio' },
   ],
   groq: [
     { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'Fast inference on Groq LPU', provider: 'groq' },

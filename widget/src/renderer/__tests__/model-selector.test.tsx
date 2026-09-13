@@ -415,5 +415,44 @@ describe('ModelSelector — custom LLM', () => {
     fireEvent.click(screen.getByText('GPT-4o'));
     expect(onModelChange).toHaveBeenCalledWith('gpt-4o', true, 'openai');
   });
+
+  test('a saved key never offers a model its provider has shut down', async () => {
+    // Every one of these was offered here after its provider switched it off,
+    // so picking it either failed every request or was silently answered by
+    // a different model than the one the chat said it switched to.
+    const retired = ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'deepseek-chat', 'deepseek-reasoner', 'gemini-2.0-flash'];
+    const onModelChange = jest.fn();
+    await renderSelector({
+      useCustomLLM: false,
+      currentModel: 'qwen2.5:7b',
+      providerApiKeys: { anthropic: 'sk-ant-test', deepseek: 'sk-ds-test', 'google-ai-studio': 'AIza-test' },
+      onModelChange,
+    });
+    const open = () => act(async () => {
+      fireEvent.click(document.querySelector('.model-selector-button') as HTMLElement);
+    });
+    const cloudOptions = () => Array.from(document.querySelectorAll('.model-option'))
+      .filter(el => el.querySelector('.model-option-icon')?.textContent === '☁️');
+    await open();
+    const count = cloudOptions().length;
+    expect(count).toBeGreaterThanOrEqual(5);
+    for (let i = 0; i < count; i++) {
+      if (cloudOptions().length === 0) await open();
+      fireEvent.click(cloudOptions()[i]);
+    }
+    // Assert what a click actually sends, not the label on the button.
+    const sent = onModelChange.mock.calls.map(([id, isCloud, provider]) => ({ id, isCloud, provider }));
+    expect(sent).toHaveLength(count);
+    for (const s of sent) {
+      expect(s.isCloud).toBe(true);
+      expect(retired).not.toContain(s.id);
+    }
+    expect(sent).toEqual(expect.arrayContaining([
+      { id: 'claude-sonnet-5', isCloud: true, provider: 'anthropic' },
+      { id: 'claude-haiku-4-5', isCloud: true, provider: 'anthropic' },
+      { id: 'deepseek-v4-flash', isCloud: true, provider: 'deepseek' },
+      { id: 'gemini-2.5-flash', isCloud: true, provider: 'google-ai-studio' },
+    ]));
+  });
 });
 
