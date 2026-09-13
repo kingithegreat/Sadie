@@ -1009,153 +1009,155 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (218)** — `window.electron`
+**Preload methods (221)** — `window.electron`
 
 ```
-addFeed                         addMessage                      browserAttach                   browserBack
-browserBounds                   browserCapture                  browserDetach                   browserForward
-browserNavigate                 browserReload                   cancelStream                    captureLogs
-captureScreen                   changesDiff                     changesList                     checkConnection
-checkOllamaInstalled            clearPermissionAudit            closeWindow                     compactConversation
-createAutomation                createConversation              deleteAutomation                deleteConversation
-deleteOllamaModel               detectGpuVram                   downloadOllama                  downloadUpdate
-executeImageGenerate            exportChat                      exportConversation              exportPermissionAudit
-exportSettings                  exportTelemetryConsent          fetchFeeds                      fetchPageContent
-generateQuiz                    generateQuizFromRag             generateTitle                   getAnalyticsSummary
-getBatchSummaries               getCapabilityReport             getConfigPath                   getConversation
-getCrmActivity                  getCrmDashboard                 getEnv                          getGeneratedImage
-getMode                         getPerfAggregates               getPerfHistory                  getSettings
-getSupervisorStatus             getUncensoredMode               getWidgetMode                   hasPermission
-importSettings                  improvePrompt                   installUpdate                   invoke
-licenseActivate                 licenseDeactivate               licenseStatus                   licenseValidate
-listAllFeeds                    listCustomLLMModels             listFeedSources                 listOllamaModels
-listTools                       loadAutomations                 loadConversations               loadQuizProgress
-maximizeWindow                  mcpAddServer                    mcpGetStatus                    mcpListServers
-mcpRemoveServer                 mcpToggleServer                 mediaAdvance                    mediaAncientPathwaysDoctor
-mediaAncientPathwaysEpisodes    mediaAncientPathwaysRun         mediaAncientPathwaysShowrunner  mediaAncientPathwaysStatus
-mediaApprove                    mediaCreate                     mediaDelete                     mediaFfmpegSetup
-mediaFfmpegStatus               mediaGetExportState             mediaList                       mediaMarkPublished
-mediaMovieListProjects          mediaMovieRun                   mediaParseFeed                  mediaReject
-mediaRun                        mediaSeriesSettingsDelete       mediaSeriesSettingsGet          mediaSeriesSettingsList
-mediaSeriesSettingsSave         mediaSeriesSettingsSegment      mediaSpliceVideo                mediaStoryboardBreakdown
-mediaStoryboardCreate           mediaStoryboardGenerateFrame    mediaStoryboardGet              mediaStoryboardList
-mediaStoryboardRender           mediaStoryboardSave             mediaTrimClip                   minimizeWindow
-moduleList                      moduleSetEnabled                onAssistantToolActivity         onBatchSummary
-onBrowserState                  onConfigRecovered               onConfirmationRequest           onConversationCompacted
-onHardwareProfileApplied        onHideWindow                    onMediaAncientPathwaysProgress  onMediaFfmpegProgress
-onMessage                       onModelFallback                 onModulesChanged                onNavigate
-onOllamaDownloadProgress        onOllamaStatus                  onPermissionRequest             onProactiveBriefing
-onPullModelProgress             onReminderFired                 onSdCppSetupProgress            onShowWindow
-onStreamChunk                   onStreamEnd                     onStreamError                   onSupervisorStatus
-onTerminalExit                  onTerminalOutput                onTitleUpdated                  onUpdateAvailable
-onUpdateDownloaded              onUpdateProgress                onWidgetModeChanged             openExternalUrl
-openFile                        parseDocument                   pullModel                       pullModelStream
-ragClear                        ragIndex                        ragList                         readConsentLog
-readDebugLogs                   readPermissionAudit             readTelemetryEvents             removeFeed
-removeHideWindowListener        removeShowWindowListener        resetPermissions                resolveActiveModel
-restartApp                      runAutomation                   runDiagnostics                  saveConversation
-saveQuizProgress                saveSettings                    schedulerAdd                    schedulerList
-schedulerRemove                 schedulerToggle                 sdCppAutoSetup                  sdCppSetup
-sdCppStatus                     searchConversations             sendConfirmationResponse        sendMessage
-sendPermissionResponse          sendStreamMessage               setActiveConversation           setAlwaysOnTop
-setUncensoredMode               showInFolder                    skillsList                      skillsOpenFolder
-startOllama                     startSpeechRecognition          subscribeToStream               terminalClose
-terminalCreate                  terminalKill                    terminalRun                     testN8nConnection
-toggleWidgetMode                ttsListVoices                   ttsSampleVoice                  ttsSpeak
-ttsStop                         unhideFeed                      updateAutomation                updateMessage
-workspaceList                   workspaceRead                   workspaceRoot                   workspaceSave
-writeClipboard                  writeDocument                   youtubeCancel                   youtubeConnect
-youtubeConnectUpload            youtubeConnectionStatus         youtubeImportCredentials        youtubeRefresh
-youtubeRemove                   youtubeUpload
+addFeed                           addMessage                        browserAttach                     browserBack
+browserBounds                     browserCapture                    browserDetach                     browserForward
+browserNavigate                   browserReload                     cancelStream                      captureLogs
+captureScreen                     changesDiff                       changesList                       checkConnection
+checkOllamaInstalled              clearPermissionAudit              closeWindow                       compactConversation
+createAutomation                  createConversation                deleteAutomation                  deleteConversation
+deleteOllamaModel                 detectGpuVram                     downloadOllama                    downloadUpdate
+executeImageGenerate              exportChat                        exportConversation                exportPermissionAudit
+exportSettings                    exportTelemetryConsent            fetchFeeds                        fetchPageContent
+generateQuiz                      generateQuizFromRag               generateTitle                     getAnalyticsSummary
+getBatchSummaries                 getCapabilityReport               getConfigPath                     getConversation
+getCrmActivity                    getCrmDashboard                   getEnv                            getGeneratedImage
+getMode                           getPerfAggregates                 getPerfHistory                    getSettings
+getSupervisorStatus               getUncensoredMode                 getWidgetMode                     hasPermission
+importSettings                    improvePrompt                     installUpdate                     invoke
+licenseActivate                   licenseDeactivate                 licenseStatus                     licenseValidate
+listAllFeeds                      listCustomLLMModels               listFeedSources                   listOllamaModels
+listTools                         loadAutomations                   loadConversations                 loadQuizProgress
+maximizeWindow                    mcpAddServer                      mcpGetStatus                      mcpListServers
+mcpRemoveServer                   mcpToggleServer                   mediaAdvance                      mediaAncientPathwaysDoctor
+mediaAncientPathwaysEpisodes      mediaAncientPathwaysRun           mediaAncientPathwaysShowrunner    mediaAncientPathwaysStatus
+mediaApprove                      mediaCreate                       mediaDelete                       mediaFfmpegSetup
+mediaFfmpegStatus                 mediaGetExportState               mediaList                         mediaMarkPublished
+mediaMovieListProjects            mediaMovieRun                     mediaParseFeed                    mediaReject
+mediaRun                          mediaSeriesSettingsDelete         mediaSeriesSettingsGet            mediaSeriesSettingsList
+mediaSeriesSettingsSave           mediaSeriesSettingsSegment        mediaSpliceVideo                  mediaStoryboardBreakdown
+mediaStoryboardConfirmPaidFrames  mediaStoryboardCreate             mediaStoryboardFrameProviders     mediaStoryboardGenerateFrame
+mediaStoryboardGet                mediaStoryboardList               mediaStoryboardRender             mediaStoryboardSave
+mediaStoryboardSetFrameProvider   mediaTrimClip                     minimizeWindow                    moduleList
+moduleSetEnabled                  onAssistantToolActivity           onBatchSummary                    onBrowserState
+onConfigRecovered                 onConfirmationRequest             onConversationCompacted           onHardwareProfileApplied
+onHideWindow                      onMediaAncientPathwaysProgress    onMediaFfmpegProgress             onMessage
+onModelFallback                   onModulesChanged                  onNavigate                        onOllamaDownloadProgress
+onOllamaStatus                    onPermissionRequest               onProactiveBriefing               onPullModelProgress
+onReminderFired                   onSdCppSetupProgress              onShowWindow                      onStreamChunk
+onStreamEnd                       onStreamError                     onSupervisorStatus                onTerminalExit
+onTerminalOutput                  onTitleUpdated                    onUpdateAvailable                 onUpdateDownloaded
+onUpdateProgress                  onWidgetModeChanged               openExternalUrl                   openFile
+parseDocument                     pullModel                         pullModelStream                   ragClear
+ragIndex                          ragList                           readConsentLog                    readDebugLogs
+readPermissionAudit               readTelemetryEvents               removeFeed                        removeHideWindowListener
+removeShowWindowListener          resetPermissions                  resolveActiveModel                restartApp
+runAutomation                     runDiagnostics                    saveConversation                  saveQuizProgress
+saveSettings                      schedulerAdd                      schedulerList                     schedulerRemove
+schedulerToggle                   sdCppAutoSetup                    sdCppSetup                        sdCppStatus
+searchConversations               sendConfirmationResponse          sendMessage                       sendPermissionResponse
+sendStreamMessage                 setActiveConversation             setAlwaysOnTop                    setUncensoredMode
+showInFolder                      skillsList                        skillsOpenFolder                  startOllama
+startSpeechRecognition            subscribeToStream                 terminalClose                     terminalCreate
+terminalKill                      terminalRun                       testN8nConnection                 toggleWidgetMode
+ttsListVoices                     ttsSampleVoice                    ttsSpeak                          ttsStop
+unhideFeed                        updateAutomation                  updateMessage                     workspaceList
+workspaceRead                     workspaceRoot                     workspaceSave                     writeClipboard
+writeDocument                     youtubeCancel                     youtubeConnect                    youtubeConnectUpload
+youtubeConnectionStatus           youtubeImportCredentials          youtubeRefresh                    youtubeRemove
+youtubeUpload
 ```
 
-**IPC channels, renderer → main (167)**
+**IPC channels, renderer → main (170)**
 
 ```
-homebot:__e2e_get_router_logs              homebot:__e2e_invoke_tool_batch
-homebot:__e2e_ping                         homebot:__e2e_trigger_upstream_error
-homebot:add-feed                           homebot:add-message
-homebot:append-renderer-log                homebot:automation:image:generate
-homebot:browse-status                      homebot:capability-report
-homebot:capture-logs                       homebot:capture-screen
-homebot:changes-diff                       homebot:changes-list
-homebot:check-connection                   homebot:check-ollama-installed
-homebot:clear-permission-audit             homebot:compact-conversation
-homebot:confirmation-response              homebot:create-automation
-homebot:create-conversation                homebot:delete-automation
-homebot:delete-conversation                homebot:delete-ollama-model
-homebot:detect-gpu-vram                    homebot:download-ollama
-homebot:download-update                    homebot:export-chat
-homebot:export-consent                     homebot:export-conversation
-homebot:export-permission-audit            homebot:export-settings
-homebot:fetch-feeds                        homebot:fetch-page-content
-homebot:generate-quiz                      homebot:generate-quiz-from-rag
-homebot:generate-title                     homebot:get-analytics-summary
-homebot:get-config-path                    homebot:get-conversation
-homebot:get-env                            homebot:get-generated-image
-homebot:get-mode                           homebot:get-perf-aggregates
-homebot:get-perf-history                   homebot:get-settings
-homebot:get-uncensored-mode                homebot:get-widget-mode
-homebot:grab-browse-content                homebot:has-permission
-homebot:import-settings                    homebot:improve-prompt
-homebot:install-update                     homebot:license:activate
-homebot:license:deactivate                 homebot:license:status
-homebot:license:validate                   homebot:list-all-feeds
-homebot:list-custom-llm-models             homebot:list-feed-sources
-homebot:list-ollama-models                 homebot:list-tools
-homebot:load-automations                   homebot:load-conversations
-homebot:load-quiz-progress                 homebot:mcp-add-server
-homebot:mcp-get-status                     homebot:mcp-list-servers
-homebot:mcp-remove-server                  homebot:mcp-toggle-server
-homebot:media:advance                      homebot:media:ancient-pathways-doctor
-homebot:media:ancient-pathways-episodes    homebot:media:ancient-pathways-run
-homebot:media:ancient-pathways-showrunner  homebot:media:ancient-pathways-status
-homebot:media:approve                      homebot:media:create
-homebot:media:delete                       homebot:media:export-state
-homebot:media:ffmpeg-setup                 homebot:media:ffmpeg-status
-homebot:media:list                         homebot:media:mark-published
-homebot:media:movie:list-projects          homebot:media:movie:run
-homebot:media:parse-feed                   homebot:media:reject
-homebot:media:run                          homebot:media:series-settings:delete
-homebot:media:series-settings:get          homebot:media:series-settings:list
-homebot:media:series-settings:save         homebot:media:series-settings:segment
-homebot:media:splice-video                 homebot:media:storyboard:breakdown
-homebot:media:storyboard:create            homebot:media:storyboard:generate-frame
-homebot:media:storyboard:get               homebot:media:storyboard:list
-homebot:media:storyboard:render            homebot:media:storyboard:save
-homebot:media:trim-clip                    homebot:media:youtube:cancel
-homebot:media:youtube:connect              homebot:media:youtube:connect-upload
-homebot:media:youtube:import               homebot:media:youtube:refresh
-homebot:media:youtube:remove               homebot:media:youtube:status
-homebot:media:youtube:upload               homebot:message
-homebot:modules:list                       homebot:modules:set-enabled
-homebot:n8n-test-connection                homebot:open-browse
-homebot:open-external-url                  homebot:open-file
-homebot:open-web-service                   homebot:parse-document
-homebot:permission-response                homebot:pull-model
-homebot:pull-model-stream                  homebot:rag-clear
-homebot:rag-index                          homebot:rag-list
-homebot:read-consent-log                   homebot:read-debug-logs
-homebot:read-permission-audit              homebot:read-telemetry-events
-homebot:remove-feed                        homebot:reset-permissions
-homebot:resolve-active-model               homebot:restart-app
-homebot:run-automation                     homebot:run-diagnostics
-homebot:save-conversation                  homebot:save-quiz-progress
-homebot:save-settings                      homebot:scheduler-add
-homebot:scheduler-list                     homebot:scheduler-remove
-homebot:scheduler-toggle                   homebot:sd-cpp:auto-setup
-homebot:sd-cpp:setup                       homebot:sd-cpp:status
-homebot:search-conversations               homebot:set-active-conversation
-homebot:set-always-on-top                  homebot:set-uncensored-mode
-homebot:show-in-folder                     homebot:skills-list
-homebot:skills-open-folder                 homebot:start-ollama
-homebot:start-speech-recognition           homebot:stream-cancel
-homebot:stream-message                     homebot:toggle-widget-mode
-homebot:tts-list-voices                    homebot:tts-sample-voice
-homebot:tts-speak                          homebot:tts-stop
-homebot:unhide-feed                        homebot:update-automation
-homebot:update-message                     homebot:web-service-status
-homebot:write-document
+homebot:__e2e_get_router_logs                 homebot:__e2e_invoke_tool_batch
+homebot:__e2e_ping                            homebot:__e2e_trigger_upstream_error
+homebot:add-feed                              homebot:add-message
+homebot:append-renderer-log                   homebot:automation:image:generate
+homebot:browse-status                         homebot:capability-report
+homebot:capture-logs                          homebot:capture-screen
+homebot:changes-diff                          homebot:changes-list
+homebot:check-connection                      homebot:check-ollama-installed
+homebot:clear-permission-audit                homebot:compact-conversation
+homebot:confirmation-response                 homebot:create-automation
+homebot:create-conversation                   homebot:delete-automation
+homebot:delete-conversation                   homebot:delete-ollama-model
+homebot:detect-gpu-vram                       homebot:download-ollama
+homebot:download-update                       homebot:export-chat
+homebot:export-consent                        homebot:export-conversation
+homebot:export-permission-audit               homebot:export-settings
+homebot:fetch-feeds                           homebot:fetch-page-content
+homebot:generate-quiz                         homebot:generate-quiz-from-rag
+homebot:generate-title                        homebot:get-analytics-summary
+homebot:get-config-path                       homebot:get-conversation
+homebot:get-env                               homebot:get-generated-image
+homebot:get-mode                              homebot:get-perf-aggregates
+homebot:get-perf-history                      homebot:get-settings
+homebot:get-uncensored-mode                   homebot:get-widget-mode
+homebot:grab-browse-content                   homebot:has-permission
+homebot:import-settings                       homebot:improve-prompt
+homebot:install-update                        homebot:license:activate
+homebot:license:deactivate                    homebot:license:status
+homebot:license:validate                      homebot:list-all-feeds
+homebot:list-custom-llm-models                homebot:list-feed-sources
+homebot:list-ollama-models                    homebot:list-tools
+homebot:load-automations                      homebot:load-conversations
+homebot:load-quiz-progress                    homebot:mcp-add-server
+homebot:mcp-get-status                        homebot:mcp-list-servers
+homebot:mcp-remove-server                     homebot:mcp-toggle-server
+homebot:media:advance                         homebot:media:ancient-pathways-doctor
+homebot:media:ancient-pathways-episodes       homebot:media:ancient-pathways-run
+homebot:media:ancient-pathways-showrunner     homebot:media:ancient-pathways-status
+homebot:media:approve                         homebot:media:create
+homebot:media:delete                          homebot:media:export-state
+homebot:media:ffmpeg-setup                    homebot:media:ffmpeg-status
+homebot:media:list                            homebot:media:mark-published
+homebot:media:movie:list-projects             homebot:media:movie:run
+homebot:media:parse-feed                      homebot:media:reject
+homebot:media:run                             homebot:media:series-settings:delete
+homebot:media:series-settings:get             homebot:media:series-settings:list
+homebot:media:series-settings:save            homebot:media:series-settings:segment
+homebot:media:splice-video                    homebot:media:storyboard:breakdown
+homebot:media:storyboard:confirm-paid-frames  homebot:media:storyboard:create
+homebot:media:storyboard:frame-providers      homebot:media:storyboard:generate-frame
+homebot:media:storyboard:get                  homebot:media:storyboard:list
+homebot:media:storyboard:render               homebot:media:storyboard:save
+homebot:media:storyboard:set-frame-provider   homebot:media:trim-clip
+homebot:media:youtube:cancel                  homebot:media:youtube:connect
+homebot:media:youtube:connect-upload          homebot:media:youtube:import
+homebot:media:youtube:refresh                 homebot:media:youtube:remove
+homebot:media:youtube:status                  homebot:media:youtube:upload
+homebot:message                               homebot:modules:list
+homebot:modules:set-enabled                   homebot:n8n-test-connection
+homebot:open-browse                           homebot:open-external-url
+homebot:open-file                             homebot:open-web-service
+homebot:parse-document                        homebot:permission-response
+homebot:pull-model                            homebot:pull-model-stream
+homebot:rag-clear                             homebot:rag-index
+homebot:rag-list                              homebot:read-consent-log
+homebot:read-debug-logs                       homebot:read-permission-audit
+homebot:read-telemetry-events                 homebot:remove-feed
+homebot:reset-permissions                     homebot:resolve-active-model
+homebot:restart-app                           homebot:run-automation
+homebot:run-diagnostics                       homebot:save-conversation
+homebot:save-quiz-progress                    homebot:save-settings
+homebot:scheduler-add                         homebot:scheduler-list
+homebot:scheduler-remove                      homebot:scheduler-toggle
+homebot:sd-cpp:auto-setup                     homebot:sd-cpp:setup
+homebot:sd-cpp:status                         homebot:search-conversations
+homebot:set-active-conversation               homebot:set-always-on-top
+homebot:set-uncensored-mode                   homebot:show-in-folder
+homebot:skills-list                           homebot:skills-open-folder
+homebot:start-ollama                          homebot:start-speech-recognition
+homebot:stream-cancel                         homebot:stream-message
+homebot:toggle-widget-mode                    homebot:tts-list-voices
+homebot:tts-sample-voice                      homebot:tts-speak
+homebot:tts-stop                              homebot:unhide-feed
+homebot:update-automation                     homebot:update-message
+homebot:web-service-status                    homebot:write-document
 ```
 
 **IPC channels, main → renderer (33)**

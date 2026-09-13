@@ -12,10 +12,16 @@ import * as path from 'path';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
 import {
   MovieProjectRunner,
-  createStandardRouter,
   type MovieProject,
   type SceneManifest,
 } from '../movie/project-runner';
+import {
+  STORYBOARD_FRAME_SIZE,
+  hasPaidFrameConfirmation,
+  routerForStoryboardFrame,
+  storyboardFrameRequestPolicy,
+} from '../movie/storyboard-frame-providers';
+import { isStoryboardFrameProviderId, storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
 import {
   ShotStatus,
   type ShotBibleEntry,
@@ -30,6 +36,34 @@ export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
   if (custom && fs.existsSync(custom)) return custom;
   return path.join(os.homedir(), 'Desktop', 'homebot-movie-projects');
+}
+
+/** A missing or unreadable JSON file reads as empty; callers validate what they use. */
+function readProjectMeta(file: string): Record<string, any> {
+  try { return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : {}; } catch { return {}; }
+}
+
+/**
+ * Save which provider makes this storyboard's frame images. Called by the
+ * Storyboard picker (where each option's cost and watermark are shown) and the
+ * Auto-Director. Only listed options are accepted, and saving a paid choice
+ * grants nothing: it still needs the owner's confirmation in the Storyboard.
+ */
+export async function setStoryboardFrameProvider(args: { projectId?: unknown; frameProvider?: unknown }): Promise<ToolResult> {
+  const projectId = String(args?.projectId ?? '').trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) return { success: false, error: 'Choose a valid storyboard project.' };
+  if (!isStoryboardFrameProviderId(args?.frameProvider)) return { success: false, error: 'Choose one of the listed ways to make frame images.' };
+  const metaPath = path.join(getStoryboardsRootDir(), projectId, 'project.json');
+  if (!fs.existsSync(metaPath)) return { success: false, error: `Storyboard project not found: ${projectId}` };
+  try {
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const staged = `${metaPath}.saving`;
+    fs.writeFileSync(staged, JSON.stringify({ ...meta, frameProvider: args.frameProvider, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+    fs.renameSync(staged, metaPath);
+    return { success: true, result: { frameProvider: args.frameProvider } };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
 }
 
 export interface StoryboardShotInput {
@@ -406,33 +440,38 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
       return { success: false, error: 'No prompt available for shot frame generation.' };
     }
 
-    const router = createStandardRouter();
-    const req: GenerationRequest = {
-      kind: 'image',
-      prompt,
-      width: 1024,
-      height: 576,
-      shotId,
-      shotDir,
-      freeOnly: true,
-      allowWatermark: false,
-      allowDeferred: false,
-    };
+    // Frames are made only by the provider the owner chose for this project —
+    // never by automatic routing, which could reach a paid or watermarking service.
+    const projectMetaPath = path.join(rootDir, projectId, 'project.json');
+    const chosen = readProjectMeta(projectMetaPath).frameProvider;
+    if (!isStoryboardFrameProviderId(chosen)) {
+      return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
+    }
+    const option = storyboardFrameProvider(chosen);
+    if (option.paid && !hasPaidFrameConfirmation(option.id)) {
+      return { success: false, error: `${option.label} costs money. Confirm paid use in the Storyboard before generating.` };
+    }
 
-    const { decision, result: res } = await router.generate(req);
+    const policy = storyboardFrameRequestPolicy(option);
+    const req: GenerationRequest = { kind: 'image', prompt, ...STORYBOARD_FRAME_SIZE, shotId, shotDir, ...policy };
+
+    const { decision, result: res } = await routerForStoryboardFrame(option.id).generate(req, { freeOnly: policy.freeOnly });
     if (res.status === 'failed') {
-      return { success: false, error: res.error || `Frame generation failed: ${decision.summary}` };
+      const rejected = decision.rejected[0]?.reason;
+      return { success: false, error: rejected ? `${option.label}: ${rejected}` : (res.error || `Frame generation failed: ${decision.summary}`) };
     }
 
     const imgPath = res.status === 'done' && res.files && res.files.length > 0 ? res.files[0]! : '';
 
     // Update status.json
     const statusFile = path.join(shotDir, 'status.json');
+    const previousAttempts = Number(readProjectMeta(statusFile).attempts);
     const statusData: any = {
       shotId,
       status: ShotStatus.IMAGE_GENERATED,
-      attempts: 1,
+      attempts: Number.isFinite(previousAttempts) && previousAttempts > 0 ? previousAttempts + 1 : 1,
       updatedAt: new Date().toISOString(),
+      frameProvider: option.id,
       provider: res.provider || decision.chosen?.providerId || 'free-router',
       // The exact prompt this frame was generated from — lets assembleScene
       // flag the frame as stale if the shot's prompt changes afterward.
@@ -749,7 +788,12 @@ export const mediaBreakdownScriptDef: ToolDefinition = {
       },
       autoGenerateFrames: {
         type: 'boolean',
-        description: 'Whether to immediately trigger AI frame generation for all directed shots (default: false).',
+        description: 'Whether to immediately make frame images for all directed shots (default: false). Needs frameProvider.',
+      },
+      frameProvider: {
+        type: 'string',
+        enum: ['online', 'this-pc', 'imagen'],
+        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI), or "imagen" (Google, paid per image; refused until the owner confirms paid use in the Storyboard). Omit to let the owner choose in the Storyboard.',
       },
     },
     required: ['script'],
@@ -770,6 +814,7 @@ export const mediaBreakdownScriptHandler: ToolHandler = async (args, _context) =
     title: args.title as string,
     projectId: args.projectId as string,
     autoGenerateFrames: args.autoGenerateFrames === true,
+    frameProvider: typeof args.frameProvider === 'string' ? args.frameProvider : undefined,
   });
 
   if (!res.ok) {
@@ -790,7 +835,10 @@ export const mediaBreakdownScriptHandler: ToolHandler = async (args, _context) =
       projectDir: res.projectDir,
       // Preserve the director's complete shot contract for the legacy Studio IPC facade.
       shots: res.shots,
-      message: `Directed script into storyboard "${res.title}" (${res.genre}) with ${res.shots?.length || 0} shots! Total duration: ${res.totalDurationSec}s.`,
+      ...(res.framesGenerated !== undefined ? { framesGenerated: res.framesGenerated } : {}),
+      ...(res.framesSkipped ? { framesSkipped: res.framesSkipped } : {}),
+      message: `Directed script into storyboard "${res.title}" (${res.genre}) with ${res.shots?.length || 0} shots! Total duration: ${res.totalDurationSec}s.` +
+        (res.framesSkipped ? ` Frames were not made: ${res.framesSkipped}` : res.framesGenerated ? ` Made ${res.framesGenerated} frame(s).` : ''),
       handoff: {
         mode: 'media',
         payload: {

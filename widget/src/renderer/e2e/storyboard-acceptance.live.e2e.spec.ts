@@ -198,13 +198,24 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
     await expect(board().getByRole('status')).toHaveText('Storyboard saved successfully.');
     evidence.projectDir = projectDir;
     await page.screenshot({ path: out('a1-board-created.png'), fullPage: true });
-    // Generation on a PC with no local image server and Online off.
-    await page.locator('.ms-shot-card').first().getByRole('button', { name: /Generate Frame/ }).click();
-    const noProvider = board().getByRole('alert');
-    await expect(noProvider).toBeVisible({ timeout: 60_000 });
-    evidence.ordinaryPcGenerateError = await noProvider.innerText();
-    note('findings', `Ordinary PC, Online off: "Generate Frame ($0.00)" fails with: ${evidence.ordinaryPcGenerateError}`);
-    await page.screenshot({ path: out('a2-generate-no-provider.png'), fullPage: true });
+    // An ordinary PC (Online off, no local image server): the Storyboard shows a
+    // selection/setup state up front instead of failing after a click.
+    const picker = () => page.getByRole('combobox', { name: 'How to make frame images' });
+    const frameNote = () => page.getByRole('note', { name: 'Frame image status' });
+    await expect(picker()).toHaveValue('');
+    await expect(frameNote()).toContainText('Nothing can make frame images yet. Turn on Online in Settings', { timeout: 15_000 });
+    await expect(page.getByText('Set up this PC (advanced)')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Generate Frames/ })).toBeDisabled();
+    for (const button of await page.getByRole('button', { name: /Generate Frame$/ }).all()) await expect(button).toBeDisabled();
+    await expect(board()).not.toContainText('$0.00');
+    // Choosing Imagen without Online or a key explains what is missing and makes no call.
+    await picker().selectOption('imagen');
+    await expect(frameNote()).toContainText('Online is off. Turn on Online in Settings to use this.');
+    await expect(page.getByRole('button', { name: /Generate Frames/ })).toBeDisabled();
+    evidence.ordinaryPcState = { note: await frameNote().innerText(), generateDisabled: true };
+    await page.screenshot({ path: out('a2-ordinary-pc-frame-choice.png'), fullPage: true });
+    await picker().selectOption({ index: 0 }).catch(() => {}); // placeholder is disabled; keep imagen saved
+    await page.getByRole('group', { name: 'Frame images' }).screenshot({ path: out('a3-frame-picker-ordinary-pc.png') });
     expect(await attempts()).toEqual([]);
     await app.close();
 
@@ -223,6 +234,14 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
     }
     await expect(captions()).toBeChecked({ checked: evidence.captionsDefaultChecked });
     evidence.persistedAfterRestart = true;
+
+    // The saved choice survived the restart; switch to this PC's image server.
+    const picker2 = page.getByRole('combobox', { name: 'How to make frame images' });
+    await expect(picker2).toHaveValue('imagen');
+    await picker2.selectOption('this-pc');
+    await expect(page.getByRole('note', { name: 'Frame image status' })).toContainText('No charge. Runs on this computer; nothing is sent online.');
+    expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).frameProvider).toBe('this-pc');
+    await page.getByRole('group', { name: 'Frame images' }).screenshot({ path: out('b0-frame-picker-this-pc.png') });
 
     // Generate every missing frame through the visible bulk action.
     const messages: string[] = [];
@@ -253,7 +272,7 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
     const uiProviderMessages = messages.filter(m => /Generated keyframe/.test(m));
     evidence.uiProviderLabel = uiProviderMessages;
     if (!uiProviderMessages.every(m => m.includes('comfyui'))) note('findings', `UI provider label did not match the provider used: ${uiProviderMessages.join(' | ')}`);
-    note('ux', 'Provider appears only as a transient status line ("Generated keyframe for shot_00N (comfyui)") for ~3.5s; cards never show which provider made a frame, and buttons always say $0.00.');
+    note('ux', 'The chosen provider is shown in the Frame images picker; each result is a transient status line ("Generated keyframe for shot_00N (comfyui)") and cards do not show which provider made a frame.');
     await page.screenshot({ path: out('b1-frames-generated.png'), fullPage: true });
 
     // Retry path 1: edit the prompt, save, reload, regenerate (provider returns JPEG).
@@ -323,7 +342,7 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
     await page.getByTitle('Reload storyboards from disk').click();
     await expect(page.locator('.ms-shot-card')).toHaveCount(5);
     await page.screenshot({ path: out('b2-after-regenerate.png'), fullPage: true });
-    note('findings', `status.json attempts after 4 generations of shot_002: ${JSON.parse(fs.readFileSync(path.join(sceneDir, 'shot_002', 'status.json'), 'utf8')).attempts} (never increments).`);
+    expect(JSON.parse(fs.readFileSync(path.join(sceneDir, 'shot_002', 'status.json'), 'utf8'))).toMatchObject({ attempts: 4, frameProvider: 'this-pc' });
 
     // ── Animatic ─────────────────────────────────────────────────────────────
     await page.getByRole('button', { name: /Play Animatic/ }).click();
@@ -455,6 +474,7 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
     await expect.poll(() => exported.evaluate((v: HTMLVideoElement) => v.currentTime)).toBeGreaterThan(0.3);
     await exported.evaluate((v: HTMLVideoElement) => { v.currentTime = v.duration - 0.4; });
     await expect.poll(() => exported.evaluate((v: HTMLVideoElement) => ({ ended: v.ended, loop: v.loop })), { timeout: 15_000 }).toEqual({ ended: true, loop: false });
+    await expect(page.getByRole('combobox', { name: 'How to make frame images' })).toHaveValue('this-pc');
     const shotsAfterRestart = await cardIds();
     expect(shotsAfterRestart).toEqual(['shot_001', 'shot_002', 'shot_003', 'shot_004', 'shot_005']);
     evidence.restart = { sameMovie: true, playedToEnd: true, loop: false };

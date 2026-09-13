@@ -7,6 +7,17 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
 import { createStudioOutputSpec } from '../../shared/media-output';
+import { STORYBOARD_FRAME_PROVIDERS, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
+
+/** Real catalog entries with a status per option; default: only This PC is ready. */
+function frameStatuses(state: Record<string, Partial<StoryboardFrameProviderStatus>> = {}): StoryboardFrameProviderStatus[] {
+  const defaults: Record<string, Partial<StoryboardFrameProviderStatus>> = {
+    online: { ready: false, needs: 'online', reason: 'Online is off. Turn on Online in Settings to use this.' },
+    'this-pc': { ready: true, needs: null, reason: null },
+    imagen: { ready: false, needs: 'gemini-key', reason: 'Add a Gemini API key in Settings. Google bills that account per image.' },
+  };
+  return STORYBOARD_FRAME_PROVIDERS.map(o => ({ ...o, ready: false, needs: null, reason: null, ...defaults[o.id], ...state[o.id] }) as StoryboardFrameProviderStatus);
+}
 
 function setup(overrides: Record<string, any> = {}) {
   const mediaList = jest.fn().mockResolvedValue([]);
@@ -30,6 +41,7 @@ function setup(overrides: Record<string, any> = {}) {
         projectId: 'pyramid-builders',
         name: 'Pyramid Builders',
         notes: 'Ancient historical documentary',
+        frameProvider: 'this-pc',
       },
       scenes: [
         {
@@ -118,7 +130,14 @@ function setup(overrides: Record<string, any> = {}) {
     totalDurationSec: 20,
   });
 
+  const mediaStoryboardFrameProviders = jest.fn().mockResolvedValue({ ok: true, providers: frameStatuses() });
+  const mediaStoryboardSetFrameProvider = jest.fn().mockImplementation(async (args: { frameProvider: string }) => ({ ok: true, frameProvider: args.frameProvider }));
+  const mediaStoryboardConfirmPaidFrames = jest.fn().mockResolvedValue({ ok: true });
+
   (window as any).electron = {
+    mediaStoryboardFrameProviders,
+    mediaStoryboardSetFrameProvider,
+    mediaStoryboardConfirmPaidFrames,
     mediaList,
     mediaStoryboardList,
     mediaStoryboardGet,
@@ -131,6 +150,9 @@ function setup(overrides: Record<string, any> = {}) {
   };
 
   return {
+    mediaStoryboardFrameProviders,
+    mediaStoryboardSetFrameProvider,
+    mediaStoryboardConfirmPaidFrames,
     mediaList,
     mediaStoryboardList,
     mediaStoryboardGet,
@@ -719,4 +741,85 @@ describe('Media Studio Visual Storyboard Deck', () => {
   });
 });
 
+describe('Storyboard frame provider picker', () => {
+  async function openBoard(mocks: ReturnType<typeof setup>, project: Record<string, unknown>) {
+    const board = (await mocks.mediaStoryboardGet()).result;
+    mocks.mediaStoryboardGet.mockResolvedValue({ ok: true, result: { ...board, project: { ...board.project, ...project } } });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'How to make frame images' })).toBeInTheDocument());
+  }
 
+  test('offers only the three honest options and no generation until one is chosen', async () => {
+    const mocks = setup();
+    await openBoard(mocks, { frameProvider: undefined });
+    const picker = screen.getByRole('combobox', { name: 'How to make frame images' }) as HTMLSelectElement;
+    expect([...picker.options].map(o => o.textContent)).toEqual([
+      'Choose how to make frame images…',
+      'Online · free third-party service · may add a watermark',
+      'This PC · ComfyUI · private, no watermark',
+      'Imagen · Google cloud · paid per image',
+    ]);
+    expect(picker.value).toBe('');
+    expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent('Choose one before generating. Nothing is sent anywhere until you do.');
+    for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
+    expect(screen.getByRole('region', { name: 'Visual Storyboard Deck' })).not.toHaveTextContent('$0.00');
+    expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
+  });
+
+  test('when nothing can make frames it shows the setup state, with local setup behind an advanced disclosure', async () => {
+    const mocks = setup();
+    mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ 'this-pc': { ready: false, needs: 'comfyui', reason: 'ComfyUI is not running on this PC.' } }) });
+    await openBoard(mocks, { frameProvider: undefined });
+    await waitFor(() => expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent(/Nothing can make frame images yet\. Turn on Online/));
+    expect(screen.getByText('Set up this PC (advanced)')).toBeInTheDocument();
+  });
+
+  test('choosing a provider saves it for the project and enables generation', async () => {
+    const mocks = setup();
+    await openBoard(mocks, { frameProvider: undefined });
+    await act(async () => { fireEvent.change(screen.getByRole('combobox', { name: 'How to make frame images' }), { target: { value: 'this-pc' } }); });
+    expect(mocks.mediaStoryboardSetFrameProvider).toHaveBeenCalledWith({ projectId: 'pyramid-builders', frameProvider: 'this-pc' });
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Generate Frame/ })[0]).toBeEnabled());
+    expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent('No charge. Runs on this computer; nothing is sent online.');
+  });
+
+  test('the online option states its watermark before any frame is generated', async () => {
+    const mocks = setup();
+    mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ online: { ready: true, needs: null, reason: null } }) });
+    await openBoard(mocks, { frameProvider: 'online' });
+    await waitFor(() => expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent(/may add a small watermark to images, and it would appear in your movie/));
+    expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
+  });
+
+  test('choosing Imagen asks for paid-use confirmation naming the cost, and only then records it', async () => {
+    const mocks = setup();
+    mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ imagen: { ready: false, needs: 'paid-confirmation', reason: 'Confirm paid use before the first image.' } }) });
+    await openBoard(mocks, { frameProvider: undefined });
+    await act(async () => { fireEvent.change(screen.getByRole('combobox', { name: 'How to make frame images' }), { target: { value: 'imagen' } }); });
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('about US$0.03 per image');
+    expect(dialog).toHaveTextContent('every regenerate, is a separate paid image');
+    expect(mocks.mediaStoryboardConfirmPaidFrames).not.toHaveBeenCalled();
+    for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
+    mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ imagen: { ready: true, needs: null, reason: null } }) });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use it and pay per image' })); });
+    expect(mocks.mediaStoryboardConfirmPaidFrames).toHaveBeenCalledWith('imagen');
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Generate Frame/ })[0]).toBeEnabled());
+  });
+
+  test('the Auto-Director will not auto-generate frames until a provider is chosen, then passes that choice', async () => {
+    const mocks = setup();
+    await openBoard(mocks, {});
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Auto-Director/ })); });
+    const scriptBox = screen.getAllByRole('textbox').find(el => el.tagName === 'TEXTAREA')!;
+    fireEvent.change(scriptBox, { target: { value: 'A keeper lights the lamp.' } });
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: /Auto-Generate Frames/ })); });
+    const direct = screen.getByRole('button', { name: /Direct & Build Storyboard/ });
+    expect(direct).toBeDisabled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'How the Auto-Director makes frame images' }), { target: { value: 'this-pc' } });
+    expect(direct).toBeEnabled();
+    await act(async () => { fireEvent.click(direct); });
+    expect(mocks.mediaStoryboardBreakdown).toHaveBeenCalledWith(expect.objectContaining({ autoGenerateFrames: true, frameProvider: 'this-pc' }));
+  });
+});

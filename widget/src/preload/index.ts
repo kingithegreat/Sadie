@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
 import { debug as logDebug } from '../shared/logger';
 import type { StudioOutputSpec } from '../shared/media-output';
+import type { StoryboardFrameProviderId } from '../shared/storyboard-frame-providers';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -824,13 +825,19 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:list'),
   mediaStoryboardGet: async (projectId: string) =>
     ipcRenderer.invoke('homebot:media:storyboard:get', projectId),
+  mediaStoryboardFrameProviders: async () =>
+    ipcRenderer.invoke('homebot:media:storyboard:frame-providers'),
+  mediaStoryboardSetFrameProvider: async (args: { projectId: string; frameProvider: StoryboardFrameProviderId }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:set-frame-provider', args),
+  mediaStoryboardConfirmPaidFrames: async (frameProvider: StoryboardFrameProviderId) =>
+    ipcRenderer.invoke('homebot:media:storyboard:confirm-paid-frames', frameProvider),
   mediaStoryboardGenerateFrame: async (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
   mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
   mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
-  mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) =>
+  mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: StoryboardFrameProviderId }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),
   mediaSeriesSettingsList: async (seriesId: string) =>
     ipcRenderer.invoke('homebot:media:series-settings:list', seriesId),

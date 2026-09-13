@@ -67,7 +67,7 @@ describe('imagen3-adapter', () => {
       const cap = await probeImagen3(fakeRequest);
       expect(cap.canGenerate).toBe(true);
       expect(cap.availability).toBe('ready');
-      expect(cap.costMicroUsd).toBe(0); // free tier
+      expect(cap.costMicroUsd).toBe(30_000); // billed per image, never free
       expect(cap.maxWidth).toBe(2048);
       expect(cap.throughputPerMin).toBe(15);
     });
@@ -166,7 +166,7 @@ describe('imagen3-adapter', () => {
         const result = await generateImagen3Shot({ ...fakeRequest, shotDir });
         expect(result.status).toBe('done');
         expect(result.provider).toBe('imagen-3');
-        expect((result as { costMicroUsd: number }).costMicroUsd).toBe(0);
+        expect((result as { costMicroUsd: number }).costMicroUsd).toBe(30_000);
         if (result.status === 'done') expect(fs.readFileSync(result.files[0])).toEqual(movieImageFixture);
       } finally { fs.rmSync(shotDir, { recursive: true, force: true }); }
     });
