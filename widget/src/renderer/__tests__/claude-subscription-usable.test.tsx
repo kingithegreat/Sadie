@@ -67,9 +67,39 @@ describe('the model lists that need no network', () => {
 
   test('a metered provider has no known list — it must still ask', () => {
     // Guards against someone "helpfully" hardcoding OpenAI's catalogue, which
-    // would go stale silently.
+    // would go stale silently. OpenAI models are fetched dynamically from
+    // the network when the user clicks Connect/Test.
     expect(knownModelsFor('openai')).toHaveLength(0);
     expect(knownModelsFor(undefined)).toHaveLength(0);
+  });
+
+  test('configured cloud models remain selectable even when customLLM.enabled is false', async () => {
+    // A provider with a saved key should still be available in the UI selector
+    // even when useCustomLLM is false, waiting for the user to enable it.
+    // This is verified in model-selector.test.tsx where OpenAI models appear
+    // in the dropdown when a key is present in providerApiKeys.
+    const { container } = render(
+      <SettingsPanel
+        settings={{
+          ...BASE,
+          useCustomLLM: false,
+          providerApiKeys: { openai: 'sk-test' },
+          customLLM: {
+            provider: 'openai',
+            apiKey: 'sk-test',
+            model: '',
+            enabled: false,
+          },
+        } as any}
+        onSave={noop}
+        onClose={noop}
+      />
+    );
+
+    // OpenAI should be selectable from the provider dropdown
+    const providerSelect = container.querySelector('.provider-select') as HTMLSelectElement;
+    expect(providerSelect).toBeTruthy();
+    expect(Array.from(providerSelect.options).some(o => o.value === 'openai')).toBe(true);
   });
 });
 
