@@ -148,6 +148,39 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('visible portrait retry renders only portrait and the successful landscape remains selectable for review', async () => {
+    const mocks = setup();
+    const board: any = (await mocks.mediaStoryboardGet()).result;
+    board.project.outputSpec = { ...createStudioOutputSpec(), variants: [createStudioOutputSpec().variants[0], createStudioOutputSpec('9:16').variants[0]] };
+    const landscape = { exportId: 'landscape', filename: 'landscape.mp4', moviePath: 'C:/proof/landscape.mp4',
+      createdAt: '2026-09-13T00:00:00Z', sourceSavedAt: null, sourceRevision: 'a'.repeat(64), durationSeconds: 14,
+      burnSubtitles: true, outputSpec: createStudioOutputSpec() };
+    const portrait = { ...landscape, exportId: 'portrait', filename: 'portrait.mp4', moviePath: 'C:/proof/portrait.mp4',
+      sourceRevision: 'b'.repeat(64), outputSpec: createStudioOutputSpec('9:16') };
+    board.renderedMoviePath = landscape.moviePath;
+    board.exportState = { sourceRevision: 'batch', sourceSavedAt: null, outputs: [landscape],
+      variantRevisions: { landscape: landscape.sourceRevision, portrait: portrait.sourceRevision },
+      variantAttempts: { landscape: { id: 'landscape', variantId: 'landscape', status: 'succeeded', sourceRevision: landscape.sourceRevision, startedAt: landscape.createdAt },
+        portrait: { id: 'failed-portrait', variantId: 'portrait', status: 'failed', sourceRevision: portrait.sourceRevision, startedAt: landscape.createdAt, error: 'Portrait stopped' } } };
+    mocks.mediaList.mockResolvedValue([{ id: 'sbexport_landscape', title: 'Landscape review', state: 'awaiting_approval', format: 'short',
+      renderPath: landscape.moviePath, durationSeconds: 14, createdAt: landscape.createdAt, updatedAt: landscape.createdAt, history: [] }] as never[]);
+    mocks.mediaStoryboardRender.mockImplementationOnce(async () => {
+      board.exportState.outputs = [portrait, landscape];
+      board.exportState.variantAttempts.portrait.status = 'succeeded';
+      return { ok: true, moviePath: portrait.moviePath, jobId: 'sbexport_portrait', variants: [{ ...portrait, ok: true, variantId: 'portrait' }] } as any;
+    });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    const retry = await screen.findByRole('button', { name: 'Retry portrait' });
+    await act(async () => { fireEvent.click(retry); });
+    expect(mocks.mediaStoryboardRender).toHaveBeenCalledTimes(1);
+    expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'pyramid-builders', variantId: 'portrait', outputSpec: board.project.outputSpec }));
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/proof/portrait.mp4');
+    fireEvent.click(screen.getByRole('button', { name: 'View landscape' }));
+    expect(screen.getByLabelText('Exported storyboard video')).toHaveAttribute('src', 'file:///C:/proof/landscape.mp4');
+    expect(screen.getByRole('button', { name: /Review & Publish/ })).toBeEnabled();
+    expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
+  });
+
   test('saved and unsaved revisions, history, Open and Reveal all reach the selected file', async () => {
     const mocks = setup();
     const board = (await mocks.mediaStoryboardGet()).result;
@@ -257,6 +290,40 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(mediaRun).toHaveBeenCalledWith('draft', 'output', { outputSpec: expect.objectContaining({ durationIntent: 'short', variants: [expect.objectContaining({ width: 1920, height: 1080 })] }) });
     expect(screen.getByLabelText('Reviewed master picture shape')).toBeDisabled();
     expect(mediaRun).toHaveBeenCalledTimes(1);
+  });
+
+  test('explicit both selection keeps new-video length independent and reaches job creation', async () => {
+    const mediaCreate = jest.fn(async () => ({ ok: true }));
+    setup({ mediaCreate });
+    render(<MediaStudioPanel />);
+    fireEvent.change(await screen.findByLabelText('New video output selection'), { target: { value: 'both' } });
+    fireEvent.change(screen.getByLabelText('Video format'), { target: { value: 'long' } });
+    expect(screen.getByLabelText('New video output selection')).toHaveValue('both');
+    expect(mediaCreate).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('New video title'), { target: { value: 'Two explicit formats' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add video' }));
+    await waitFor(() => expect(mediaCreate).toHaveBeenCalledWith(expect.objectContaining({ format: 'long',
+      outputSpec: expect.objectContaining({ durationIntent: 'long', variants: [
+        expect.objectContaining({ aspectRatio: '16:9' }), expect.objectContaining({ aspectRatio: '9:16' }),
+      ] }) })));
+  });
+
+  test('storyboard both choice saves independent portrait framing and reaches the existing render action', async () => {
+    const api = setup();
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    fireEvent.change(await screen.findByLabelText('Storyboard output selection'), { target: { value: 'both' } });
+    fireEvent.change(screen.getByLabelText('Storyboard portrait image framing'), { target: { value: 'crop' } });
+    fireEvent.change(screen.getByLabelText('Storyboard portrait crop horizontal position'), { target: { value: '0.25' } });
+    expect(api.mediaStoryboardRender).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Render both formats/ }));
+    await waitFor(() => expect(api.mediaStoryboardRender).toHaveBeenCalledTimes(1));
+    const spec = api.mediaStoryboardSave.mock.calls[0][0].outputSpec;
+    expect(spec.variants).toEqual([
+      expect.objectContaining({ aspectRatio: '16:9', framing: expect.objectContaining({ x: 0.5 }) }),
+      expect.objectContaining({ aspectRatio: '9:16', framing: expect.objectContaining({ mode: 'crop', x: 0.25 }) }),
+    ]);
+    expect(api.mediaStoryboardRender.mock.calls[0][0].outputSpec).toEqual(spec);
+    expect(screen.getByLabelText('Duration for shot_001')).toHaveValue(5);
   });
 
   test('does not offer a caption switch that cannot change an external export', async () => {
@@ -376,7 +443,8 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(screen.getByText(/🎬 Pyramid Builders/)).toBeInTheDocument();
     expect(screen.getByText(/3 Shot\(s\)/)).toBeInTheDocument();
     expect(screen.getByText(/14s Total/)).toBeInTheDocument();
-    expect(screen.getByText(/✓ \$0\.00 Free Policy/)).toBeInTheDocument();
+    expect(screen.getByText('Captions on')).toBeInTheDocument();
+    expect(screen.queryByText(/✓ \$0\.00 Free Policy/)).not.toBeInTheDocument();
   });
 
   test('does not let a storyboard send prompts to retired Imagen 3', async () => {

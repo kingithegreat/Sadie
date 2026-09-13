@@ -4,10 +4,11 @@ import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { getSettings } from '../config-manager';
 import { assembleStoryboardScenes, type AssembledScene } from './storyboard-assembly';
-import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioExportState,
+import { resolveBurnSubtitles, resolveStudioOutputSpec, readStudioExportAttempt, type StudioExportAttempt, type StudioExportState,
   type StudioRenderedOutput } from '../../shared/media-output';
 
 const activeAttempts = new Map<string, string>();
+const activeDirectories = new Map<string, string>();
 const key = (dir: string) => fs.realpathSync(dir).toLowerCase();
 
 /** Stream actual bytes, not timestamps (replaced files can retain their mtime). */
@@ -69,14 +70,23 @@ export function beginStoryboardExport(projectDir: string, sceneId?: string): Stu
     startedAt: new Date().toISOString(), ...(sceneId ? { sceneId } : {}) };
   updateStoryboardExportMeta(projectDir, { latestExportAttempt: attempt });
   activeAttempts.set(identity, attempt.id);
+  activeDirectories.set(path.resolve(projectDir).toLowerCase(), identity);
   return attempt;
 }
 
 export function recordStoryboardAttempt(projectDir: string, attempt: StudioExportAttempt): void {
-  updateStoryboardExportMeta(projectDir, { latestExportAttempt: attempt });
+  const file = path.join(projectDir, 'project.json');
+  const current = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  updateStoryboardExportMeta(projectDir, { latestExportAttempt: attempt,
+    ...(attempt.variantId ? { variantExportAttempts: { ...current.variantExportAttempts, [attempt.variantId]: attempt } } : {}) });
 }
 
-export function endStoryboardExport(projectDir: string): void { activeAttempts.delete(key(projectDir)); }
+export function endStoryboardExport(projectDir: string): void {
+  const directory = path.resolve(projectDir).toLowerCase();
+  const identity = activeDirectories.get(directory);
+  if (identity) activeAttempts.delete(identity);
+  activeDirectories.delete(directory);
+}
 
 /** A metadata path is not authority to open a different directory or a symlink. */
 export function resolveStoryboardExportPath(projectDir: string, filename: unknown): string | null {
@@ -94,19 +104,11 @@ export async function readStoryboardExportState(projectDir: string, meta: Record
   const savedAttempt = meta.latestExportAttempt;
   let latestAttempt: StudioExportAttempt | undefined;
   if (savedAttempt !== undefined) {
-    if (savedAttempt && typeof savedAttempt.id === 'string' &&
-        ['preparing', 'rendering', 'validating', 'succeeded', 'failed', 'interrupted'].includes(savedAttempt.status) &&
-        typeof savedAttempt.startedAt === 'string' && Number.isFinite(Date.parse(savedAttempt.startedAt))) {
-      latestAttempt = { id: savedAttempt.id, status: savedAttempt.status, startedAt: savedAttempt.startedAt,
-        sourceRevision: typeof savedAttempt.sourceRevision === 'string' && /^[a-f0-9]{64}$/.test(savedAttempt.sourceRevision) ? savedAttempt.sourceRevision : null,
-        ...(typeof savedAttempt.finishedAt === 'string' ? { finishedAt: savedAttempt.finishedAt } : {}),
-        ...(typeof savedAttempt.error === 'string' ? { error: savedAttempt.error.slice(0, 8000) } : {}),
-        ...(typeof savedAttempt.exportId === 'string' ? { exportId: savedAttempt.exportId } : {}),
-        ...(typeof savedAttempt.sceneId === 'string' ? { sceneId: savedAttempt.sceneId } : {}) };
-    } else warnings.push('The latest attempt record is unreadable. Its status is unknown.');
+    latestAttempt = readStudioExportAttempt(savedAttempt);
+    if (!latestAttempt) warnings.push('The latest attempt record is unreadable. Its status is unknown.');
   }
   if (latestAttempt && ['preparing', 'rendering', 'validating'].includes(latestAttempt.status) &&
-      activeAttempts.get(key(projectDir)) !== latestAttempt.id) {
+      activeAttempts.get(key(projectDir)) !== (latestAttempt.batchId ?? latestAttempt.id)) {
     latestAttempt = { ...latestAttempt, status: 'interrupted', finishedAt: new Date().toISOString(),
       error: 'The app stopped before this export finished. The previous successful export has been kept. Render again when ready.' };
     recordStoryboardAttempt(projectDir, latestAttempt);
@@ -144,15 +146,41 @@ export async function readStoryboardExportState(projectDir: string, meta: Record
     return moviePath ? [{ filename, moviePath }] : [];
   }) : [];
   const sceneRevisions: Record<string, string> = Object.create(null);
+  const variantRevisions: StudioExportState['variantRevisions'] = {};
+  const sceneVariantRevisions: NonNullable<StudioExportState['sceneVariantRevisions']> = Object.create(null);
   try {
     const savedScenes = scenes ?? assembleStoryboardScenes(projectDir);
     sourceRevision = await storyboardSourceRevision(savedScenes, meta);
+    if (meta.outputSpec !== undefined) {
+      const spec = resolveStudioOutputSpec(meta.outputSpec);
+      for (const variant of spec.variants) {
+        variantRevisions[variant.id] = await storyboardSourceRevision(savedScenes, { ...meta, outputSpec: { ...spec, variants: [variant] } });
+      }
+    }
     for (const sceneId of new Set(outputs.map(output => output.sceneId).filter((id): id is string => !!id))) {
       if (savedScenes.some(scene => scene.sceneId === sceneId)) sceneRevisions[sceneId] = await storyboardSourceRevision(savedScenes, meta, { sceneId });
+      if (meta.outputSpec !== undefined && savedScenes.some(scene => scene.sceneId === sceneId)) {
+        const spec = resolveStudioOutputSpec(meta.outputSpec);
+        sceneVariantRevisions[sceneId] = {};
+        for (const variant of spec.variants) sceneVariantRevisions[sceneId][variant.id] =
+          await storyboardSourceRevision(savedScenes, { ...meta, outputSpec: { ...spec, variants: [variant] } }, { sceneId });
+      }
     }
   }
   catch { warnings.push('The current source revision could not be verified.'); }
-  return { sourceRevision, sceneRevisions, sourceSavedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : null, latestAttempt,
+  const variantAttempts: NonNullable<StudioExportState['variantAttempts']> = {};
+  for (const id of ['landscape', 'portrait', 'square'] as const) {
+    const saved = readStudioExportAttempt(meta.variantExportAttempts?.[id]);
+    if (!saved || saved.variantId !== id) continue;
+    variantAttempts[id] = saved;
+    if (['preparing', 'rendering', 'validating'].includes(saved.status) && !activeAttempts.has(key(projectDir))) {
+      variantAttempts[id] = { ...saved, status: 'interrupted', finishedAt: new Date().toISOString(),
+        error: 'The app stopped before this format finished. Other successful formats are kept.' };
+    }
+  }
+  if (JSON.stringify(variantAttempts) !== JSON.stringify(meta.variantExportAttempts ?? {})) updateStoryboardExportMeta(projectDir, { variantExportAttempts: variantAttempts });
+  return { sourceRevision, sceneRevisions, variantRevisions, sceneVariantRevisions, variantAttempts,
+    sourceSavedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : null, latestAttempt,
     outputs: outputs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), untrackedOutputs,
     ...(warnings.length ? { warning: [...new Set(warnings)].join(' ') } : {}) };
 }

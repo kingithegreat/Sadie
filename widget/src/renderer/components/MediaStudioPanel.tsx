@@ -20,7 +20,7 @@ import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
-import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec } from '../../shared/media-output';
+import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { StudioExportStatus } from './StudioExportStatus';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
@@ -103,6 +103,8 @@ interface MediaJob {
   script?: string;
   /** Set once narration has been recorded; absolute path to the MP3. */
   narrationPath?: string;
+  /** Saved render inputs can avoid image generation; main validates their files. */
+  renderInputs?: { imagePath?: string | null; visuals?: string };
   /** Which engine actually narrated ('edge' | 'kokoro') — a silent fallback
    *  must be visible here, not discoverable by ear after publishing. */
   narratedWith?: string;
@@ -117,6 +119,8 @@ interface MediaJob {
   renderPath?: string;
   rejectedRenderPath?: string;
   latestExportAttempt?: StudioExportState['latestAttempt'];
+  reviewSource?: { type: 'job' | 'storyboard'; id: string };
+  perExportReview?: boolean;
   /**
    * The generated slides, in running order. `null` marks a scene whose image
    * failed and which reuses its neighbour in the video.
@@ -658,6 +662,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   /** Stages that call a model, the TTS service or ffmpeg — the slow ones. */
   const stageAction = (j: MediaJob): { label: string; action: 'script' | 'narrate' | 'render' } | null => {
+    if (j.reviewSource) return null;
     if (j.state === 'idea' || j.state === 'researching' || j.state === 'needs_revision') {
       return { label: 'Write script', action: 'script' };
     }
@@ -1481,7 +1486,7 @@ ${shots.map((s, idx) => `
     setTimeout(() => setDone(null), 4000);
   };
 
-  const handleRenderMovie = async () => {
+  const handleRenderMovie = async (variantId?: StudioOutputVariant['id'], sceneId?: string) => {
     if (!selectedStoryboardId || !activeStoryboard || storyboardBusy) return;
     const loadVersion = storyboardLoadVersion.current;
     const previousExport = renderedMoviePath;
@@ -1500,21 +1505,24 @@ ${shots.map((s, idx) => `
       const res = await api()?.mediaStoryboardRender?.({
         projectId: selectedStoryboardId,
         motion: true,
+        ...(variantId ? { variantId } : {}),
+        ...(sceneId ? { sceneId } : {}),
         burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
         ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
       });
       if (loadVersion !== storyboardLoadVersion.current) return;
       await refreshStoryboardExport(selectedStoryboardId, loadVersion);
       if (loadVersion !== storyboardLoadVersion.current) return;
-      if (res?.ok && res.moviePath) {
+      if (res?.moviePath && (res.ok || res.variants?.some((item: { ok: boolean }) => item.ok))) {
         setRenderedMoviePath(res.moviePath);
         setRenderedMovieJobId(res.jobId || null);
         await refresh();
         if (loadVersion !== storyboardLoadVersion.current) return;
-        setStoryboardError(res.warning || null);
+        setStoryboardError(res.error || res.warning || null);
         const output = res.outputSpec?.variants[0];
         const size = output ? `${output.width} × ${output.height}` : '1080p';
-        setStoryboardMessage(`🎬 Successfully rendered ${size} movie (${res.durationSec}s, ${res.totalShots} shots)!${res.jobId ? ' Added to Director review queue.' : ''}`);
+        setStoryboardMessage(res.variants ? `${res.variants.filter((item: { ok: boolean }) => item.ok).length} of ${res.variants.length} selected formats exported. Each saved movie has a separate review; failed formats can be retried below.`
+          : `🎬 Successfully rendered ${size} movie (${res.durationSec}s, ${res.totalShots} shots)!${res.jobId ? ' Added to Director review queue.' : ''}`);
       } else {
         setRenderedMoviePath(previousExport);
         setStoryboardMessage(null);
@@ -1727,12 +1735,20 @@ ${shots.map((s, idx) => `
       sourceRevision: null, sourceSavedAt: job.updatedAt, latestAttempt: job.latestExportAttempt, outputs: [] }}
       moviePath={jobMoviePath(job) ?? null} unsaved={false} busy={busy === job.id}
       rendering={busy === job.id || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
+      onRetry={(job.perExportReview || job.outputSpec?.variants?.length === 2) && job.state === 'media_production' ? variantId => {
+        void run(job.id, () => api()?.mediaRun?.(job.id, 'render', { variantId }), `Rendering ${variantId}`);
+      } : undefined}
       onSelect={moviePath => selectJobMovie(job, moviePath)} />
-    {isHistoricalJob(job) && <p role="status">Viewing an older export. Approval and upload are disabled. Select the current movie to review it.</p>}
+    {(job.perExportReview || job.outputSpec?.variants?.length === 2) && <button className="ms-btn" disabled={!jobs.some(item => item.reviewSource?.type === 'job' && item.reviewSource.id === job.id && item.renderPath === jobMoviePath(job))}
+      onClick={() => {
+        const review = jobs.find(item => item.reviewSource?.type === 'job' && item.reviewSource.id === job.id && item.renderPath === jobMoviePath(job));
+        if (review) { setSelectedJobId(review.id); setActiveWorkspace('director'); }
+      }}>Review selected format</button>}
+    {isHistoricalJob(job) && <p role="status">Viewing an older export. Direct approval and upload are disabled.{job.perExportReview || job.outputSpec?.variants?.length === 2 ? ' Use its separate movie review.' : ' Select the current movie to review it.'}</p>}
     {job.rejectedRenderPath && <button className="ms-btn" onClick={() => revealJobMovie(job.rejectedRenderPath!)}>
       Reveal rejected attempt (not approved)
     </button>}
-    {job.narrationPath && !hasExternalMediaRenderer(job) && ['needs_revision', 'failed', 'blocked'].includes(job.state) &&
+    {job.narrationPath && !job.reviewSource && !hasExternalMediaRenderer(job) && ['needs_revision', 'failed', 'blocked'].includes(job.state) &&
       job.latestExportAttempt && <button className="ms-btn" disabled={busy !== null} onClick={() => run(job.id, async () => {
         const moved = await api()?.mediaAdvance?.(job.id, 'media_production');
         if (!moved?.ok) return moved;
@@ -1922,16 +1938,23 @@ ${shots.map((s, idx) => `
             type="checkbox"
             aria-label={`Burn captions into ${j.title}`}
             checked={j.burnSubtitles !== false}
-            disabled={busy === j.id || !canEditMediaOutput(j.state)}
+            disabled={busy === j.id || !!j.reviewSource || !canEditMediaOutput(j.state)}
             onChange={e => {
               const burnSubtitles = e.target.checked;
               void run(j.id, () => api()?.mediaRun?.(j.id, 'output', { burnSubtitles }), 'Saving output');
             }}
           />{' '}Burn captions into video
-          {!canEditMediaOutput(j.state) && ' — send back for revision to change'}
+          {j.reviewSource ? ' — settings belong to this saved movie' : !canEditMediaOutput(j.state) && ' — send back for revision to change'}
         </label>}
 
-        {!hasExternalMediaRenderer(j) && <StudioOutputSettings label={j.title} value={j.outputSpec}
+        {j.reviewSource && <button type="button" className="ms-btn" onClick={() => {
+          if (j.reviewSource!.type === 'job') {
+            if (!jobs.some(item => item.id === j.reviewSource!.id)) { setError('The source production is no longer in the list. This saved movie is kept.'); return; }
+            setSelectedJobId(j.reviewSource!.id); setActiveWorkspace('timeline');
+          } else { setActiveWorkspace('storyboard'); void loadStoryboard(j.reviewSource!.id); }
+        }}>Open source project</button>}
+
+        {!hasExternalMediaRenderer(j) && !j.reviewSource && <StudioOutputSettings label={j.title} value={j.outputSpec}
           durationIntent={j.format} legacyRatio={j.format === 'long' ? '16:9' : '9:16'}
           disabled={busy === j.id || !canEditMediaOutput(j.state)}
           saveHint={canEditMediaOutput(j.state) ? 'Changes save to this job; render to make a new video.' : 'Send back for revision to change these settings.'}
@@ -2168,12 +2191,11 @@ ${shots.map((s, idx) => `
               className="ms-btn ms-btn--primary"
               onClick={() => {
                 const a = stageAction(j)!;
-                // "Make the video" is what actually calls generateSceneImages,
-                // which goes straight to Pollinations/Stable Horde whenever
-                // nothing local is installed — nondeterministic, no offline
-                // rendering, prompts leaving the machine, with no ask. Ask
-                // once, here, rather than deciding it silently.
-                if (a.action === 'render' && sdCppStatus && !sdCppStatus.ready) {
+                // Ask only when new images may be needed. Saved single-image
+                // and plain-background exports never call generateSceneImages.
+                // Main still validates inputs and enforces Online consent.
+                const needsImages = !j.renderInputs?.imagePath && j.renderInputs?.visuals !== 'plain';
+                if (a.action === 'render' && needsImages && sdCppStatus && !sdCppStatus.ready) {
                   setSdCppPromptFor(j.id);
                   return;
                 }
@@ -2426,6 +2448,8 @@ ${shots.map((s, idx) => `
               </button>
             </>
           )
+        ) : j.reviewSource && j.state === 'needs_revision' ? (
+          <span className="ms-job-terminal">Changes requested. Open source project to edit and export a new movie. This review keeps its original file.</span>
         ) : NEXT_STAGE[j.state] ? (
           <button
             className="ms-btn"
@@ -4369,15 +4393,15 @@ ${shots.map((s, idx) => `
               type="button"
               className="ms-btn ms-btn--primary"
               disabled={storyboardBusy || !activeStoryboard?.scenes.some(scene => scene.shots.length > 0)}
-              onClick={handleRenderMovie}
+              onClick={() => { void handleRenderMovie(); }}
               title="Save and render every scene in the project with camera motion, narration, and subtitles"
             >
               {storyboardRendering ? (
                 <>
-                  <span className="ms-spinner" /> Rendering 1080p…
+                  <span className="ms-spinner" /> Rendering selected formats…
                 </>
               ) : (
-                '🎬 Render Movie ($0.00)'
+                activeStoryboard?.project.outputSpec?.variants?.length === 2 ? 'Render both formats' : '🎬 Render Movie'
               )}
             </button>
 
@@ -4621,13 +4645,14 @@ ${shots.map((s, idx) => `
                 <span className="ms-storyboard-badge">{shots.length} Shot(s)</span>
                 <span className="ms-storyboard-badge">⏱ {totalDuration}s Total</span>
                 <span className="ms-storyboard-badge">🖼 {renderedFramesCount}/{shots.length} Frames Generated</span>
-                <span className="ms-storyboard-badge ms-storyboard-badge--free">✓ $0.00 Free Policy</span>
+                <span className="ms-storyboard-badge">{activeStoryboard.project.burnSubtitles === false ? 'Captions off' : 'Captions on'}</span>
               </div>
             </div>
 
             <StudioExportStatus state={activeStoryboard.exportState} moviePath={renderedMoviePath}
               unsaved={savedStoryboardDraft !== null && savedStoryboardDraft !== storyboardDraftIdentity(activeStoryboard)}
               busy={storyboardBusy} rendering={storyboardRendering}
+              onRetry={(variantId, sceneId) => { void handleRenderMovie(variantId, sceneId); }}
               onSelect={moviePath => { setRenderedMoviePath(moviePath); setRenderedMovieJobId(null); }} />
 
             {/* Exact saved file selected above; opening is separate from approval/publication. */}
