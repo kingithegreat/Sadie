@@ -1,4 +1,4 @@
-# Studio export freshness and attempt identity — STUDIO-04
+# Storyboard export freshness and history — STUDIO-04 checkpoint 1
 
 Owner: Codex following Aden's remaining-Studio handoff. Fresh base: main
 `afc4cae` (#320). Claim:
@@ -85,3 +85,37 @@ alone. The actual A/B test now selects both complete and scene exports.
 Removed scenes remain Unknown, including IDs such as `constructor` that must
 not resolve to an inherited JavaScript property. This case has a red-to-green
 renderer regression; the dictionary and lookup both use own entries only.
+
+## Final local evidence — frozen source 7c25de3
+
+Production/test source: `7c25de3eb2d3f1c15cdfeaf53079a90843b227ee`.
+Actual main bundle SHA-256:
+`a348f208def93d6626c8064e08ac3a54157b425e1ea200d709cce2770908033b`.
+Portable metadata: [studio-export-freshness.json](../docs/evidence/studio-export-freshness.json).
+Logs, JUnit, screenshots, sidecars and 18 copied MP4s:
+`.kilo/artifacts/studio-freshness-7c25de3/`. Source originals are retained.
+
+- Full Windows widget: 4,228 passing tests / 305 suites; 19 skipped tests.
+  Uses the CI forceExit setting for existing open handles, not a zero-leak claim.
+- Root: 227 passing tests / 18 suites. Both typechecks and Electron build pass.
+- ESLint: zero errors, eight existing unrelated warnings. Docs: 217 preload,
+  166 renderer-to-main, 33 main-to-renderer. Export guard checks two new files.
+- Real Windows Electron: 15 passed, zero failures/skips/retries, 385.343 seconds.
+  Includes A/B edits, failed replacement, restart, playback, retry, complete/scene
+  history, exact Open/Reveal paths, visible OS-open error, review without approval,
+  eight output-format cases, integer/fractional job audio timing, legacy narrated
+  caption-on/off replacement, speech privacy and theme regression.
+- All 18 archived movies have verified source/copy hashes, matching sidecars
+  where present and ffprobe video/audio metadata. Their encoded hashes exactly
+  match the preceding 2b469e2 run; the final hardening changes no rendered bytes.
+
+Playback starts, seeks near the ending, then checks ended/no-loop. This is not
+continuous viewing of every 66-second movie; storyboard QA separately decodes
+each output fully. File actions execute real preload/IPC/path validation, with
+only Electron's OS-launch boundary trapped to avoid opening desktop apps.
+Interrupted-attempt recovery has a persisted-record unit test; this run does not
+kill the app mid-render. Fixtures are diagnostic images, synthetic timing audio
+and cached local Kokoro, not an owner-approved episode or provider-art review.
+This is a development bundle, not installed-release or full Studio acceptance.
+
+GitHub required checks and merged-content verification remain integration gates.
