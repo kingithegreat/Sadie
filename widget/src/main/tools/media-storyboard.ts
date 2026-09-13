@@ -24,7 +24,7 @@ import {
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
-import { createStudioExportReview } from '../studio-export-review';
+import { createStudioExportReview } from '../movie/studio-export-review';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;

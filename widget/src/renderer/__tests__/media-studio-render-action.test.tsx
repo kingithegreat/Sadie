@@ -43,3 +43,32 @@ test('a video in media_production offers "Make the video", wired to the render a
 
   expect(mediaRun).toHaveBeenCalledWith('j1', 'render', undefined);
 });
+
+test.each([
+  { imagePath: 'C:\\media\\j1\\saved.png', visuals: 'scenes' },
+  { imagePath: null, visuals: 'plain' },
+])('saved inputs %j do not require an image generator', async renderInputs => {
+  const mediaRun = jest.fn().mockResolvedValue({ ok: true, message: 'Rendered.' });
+  (window as any).electron = {
+    mediaList: jest.fn().mockResolvedValue([{ ...JOB, renderInputs }]),
+    sdCppStatus: jest.fn().mockResolvedValue({ ready: false }),
+    mediaRun,
+  };
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByText('Make the video')); });
+  expect(mediaRun).toHaveBeenCalledWith('j1', 'render', undefined);
+  expect(screen.queryByRole('dialog', { name: 'Choose where images are made' })).toBeNull();
+});
+
+test('a job that needs new scene images still asks about generator setup', async () => {
+  const mediaRun = jest.fn();
+  (window as any).electron = {
+    mediaList: jest.fn().mockResolvedValue([JOB]),
+    sdCppStatus: jest.fn().mockResolvedValue({ ready: false }),
+    mediaRun,
+  };
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByText('Make the video')); });
+  expect(screen.getByRole('dialog', { name: 'Choose where images are made' })).toBeTruthy();
+  expect(mediaRun).not.toHaveBeenCalled();
+});

@@ -1,6 +1,6 @@
 /** One review decision belongs to one immutable, QA-verified movie. */
-import type { MediaJob } from './media-studio';
-import type { StudioRenderedOutput } from '../shared/media-output';
+import type { MediaJob } from '../media-studio';
+import type { StudioRenderedOutput } from '../../shared/media-output';
 
 export function createStudioExportReview(input: {
   source: { type: 'job' | 'storyboard'; id: string };

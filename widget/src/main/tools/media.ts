@@ -13,7 +13,7 @@
 
 import * as fs from 'fs';
 import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../../shared/media-output';
-import { createStudioExportReview } from '../studio-export-review';
+import { createStudioExportReview } from '../movie/studio-export-review';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { app } from 'electron';

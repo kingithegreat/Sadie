@@ -9637,7 +9637,7 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 
 .ms-job {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: .75rem;
   align-items: center;
   padding: .7rem .9rem;
@@ -9648,7 +9648,8 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 /* The queue's whole purpose: what needs a person is visibly different. */
 .ms-section--attention .ms-job { border-left: 3px solid oklch(78% 0.15 85); }
 
-.ms-job-main { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.ms-job-main { display: flex; flex-direction: column; gap: .15rem; min-width: 0; grid-column: 1 / -1; }
+.ms-job > .ms-state { justify-self: start; align-self: start; }
 .ms-job-title { font-weight: 600; overflow-wrap: anywhere; }
 .ms-job-format { font-size: .75rem; color: var(--text-muted); }
 
@@ -9666,7 +9667,7 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .ms-state--bad       { border-color: oklch(65% 0.17 25); color: oklch(78% 0.14 25); }
 .ms-state--done      { border-color: oklch(70% 0.14 150); color: oklch(80% 0.12 150); }
 
-.ms-job-actions { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
+.ms-job-actions { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
 .ms-job-terminal { font-size: .8rem; color: var(--text-muted); }
 
 .ms-btn {

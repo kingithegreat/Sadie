@@ -128,3 +128,39 @@ corrected; the concurrency fixture now expects preparing during speech and await
 its released work in finally. No assertions about encoded files, CI, integration,
 installed acceptance or owner art approval are made by these unit results. Next:
 full local gates and actual Windows UI-to-FFmpeg both/partial/retry proof.
+
+## Real ordinary export and reachability checkpoint
+
+At 214ac5d, full Windows widget Jest executes 4,275 passing tests across 307
+suites, with 19 tests/six suites skipped (127.736s). The late-exit warning is
+followed by exit 0 on its own; no runner was stopped. Development build passes.
+Root Jest then catches the new review helper outside the Studio-owned directory:
+226 passed/one failed. Moving it to `main/movie/studio-export-review.ts` restores
+all 227 root tests without changing the boundary guard (5.763s).
+
+The first real Make the video click never starts an export: the image-generator
+setup prompt incorrectly blocks saved image/plain-background input. Two new unit
+regressions fail before the correction; all four render-action cases pass after,
+including the positive control that new scene images still get the setup prompt.
+The setup dialog also squeezed output settings into 25.6 pixels; the actual
+Electron regression fails before moving the main content onto a full-width grid
+row, then measures 1,114.4 pixels within the same 1,144.8-pixel card.
+
+`ordinary-live-second.log`: two actual Windows Electron tests pass in 44.0s,
+without retries/skips, using the rebuilt development bundle. Visible Both makes
+a 1,280×720 landscape movie while actual placeholder QA rejects a flat centered
+720×1,280 portrait crop. Restart retains settings, previous video/player and its
+exact review. Change only portrait to Fit and click Retry portrait: its distinct
+movie succeeds; landscape bytes, attempt and review stay unchanged. Both decode
+fully/play through, run 3s within 0.15s, and wrong-file approval is refused. No
+fixture was approved or published. The layout regression passes and screenshots
+were inspected. Diagnostic colours/sine audio are not creative acceptance.
+
+Evidence under `.kilo/artifacts/studio-multiple-outputs/`: full-widget-first.log,
+root-tests-first/second.log, preflight-red/green.log, setup-layout-red.log,
+ordinary-live-first/second.log, and ordinary-live-second-results (JSON, measured
+geometry, exact hashes and screenshots). The initial layout-red run establishes
+that controls are wide before setup but collapse when it opens; it retains the
+same preflight failure, not an additional rendering defect. Types and rebuild
+pass. Narrated storyboard Both/restart/input-reuse proof is running next; full
+final gates, CI and integration are still unverified. Owner preview is unchanged.

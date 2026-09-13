@@ -102,6 +102,8 @@ interface MediaJob {
   script?: string;
   /** Set once narration has been recorded; absolute path to the MP3. */
   narrationPath?: string;
+  /** Saved render inputs can avoid image generation; main validates their files. */
+  renderInputs?: { imagePath?: string | null; visuals?: string };
   /** Which engine actually narrated ('edge' | 'kokoro') — a silent fallback
    *  must be visible here, not discoverable by ear after publishing. */
   narratedWith?: string;
@@ -2137,12 +2139,11 @@ ${shots.map((s, idx) => `
               className="ms-btn ms-btn--primary"
               onClick={() => {
                 const a = stageAction(j)!;
-                // "Make the video" is what actually calls generateSceneImages,
-                // which goes straight to Pollinations/Stable Horde whenever
-                // nothing local is installed — nondeterministic, no offline
-                // rendering, prompts leaving the machine, with no ask. Ask
-                // once, here, rather than deciding it silently.
-                if (a.action === 'render' && sdCppStatus && !sdCppStatus.ready) {
+                // Ask only when new images may be needed. Saved single-image
+                // and plain-background exports never call generateSceneImages.
+                // Main still validates inputs and enforces Online consent.
+                const needsImages = !j.renderInputs?.imagePath && j.renderInputs?.visuals !== 'plain';
+                if (a.action === 'render' && needsImages && sdCppStatus && !sdCppStatus.ready) {
                   setSdCppPromptFor(j.id);
                   return;
                 }
