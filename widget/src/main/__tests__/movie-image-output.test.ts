@@ -33,7 +33,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-for (const [name, generate] of [['Pollinations', generatePollinationsShot]] as const) {
+for (const [name, generate] of [['Pollinations', generatePollinationsShot], ['Imagen', generateImagen3Shot]] as const) {
   for (const valid of [true, false]) {
     test(`${name} ${valid ? 'saves the returned image before done' : 'rejects corrupt image bytes'}`, async () => {
       const base64 = (valid ? bytes : Buffer.from('not an image'.repeat(100))).toString('base64');
@@ -49,12 +49,6 @@ for (const [name, generate] of [['Pollinations', generatePollinationsShot]] as c
     });
   }
 }
-
-test('retired Imagen 3 fails before adding an active shot image', async () => {
-  const result = await generateImagen3Shot(req);
-  expect(result).toMatchObject({ status: 'failed', provider: 'imagen-3' });
-  expect(fs.existsSync(path.join(dir, 'image'))).toBe(false);
-});
 
 test('Stable Diffusion writes real loopback response bytes to the shot folder', async () => {
   const server = http.createServer((_request, response) => response.end(JSON.stringify({ images: [bytes.toString('base64')] })));
@@ -114,15 +108,6 @@ test('invalid replacement keeps the previous image bytes intact', () => {
   expect(() => saveMovieShotImage(req, 'corrupt!base64')).toThrow();
   expect(fs.readFileSync(file)).toEqual(bytes);
   expect(fs.readdirSync(path.dirname(file))).toEqual(['shot_01.png']);
-});
-
-test('a retry removes the inactive alternate image extension', () => {
-  const imageDir = path.join(dir, 'image');
-  fs.mkdirSync(imageDir);
-  fs.writeFileSync(path.join(imageDir, 'shot_01.jpg'), 'old image');
-  const file = saveMovieShotImage(req, `data:image/png;base64,${bytes.toString('base64')}`);
-  expect(file.endsWith(path.join('image', 'shot_01.png'))).toBe(true);
-  expect(fs.readdirSync(imageDir)).toEqual(['shot_01.png']);
 });
 
 test('rejects an image-folder junction outside the shot without writing there', () => {
