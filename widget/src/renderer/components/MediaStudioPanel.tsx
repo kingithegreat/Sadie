@@ -20,6 +20,7 @@ import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
+import { OverlayPortal } from './anchoredOverlay';
 import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { StudioExportStatus } from './StudioExportStatus';
@@ -393,6 +394,13 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [storyboardLoading, setStoryboardLoading] = useState<boolean>(false);
   const [storyboardSaving, setStoryboardSaving] = useState<boolean>(false);
   const [generatingShotId, setGeneratingShotId] = useState<string | null>(null);
+  // A regenerate in the same format rewrites the same file, so the same file://
+  // URL would keep showing the cached picture. Version the URL per rewrite.
+  const [frameVersions, setFrameVersions] = useState<Record<string, number>>({});
+  const frameUrl = (filePath: string | null | undefined) => {
+    const url = toMediaFileUrl(filePath);
+    return url && filePath && frameVersions[filePath] ? `${url}?v=${frameVersions[filePath]}` : url;
+  };
   const [newStoryboardTitle, setNewStoryboardTitle] = useState<string>('');
   const [newStoryboardNotes, setNewStoryboardNotes] = useState<string>('');
   const [isCreatingStoryboard, setIsCreatingStoryboard] = useState<boolean>(false);
@@ -1195,10 +1203,14 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         setStoryboardMessage(`Offloaded shot ${shotId} to Colab T4 worker ticket (${res.result.ticket || 'staged'}). Run Colab notebook to generate image.`);
         setTimeout(() => setStoryboardMessage(null), 5000);
       } else if (res?.ok && res.result?.frameImagePath) {
+        const frameImagePath = res.result.frameImagePath;
         handleUpdateShot(shotId, {
-          frameImagePath: res.result.frameImagePath,
+          frameImagePath,
           status: 'COMPLETED',
+          // The new frame was made from the current prompt.
+          frameStale: false,
         });
+        setFrameVersions(prev => ({ ...prev, [frameImagePath]: Date.now() }));
         setStoryboardMessage(`Generated keyframe for ${shotId} (${res.result.provider || 'Free'}).`);
         setTimeout(() => setStoryboardMessage(null), 3500);
       } else {
@@ -4437,7 +4449,7 @@ ${shots.map((s, idx) => `
         {activeStoryboard && (
           <><StudioOutputSettings label="Storyboard" value={activeStoryboard.project.outputSpec} legacyRatio="16:9"
             disabled={storyboardBusy} saveHint="Saved with Save Board or Render Movie."
-            previewUrl={toMediaFileUrl(activeStoryboardScene?.shots[0]?.frameImagePath)}
+            previewUrl={frameUrl(activeStoryboardScene?.shots[0]?.frameImagePath)}
             onChange={outputSpec => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, outputSpec } } : prev)} />
           <label className="ms-job-format">
             <input
@@ -4856,7 +4868,7 @@ ${shots.map((s, idx) => `
                             <span className="ms-shot-stale-badge">⚠ Prompt changed — regenerate</span>
                           )}
                           <img
-                            src={toMediaFileUrl(shot.frameImagePath)}
+                            src={frameUrl(shot.frameImagePath)}
                             alt={shot.shotId}
                             className={`ms-shot-thumb-img${shot.frameStale ? ' ms-shot-thumb-img--stale' : ''}`}
                           />
@@ -5058,8 +5070,10 @@ ${shots.map((s, idx) => `
           </div>
         )}
 
-        {/* Fullscreen Animatic Player Modal */}
+        {/* Fullscreen Animatic Player Modal — portalled: inside the Studio tree
+            the app header covered its title, shot badge and Close button. */}
         {animaticOpen && activeStoryboard && (
+          <OverlayPortal>
           <div className="ms-animatic-overlay" role="dialog" aria-label="Storyboard Animatic Player">
             <div className="ms-animatic-modal">
               <div className="ms-animatic-header">
@@ -5088,7 +5102,7 @@ ${shots.map((s, idx) => `
               <div className="ms-animatic-screen">
                 {shots[animaticIndex]?.frameImagePath ? (
                   <img
-                    src={toMediaFileUrl(shots[animaticIndex].frameImagePath)}
+                    src={frameUrl(shots[animaticIndex].frameImagePath)}
                     alt={shots[animaticIndex].shotId}
                     className="ms-animatic-img"
                   />
@@ -5176,6 +5190,7 @@ ${shots.map((s, idx) => `
               </div>
             </div>
           </div>
+          </OverlayPortal>
         )}
       </div>
     );
