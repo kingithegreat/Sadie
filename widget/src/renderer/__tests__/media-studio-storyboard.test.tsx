@@ -823,3 +823,32 @@ describe('Storyboard frame provider picker', () => {
     expect(mocks.mediaStoryboardBreakdown).toHaveBeenCalledWith(expect.objectContaining({ autoGenerateFrames: true, frameProvider: 'this-pc' }));
   });
 });
+
+describe('Storyboard frame freshness', () => {
+  test('regenerating to the identical file path still shows the new pixels (versioned URL each time)', async () => {
+    const mocks = setup();
+    const samePath = 'C:/fake/path/shot_001.png';
+    mocks.mediaStoryboardGenerateFrame.mockResolvedValue({ ok: true, result: { projectId: 'pyramid-builders', shotId: 'shot_001', provider: 'comfyui', frameImagePath: samePath } });
+    let now = 1_700_000_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => ++now);
+    try {
+      await act(async () => { render(<MediaStudioPanel />); });
+      await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
+      const frame = () => screen.getByAltText('shot_001') as HTMLImageElement;
+      await waitFor(() => expect(frame()).toBeInTheDocument());
+      const original = frame().getAttribute('src');
+      expect(original).toBe('file:///C:/fake/path/shot_001.png');
+      const regenerate = () => screen.getAllByRole('button', { name: /Regenerate Frame/ })[0];
+      await waitFor(() => expect(regenerate()).toBeEnabled());
+      await act(async () => { fireEvent.click(regenerate()); });
+      await waitFor(() => expect(frame().getAttribute('src')).not.toBe(original));
+      const first = frame().getAttribute('src');
+      expect(first).toMatch(/^file:\/\/\/C:\/fake\/path\/shot_001\.png\?v=\d+$/);
+      await act(async () => { fireEvent.click(regenerate()); });
+      await waitFor(() => expect(frame().getAttribute('src')).not.toBe(first));
+      expect(mocks.mediaStoryboardGenerateFrame).toHaveBeenCalledTimes(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
