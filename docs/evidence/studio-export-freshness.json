@@ -1,6 +1,13 @@
 {
   "checkpoint": "STUDIO-04 checkpoint 1 — storyboard export freshness and history",
   "sourceCommit": "7c25de3eb2d3f1c15cdfeaf53079a90843b227ee",
+  "unitAdapterCorrection": {
+    "commit": "3dd1184ad373b694cd59ebffe67298b1224ebe2a",
+    "scope": "Test-only explicit settings and Electron adapters; production and real Electron tests unchanged",
+    "initialCi": "Both a7eaebf CI runs: 4185 passed, one 43-case suite failed to load before runtime download",
+    "correctedLocal": "43 focused cases, then all 4228 widget tests / 305 suites pass; 19 skipped; 106.885 seconds",
+    "static": "Typecheck pass, lint zero errors/eight existing warnings; bundle hash unchanged"
+  },
   "runtime": "Windows Electron development bundle, not an installed release",
   "mainBundleSha256": "a348f208def93d6626c8064e08ac3a54157b425e1ea200d709cce2770908033b",
   "artifactDirectory": ".kilo/artifacts/studio-freshness-7c25de3",

@@ -88,7 +88,7 @@ renderer regression; the dictionary and lookup both use own entries only.
 
 ## Final local evidence — frozen source 7c25de3
 
-Production/test source: `7c25de3eb2d3f1c15cdfeaf53079a90843b227ee`.
+Production and real Electron test source: `7c25de3eb2d3f1c15cdfeaf53079a90843b227ee`.
 Actual main bundle SHA-256:
 `a348f208def93d6626c8064e08ac3a54157b425e1ea200d709cce2770908033b`.
 Portable metadata: [studio-export-freshness.json](../docs/evidence/studio-export-freshness.json).
@@ -119,3 +119,20 @@ and cached local Kokoro, not an owner-approved episode or provider-art review.
 This is a development bundle, not installed-release or full Studio acceptance.
 
 GitHub required checks and merged-content verification remain integration gates.
+
+## Initial CI failure and corrected unit environment
+
+Both initial CI runs at a7eaebf execute 4,185 passing tests but fail to load the
+43-case storyboard contract suite. CI downloads Electron after units; the local
+binary hid the suite's unmocked settings/native-image imports. A local import
+trap reproduces this. Mocking settings alone still exposes image-output's import,
+so the correction explicitly supplies the unit suite's settings and Electron
+adapter; native image decoding throws if unexpectedly reached. Nothing in the
+production renderer, assertions, workflow or branch protection changed.
+
+Test-only commit `3dd1184ad373b694cd59ebffe67298b1224ebe2a` passes all 43 cases,
+then 4,228 widget tests / 305 suites (19 skipped) in 106.885 seconds. Typecheck
+and lint pass again (zero errors/eight existing warnings). The main bundle hash
+above is unchanged; the prior 15 actual Electron cases still cover the exact
+production/E2E source. Red, intermediate and corrected logs are retained in the
+same artifact directory. Auto-merge was disabled pending corrected-head CI.
