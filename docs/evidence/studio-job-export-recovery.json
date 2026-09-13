@@ -1,5 +1,53 @@
 {
   "checkpoint": "STUDIO-04 checkpoint 2 — ordinary-job export recovery and identity",
+  "integration": {
+    "pr": "https://github.com/kingithegreat/Sadie/pull/322",
+    "publishedCommit": "beb6324590dbbd5a08d11803fc303e93d965d05f",
+    "mergeCommit": "4da4532848cf2b8afa5edf5ffd512300c6494331",
+    "mergedAt": "2026-09-13T02:44:17Z",
+    "identicalFullTree": "c081aed565aa27f837d02766e7b996458a32d7d8",
+    "requiredContexts": [
+      "build",
+      "duplicate-export-guard",
+      "ESLint (React Hooks)",
+      "Permissions smoke test",
+      "widget",
+      "e2e-all"
+    ],
+    "allRequiredPresentAndSuccessful": true,
+    "applicationCi": [
+      34732986810,
+      34732995509
+    ],
+    "applicationCiCounts": {
+      "widget": 4254,
+      "widgetSkipped": 19,
+      "root": 227,
+      "overlays": 13
+    },
+    "matrixRun": 34732995519,
+    "matrix": {
+      "executedPerOs": 56,
+      "optInSkippedPerOs": 14,
+      "linux": [
+        24,
+        21,
+        11
+      ],
+      "windows": [
+        24,
+        21,
+        11
+      ],
+      "macosDirect": [
+        24,
+        20,
+        11
+      ],
+      "macosFlaky": 1,
+      "qualification": "Right-click menu x-distance 303.1 exceeded existing <80 check; passed existing retry. All nine outer attempts 1 / exit 0. No source or thresholds changed."
+    }
+  },
   "sourceCommit": "eec67961446d973ed9493cef2075dc459b4064bf",
   "runtime": "Windows Electron development bundle, not an installed release",
   "mainBundleSha256": "8e6662b5d37a3cd3060efcbab4ce140bcb9ad90dc68159c83e00ca1fdf71ef97",
