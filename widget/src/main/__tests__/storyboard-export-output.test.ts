@@ -11,6 +11,13 @@ import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryb
 import { readJobs, writeJobs } from '../tools/media';
 import { createStudioOutputSpec } from '../../shared/media-output';
 
+// Unit adapters must not implicitly depend on a downloaded Electron binary.
+// CI installs it later for the real renderer tests; the local install hid this.
+jest.mock('electron', () => ({
+  nativeImage: { createFromBuffer: () => { throw new Error('Provider image decoding is outside this render-adapter unit suite.'); } },
+}));
+jest.mock('../config-manager', () => ({ getSettings: jest.fn(() => ({ narrationEngine: 'edge' })) }));
+
 jest.mock('../media-render', () => ({
   ...jest.requireActual('../media-render'), findFfmpeg: jest.fn(),
 }));
