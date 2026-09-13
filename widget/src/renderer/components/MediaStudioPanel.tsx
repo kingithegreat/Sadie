@@ -4182,7 +4182,7 @@ ${shots.map((s, idx) => `
                   <span className="ms-spinner" /> Rendering 1080p…
                 </>
               ) : (
-                '🎬 Render Movie ($0.00)'
+                activeStoryboard?.project.outputSpec?.variants.length === 2 ? 'Render both formats' : '🎬 Render Movie'
               )}
             </button>
 

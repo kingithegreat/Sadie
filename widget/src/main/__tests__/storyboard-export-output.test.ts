@@ -161,6 +161,37 @@ describe('storyboard export output contract', () => {
     expect(changed.renderedMoviePath).toBe(first.moviePath);
   });
 
+  test('keeps a successful batch review and retries only the failed format using verified cached speech', async () => {
+    const outputSpec = { ...createStudioOutputSpec('16:9'), variants: [
+      createStudioOutputSpec('16:9').variants[0], createStudioOutputSpec('9:16').variants[0],
+    ] };
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec, burnSubtitles: false }));
+    const stored: any[] = [];
+    (readJobs as jest.Mock).mockImplementation(() => stored);
+    (writeJobs as jest.Mock).mockImplementation(jobs => stored.splice(0, stored.length, ...jobs));
+    let movies = 0;
+    (inspectRender as jest.Mock).mockImplementation(async (_bin: string, file: string) => {
+      if (!file.endsWith('.mp4')) return speechFacts;
+      movies++;
+      // Portrait's first encode is genuinely rejected by the unchanged geometry QA.
+      return movies < 3 ? movieFacts : { ...movieFacts, width: 1080, height: 1920 };
+    });
+    const first = await mediaRenderStoryboardHandler({ projectId: 'export-check', motion: false }, {} as any);
+    expect(first.success).toBe(false);
+    expect(first.result.variants).toHaveLength(2);
+    expect(stored).toHaveLength(1);
+    const review = { ...stored[0], state: 'approved' };
+    stored[0] = review;
+    const retry = await mediaRenderStoryboardHandler({ projectId: 'export-check', variantId: 'portrait', motion: false }, {} as any);
+    expect(retry.success).toBe(true);
+    expect(movies).toBe(3);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2);
+    expect(stored).toHaveLength(2);
+    expect(stored.find(item => item.id === review.id)).toEqual(review);
+    expect(stored[1].renderPath).not.toBe(review.renderPath);
+    expect(stored[1].outputSpec.variants[0].id).toBe('portrait');
+  });
+
   test('persists a failed latest attempt separately from successful export history', async () => {
     fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
     const first = await render();

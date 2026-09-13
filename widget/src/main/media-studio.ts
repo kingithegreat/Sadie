@@ -64,6 +64,8 @@ export interface MediaRenderInputs {
   zoom: boolean;
   visuals: string;
   style?: string;
+  /** Accepted input identity, excluding output framing/resolution. */
+  inputRevision?: string;
 }
 
 export interface MediaJob {
@@ -91,6 +93,9 @@ export interface MediaJob {
   renderInputs?: MediaRenderInputs;
   narrationScriptHash?: string;
   latestExportAttempt?: StudioExportAttempt;
+  variantExportAttempts?: Partial<Record<'landscape' | 'portrait' | 'square', StudioExportAttempt>>;
+  /** Review entries cannot be edited into a different movie. */
+  reviewSource?: { type: 'job' | 'storyboard'; id: string };
   /** A QA-rejected diagnostic is never the successful movie in renderPath. */
   rejectedRenderPath?: string;
   /** External bridges have their own output settings, not HomeBot's renderer. */
@@ -225,6 +230,12 @@ export interface TransitionOptions {
  * pipeline ends up with a job that looks published and is not.
  */
 export function transition(job: MediaJob, to: MediaJobState, opts: TransitionOptions = {}): MediaJob {
+  if (job.outputSpec?.variants.length === 2 && ['awaiting_approval', 'approved', 'scheduled', 'published'].includes(to)) {
+    throw new Error('Review each exported format separately. This production cannot approve or publish both movies together.');
+  }
+  if (job.reviewSource && ['idea', 'researching', 'script_draft', 'script_qa', 'media_production', 'needs_revision'].includes(to)) {
+    throw new Error('This review belongs to one saved movie. Edit and render its source project to create a new review.');
+  }
   if (!isValidState(to)) throw new InvalidTransitionError(job.state, to as MediaJobState);
   if (!canTransition(job.state, to)) throw new InvalidTransitionError(job.state, to);
 

@@ -61,6 +61,8 @@ export interface StudioExportAttempt {
   error?: string;
   exportId?: string;
   sceneId?: string;
+  variantId?: StudioOutputVariant['id'];
+  batchId?: string;
 }
 
 export interface StudioExportState {
@@ -68,6 +70,9 @@ export interface StudioExportState {
   sceneRevisions?: Record<string, string>;
   sourceSavedAt: string | null;
   latestAttempt?: StudioExportAttempt;
+  variantAttempts?: Partial<Record<StudioOutputVariant['id'], StudioExportAttempt>>;
+  variantRevisions?: Partial<Record<StudioOutputVariant['id'], string | null>>;
+  sceneVariantRevisions?: Record<string, Partial<Record<StudioOutputVariant['id'], string | null>>>;
   outputs: Array<StudioRenderedOutput & { moviePath: string }>;
   /** Real files without trusted sidecars remain reachable, with unknown provenance. */
   untrackedOutputs?: Array<{ filename: string; moviePath: string }>;
@@ -121,10 +126,14 @@ export function resolveStudioOutputSpec(
   const spec = value as Record<string, unknown>;
   if (spec.schemaVersion !== 1) throw new Error('This output-settings version is not supported.');
   if (spec.durationIntent !== 'short' && spec.durationIntent !== 'long') throw new Error('Choose short or long content length.');
-  if (!Array.isArray(spec.variants) || spec.variants.length !== 1) {
-    throw new Error('Choose one output for this export. Multi-output rendering is not available yet.');
+  if (!Array.isArray(spec.variants) || spec.variants.length < 1 || spec.variants.length > 2) {
+    throw new Error('Choose one output, or landscape and portrait together.');
   }
-  return { schemaVersion: 1, durationIntent: spec.durationIntent, variants: spec.variants.map(resolveStudioOutputVariant) };
+  const variants = spec.variants.map(resolveStudioOutputVariant);
+  if (variants.length === 2 && (!variants.some(v => v.id === 'landscape') || !variants.some(v => v.id === 'portrait'))) {
+    throw new Error('Two outputs must be one landscape and one portrait.');
+  }
+  return { schemaVersion: 1, durationIntent: spec.durationIntent, variants };
 }
 
 export function createStudioOutputSpec(

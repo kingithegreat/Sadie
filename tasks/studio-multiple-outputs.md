@@ -87,3 +87,20 @@ artifact directory. The first `render-red.log` had three additional failures
 caused by unused one-shot mocks leaking from the new early-rejection test.
 Scoped cleanup now clears that queue even on assertion failure. That original
 run is retained as a test-harness defect, not five product regressions.
+
+## Ordinary renderer / controls implementation checkpoint
+
+84 tests pass across the ordinary renderer, job export state, output formats and
+controlled storyboard UI suites (6.977 seconds, Windows). `ordinary-first.log`
+retains the result. One preparation feeds sequential encodes/QA; separate review
+entries and attempts preserve successful landscape and its approved fixture
+decision across portrait failure/retry. Portrait framing alone does not change
+landscape's source revision. Both is explicit and the render button no longer
+promises $0.00. An intermediate typecheck is clean. These are adapter/controlled
+UI results, not actual media or final validation.
+
+`partial-red.log` first reproduces ordinary silent first-variant-only behavior
+after enabling shared validation (2 failed, 26 passed). The new storyboard
+partial review/retry/cached-speech test and existing both-encode test remain red:
+2 failed, 43 passed, 2.289 seconds (`storyboard-partial-red.log`). Storyboard
+batch, recovery UI/IPC, full checks and real Windows files are still in progress.
