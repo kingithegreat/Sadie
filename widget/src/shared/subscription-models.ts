@@ -84,6 +84,9 @@ export const OPENROUTER_MODELS: CustomModelInfo[] = [
 export const SUBSCRIPTION_CLI_MODELS: Record<string, CustomModelInfo[]> = {
   'claude-code': CLAUDE_CODE_MODELS,
   codex: CODEX_MODELS,
+};
+
+export const CURATED_METERED_MODELS: Record<string, CustomModelInfo[]> = {
   openai: OPENAI_MODELS,
   anthropic: ANTHROPIC_MODELS,
   'google-ai-studio': GEMINI_MODELS,
@@ -102,3 +105,4 @@ export function hasKnownModels(provider: string | undefined): boolean {
 export function knownModelsFor(provider: string | undefined): CustomModelInfo[] {
   return (provider && SUBSCRIPTION_CLI_MODELS[provider]) || [];
 }
+

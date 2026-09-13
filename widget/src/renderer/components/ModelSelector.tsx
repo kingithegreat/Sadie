@@ -5,7 +5,7 @@ import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 import { recommendedModelIdsForVram } from '../../shared/hardware-presets';
 import { assessModelDownloadFit } from '../../shared/model-download-fit';
 import { assessPullById, normalizeModelId } from '../../shared/model-pull-guard';
-import { knownModelsFor } from '../../shared/subscription-models';
+import { knownModelsFor, CURATED_METERED_MODELS } from '../../shared/subscription-models';
 
 interface OllamaModel {
   name: string;
@@ -256,11 +256,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     costHint: cm.costHint,
   }));
 
+function getFallbackModelsFor(provider: string | undefined): CustomModelInfo[] {
+  if (!provider) return [];
+  const cliModels = knownModelsFor(provider);
+  if (cliModels.length > 0) return cliModels;
+  return CURATED_METERED_MODELS[provider] || [];
+}
+
   // Fallback: when an API is entered, it should remain an option in the model picker:
   // if network fetch hasn't populated models yet, populate from known models
   // for this provider or use the configured model.
   if (customModelInfos.length === 0 && (hasConfiguredApi || customLLM?.enabled)) {
-    const known = knownModelsFor(customLLM?.provider);
+    const known = getFallbackModelsFor(customLLM?.provider);
     if (known.length > 0) {
       customModelInfos.push(...known.map(km => ({
         id: km.id,
@@ -308,7 +315,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     const activeProvider = customLLM?.provider;
     for (const [provider, key] of Object.entries(providerApiKeys)) {
       if (provider !== activeProvider && typeof key === 'string' && key.trim().length > 0) {
-        const otherKnown = knownModelsFor(provider);
+        const otherKnown = getFallbackModelsFor(provider);
         for (const km of otherKnown) {
           if (!customModelInfos.some(m => m.id === km.id && m.provider === provider)) {
             customModelInfos.push({

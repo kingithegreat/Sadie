@@ -85,7 +85,8 @@ export default function CloudProviderSection() {
                 // the new provider. Convenience is not worth misrouting a
                 // credential.
                 const autoFillKey = apiKeyForProvider(localSettings as any, newProvider);
-                const known = knownModelsFor(newProvider);
+                const isNewSub = newProvider === 'claude-code' || newProvider === 'codex';
+                const known = isNewSub ? knownModelsFor(newProvider) : [];
                 setLocalSettings({
                   ...localSettings,
                   customLLM: { 
@@ -93,16 +94,12 @@ export default function CloudProviderSection() {
                     provider: newProvider,
                     apiUrl: getDefaultApiUrl(newProvider),
                     apiKey: autoFillKey,
-                    model: known.length > 0 ? known[0].id : '',
-                    enabled: !!autoFillKey || isSubscriptionCli
+                    model: isNewSub && known.length > 0 ? known[0].id : '',
+                    enabled: false
                   },
-                  useCustomLLM: !!autoFillKey || isSubscriptionCli
+                  useCustomLLM: false
                 });
-                if (known.length > 0) {
-                  setAvailableModels(known);
-                } else {
-                  setAvailableModels([]);
-                }
+                setAvailableModels(known);
                 setModelFetchError(null);
                 setModelsFetchedAt(null);
               }}

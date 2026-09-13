@@ -1225,6 +1225,19 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
+  const handoffSubscriptionImage = async (provider: 'gemini' | 'chatgpt', shot: { shotId: string; prompt: string }) => {
+    const prefix = 'Create one cinematic storyboard frame, 16:9. ';
+    const text = `${prefix}${shot.prompt}`;
+    window.electron?.writeClipboard?.(text);
+    const url = provider === 'gemini' ? 'https://gemini.google.com/app' : 'https://chatgpt.com/';
+    const opened = await window.electron?.openExternalUrl?.(url);
+    if (opened?.success === false) {
+      setStoryboardError(opened.error || 'Could not open your subscribed image workspace. The prompt is still copied.');
+      return;
+    }
+    setStoryboardMessage(`${provider === 'gemini' ? 'Gemini' : 'ChatGPT'} opened and the prompt for ${shot.shotId} is copied. Generate there with your subscription, then save the image to import into this shot.`);
+  };
+
   const handleAddShot = () => {
     if (!activeStoryboard) return;
     setActiveStoryboard(prev => {
@@ -4856,6 +4869,8 @@ ${shots.map((s, idx) => `
                             >
                               {isGenerating ? 'Rendering…' : '↻ Regenerate Frame'}
                             </button>
+                            <button type="button" className="ms-btn" disabled={isGenerating} onClick={() => handoffSubscriptionImage('gemini', shot)} title="Copy this shot prompt and open Gemini in your browser. Uses your Gemini subscription, not a HomeBot API call.">Gemini subscription</button>
+                            <button type="button" className="ms-btn" disabled={isGenerating} onClick={() => handoffSubscriptionImage('chatgpt', shot)} title="Copy this shot prompt and open ChatGPT in your browser. Uses your ChatGPT subscription, not a HomeBot API call.">ChatGPT subscription</button>
                           </div>
                         </>
                       ) : (
@@ -4890,6 +4905,8 @@ ${shots.map((s, idx) => `
                               >
                                 ⚡ Generate Frame ($0.00)
                               </button>
+                              <button type="button" className="ms-btn" style={{ fontSize: '0.76rem', padding: '4px 10px' }} onClick={() => handoffSubscriptionImage('gemini', shot)}>Gemini subscription</button>
+                              <button type="button" className="ms-btn" style={{ fontSize: '0.76rem', padding: '4px 10px' }} onClick={() => handoffSubscriptionImage('chatgpt', shot)}>ChatGPT subscription</button>
                             </>
                           )}
                         </div>

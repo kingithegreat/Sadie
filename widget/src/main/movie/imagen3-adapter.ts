@@ -13,6 +13,7 @@
  */
 
 import type { GenerationCapability, GenerationProvider, GenerationRequest, GenerationResult } from './types';
+import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 
 export const IMAGEN_3_RETIRED_MESSAGE =
   'Google Imagen 3 was retired on 2026-08-17. Choose Pollinations or update the configured image provider before generating.';
@@ -25,6 +26,7 @@ export const IMAGEN_3_RETIRED_MESSAGE =
 export async function probeImagen3(
   _req: GenerationRequest
 ): Promise<GenerationCapability> {
+  assertProviderOnlineAccess('Imagen');
   return {
     canGenerate: false,
     reason: IMAGEN_3_RETIRED_MESSAGE,
@@ -60,6 +62,11 @@ export interface Imagen3Provider extends GenerationProvider {
  * Save the decoded image inside the shot before reporting completion.
  */
 export async function generateImagen3Shot(req: GenerationRequest): Promise<GenerationResult> {
+  try {
+    assertProviderOnlineAccess('Imagen');
+  } catch (err) {
+    return { status: 'failed', provider: 'imagen-3', error: (err as Error).message };
+  }
   void req;
   return { status: 'failed', provider: 'imagen-3', error: IMAGEN_3_RETIRED_MESSAGE };
 }
