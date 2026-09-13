@@ -759,6 +759,7 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:modules:changed', listener);
   },
   mediaList: async () => ipcRenderer.invoke('homebot:media:list'),
+  mediaGetExportState: async (id: string) => ipcRenderer.invoke('homebot:media:export-state', id),
   youtubeConnectionStatus: async () => ipcRenderer.invoke('homebot:media:youtube:status'),
   youtubeImportCredentials: async () => ipcRenderer.invoke('homebot:media:youtube:import'),
   youtubeConnect: async () => ipcRenderer.invoke('homebot:media:youtube:connect'),
@@ -775,8 +776,8 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
   mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:run', id, action, opts),
-  mediaApprove: async (id: string, note?: string) =>
-    ipcRenderer.invoke('homebot:media:approve', id, note),
+  mediaApprove: async (id: string, note?: string, expectedRenderPath?: string) =>
+    ipcRenderer.invoke('homebot:media:approve', id, note, expectedRenderPath),
   mediaReject: async (id: string, revise: boolean, note?: string) =>
     ipcRenderer.invoke('homebot:media:reject', id, revise, note),
   mediaFfmpegStatus: async () => ipcRenderer.invoke('homebot:media:ffmpeg-status'),

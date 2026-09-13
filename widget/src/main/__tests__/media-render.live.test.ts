@@ -161,8 +161,9 @@ maybe('rendering a real video', () => {
     const failed = readJobs().find(x => x.title === 'Flat placeholder check')!;
     expect(failed.state).toBe('needs_revision');
     // Preserved, not discarded — same trust boundary as every other QA failure.
-    expect(failed.renderPath).toBeTruthy();
-    expect(fs.existsSync(failed.renderPath!)).toBe(true);
+    expect(failed.renderPath).toBeUndefined();
+    expect(failed.rejectedRenderPath).toBeTruthy();
+    expect(fs.existsSync(failed.rejectedRenderPath!)).toBe(true);
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });

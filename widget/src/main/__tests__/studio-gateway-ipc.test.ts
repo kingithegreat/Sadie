@@ -9,6 +9,7 @@ const mockGetMainWindow = jest.fn(() => mockMainWindow);
 const mockInvoke = jest.fn(async (_id: string, callback: () => any) => callback());
 const mockReadJobs = jest.fn<any[], []>(() => []);
 const mockWriteJobs = jest.fn<void, [jobs: any[]]>(() => undefined);
+const mockGetMediaJobExportState = jest.fn(async (id: string) => ({ id, sourceRevision: null, outputs: [] }));
 const mockTransition = jest.fn((job: any, to: string, opts: any) => ({
   ...job,
   state: to,
@@ -30,7 +31,7 @@ jest.mock('electron', () => ({
 jest.mock('../window-manager', () => ({ getMainWindow: () => mockGetMainWindow() }));
 jest.mock('../message-router', () => ({ requestConfirmationFrom: mockRequestConfirmationFrom }));
 jest.mock('../tools/registry', () => ({ getTool: mockGetTool, getToolOwner: mockGetToolOwner }));
-jest.mock('../tools/media', () => ({ readJobs: mockReadJobs, writeJobs: mockWriteJobs }));
+jest.mock('../tools/media', () => ({ readJobs: mockReadJobs, writeJobs: mockWriteJobs, getMediaJobExportState: mockGetMediaJobExportState }));
 jest.mock('../media-studio', () => ({
   transition: mockTransition,
   isValidState: jest.requireActual('../media-studio').isValidState,
@@ -68,6 +69,7 @@ beforeEach(() => {
 });
 
 test.each([
+  ['export-state', 'job-1'],
   ['advance', 'job-1', 'researching'],
   ['approve', 'job-1'],
   ['reject', 'job-1', false],
@@ -110,6 +112,9 @@ test('rejects a missing or destroyed main window before dispatch', async () => {
 });
 
 test.each([
+  ['export-state', []],
+  ['export-state', [42]],
+  ['export-state', ['job-1', 'extra']],
   ['advance', []],
   ['advance', ['job-1']],
   ['advance', ['job-1', 'researching', 'note', 'extra']],
@@ -117,7 +122,8 @@ test.each([
   ['advance', ['job-1', 42]],
   ['advance', ['job-1', 'researching', 42]],
   ['approve', []],
-  ['approve', ['job-1', 'note', 'extra']],
+  ['approve', ['job-1', 'note', 'movie.mp4', 'extra']],
+  ['approve', ['job-1', 'note', 42]],
   ['approve', [123]],
   ['approve', ['job-1', 42]],
   ['reject', []],
@@ -179,7 +185,21 @@ test.each([
 
   expect(result).toEqual({ ok: true, job: expectedJob });
   expect(mockInvoke).toHaveBeenCalledTimes(1);
-  expect(mockReadJobs).toHaveBeenCalledTimes(1);
+  expect(mockReadJobs).toHaveBeenCalledTimes(channel === 'approve' ? 3 : 2);
   expect(mockTransition).toHaveBeenCalledWith(sourceJob, target, expectedOpts);
   expect(mockWriteJobs).toHaveBeenCalledWith([expectedJob]);
+});
+
+test('approval of an older displayed path cannot approve a different current movie', async () => {
+  mockReadJobs.mockReturnValue([{ ...job, renderPath: 'current.mp4' }]);
+  expect(await invoke('approve', trustedEvent(), job.id, undefined, 'old.mp4')).toMatchObject({ ok: false, error: expect.stringMatching(/current movie changed/i) });
+  expect(mockTransition).not.toHaveBeenCalled();
+  expect(mockWriteJobs).not.toHaveBeenCalled();
+});
+
+test('the guarded read-only history channel reaches the real job-state seam', async () => {
+  expect(await invoke('export-state', trustedEvent(), 'job-1')).toEqual({ id: 'job-1', sourceRevision: null, outputs: [] });
+  expect(mockGetMediaJobExportState).toHaveBeenCalledWith('job-1');
+  expect(mockWriteJobs).not.toHaveBeenCalled();
+  expect(mockGetTool).not.toHaveBeenCalled();
 });

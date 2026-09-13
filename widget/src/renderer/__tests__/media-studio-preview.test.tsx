@@ -15,7 +15,8 @@
  * reading it, and the approval gate is where judging happens.
  */
 
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent, within } from '@testing-library/react';
+import { createStudioOutputSpec, type StudioExportState } from '../../shared/media-output';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
 
 const base = {
@@ -94,4 +95,49 @@ test('a failed replacement is not announced as a ready episode', async () => {
   expect(screen.getByTestId('ms-video-j1')).toHaveAttribute('src', 'file:///C:/media/j1/good.mp4');
   expect(screen.queryByText(/Your episode is ready to watch!/)).not.toBeInTheDocument();
   expect(screen.getByText(/latest attempt failed/i)).toBeInTheDocument();
+});
+
+const exportState = (id: string): StudioExportState => ({ sourceRevision: 'a'.repeat(64), sourceSavedAt: base.updatedAt,
+  outputs: ['new', 'old'].map((version, index) => ({ exportId: `${id}-${version}`, filename: `${version}.mp4`,
+    moviePath: `C:\\media\\${id}\\${version}.mp4`, createdAt: `2026-09-1${3 - index}T00:00:00Z`,
+    sourceSavedAt: base.updatedAt, durationSeconds: 3, burnSubtitles: false, outputSpec: createStudioOutputSpec(),
+    scenePaths: [`C:\\media\\${id}\\${version}.png`],
+    sourceRevision: 'a'.repeat(64) })) });
+
+test('history selects the exact player and reveal path and cannot approve the current movie while watching an older one', async () => {
+  const job = { ...base, renderPath: 'C:\\media\\j1\\new.mp4' };
+  const mediaApprove = jest.fn().mockResolvedValue({ ok: true });
+  const showInFolder = jest.fn().mockResolvedValue({ success: true });
+  (window as any).electron = { mediaList: jest.fn().mockResolvedValue([job]),
+    mediaGetExportState: jest.fn().mockResolvedValue(exportState('j1')), mediaApprove, showInFolder };
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.change(screen.getByLabelText('Export history'), { target: { value: 'C:\\media\\j1\\old.mp4' } }); });
+  expect(screen.getByTestId('ms-video-j1')).toHaveAttribute('src', 'file:///C:/media/j1/old.mp4');
+  expect(within(screen.getByTestId('ms-slides-j1')).getByRole('img')).toHaveAttribute('src', 'file:///C:/media/j1/old.png');
+  expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Open file location/ })); });
+  expect(showInFolder).toHaveBeenCalledWith('C:\\media\\j1\\old.mp4');
+  expect(mediaApprove).not.toHaveBeenCalled();
+  showInFolder.mockResolvedValueOnce({ success: false, error: 'The selected file is missing.' });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Open file location/ })); });
+  expect(screen.getByText('The selected file is missing.')).toBeVisible();
+  await act(async () => { fireEvent.change(screen.getByLabelText('Export history'), { target: { value: job.renderPath } }); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })); });
+  expect(mediaApprove).toHaveBeenCalledWith('j1', undefined, job.renderPath);
+});
+
+test('a late history result from A cannot replace selected B', async () => {
+  const jobs = [{ ...base, renderPath: 'C:\\media\\j1\\new.mp4' },
+    { ...base, id: 'j2', title: 'Second project', renderPath: 'C:\\media\\j2\\new.mp4' }];
+  let resolveA!: (state: StudioExportState) => void;
+  const pendingA = new Promise<StudioExportState>(resolve => { resolveA = resolve; });
+  (window as any).electron = { mediaList: jest.fn().mockResolvedValue(jobs),
+    mediaGetExportState: jest.fn((id: string) => id === 'j1' ? pendingA : Promise.resolve(exportState('j2'))) };
+  await act(async () => { render(<MediaStudioPanel />); });
+  const second = screen.getByText('Second project').closest('li')!;
+  await act(async () => { fireEvent.click(within(second).getByRole('button', { name: 'Movie details and history' })); });
+  expect(screen.getByLabelText('Export history')).toHaveValue(jobs[1].renderPath);
+  await act(async () => { resolveA(exportState('j1')); });
+  expect(screen.getByLabelText('Export history')).toHaveValue(jobs[1].renderPath);
+  expect(within(screen.getByLabelText('Export history')).queryByRole('option', { name: /j1-old/ })).not.toBeInTheDocument();
 });

@@ -18,7 +18,7 @@
  * structural rather than a matter of remembering.
  */
 
-import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput } from '../shared/media-output';
+import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../shared/media-output';
 
 /** Pipeline states, in the order the plan defines them. */
 export const MEDIA_STATES = [
@@ -57,6 +57,15 @@ export interface MediaJobEvent {
   note?: string;
 }
 
+export interface MediaRenderInputs {
+  imagePath: string | null;
+  scenePaths: Array<string | null>;
+  musicPath: string | null;
+  zoom: boolean;
+  visuals: string;
+  style?: string;
+}
+
 export interface MediaJob {
   id: string;
   title: string;
@@ -79,6 +88,11 @@ export interface MediaJob {
   /** Absent on legacy jobs: preserve their original short/long geometry. */
   outputSpec?: StudioOutputSpec;
   renderedOutput?: StudioRenderedOutput;
+  renderInputs?: MediaRenderInputs;
+  narrationScriptHash?: string;
+  latestExportAttempt?: StudioExportAttempt;
+  /** A QA-rejected diagnostic is never the successful movie in renderPath. */
+  rejectedRenderPath?: string;
   /** External bridges have their own output settings, not HomeBot's renderer. */
   externalRenderer?: 'ancient-pathways';
   /** True spoken length, measured from the audio rather than estimated. */

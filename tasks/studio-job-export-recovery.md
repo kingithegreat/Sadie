@@ -41,3 +41,54 @@ repoint or publish. Preserve its disjoint card-progress/doctor/chat-mode edits,
 all original projects and the existing Egypt production. Privacy, 4 GB/CPU
 strategy, no-caption preference, approval/upload separation and installer gates
 remain unchanged. No product code was changed when this claim was created.
+
+## Implementation and local checkpoints
+
+Red regression commit `1b62049` follows claim `219e2f4`. Original mocked store/UI
+tests fail at the pointer and ready banner; real FFmpeg reproduces the same
+failure in 43.4 seconds (profile `homebot-job-recovery-proof-jfvuja`). The old
+movie's bytes survive, but its player pointer becomes a QA-rejected replacement.
+
+The implementation extends the existing renderer and shared export-status UI:
+
+- Every legacy/new attempt has unique frozen inputs, output and diagnostic
+  filenames. Only successful QA plus metadata storage changes `renderPath`.
+- Last success, latest attempt and rejected diagnostic are separate. Interrupted
+  persisted attempts recover without automatically starting generation.
+- Byte-based source/output identities, addressable history and per-export slides
+  drive the exact player, timeline, stage and Reveal action. Unknown provenance
+  remains Unknown; unchanged timestamps cannot hide replaced source bytes.
+- Later edits and other jobs survive asynchronous completion; removed jobs are
+  not recreated. Known script/narration mismatches require new narration.
+- A visible retry uses saved inputs, including music and reusable scene plates.
+  Historical selections cannot approve/upload a different current movie. Main
+  rechecks the exact displayed path, actual bytes and ordinary-job source before
+  review. Immutable storyboard review jobs retain their own source contract.
+- Reveal failures are visible; watching, approval and uploading are separate.
+
+Intermediate evidence under `.kilo/artifacts/studio-job-recovery/`:
+24 initial regression passes; 67 expanded UI/store/gateway passes; 4,243 full
+widget passes / 306 suites (19 opt-in skipped), 227 root passes / 18 suites.
+The first full run's only failure expected the retired ready banner; its
+replacement asserts legacy Unknown provenance. Final review adds more tests.
+
+Actual `checkpoint` run passes the original rejection case in 27.2 seconds.
+The expanded `restart-focused` run passes in 29.7 seconds with no retries/skips:
+A/B, failed replacement, full three-second playback before/after restart, visible
+retry, immutable history, exact Reveal/timeline and refused stale-path approval.
+Profile `homebot-job-recovery-proof-PAK7vi` is retained. OS Reveal is trapped only
+at Electron's launch boundary; preload/IPC/path checks are real. No test approves
+or uploads a movie. Earlier navigation timeouts are retained, not called media
+passes: explicitly focusing only the test window resolved the stable-click issue.
+
+These are intermediate builds, not the final frozen-source result. Final review
+passes 71 focused cases and widget typecheck. Full final-source regression, real
+media batch, CI and merged-content checks remain required before release.
+
+Limitations: process-local active-attempt lock, not a cross-process scheduler;
+interruption proof uses a persisted record, not a mid-encode process kill;
+diagnostic stills/synthetic audio and cached local speech, not approved creative
+production; development bundle, not installer acceptance. Missing provenance on
+old narration is not reconstructed. No snapshot/output garbage collection is
+added; retained files intentionally consume disk space. Multi-output remains
+the next separate checkpoint, not an implied feature of this recovery work.

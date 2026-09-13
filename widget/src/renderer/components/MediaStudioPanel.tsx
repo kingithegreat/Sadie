@@ -114,6 +114,8 @@ interface MediaJob {
    * approving".
    */
   renderPath?: string;
+  rejectedRenderPath?: string;
+  latestExportAttempt?: StudioExportState['latestAttempt'];
   /**
    * The generated slides, in running order. `null` marks a scene whose image
    * failed and which reuses its neighbour in the video.
@@ -188,6 +190,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   // Workspace Mode: 'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard'
   const [activeWorkspace, setActiveWorkspace] = useState<'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard'>('director');
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [jobPreviewPaths, setJobPreviewPaths] = useState<Record<string, { path: string; current?: string }>>({});
+  const [jobExportInfo, setJobExportInfo] = useState<{ job: MediaJob; state: StudioExportState } | null>(null);
 
   // CapCut Timeline State
   const [timelineTime, setTimelineTime] = useState<number>(0);
@@ -705,6 +709,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
    * otherwise is what the old "Move to published" button did.
    */
   const markPublished = async (j: MediaJob) => {
+    if (isHistoricalJob(j)) { setError('Select the current movie before recording publication.'); return; }
     const link = publishedLink.trim();
     if (!link) return;
     await run(j.id, () => api()?.mediaMarkPublished?.(j.id, link), 'Saving');
@@ -722,6 +727,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   }, []);
 
   const openUploadDialog = (j: MediaJob) => {
+    if (isHistoricalJob(j)) { setError('Select the current movie before uploading.'); return; }
     setUploadingFor(j.id);
     setUploadTitle(j.title || '');
     setUploadDesc(j.brief || (j.script ? j.script.slice(0, 500) : ''));
@@ -733,6 +739,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const submitYouTubeUpload = async (j: MediaJob) => {
+    if (isHistoricalJob(j)) { setUploadError('Select the current movie before uploading.'); return; }
     if (!uploadTitle.trim()) {
       setUploadError('Please enter a video title.');
       return;
@@ -1641,7 +1648,59 @@ ${shots.map((s, idx) => `
 
   // Play the rendered mix, or narration before a video exists. Never play both.
   const currentSelectedJob = jobs.find(j => j.id === selectedJobId) || jobs[0] || null;
-  const timelineMediaPath = currentSelectedJob?.renderPath || currentSelectedJob?.narrationPath || '';
+  const jobMoviePath = (job: MediaJob) => {
+    const selection = Object.prototype.hasOwnProperty.call(jobPreviewPaths, job.id) ? jobPreviewPaths[job.id] : undefined;
+    return selection?.current === job.renderPath ? selection?.path || job.renderPath : job.renderPath;
+  };
+  const isHistoricalJob = (job: MediaJob) => jobMoviePath(jobs.find(item => item.id === job.id) ?? job) !==
+    (jobs.find(item => item.id === job.id) ?? job).renderPath;
+  const jobScenePaths = (job: MediaJob) => isHistoricalJob(job)
+    ? jobExportInfo?.job.id === job.id ? jobExportInfo.state.outputs.find(output => output.moviePath === jobMoviePath(job))?.scenePaths : undefined
+    : job.scenePaths;
+  useEffect(() => {
+    let cancelled = false;
+    const job = currentSelectedJob;
+    if (job && api()?.mediaGetExportState) {
+      api().mediaGetExportState(job.id).then((state: StudioExportState) => {
+        if (!cancelled && Array.isArray(state?.outputs)) setJobExportInfo({ job, state });
+      }).catch(() => {
+        if (!cancelled) setJobExportInfo({ job, state: { sourceRevision: null, sourceSavedAt: job.updatedAt,
+          latestAttempt: job.latestExportAttempt, outputs: [], warning: 'Export history could not be loaded. No files were changed.' } });
+      });
+    }
+    return () => { cancelled = true; };
+  }, [currentSelectedJob]);
+  const selectJobMovie = (job: MediaJob, moviePath: string) => {
+    setSelectedJobId(job.id);
+    setJobPreviewPaths(previous => ({ ...previous, [job.id]: { path: moviePath, current: job.renderPath } }));
+    setTimelinePlaying(false);
+  };
+  const revealJobMovie = async (moviePath: string) => {
+    try {
+      const result = await api()?.showInFolder?.(moviePath);
+      if (!result?.success) setError(result?.error || 'The selected movie could not be shown in its folder.');
+    } catch (error: any) { setError(error?.message || 'The selected movie could not be shown in its folder.'); }
+  };
+  const renderJobExportStatus = (job: MediaJob) => <>
+    <StudioExportStatus state={jobExportInfo?.job === job ? jobExportInfo.state : {
+      sourceRevision: null, sourceSavedAt: job.updatedAt, latestAttempt: job.latestExportAttempt, outputs: [] }}
+      moviePath={jobMoviePath(job) ?? null} unsaved={false} busy={busy === job.id}
+      rendering={busy === job.id || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
+      onSelect={moviePath => selectJobMovie(job, moviePath)} />
+    {isHistoricalJob(job) && <p role="status">Viewing an older export. Approval and upload are disabled. Select the current movie to review it.</p>}
+    {job.rejectedRenderPath && <button className="ms-btn" onClick={() => revealJobMovie(job.rejectedRenderPath!)}>
+      Reveal rejected attempt (not approved)
+    </button>}
+    {job.narrationPath && !hasExternalMediaRenderer(job) && ['needs_revision', 'failed', 'blocked'].includes(job.state) &&
+      job.latestExportAttempt && <button className="ms-btn" disabled={busy !== null} onClick={() => run(job.id, async () => {
+        const moved = await api()?.mediaAdvance?.(job.id, 'media_production');
+        if (!moved?.ok) return moved;
+        return api()?.mediaRun?.(job.id, 'render');
+      }, 'Retrying export')}>
+        Retry export with saved inputs
+      </button>}
+  </>;
+  const timelineMediaPath = (currentSelectedJob && jobMoviePath(currentSelectedJob)) || currentSelectedJob?.narrationPath || '';
   const timelineMediaSource = timelineMediaPath ? toMediaFileUrl(timelineMediaPath) : '';
   const timelineCanPlay = Boolean(timelineMediaSource || currentSelectedJob?.scenePaths?.some(Boolean));
   const activeDuration = timelineMediaDuration || currentSelectedJob?.durationSeconds || (
@@ -1772,7 +1831,10 @@ ${shots.map((s, idx) => `
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeWorkspace, timelineTime, activeDuration, trackLocked.V1, timelineCanPlay, seekTimeline]);
 
-  const renderJob = (j: MediaJob, showApproval: boolean) => (
+  const renderJob = (j: MediaJob, showApproval: boolean) => {
+    const moviePath = jobMoviePath(j);
+    const displayScenes = jobScenePaths(j);
+    return (
     <li
       key={j.id}
       className={`ms-job ${highlightedJobId === j.id ? 'ms-job--highlighted' : ''}`}
@@ -1875,22 +1937,22 @@ ${shots.map((s, idx) => `
           </details>
         ) : null}
 
-        {j.scenePaths?.length ? (
+        {displayScenes?.length ? (
           <details className="ms-preview">
             <summary className="ms-preview-toggle">
-              Slides ({j.scenePaths.length})
-              {j.scenePaths.some(p => !p)
-                ? ` · ${j.scenePaths.filter(p => !p).length} reused a neighbour`
+              Slides ({displayScenes.length})
+              {displayScenes.some(p => !p)
+                ? ` · ${displayScenes.filter(p => !p).length} reused a neighbour`
                 : ''}
             </summary>
             <div className="ms-slides" data-testid={`ms-slides-${j.id}`}>
-              {j.scenePaths.map((p, i) => (
+              {displayScenes.map((p, i) => (
                 p ? (
                   <img
                     key={i}
                     className="ms-slide"
                     loading="lazy"
-                    alt={`Slide ${i + 1} of ${j.scenePaths!.length}`}
+                    alt={`Slide ${i + 1} of ${displayScenes.length}`}
                     src={toMediaFileUrl(p)}
                   />
                 ) : (
@@ -1909,12 +1971,15 @@ ${shots.map((s, idx) => `
             where it gets approved. Once a render exists the video replaces the
             audio player — the narration is inside it, so offering both is two
             controls for one job. */}
-        {j.renderPath ? (
+        {j.id === currentSelectedJob?.id ? renderJobExportStatus(j) : <>
+          {['failed', 'interrupted'].includes(j.latestExportAttempt?.status ?? '') && <p>Latest attempt {j.latestExportAttempt?.status}. Previous movies are kept.</p>}
+          <button className="ms-btn" onClick={() => setSelectedJobId(j.id)}>Movie details and history</button>
+        </>}
+        {moviePath ? (
           <>
-            <div className="ms-ready-banner" role="status">
-              <span style={{ fontSize: '1.2rem' }}>🎉</span>
+            <div role="status">
               <div>
-                <strong>Your episode is ready to watch!</strong> Play the video below, then approve below to publish.
+                <strong>Watch the selected movie.</strong> Approval is a separate decision; it does not upload or publish the video.
               </div>
             </div>
             <video
@@ -1922,13 +1987,13 @@ ${shots.map((s, idx) => `
               controls
               preload="metadata"
               data-testid={`ms-video-${j.id}`}
-              src={toMediaFileUrl(j.renderPath)}
+              src={toMediaFileUrl(moviePath)}
             />
             <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
               <button
                 type="button"
                 className="ms-btn"
-                onClick={() => api()?.showInFolder?.(j.renderPath!)}
+                onClick={() => revealJobMovie(moviePath)}
                 title="Reveal MP4 in Windows File Explorer"
               >
                 📂 Open file location
@@ -1965,8 +2030,8 @@ ${shots.map((s, idx) => `
           <>
             <button
               className="ms-btn ms-btn--approve"
-              disabled={busy === j.id}
-              onClick={() => run(j.id, () => api()?.mediaApprove?.(j.id))}
+              disabled={busy === j.id || isHistoricalJob(j)}
+              onClick={() => run(j.id, () => api()?.mediaApprove?.(j.id, undefined, moviePath))}
             >Approve</button>
             <button
               className="ms-btn"
@@ -2290,6 +2355,7 @@ ${shots.map((s, idx) => `
                 <button
                   className="ms-btn ms-btn--primary"
                   title="Upload this rendered video directly to YouTube"
+                  disabled={isHistoricalJob(j)}
                   onClick={() => openUploadDialog(j)}
                 >
                   ▶ Upload to YouTube…
@@ -2298,6 +2364,7 @@ ${shots.map((s, idx) => `
               <button
                 className="ms-btn"
                 onClick={() => { setPublishingFor(j.id); setPublishedLink(''); }}
+                disabled={isHistoricalJob(j)}
               >
                 Mark as published…
               </button>
@@ -2336,6 +2403,7 @@ ${shots.map((s, idx) => `
       </div>
     </li>
   );
+  };
 
   const filteredEpisodes = (apEpisodes || []).filter(ep => {
     if (seasonFilter !== 0 && ep.season !== seasonFilter) return false;
@@ -2354,7 +2422,7 @@ ${shots.map((s, idx) => `
 
   /* CapCut Multi-Track Sequencer Workspace View */
   const renderTimelineWorkspace = () => {
-    const job = currentSelectedJob;
+    const job = currentSelectedJob ? { ...currentSelectedJob, renderPath: jobMoviePath(currentSelectedJob), scenePaths: jobScenePaths(currentSelectedJob) } : null;
     const duration = activeDuration;
     const playheadPercent = duration > 0 ? (timelineTime / duration) * 100 : 0;
 
@@ -2610,6 +2678,7 @@ ${shots.map((s, idx) => `
         </div>
 
         {/* Mini Preview Stage */}
+        {currentSelectedJob && renderJobExportStatus(currentSelectedJob)}
         <div className="ms-timeline-stage-row">
           <div className="ms-timeline-monitor">
             <div className="ms-monitor-screen">
@@ -2904,13 +2973,15 @@ ${shots.map((s, idx) => `
                       <button
                         className="ms-btn ms-btn--primary"
                         style={{ width: '100%', marginBottom: 6 }}
-                        onClick={() => run(job.id, () => api()?.mediaAdvance?.(job.id, 'approved'), 'Approving')}
+                        disabled={isHistoricalJob(job)}
+                        onClick={() => run(job.id, () => api()?.mediaApprove?.(job.id, undefined, job.renderPath), 'Approving')}
                       >
                         ✓ Approve Master Video
                       </button>
                     )}
                     {PUBLISHABLE.includes(job.state) && job.renderPath && (
                       <button
+                        disabled={isHistoricalJob(job)}
                         className="ms-btn ms-btn--primary"
                         style={{ width: '100%', marginBottom: 6 }}
                         onClick={() => {
@@ -3191,7 +3262,7 @@ ${shots.map((s, idx) => `
 
   /* Blender Viewport & Camera Stage Workspace View */
   const renderStageWorkspace = () => {
-    const job = currentSelectedJob;
+    const job = currentSelectedJob ? { ...currentSelectedJob, renderPath: jobMoviePath(currentSelectedJob), scenePaths: jobScenePaths(currentSelectedJob) } : null;
     const aspectClass = stageAspectRatio === '9:16'
       ? 'ms-viewport-screen--portrait'
       : stageAspectRatio === '1:1'
@@ -3308,6 +3379,7 @@ ${shots.map((s, idx) => `
         </div>
 
         {/* Viewport Frame & Blender N-Panel Inspector Row */}
+        {currentSelectedJob && renderJobExportStatus(currentSelectedJob)}
         <div className="ms-stage-viewport-grid">
           <div className="ms-viewport-container">
             <div className={`ms-viewport-screen ${aspectClass}`} style={{ position: 'relative', overflow: 'hidden' }}>
@@ -3315,7 +3387,7 @@ ${shots.map((s, idx) => `
               {job?.renderPath ? (
                 <video
                   className="ms-viewport-content-video"
-                  src={toMediaFileUrl(job.renderPath)}
+                  src={toMediaFileUrl(jobMoviePath(job)!)}
                   controls
                 />
               ) : (

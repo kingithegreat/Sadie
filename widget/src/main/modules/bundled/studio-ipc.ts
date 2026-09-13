@@ -99,6 +99,11 @@ export function registerStudioIpc(
     return readJobs();
   });
 
+  ipcMain.handle('homebot:media:export-state', async (_e, id: string) => {
+    const { getMediaJobExportState } = await import('../../tools/media');
+    return getMediaJobExportState(id);
+  });
+
   // List a podcast feed's episodes so the panel can offer "make a recap of
   // this one". Read-only: nothing is created until the user picks an episode,
   // which then goes through the ordinary homebot:media:create path — a
@@ -138,7 +143,7 @@ export function registerStudioIpc(
 
   /** Shared by advance/approve/reject so the transition rules live in one place. */
   const applyMediaTransition = async (
-    id: string, to: string, opts: { humanDecision?: boolean; note?: string; by: string },
+    id: string, to: string, opts: { humanDecision?: boolean; note?: string; by: string }, expectedRenderPath?: string,
   ) => {
     const { readJobs, writeJobs } = await import('../../tools/media');
     const { transition, isValidState } = await import('../../media-studio');
@@ -150,8 +155,15 @@ export function registerStudioIpc(
     if (i < 0) return { ok: false, error: 'That video is no longer in the list.' };
     if (!isValidState(to)) return { ok: false, error: `"${to}" is not a pipeline stage.` };
     try {
+      if (to === 'awaiting_approval' || to === 'approved') {
+        const { assertMediaJobReviewable } = await import('../../media-job-export-state');
+        await assertMediaJobReviewable(jobs[i], expectedRenderPath);
+        if (JSON.stringify(readJobs().find(job => job.id === id)) !== JSON.stringify(jobs[i])) {
+          return { ok: false, error: 'This video changed during review. Reload it before continuing.' };
+        }
+      }
       jobs[i] = transition(jobs[i], to as any, { ...opts, publishingEnabled });
-      writeJobs(jobs);
+      writeJobs(readJobs().map(job => job.id === id ? jobs[i] : job));
       return { ok: true, job: jobs[i] };
     } catch (e: any) {
       return { ok: false, error: e.message };
@@ -227,8 +239,8 @@ export function registerStudioIpc(
   ipcMain.handle('homebot:media:advance', async (_e, id: string, to: string, note?: string) =>
     applyMediaTransition(id, to, { by: 'studio', note }));
 
-  ipcMain.handle('homebot:media:approve', async (_e, id: string, note?: string) =>
-    applyMediaTransition(id, 'approved', { by: 'human', humanDecision: true, note }));
+  ipcMain.handle('homebot:media:approve', async (_e, id: string, note?: string, expectedRenderPath?: string) =>
+    applyMediaTransition(id, 'approved', { by: 'human', humanDecision: true, note }, expectedRenderPath));
 
   ipcMain.handle('homebot:media:reject', async (_e, id: string, revise: boolean, note?: string) =>
     applyMediaTransition(id, revise ? 'needs_revision' : 'rejected', { by: 'human', humanDecision: true, note }));
