@@ -143,7 +143,7 @@ export async function readStoryboardExportState(projectDir: string, meta: Record
     const moviePath = resolveStoryboardExportPath(projectDir, filename);
     return moviePath ? [{ filename, moviePath }] : [];
   }) : [];
-  const sceneRevisions: Record<string, string> = {};
+  const sceneRevisions: Record<string, string> = Object.create(null);
   try {
     const savedScenes = scenes ?? assembleStoryboardScenes(projectDir);
     sourceRevision = await storyboardSourceRevision(savedScenes, meta);

@@ -82,3 +82,6 @@ showed that comparing a scene movie with the full-project hash always reported
 it stale. History now uses the matching saved-scene revision, without moving
 the complete-project pointer. An edit to another scene leaves that comparison
 alone. The actual A/B test now selects both complete and scene exports.
+Removed scenes remain Unknown, including IDs such as `constructor` that must
+not resolve to an inherited JavaScript property. This case has a red-to-green
+renderer regression; the dictionary and lookup both use own entries only.

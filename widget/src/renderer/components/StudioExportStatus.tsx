@@ -17,7 +17,9 @@ const revision = (value: string | null | undefined) => value ? value.slice(0, 12
 export function StudioExportStatus({ state, moviePath, unsaved, busy, rendering, onSelect }: Props) {
   const output = state?.outputs.find(item => item.moviePath === moviePath);
   const attempt = state?.latestAttempt;
-  const currentRevision = output?.sceneId ? state?.sceneRevisions?.[output.sceneId] : state?.sourceRevision;
+  const currentRevision = output?.sceneId
+    ? state?.sceneRevisions && Object.prototype.hasOwnProperty.call(state.sceneRevisions, output.sceneId) ? state.sceneRevisions[output.sceneId] : undefined
+    : state?.sourceRevision;
   const known = !!output?.sourceRevision && !!currentRevision;
   const stale = unsaved || (known && output!.sourceRevision !== currentRevision);
   const failed = attempt?.status === 'failed' || attempt?.status === 'interrupted';

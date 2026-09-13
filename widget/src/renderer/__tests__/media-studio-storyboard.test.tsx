@@ -209,6 +209,16 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(screen.queryByText('Preview matches the saved revision')).not.toBeInTheDocument();
   });
 
+  test('a removed scene with a JavaScript property name has unknown freshness, not an inherited revision', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result;
+    const output = { exportId: 'removed-scene', filename: 'scene.mp4', moviePath: 'C:/proof/scene.mp4', createdAt: '2026-09-12T00:00:00Z',
+      sourceSavedAt: null, sourceRevision: 'a'.repeat(64), sceneId: 'constructor', durationSeconds: 4, burnSubtitles: false, outputSpec: createStudioOutputSpec() };
+    Object.assign(board, { renderedMoviePath: output.moviePath, exportState: { sourceRevision: 'b'.repeat(64), sceneRevisions: {}, outputs: [output] } });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    expect(await screen.findByText('Saved movie — current source cannot be verified')).toBeVisible();
+  });
+
   test('storyboard shape, resolution and framing reach Save Board and Render Movie without changing shot timing', async () => {
     const api = setup();
     render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
