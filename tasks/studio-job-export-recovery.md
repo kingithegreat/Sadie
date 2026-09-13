@@ -181,3 +181,35 @@ Local implementation is ready for normal branch publication. Required remote CI
 and exact merged-content verification are still pending; no main/installed or
 complete-Studio claim. Next after integration: explicit landscape/portrait outputs
 with shared accepted inputs and independently truthful failure/retry status.
+
+## Integrated — PR #322, 13 September 2026 NZ
+
+Merged at `2026-09-13T02:44:17Z` as
+`4da4532848cf2b8afa5edf5ffd512300c6494331`. Fetched main and published
+`beb6324590dbbd5a08d11803fc303e93d965d05f` have the identical full tree
+`c081aed565aa27f837d02766e7b996458a32d7d8`; diff is empty and remote main is confirmed.
+All six freshly read required contexts are explicitly present and successful:
+build, duplicate-export-guard, ESLint (React Hooks), Permissions smoke test,
+widget and e2e-all. Claim released; the next feature branches from this main.
+
+Both application CI runs ([push](https://github.com/kingithegreat/Sadie/actions/runs/34732986810),
+[PR](https://github.com/kingithegreat/Sadie/actions/runs/34732995509)) actually
+execute 4,254 widget tests / 306 suites (19 skipped), 227 root / 18 suites, and
+13 real overlays each. Full logs retained beside the local evidence.
+
+The [required matrix](https://github.com/kingithegreat/Sadie/actions/runs/34732995519)
+executes 56 cases per OS. Linux and Windows each pass 24 + 21 + 11 without an
+inner retry; each skips 2 + 12 deliberate opt-in actual-media cases. macOS passes
+24 + 20 + 11 directly and one right-click-menu placement case on the existing
+retry (first measured x-distance 303.1 exceeds the existing less-than-80 check).
+All nine outer shard attempts are attempt 1 / exit 0. No timeout, threshold,
+retry policy or source changed in response; its failure/log is retained. Do not
+describe the full remote matrix as retry-free. The aggregate actually reports
+`matrix result: success`, not an absent or skipped context.
+
+Owner preview worktree is still clean at `b5aa5cf`, and the existing launcher
+still selects that build/profile, not this integration. A newer owner visual
+review records unresolved Egypt character softness and Leila glasses artifacts;
+those are separate art-quality defects and not fixed by export recovery.
+The next claimed task is explicit multi-output; creative/installed acceptance
+and all other limitations remain open.

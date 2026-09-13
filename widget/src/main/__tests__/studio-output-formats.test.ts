@@ -29,6 +29,18 @@ describe('saved Studio output formats', () => {
     expect(job.format).toBe(format);
   });
 
+  it.each(['short', 'long'])('persists explicit landscape and portrait choices for %s jobs without making length imply both', format => {
+    const outputSpec = { ...specification('16:9', format),
+      variants: [specification('16:9', format).variants[0], specification('9:16', format).variants[0]] };
+    outputSpec.variants[1].framing = { mode: 'crop', x: 0.25, y: 0.75 };
+    const job = createJob({ title: 'Two explicit formats', format, outputSpec } as any) as any;
+    expect(job.outputSpec).toEqual(outputSpec);
+    expect(job.format).toBe(format);
+    outputSpec.variants[1].framing.x = 1;
+    expect(job.outputSpec.variants[1].framing.x).toBe(0.25);
+    expect((createJob({ title: 'One by default', format } as any) as any).outputSpec.variants).toHaveLength(1);
+  });
+
   it.each([
     ['version', (s: any) => { s.schemaVersion = 2; }],
     ['dimensions', (s: any) => { s.variants[0].width = 8192; }],
@@ -38,6 +50,10 @@ describe('saved Studio output formats', () => {
     ['crop position', (s: any) => { s.variants[0].framing.x = -1; }],
     ['duration intent', (s: any) => { s.durationIntent = 'tiny'; }],
     ['variant identity', (s: any) => { s.variants[0].id = '../another-project'; }],
+    ['empty selection', (s: any) => { s.variants = []; }],
+    ['duplicate formats', (s: any) => { s.variants.push(s.variants[0]); }],
+    ['unsupported format pair', (s: any) => { s.variants.push(specification('1:1').variants[0]); }],
+    ['too many outputs', (s: any) => { s.variants.push(specification('9:16').variants[0], specification('1:1').variants[0]); }],
   ])('rejects unsupported %s before creating a job', (_name, mutate) => {
     const outputSpec = specification();
     (mutate as (s: any) => void)(outputSpec);

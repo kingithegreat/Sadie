@@ -24,6 +24,7 @@ import {
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
+import { createStudioExportReview } from '../movie/studio-export-review';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -81,7 +82,7 @@ export const mediaCreateStoryboardDef: ToolDefinition = {
         description: 'Hard gate ensuring all generations cost $0.00 (defaults to true).',
       },
       burnSubtitles: { type: 'boolean', description: 'Burn captions into the movie. New projects default to off.' },
-      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p fit.' },
+      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one format or explicitly both landscape and portrait, each {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p fit.' },
     },
     required: ['projectId', 'title'],
   },
@@ -601,6 +602,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
         description: 'Optional override for the saved project caption choice. New projects default to off; legacy projects retain captions until changed.',
       },
       outputSpec: { type: 'object', description: 'Optional output override using the versioned settings described by media_create_storyboard. Omit to use the saved project settings.' },
+      variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved format. Omit to render every explicitly selected format.' },
     },
     required: ['projectId'],
   },
@@ -618,18 +620,37 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     sceneId: (args.sceneId as string)?.trim(),
     motion: args.motion !== false,
     burnSubtitles: args.burnSubtitles,
+    variantId: args.variantId,
     ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
   });
 
-  if (!res.ok) {
+  if (!res.ok && !res.variants) {
     return {
       success: false,
       error: res.error || 'Failed to render storyboard movie.',
     };
   }
 
+  const variants = [];
+  for (const result of res.variants ?? [res]) {
+    const reviewed = result.ok ? await registerStoryboardReview(projectId, (args.sceneId as string)?.trim(), result) : result;
+    variants.push({ ...result, ...reviewed });
+  }
+  const selected = variants.find(result => result.ok);
+  return {
+    success: res.ok,
+    ...(res.ok ? {} : { error: res.error || 'One or more formats did not finish. Successful movies are kept.' }),
+    result: { projectId, ...selected,
+      ...(res.variants ? { variants } : {}),
+      message: res.variants ? `${variants.filter(result => result.ok).length} of ${variants.length} selected formats exported. Review each saved movie separately.`
+        : `Rendered movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
+      handoff: { mode: 'media', payload: { workspace: 'storyboard', projectId, renderedMoviePath: selected?.moviePath } },
+    },
+  };
+};
+
+async function registerStoryboardReview(projectId: string, sceneId: string | undefined, res: import('../movie/storyboard-renderer').StoryboardRenderResult) {
   // Bridge rendered storyboard movie into primary MediaJob approval queue
-  const sceneId = (args.sceneId as string)?.trim();
   // Separate namespaces and a length-prefixed project ID avoid collisions
   // between complete movies and independently exported scenes.
   let jobId: string | undefined = res.renderedOutput ? `sbexport_${res.renderedOutput.exportId}`
@@ -651,7 +672,9 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     const jobs = readJobs();
     const existing = jobs.find(j => j.id === jobId);
     const title = projectMeta.title || projectMeta.name || projectId;
-    const job: any = {
+    const job: any = res.renderedOutput ? createStudioExportReview({ source: { type: 'storyboard', id: projectId },
+      title, moviePath: res.moviePath!, output: res.renderedOutput,
+      brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)` }, existing) : {
       id: jobId,
       title: `[Storyboard] ${title}`,
       format: exportSpec?.durationIntent ?? ((res.durationSec && res.durationSec > 60) ? 'long' : 'short'),
@@ -687,28 +710,8 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     console.warn('[Storyboard] Failed to register MediaJob in approval queue:', e);
   }
 
-  return {
-    success: true,
-    result: {
-      projectId,
-      jobId,
-      ...(warning ? { warning } : {}),
-      moviePath: res.moviePath,
-      durationSec: res.durationSec,
-      totalShots: res.totalShots,
-      ...(exportSpec ? { outputSpec: exportSpec } : {}), renderedOutput: res.renderedOutput,
-      message: `Rendered ${outputLabel} movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
-      handoff: {
-        mode: 'media',
-        payload: {
-          workspace: 'storyboard',
-          projectId,
-          renderedMoviePath: res.moviePath,
-        },
-      },
-    },
-  };
-};
+  return { ...res, jobId, ...(warning ? { warning } : {}) };
+}
 
 // --- 6. media_breakdown_script ----------------------------------------------
 

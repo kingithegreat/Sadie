@@ -119,6 +119,76 @@ describe('media_render output trust', () => {
   const goodFacts = { hasVideo: true, hasAudio: true, width: 1080, height: 1920,
     durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null };
 
+  it('encodes both variants from one frozen input set and preserves two successful files', async () => {
+    const job = writeReadyJob('Two frozen outputs');
+    job.burnSubtitles = false;
+    job.outputSpec = { ...createStudioOutputSpec('16:9'), variants: [
+      createStudioOutputSpec('16:9').variants[0], createStudioOutputSpec('9:16').variants[0],
+    ] };
+    writeJobs([job]);
+    const calls: any[] = [];
+    const encode = async (options: any) => {
+      calls.push(options);
+      expect(fs.readFileSync(options.audioPath, 'utf8')).toBe('narration');
+      expect(fs.readFileSync(options.imagePath, 'utf8')).toBe('scene');
+      fs.writeFileSync(narrationPath, 'a later source edit');
+      fs.writeFileSync(scenePath, 'later artwork');
+      fs.writeFileSync(options.outputPath, Buffer.alloc(12000, calls.length));
+      return { path: options.outputPath, bytes: 12000, args: [] };
+    };
+    const renderMock = renderVideo as jest.Mock;
+    const defaultEncode = renderMock.getMockImplementation();
+    renderMock.mockImplementationOnce(encode).mockImplementationOnce(encode);
+    mockedInspectRender.mockImplementation(async (_bin, file) => {
+      const encoded = calls.find(options => options.outputPath === file);
+      return encoded ? { ...goodFacts, width: encoded.outputVariant.width, height: encoded.outputVariant.height }
+        : { ...goodFacts, hasVideo: false };
+    });
+    try {
+      const result = await call('media_render', { job: job.id, image: scenePath, visuals: 'plain' });
+      expect(result.success).toBe(true);
+      expect(calls.map(options => options.outputVariant.id)).toEqual(['landscape', 'portrait']);
+      expect(calls[1].audioPath).toBe(calls[0].audioPath);
+      expect(calls[1].imagePath).toBe(calls[0].imagePath);
+      const state = await getMediaJobExportState(job.id);
+      expect(state.outputs).toHaveLength(2);
+      expect(new Set(state.outputs.map(item => item.moviePath)).size).toBe(2);
+      expect(state.outputs.map(item => item.outputSpec.variants[0].id).sort()).toEqual(['landscape', 'portrait']);
+      for (const item of state.outputs) expect(fs.existsSync(item.moviePath)).toBe(true);
+    } finally {
+      // Early validation can leave both one-shot encoders unused. Clear that
+      // queue as well as restoring the default, even when the assertion fails.
+      renderMock.mockReset().mockImplementation(defaultEncode);
+    }
+  });
+
+  it('records requested changes on an immutable review and keeps editing on its source', async () => {
+    const parent = writeReadyJob('Review source');
+    const review: MediaJob = { ...parent, id: 'jobexport_review', title: 'Saved movie review', state: 'awaiting_approval',
+      reviewSource: { type: 'job', id: parent.id }, renderPath: scenePath };
+    writeJobs([parent, review]);
+    expect((await call('media_reject_job', { job: review.id, reason: 'revise', note: 'Fix portrait framing' })).success).toBe(true);
+    const saved = readJobs().find(job => job.id === review.id)!;
+    expect(saved).toMatchObject({ state: 'needs_revision', renderPath: scenePath, reviewSource: review.reviewSource });
+    expect(saved.history.at(-1)).toMatchObject({ by: 'human', to: 'needs_revision', note: 'Fix portrait framing' });
+    expect(readJobs().find(job => job.id === parent.id)).toEqual(parent);
+    for (const name of ['media_write_script', 'media_narrate', 'media_render']) {
+      const result = await call(name, { job: review.id });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/source project/i);
+    }
+    expect((await call('media_advance_job', { job: review.id, to: 'media_production' })).success).toBe(false);
+    expect(readJobs().find(job => job.id === review.id)).toEqual(saved);
+    expect(fs.readFileSync(scenePath, 'utf8')).toBe('scene');
+  });
+
+  it('does not return object-valued ordinary attempt errors to the renderer', async () => {
+    const job = writeReadyJob('Malformed ordinary attempt');
+    writeJobs([{ ...job, latestExportAttempt: { id: 'bad-error', status: 'failed', startedAt: '2026-09-13T00:00:00Z',
+      sourceRevision: null, error: { unexpected: true } } as any }]);
+    expect((await getMediaJobExportState(job.id)).latestAttempt?.error).toBeUndefined();
+  });
+
   it('keeps immutable legacy history and compares content, not save timestamps', async () => {
     const job = writeReadyJob('Immutable legacy history');
     mockedInspectRender.mockResolvedValue(goodFacts);
@@ -144,6 +214,61 @@ describe('media_render output trust', () => {
     fs.utimesSync(narrationPath, savedAudioTime, savedAudioTime);
     expect((await getMediaJobExportState(job.id)).sourceRevision).not.toBe(state.sourceRevision);
     expect((await call('media_advance_job', { job: job.id, to: 'awaiting_approval' })).success).toBe(false);
+  });
+
+  it('keeps landscape review independent after portrait fails, retries only portrait and preserves an approved sibling', async () => {
+    const job = writeReadyJob('Independent output recovery');
+    job.burnSubtitles = false;
+    job.outputSpec = { ...createStudioOutputSpec('16:9'), variants: [
+      createStudioOutputSpec('16:9').variants[0], createStudioOutputSpec('9:16').variants[0],
+    ] };
+    writeJobs([job]);
+    const calls: any[] = [];
+    const renderMock = renderVideo as jest.Mock;
+    const defaultEncode = renderMock.getMockImplementation();
+    renderMock.mockImplementation(async options => {
+      calls.push(options);
+      if (calls.length === 2) throw new Error('Portrait encoder stopped');
+      fs.writeFileSync(options.outputPath, Buffer.alloc(12000, calls.length));
+      return { path: options.outputPath, bytes: 12000, args: [] };
+    });
+    mockedInspectRender.mockImplementation(async (_bin, file) => {
+      const encoded = calls.find(options => options.outputPath === file);
+      return encoded ? { ...goodFacts, width: encoded.outputVariant.width, height: encoded.outputVariant.height }
+        : { ...goodFacts, hasVideo: false };
+    });
+    try {
+      expect((await call('media_render', { job: job.id, image: scenePath, visuals: 'plain' })).success).toBe(false);
+      let state = await getMediaJobExportState(job.id);
+      expect(state.outputs).toHaveLength(1);
+      expect(state.variantAttempts).toMatchObject({ landscape: { status: 'succeeded' }, portrait: { status: 'failed', error: expect.stringContaining('Portrait encoder stopped') } });
+      const first = state.outputs[0];
+      const review = readJobs().find(item => item.id === `jobexport_${first.exportId}`)!;
+      expect(review).toMatchObject({ state: 'awaiting_approval', renderPath: first.moviePath, outputSpec: createStudioOutputSpec('16:9') });
+      const parent = readJobs().find(item => item.id === job.id)!;
+      expect(parent.state).toBe('media_production');
+      const landscapeRevision = state.variantRevisions?.landscape;
+      expect(landscapeRevision).toBe(first.sourceRevision);
+      writeJobs(readJobs().map(item => item.id === review.id ? { ...item, state: 'approved' } : item.id === job.id
+        ? { ...item, outputSpec: { ...item.outputSpec!, variants: item.outputSpec!.variants.map(v => v.id === 'portrait' ? { ...v, framing: { ...v.framing, mode: 'crop' } } : v) } } : item));
+      expect((await getMediaJobExportState(job.id)).variantRevisions?.landscape).toBe(landscapeRevision);
+      expect((await call('media_render', { job: job.id, variantId: 'portrait' })).success).toBe(true);
+      expect(calls.map(options => options.outputVariant.id)).toEqual(['landscape', 'portrait', 'portrait']);
+      state = await getMediaJobExportState(job.id);
+      expect(state.outputs).toHaveLength(2);
+      expect(readJobs().find(item => item.id === review.id)).toMatchObject({ state: 'approved', renderPath: first.moviePath, renderedOutput: { sha256: first.sha256 } });
+      expect((await call('media_advance_job', { job: job.id, to: 'render_qa' })).success).toBe(true);
+      const parentReview = await call('media_advance_job', { job: job.id, to: 'awaiting_approval' });
+      expect(parentReview.success).toBe(false);
+      expect(parentReview.error).toMatch(/each|separate|format/i);
+      // Selecting one future output must not turn an existing per-file review
+      // into a second parent approval for the same movie.
+      writeJobs(readJobs().map(item => item.id === job.id ? { ...item,
+        outputSpec: { ...item.outputSpec!, variants: item.outputSpec!.variants.filter(v => v.id === 'portrait') } } : item));
+      const narrowedReview = await call('media_advance_job', { job: job.id, to: 'awaiting_approval' });
+      expect(narrowedReview.success).toBe(false);
+      expect(narrowedReview.error).toMatch(/each|separate|format/i);
+    } finally { renderMock.mockReset().mockImplementation(defaultEncode); }
   });
 
   it('freezes audio, captions and image bytes and preserves later edits plus another job', async () => {

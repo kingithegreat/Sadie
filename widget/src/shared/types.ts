@@ -1,5 +1,5 @@
 // ── Pro licensing / entitlements (renderer-facing mirror of src/entitlements + src/licensing) ──
-import type { StudioOutputSpec, StudioRenderedOutput } from './media-output';
+import type { StudioOutputSpec, StudioMovieResult } from './media-output';
 
 export type LicenseTier = 'free' | 'pro';
 
@@ -540,7 +540,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string, expectedRenderPath?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -679,17 +679,7 @@ export interface ElectronAPI {
     message?: string;
     error?: string;
   }>;
-  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) => Promise<{
-    ok: boolean;
-    moviePath?: string;
-    outputSpec?: StudioOutputSpec;
-    renderedOutput?: StudioRenderedOutput;
-    jobId?: string;
-    warning?: string;
-    durationSec?: number;
-    totalShots?: number;
-    error?: string;
-  }>;
+  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) => Promise<StudioMovieResult>;
   mediaStoryboardBreakdown?: (args: {
     script: string;
     genre?: string;

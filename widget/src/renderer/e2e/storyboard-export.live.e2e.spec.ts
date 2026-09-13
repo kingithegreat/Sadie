@@ -7,6 +7,7 @@ import { createHash } from 'crypto';
 import { launchFocusedStudioApp as launchElectronApp } from './helpers/focusStudioWindow';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
+import { trapSpeechNetwork } from './helpers/speechNetworkTrap';
 
 // Opt-in: uses the installed FFmpeg/ffprobe and cached Kokoro model, with
 // speech/model network transports trapped. It never downloads models or calls
@@ -84,43 +85,7 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     await page.getByRole('combobox', { name: 'Select Storyboard Scene' }).selectOption('scene_02');
     await expect(page.getByLabel('Narration for shot_01')).toHaveValue(lines[1]);
     await page.getByLabel('Duration for shot_01').fill('4');
-    const trapSpeechNetwork = async () => expect(await app.evaluate((_electron, fixture: { cacheDir?: string; packagePath: string }) => {
-      if (fixture.cacheDir) {
-        const createRequire = (process as any).getBuiltinModule('module').createRequire;
-        const widgetRequire = createRequire(fixture.packagePath);
-        const runtimeRequire = createRequire(widgetRequire.resolve('kokoro-js'));
-        runtimeRequire('@huggingface/transformers').env.cacheDir = fixture.cacheDir;
-      }
-      const state = globalThis as typeof globalThis & { exportSpeechAttempts: string[] };
-      state.exportSpeechAttempts = [];
-      const inspect = (value: any) => {
-        const destination = typeof value === 'string' ? value : String(value?.url || value?.hostname || value?.host || value);
-        if (/huggingface\.co|hf\.co|microsoft\.com|bing\.com|speech-export-control\.invalid/.test(destination)) {
-          state.exportSpeechAttempts.push(destination);
-          throw new Error('Speech/model network request blocked by the local export test');
-        }
-      };
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = (input, init) => { inspect(input); return originalFetch(input, init); };
-      for (const moduleName of ['http', 'https']) {
-        const transport = (process as any).getBuiltinModule(moduleName);
-        for (const method of ['get', 'request']) {
-          const original = transport[method];
-          transport[method] = (...args: any[]) => { inspect(args[0]); return original.apply(transport, args); };
-        }
-      }
-      for (const invoke of [
-        () => globalThis.fetch('https://speech-export-control.invalid'),
-        () => (process as any).getBuiltinModule('http').get({ hostname: 'speech-export-control.invalid' }),
-        () => (process as any).getBuiltinModule('http').request({ hostname: 'speech-export-control.invalid' }),
-        () => (process as any).getBuiltinModule('https').get({ hostname: 'speech-export-control.invalid' }),
-        () => (process as any).getBuiltinModule('https').request({ hostname: 'speech-export-control.invalid' }),
-      ]) { try { invoke(); } catch { /* Positive controls must be observed. */ } }
-      const count = state.exportSpeechAttempts.length;
-      state.exportSpeechAttempts = [];
-      return count;
-    }, { cacheDir: process.env.HOMEBOT_KOKORO_TEST_CACHE, packagePath: path.resolve('package.json') })).toBe(5);
-    await trapSpeechNetwork();
+    await trapSpeechNetwork(app);
     await page.getByRole('button', { name: /Render Movie/ }).click();
     const result = await Promise.race([
       page.locator('.ms-movie-rendered-banner').waitFor({ state: 'visible', timeout: 180_000 }).then(() => 'ready'),
@@ -190,7 +155,7 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     await app.close();
     ({ app, page } = await launchElectronApp(launchEnv, profile));
     await waitForAppReady(page);
-    await trapSpeechNetwork();
+    await trapSpeechNetwork(app);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     if (!burnSubtitles) {
       await page.getByRole('tab', { name: /Director Console/ }).click();
