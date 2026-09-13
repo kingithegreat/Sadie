@@ -194,3 +194,30 @@ process exits 0 on its own after late-exit warning. Both typechecks, lint (eight
 existing warnings, zero errors), docs 218/167/33 and one-new-file duplicate guard
 pass. These final review corrections require another full/actual regression sweep
 before publication. Still Building; original owner preview/assets are untouched.
+
+## Final local regression checkpoint
+
+At df07327, the combined Windows Electron/media sweep executes all 18 cases in
+9.0 minutes, no retries/skips, exit 0. It covers offline speech privacy, captions
+on/off, narrated Both/restart/independent replacement, A/B freshness, ordinary
+duration/recovery/Both retry/Send back/Open source, Studio host and the saved
+short/long fit/crop 720p/1080p matrix. Real CPU FFmpeg and cached CPU Kokoro;
+diagnostic fixtures are not creative pilot acceptance. The earlier combined
+host timeout does not recur; no product timeout fix is claimed.
+
+Main #323 naming changes merge cleanly as ff4d65d. Post-merge Windows widget:
+307 suites/4,281 tests pass, 19 tests/six suites skipped, 143.667s. The runner
+warns about late exit, then exits 0 naturally without interrupt or forceExit.
+This resolves the earlier uncertainty about unassisted shutdown, not the warning.
+Root: 18 suites/227 tests pass (7.87s). Root/widget types, development build,
+docs (218/167/33), lint (zero errors/eight existing warnings) pass. Rebuilt
+Studio host and setup-output-controls tests: two pass in 16.6s, retries disabled,
+exit 0. Screenshot inspected: settings width 1,114.4px in a 1,144.8px card.
+
+Evidence is retained at the primary workspace's `.kilo/artifacts/`:
+`codex-final-media-20260913.log` and corresponding trace directory;
+`codex-postmerge-widget-20260913.log`, `codex-postmerge-root-20260913.log`,
+`codex-postmerge-build-20260913.log`, `codex-postmerge-lint-20260913.log`,
+and `codex-postmerge-ui-20260913.log` plus screenshots/geometry/traces.
+Local gates complete; PR, all six required CI contexts with executed counts,
+and merged-content verification remain. No owner preview, assets or release changed.
