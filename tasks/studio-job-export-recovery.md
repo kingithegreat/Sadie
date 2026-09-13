@@ -123,3 +123,61 @@ check the IPC record and Director message too. This production correction follow
 aa864ba; that running compatibility batch is intermediate, not final-source proof.
 Red/green logs are retained in its artifact directory. A rebuilt final run is
 required before publication of the branch.
+
+## Final local verification report — eec6796
+
+Story: retry a failed ordinary-job export, recover after restart, and inspect the
+exact saved movie without losing a prior success or approving a different file.
+The full-flow verification checklist is applied to Electron/preload/IPC and disk,
+not a web deployment. React review retains derived state, functional updates and
+cancellation of late project-A responses when project B is selected.
+
+Exact production and test source: `eec67961446d973ed9493cef2075dc459b4064bf`.
+Actual main bundle SHA-256:
+`8e6662b5d37a3cd3060efcbab4ce140bcb9ad90dc68159c83e00ca1fdf71ef97`.
+Windows widget: **4,254 tests / 306 suites pass**, 19 opt-in tests skipped,
+99.055 seconds. Root: 227 / 18 pass, root source unchanged since that check.
+Both typechecks, build, docs (218 preload / 167 renderer-to-main / 33 main-to-renderer)
+and duplicate guard pass; the guard positively checks one new production helper.
+Lint has zero errors and eight existing unrelated warnings.
+
+Final real Electron batch: **16 pass, zero failures/errors/skips/retries**, 369.278
+seconds. This includes the new 32.5-second ordinary recovery flow, storyboard A/B
+freshness/history, eight encoded geometry cases, 3.0/3.49-second ordinary audio
+timing, cached local narrated caption-on/off exports, speech privacy and theme.
+Retained artifacts: `.kilo/artifacts/studio-job-recovery-eec6796/`, including
+`focused-junit.xml`, logs, screenshots, original profiles and `exports/`.
+
+| Boundary | Status | Evidence |
+|---|---|---|
+| Visible UI → preload/guarded IPC | Verified | Visible Retry and history controls; real IPC plus foreign-sender, malformed-argument and permission regressions |
+| IPC → render/data | Verified | Real flat-content QA rejection (variation 0.3); old successful pointer/bytes retained; distinct successful retry and immutable input/output metadata |
+| Persistent data → response/UI | Verified | Restart, A/B selection, source/attempt labels and exact history movie; full three-second ending with no loop or media error |
+| Review → intended movie | Verified | Historical Approve disabled, direct stale-path approval refused, state remains awaiting approval; storyboard review preserves its independently verified metadata |
+| File action → OS boundary | Verified with adapter limit | Exact selected path crosses actual preload/IPC checks; Electron shell launch is trapped to avoid opening unrelated desktop apps |
+
+The initial pointer/banner regressions and the later storyboard-review metadata
+regression are red-to-green. Final recovery profile is
+`homebot-job-recovery-proof-CoY2qP`. Original and repaired-source retry are distinct
+files with the same expected bytes, SHA-256
+`7e1493be086413b6adb696468d317c64742a260852a89e1751f84dd0dbca5188`.
+No movie was approved, uploaded or published.
+
+Archive verification copies **22 MP4s: 21 successful exports and one deliberately
+QA-rejected diagnostic**. Every source/copy hash matches; sidecar hashes match
+where present; ffprobe finds actual video and audio tracks. The final encoded
+hash multiset exactly matches the intermediate aa864ba/70b0fcb batch. Portable
+measurements: [studio-job-export-recovery.json](../docs/evidence/studio-job-export-recovery.json).
+
+Inspected screenshots show the reopened captioned storyboard and the historical
+movie at 0:03 with disabled Approve and explicit read-only guidance. The initial
+failure screenshot is before playback (black at 0:00), so it is not used alone as
+playback proof. Element screenshots have capture/scroll cropping; this is not
+1280/1920 workspace, scaling or owner visual acceptance. Compatibility tests seek
+to the ending of longer movies rather than continuously watching every 66-second
+case. Other limits above remain in force.
+
+Local implementation is ready for normal branch publication. Required remote CI
+and exact merged-content verification are still pending; no main/installed or
+complete-Studio claim. Next after integration: explicit landscape/portrait outputs
+with shared accepted inputs and independently truthful failure/retry status.
