@@ -5,7 +5,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { createStudioOutputSpec } from '../../shared/media-output';
-import { launchElectronApp } from './launchElectron';
+import { launchFocusedStudioApp as launchElectronApp } from './helpers/focusStudioWindow';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
 

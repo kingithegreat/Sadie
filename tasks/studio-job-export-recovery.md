@@ -92,3 +92,21 @@ production; development bundle, not installer acceptance. Missing provenance on
 old narration is not reconstructed. No snapshot/output garbage collection is
 added; retained files intentionally consume disk space. Multi-output remains
 the next separate checkpoint, not an implied feature of this recovery work.
+
+## Production freeze aa864ba and focused-window test setup
+
+Exact production commit `aa864ba0c5f8a2f4de791438c76f9822ed3b3b5a` passes 4,253
+widget tests / 306 suites, 19 opt-in tests skipped, in 129.132 seconds. Both
+typechecks, build, lint and docs pass. Main bundle SHA-256 is
+`be5849b583249339fa5e82532aa97f5e2ae8697096413165ce995b5b9f82d9a4`.
+
+The first 16-case compatibility batch had three failures around 40 seconds
+each and was stopped, not treated as a clean media result. The isolated privacy
+diagnostic then passed unchanged assertions in 5.7 seconds. The exact cause of
+every aborted-batch failure is not established. Earlier recovery diagnostics
+show a stable-click timeout, and explicitly restoring/showing/focusing the
+test's own native window already passed the recovery test. That test-only setup
+is now shared by these seven Studio compatibility files, with window diagnostics
+retained for a privacy failure. Generic app launch, production code, assertions,
+privacy gates and the owner's preview are unchanged. The next batch stops on its
+first failure, has zero retries, and retains separate reports/results.

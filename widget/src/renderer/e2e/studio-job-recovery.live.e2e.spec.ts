@@ -5,7 +5,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { createStudioOutputSpec } from '../../shared/media-output';
-import { launchElectronApp } from './launchElectron';
+import { launchFocusedStudioApp as launchElectronApp, focusStudioWindow } from './helpers/focusStudioWindow';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
 
@@ -34,14 +34,7 @@ test('ordinary job keeps the successful movie selected after a real QA-rejected 
   const digest = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   const launchEnv = { HOMEBOT_E2E: '1', NODE_ENV: 'test', HOMEBOT_FFMPEG: ffmpeg };
   let { app, page } = await launchElectronApp(launchEnv, profile);
-  const focusTestWindow = async () => {
-    await app.evaluate(({ BrowserWindow }) => {
-      const window = BrowserWindow.getAllWindows().find(item => item.getTitle().includes('HomeBot'));
-      if (!window) throw new Error('The test application window was not found.');
-      window.restore(); window.show(); window.focus();
-    });
-    await page.bringToFront();
-  };
+  const focusTestWindow = () => focusStudioWindow(app, page);
   const playToEnd = async () => {
     const player = page.getByTestId(`ms-video-${id}`);
     await player.scrollIntoViewIfNeeded();
